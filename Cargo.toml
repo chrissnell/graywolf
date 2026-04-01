@@ -1,0 +1,23 @@
+[package]
+name = "direwolf-demod"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of the Dire Wolf AFSK demodulator"
+
+[dependencies]
+claxon = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+
+[[bench]]
+name = "afsk_bench"
+harness = false
