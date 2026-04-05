@@ -6,6 +6,12 @@ description = "Rust port of the Dire Wolf AFSK demodulator"
 
 [dependencies]
 claxon = "0.4"
+prost = "0.13"
+bytes = "1"
+cpal = "0.15"
+
+[build-dependencies]
+prost-build = "0.13"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -21,3 +27,11 @@ inherits = "release"
 [[bench]]
 name = "afsk_bench"
 harness = false
+
+[[bin]]
+name = "graywolf-modem"
+path = "src/bin/graywolf_modem.rs"
+
+[[bin]]
+name = "demod-bench"
+path = "src/bin/demod_bench.rs"
