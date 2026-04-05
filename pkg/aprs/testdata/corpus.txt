@@ -1,0 +1,45 @@
+# APRS corpus — one packet per line, each representing a packet type the
+# parser must handle. Lines beginning with '#' or blank are ignored.
+# Format: <expected_type>|<info_field>
+#
+# These are synthesised from the APRS Protocol Reference v1.0.1 and
+# real-world examples documented in the direwolf source tree. Live
+# 144.39 captures (see ../../aprs-test-tracks/*.flac) can be added
+# alongside once the modem IPC round-trip is wired end-to-end in Phase 4.
+
+position|!4903.50N/07201.75W-Test status
+position|=4903.50N/07201.75W>Mobile /A=001234
+position|@092345z4903.50N/07201.75W-Timestamped
+position|!4903.50N/07201.75W>088/036Course and speed
+message|:W1AW     :Hello, World{001
+message|:N0CALL   :ack042
+message|:BLN1     :Monthly net Wed 2000z
+telemetry|T#123,100,200,300,400,500,10110000
+weather|_10090556c220s004g005t077r000p000P000h50b09900wRSW
+weather|!4903.50N/07201.75W_220/004g005t077r000p000P000h50b09900
+object|;LEADER   *092345z4903.50N/07201.75W>Object demo
+object|;DEADOBJ  _092345z4903.50N/07201.75W>Killed
+item|)AID#2!4903.50N/07201.75W-Aid station
+item|)WRECK_4903.50N/07201.75W>Killed item
+capabilities|<IGATE,MSG_CNT=0,LOC_CNT=12>
+status|>Net Control Active
+query|?APRS?
+thirdparty|}N0CALL>APRS,TCPIP*,qAC,T2USA:=4903.50N/07201.75W-
+# Direction-finding appendix (APRS101 ch 7): "/BRG/NRQ".
+position|!4903.50N/07201.75W\/088/729DF station
+# Snowfall (s after g per direwolf decode_aprs.c) + raw rain counter #.
+weather|_10090556c220s004g010s012t077#0123h50b09900
+# Software+unit identifier tag trailing a weather report.
+weather|_10090556c220s004g005t077h50b09900xOWRD
+# Negative temperature in positionless weather.
+weather|_10090556c220s004g005t-14h50b09900
+# Telemetry metadata messages (APRS101 ch 13).
+telemetry|:N0CALL   :PARM.Battery,BTemp,AirTemp,Pres,Alt
+telemetry|:N0CALL   :UNIT.V,deg.F,deg.F,Mbar,Meters
+telemetry|:N0CALL   :EQNS.0,0.01,0,0,0.1,-30,0,0.1,-30,0,0.1,0,0,1,0
+telemetry|:N0CALL   :BITS.11111111,Weather Balloon
+# Real-world packet shapes from hessu/perl-aprs-fap t/*.t corpus.
+# Source: https://github.com/hessu/perl-aprs-fap/tree/main/t (BSD-style licensed).
+weather|!4903.50N/07201.75W_220/000g000t077r000p000P000h42b10147wRSW
+position|@092345z4903.50N/07201.75W>088/036/A=001234Course alt
+message|:EMAIL-2  :kc7xyz@example.com Hello from APRS
