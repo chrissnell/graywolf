@@ -1,0 +1,270 @@
+package kiss
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"net"
+	"sync"
+	"sync/atomic"
+
+	"github.com/chrissnell/graywolf/pkg/ax25"
+)
+
+// TxSink is the consumer for frames received from KISS clients. The
+// txgovernor implements this.
+type TxSink interface {
+	// Submit hands an AX.25 frame (already decoded) to the transmit path.
+	// The channel argument selects the radio channel (mapped from the KISS
+	// port number via ChannelMap).
+	Submit(ctx context.Context, channel uint32, frame *ax25.Frame, source SubmitSource) error
+}
+
+// SubmitSource identifies the origin of a TX request.
+type SubmitSource struct {
+	Kind     string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
+	Detail   string // interface name / client addr
+	Priority int    // governor priority (higher = sooner)
+}
+
+// ServerConfig configures a KISS TCP server instance.
+type ServerConfig struct {
+	// Name identifies the interface in logs and metrics.
+	Name string
+	// ListenAddr is a "host:port" TCP address. For serial/bluetooth use a
+	// different constructor (ServeTransport).
+	ListenAddr string
+	// ChannelMap translates KISS port numbers (0..15) to graywolf radio
+	// channels. A missing entry defaults to channel 1.
+	ChannelMap map[uint8]uint32
+	// Sink receives parsed AX.25 frames for transmission.
+	Sink TxSink
+	// Logger is optional.
+	Logger *slog.Logger
+	// OnClientChange is invoked with the new active-client count whenever
+	// a client connects or disconnects. Optional.
+	OnClientChange func(active int)
+}
+
+// Server is a multi-client KISS TCP server. A single Server instance
+// corresponds to one row in the kiss_interfaces table.
+type Server struct {
+	cfg      ServerConfig
+	logger   *slog.Logger
+	ln       net.Listener
+	wg       sync.WaitGroup
+	mu       sync.Mutex
+	clients  map[*clientConn]struct{}
+	active   int32 // atomic: current client count
+}
+
+type clientConn struct {
+	w  io.Writer
+	mu sync.Mutex // serialises writes to the same client
+}
+
+// NewServer builds a Server. It does not start listening until ListenAndServe.
+func NewServer(cfg ServerConfig) *Server {
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+	return &Server{
+		cfg:     cfg,
+		logger:  cfg.Logger.With("kiss_iface", cfg.Name),
+		clients: make(map[*clientConn]struct{}),
+	}
+}
+
+// ActiveClients returns the current number of connected KISS clients.
+func (s *Server) ActiveClients() int { return int(atomic.LoadInt32(&s.active)) }
+
+// ListenAndServe binds the configured TCP address and serves clients until
+// the context is cancelled. It blocks.
+func (s *Server) ListenAndServe(ctx context.Context) error {
+	ln, err := net.Listen("tcp", s.cfg.ListenAddr)
+	if err != nil {
+		return err
+	}
+	s.ln = ln
+	s.logger.Info("kiss server listening", "addr", s.cfg.ListenAddr)
+
+	// Close listener on context cancel to break Accept.
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			if ctx.Err() != nil {
+				break
+			}
+			if errors.Is(err, net.ErrClosed) {
+				break
+			}
+			s.logger.Warn("accept error", "err", err)
+			continue
+		}
+		s.wg.Add(1)
+		go func(c net.Conn) {
+			defer s.wg.Done()
+			s.handleClient(ctx, c)
+		}(conn)
+	}
+	s.wg.Wait()
+	return nil
+}
+
+func (s *Server) handleClient(ctx context.Context, conn net.Conn) {
+	defer conn.Close()
+	addr := conn.RemoteAddr().String()
+	c := &clientConn{w: conn}
+	s.addClient(c)
+	defer s.removeClient(c)
+	s.logger.Info("kiss client connected", "remote", addr)
+	defer s.logger.Info("kiss client disconnected", "remote", addr)
+
+	// Close the connection if the context is cancelled so the decoder
+	// unblocks.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
+
+	d := NewDecoder(conn)
+	for {
+		f, err := d.Next()
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+				return
+			}
+			s.logger.Warn("kiss decode error", "remote", addr, "err", err)
+			return
+		}
+		s.handleFrame(ctx, addr, f)
+	}
+}
+
+func (s *Server) handleFrame(ctx context.Context, remote string, f *Frame) {
+	switch f.Command {
+	case CmdDataFrame:
+		ax, err := ax25.Decode(f.Data)
+		if err != nil {
+			s.logger.Warn("kiss frame is not valid ax.25", "remote", remote, "err", err)
+			return
+		}
+		if !ax.IsUI() {
+			s.logger.Debug("dropping non-UI frame from kiss client", "remote", remote)
+			return
+		}
+		channel := s.channelFor(f.Port)
+		if s.cfg.Sink != nil {
+			err := s.cfg.Sink.Submit(ctx, channel, ax, SubmitSource{
+				Kind:     "kiss",
+				Detail:   s.cfg.Name + " " + remote,
+				Priority: 2, // KISS/AGW client, per plan priority table
+			})
+			if err != nil {
+				s.logger.Warn("tx governor rejected kiss frame", "err", err)
+			}
+		}
+	case CmdTxDelay, CmdPersistence, CmdSlotTime, CmdTxTail, CmdFullDuplex, CmdSetHardware:
+		// KISS timing parameters are configured via the web UI in graywolf;
+		// accept and ignore to stay compatible with direwolf kissutil etc.
+		s.logger.Debug("ignoring kiss timing command", "cmd", f.Command, "remote", remote)
+	case CmdReturn:
+		s.logger.Info("kiss return command received", "remote", remote)
+	default:
+		s.logger.Debug("unknown kiss command", "cmd", f.Command, "remote", remote)
+	}
+}
+
+func (s *Server) channelFor(port uint8) uint32 {
+	if ch, ok := s.cfg.ChannelMap[port]; ok {
+		return ch
+	}
+	return 1
+}
+
+func (s *Server) addClient(c *clientConn) {
+	s.mu.Lock()
+	s.clients[c] = struct{}{}
+	n := int32(len(s.clients))
+	s.mu.Unlock()
+	atomic.StoreInt32(&s.active, n)
+	if s.cfg.OnClientChange != nil {
+		s.cfg.OnClientChange(int(n))
+	}
+}
+
+func (s *Server) removeClient(c *clientConn) {
+	s.mu.Lock()
+	delete(s.clients, c)
+	n := int32(len(s.clients))
+	s.mu.Unlock()
+	atomic.StoreInt32(&s.active, n)
+	if s.cfg.OnClientChange != nil {
+		s.cfg.OnClientChange(int(n))
+	}
+}
+
+// Broadcast sends a received AX.25 frame to every connected KISS client
+// (KISSCOPY equivalent). Errors on individual clients are logged but do not
+// stop the broadcast.
+func (s *Server) Broadcast(port uint8, axBytes []byte) {
+	raw := Encode(port, axBytes)
+	s.mu.Lock()
+	clients := make([]*clientConn, 0, len(s.clients))
+	for c := range s.clients {
+		clients = append(clients, c)
+	}
+	s.mu.Unlock()
+	for _, c := range clients {
+		c.mu.Lock()
+		_, err := c.w.Write(raw)
+		c.mu.Unlock()
+		if err != nil {
+			s.logger.Debug("kiss broadcast write failed", "err", err)
+		}
+	}
+}
+
+// ServeTransport runs a single-client KISS session over any
+// io.ReadWriteCloser — e.g. a serial port opened via go.bug.st/serial, or
+// a bluetooth rfcomm device opened via os.OpenFile. Used for
+// kiss_interfaces.interface_type = "serial" | "bluetooth".
+//
+// The transport is closed on return or context cancellation.
+func (s *Server) ServeTransport(ctx context.Context, rwc io.ReadWriteCloser) error {
+	c := &clientConn{w: rwc}
+	s.addClient(c)
+	defer s.removeClient(c)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = rwc.Close()
+		case <-done:
+		}
+	}()
+	d := NewDecoder(rwc)
+	for {
+		f, err := d.Next()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		s.handleFrame(ctx, "transport:"+s.cfg.Name, f)
+	}
+}
+

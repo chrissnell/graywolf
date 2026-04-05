@@ -24,6 +24,14 @@ type Metrics struct {
 	DcdActive       *prometheus.GaugeVec
 	ChildUp         prometheus.Gauge
 
+	// Phase 2: protocol + tx governor metrics.
+	KissClientsActive *prometheus.GaugeVec // per interface name
+	AgwClientsActive  prometheus.Gauge
+	TxFrames          *prometheus.CounterVec // per channel
+	TxRateLimited     prometheus.Counter
+	TxDeduped         prometheus.Counter
+	TxQueueDropped    prometheus.Counter
+
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
 	// deltas. (Rx frame counts come directly from ObserveReceivedFrame so we
@@ -64,6 +72,30 @@ func New() *Metrics {
 			Name: "graywolf_child_up",
 			Help: "1 if the Rust modem child process is currently running.",
 		}),
+		KissClientsActive: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "graywolf_kiss_clients_active",
+			Help: "Connected KISS clients, by interface name.",
+		}, []string{"interface"}),
+		AgwClientsActive: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "graywolf_agw_clients_active",
+			Help: "Connected AGWPE clients.",
+		}),
+		TxFrames: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_tx_frames_total",
+			Help: "AX.25 frames transmitted by the governor, by channel.",
+		}, []string{"channel"}),
+		TxRateLimited: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_tx_rate_limited_total",
+			Help: "Frames deferred because a channel's rate limit was reached.",
+		}),
+		TxDeduped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_tx_deduped_total",
+			Help: "Frames suppressed by the tx governor deduplication window.",
+		}),
+		TxQueueDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_tx_queue_dropped_total",
+			Help: "Frames dropped because the tx governor queue was full.",
+		}),
 		lastDcdTransitions: make(map[uint32]uint64),
 	}
 	reg.MustRegister(
@@ -74,8 +106,29 @@ func New() *Metrics {
 		m.AudioLevel,
 		m.DcdActive,
 		m.ChildUp,
+		m.KissClientsActive,
+		m.AgwClientsActive,
+		m.TxFrames,
+		m.TxRateLimited,
+		m.TxDeduped,
+		m.TxQueueDropped,
 	)
 	return m
+}
+
+// ObserveTxFrame increments the tx counter for a channel.
+func (m *Metrics) ObserveTxFrame(channel uint32) {
+	m.TxFrames.WithLabelValues(strconv.FormatUint(uint64(channel), 10)).Inc()
+}
+
+// SetKissClients sets the gauge for a KISS interface name.
+func (m *Metrics) SetKissClients(iface string, n int) {
+	m.KissClientsActive.WithLabelValues(iface).Set(float64(n))
+}
+
+// SetAgwClients sets the AGW client gauge.
+func (m *Metrics) SetAgwClients(n int) {
+	m.AgwClientsActive.Set(float64(n))
 }
 
 // Handler returns an http.Handler serving /metrics from this registry.

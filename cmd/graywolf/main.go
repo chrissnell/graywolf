@@ -13,9 +13,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/agw"
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
+	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
 func main() {
@@ -23,6 +28,12 @@ func main() {
 		dbPath     = flag.String("config", "./graywolf.db", "path to SQLite config database")
 		modemPath  = flag.String("modem", "./target/release/graywolf-modem", "path to graywolf-modem binary")
 		httpAddr   = flag.String("http", "127.0.0.1:8080", "HTTP listen address for /metrics")
+		kissAddr   = flag.String("kiss", "", "KISS TCP listen address, e.g. 0.0.0.0:8001 (empty = disabled)")
+		agwAddr    = flag.String("agw", "", "AGWPE TCP listen address, e.g. 0.0.0.0:8000 (empty = disabled)")
+		mycall     = flag.String("mycall", "N0CALL", "default station callsign for AGW port info")
+		rate1      = flag.Int("tx-rate-1min", 0, "tx governor 1-minute frame rate limit per channel (0=unlimited)")
+		rate5      = flag.Int("tx-rate-5min", 0, "tx governor 5-minute frame rate limit per channel (0=unlimited)")
+		dedupWin   = flag.Duration("tx-dedup-window", 30*time.Second, "tx dedup window")
 		shutdownTO = flag.Duration("shutdown-timeout", 10*time.Second, "max time to wait for clean shutdown")
 	)
 	flag.Parse()
@@ -53,10 +64,112 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Drain frames — later phases will route them to KISS/AGW/APRS. For
-	// phase 1 we log the count via metrics and discard the payload.
+	// --- TX governor ----------------------------------------------------
+	txSender := func(tf *pb.TransmitFrame) error {
+		if err := bridge.SendTransmitFrame(tf); err != nil {
+			return err
+		}
+		m.ObserveTxFrame(tf.Channel)
+		return nil
+	}
+	gov := txgovernor.New(txgovernor.Config{
+		Sender:        txSender,
+		DcdEvents:     bridge.DcdEvents(),
+		Rate1MinLimit: *rate1,
+		Rate5MinLimit: *rate5,
+		DedupWindow:   *dedupWin,
+		Logger:        logger,
+	})
 	go func() {
-		for range bridge.Frames() {
+		if err := gov.Run(ctx); err != nil {
+			logger.Error("tx governor", "err", err)
+		}
+	}()
+	// Periodically mirror governor stats into Prometheus counters.
+	go func() {
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		var prev txgovernor.Stats
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s := gov.Stats()
+				if d := s.RateLimited - prev.RateLimited; d > 0 {
+					for i := uint64(0); i < d; i++ {
+						m.TxRateLimited.Inc()
+					}
+				}
+				if d := s.Deduped - prev.Deduped; d > 0 {
+					for i := uint64(0); i < d; i++ {
+						m.TxDeduped.Inc()
+					}
+				}
+				if d := s.QueueDropped - prev.QueueDropped; d > 0 {
+					for i := uint64(0); i < d; i++ {
+						m.TxQueueDropped.Inc()
+					}
+				}
+				prev = s
+			}
+		}
+	}()
+
+	// --- KISS TCP server (optional) -------------------------------------
+	var kissServer *kiss.Server
+	if *kissAddr != "" {
+		kissServer = kiss.NewServer(kiss.ServerConfig{
+			Name:       "tcp",
+			ListenAddr: *kissAddr,
+			Sink:       &kissSinkAdapter{gov: gov},
+			Logger:     logger,
+			ChannelMap: map[uint8]uint32{0: 1},
+			OnClientChange: func(n int) {
+				m.SetKissClients("tcp", n)
+			},
+		})
+		go func() {
+			if err := kissServer.ListenAndServe(ctx); err != nil {
+				logger.Error("kiss server", "err", err)
+			}
+		}()
+	}
+
+	// --- AGW TCP server (optional) --------------------------------------
+	var agwServer *agw.Server
+	if *agwAddr != "" {
+		agwServer = agw.NewServer(agw.ServerConfig{
+			ListenAddr:    *agwAddr,
+			PortCallsigns: []string{*mycall},
+			PortToChannel: map[uint8]uint32{0: 1},
+			Sink:          &agwSinkAdapter{gov: gov},
+			Logger:        logger,
+			OnClientChange: func(n int) {
+				m.SetAgwClients(n)
+			},
+		})
+		go func() {
+			if err := agwServer.ListenAndServe(ctx); err != nil {
+				logger.Error("agw server", "err", err)
+			}
+		}()
+	}
+
+	// --- RX fan-out: modem → KISS broadcast + AGW monitor ---------------
+	go func() {
+		for rf := range bridge.Frames() {
+			if rf == nil {
+				continue
+			}
+			if kissServer != nil {
+				kissServer.Broadcast(0, rf.Data)
+			}
+			if agwServer != nil {
+				if f, err := ax25.Decode(rf.Data); err == nil && f.IsUI() {
+					agwServer.BroadcastMonitoredUI(uint8(rf.Channel), f)
+				}
+			}
 		}
 	}()
 
@@ -89,3 +202,22 @@ func main() {
 
 	_ = httpSrv.Shutdown(shutdownCtx)
 }
+
+// kissSinkAdapter bridges kiss.TxSink to txgovernor.Submit.
+type kissSinkAdapter struct{ gov *txgovernor.Governor }
+
+func (a *kissSinkAdapter) Submit(ctx context.Context, channel uint32, f *ax25.Frame, s kiss.SubmitSource) error {
+	return a.gov.Submit(ctx, channel, f, txgovernor.SubmitSource{
+		Kind: s.Kind, Detail: s.Detail, Priority: s.Priority,
+	})
+}
+
+// agwSinkAdapter bridges agw.TxSink to txgovernor.Submit.
+type agwSinkAdapter struct{ gov *txgovernor.Governor }
+
+func (a *agwSinkAdapter) Submit(ctx context.Context, channel uint32, f *ax25.Frame, s agw.SubmitSource) error {
+	return a.gov.Submit(ctx, channel, f, txgovernor.SubmitSource{
+		Kind: s.Kind, Detail: s.Detail, Priority: s.Priority,
+	})
+}
+

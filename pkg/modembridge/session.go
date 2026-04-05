@@ -26,13 +26,16 @@ type sessionConn interface {
 // closes or the context is cancelled.
 func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 	// A writer mutex keeps ConfigureX messages and the eventual Shutdown
-	// from interleaving with any writes the consumer may add later.
+	// from interleaving with TransmitFrame writes from the txgovernor.
 	var writeMu sync.Mutex
 	send := func(m *pb.IpcMessage) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
 		return writeFrame(conn, m)
 	}
+	// Publish the sender so Bridge.SendTransmitFrame can reach this session.
+	b.setSender(send)
+	defer b.setSender(nil)
 
 	// ------------------------------------------------------------------
 	// Wait for ModemReady.
@@ -120,11 +123,16 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 				// Final status before modem exits; wait for EOF next iter.
 			}
 		case *pb.IpcMessage_DcdChange:
-			// Currently we derive DCD state from StatusUpdate gauges. Log for
-			// visibility but no other action in phase 1.
 			b.logger.Debug("dcd change",
 				"channel", p.DcdChange.Channel,
 				"detected", p.DcdChange.Detected)
+			// Forward to DcdEvents() consumers (txgovernor). Non-blocking:
+			// drop if no consumer is keeping up.
+			select {
+			case b.dcd <- p.DcdChange:
+			default:
+				b.logger.Warn("dcd channel full, dropping event")
+			}
 		default:
 			b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 		}

@@ -69,6 +69,8 @@ type Config struct {
 	Logger *slog.Logger
 	// FrameBufferSize controls the capacity of the Frames() channel.
 	FrameBufferSize int
+	// DcdBufferSize controls the capacity of the DcdEvents() channel.
+	DcdBufferSize int
 }
 
 func (c *Config) applyDefaults() {
@@ -90,6 +92,9 @@ func (c *Config) applyDefaults() {
 	if c.FrameBufferSize == 0 {
 		c.FrameBufferSize = 64
 	}
+	if c.DcdBufferSize == 0 {
+		c.DcdBufferSize = 64
+	}
 }
 
 // Bridge supervises the Rust modem child and exposes received frames to
@@ -99,9 +104,14 @@ type Bridge struct {
 	logger *slog.Logger
 
 	frames chan *pb.ReceivedFrame
+	dcd    chan *pb.DcdChange
 
 	mu    sync.Mutex
 	state State
+
+	// sendFn is the current session's write function, or nil if no session
+	// is active. Guarded by mu.
+	sendFn func(*pb.IpcMessage) error
 
 	// Runtime fields guarded by mu.
 	cancel context.CancelFunc
@@ -115,8 +125,33 @@ func New(cfg Config) *Bridge {
 		cfg:    cfg,
 		logger: cfg.Logger,
 		frames: make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
+		dcd:    make(chan *pb.DcdChange, cfg.DcdBufferSize),
 		state:  StateStopped,
 	}
+}
+
+// DcdEvents returns a channel of DCD state-change events from the modem.
+// Consumers (e.g. txgovernor) use these to time transmissions against
+// channel-busy state. The channel is closed when Stop completes.
+func (b *Bridge) DcdEvents() <-chan *pb.DcdChange { return b.dcd }
+
+// SendTransmitFrame queues a TransmitFrame IPC message to the currently
+// connected modem session. Returns an error if no session is active.
+// Callers (e.g. the txgovernor) are expected to retry or drop on error.
+func (b *Bridge) SendTransmitFrame(tf *pb.TransmitFrame) error {
+	b.mu.Lock()
+	send := b.sendFn
+	b.mu.Unlock()
+	if send == nil {
+		return errors.New("modembridge: no active session")
+	}
+	return send(&pb.IpcMessage{Payload: &pb.IpcMessage_TransmitFrame{TransmitFrame: tf}})
+}
+
+func (b *Bridge) setSender(fn func(*pb.IpcMessage) error) {
+	b.mu.Lock()
+	b.sendFn = fn
+	b.mu.Unlock()
 }
 
 // Frames returns a channel of received AX.25 frames. The channel is closed
@@ -172,6 +207,7 @@ func (b *Bridge) Stop() {
 func (b *Bridge) supervise(ctx context.Context) {
 	defer close(b.done)
 	defer close(b.frames)
+	defer close(b.dcd)
 
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
