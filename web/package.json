@@ -1,0 +1,20 @@
+{
+  "name": "graywolf-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "chonky": "^2.3.2",
+    "chonky-icon-fontawesome": "^2.3.2"
+  }
+}
