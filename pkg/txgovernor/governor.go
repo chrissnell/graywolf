@@ -25,12 +25,15 @@ import (
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 )
 
-// Priority levels. Higher value = sent sooner.
+// Priority levels. Higher value = sent sooner. These re-export the
+// canonical constants defined in pkg/ax25 so existing call sites keep
+// working; the ax25 package owns the truth so pkg/kiss, pkg/agw, and
+// pkg/aprs can reference the same values without importing txgovernor.
 const (
-	PriorityBeacon     = 1
-	PriorityDigipeated = 2
-	PriorityClient     = 3 // KISS/AGW client-originated
-	PriorityIGateMsg   = 4 // iGate message to a heard station
+	PriorityBeacon     = ax25.PriorityBeacon
+	PriorityDigipeated = ax25.PriorityDigipeated
+	PriorityClient     = ax25.PriorityClient // KISS/AGW client-originated
+	PriorityIGateMsg   = ax25.PriorityIGateMsg
 )
 
 // SubmitSource describes the origin of a TX request for logging, dedup

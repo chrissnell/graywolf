@@ -169,7 +169,7 @@ func (s *Server) handleFrame(ctx context.Context, remote string, f *Frame) {
 			err := s.cfg.Sink.Submit(ctx, channel, ax, SubmitSource{
 				Kind:     "kiss",
 				Detail:   s.cfg.Name + " " + remote,
-				Priority: 2, // KISS/AGW client, per plan priority table
+				Priority: ax25.PriorityClient,
 			})
 			if err != nil {
 				s.logger.Warn("tx governor rejected kiss frame", "err", err)
