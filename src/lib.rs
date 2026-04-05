@@ -84,3 +84,6 @@ pub mod dsp;
 pub mod state;
 pub mod hdlc;
 pub mod demod_afsk;
+pub mod ipc;
+pub mod audio;
+pub mod modem;
