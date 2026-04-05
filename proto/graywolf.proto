@@ -1,0 +1,146 @@
+// Graywolf modem ↔ application IPC protocol.
+//
+// Wire format: length-prefixed IpcMessage frames over a Unix domain socket.
+// Each frame is [4 bytes big-endian length][IpcMessage protobuf bytes].
+//
+// All messages are wrapped in the IpcMessage oneof envelope so that a single
+// bidirectional stream can carry both directions without a separate type tag.
+
+syntax = "proto3";
+
+package graywolf;
+
+option go_package = "github.com/graywolf/graywolf/pkg/ipcproto";
+
+// ---------------------------------------------------------------------------
+// Envelope
+// ---------------------------------------------------------------------------
+
+message IpcMessage {
+  oneof payload {
+    // Rust modem → Go application
+    ReceivedFrame received_frame = 1;
+    DcdChange dcd_change = 2;
+    StatusUpdate status_update = 3;
+    ModemReady modem_ready = 4;
+
+    // Go application → Rust modem
+    TransmitFrame transmit_frame = 10;
+    ConfigureChannel configure_channel = 11;
+    ConfigureAudio configure_audio = 12;
+    ConfigurePtt configure_ptt = 13;
+    StartAudio start_audio = 14;
+    StopAudio stop_audio = 15;
+    Shutdown shutdown = 16;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rust → Go
+// ---------------------------------------------------------------------------
+
+// A successfully decoded AX.25 frame with demodulator metadata.
+message ReceivedFrame {
+  uint32 channel = 1;          // logical radio channel
+  uint32 subchan = 2;          // demodulator subchannel
+  uint32 slice = 3;             // slicer index
+  bytes data = 4;               // AX.25 frame bytes, FCS stripped
+  int32 quality = 5;            // 0..100 decoder quality
+  float audio_level_mark = 6;   // mark level at time of capture
+  float audio_level_space = 7;  // space level at time of capture
+  float speed_error = 8;        // baud-rate error, percent
+  string retry = 9;             // "none" | "single" | "double"
+  uint64 timestamp_ns = 10;     // monotonic capture time
+}
+
+// Data Carrier Detect state transition.
+message DcdChange {
+  uint32 channel = 1;
+  uint32 subchan = 2;
+  uint32 slice = 3;
+  bool detected = 4;
+  uint64 timestamp_ns = 5;
+}
+
+// Periodic health / metrics update. Consumed by Go for Prometheus export.
+message StatusUpdate {
+  uint32 channel = 1;
+  uint64 rx_frames = 2;
+  uint64 rx_bad_fcs = 3;
+  uint64 tx_frames = 4;
+  uint64 dcd_transitions = 5;
+  float audio_level_mark = 6;
+  float audio_level_space = 7;
+  float audio_level_peak = 8;
+  bool dcd_state = 9;
+  bool shutdown_complete = 10;   // final status before process exit
+  uint64 timestamp_ns = 11;
+}
+
+// Sent once after the modem has bound its IPC socket, accepted a connection,
+// and is ready to receive configuration messages.
+message ModemReady {
+  string version = 1;
+  uint64 pid = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Go → Rust
+// ---------------------------------------------------------------------------
+
+// Request transmission of a raw AX.25 frame on a specific channel.
+message TransmitFrame {
+  uint32 channel = 1;
+  bytes data = 2;               // AX.25 frame bytes, no FCS (modem appends)
+  uint32 txdelay_override_ms = 3;  // 0 = use configured default
+  uint32 txtail_override_ms = 4;
+  uint32 priority = 5;          // higher = sooner
+}
+
+// Configure a logical radio channel's demodulator parameters.
+message ConfigureChannel {
+  uint32 channel = 1;
+  uint32 device_id = 2;         // audio device this channel reads from
+  uint32 audio_channel = 3;     // 0=left / mono, 1=right
+  uint32 baud = 4;              // 1200, 2400, 4800, 9600
+  uint32 mark_freq = 5;
+  uint32 space_freq = 6;
+  string modem_type = 7;        // "afsk" (phase 1), "psk", "9600" later
+  string profile = 8;           // "A" | "B"
+  uint32 num_slicers = 9;
+  string fix_bits = 10;         // "none" | "single" | "double"
+}
+
+// Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
+message ConfigureAudio {
+  uint32 device_id = 1;
+  string device_name = 2;       // cpal device name, "stdin", or file path
+  uint32 sample_rate = 3;
+  uint32 channels = 4;          // 1=mono, 2=stereo
+  string source_type = 5;       // "soundcard" | "stdin" | "flac" | "sdr_udp"
+  string format = 6;            // "s16le" | "f32" etc. (source-specific)
+}
+
+// Configure PTT (push-to-talk) control for a channel.
+message ConfigurePtt {
+  uint32 channel = 1;
+  string method = 2;            // "serial_rts" | "serial_dtr" | "gpio" | "cm108" | "none"
+  string device = 3;
+  uint32 txdelay_ms = 4;
+  uint32 txtail_ms = 5;
+  uint32 slottime_ms = 6;
+  uint32 persist = 7;           // p-persistence 0..255
+  uint32 dwait_ms = 8;
+}
+
+// Begin audio processing on all configured devices.
+message StartAudio {}
+
+// Stop audio processing (for device hot-swap). Safe to follow with a new
+// ConfigureAudio + StartAudio sequence.
+message StopAudio {}
+
+// Graceful shutdown: finish current TX, deassert PTT, drain queues, exit.
+message Shutdown {
+  uint32 timeout_ms = 1;        // max time to wait for drain, 0 = use default
+}
