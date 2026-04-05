@@ -56,6 +56,7 @@ const (
 	KindUnregisterCallsign byte = 'x'
 	KindMonitorOn          byte = 'm'
 	KindSendUnproto        byte = 'M' // client → server: send UI frame
+	KindSendUnprotoVia     byte = 'V' // client → server: send UI frame via digipeaters
 	KindSendRaw            byte = 'K' // both directions: raw AX.25
 	KindMonitoredUI        byte = 'U' // server → client: rx UI frame
 )

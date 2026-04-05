@@ -62,6 +62,10 @@ type clientState struct {
 	mu        sync.Mutex
 	monitor   bool
 	callsigns map[string]struct{}
+	// viaPath is the digipeater list supplied by the most recent 'V'
+	// message. It is consumed (cleared) by the next 'M' (UNPROTO) send so
+	// a client can choose a path per transmission.
+	viaPath []string
 }
 
 // NewServer builds an AGW server. Does not listen until ListenAndServe.
@@ -196,33 +200,37 @@ func (s *Server) dispatch(ctx context.Context, cs *clientState, h *Header, data 
 		return nil
 
 	case KindSendUnproto:
-		// data layout (direwolf): first byte PID is in header.PID; data is
-		// the info field. CallFrom → CallTo, via optional digipeater path
-		// carried inside data as "VIA CALL,CALL,..." prefix? In practice
-		// APRSIS32 and UI-View put the info field directly in data and use
-		// CallFrom/CallTo as source/dest, with the path either empty or
-		// provided via a preceding 'V' message. Graywolf implements the
-		// common simple path: treat data as info field, no digipeater path.
-		src, err := ax25.ParseAddress(h.CallFrom)
+		// data layout (direwolf): header.PID is the PID byte; data is the
+		// info field. CallFrom → CallTo. If a prior 'V' frame stashed a
+		// via-list on this client state, consume it here.
+		cs.mu.Lock()
+		via := cs.viaPath
+		cs.viaPath = nil
+		cs.mu.Unlock()
+		return s.submitUnproto(ctx, cs, h, via, data)
+
+	case KindSendUnprotoVia:
+		// 'V' layout matches the AGWPE spec: one byte N = number of
+		// digipeaters, then N×10 NUL-padded callsigns, then the info
+		// field. direwolf's implementation stores these on the client
+		// until the matching 'M' arrives.
+		via, info, err := parseViaPayload(data)
 		if err != nil {
-			return nil // ignore invalid
-		}
-		dst, err := ax25.ParseAddress(h.CallTo)
-		if err != nil {
+			s.logger.Debug("agw V parse", "err", err)
 			return nil
 		}
-		f, err := ax25.NewUIFrame(src, dst, nil, data)
-		if err != nil {
+		// APRSIS32 / UI-View send the V frame as a self-contained UI
+		// transmission (the info payload rides along with the via list),
+		// so we submit immediately. Clients that instead split V+M and
+		// expect the via to cling to the next M also work because we
+		// stash the via list in case no info was supplied.
+		if len(info) == 0 {
+			cs.mu.Lock()
+			cs.viaPath = via
+			cs.mu.Unlock()
 			return nil
 		}
-		if s.cfg.Sink != nil {
-			return s.cfg.Sink.Submit(ctx, s.channelFor(h.Port), f, SubmitSource{
-				Kind:     "agw",
-				Detail:   cs.conn.RemoteAddr().String(),
-				Priority: 2,
-			})
-		}
-		return nil
+		return s.submitUnproto(ctx, cs, h, via, info)
 
 	case KindSendRaw:
 		// Raw AX.25 frame in data.
@@ -246,7 +254,7 @@ func (s *Server) dispatch(ctx context.Context, cs *clientState, h *Header, data 
 			return s.cfg.Sink.Submit(ctx, s.channelFor(h.Port), ax, SubmitSource{
 				Kind:     "agw",
 				Detail:   cs.conn.RemoteAddr().String(),
-				Priority: 2,
+				Priority: ax25.PriorityClient,
 			})
 		}
 		return nil
@@ -256,6 +264,71 @@ func (s *Server) dispatch(ctx context.Context, cs *clientState, h *Header, data 
 		s.logger.Debug("unsupported agw frame kind", "kind", string(h.DataKind))
 		return nil
 	}
+}
+
+// submitUnproto builds a UI frame from an AGW 'M'/'V' submission and
+// funnels it through the TxSink.
+func (s *Server) submitUnproto(ctx context.Context, cs *clientState, h *Header, via []string, info []byte) error {
+	src, err := ax25.ParseAddress(h.CallFrom)
+	if err != nil {
+		return nil
+	}
+	dst, err := ax25.ParseAddress(h.CallTo)
+	if err != nil {
+		return nil
+	}
+	path := make([]ax25.Address, 0, len(via))
+	for _, v := range via {
+		a, err := ax25.ParseAddress(v)
+		if err != nil {
+			s.logger.Debug("agw via parse", "addr", v, "err", err)
+			continue
+		}
+		path = append(path, a)
+	}
+	f, err := ax25.NewUIFrame(src, dst, path, info)
+	if err != nil {
+		return nil
+	}
+	// Honor the client-supplied PID byte instead of forcing 0xF0.
+	if h.PID != 0 {
+		f.PID = h.PID
+	}
+	if s.cfg.Sink == nil {
+		return nil
+	}
+	return s.cfg.Sink.Submit(ctx, s.channelFor(h.Port), f, SubmitSource{
+		Kind:     "agw",
+		Detail:   cs.conn.RemoteAddr().String(),
+		Priority: ax25.PriorityClient,
+	})
+}
+
+// parseViaPayload decodes the 'V' frame data field: 1-byte digi count,
+// then N*10 bytes of NUL-padded digipeater callsigns, then the info
+// field. Returns the digi list and the info payload.
+func parseViaPayload(data []byte) ([]string, []byte, error) {
+	if len(data) < 1 {
+		return nil, nil, errors.New("agw: V frame empty")
+	}
+	n := int(data[0])
+	const callLen = 10
+	need := 1 + n*callLen
+	if n > 8 {
+		return nil, nil, fmt.Errorf("agw: V frame too many digis: %d", n)
+	}
+	if len(data) < need {
+		return nil, nil, errors.New("agw: V frame truncated")
+	}
+	via := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		off := 1 + i*callLen
+		call := trimNul(string(data[off : off+callLen]))
+		if call != "" {
+			via = append(via, call)
+		}
+	}
+	return via, data[need:], nil
 }
 
 func (s *Server) sendPortInfo(cs *clientState) error {
