@@ -31,6 +31,7 @@ type Metrics struct {
 	TxRateLimited     prometheus.Counter
 	TxDeduped         prometheus.Counter
 	TxQueueDropped    prometheus.Counter
+	AprsOutDropped    prometheus.Counter
 
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
@@ -96,6 +97,10 @@ func New() *Metrics {
 			Name: "graywolf_tx_queue_dropped_total",
 			Help: "Frames dropped because the tx governor queue was full.",
 		}),
+		AprsOutDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_aprs_out_dropped_total",
+			Help: "Decoded APRS packets dropped because the output worker queue was full.",
+		}),
 		lastDcdTransitions: make(map[uint32]uint64),
 	}
 	reg.MustRegister(
@@ -112,6 +117,7 @@ func New() *Metrics {
 		m.TxRateLimited,
 		m.TxDeduped,
 		m.TxQueueDropped,
+		m.AprsOutDropped,
 	)
 	return m
 }

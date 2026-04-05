@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/agw"
+	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
@@ -21,6 +22,8 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
+	"github.com/chrissnell/graywolf/pkg/webapi"
+	"github.com/chrissnell/graywolf/web"
 )
 
 func main() {
@@ -156,7 +159,22 @@ func main() {
 		}()
 	}
 
-	// --- RX fan-out: modem → KISS broadcast + AGW monitor ---------------
+	// --- APRS decode + log output ---------------------------------------
+	aprsOut := aprs.NewLogOutput(logger)
+
+	// Bounded worker queue so a slow PacketOutput (log rotate, syslog
+	// stall) never backs up the modem RX goroutine. On full, the oldest
+	// packet is dropped and the AprsOutDropped counter is incremented.
+	aprsQueue := make(chan *aprs.DecodedAPRSPacket, 256)
+	go func() {
+		for pkt := range aprsQueue {
+			_ = aprsOut.SendPacket(ctx, pkt)
+		}
+	}()
+
+	// --- RX fan-out: modem → KISS broadcast + AGW monitor + APRS log ----
+	// The decoded ax25.Frame is passed to both AGW and aprs.Parse without
+	// cloning; both consumers treat it as read-only.
 	go func() {
 		for rf := range bridge.Frames() {
 			if rf == nil {
@@ -165,9 +183,31 @@ func main() {
 			if kissServer != nil {
 				kissServer.Broadcast(0, rf.Data)
 			}
-			if agwServer != nil {
-				if f, err := ax25.Decode(rf.Data); err == nil && f.IsUI() {
+			f, err := ax25.Decode(rf.Data)
+			if err != nil {
+				continue
+			}
+			if f.IsUI() {
+				if agwServer != nil {
 					agwServer.BroadcastMonitoredUI(uint8(rf.Channel), f)
+				}
+				if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
+					pkt.Channel = int(rf.Channel)
+					select {
+					case aprsQueue <- pkt:
+					default:
+						// Drop oldest to make room for the new packet.
+						select {
+						case <-aprsQueue:
+							m.AprsOutDropped.Inc()
+						default:
+						}
+						select {
+						case aprsQueue <- pkt:
+						default:
+							m.AprsOutDropped.Inc()
+						}
+					}
 				}
 			}
 		}
@@ -175,6 +215,18 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", m.Handler())
+
+	// REST API (Phase 3 skeleton; Phase 6 fleshes out write paths).
+	apiSrv, err := webapi.NewServer(webapi.Config{Store: store, Logger: logger})
+	if err != nil {
+		logger.Error("webapi new", "err", err)
+		os.Exit(1)
+	}
+	apiSrv.RegisterRoutes(mux)
+
+	// Embedded Svelte UI at "/"; Phase 6 replaces the placeholder dist.
+	mux.Handle("/", web.Handler())
+
 	httpSrv := &http.Server{Addr: *httpAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		logger.Info("http listening", "addr", *httpAddr)
