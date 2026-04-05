@@ -5,8 +5,6 @@
 //! path yet). Multi-channel and TX are follow-up work.
 
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
-use std::sync::Arc;
-use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::audio::{self, AudioChunk, AudioSource, CHUNK_QUEUE_DEPTH};
@@ -437,7 +435,3 @@ fn now_ns() -> u64 {
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0)
 }
-
-// Keep thread/Arc imports used in diagnostic paths if removed elsewhere.
-#[allow(dead_code)]
-fn _keep_imports(_a: Arc<()>, _b: thread::Thread) {}
