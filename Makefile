@@ -37,7 +37,6 @@ clean:
 #   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 proto:
 	protoc --go_out=. --go_opt=module=github.com/chrissnell/graywolf \
-		--go_opt=Mproto/graywolf.proto=github.com/chrissnell/graywolf/pkg/ipcproto \
 		proto/graywolf.proto
 
 go-build:

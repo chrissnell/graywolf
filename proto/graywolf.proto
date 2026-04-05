@@ -10,7 +10,7 @@ syntax = "proto3";
 
 package graywolf;
 
-option go_package = "github.com/graywolf/graywolf/pkg/ipcproto";
+option go_package = "github.com/chrissnell/graywolf/pkg/ipcproto";
 
 // ---------------------------------------------------------------------------
 // Envelope
