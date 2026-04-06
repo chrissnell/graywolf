@@ -169,9 +169,10 @@ func (l *Log) Query(f Filter) []Entry {
 			continue
 		}
 		out = append(out, e)
-		if f.Limit > 0 && len(out) >= f.Limit {
-			break
-		}
+	}
+	// Return the newest entries when limit is set
+	if f.Limit > 0 && len(out) > f.Limit {
+		out = out[len(out)-f.Limit:]
 	}
 	return out
 }
