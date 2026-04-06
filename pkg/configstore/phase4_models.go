@@ -30,10 +30,6 @@ type AgwConfig struct {
 	UpdatedAt  time.Time `json:"-"`
 }
 
-// NOTE: Agw.svelte uses tcp_port/monitor_port (numbers) while Go model has
-// ListenAddr (host:port string). The frontend needs updating in a follow-up
-// to use listen_addr/callsigns or the API needs an adapter layer.
-
 // TxTiming holds per-channel CSMA parameters. Mirrors
 // txgovernor.ChannelTiming.
 type TxTiming struct {
