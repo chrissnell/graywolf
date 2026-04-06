@@ -1,0 +1,431 @@
+// Package digipeater implements a WIDEn-N / TRACEn-N APRS digipeater
+// with preemptive digipeating and cross-channel routing driven by
+// per-channel rules stored in the configstore.
+//
+// The engine is a pure function of (rules, mycall, rx frame). It does
+// not own the RX frame source or the TX sink; cmd/graywolf wires it in:
+//
+//	digi := digipeater.New(digipeater.Config{...})
+//	// on RX:
+//	digi.Handle(ctx, rxChannel, frame)
+//
+// Handle walks the path looking for the first unconsumed (H-bit clear)
+// entry that matches a rule and, if it finds one, submits a cloned
+// frame with the appropriate path mutation to the txgovernor at
+// PriorityDigipeated. The RX frame is never mutated.
+package digipeater
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
+)
+
+// Rule is a digipeater-local form of configstore.DigipeaterRule,
+// decoupled from GORM.
+type Rule struct {
+	FromChannel uint32
+	ToChannel   uint32
+	Alias       string // "WIDE", "TRACE", or an exact callsign for AliasTypeExact
+	AliasType   string // "widen"|"trace"|"exact"
+	MaxHops     uint32
+	Action      string // "repeat"|"drop"
+	Priority    uint32
+}
+
+// Config configures a Digipeater.
+type Config struct {
+	// MyCall is the local station callsign. Used for preemptive digi
+	// (if a path slot equals MyCall, it is consumed and the frame is
+	// repeated regardless of WIDEn-N rules) and for TRACEn-N insertion.
+	MyCall ax25.Address
+
+	// DedupeWindow is the time window within which an identical frame
+	// will be dropped. Default 30s if zero.
+	DedupeWindow time.Duration
+
+	// Rules lists all digipeater rules (across all channels). The
+	// engine filters by FromChannel on each call. The slice may be
+	// replaced via SetRules for live reconfig.
+	Rules []Rule
+
+	// Submit is the TX sink. Required. Typically
+	// func(ctx, ch, f, src) error { return gov.Submit(...) }.
+	Submit func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
+
+	// Logger is optional.
+	Logger *slog.Logger
+
+	// OnPacket is an optional hook invoked after a successful digipeat,
+	// carrying a short human-readable note. Used by packetlog to
+	// annotate entries.
+	OnPacket func(note string, fromChan, toChan uint32, f *ax25.Frame)
+}
+
+// Stats exposes counters.
+type Stats struct {
+	Packets uint64 // successfully digipeated
+	Deduped uint64 // dropped as duplicate
+}
+
+// Digipeater is the engine.
+type Digipeater struct {
+	mu     sync.RWMutex
+	mycall ax25.Address
+	window time.Duration
+	rules  []Rule
+	submit func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
+	logger *slog.Logger
+	onPkt  func(note string, fromChan, toChan uint32, f *ax25.Frame)
+
+	dedup map[string]time.Time
+	stats Stats
+}
+
+// New builds a Digipeater.
+func New(cfg Config) (*Digipeater, error) {
+	if cfg.Submit == nil {
+		return nil, errors.New("digipeater: Submit required")
+	}
+	if cfg.DedupeWindow <= 0 {
+		cfg.DedupeWindow = 30 * time.Second
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+	return &Digipeater{
+		mycall: cfg.MyCall,
+		window: cfg.DedupeWindow,
+		rules:  append([]Rule(nil), cfg.Rules...),
+		submit: cfg.Submit,
+		logger: cfg.Logger.With("component", "digipeater"),
+		onPkt:  cfg.OnPacket,
+		dedup:  make(map[string]time.Time),
+	}, nil
+}
+
+// SetRules replaces the rule set under the lock. Safe for live reconfig.
+func (d *Digipeater) SetRules(rules []Rule) {
+	d.mu.Lock()
+	d.rules = append([]Rule(nil), rules...)
+	d.mu.Unlock()
+}
+
+// SetMyCall updates the local callsign for preemptive digi.
+func (d *Digipeater) SetMyCall(a ax25.Address) {
+	d.mu.Lock()
+	d.mycall = a
+	d.mu.Unlock()
+}
+
+// Stats returns a snapshot.
+func (d *Digipeater) Stats() Stats {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.stats
+}
+
+// RulesFromStore converts configstore rows to local Rule values.
+func RulesFromStore(rows []configstore.DigipeaterRule) []Rule {
+	out := make([]Rule, 0, len(rows))
+	for _, r := range rows {
+		if !r.Enabled {
+			continue
+		}
+		out = append(out, Rule{
+			FromChannel: r.FromChannel,
+			ToChannel:   r.ToChannel,
+			Alias:       r.Alias,
+			AliasType:   r.AliasType,
+			MaxHops:     r.MaxHops,
+			Action:      r.Action,
+			Priority:    r.Priority,
+		})
+	}
+	return out
+}
+
+// Handle evaluates frame arriving on rxChannel against the rules. If a
+// rule matches and Action is "repeat", a cloned+mutated frame is
+// submitted to the TX sink. The RX frame is never mutated. Returns
+// true if the frame was digipeated.
+func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.Frame) bool {
+	if frame == nil || !frame.IsUI() {
+		return false
+	}
+	d.mu.Lock()
+	mycall := d.mycall
+	window := d.window
+	rules := d.rules
+	// Dedup key is computed from the RX frame so two identical frames
+	// heard within the window collapse to a single digipeat regardless
+	// of outgoing path mutation.
+	key := dedupKey(frame)
+	now := time.Now()
+	d.gcDedupLocked(now)
+	if t, ok := d.dedup[key]; ok && now.Sub(t) < window {
+		d.stats.Deduped++
+		d.mu.Unlock()
+		return false
+	}
+	// Record now so concurrent duplicates are caught even if submit
+	// fails later.
+	d.dedup[key] = now
+	d.mu.Unlock()
+
+	// Locate first unconsumed path slot.
+	slot := firstUnconsumed(frame.Path)
+	if slot < 0 {
+		return false // fully-digipeated frame
+	}
+
+	// Don't re-digi our own transmissions.
+	if addressEqual(frame.Source, mycall) {
+		return false
+	}
+
+	// Preemptive digi: if any earlier-or-equal slot is our callsign, we
+	// insert ourselves there regardless of rules.
+	for i := slot; i < len(frame.Path); i++ {
+		if frame.Path[i].Repeated {
+			continue
+		}
+		if addressEqual(frame.Path[i], mycall) {
+			clone := cloneFrame(frame)
+			// Mark all prior unconsumed slots and this one as repeated
+			// (preemptive); a strict reading of the spec leaves earlier
+			// WIDE hops alone, but direwolf preempts the chain.
+			for j := 0; j <= i; j++ {
+				if !clone.Path[j].Repeated {
+					clone.Path[j].Repeated = true
+				}
+			}
+			// ToChannel defaults to rxChannel for preemptive digi
+			// unless a matching exact rule redirects.
+			toCh := rxChannel
+			for _, r := range rules {
+				if r.FromChannel != rxChannel || r.AliasType != "exact" {
+					continue
+				}
+				if ruleMatchesCall(r, mycall) {
+					toCh = r.ToChannel
+					break
+				}
+			}
+			return d.submitClone(ctx, rxChannel, toCh, clone, "preemptive "+mycall.String())
+		}
+	}
+
+	// Rule-driven match against the first unconsumed slot.
+	slotAddr := frame.Path[slot]
+	var matched *Rule
+	for i := range rules {
+		r := rules[i]
+		if r.FromChannel != rxChannel {
+			continue
+		}
+		if !ruleMatches(r, slotAddr) {
+			continue
+		}
+		matched = &r
+		break
+	}
+	if matched == nil {
+		return false
+	}
+	if matched.Action == "drop" {
+		d.logger.Debug("digi drop rule matched", "slot", slotAddr.String())
+		return false
+	}
+
+	clone := cloneFrame(frame)
+	note, ok := applyMatch(clone, slot, *matched, mycall)
+	if !ok {
+		return false
+	}
+	return d.submitClone(ctx, rxChannel, matched.ToChannel, clone, note)
+}
+
+func (d *Digipeater) submitClone(ctx context.Context, fromCh, toCh uint32, clone *ax25.Frame, note string) bool {
+	d.mu.Lock()
+	d.stats.Packets++
+	d.mu.Unlock()
+	err := d.submit(ctx, toCh, clone, txgovernor.SubmitSource{
+		Kind:     "digipeater",
+		Detail:   note,
+		Priority: txgovernor.PriorityDigipeated,
+	})
+	if err != nil {
+		d.logger.Warn("digi submit", "err", err)
+		return false
+	}
+	if d.onPkt != nil {
+		d.onPkt(note, fromCh, toCh, clone)
+	}
+	d.logger.Debug("digipeated", "from", fromCh, "to", toCh, "note", note)
+	return true
+}
+
+// firstUnconsumed returns the index of the first path slot with H bit
+// clear, or -1 if all slots have been repeated.
+func firstUnconsumed(path []ax25.Address) int {
+	for i, a := range path {
+		if !a.Repeated {
+			return i
+		}
+	}
+	return -1
+}
+
+// ruleMatches reports whether r matches the unconsumed path slot addr.
+func ruleMatches(r Rule, addr ax25.Address) bool {
+	switch r.AliasType {
+	case "exact":
+		return ruleMatchesCall(r, addr)
+	case "widen":
+		return matchesWidenAlias(r.Alias, r.MaxHops, addr)
+	case "trace":
+		return matchesWidenAlias(r.Alias, r.MaxHops, addr)
+	}
+	return false
+}
+
+func ruleMatchesCall(r Rule, addr ax25.Address) bool {
+	parsed, err := ax25.ParseAddress(r.Alias)
+	if err != nil {
+		return false
+	}
+	return addressEqual(parsed, addr)
+}
+
+// matchesWidenAlias reports whether addr is a WIDEn-N style entry for
+// the given base alias (e.g. "WIDE"). Accepted forms:
+//
+//	WIDE1-1   Call="WIDE1"  SSID=1   (first-hop, 1 remaining) — n=1, N=1
+//	WIDE2-2   Call="WIDE2"  SSID=2   — n=2, N=2
+//	WIDE2-1   Call="WIDE2"  SSID=1   — n=2, N=1 (already been through one hop)
+//	WIDE-1    Call="WIDE"   SSID=1   — generic WIDE, 1 remaining (accepted but
+//	                                    not recommended per New-N paradigm)
+//
+// The SSID (remaining hops) must be > 0 for the entry to be repeatable.
+// The base n (embedded in the callsign) must be <= MaxHops.
+func matchesWidenAlias(base string, maxHops uint32, addr ax25.Address) bool {
+	base = strings.ToUpper(base)
+	call := strings.ToUpper(addr.Call)
+	if !strings.HasPrefix(call, base) {
+		return false
+	}
+	suffix := call[len(base):]
+	// SSID == remaining hops; 0 means the slot is exhausted (should not
+	// normally reach here because callers only look at unconsumed slots,
+	// but direwolf "WIDE2-0" frames are junk and we refuse).
+	if addr.SSID == 0 {
+		return false
+	}
+	if suffix == "" {
+		// Generic "WIDE-1" style.
+		return addr.SSID <= uint8(maxHops)
+	}
+	// Parse the embedded n digit(s).
+	n, err := strconv.Atoi(suffix)
+	if err != nil || n <= 0 {
+		return false
+	}
+	if uint32(n) > maxHops {
+		return false
+	}
+	// Remaining (SSID) must never exceed n.
+	if int(addr.SSID) > n {
+		return false
+	}
+	return true
+}
+
+// applyMatch mutates clone.Path[slot] according to the matched rule and
+// returns a human-readable note for logging. Preconditions:
+//   - clone.Path[slot] is the unconsumed matched entry
+//   - r matches it (ruleMatches was true)
+func applyMatch(clone *ax25.Frame, slot int, r Rule, mycall ax25.Address) (string, bool) {
+	entry := clone.Path[slot]
+	switch r.AliasType {
+	case "exact":
+		clone.Path[slot].Repeated = true
+		return "exact " + entry.String(), true
+	case "widen", "trace":
+		// Decrement remaining-hops (SSID). When it reaches 0, the alias
+		// is fully consumed: mark repeated and leave the SSID at 0
+		// (direwolf-style "WIDE2*" display).
+		if entry.SSID == 0 {
+			return "", false
+		}
+		entry.SSID--
+		if entry.SSID == 0 {
+			entry.Repeated = true
+		}
+		clone.Path[slot] = entry
+		if r.AliasType == "trace" {
+			// Insert mycall just before the alias slot so the packet
+			// carries an audit trail. Only if there's room.
+			if len(clone.Path) < ax25.MaxRepeaters && mycall.Call != "" {
+				inserted := ax25.Address{Call: mycall.Call, SSID: mycall.SSID, Repeated: true}
+				newPath := make([]ax25.Address, 0, len(clone.Path)+1)
+				newPath = append(newPath, clone.Path[:slot]...)
+				newPath = append(newPath, inserted)
+				newPath = append(newPath, clone.Path[slot:]...)
+				clone.Path = newPath
+			}
+		}
+		return r.AliasType + " " + entry.String(), true
+	}
+	return "", false
+}
+
+func cloneFrame(f *ax25.Frame) *ax25.Frame {
+	c := *f
+	c.Path = append([]ax25.Address(nil), f.Path...)
+	c.Info = append([]byte(nil), f.Info...)
+	return &c
+}
+
+func addressEqual(a, b ax25.Address) bool {
+	return strings.EqualFold(a.Call, b.Call) && a.SSID == b.SSID
+}
+
+// dedupKey keys the digi-local dedupe map. We include the path in the
+// key so the same payload heard with different digi history is not
+// collapsed (otherwise two geographically distinct paths to the same
+// packet would be conflated).
+func dedupKey(f *ax25.Frame) string {
+	var sb strings.Builder
+	sb.WriteString(f.Source.String())
+	sb.WriteByte('>')
+	sb.WriteString(f.Dest.String())
+	for _, p := range f.Path {
+		sb.WriteByte(',')
+		sb.WriteString(p.Call)
+		sb.WriteByte('-')
+		sb.WriteByte(byte('0' + p.SSID))
+	}
+	sb.WriteByte(':')
+	sb.Write(f.Info)
+	return sb.String()
+}
+
+func (d *Digipeater) gcDedupLocked(now time.Time) {
+	if len(d.dedup) < 64 {
+		return
+	}
+	for k, t := range d.dedup {
+		if now.Sub(t) >= d.window {
+			delete(d.dedup, k)
+		}
+	}
+}
