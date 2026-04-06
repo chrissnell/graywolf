@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import Card from '../components/Card.svelte';
+  import { Box } from '@chrissnell/chonky-ui';
   import PageHeader from '../components/PageHeader.svelte';
 
   let packets = $state([]);
@@ -42,7 +42,7 @@
 <PageHeader title="Dashboard" subtitle="Live station overview" />
 
 <div class="dashboard-grid">
-  <Card title="Station Stats">
+  <Box title="Station Stats">
     <div class="stats-grid">
       <div class="stat">
         <span class="stat-value">{stats.packets_rx}</span>
@@ -61,9 +61,9 @@
         <span class="stat-label">Uptime</span>
       </div>
     </div>
-  </Card>
+  </Box>
 
-  <Card title="DCD Status">
+  <Box title="DCD Status">
     <div class="dcd-row">
       <div class="dcd-indicator">
         <span class="dcd-dot dcd-idle"></span>
@@ -74,9 +74,9 @@
         <span>CH2 — 9600 Data</span>
       </div>
     </div>
-  </Card>
+  </Box>
 
-  <Card title="Audio Levels">
+  <Box title="Audio Levels">
     <div class="levels">
       <div class="level-row">
         <span class="level-label">CH1 RX</span>
@@ -93,9 +93,9 @@
         <span class="level-value">— dB</span>
       </div>
     </div>
-  </Card>
+  </Box>
 
-  <Card title="GPS Position">
+  <Box title="GPS Position">
     {#if position}
       <div class="position-info">
         <span>{position.latitude.toFixed(4)}°N, {position.longitude.toFixed(4)}°W</span>
@@ -104,10 +104,10 @@
     {:else}
       <span class="text-muted">No GPS fix</span>
     {/if}
-  </Card>
+  </Box>
 </div>
 
-<Card title="Live Packet Feed">
+<Box title="Live Packet Feed">
   <div class="packet-feed">
     {#if packets.length === 0}
       <div class="empty-feed">Waiting for packets...</div>
@@ -126,7 +126,7 @@
       {/each}
     {/if}
   </div>
-</Card>
+</Box>
 
 <style>
   .dashboard-grid {

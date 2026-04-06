@@ -1,13 +1,10 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Toggle, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import Card from '../components/Card.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import ToggleSwitch from '../components/ToggleSwitch.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let form = $state({
     enabled: true, server: 'rotate.aprs2.net', port: '14580',
@@ -21,7 +18,6 @@
   });
 
   function validate() {
-    const e = {};
     if (form.enabled && !form.callsign.trim()) return false;
     return true;
   }
@@ -46,33 +42,33 @@
 
 <PageHeader title="iGate" subtitle="Internet gateway configuration" />
 
-<Card>
+<Box>
   <form onsubmit={handleSave}>
-    <ToggleSwitch bind:checked={form.enabled} label="Enable iGate" id="ig-enabled" />
+    <Toggle bind:checked={form.enabled} label="Enable iGate" />
     <div style="margin-top: 16px;">
       <FormField label="APRS-IS Server" id="ig-server">
-        <TextInput id="ig-server" bind:value={form.server} placeholder="rotate.aprs2.net" />
+        <Input id="ig-server" bind:value={form.server} placeholder="rotate.aprs2.net" />
       </FormField>
       <FormField label="Port" id="ig-port">
-        <TextInput id="ig-port" bind:value={form.port} type="number" placeholder="14580" />
+        <Input id="ig-port" bind:value={form.port} type="number" placeholder="14580" />
       </FormField>
       <FormField label="Callsign" id="ig-call">
-        <TextInput id="ig-call" bind:value={form.callsign} placeholder="N0CALL-10" />
+        <Input id="ig-call" bind:value={form.callsign} placeholder="N0CALL-10" />
       </FormField>
       <FormField label="Passcode" id="ig-pass">
-        <TextInput id="ig-pass" bind:value={form.passcode} type="password" placeholder="12345" />
+        <Input id="ig-pass" bind:value={form.passcode} type="password" placeholder="12345" />
       </FormField>
       <FormField label="Server Filter" id="ig-filter">
-        <TextInput id="ig-filter" bind:value={form.filter} placeholder="r/35.0/-106.0/100" />
+        <Input id="ig-filter" bind:value={form.filter} placeholder="r/35.0/-106.0/100" />
       </FormField>
     </div>
     <div class="form-actions">
-      <Btn variant="primary" type="submit" disabled={loading}>
+      <Button variant="primary" type="submit" disabled={loading}>
         {loading ? 'Saving...' : 'Save'}
-      </Btn>
+      </Button>
     </div>
   </form>
-</Card>
+</Box>
 
 <style>
   .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }

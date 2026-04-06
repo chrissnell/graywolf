@@ -1,14 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Toggle } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import ToggleSwitch from '../components/ToggleSwitch.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let items = $state([]);
   let modalOpen = $state(false);
@@ -86,7 +84,7 @@
 </script>
 
 <PageHeader title="TX Timing" subtitle="Transmit timing parameters per channel">
-  <Btn variant="primary" onclick={openCreate}>+ Add TX Timing</Btn>
+  <Button variant="primary" onclick={openCreate}>+ Add TX Timing</Button>
 </PageHeader>
 
 <DataTable {columns} rows={items} onEdit={openEdit} onDelete={handleDelete} />
@@ -94,24 +92,24 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit TX Timing' : 'New TX Timing'}>
   <form onsubmit={handleSave}>
     <FormField label="Channel ID" id="tx-ch">
-      <TextInput id="tx-ch" bind:value={form.channel_id} type="number" />
+      <Input id="tx-ch" bind:value={form.channel_id} type="number" />
     </FormField>
     <FormField label="TXDelay (ms)" id="tx-delay">
-      <TextInput id="tx-delay" bind:value={form.txdelay} type="number" placeholder="300" />
+      <Input id="tx-delay" bind:value={form.txdelay} type="number" placeholder="300" />
     </FormField>
     <FormField label="TXTail (ms)" id="tx-tail">
-      <TextInput id="tx-tail" bind:value={form.txtail} type="number" placeholder="50" />
+      <Input id="tx-tail" bind:value={form.txtail} type="number" placeholder="50" />
     </FormField>
     <FormField label="Slot Time (ms)" id="tx-slot">
-      <TextInput id="tx-slot" bind:value={form.slottime} type="number" placeholder="100" />
+      <Input id="tx-slot" bind:value={form.slottime} type="number" placeholder="100" />
     </FormField>
     <FormField label="Persist (0-255)" error={errors.persist} id="tx-persist">
-      <TextInput id="tx-persist" bind:value={form.persist} type="number" placeholder="63" />
+      <Input id="tx-persist" bind:value={form.persist} type="number" placeholder="63" />
     </FormField>
-    <ToggleSwitch bind:checked={form.duplex} label="Duplex" id="tx-duplex" />
+    <Toggle bind:checked={form.duplex} label="Duplex" />
     <div class="modal-actions">
-      <Btn variant="default" onclick={() => modalOpen = false}>Cancel</Btn>
-      <Btn variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Btn>
+      <Button onclick={() => modalOpen = false}>Cancel</Button>
+      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
     </div>
   </form>
 </Modal>

@@ -1,14 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Select } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import SelectInput from '../components/SelectInput.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let devices = $state([]);
   let available = $state([]);
@@ -104,10 +102,10 @@
 </script>
 
 <PageHeader title="Audio Devices" subtitle="Sound card configuration">
-  <Btn onclick={refreshAvailable} disabled={loadingAvail}>
+  <Button onclick={refreshAvailable} disabled={loadingAvail}>
     {loadingAvail ? 'Scanning...' : 'Refresh Available'}
-  </Btn>
-  <Btn variant="primary" onclick={openCreate}>+ Add Device</Btn>
+  </Button>
+  <Button variant="primary" onclick={openCreate}>+ Add Device</Button>
 </PageHeader>
 
 {#if available.length > 0}
@@ -132,13 +130,13 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit Audio Device' : 'Add Audio Device'}>
   <form onsubmit={handleSave}>
     <FormField label="Name" error={errors.name} id="ad-name">
-      <TextInput id="ad-name" bind:value={form.name} placeholder="USB Sound Card" />
+      <Input id="ad-name" bind:value={form.name} placeholder="USB Sound Card" />
     </FormField>
     <FormField label="Device Path" error={errors.device_path} id="ad-path">
-      <TextInput id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
+      <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
     </FormField>
     <FormField label="Sample Rate" id="ad-rate">
-      <SelectInput id="ad-rate" bind:value={form.sample_rate} options={[
+      <Select id="ad-rate" bind:value={form.sample_rate} options={[
         { value: '8000', label: '8000 Hz' },
         { value: '16000', label: '16000 Hz' },
         { value: '44100', label: '44100 Hz' },
@@ -147,14 +145,14 @@
       ]} />
     </FormField>
     <FormField label="Channels" id="ad-ch">
-      <SelectInput id="ad-ch" bind:value={form.channels} options={[
+      <Select id="ad-ch" bind:value={form.channels} options={[
         { value: '1', label: 'Mono' },
         { value: '2', label: 'Stereo' },
       ]} />
     </FormField>
     <div class="modal-actions">
-      <Btn variant="default" onclick={() => modalOpen = false}>Cancel</Btn>
-      <Btn variant="primary" type="submit">{editing ? 'Save' : 'Add'}</Btn>
+      <Button onclick={() => modalOpen = false}>Cancel</Button>
+      <Button variant="primary" type="submit">{editing ? 'Save' : 'Add'}</Button>
     </div>
   </form>
 </Modal>
@@ -190,7 +188,7 @@
     cursor: pointer;
     color: var(--text-primary);
     text-align: left;
-    font-family: var(--font-sans);
+    font-family: var(--font-mono);
     font-size: 13px;
     transition: border-color 0.15s;
   }

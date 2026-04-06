@@ -2,9 +2,8 @@
   import { push } from 'svelte-spa-router';
   import { api } from '../lib/api.js';
   import { toasts, isAuthenticated, isFirstRun } from '../lib/stores.js';
-  import TextInput from '../components/TextInput.svelte';
+  import { Input, Button } from '@chrissnell/chonky-ui';
   import FormField from '../components/FormField.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let setupMode = $state(false);
   let username = $state('');
@@ -63,22 +62,22 @@
 
     <form onsubmit={handleSubmit}>
       <FormField label="Username" error={errors.username} id="username">
-        <TextInput id="username" bind:value={username} placeholder="admin" />
+        <Input id="username" bind:value={username} placeholder="admin" />
       </FormField>
 
       <FormField label="Password" error={errors.password} id="password">
-        <TextInput id="password" type="password" bind:value={password} placeholder="••••••••" />
+        <Input id="password" type="password" bind:value={password} placeholder="••••••••" />
       </FormField>
 
       {#if setupMode}
         <FormField label="Confirm Password" error={errors.passwordConfirm} id="passwordConfirm">
-          <TextInput id="passwordConfirm" type="password" bind:value={passwordConfirm} placeholder="••••••••" />
+          <Input id="passwordConfirm" type="password" bind:value={passwordConfirm} placeholder="••••••••" />
         </FormField>
       {/if}
 
-      <Btn variant="primary" type="submit" disabled={loading}>
+      <Button variant="primary" type="submit" disabled={loading}>
         {loading ? 'Please wait...' : setupMode ? 'Create Account' : 'Sign In'}
-      </Btn>
+      </Button>
     </form>
   </div>
 </div>

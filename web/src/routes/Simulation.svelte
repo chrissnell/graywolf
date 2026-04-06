@@ -1,10 +1,9 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Toggle, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import Card from '../components/Card.svelte';
-  import ToggleSwitch from '../components/ToggleSwitch.svelte';
 
   let enabled = $state(false);
   let packets = $state([]);
@@ -33,19 +32,19 @@
 
 <PageHeader title="Simulation" subtitle="Simulation mode for testing without RF" />
 
-<Card>
+<Box>
   <div class="sim-toggle">
-    <ToggleSwitch bind:checked={enabled} label="Enable simulation mode" id="sim-on" />
-    <button class="save-toggle" onclick={toggle}>Apply</button>
+    <Toggle bind:checked={enabled} label="Enable simulation mode" />
+    <Button onclick={toggle}>Apply</Button>
   </div>
   <p class="sim-note">
     When enabled, packets are processed without actual RF transmission/reception.
     Useful for testing configurations.
   </p>
-</Card>
+</Box>
 
 <div style="margin-top: 16px;">
-  <Card title="Logged Packets">
+  <Box title="Logged Packets">
     <div class="packet-log">
       {#if packets.length === 0}
         <div class="empty">No logged packets</div>
@@ -61,7 +60,7 @@
         {/each}
       {/if}
     </div>
-  </Card>
+  </Box>
 </div>
 
 <style>
@@ -69,18 +68,6 @@
     display: flex;
     align-items: center;
     gap: 16px;
-  }
-  .save-toggle {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    color: var(--text-primary);
-    padding: 6px 14px;
-    cursor: pointer;
-    font-size: 13px;
-  }
-  .save-toggle:hover {
-    background: var(--bg-hover);
   }
   .sim-note {
     margin-top: 12px;

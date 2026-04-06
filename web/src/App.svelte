@@ -1,8 +1,8 @@
 <script>
   import './app.css';
   import Router, { location } from 'svelte-spa-router';
+  import { Toaster } from '@chrissnell/chonky-ui';
   import Sidebar from './components/Sidebar.svelte';
-  import ToastContainer from './components/ToastContainer.svelte';
 
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
@@ -47,7 +47,7 @@
   let isLoginPage = $derived(currentPath === '/login');
 </script>
 
-<ToastContainer />
+<Toaster />
 
 {#if isLoginPage}
   <Router {routes} />

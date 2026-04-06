@@ -1,14 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Select } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import SelectInput from '../components/SelectInput.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let items = $state([]);
   let modalOpen = $state(false);
@@ -68,7 +66,7 @@
 </script>
 
 <PageHeader title="KISS Interfaces" subtitle="KISS TNC interface configuration">
-  <Btn variant="primary" onclick={openCreate}>+ Add KISS</Btn>
+  <Button variant="primary" onclick={openCreate}>+ Add KISS</Button>
 </PageHeader>
 
 <DataTable {columns} rows={items} onEdit={openEdit} onDelete={handleDelete} />
@@ -76,23 +74,23 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit KISS' : 'New KISS Interface'}>
   <form onsubmit={handleSave}>
     <FormField label="Type" id="kiss-type">
-      <SelectInput id="kiss-type" bind:value={form.type} options={typeOptions} />
+      <Select id="kiss-type" bind:value={form.type} options={typeOptions} />
     </FormField>
     {#if form.type === 'tcp'}
       <FormField label="TCP Port" id="kiss-port">
-        <TextInput id="kiss-port" bind:value={form.tcp_port} type="number" placeholder="8001" />
+        <Input id="kiss-port" bind:value={form.tcp_port} type="number" placeholder="8001" />
       </FormField>
     {:else}
       <FormField label="Serial Device" id="kiss-serial">
-        <TextInput id="kiss-serial" bind:value={form.serial_device} placeholder="/dev/ttyUSB0" />
+        <Input id="kiss-serial" bind:value={form.serial_device} placeholder="/dev/ttyUSB0" />
       </FormField>
       <FormField label="Baud Rate" id="kiss-baud">
-        <TextInput id="kiss-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
+        <Input id="kiss-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
       </FormField>
     {/if}
     <div class="modal-actions">
-      <Btn variant="default" onclick={() => modalOpen = false}>Cancel</Btn>
-      <Btn variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Btn>
+      <Button onclick={() => modalOpen = false}>Cancel</Button>
+      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
     </div>
   </form>
 </Modal>

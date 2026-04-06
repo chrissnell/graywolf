@@ -1,14 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Select } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import SelectInput from '../components/SelectInput.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let items = $state([]);
   let modalOpen = $state(false);
@@ -82,7 +80,7 @@
 </script>
 
 <PageHeader title="PTT Configuration" subtitle="Push-to-talk settings per channel">
-  <Btn variant="primary" onclick={openCreate}>+ Add PTT</Btn>
+  <Button variant="primary" onclick={openCreate}>+ Add PTT</Button>
 </PageHeader>
 
 <DataTable {columns} rows={items} onEdit={openEdit} onDelete={handleDelete} />
@@ -90,24 +88,24 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit PTT' : 'New PTT Config'}>
   <form onsubmit={handleSave}>
     <FormField label="Channel ID" id="ptt-ch">
-      <TextInput id="ptt-ch" bind:value={form.channel_id} type="number" />
+      <Input id="ptt-ch" bind:value={form.channel_id} type="number" />
     </FormField>
     <FormField label="Method" id="ptt-method">
-      <SelectInput id="ptt-method" bind:value={form.method} options={methodOptions} />
+      <Select id="ptt-method" bind:value={form.method} options={methodOptions} />
     </FormField>
     {#if form.method !== 'none'}
       <FormField label="Device Path" error={errors.device_path} id="ptt-dev">
-        <TextInput id="ptt-dev" bind:value={form.device_path} placeholder="/dev/ttyUSB0" />
+        <Input id="ptt-dev" bind:value={form.device_path} placeholder="/dev/ttyUSB0" />
       </FormField>
     {/if}
     {#if form.method === 'gpio'}
       <FormField label="GPIO Pin" id="ptt-gpio">
-        <TextInput id="ptt-gpio" bind:value={form.gpio_pin} type="number" />
+        <Input id="ptt-gpio" bind:value={form.gpio_pin} type="number" />
       </FormField>
     {/if}
     <div class="modal-actions">
-      <Btn variant="default" onclick={() => modalOpen = false}>Cancel</Btn>
-      <Btn variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Btn>
+      <Button onclick={() => modalOpen = false}>Cancel</Button>
+      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
     </div>
   </form>
 </Modal>

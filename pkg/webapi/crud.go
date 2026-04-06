@@ -24,6 +24,7 @@ func (s *Server) handlePttCollection(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.notifyBridgeForChannel(r.Context(), p.ChannelID)
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -52,6 +53,7 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.notifyBridgeForChannel(r.Context(), id)
 		writeJSON(w, http.StatusOK, p)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -79,6 +81,7 @@ func (s *Server) handleTxTimingCollection(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.notifyBridgeForChannel(r.Context(), t.Channel)
 		writeJSON(w, http.StatusCreated, t)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -110,6 +113,7 @@ func (s *Server) handleTxTimingByChannel(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.notifyBridgeForChannel(r.Context(), id)
 		writeJSON(w, http.StatusOK, t)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

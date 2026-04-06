@@ -1,15 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Select, Toggle } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import SelectInput from '../components/SelectInput.svelte';
-  import ToggleSwitch from '../components/ToggleSwitch.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let channels = $state([]);
   let modalOpen = $state(false);
@@ -94,7 +91,7 @@
 </script>
 
 <PageHeader title="Channels" subtitle="Radio channel configuration">
-  <Btn variant="primary" onclick={openCreate}>+ Add Channel</Btn>
+  <Button variant="primary" onclick={openCreate}>+ Add Channel</Button>
 </PageHeader>
 
 <DataTable {columns} rows={channels} onEdit={openEdit} onDelete={handleDelete} />
@@ -102,24 +99,24 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit Channel' : 'New Channel'}>
   <form onsubmit={handleSave}>
     <FormField label="Name" error={errors.name} id="ch-name">
-      <TextInput id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
+      <Input id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
     </FormField>
     <FormField label="Frequency" error={errors.frequency} id="ch-freq">
-      <TextInput id="ch-freq" bind:value={form.frequency} placeholder="144.390" />
+      <Input id="ch-freq" bind:value={form.frequency} placeholder="144.390" />
     </FormField>
     <FormField label="Modem Type" id="ch-modem">
-      <SelectInput id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
+      <Select id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
     </FormField>
     <FormField label="Baud Rate" id="ch-baud">
-      <TextInput id="ch-baud" bind:value={form.baud_rate} type="number" placeholder="1200" />
+      <Input id="ch-baud" bind:value={form.baud_rate} type="number" placeholder="1200" />
     </FormField>
     <FormField label="Audio Device" error={errors.device} id="ch-dev">
-      <TextInput id="ch-dev" bind:value={form.device} placeholder="hw:0" />
+      <Input id="ch-dev" bind:value={form.device} placeholder="hw:0" />
     </FormField>
-    <ToggleSwitch bind:checked={form.enabled} label="Enabled" id="ch-enabled" />
+    <Toggle bind:checked={form.enabled} label="Enabled" />
     <div class="modal-actions">
-      <Btn variant="default" onclick={() => modalOpen = false}>Cancel</Btn>
-      <Btn variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Btn>
+      <Button onclick={() => modalOpen = false}>Cancel</Button>
+      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
     </div>
   </form>
 </Modal>

@@ -1,11 +1,8 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Select, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import Card from '../components/Card.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import SelectInput from '../components/SelectInput.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let packets = $state([]);
   let filter = $state('');
@@ -63,20 +60,20 @@
 </script>
 
 <PageHeader title="Packet Logs" subtitle="Packet log viewer with filter/search">
-  <Btn onclick={loadPackets} disabled={loading}>Refresh</Btn>
-  <Btn onclick={exportCsv}>Export CSV</Btn>
+  <Button onclick={loadPackets} disabled={loading}>Refresh</Button>
+  <Button onclick={exportCsv}>Export CSV</Button>
 </PageHeader>
 
-<Card>
+<Box>
   <div class="filter-bar">
     <div class="filter-input">
-      <TextInput bind:value={filter} placeholder="Search callsign, destination, raw..." />
+      <Input bind:value={filter} placeholder="Search callsign, destination, raw..." />
     </div>
     <div class="filter-select">
-      <SelectInput bind:value={dirFilter} options={dirOptions} />
+      <Select bind:value={dirFilter} options={dirOptions} />
     </div>
     <div class="filter-select">
-      <SelectInput bind:value={limit} options={[
+      <Select bind:value={limit} options={[
         { value: '50', label: '50 packets' },
         { value: '100', label: '100 packets' },
         { value: '500', label: '500 packets' },
@@ -84,10 +81,10 @@
       ]} />
     </div>
   </div>
-</Card>
+</Box>
 
 <div class="log-table" style="margin-top: 12px;">
-  <Card>
+  <Box>
     <div class="log-container">
       {#if loading}
         <div class="empty">Loading...</div>
@@ -129,7 +126,7 @@
     <div class="log-footer">
       Showing {filtered().length} of {packets.length} packets
     </div>
-  </Card>
+  </Box>
 </div>
 
 <style>

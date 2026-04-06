@@ -1,15 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Select, Toggle } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import SelectInput from '../components/SelectInput.svelte';
-  import ToggleSwitch from '../components/ToggleSwitch.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let filters = $state([]);
   let modalOpen = $state(false);
@@ -85,7 +82,7 @@
 </script>
 
 <PageHeader title="iGate Filters" subtitle="IS-to-RF filter rules">
-  <Btn variant="primary" onclick={openCreate}>+ Add Filter</Btn>
+  <Button variant="primary" onclick={openCreate}>+ Add Filter</Button>
 </PageHeader>
 
 <DataTable {columns} rows={filters} onEdit={openEdit} onDelete={handleDelete} />
@@ -93,18 +90,18 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit Filter' : 'New Filter'}>
   <form onsubmit={handleSave}>
     <FormField label="Name" error={errors.name} id="flt-name">
-      <TextInput id="flt-name" bind:value={form.name} placeholder="Local area" />
+      <Input id="flt-name" bind:value={form.name} placeholder="Local area" />
     </FormField>
     <FormField label="Type" id="flt-type">
-      <SelectInput id="flt-type" bind:value={form.type} options={typeOptions} />
+      <Select id="flt-type" bind:value={form.type} options={typeOptions} />
     </FormField>
     <FormField label="Pattern" error={errors.pattern} id="flt-pattern">
-      <TextInput id="flt-pattern" bind:value={form.pattern} placeholder="r/35.0/-106.0/50" />
+      <Input id="flt-pattern" bind:value={form.pattern} placeholder="r/35.0/-106.0/50" />
     </FormField>
-    <ToggleSwitch bind:checked={form.enabled} label="Enabled" id="flt-enabled" />
+    <Toggle bind:checked={form.enabled} label="Enabled" />
     <div class="modal-actions">
-      <Btn variant="default" onclick={() => modalOpen = false}>Cancel</Btn>
-      <Btn variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Btn>
+      <Button onclick={() => modalOpen = false}>Cancel</Button>
+      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
     </div>
   </form>
 </Modal>

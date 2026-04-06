@@ -1,15 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { Button, Input, Toggle, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import Card from '../components/Card.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
-  import TextInput from '../components/TextInput.svelte';
-  import ToggleSwitch from '../components/ToggleSwitch.svelte';
-  import Btn from '../components/Btn.svelte';
 
   let config = $state({ enabled: false, callsign: '' });
   let rules = $state([]);
@@ -86,23 +83,23 @@
 
 <PageHeader title="Digipeater" subtitle="Digital repeater configuration and rules" />
 
-<Card title="Settings">
+<Box title="Settings">
   <form onsubmit={saveConfig}>
-    <ToggleSwitch bind:checked={config.enabled} label="Enable Digipeater" id="digi-enabled" />
+    <Toggle bind:checked={config.enabled} label="Enable Digipeater" />
     <div style="margin-top: 12px;">
       <FormField label="Callsign" id="digi-call">
-        <TextInput id="digi-call" bind:value={config.callsign} placeholder="N0CALL-1" />
+        <Input id="digi-call" bind:value={config.callsign} placeholder="N0CALL-1" />
       </FormField>
     </div>
     <div class="form-actions">
-      <Btn variant="primary" type="submit" disabled={savingConfig}>Save Settings</Btn>
+      <Button variant="primary" type="submit" disabled={savingConfig}>Save Settings</Button>
     </div>
   </form>
-</Card>
+</Box>
 
 <div style="margin-top: 20px;">
   <PageHeader title="Digipeater Rules">
-    <Btn variant="primary" onclick={openCreate}>+ Add Rule</Btn>
+    <Button variant="primary" onclick={openCreate}>+ Add Rule</Button>
   </PageHeader>
   <DataTable {columns} rows={rules} onEdit={openEdit} onDelete={handleDelete} />
 </div>
@@ -110,16 +107,16 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit Rule' : 'New Rule'}>
   <form onsubmit={handleSaveRule}>
     <FormField label="Alias" id="rule-alias">
-      <TextInput id="rule-alias" bind:value={form.alias} placeholder="WIDE1-1" />
+      <Input id="rule-alias" bind:value={form.alias} placeholder="WIDE1-1" />
     </FormField>
     <div style="display: flex; gap: 20px; margin: 8px 0;">
-      <ToggleSwitch bind:checked={form.substitute} label="Substitute" id="rule-sub" />
-      <ToggleSwitch bind:checked={form.preempt} label="Preempt" id="rule-pre" />
-      <ToggleSwitch bind:checked={form.enabled} label="Enabled" id="rule-on" />
+      <Toggle bind:checked={form.substitute} label="Substitute" />
+      <Toggle bind:checked={form.preempt} label="Preempt" />
+      <Toggle bind:checked={form.enabled} label="Enabled" />
     </div>
     <div class="modal-actions">
-      <Btn variant="default" onclick={() => modalOpen = false}>Cancel</Btn>
-      <Btn variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Btn>
+      <Button onclick={() => modalOpen = false}>Cancel</Button>
+      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
     </div>
   </form>
 </Modal>

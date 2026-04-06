@@ -2,6 +2,7 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -160,6 +161,7 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.notifyBridgeForDevice(r.Context(), c.AudioDeviceID)
 		writeJSON(w, http.StatusOK, c)
 	case http.MethodDelete:
 		if err := s.store.DeleteChannel(id); err != nil {
@@ -249,6 +251,7 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.notifyBridgeForDevice(r.Context(), id)
 		writeJSON(w, http.StatusOK, d)
 	case http.MethodDelete:
 		if err := s.store.DeleteAudioDevice(id); err != nil {
@@ -330,6 +333,30 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"status": "ok",
 		"time":   time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// notifyBridgeForDevice tells the modem bridge to hot-reconfigure a device.
+// Best-effort: logs on failure but does not propagate to the caller.
+func (s *Server) notifyBridgeForDevice(ctx context.Context, deviceID uint32) {
+	if s.bridge == nil {
+		return
+	}
+	if err := s.bridge.ReconfigureAudioDevice(ctx, deviceID); err != nil {
+		s.logger.Warn("bridge reconfigure", "device_id", deviceID, "err", err)
+	}
+}
+
+// notifyBridgeForChannel looks up the channel's audio device and reconfigures it.
+func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
+	if s.bridge == nil {
+		return
+	}
+	ch, err := s.store.GetChannel(channelID)
+	if err != nil {
+		s.logger.Warn("bridge reconfigure: get channel", "channel_id", channelID, "err", err)
+		return
+	}
+	s.notifyBridgeForDevice(ctx, ch.AudioDeviceID)
 }
 
 func parseID(s string) (uint32, error) {

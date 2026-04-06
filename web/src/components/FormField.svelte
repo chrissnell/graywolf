@@ -1,10 +1,12 @@
 <script>
+  import { Label } from '@chrissnell/chonky-ui';
+
   let { label = '', error = '', children, id = '' } = $props();
 </script>
 
 <div class="field" class:has-error={!!error}>
   {#if label}
-    <label for={id} class="field-label">{label}</label>
+    <Label for={id}>{label}</Label>
   {/if}
   {@render children()}
   {#if error}
@@ -19,15 +21,8 @@
     gap: 4px;
     margin-bottom: 12px;
   }
-  .field-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
   .field-error {
     font-size: 12px;
-    color: var(--error);
+    color: var(--color-danger);
   }
 </style>
