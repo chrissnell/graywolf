@@ -114,6 +114,10 @@ fn flac_end_to_end_yields_frames() {
             profile: "A".into(),
             num_slicers: 1,
             fix_bits: "none".into(),
+            num_decoders: 1,
+            decoder_offset: 0,
+            fx25_encode: false,
+            il2p_encode: false,
         })),
     };
     write_frame(&mut client, &cfg_chan).unwrap();

@@ -87,3 +87,8 @@ pub mod demod_afsk;
 pub mod ipc;
 pub mod audio;
 pub mod modem;
+pub mod sdr;
+pub mod modem_psk;
+pub mod modem_9600;
+pub mod fx25;
+pub mod il2p;

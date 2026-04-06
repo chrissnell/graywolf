@@ -1,0 +1,11 @@
+FX.25 test vectors.
+
+Test vectors are embedded directly in the Rust test code (src/fx25/tests.rs)
+rather than as external files, for build simplicity. The vectors exercise:
+
+- All 15 valid FX.25 correlation tags
+- Encode/decode roundtrip for each tag
+- RS error correction at various error rates
+- Shortened RS codes (tags 0x06-0x0D)
+- Receiver state machine bit-level processing
+- Known AX.25 frame encoding compatible with direwolf's implementation

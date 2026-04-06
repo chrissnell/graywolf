@@ -20,6 +20,9 @@ impl IpcMessage {
     pub fn modem_ready(r: ModemReady) -> Self {
         Self { payload: Some(ipc_message::Payload::ModemReady(r)) }
     }
+    pub fn audio_device_list(l: AudioDeviceList) -> Self {
+        Self { payload: Some(ipc_message::Payload::AudioDeviceList(l)) }
+    }
 }
 
 #[cfg(test)]
@@ -61,6 +64,10 @@ mod tests {
                 profile: "A".into(),
                 num_slicers: 1,
                 fix_bits: "none".into(),
+                num_decoders: 1,
+                decoder_offset: 0,
+                fx25_encode: false,
+                il2p_encode: false,
             })),
         };
         let mut buf = Vec::new();
@@ -70,13 +77,49 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_enumerate_audio_devices() {
+        let original = IpcMessage {
+            payload: Some(ipc_message::Payload::EnumerateAudioDevices(
+                EnumerateAudioDevices {
+                    request_id: 42,
+                    include_output: true,
+                },
+            )),
+        };
+        let mut buf = Vec::new();
+        original.encode(&mut buf).unwrap();
+        let decoded = IpcMessage::decode(&buf[..]).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn round_trip_audio_device_list() {
+        let original = IpcMessage::audio_device_list(AudioDeviceList {
+            request_id: 42,
+            devices: vec![AudioDeviceInfo {
+                name: "Built-in Microphone".into(),
+                stable_id: "built-in-mic".into(),
+                kind: AudioDeviceKind::Input.into(),
+                sample_rates: vec![44100, 48000],
+                channel_counts: vec![1, 2],
+                host_api: "CoreAudio".into(),
+                is_default: true,
+            }],
+        });
+        let mut buf = Vec::new();
+        original.encode(&mut buf).unwrap();
+        let decoded = IpcMessage::decode(&buf[..]).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
     fn oneof_tags_are_distinct() {
-        // Catches accidental tag collisions after refactoring.
         let msgs = vec![
             IpcMessage::received_frame(Default::default()),
             IpcMessage::dcd_change(Default::default()),
             IpcMessage::status_update(Default::default()),
             IpcMessage::modem_ready(Default::default()),
+            IpcMessage::audio_device_list(Default::default()),
         ];
         for m in msgs {
             let mut buf = Vec::new();

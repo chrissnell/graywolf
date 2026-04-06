@@ -23,6 +23,7 @@ message IpcMessage {
     DcdChange dcd_change = 2;
     StatusUpdate status_update = 3;
     ModemReady modem_ready = 4;
+    AudioDeviceList audio_device_list = 5;
 
     // Go application → Rust modem
     TransmitFrame transmit_frame = 10;
@@ -32,6 +33,7 @@ message IpcMessage {
     StartAudio start_audio = 14;
     StopAudio stop_audio = 15;
     Shutdown shutdown = 16;
+    EnumerateAudioDevices enumerate_audio_devices = 17;
   }
 }
 
@@ -84,6 +86,28 @@ message ModemReady {
   uint64 pid = 2;
 }
 
+// Response to EnumerateAudioDevices.
+message AudioDeviceList {
+  uint32 request_id = 1;
+  repeated AudioDeviceInfo devices = 2;
+}
+
+message AudioDeviceInfo {
+  string name = 1;
+  string stable_id = 2;          // stable identifier, or name if unavailable
+  AudioDeviceKind kind = 3;
+  repeated uint32 sample_rates = 4;
+  repeated uint32 channel_counts = 5;
+  string host_api = 6;           // "CoreAudio", "ALSA", "WASAPI"
+  bool is_default = 7;
+}
+
+enum AudioDeviceKind {
+  AUDIO_DEVICE_KIND_UNSPECIFIED = 0;
+  AUDIO_DEVICE_KIND_INPUT = 1;
+  AUDIO_DEVICE_KIND_OUTPUT = 2;
+}
+
 // ---------------------------------------------------------------------------
 // Go → Rust
 // ---------------------------------------------------------------------------
@@ -109,6 +133,10 @@ message ConfigureChannel {
   string profile = 8;           // "A" | "B"
   uint32 num_slicers = 9;
   string fix_bits = 10;         // "none" | "single" | "double"
+  uint32 num_decoders = 11;     // multi-modem: number of parallel decoders
+  int32 decoder_offset = 12;    // multi-modem: frequency offset step in Hz
+  bool fx25_encode = 13;        // enable FX.25 RS FEC on transmit
+  bool il2p_encode = 14;        // enable IL2P encoding on transmit
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
@@ -143,4 +171,10 @@ message StopAudio {}
 // Graceful shutdown: finish current TX, deassert PTT, drain queues, exit.
 message Shutdown {
   uint32 timeout_ms = 1;        // max time to wait for drain, 0 = use default
+}
+
+// Request enumeration of available audio devices.
+message EnumerateAudioDevices {
+  uint32 request_id = 1;        // echoed back in AudioDeviceList
+  bool include_output = 2;      // include output devices in response
 }

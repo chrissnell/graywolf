@@ -1,0 +1,13 @@
+IL2P test vectors.
+
+Test vectors are embedded directly in the Rust test code (src/il2p/tests.rs)
+rather than as external files, for build simplicity. The vectors exercise:
+
+- IL2P sync word detection
+- Header encode/decode with RS(15,13)
+- Payload encode/decode with RS(255,239)
+- Scramble/descramble roundtrip
+- Multi-block payload processing
+- Error correction in both header and payload
+- Full encode/decode roundtrip for AX.25 frames
+- Receiver state machine bit-level processing
