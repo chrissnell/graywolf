@@ -106,28 +106,57 @@
 
 <div style="margin-top: 24px;">
   <Box title="SmartBeaconing">
+    <p class="sb-intro">
+      SmartBeaconing adjusts your beacon rate based on how you're moving.
+      When you're driving fast or turning, it beacons more often so trackers can follow your path accurately.
+      When you're slow or stopped, it beacons less often to avoid cluttering the frequency.
+      The settings below control how aggressively it adapts.
+    </p>
     <form onsubmit={saveSmartBeacon}>
       <Toggle bind:checked={smartBeacon.enabled} label="Enable SmartBeaconing" />
+      <h4 class="sb-section-label">Speed-based beaconing</h4>
+      <p class="sb-section-desc">
+        These control how often you beacon based on your speed.
+        At or above Fast Speed, you beacon at the Fast Rate.
+        At or below Slow Speed, you beacon at the Slow Rate.
+        In between, the rate scales proportionally.
+      </p>
       <div class="sb-grid">
-        <FormField label="Fast Speed (mph)" id="sb-fspd">
+        <FormField label="Fast Speed (mph)" id="sb-fspd"
+          hint="Above this speed, you beacon at the fast rate. Typical: 60 mph for highway driving.">
           <Input id="sb-fspd" bind:value={smartBeacon.fast_speed} type="number" />
         </FormField>
-        <FormField label="Fast Rate (s)" id="sb-frate">
+        <FormField label="Fast Rate (s)" id="sb-frate"
+          hint="Seconds between beacons at high speed. Lower = more frequent. 60s is common for active tracking.">
           <Input id="sb-frate" bind:value={smartBeacon.fast_rate} type="number" />
         </FormField>
-        <FormField label="Slow Speed (mph)" id="sb-sspd">
+        <FormField label="Slow Speed (mph)" id="sb-sspd"
+          hint="Below this speed, you're considered nearly stopped and beacon at the slow rate. Typical: 5 mph.">
           <Input id="sb-sspd" bind:value={smartBeacon.slow_speed} type="number" />
         </FormField>
-        <FormField label="Slow Rate (s)" id="sb-srate">
+        <FormField label="Slow Rate (s)" id="sb-srate"
+          hint="Seconds between beacons when slow or stopped. 1800s (30 min) is typical to avoid unnecessary transmissions.">
           <Input id="sb-srate" bind:value={smartBeacon.slow_rate} type="number" />
         </FormField>
-        <FormField label="Min Turn Angle" id="sb-angle">
+      </div>
+      <h4 class="sb-section-label">Turn-based beaconing</h4>
+      <p class="sb-section-desc">
+        These trigger an extra beacon when you make a turn, so your tracked path shows corners accurately.
+        A beacon fires when your heading change exceeds a threshold calculated as:
+        Min Turn Angle + (Turn Slope &div; your speed).
+        This means sharper turns are needed at higher speeds, and gentle curves trigger beacons at low speeds.
+      </p>
+      <div class="sb-grid">
+        <FormField label="Min Turn Angle (°)" id="sb-angle"
+          hint="The fixed part of the turn threshold. At very high speeds, you must turn at least this many degrees to trigger a beacon. Typical: 28°.">
           <Input id="sb-angle" bind:value={smartBeacon.min_turn_angle} type="number" />
         </FormField>
-        <FormField label="Turn Slope" id="sb-slope">
+        <FormField label="Turn Slope" id="sb-slope"
+          hint="Controls how sensitive turns are at lower speeds. Higher values make slow-speed turns trigger beacons more easily. Typical: 26.">
           <Input id="sb-slope" bind:value={smartBeacon.turn_slope} type="number" />
         </FormField>
-        <FormField label="Min Turn Time (s)" id="sb-ttime">
+        <FormField label="Min Turn Time (s)" id="sb-ttime"
+          hint="Minimum seconds between turn-triggered beacons. Prevents excessive beaconing during winding roads. Typical: 30s.">
           <Input id="sb-ttime" bind:value={smartBeacon.min_turn_time} type="number" />
         </FormField>
       </div>
@@ -162,9 +191,26 @@
 </Modal>
 
 <style>
+  .sb-intro {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 16px 0;
+  }
+  .sb-section-label {
+    margin: 20px 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .sb-section-desc {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 8px 0;
+  }
   .sb-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 0 16px;
     margin-top: 12px;
   }
