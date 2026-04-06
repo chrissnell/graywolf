@@ -1,26 +1,36 @@
-// graywolf is the Phase 1 Go entry point: it opens the configstore, starts
-// the modem bridge, and exposes /metrics on 127.0.0.1:8080.
+// graywolf is the Phase 4 entry point: configstore, modembridge, metrics,
+// KISS/AGW protocol servers, digipeater, iGate, GPS, beacon scheduler,
+// packet log, REST API, and embedded web UI.
 package main
 
 import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/agw"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/digipeater"
+	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/igate"
+	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
+	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/web"
@@ -30,13 +40,7 @@ func main() {
 	var (
 		dbPath     = flag.String("config", "./graywolf.db", "path to SQLite config database")
 		modemPath  = flag.String("modem", "./target/release/graywolf-modem", "path to graywolf-modem binary")
-		httpAddr   = flag.String("http", "127.0.0.1:8080", "HTTP listen address for /metrics")
-		kissAddr   = flag.String("kiss", "", "KISS TCP listen address, e.g. 0.0.0.0:8001 (empty = disabled)")
-		agwAddr    = flag.String("agw", "", "AGWPE TCP listen address, e.g. 0.0.0.0:8000 (empty = disabled)")
-		mycall     = flag.String("mycall", "N0CALL", "default station callsign for AGW port info")
-		rate1      = flag.Int("tx-rate-1min", 0, "tx governor 1-minute frame rate limit per channel (0=unlimited)")
-		rate5      = flag.Int("tx-rate-5min", 0, "tx governor 5-minute frame rate limit per channel (0=unlimited)")
-		dedupWin   = flag.Duration("tx-dedup-window", 30*time.Second, "tx dedup window")
+		httpAddr   = flag.String("http", "127.0.0.1:8080", "HTTP listen address")
 		shutdownTO = flag.Duration("shutdown-timeout", 10*time.Second, "max time to wait for clean shutdown")
 	)
 	flag.Parse()
@@ -53,6 +57,7 @@ func main() {
 
 	m := metrics.New()
 
+	// --- Modem bridge ---------------------------------------------------
 	bridge := modembridge.New(modembridge.Config{
 		BinaryPath: *modemPath,
 		Store:      store,
@@ -67,6 +72,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// --- Packet log -----------------------------------------------------
+	plog := packetlog.New(packetlog.Config{Capacity: 2000, MaxAge: 30 * time.Minute})
+
+	// RX hook: record every received frame into the packet log.
+	bridge.SetRxHook(func(rf *pb.ReceivedFrame) {
+		if rf == nil {
+			return
+		}
+		e := packetlog.Entry{
+			Channel:   rf.Channel,
+			Direction: packetlog.DirRX,
+			Source:    "modem",
+			Raw:       rf.Data,
+		}
+		if f, err := ax25.Decode(rf.Data); err == nil {
+			e.Display = f.String()
+		}
+		plog.Record(e)
+	})
+
 	// --- TX governor ----------------------------------------------------
 	txSender := func(tf *pb.TransmitFrame) error {
 		if err := bridge.SendTransmitFrame(tf); err != nil {
@@ -75,20 +100,66 @@ func main() {
 		m.ObserveTxFrame(tf.Channel)
 		return nil
 	}
+
+	// Load per-channel timing from configstore.
+	channelTimings := make(map[uint32]txgovernor.ChannelTiming)
+	if timings, err := store.ListTxTimings(); err == nil {
+		for _, t := range timings {
+			channelTimings[t.Channel] = txgovernor.ChannelTiming{
+				TxDelayMs: t.TxDelayMs,
+				TxTailMs:  t.TxTailMs,
+				SlotTime:  time.Duration(t.SlotMs) * time.Millisecond,
+				Persist:   uint8(t.Persist),
+				FullDup:   t.FullDup,
+			}
+		}
+	}
+
+	// Rate limits from timing rows (first one wins as global default).
+	var rate1, rate5 int
+	if timings, err := store.ListTxTimings(); err == nil {
+		for _, t := range timings {
+			if t.Rate1Min > 0 && rate1 == 0 {
+				rate1 = int(t.Rate1Min)
+			}
+			if t.Rate5Min > 0 && rate5 == 0 {
+				rate5 = int(t.Rate5Min)
+			}
+		}
+	}
+
 	gov := txgovernor.New(txgovernor.Config{
 		Sender:        txSender,
 		DcdEvents:     bridge.DcdEvents(),
-		Rate1MinLimit: *rate1,
-		Rate5MinLimit: *rate5,
-		DedupWindow:   *dedupWin,
+		Rate1MinLimit: rate1,
+		Rate5MinLimit: rate5,
+		DedupWindow:   30 * time.Second,
+		Channels:      channelTimings,
 		Logger:        logger,
 	})
+
+	// TX hook: record transmitted frames into the packet log.
+	gov.SetTxHook(func(channel uint32, frame *ax25.Frame, source txgovernor.SubmitSource) {
+		e := packetlog.Entry{
+			Channel:   channel,
+			Direction: packetlog.DirTX,
+			Source:    source.Kind,
+			Display:   frame.String(),
+			Notes:     source.Detail,
+		}
+		if raw, err := frame.Encode(); err == nil {
+			e.Raw = raw
+		}
+		plog.Record(e)
+	})
+
 	go func() {
 		if err := gov.Run(ctx); err != nil {
 			logger.Error("tx governor", "err", err)
 		}
 	}()
-	// Periodically mirror governor stats into Prometheus counters.
+
+	// Governor stats → Prometheus.
 	go func() {
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
@@ -119,32 +190,61 @@ func main() {
 		}
 	}()
 
-	// --- KISS TCP server (optional) -------------------------------------
-	var kissServer *kiss.Server
-	if *kissAddr != "" {
-		kissServer = kiss.NewServer(kiss.ServerConfig{
-			Name:       "tcp",
-			ListenAddr: *kissAddr,
+	// Packetlog gauge ticker.
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				m.PacketlogEntries.Set(float64(plog.Len()))
+			}
+		}
+	}()
+
+	// --- KISS TCP servers (from configstore) ----------------------------
+	var kissServers []*kiss.Server
+	kissIfaces, _ := store.ListKissInterfaces()
+	for _, ki := range kissIfaces {
+		if !ki.Enabled || ki.InterfaceType != "tcp" || ki.ListenAddr == "" {
+			continue
+		}
+		name := ki.Name
+		ch := ki.Channel
+		if ch == 0 {
+			ch = 1
+		}
+		ks := kiss.NewServer(kiss.ServerConfig{
+			Name:       name,
+			ListenAddr: ki.ListenAddr,
 			Sink:       &kissSinkAdapter{gov: gov},
 			Logger:     logger,
-			ChannelMap: map[uint8]uint32{0: 1},
+			ChannelMap: map[uint8]uint32{0: ch},
+			Broadcast:  ki.Broadcast,
 			OnClientChange: func(n int) {
-				m.SetKissClients("tcp", n)
+				m.SetKissClients(name, n)
 			},
 		})
+		kissServers = append(kissServers, ks)
 		go func() {
-			if err := kissServer.ListenAndServe(ctx); err != nil {
-				logger.Error("kiss server", "err", err)
+			if err := ks.ListenAndServe(ctx); err != nil {
+				logger.Error("kiss server", "name", name, "err", err)
 			}
 		}()
 	}
 
-	// --- AGW TCP server (optional) --------------------------------------
+	// --- AGW TCP server (from configstore) ------------------------------
 	var agwServer *agw.Server
-	if *agwAddr != "" {
+	if agwCfg, err := store.GetAgwConfig(); err == nil && agwCfg != nil && agwCfg.Enabled {
+		calls := strings.Split(agwCfg.Callsigns, ",")
+		for i := range calls {
+			calls[i] = strings.TrimSpace(calls[i])
+		}
 		agwServer = agw.NewServer(agw.ServerConfig{
-			ListenAddr:    *agwAddr,
-			PortCallsigns: []string{*mycall},
+			ListenAddr:    agwCfg.ListenAddr,
+			PortCallsigns: calls,
 			PortToChannel: map[uint8]uint32{0: 1},
 			Sink:          &agwSinkAdapter{gov: gov},
 			Logger:        logger,
@@ -159,44 +259,199 @@ func main() {
 		}()
 	}
 
+	// --- Digipeater -----------------------------------------------------
+	var digi *digipeater.Digipeater
+	if digiCfg, err := store.GetDigipeaterConfig(); err == nil && digiCfg != nil && digiCfg.Enabled {
+		digiRules, _ := store.ListDigipeaterRules()
+		mycall, _ := ax25.ParseAddress(digiCfg.MyCall)
+		digi, err = digipeater.New(digipeater.Config{
+			MyCall:       mycall,
+			DedupeWindow: time.Duration(digiCfg.DedupeWindowSeconds) * time.Second,
+			Rules:        digipeater.RulesFromStore(digiRules),
+			Submit:       gov.Submit,
+			Logger:       logger,
+			OnPacket: func(note string, fromChan, toChan uint32, f *ax25.Frame) {
+				m.DigipeaterPackets.Inc()
+				plog.Record(packetlog.Entry{
+					Channel:   toChan,
+					Direction: packetlog.DirTX,
+					Source:    "digipeater",
+					Display:   f.String(),
+					Notes:     note,
+				})
+			},
+		})
+		if err != nil {
+			logger.Error("digipeater init", "err", err)
+		}
+	}
+
+	// --- GPS cache + reader ---------------------------------------------
+	gpsCache := gps.NewMemCache()
+	if gpsCfg, err := store.GetGPSConfig(); err == nil && gpsCfg != nil && gpsCfg.Enabled {
+		switch gpsCfg.SourceType {
+		case "serial":
+			go func() {
+				for {
+					err := gps.RunSerial(ctx, gps.SerialConfig{
+						Device:   gpsCfg.Device,
+						BaudRate: int(gpsCfg.BaudRate),
+					}, gpsCache, logger)
+					if ctx.Err() != nil {
+						return
+					}
+					logger.Warn("gps serial reader exited", "err", err)
+					time.Sleep(5 * time.Second)
+				}
+			}()
+		case "gpsd":
+			go func() {
+				for {
+					err := gps.RunGPSD(ctx, gps.GPSDConfig{
+						Host: gpsCfg.GpsdHost,
+						Port: int(gpsCfg.GpsdPort),
+					}, gpsCache, logger)
+					if ctx.Err() != nil {
+						return
+					}
+					logger.Warn("gpsd reader exited", "err", err)
+					time.Sleep(5 * time.Second)
+				}
+			}()
+		}
+	}
+
+	// --- Beacon scheduler -----------------------------------------------
+	beaconSched, err := beacon.New(beacon.Options{
+		Sink:     &beaconSinkAdapter{gov: gov},
+		Cache:    gpsCache,
+		Logger:   logger,
+		Observer: &beaconObserver{m: m},
+	})
+	if err != nil {
+		logger.Error("beacon scheduler init", "err", err)
+		os.Exit(1)
+	}
+	if beacons, err := store.ListBeacons(); err == nil && len(beacons) > 0 {
+		var configs []beacon.Config
+		for _, b := range beacons {
+			if !b.Enabled {
+				continue
+			}
+			bc, err := beaconConfigFromStore(b)
+			if err != nil {
+				logger.Warn("beacon config", "id", b.ID, "err", err)
+				continue
+			}
+			configs = append(configs, bc)
+		}
+		beaconSched.SetBeacons(configs)
+		go func() {
+			if err := beaconSched.Run(ctx); err != nil {
+				logger.Error("beacon scheduler", "err", err)
+			}
+		}()
+	}
+
+	// --- iGate ----------------------------------------------------------
+	var ig *igate.Igate
+	if igCfg, err := store.GetIGateConfig(); err == nil && igCfg != nil && igCfg.Enabled {
+		rfFilters, _ := store.ListIGateRfFilters()
+		rules := make([]filters.Rule, 0, len(rfFilters))
+		for _, f := range rfFilters {
+			if !f.Enabled {
+				continue
+			}
+			rules = append(rules, filters.Rule{
+				ID:       f.ID,
+				Priority: int(f.Priority),
+				Type:     filters.RuleType(f.Type),
+				Pattern:  f.Pattern,
+				Action:   filters.Action(f.Action),
+			})
+		}
+
+		serverAddr := fmt.Sprintf("%s:%d", igCfg.Server, igCfg.Port)
+		var igGov *txgovernor.Governor
+		if igCfg.GateIsToRf {
+			igGov = gov
+		}
+
+		ig, err = igate.New(igate.Config{
+			Server:          serverAddr,
+			Callsign:        igCfg.Callsign,
+			Passcode:        igCfg.Passcode,
+			ServerFilter:    igCfg.ServerFilter,
+			SoftwareName:    igCfg.SoftwareName,
+			SoftwareVersion: igCfg.SoftwareVersion,
+			Rules:           rules,
+			TxChannel:       igCfg.TxChannel,
+			Governor:        igGov,
+			SimulationMode:  igCfg.SimulationMode,
+			Logger:          logger,
+			Registry:        m.Registry,
+		})
+		if err != nil {
+			logger.Error("igate init", "err", err)
+		} else {
+			if err := ig.Start(ctx); err != nil {
+				logger.Error("igate start", "err", err)
+			}
+		}
+	}
+
+	// iGate output adapter for the APRS fan-out.
+	var igateOut *igate.IgateOutput
+	if ig != nil {
+		igateOut = igate.NewIgateOutput(ig)
+	}
+
 	// --- APRS decode + log output ---------------------------------------
 	aprsOut := aprs.NewLogOutput(logger)
 
-	// Bounded worker queue so a slow PacketOutput (log rotate, syslog
-	// stall) never backs up the modem RX goroutine. On full, the oldest
-	// packet is dropped and the AprsOutDropped counter is incremented.
 	aprsQueue := make(chan *aprs.DecodedAPRSPacket, 256)
 	go func() {
 		for pkt := range aprsQueue {
 			_ = aprsOut.SendPacket(ctx, pkt)
+			if igateOut != nil {
+				_ = igateOut.SendPacket(ctx, pkt)
+			}
 		}
 	}()
 
-	// --- RX fan-out: modem → KISS broadcast + AGW monitor + APRS log ----
-	// The decoded ax25.Frame is passed to both AGW and aprs.Parse without
-	// cloning; both consumers treat it as read-only.
+	// --- RX fan-out: modem → KISS broadcast + AGW monitor + digi + APRS log
 	go func() {
 		for rf := range bridge.Frames() {
 			if rf == nil {
 				continue
 			}
-			if kissServer != nil {
-				kissServer.Broadcast(0, rf.Data)
+			// KISS broadcast to all interfaces.
+			for _, ks := range kissServers {
+				ks.BroadcastFromChannel(rf.Channel, rf.Data)
 			}
+
 			f, err := ax25.Decode(rf.Data)
 			if err != nil {
 				continue
 			}
+
+			// AGW monitor.
 			if f.IsUI() {
 				if agwServer != nil {
 					agwServer.BroadcastMonitoredUI(uint8(rf.Channel), f)
 				}
+
+				// Digipeater.
+				if digi != nil {
+					digi.Handle(ctx, rf.Channel, f)
+				}
+
+				// APRS parse → fan-out.
 				if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
 					pkt.Channel = int(rf.Channel)
 					select {
 					case aprsQueue <- pkt:
 					default:
-						// Drop oldest to make room for the new packet.
 						select {
 						case <-aprsQueue:
 							m.AprsOutDropped.Inc()
@@ -213,10 +468,10 @@ func main() {
 		}
 	}()
 
+	// --- HTTP -----------------------------------------------------------
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", m.Handler())
 
-	// REST API (Phase 3 skeleton; Phase 6 fleshes out write paths).
 	apiSrv, err := webapi.NewServer(webapi.Config{Store: store, Logger: logger})
 	if err != nil {
 		logger.Error("webapi new", "err", err)
@@ -224,7 +479,30 @@ func main() {
 	}
 	apiSrv.RegisterRoutes(mux)
 
-	// Embedded Svelte UI at "/"; Phase 6 replaces the placeholder dist.
+	// Phase 4 real endpoint registrations (replace stubs).
+	webapi.RegisterPackets(apiSrv, plog)(mux)
+	webapi.RegisterPosition(apiSrv, gpsCache, mux)
+	if ig != nil {
+		webapi.RegisterIgate(apiSrv, mux,
+			ig.SetSimulationMode,
+			func() webapi.IgateStatus {
+				s := ig.Status()
+				return webapi.IgateStatus{
+					Connected:      s.Connected,
+					Server:         s.Server,
+					Callsign:       s.Callsign,
+					SimulationMode: s.SimulationMode,
+					LastConnected:  s.LastConnected,
+					Gated:          s.Gated,
+					Downlinked:     s.Downlinked,
+					Filtered:       s.Filtered,
+					DroppedOffline: s.DroppedOffline,
+				}
+			},
+		)
+	}
+
+	// Embedded Svelte UI.
 	mux.Handle("/", web.Handler())
 
 	httpSrv := &http.Server{Addr: *httpAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -235,6 +513,7 @@ func main() {
 		}
 	}()
 
+	// --- Shutdown -------------------------------------------------------
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigCh
@@ -243,7 +522,12 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), *shutdownTO)
 	defer shutdownCancel()
 
-	cancel() // tell bridge to begin shutdown
+	cancel() // signal all goroutines
+
+	if ig != nil {
+		ig.Stop()
+	}
+
 	done := make(chan struct{})
 	go func() { bridge.Stop(); close(done) }()
 	select {
@@ -254,6 +538,8 @@ func main() {
 
 	_ = httpSrv.Shutdown(shutdownCtx)
 }
+
+// --- Sink adapters --------------------------------------------------------
 
 // kissSinkAdapter bridges kiss.TxSink to txgovernor.Submit.
 type kissSinkAdapter struct{ gov *txgovernor.Governor }
@@ -273,3 +559,104 @@ func (a *agwSinkAdapter) Submit(ctx context.Context, channel uint32, f *ax25.Fra
 	})
 }
 
+// beaconSinkAdapter bridges beacon.TxSink to txgovernor.Submit.
+type beaconSinkAdapter struct{ gov *txgovernor.Governor }
+
+func (a *beaconSinkAdapter) Submit(ctx context.Context, channel uint32, f *ax25.Frame, s beacon.SubmitSource) error {
+	return a.gov.Submit(ctx, channel, f, txgovernor.SubmitSource{
+		Kind: s.Kind, Detail: s.Detail, Priority: s.Priority,
+	})
+}
+
+// --- Beacon observer for metrics ------------------------------------------
+
+type beaconObserver struct{ m *metrics.Metrics }
+
+func (o *beaconObserver) OnBeaconSent(t beacon.Type) {
+	o.m.BeaconPackets.WithLabelValues(string(t)).Inc()
+}
+
+func (o *beaconObserver) OnSmartBeaconRate(channel uint32, interval time.Duration) {
+	o.m.SmartBeaconRate.WithLabelValues(strconv.FormatUint(uint64(channel), 10)).Set(interval.Seconds())
+}
+
+// --- Config mapping helpers -----------------------------------------------
+
+func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
+	src, err := ax25.ParseAddress(b.Callsign)
+	if err != nil {
+		return beacon.Config{}, fmt.Errorf("parse callsign %q: %w", b.Callsign, err)
+	}
+	dest, err := ax25.ParseAddress(b.Destination)
+	if err != nil {
+		return beacon.Config{}, fmt.Errorf("parse destination %q: %w", b.Destination, err)
+	}
+	var path []ax25.Address
+	for _, p := range strings.Split(b.Path, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		a, err := ax25.ParseAddress(p)
+		if err != nil {
+			return beacon.Config{}, fmt.Errorf("parse path %q: %w", p, err)
+		}
+		path = append(path, a)
+	}
+
+	var commentCmd []string
+	if b.CommentCmd != "" {
+		argv, err := beacon.SplitArgv(b.CommentCmd)
+		if err != nil {
+			return beacon.Config{}, fmt.Errorf("split comment_cmd: %w", err)
+		}
+		commentCmd = argv
+	}
+
+	symTable := byte('/')
+	if len(b.SymbolTable) > 0 {
+		symTable = b.SymbolTable[0]
+	}
+	symCode := byte('-')
+	if len(b.Symbol) > 0 {
+		symCode = b.Symbol[0]
+	}
+
+	cfg := beacon.Config{
+		ID:          b.ID,
+		Type:        beacon.Type(b.Type),
+		Channel:     b.Channel,
+		Source:      src,
+		Dest:        dest,
+		Path:        path,
+		Delay:       time.Duration(b.DelaySeconds) * time.Second,
+		Every:       time.Duration(b.EverySeconds) * time.Second,
+		Slot:        int(b.SlotSeconds),
+		Lat:         b.Latitude,
+		Lon:         b.Longitude,
+		AltFt:       b.AltFt,
+		SymbolTable: symTable,
+		SymbolCode:  symCode,
+		Comment:     b.Comment,
+		CommentCmd:  commentCmd,
+		Messaging:   b.Messaging,
+		ObjectName:  b.ObjectName,
+		CustomInfo:  b.CustomInfo,
+		Enabled:     b.Enabled,
+	}
+
+	if b.SmartBeacon {
+		cfg.SmartBeacon = &beacon.SmartBeaconConfig{
+			Enabled:   true,
+			FastSpeed: float64(b.SbFastSpeed),
+			SlowSpeed: float64(b.SbSlowSpeed),
+			FastRate:  time.Duration(b.SbFastRate) * time.Second,
+			SlowRate:  time.Duration(b.SbSlowRate) * time.Second,
+			TurnAngle: float64(b.SbTurnAngle),
+			TurnSlope: float64(b.SbTurnSlope),
+			TurnTime:  time.Duration(b.SbMinTurnTime) * time.Second,
+		}
+	}
+
+	return cfg, nil
+}

@@ -56,8 +56,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/agw", s.stub("agw"))
 	mux.HandleFunc("/api/tx-timing", s.stub("tx-timing"))
 	mux.HandleFunc("/api/digipeater", s.stub("digipeater"))
-	mux.HandleFunc("/api/igate", s.stub("igate"))
-	mux.HandleFunc("/api/packets", s.stub("packets"))
+	// /api/igate — real handler in igate.go (RegisterIgate)
+	// /api/packets — real handler in packets.go (RegisterPackets)
 	mux.HandleFunc("/api/health", s.handleHealth)
 }
 
