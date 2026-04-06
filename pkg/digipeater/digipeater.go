@@ -68,6 +68,10 @@ type Config struct {
 	// carrying a short human-readable note. Used by packetlog to
 	// annotate entries.
 	OnPacket func(note string, fromChan, toChan uint32, f *ax25.Frame)
+
+	// OnDedup is an optional hook invoked when a frame is dropped as a
+	// duplicate within the dedup window.
+	OnDedup func()
 }
 
 // Stats exposes counters.
@@ -84,7 +88,8 @@ type Digipeater struct {
 	rules  []Rule
 	submit func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
 	logger *slog.Logger
-	onPkt  func(note string, fromChan, toChan uint32, f *ax25.Frame)
+	onPkt   func(note string, fromChan, toChan uint32, f *ax25.Frame)
+	onDedup func()
 
 	dedup map[string]time.Time
 	stats Stats
@@ -107,8 +112,9 @@ func New(cfg Config) (*Digipeater, error) {
 		rules:  append([]Rule(nil), cfg.Rules...),
 		submit: cfg.Submit,
 		logger: cfg.Logger.With("component", "digipeater"),
-		onPkt:  cfg.OnPacket,
-		dedup:  make(map[string]time.Time),
+		onPkt:   cfg.OnPacket,
+		onDedup: cfg.OnDedup,
+		dedup:   make(map[string]time.Time),
 	}, nil
 }
 
@@ -173,7 +179,11 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 	d.gcDedupLocked(now)
 	if t, ok := d.dedup[key]; ok && now.Sub(t) < window {
 		d.stats.Deduped++
+		cb := d.onDedup
 		d.mu.Unlock()
+		if cb != nil {
+			cb()
+		}
 		return false
 	}
 	// Record now so concurrent duplicates are caught even if submit

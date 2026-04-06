@@ -280,6 +280,7 @@ func main() {
 					Notes:     note,
 				})
 			},
+			OnDedup: func() { m.DigipeaterDeduped.Inc() },
 		})
 		if err != nil {
 			logger.Error("digipeater init", "err", err)

@@ -215,7 +215,7 @@ func (ig *Igate) supervise(ctx context.Context) {
 		ig.cfg,
 		ig.logger,
 		ig.handleISLine,
-		ig.onConnected,
+		func() { bo.Reset(); ig.onConnected() },
 		ig.onLost,
 	)
 	for {

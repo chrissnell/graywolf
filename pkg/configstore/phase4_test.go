@@ -64,4 +64,11 @@ func TestPhase4Migrations(t *testing.T) {
 	if _, err := s.ListPacketFilters(); err != nil {
 		t.Fatalf("packet filter list: %v", err)
 	}
+
+	if err := s.UpsertGPSConfig(&GPSConfig{SourceType: "gpsd", GpsdHost: "localhost", GpsdPort: 2947, Enabled: true}); err != nil {
+		t.Fatalf("gps config upsert: %v", err)
+	}
+	if gc, err := s.GetGPSConfig(); err != nil || gc == nil || gc.SourceType != "gpsd" {
+		t.Fatalf("gps config get: %v %+v", err, gc)
+	}
 }
