@@ -62,7 +62,7 @@ type Config struct {
 	// ShutdownTimeout bounds graceful shutdown after a Shutdown IPC is sent.
 	ShutdownTimeout time.Duration
 	// Store supplies the channel/audio/ptt configuration to push to the child.
-	Store *configstore.Store
+	Store configstore.ConfigStore
 	// Metrics receives status updates and frame counts. Optional.
 	Metrics *metrics.Metrics
 	// Logger is used for structured logging. Defaults to slog.Default().
@@ -251,7 +251,7 @@ func (b *Bridge) setSender(fn func(*pb.IpcMessage) error) {
 }
 
 // ConfigStore returns the attached configstore (may be nil).
-func (b *Bridge) ConfigStore() *configstore.Store { return b.cfg.Store }
+func (b *Bridge) ConfigStore() configstore.ConfigStore { return b.cfg.Store }
 
 // Frames returns a channel of received AX.25 frames. The channel is closed
 // when Stop completes.

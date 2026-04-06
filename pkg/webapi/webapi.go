@@ -48,90 +48,128 @@ func NewServer(cfg Config) (*Server, error) {
 
 // RegisterRoutes installs the /api/* handlers on mux.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
+	// Channels — full CRUD + stats subpath
 	mux.HandleFunc("/api/channels", s.handleChannels)
 	mux.HandleFunc("/api/channels/", s.handleChannelsSubpath)
-	mux.HandleFunc("/api/beacons", s.handleBeacons)
-	mux.HandleFunc("/api/beacons/", s.handleBeacons)
+
+	// Audio devices — full CRUD + available enumeration
 	mux.HandleFunc("/api/audio-devices", s.handleAudioDevices)
-	mux.HandleFunc("/api/ptt", s.stub("ptt"))
-	mux.HandleFunc("/api/kiss-interfaces", s.stub("kiss-interfaces"))
-	mux.HandleFunc("/api/agw", s.stub("agw"))
-	mux.HandleFunc("/api/tx-timing", s.stub("tx-timing"))
-	mux.HandleFunc("/api/digipeater", s.stub("digipeater"))
-	// /api/igate — real handler in igate.go (RegisterIgate)
-	// /api/packets — real handler in packets.go (RegisterPackets)
+	mux.HandleFunc("/api/audio-devices/", s.handleAudioDevice)
+
+	// Beacons — full CRUD
+	mux.HandleFunc("/api/beacons", s.handleBeacons)
+	mux.HandleFunc("/api/beacons/", s.handleBeacon)
+
+	// PTT — upsert/get by channel
+	mux.HandleFunc("/api/ptt", s.handlePttCollection)
+	mux.HandleFunc("/api/ptt/", s.handlePttByChannel)
+
+	// TX timing — upsert/get by channel
+	mux.HandleFunc("/api/tx-timing", s.handleTxTimingCollection)
+	mux.HandleFunc("/api/tx-timing/", s.handleTxTimingByChannel)
+
+	// KISS interfaces — full CRUD
+	mux.HandleFunc("/api/kiss", s.handleKissCollection)
+	mux.HandleFunc("/api/kiss/", s.handleKissItem)
+
+	// AGW — singleton get/update
+	mux.HandleFunc("/api/agw", s.handleAgw)
+
+	// iGate config — singleton get/update (igate.go still has status + sim)
+	mux.HandleFunc("/api/igate/config", s.handleIgateConfig)
+	mux.HandleFunc("/api/igate/filters", s.handleIgateFilters)
+	mux.HandleFunc("/api/igate/filters/", s.handleIgateFilter)
+
+	// Digipeater — config singleton + rules CRUD
+	mux.HandleFunc("/api/digipeater", s.handleDigipeaterConfig)
+	mux.HandleFunc("/api/digipeater/rules", s.handleDigipeaterRules)
+	mux.HandleFunc("/api/digipeater/rules/", s.handleDigipeaterRule)
+
+	// GPS — singleton get/update
+	mux.HandleFunc("/api/gps", s.handleGps)
+
+	// /api/igate — status + simulation in igate.go (RegisterIgate)
+	// /api/packets — in packets.go (RegisterPackets)
+	// /api/position — in position.go (RegisterPosition)
 	mux.HandleFunc("/api/health", s.handleHealth)
 }
 
-// ChannelDTO is the JSON shape returned by GET /api/channels.
-type ChannelDTO struct {
-	ID            uint32 `json:"id"`
-	Name          string `json:"name"`
-	AudioDeviceID uint32 `json:"audio_device_id"`
-	AudioChannel  uint32 `json:"audio_channel"`
-	ModemType     string `json:"modem_type"`
-	BitRate       uint32 `json:"bit_rate"`
-	MarkFreq      uint32 `json:"mark_freq"`
-	SpaceFreq     uint32 `json:"space_freq"`
-	Profile       string `json:"profile"`
-	TxDelayMs     uint32 `json:"tx_delay_ms"`
-	TxTailMs      uint32 `json:"tx_tail_ms"`
-}
-
-// BeaconDTO is the JSON shape returned by GET /api/beacons.
-type BeaconDTO struct {
-	ID        uint32    `json:"id"`
-	Channel   uint32    `json:"channel"`
-	Callsign  string    `json:"callsign"`
-	Path      string    `json:"path"`
-	Interval  string    `json:"interval"`
-	Text      string    `json:"text"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
-}
-
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		channels, err := s.store.ListChannels()
+		if err != nil {
+			s.logger.Warn("list channels", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, channels)
+	case http.MethodPost:
+		var c configstore.Channel
+		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := s.store.CreateChannel(&c); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, c)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	channels, err := s.store.ListChannels()
-	if err != nil {
-		s.logger.Warn("list channels", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	out := make([]ChannelDTO, 0, len(channels))
-	for _, c := range channels {
-		out = append(out, ChannelDTO{
-			ID:            c.ID,
-			Name:          c.Name,
-			AudioDeviceID: c.AudioDeviceID,
-			AudioChannel:  c.AudioChannel,
-			ModemType:     c.ModemType,
-			BitRate:       c.BitRate,
-			MarkFreq:      c.MarkFreq,
-			SpaceFreq:     c.SpaceFreq,
-			Profile:       c.Profile,
-			TxDelayMs:     c.TxDelayMs,
-			TxTailMs:      c.TxTailMs,
-		})
-	}
-	writeJSON(w, http.StatusOK, out)
 }
 
-// handleChannelsSubpath routes /api/channels/{id}/stats
+// handleChannelsSubpath routes /api/channels/{id} and /api/channels/{id}/stats
 func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/channels/")
 	parts := strings.SplitN(path, "/", 2)
+
+	// /api/channels/{id}/stats
 	if len(parts) == 2 && parts[1] == "stats" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		s.handleChannelStats(w, r, parts[0])
 		return
 	}
-	s.handleChannels(w, r)
+
+	// /api/channels/{id} — GET, PUT, DELETE
+	id, err := parseID(parts[0])
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		c, err := s.store.GetChannel(id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, c)
+	case http.MethodPut:
+		var c configstore.Channel
+		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		c.ID = id
+		if err := s.store.UpdateChannel(&c); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, c)
+	case http.MethodDelete:
+		if err := s.store.DeleteChannel(id); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // GET /api/channels/{id}/stats
@@ -153,26 +191,138 @@ func (s *Server) handleChannelStats(w http.ResponseWriter, _ *http.Request, idSt
 	writeJSON(w, http.StatusOK, stats)
 }
 
-// GET /api/audio-devices
+// /api/audio-devices — list + create
 func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		devices, err := s.store.ListAudioDevices()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, devices)
+	case http.MethodPost:
+		var d configstore.AudioDevice
+		if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := s.store.CreateAudioDevice(&d); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, d)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	devices, err := s.store.ListAudioDevices()
-	if err != nil {
-		http.Error(w, "list devices: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, devices)
 }
 
-func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+// /api/audio-devices/{id} or /api/audio-devices/available
+func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/audio-devices/")
+	if rest == "available" {
+		// TODO(phase6): audio device enumeration IPC round-trip
+		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
-	writeJSON(w, http.StatusOK, []BeaconDTO{})
+	id, err := parseID(rest)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		d, err := s.store.GetAudioDevice(id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, d)
+	case http.MethodPut:
+		var d configstore.AudioDevice
+		if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		d.ID = id
+		if err := s.store.UpdateAudioDevice(&d); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, d)
+	case http.MethodDelete:
+		if err := s.store.DeleteAudioDevice(id); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// /api/beacons — list + create
+func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		beacons, err := s.store.ListBeacons()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, beacons)
+	case http.MethodPost:
+		var b configstore.Beacon
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := s.store.CreateBeacon(&b); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, b)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// /api/beacons/{id} — get, update, delete
+func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(strings.TrimPrefix(r.URL.Path, "/api/beacons/"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		b, err := s.store.GetBeacon(id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
+	case http.MethodPut:
+		var b configstore.Beacon
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		b.ID = id
+		if err := s.store.UpdateBeacon(&b); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
+	case http.MethodDelete:
+		if err := s.store.DeleteBeacon(id); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -182,14 +332,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) stub(name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{
-			"error":    "not implemented",
-			"endpoint": name,
-			"phase":    "pending Phase 6",
-		})
+func parseID(s string) (uint32, error) {
+	// Strip trailing path segments (e.g. "1/stats" → "1")
+	if i := strings.Index(s, "/"); i >= 0 {
+		s = s[:i]
 	}
+	n, err := strconv.ParseUint(s, 10, 32)
+	return uint32(n), err
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

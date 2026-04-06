@@ -1,6 +1,6 @@
-// graywolf is the Phase 4 entry point: configstore, modembridge, metrics,
-// KISS/AGW protocol servers, digipeater, iGate, GPS, beacon scheduler,
-// packet log, REST API, and embedded web UI.
+// graywolf entry point: configstore, modembridge, metrics, KISS/AGW,
+// digipeater, iGate, GPS, beacon scheduler, packet log, REST API,
+// embedded web UI, and web authentication.
 package main
 
 import (
@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,10 +34,17 @@ import (
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/webapi"
+	"github.com/chrissnell/graywolf/pkg/webauth"
 	"github.com/chrissnell/graywolf/web"
 )
 
 func main() {
+	// Handle "auth" subcommand before flag parsing.
+	if len(os.Args) > 1 && os.Args[1] == "auth" {
+		handleAuthSubcommand(os.Args[2:])
+		return
+	}
+
 	var (
 		dbPath     = flag.String("config", "./graywolf.db", "path to SQLite config database")
 		modemPath  = flag.String("modem", "./target/release/graywolf-modem", "path to graywolf-modem binary")
@@ -469,6 +477,21 @@ func main() {
 		}
 	}()
 
+	// --- Auth -----------------------------------------------------------
+	authStore, err := webauth.NewAuthStore(store.DB())
+	if err != nil {
+		logger.Error("init auth store", "err", err)
+		os.Exit(1)
+	}
+
+	// Warn if binding to non-loopback address.
+	secure := false
+	host, _, _ := net.SplitHostPort(*httpAddr)
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		logger.Warn(fmt.Sprintf("Web server binding to %s — accessible from all network interfaces", *httpAddr))
+		secure = true
+	}
+
 	// --- HTTP -----------------------------------------------------------
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", m.Handler())
@@ -478,13 +501,23 @@ func main() {
 		logger.Error("webapi new", "err", err)
 		os.Exit(1)
 	}
-	apiSrv.RegisterRoutes(mux)
+
+	// Auth endpoints (public, no middleware).
+	authHandlers := &webauth.Handlers{Auth: authStore, Secure: secure}
+	mux.HandleFunc("/api/auth/login", authHandlers.HandleLogin)
+	mux.HandleFunc("/api/auth/logout", authHandlers.HandleLogout)
+	mux.HandleFunc("/api/auth/setup", authHandlers.HandleSetup)
+
+	// Protected API routes — all existing registrations go on a sub-mux
+	// wrapped by auth middleware.
+	apiMux := http.NewServeMux()
+	apiSrv.RegisterRoutes(apiMux)
 
 	// Phase 4 real endpoint registrations (replace stubs).
-	webapi.RegisterPackets(apiSrv, plog)(mux)
-	webapi.RegisterPosition(apiSrv, gpsCache, mux)
+	webapi.RegisterPackets(apiSrv, plog)(apiMux)
+	webapi.RegisterPosition(apiSrv, gpsCache, apiMux)
 	if ig != nil {
-		webapi.RegisterIgate(apiSrv, mux,
+		webapi.RegisterIgate(apiSrv, apiMux,
 			ig.SetSimulationMode,
 			func() webapi.IgateStatus {
 				s := ig.Status()
@@ -503,8 +536,10 @@ func main() {
 		)
 	}
 
-	// Embedded Svelte UI.
-	mux.Handle("/", web.Handler())
+	mux.Handle("/api/", webauth.RequireAuth(authStore)(apiMux))
+
+	// Embedded Svelte UI with SPA history-mode rewriting.
+	mux.Handle("/", web.SPAHandler())
 
 	httpSrv := &http.Server{Addr: *httpAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -660,4 +695,122 @@ func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// --- Auth subcommand ----------------------------------------------------------
+
+// handleAuthSubcommand dispatches graywolf auth {set-password,list-users,delete-user}.
+func handleAuthSubcommand(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: graywolf auth {set-password|list-users|delete-user} [options]")
+		os.Exit(1)
+	}
+
+	fs := flag.NewFlagSet("auth", flag.ExitOnError)
+	dbPath := fs.String("config", "./graywolf.db", "path to SQLite config database")
+
+	switch args[0] {
+	case "set-password":
+		user := ""
+		remaining := args[1:]
+		for i := 0; i < len(remaining); i++ {
+			if remaining[i] == "--user" && i+1 < len(remaining) {
+				user = remaining[i+1]
+				remaining = append(remaining[:i], remaining[i+2:]...)
+				break
+			}
+			if strings.HasPrefix(remaining[i], "--user=") {
+				user = strings.TrimPrefix(remaining[i], "--user=")
+				remaining = append(remaining[:i], remaining[i+1:]...)
+				break
+			}
+		}
+		fs.Parse(remaining)
+		if user == "" {
+			user = "admin"
+		}
+
+		fmt.Printf("Enter password for %s: ", user)
+		var password string
+		fmt.Scanln(&password)
+		if password == "" {
+			fmt.Fprintln(os.Stderr, "error: empty password")
+			os.Exit(1)
+		}
+
+		store, authStore := openAuthDB(*dbPath)
+		defer store.Close()
+
+		hash, err := webauth.HashPassword(password)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+
+		ctx := context.Background()
+		existing, err := authStore.GetUserByUsername(ctx, user)
+		if err != nil {
+			if _, err := authStore.CreateUser(ctx, user, hash); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Created user %s\n", user)
+		} else {
+			existing.PasswordHash = hash
+			store.DB().Save(existing)
+			fmt.Printf("Updated password for %s\n", user)
+		}
+
+	case "list-users":
+		fs.Parse(args[1:])
+		_, authStore := openAuthDB(*dbPath)
+
+		users, err := authStore.ListUsers(context.Background())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if len(users) == 0 {
+			fmt.Println("No users configured.")
+			return
+		}
+		fmt.Printf("%-20s %-20s\n", "USERNAME", "CREATED")
+		for _, u := range users {
+			fmt.Printf("%-20s %-20s\n", u.Username, u.CreatedAt.Format(time.RFC3339))
+		}
+
+	case "delete-user":
+		fs.Parse(args[1:])
+		remaining := fs.Args()
+		if len(remaining) == 0 {
+			fmt.Fprintln(os.Stderr, "usage: graywolf auth delete-user USERNAME")
+			os.Exit(1)
+		}
+		username := remaining[0]
+		_, authStore := openAuthDB(*dbPath)
+
+		if err := authStore.DeleteUser(context.Background(), username); err != nil {
+			fmt.Fprintf(os.Stderr, "error deleting %s: %v\n", username, err)
+			os.Exit(1)
+		}
+		fmt.Printf("Deleted user %s\n", username)
+
+	default:
+		fmt.Fprintf(os.Stderr, "unknown auth subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func openAuthDB(dbPath string) (*configstore.Store, *webauth.AuthStore) {
+	store, err := configstore.Open(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	authStore, err := webauth.NewAuthStore(store.DB())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error initializing auth: %v\n", err)
+		os.Exit(1)
+	}
+	return store, authStore
 }
