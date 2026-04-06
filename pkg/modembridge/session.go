@@ -171,16 +171,20 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) error {
 	// Emit one ConfigureChannel + ConfigurePtt per channel.
 	for _, ch := range channels {
 		cmsg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigureChannel{ConfigureChannel: &pb.ConfigureChannel{
-			Channel:      ch.ID,
-			DeviceId:     ch.AudioDeviceID,
-			AudioChannel: ch.AudioChannel,
-			Baud:         ch.BitRate,
-			MarkFreq:     ch.MarkFreq,
-			SpaceFreq:    ch.SpaceFreq,
-			ModemType:    ch.ModemType,
-			Profile:      ch.Profile,
-			NumSlicers:   ch.NumSlicers,
-			FixBits:      ch.FixBits,
+			Channel:       ch.ID,
+			DeviceId:      ch.AudioDeviceID,
+			AudioChannel:  ch.AudioChannel,
+			Baud:          ch.BitRate,
+			MarkFreq:      ch.MarkFreq,
+			SpaceFreq:     ch.SpaceFreq,
+			ModemType:     ch.ModemType,
+			Profile:       ch.Profile,
+			NumSlicers:    ch.NumSlicers,
+			FixBits:       ch.FixBits,
+			NumDecoders:   ch.NumDecoders,
+			DecoderOffset: ch.DecoderOffset,
+			Fx25Encode:    ch.FX25Encode,
+			Il2PEncode:    ch.IL2PEncode,
 		}}}
 		if err := send(cmsg); err != nil {
 			return err

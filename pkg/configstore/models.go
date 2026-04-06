@@ -35,6 +35,8 @@ type Channel struct {
 	FixBits       string `gorm:"not null;default:'none'"` // none|single|double
 	FX25Encode    bool   `gorm:"not null;default:false"`
 	IL2PEncode    bool   `gorm:"column:il2p_encode;not null;default:false"`
+	NumDecoders   uint32 `gorm:"not null;default:1"`
+	DecoderOffset int32  `gorm:"not null;default:0"`
 	TxDelayMs     uint32 `gorm:"not null;default:300"`
 	TxTailMs      uint32 `gorm:"not null;default:100"`
 	CreatedAt     time.Time

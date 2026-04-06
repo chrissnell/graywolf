@@ -207,6 +207,51 @@ fn payload_block_sizes_match_direwolf() {
     assert_eq!(total_data, 1023);
 }
 
+/// Direwolf byte-exact test vector: end-to-end AX.25 → IL2P header encoding.
+/// Example 1 from il2p_test.c: S-frame (RR), KA2DEW-2 > KK4HEJ-7.
+///   AX.25: 96 82 64 88 8a ae e4 96 96 68 90 8a 94 6f b1
+///   IL2P header (pre-scramble): 2b a1 12 24 25 77 6b 2b 54 68 25 2a 27
+#[test]
+fn direwolf_test_vector_header_encode_sframe() {
+    let ax25: [u8; 15] = [
+        0x96, 0x82, 0x64, 0x88, 0x8a, 0xae, 0xe4,
+        0x96, 0x96, 0x68, 0x90, 0x8a, 0x94, 0x6f, 0xb1,
+    ];
+    let expected_header: [u8; 13] = [
+        0x2b, 0xa1, 0x12, 0x24, 0x25, 0x77,
+        0x6b, 0x2b, 0x54, 0x68, 0x25, 0x2a, 0x27,
+    ];
+
+    let hdr = header::Il2pHeader::from_ax25(&ax25).expect("S-frame should be encodable");
+    let encoded = hdr.to_bytes();
+    assert_eq!(encoded, expected_header,
+        "S-frame header mismatch.\n  got:      {:02x?}\n  expected: {:02x?}",
+        encoded, expected_header);
+}
+
+/// Direwolf byte-exact test vector: end-to-end AX.25 → IL2P header encoding.
+/// Example 2 from il2p_test.c: UI frame, CQ-0 > KK4HEJ-15, no payload.
+///   AX.25: 86 a2 40 40 40 40 60 96 96 68 90 8a 94 7f 03 f0
+///   IL2P header (pre-scramble): 63 f1 40 40 40 00 6b 2b 54 28 25 2a 0f
+#[test]
+fn direwolf_test_vector_header_encode_ui() {
+    let ax25: [u8; 16] = [
+        0x86, 0xa2, 0x40, 0x40, 0x40, 0x40, 0x60,
+        0x96, 0x96, 0x68, 0x90, 0x8a, 0x94, 0x7f,
+        0x03, 0xf0,
+    ];
+    let expected_header: [u8; 13] = [
+        0x63, 0xf1, 0x40, 0x40, 0x40, 0x00,
+        0x6b, 0x2b, 0x54, 0x28, 0x25, 0x2a, 0x0f,
+    ];
+
+    let hdr = header::Il2pHeader::from_ax25(&ax25).expect("UI frame should be encodable");
+    let encoded = hdr.to_bytes();
+    assert_eq!(encoded, expected_header,
+        "UI header mismatch.\n  got:      {:02x?}\n  expected: {:02x?}",
+        encoded, expected_header);
+}
+
 /// Test encode/decode with error correction in payload.
 #[test]
 fn il2p_payload_error_correction() {
