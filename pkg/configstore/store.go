@@ -193,6 +193,34 @@ func (s *Store) DeleteAudioDevice(id uint32) error {
 	return s.db.Delete(&AudioDevice{}, id).Error
 }
 
+// ChannelsForDevice returns all channels that reference the given device as
+// either their input or output device.
+func (s *Store) ChannelsForDevice(deviceID uint32) ([]Channel, error) {
+	var out []Channel
+	err := s.db.Where("input_device_id = ? OR output_device_id = ?", deviceID, deviceID).
+		Order("id").Find(&out).Error
+	return out, err
+}
+
+// DeleteAudioDeviceCascade deletes the audio device and any channels that
+// reference it (as input or output) in a single transaction.
+func (s *Store) DeleteAudioDeviceCascade(id uint32) ([]Channel, error) {
+	var deleted []Channel
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("input_device_id = ? OR output_device_id = ?", id, id).
+			Find(&deleted).Error; err != nil {
+			return err
+		}
+		for _, ch := range deleted {
+			if err := tx.Delete(&Channel{}, ch.ID).Error; err != nil {
+				return fmt.Errorf("delete channel %d: %w", ch.ID, err)
+			}
+		}
+		return tx.Delete(&AudioDevice{}, id).Error
+	})
+	return deleted, err
+}
+
 // ---------------------------------------------------------------------------
 // Channel CRUD
 // ---------------------------------------------------------------------------

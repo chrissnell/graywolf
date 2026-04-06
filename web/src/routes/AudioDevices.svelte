@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Badge, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Badge, AlertDialog, Checkbox } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -16,6 +16,8 @@
   let errors = $state({});
   let deleteTarget = $state(null);
   let deleteOpen = $state(false);
+  let deleteAffectedChannels = $state([]);
+  let deleteCascadeAcked = $state(false);
 
   function emptyForm() {
     return { name: '', device_path: '', sample_rate: '48000', channels: '1', source_type: 'soundcard', direction: 'input' };
@@ -99,22 +101,40 @@
     }
   }
 
-  function confirmDelete(row) {
+  async function confirmDelete(row) {
     deleteTarget = row;
+    deleteAffectedChannels = [];
+    deleteCascadeAcked = false;
+    try {
+      const channels = await api.get('/channels') || [];
+      deleteAffectedChannels = channels.filter(
+        ch => ch.input_device_id === row.id || ch.output_device_id === row.id
+      );
+    } catch (_) {
+      // If we can't fetch channels, still allow delete — backend will 409 if needed
+    }
     deleteOpen = true;
   }
 
   async function executeDelete() {
     if (!deleteTarget) return;
+    const cascade = deleteAffectedChannels.length > 0;
     try {
-      await api.delete(`/audio-devices/${deleteTarget.id}`);
-      toasts.success('Device deleted');
+      const qs = cascade ? '?cascade=true' : '';
+      await api.delete(`/audio-devices/${deleteTarget.id}${qs}`);
+      const count = deleteAffectedChannels.length;
+      const msg = count > 0
+        ? `Device and ${count} channel${count !== 1 ? 's' : ''} deleted`
+        : 'Device deleted';
+      toasts.success(msg);
       await loadDevices();
     } catch (err) {
       toasts.error(err.message);
     } finally {
       deleteOpen = false;
       deleteTarget = null;
+      deleteAffectedChannels = [];
+      deleteCascadeAcked = false;
     }
   }
 
@@ -281,9 +301,27 @@
     <AlertDialog.Description>
       Are you sure you want to delete "{deleteTarget?.name}"? This cannot be undone.
     </AlertDialog.Description>
+    {#if deleteAffectedChannels.length > 0}
+      <div class="cascade-warning">
+        <strong>The following channels use this device and will also be deleted:</strong>
+        <ul class="affected-channels">
+          {#each deleteAffectedChannels as ch}
+            <li>{ch.name}</li>
+          {/each}
+        </ul>
+        <label class="cascade-ack">
+          <Checkbox bind:checked={deleteCascadeAcked} />
+          <span>I understand — delete this device and its channels</span>
+        </label>
+      </div>
+    {/if}
     <div class="modal-footer">
       <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-      <AlertDialog.Action class="danger-action" onclick={executeDelete}>Delete</AlertDialog.Action>
+      <AlertDialog.Action
+        class="danger-action"
+        onclick={executeDelete}
+        disabled={deleteAffectedChannels.length > 0 && !deleteCascadeAcked}
+      >Delete</AlertDialog.Action>
     </div>
   </AlertDialog.Content>
 </AlertDialog>
@@ -503,5 +541,37 @@
   :global(.danger-action) {
     background: var(--color-danger) !important;
     color: white !important;
+  }
+  :global(.danger-action:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .cascade-warning {
+    margin: 12px 1.5rem 0;
+    padding: 12px;
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .cascade-warning strong {
+    display: block;
+    margin-bottom: 6px;
+  }
+  .affected-channels {
+    margin: 0 0 10px 18px;
+    padding: 0;
+  }
+  .affected-channels li {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+  .cascade-ack {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-secondary);
   }
 </style>

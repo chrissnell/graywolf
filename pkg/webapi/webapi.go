@@ -279,9 +279,33 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		s.notifyBridgeForDevice(r.Context(), id)
 		writeJSON(w, http.StatusOK, d)
 	case http.MethodDelete:
-		if err := s.store.DeleteAudioDevice(id); err != nil {
+		cascade := r.URL.Query().Get("cascade") == "true"
+		deps, err := s.store.ChannelsForDevice(id)
+		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
+		}
+		if len(deps) > 0 && !cascade {
+			names := make([]string, len(deps))
+			for i, ch := range deps {
+				names[i] = ch.Name
+			}
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":    "device is referenced by channels",
+				"channels": names,
+			})
+			return
+		}
+		if len(deps) > 0 {
+			if _, err := s.store.DeleteAudioDeviceCascade(id); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		} else {
+			if err := s.store.DeleteAudioDevice(id); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
 		}
 		s.notifyBridgeForDevice(r.Context(), id)
 		w.WriteHeader(http.StatusNoContent)
