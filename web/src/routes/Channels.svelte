@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Toggle } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -11,23 +11,25 @@
   let channels = $state([]);
   let modalOpen = $state(false);
   let editing = $state(null);
-  let form = $state({ name: '', frequency: '', modem_type: 'afsk1200', baud_rate: '1200', device: '', enabled: true });
+  let form = $state({
+    name: '', audio_device_id: '1', audio_channel: '0',
+    modem_type: 'afsk', bit_rate: '1200', mark_freq: '1200', space_freq: '2200',
+  });
   let errors = $state({});
 
   const columns = [
     { key: 'name', label: 'Name' },
-    { key: 'frequency', label: 'Frequency' },
     { key: 'modem_type', label: 'Modem' },
-    { key: 'baud_rate', label: 'Baud Rate' },
-    { key: 'device', label: 'Device' },
-    { key: 'enabled', label: 'Enabled' },
+    { key: 'bit_rate', label: 'Bit Rate' },
+    { key: 'audio_device_id', label: 'Device ID' },
+    { key: 'audio_channel', label: 'Audio Ch' },
   ];
 
   const modemOptions = [
-    { value: 'afsk1200', label: 'AFSK 1200' },
-    { value: 'gfsk9600', label: 'GFSK 9600' },
-    { value: 'psk31', label: 'PSK31' },
-    { value: 'fsk300', label: 'FSK 300' },
+    { value: 'afsk', label: 'AFSK' },
+    { value: 'gfsk', label: 'GFSK' },
+    { value: 'psk', label: 'PSK' },
+    { value: 'fsk', label: 'FSK' },
   ];
 
   onMount(loadChannels);
@@ -38,14 +40,24 @@
 
   function openCreate() {
     editing = null;
-    form = { name: '', frequency: '', modem_type: 'afsk1200', baud_rate: '1200', device: '', enabled: true };
+    form = {
+      name: '', audio_device_id: '1', audio_channel: '0',
+      modem_type: 'afsk', bit_rate: '1200', mark_freq: '1200', space_freq: '2200',
+    };
     errors = {};
     modalOpen = true;
   }
 
   function openEdit(row) {
     editing = row;
-    form = { ...row, baud_rate: String(row.baud_rate) };
+    form = {
+      ...row,
+      audio_device_id: String(row.audio_device_id),
+      audio_channel: String(row.audio_channel),
+      bit_rate: String(row.bit_rate),
+      mark_freq: String(row.mark_freq),
+      space_freq: String(row.space_freq),
+    };
     errors = {};
     modalOpen = true;
   }
@@ -53,8 +65,6 @@
   function validate() {
     const e = {};
     if (!form.name.trim()) e.name = 'Required';
-    if (!form.frequency.trim()) e.frequency = 'Required';
-    if (!form.device.trim()) e.device = 'Required';
     errors = e;
     return Object.keys(e).length === 0;
   }
@@ -62,7 +72,14 @@
   async function handleSave(e) {
     e.preventDefault();
     if (!validate()) return;
-    const data = { ...form, baud_rate: parseInt(form.baud_rate, 10) };
+    const data = {
+      ...form,
+      audio_device_id: parseInt(form.audio_device_id, 10),
+      audio_channel: parseInt(form.audio_channel, 10),
+      bit_rate: parseInt(form.bit_rate, 10),
+      mark_freq: parseInt(form.mark_freq, 10),
+      space_freq: parseInt(form.space_freq, 10),
+    };
     try {
       if (editing) {
         await api.put(`/channels/${editing.id}`, data);
@@ -101,19 +118,27 @@
     <FormField label="Name" error={errors.name} id="ch-name">
       <Input id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
     </FormField>
-    <FormField label="Frequency" error={errors.frequency} id="ch-freq">
-      <Input id="ch-freq" bind:value={form.frequency} placeholder="144.390" />
+    <FormField label="Audio Device ID" id="ch-dev">
+      <Input id="ch-dev" bind:value={form.audio_device_id} type="number" placeholder="1" />
+    </FormField>
+    <FormField label="Audio Channel" id="ch-ach">
+      <Select id="ch-ach" bind:value={form.audio_channel} options={[
+        { value: '0', label: '0 (Left/Mono)' },
+        { value: '1', label: '1 (Right)' },
+      ]} />
     </FormField>
     <FormField label="Modem Type" id="ch-modem">
       <Select id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
     </FormField>
-    <FormField label="Baud Rate" id="ch-baud">
-      <Input id="ch-baud" bind:value={form.baud_rate} type="number" placeholder="1200" />
+    <FormField label="Bit Rate" id="ch-baud">
+      <Input id="ch-baud" bind:value={form.bit_rate} type="number" placeholder="1200" />
     </FormField>
-    <FormField label="Audio Device" error={errors.device} id="ch-dev">
-      <Input id="ch-dev" bind:value={form.device} placeholder="hw:0" />
+    <FormField label="Mark Freq (Hz)" id="ch-mark">
+      <Input id="ch-mark" bind:value={form.mark_freq} type="number" placeholder="1200" />
     </FormField>
-    <Toggle bind:checked={form.enabled} label="Enabled" />
+    <FormField label="Space Freq (Hz)" id="ch-space">
+      <Input id="ch-space" bind:value={form.space_freq} type="number" placeholder="2200" />
+    </FormField>
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
       <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>

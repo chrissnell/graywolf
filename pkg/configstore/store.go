@@ -74,8 +74,6 @@ func (s *Store) Migrate() error {
 		&AudioDevice{},
 		&Channel{},
 		&PttConfig{},
-		&WebAuth{},
-		&WebSession{},
 		// Phase 4 additions.
 		&KissInterface{},
 		&AgwConfig{},
@@ -179,37 +177,6 @@ func (s *Store) GetPttConfigForChannel(channelID uint32) (*PttConfig, error) {
 	return &p, nil
 }
 
-// ---------------------------------------------------------------------------
-// WebAuth / WebSession (stubs — consumed in later phases)
-// ---------------------------------------------------------------------------
-
-func (s *Store) UpsertWebAuth(w *WebAuth) error {
-	return s.db.Save(w).Error
-}
-
-func (s *Store) GetWebAuth(username string) (*WebAuth, error) {
-	var w WebAuth
-	if err := s.db.First(&w, "username = ?", username).Error; err != nil {
-		return nil, err
-	}
-	return &w, nil
-}
-
-func (s *Store) CreateWebSession(ws *WebSession) error {
-	return s.db.Create(ws).Error
-}
-
-func (s *Store) GetWebSession(token string) (*WebSession, error) {
-	var ws WebSession
-	if err := s.db.First(&ws, "token = ?", token).Error; err != nil {
-		return nil, err
-	}
-	return &ws, nil
-}
-
-func (s *Store) DeleteWebSession(token string) error {
-	return s.db.Delete(&WebSession{}, "token = ?", token).Error
-}
 
 // ---------------------------------------------------------------------------
 // Channel validation

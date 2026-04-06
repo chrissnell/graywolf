@@ -56,19 +56,3 @@ type PttConfig struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
-
-// WebAuth is a bcrypt-hashed credential for the future web UI.
-type WebAuth struct {
-	Username   string `gorm:"primaryKey"`
-	BcryptHash string `gorm:"not null"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-}
-
-// WebSession is a bearer token issued after a successful login.
-type WebSession struct {
-	Token     string `gorm:"primaryKey"`
-	Username  string `gorm:"not null;index"`
-	ExpiresAt time.Time `gorm:"not null;index"`
-	CreatedAt time.Time
-}

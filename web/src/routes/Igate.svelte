@@ -13,7 +13,7 @@
   let loading = $state(false);
 
   onMount(async () => {
-    const data = await api.get('/igate');
+    const data = await api.get('/igate/config');
     if (data) form = { ...data, port: String(data.port) };
   });
 
@@ -30,7 +30,7 @@
     }
     loading = true;
     try {
-      await api.put('/igate', { ...form, port: parseInt(form.port) });
+      await api.put('/igate/config', { ...form, port: parseInt(form.port) });
       toasts.success('iGate config saved');
     } catch (err) {
       toasts.error(err.message);

@@ -15,6 +15,13 @@ func (s *Store) ListKissInterfaces() ([]KissInterface, error) {
 	return out, s.db.Order("id").Find(&out).Error
 }
 
+func (s *Store) GetKissInterface(id uint32) (*KissInterface, error) {
+	var k KissInterface
+	if err := s.db.First(&k, id).Error; err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
 func (s *Store) CreateKissInterface(k *KissInterface) error { return s.db.Create(k).Error }
 func (s *Store) UpdateKissInterface(k *KissInterface) error { return s.db.Save(k).Error }
 func (s *Store) DeleteKissInterface(id uint32) error {

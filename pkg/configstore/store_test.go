@@ -1,9 +1,6 @@
 package configstore
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
@@ -195,32 +192,5 @@ func TestFX25IL2PConfig(t *testing.T) {
 	}
 	if !got.FX25Encode || !got.IL2PEncode {
 		t.Fatalf("expected both true, got fx25=%v il2p=%v", got.FX25Encode, got.IL2PEncode)
-	}
-}
-
-func TestWebAuthAndSession(t *testing.T) {
-	s := newTestStore(t)
-	if err := s.UpsertWebAuth(&WebAuth{Username: "admin", BcryptHash: "$2a$..."}); err != nil {
-		t.Fatal(err)
-	}
-	w, err := s.GetWebAuth("admin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w.BcryptHash == "" {
-		t.Fatalf("hash missing")
-	}
-	ws := &WebSession{Token: "tok", Username: "admin", ExpiresAt: time.Now().Add(time.Hour)}
-	if err := s.CreateWebSession(ws); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.GetWebSession("tok"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.DeleteWebSession("tok"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.GetWebSession("tok"); err == nil {
-		t.Fatalf("expected missing session")
 	}
 }

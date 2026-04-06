@@ -164,9 +164,14 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 		s.notifyBridgeForDevice(r.Context(), c.AudioDeviceID)
 		writeJSON(w, http.StatusOK, c)
 	case http.MethodDelete:
+		// Look up device ID before deleting so we can notify the bridge.
+		ch, _ := s.store.GetChannel(id)
 		if err := s.store.DeleteChannel(id); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
+		}
+		if ch != nil {
+			s.notifyBridgeForDevice(r.Context(), ch.AudioDeviceID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -223,7 +228,7 @@ func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/audio-devices/")
 	if rest == "available" {
-		// TODO(phase6): audio device enumeration IPC round-trip
+		// Placeholder until Rust DSP IPC provides device enumeration.
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
@@ -258,6 +263,7 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.notifyBridgeForDevice(r.Context(), id)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

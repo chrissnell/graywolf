@@ -154,6 +154,13 @@ func (s *Server) handleKissItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		k, err := s.store.GetKissInterface(id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, k)
 	case http.MethodPut:
 		var k configstore.KissInterface
 		if err := json.NewDecoder(r.Body).Decode(&k); err != nil {

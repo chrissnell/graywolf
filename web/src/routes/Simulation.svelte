@@ -6,28 +6,24 @@
   import PageHeader from '../components/PageHeader.svelte';
 
   let enabled = $state(false);
-  let packets = $state([]);
 
   onMount(async () => {
-    const data = await api.get('/simulation');
+    const data = await api.get('/igate/config');
     if (data) {
-      enabled = data.enabled;
-      packets = data.packets || [];
+      enabled = data.simulation_mode || false;
     }
   });
 
   async function toggle() {
     try {
-      await api.put('/simulation', { enabled });
+      await api.post('/igate/simulation', { enabled });
       toasts.success(enabled ? 'Simulation enabled' : 'Simulation disabled');
     } catch (err) {
       toasts.error(err.message);
     }
   }
 
-  function formatTime(ts) {
-    return new Date(ts).toLocaleTimeString();
-  }
+
 </script>
 
 <PageHeader title="Simulation" subtitle="Simulation mode for testing without RF" />
@@ -43,26 +39,6 @@
   </p>
 </Box>
 
-<div style="margin-top: 16px;">
-  <Box title="Logged Packets">
-    <div class="packet-log">
-      {#if packets.length === 0}
-        <div class="empty">No logged packets</div>
-      {:else}
-        {#each packets as pkt}
-          <div class="log-row">
-            <span class="log-time">{formatTime(pkt.timestamp)}</span>
-            <span class="log-dir" class:rx={pkt.direction === 'rx'} class:tx={pkt.direction === 'tx'}>
-              {pkt.direction.toUpperCase()}
-            </span>
-            <span class="log-raw">{pkt.raw}</span>
-          </div>
-        {/each}
-      {/if}
-    </div>
-  </Box>
-</div>
-
 <style>
   .sim-toggle {
     display: flex;
@@ -74,26 +50,4 @@
     font-size: 13px;
     color: var(--text-muted);
   }
-  .packet-log {
-    max-height: 400px;
-    overflow-y: auto;
-    font-size: 12px;
-  }
-  .log-row {
-    display: flex;
-    gap: 8px;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--border-light);
-  }
-  .log-time { color: var(--text-muted); min-width: 70px; }
-  .log-dir {
-    font-weight: 700;
-    font-size: 10px;
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-  .rx { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-  .tx { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
-  .log-raw { color: var(--text-secondary); word-break: break-all; }
-  .empty { color: var(--text-muted); text-align: center; padding: 20px; }
 </style>

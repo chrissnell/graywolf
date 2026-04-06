@@ -31,6 +31,7 @@ type ConfigStore interface {
 
 	// KISS interfaces
 	ListKissInterfaces() ([]KissInterface, error)
+	GetKissInterface(id uint32) (*KissInterface, error)
 	CreateKissInterface(k *KissInterface) error
 	UpdateKissInterface(k *KissInterface) error
 	DeleteKissInterface(id uint32) error
@@ -70,15 +71,6 @@ type ConfigStore interface {
 
 	// Packet filters
 	ListPacketFilters() ([]PacketFilter, error)
-
-	// Web auth
-	UpsertWebAuth(w *WebAuth) error
-	GetWebAuth(username string) (*WebAuth, error)
-
-	// Web sessions
-	CreateWebSession(ws *WebSession) error
-	GetWebSession(token string) (*WebSession, error)
-	DeleteWebSession(token string) error
 }
 
 // Compile-time check: *Store implements ConfigStore.
