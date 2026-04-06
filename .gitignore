@@ -1,5 +1,7 @@
 target/
 .cursor/
+.vscode/
+.DS_Store
 aprs-test-tracks/
 .context/
 .claude/
