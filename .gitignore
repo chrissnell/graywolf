@@ -6,3 +6,4 @@ aprs-test-tracks/
 .context/
 .claude/
 scratch/
+node_modules/

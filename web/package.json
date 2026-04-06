@@ -14,7 +14,9 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
-    "chonky": "^2.3.2",
-    "chonky-icon-fontawesome": "^2.3.2"
+    "@chrissnell/chonky-ui": "0.1.10",
+    "@internationalized/date": "^3.8.0",
+    "bits-ui": "^2.0.0",
+    "svelte-spa-router": "^4.0.0"
   }
 }

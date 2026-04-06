@@ -1,0 +1,86 @@
+<script>
+  import { onMount } from 'svelte';
+  import { api } from '../lib/api.js';
+  import { toasts } from '../lib/stores.js';
+  import PageHeader from '../components/PageHeader.svelte';
+  import Card from '../components/Card.svelte';
+  import FormField from '../components/FormField.svelte';
+  import TextInput from '../components/TextInput.svelte';
+  import SelectInput from '../components/SelectInput.svelte';
+  import Btn from '../components/Btn.svelte';
+
+  let form = $state({
+    source: 'serial', serial_port: '/dev/ttyACM0', baud_rate: '9600',
+    gpsd_host: 'localhost', gpsd_port: '2947',
+  });
+  let loading = $state(false);
+
+  const sourceOptions = [
+    { value: 'serial', label: 'Serial Port' },
+    { value: 'gpsd', label: 'GPSD' },
+    { value: 'none', label: 'None' },
+  ];
+
+  onMount(async () => {
+    const data = await api.get('/gps');
+    if (data) form = {
+      source: data.source, serial_port: data.serial_port,
+      baud_rate: String(data.baud_rate), gpsd_host: data.gpsd_host,
+      gpsd_port: String(data.gpsd_port),
+    };
+  });
+
+  async function handleSave(e) {
+    e.preventDefault();
+    loading = true;
+    try {
+      await api.put('/gps', {
+        ...form, baud_rate: parseInt(form.baud_rate), gpsd_port: parseInt(form.gpsd_port),
+      });
+      toasts.success('GPS config saved');
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      loading = false;
+    }
+  }
+</script>
+
+<PageHeader title="GPS" subtitle="GPS source configuration" />
+
+<Card>
+  <form onsubmit={handleSave}>
+    <FormField label="Source" id="gps-source">
+      <SelectInput id="gps-source" bind:value={form.source} options={sourceOptions} />
+    </FormField>
+    {#if form.source === 'serial'}
+      <FormField label="Serial Port" id="gps-serial">
+        <TextInput id="gps-serial" bind:value={form.serial_port} placeholder="/dev/ttyACM0" />
+      </FormField>
+      <FormField label="Baud Rate" id="gps-baud">
+        <SelectInput id="gps-baud" bind:value={form.baud_rate} options={[
+          { value: '4800', label: '4800' },
+          { value: '9600', label: '9600' },
+          { value: '38400', label: '38400' },
+          { value: '115200', label: '115200' },
+        ]} />
+      </FormField>
+    {:else if form.source === 'gpsd'}
+      <FormField label="GPSD Host" id="gps-host">
+        <TextInput id="gps-host" bind:value={form.gpsd_host} placeholder="localhost" />
+      </FormField>
+      <FormField label="GPSD Port" id="gps-port">
+        <TextInput id="gps-port" bind:value={form.gpsd_port} type="number" placeholder="2947" />
+      </FormField>
+    {/if}
+    <div class="form-actions">
+      <Btn variant="primary" type="submit" disabled={loading}>
+        {loading ? 'Saving...' : 'Save'}
+      </Btn>
+    </div>
+  </form>
+</Card>
+
+<style>
+  .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+</style>

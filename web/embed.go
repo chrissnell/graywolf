@@ -31,8 +31,36 @@ func FS() fs.FS {
 
 // Handler returns an http.Handler that serves the embedded UI with
 // index.html as the default document. Unknown paths fall through to
-// 404 rather than SPA-rewriting; Phase 6 will add history-mode
-// rewriting once the Svelte router is wired up.
+// 404 rather than SPA-rewriting.
 func Handler() http.Handler {
 	return http.FileServer(http.FS(FS()))
+}
+
+// SPAHandler returns an http.Handler that serves static assets from the
+// embedded dist/ and falls back to index.html for unmatched paths. This
+// enables client-side routing in the Svelte SPA.
+func SPAHandler() http.Handler {
+	fsys := FS()
+	fileServer := http.FileServer(http.FS(fsys))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Try to serve the exact file first.
+		path := r.URL.Path
+		if path == "/" {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Strip leading slash for fs.Open.
+		name := path[1:]
+		if f, err := fsys.Open(name); err == nil {
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// File not found — serve index.html for SPA routing.
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	})
 }
