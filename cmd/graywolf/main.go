@@ -65,7 +65,8 @@ func main() {
 	}
 	defer store.Close()
 
-	// -flac flag: override the first audio device to use a FLAC file.
+	// -flac flag: override (or create) the first audio device to use a FLAC file,
+	// and ensure at least one channel references it.
 	if *flacFile != "" {
 		absPath, err := filepath.Abs(*flacFile)
 		if err != nil {
@@ -78,17 +79,40 @@ func main() {
 		}
 		devs, _ := store.ListAudioDevices()
 		if len(devs) == 0 {
-			logger.Error("no audio devices to override")
-			os.Exit(1)
-		}
-		devs[0].SourceType = "flac"
-		devs[0].SourcePath = absPath
-		devs[0].SampleRate = 44100
-		if err := store.UpdateAudioDevice(&devs[0]); err != nil {
-			logger.Error("update audio device for flac", "err", err)
-			os.Exit(1)
+			dev := &configstore.AudioDevice{
+				Name: "FLAC Input", Direction: "input",
+				SourceType: "flac", SourcePath: absPath,
+				SampleRate: 44100, Channels: 1, Format: "s16le",
+			}
+			if err := store.CreateAudioDevice(dev); err != nil {
+				logger.Error("create flac audio device", "err", err)
+				os.Exit(1)
+			}
+			devs = []configstore.AudioDevice{*dev}
+		} else {
+			devs[0].SourceType = "flac"
+			devs[0].SourcePath = absPath
+			devs[0].SampleRate = 44100
+			if err := store.UpdateAudioDevice(&devs[0]); err != nil {
+				logger.Error("update audio device for flac", "err", err)
+				os.Exit(1)
+			}
 		}
 		logger.Info("audio device overridden", "source", "flac", "path", absPath)
+
+		// Ensure at least one channel exists so the FLAC source gets used.
+		chs, _ := store.ListChannels()
+		if len(chs) == 0 {
+			ch := &configstore.Channel{
+				Name: "FLAC Test", InputDeviceID: devs[0].ID,
+				ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+			}
+			if err := store.CreateChannel(ch); err != nil {
+				logger.Error("create default channel for flac", "err", err)
+				os.Exit(1)
+			}
+			logger.Info("created default channel for flac input", "device_id", devs[0].ID)
+		}
 	}
 
 	m := metrics.New()

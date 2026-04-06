@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { Box } from '@chrissnell/chonky-ui';
+  import { Box, LogViewer } from '@chrissnell/chonky-ui';
   import PageHeader from '../components/PageHeader.svelte';
 
   let packets = $state([]);
@@ -21,16 +21,14 @@
   });
 
   async function loadData() {
-    try {
-      const [pkts, pos, st] = await Promise.all([
-        api.get('/packets?limit=20'),
-        api.get('/position'),
-        api.get('/channels/1/stats'),
-      ]);
-      packets = pkts || [];
-      position = pos;
-      stats = st || stats;
-    } catch (_) { /* mock fallback handles it */ }
+    const [pkts, pos, st] = await Promise.allSettled([
+      api.get('/packets?limit=20'),
+      api.get('/position'),
+      api.get('/channels/1/stats'),
+    ]);
+    if (pkts.status === 'fulfilled') packets = pkts.value || [];
+    if (pos.status === 'fulfilled') position = pos.value;
+    if (st.status === 'fulfilled' && st.value) stats = st.value;
   }
 
   async function loadAudioDevices() {
@@ -48,7 +46,49 @@
   function formatTime(ts) {
     return new Date(ts).toLocaleTimeString();
   }
+
+  function parseDisplay(pkt) {
+    const d = pkt.decoded;
+    if (d?.source) return { src: d.source, dst: d.dest || '' };
+    const s = pkt.display || '';
+    const gt = s.indexOf('>');
+    if (gt < 0) return { src: '', dst: '' };
+    const src = s.substring(0, gt);
+    const rest = s.substring(gt + 1);
+    const end = rest.search(/[,:]/);
+    const dst = end >= 0 ? rest.substring(0, end) : rest;
+    return { src, dst };
+  }
+
+  let feedEntries = $derived(packets.map(pkt => {
+    const calls = parseDisplay(pkt);
+    return {
+      time: formatTime(pkt.timestamp),
+      direction: pkt.direction || '',
+      channel: pkt.channel || '—',
+      source: calls.src,
+      dest: calls.dst,
+      info: pkt.display || '',
+    };
+  }));
+
 </script>
+
+{#snippet dirBadge(value)}
+  <span class="dir-badge" class:rx={value === 'RX'} class:tx={value === 'TX'}>{value}</span>
+{/snippet}
+
+{#snippet chBadge(value)}
+  <span class="ch-badge">{value}</span>
+{/snippet}
+
+{#snippet srcCall(value)}
+  <span class="col-src">{value}</span>
+{/snippet}
+
+{#snippet dstCall(value)}
+  <span class="col-dst">{value}</span>
+{/snippet}
 
 <PageHeader title="Dashboard" subtitle="Live station overview" />
 
@@ -118,7 +158,7 @@
   </Box>
 
   <Box title="GPS Position">
-    {#if position}
+    {#if position?.latitude != null}
       <div class="position-info">
         <span>{position.latitude.toFixed(4)}°N, {position.longitude.toFixed(4)}°W</span>
         <span class="pos-detail">Alt: {position.altitude}m | Fix: {position.fix} | Sats: {position.satellites}</span>
@@ -130,24 +170,26 @@
 </div>
 
 <Box title="Live Packet Feed">
-  <div class="packet-feed">
-    {#if packets.length === 0}
-      <div class="empty-feed">Waiting for packets...</div>
-    {:else}
-      {#each packets as pkt}
-        <div class="packet-row">
-          <span class="pkt-time">{formatTime(pkt.timestamp)}</span>
-          <span class="pkt-dir" class:pkt-rx={pkt.direction === 'rx'} class:pkt-tx={pkt.direction === 'tx'}>
-            {pkt.direction.toUpperCase()}
-          </span>
-          <span class="pkt-call">{pkt.source}</span>
-          <span class="pkt-arrow">→</span>
-          <span class="pkt-dest">{pkt.destination}</span>
-          <span class="pkt-raw">{pkt.raw}</span>
-        </div>
-      {/each}
-    {/if}
-  </div>
+  {#if packets.length === 0}
+    <div class="empty-feed">Waiting for packets...</div>
+  {:else}
+    <LogViewer
+      entries={feedEntries}
+      columns={[
+        { key: 'time', label: 'Time', width: '90px' },
+        { key: 'direction', label: 'Dir', width: '50px', render: dirBadge },
+        { key: 'channel', label: 'Ch', width: '50px', render: chBadge },
+        { key: 'source', label: 'Source', width: '100px', render: srcCall },
+        { key: 'dest', label: 'Dest', width: '100px', render: dstCall },
+        { key: 'info', label: 'Info', width: '1fr' },
+      ]}
+      live={true}
+      autoscroll={true}
+      height="400px"
+      showHeader={true}
+      class="feed-viewer"
+    />
+  {/if}
 </Box>
 
 <style>
@@ -269,41 +311,39 @@
     font-size: 12px;
     color: var(--text-muted);
   }
-  .packet-feed {
-    max-height: 400px;
-    overflow-y: auto;
-    font-size: 12px;
+  :global(.feed-viewer) {
+    font-size: 13px;
   }
-  .packet-row {
-    display: flex;
-    gap: 8px;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--border-light);
-    align-items: baseline;
-    flex-wrap: wrap;
+  :global(.feed-viewer .log-grid-cell) {
+    padding-top: 5px;
+    padding-bottom: 5px;
+    font-size: 13px;
   }
-  .pkt-time {
-    color: var(--text-muted);
-    min-width: 70px;
+  :global(.feed-viewer .log-grid-header) {
+    font-size: 11px;
   }
-  .pkt-dir {
+  :global(.feed-viewer .dir-badge),
+  :global(.feed-viewer .ch-badge) {
     font-weight: 700;
     font-size: 10px;
-    padding: 1px 4px;
+    padding: 2px 5px;
     border-radius: 3px;
+    display: inline-block;
     min-width: 24px;
     text-align: center;
   }
-  .pkt-rx { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-  .pkt-tx { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
-  .pkt-call { color: var(--accent); font-weight: 500; }
-  .pkt-arrow { color: var(--text-muted); }
-  .pkt-dest { color: var(--text-secondary); }
-  .pkt-raw {
-    color: var(--text-muted);
-    word-break: break-all;
-    flex: 1;
-    min-width: 200px;
+  :global(.feed-viewer .dir-badge.rx) { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+  :global(.feed-viewer .dir-badge.tx) { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
+  :global(.feed-viewer .ch-badge) {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+  }
+  :global(.feed-viewer .col-src) {
+    color: #d4a040;
+    font-weight: 500;
+  }
+  :global(.feed-viewer .col-dst) {
+    color: #58a6ff;
   }
   .empty-feed {
     color: var(--text-muted);

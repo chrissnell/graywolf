@@ -57,11 +57,14 @@ func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 	// CONFIGURING: send audio/channel/ptt, then StartAudio.
 	// ------------------------------------------------------------------
 	b.setState(StateConfiguring)
-	if err := b.pushConfiguration(send); err != nil {
+	hasChannels, err := b.pushConfiguration(send)
+	if err != nil {
 		return fmt.Errorf("configure: %w", err)
 	}
-	if err := send(&pb.IpcMessage{Payload: &pb.IpcMessage_StartAudio{StartAudio: &pb.StartAudio{}}}); err != nil {
-		return fmt.Errorf("StartAudio: %w", err)
+	if hasChannels {
+		if err := send(&pb.IpcMessage{Payload: &pb.IpcMessage_StartAudio{StartAudio: &pb.StartAudio{}}}); err != nil {
+			return fmt.Errorf("StartAudio: %w", err)
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -140,23 +143,40 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 
 // pushConfiguration reads the configstore and emits ConfigureAudio,
 // ConfigureChannel, and ConfigurePtt messages for every configured channel.
-// If no store is attached, it pushes a single default FLAC-free no-op
-// configuration — callers that need real configuration must set cfg.Store.
-func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) error {
+// It returns true if at least one channel was configured (and thus
+// StartAudio should follow). Only devices referenced by a channel are
+// configured.
+func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) (bool, error) {
 	if b.cfg.Store == nil {
-		return errors.New("no configstore provided")
+		return false, errors.New("no configstore provided")
 	}
 	devices, err := b.cfg.Store.ListAudioDevices()
 	if err != nil {
-		return fmt.Errorf("list audio devices: %w", err)
+		return false, fmt.Errorf("list audio devices: %w", err)
 	}
 	channels, err := b.cfg.Store.ListChannels()
 	if err != nil {
-		return fmt.Errorf("list channels: %w", err)
+		return false, fmt.Errorf("list channels: %w", err)
+	}
+	if len(channels) == 0 {
+		b.logger.Info("no channels configured, skipping audio setup")
+		return false, nil
 	}
 
-	// Emit one ConfigureAudio per device.
+	// Collect device IDs referenced by at least one channel.
+	usedDevices := make(map[uint32]bool)
+	for _, ch := range channels {
+		usedDevices[ch.InputDeviceID] = true
+		if ch.OutputDeviceID != 0 {
+			usedDevices[ch.OutputDeviceID] = true
+		}
+	}
+
+	// Emit one ConfigureAudio per referenced device.
 	for _, d := range devices {
+		if !usedDevices[d.ID] {
+			continue
+		}
 		msg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigureAudio{ConfigureAudio: &pb.ConfigureAudio{
 			DeviceId:   d.ID,
 			DeviceName: audioDeviceName(&d),
@@ -166,7 +186,7 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) error {
 			Format:     d.Format,
 		}}}
 		if err := send(msg); err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -193,7 +213,7 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) error {
 			Il2PEncode:    ch.IL2PEncode,
 		}}}
 		if err := send(cmsg); err != nil {
-			return err
+			return false, err
 		}
 
 		ptt, err := b.cfg.Store.GetPttConfigForChannel(ch.ID)
@@ -212,10 +232,10 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) error {
 			DwaitMs:    ptt.DwaitMs,
 		}}}
 		if err := send(pmsg); err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+	return true, nil
 }
 
 // audioDeviceName picks the string the Rust modem actually consumes as a
