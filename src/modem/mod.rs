@@ -397,7 +397,13 @@ impl Modem {
                             }
 
                             // DCD changes from primary demod
-                            let dcd_changes = take_demod_dcd_changes(&mut chan_pipe.demod);
+                            let chan_id = chan_pipe.channel_id as usize;
+                            let dcd_changes = take_demod_dcd_changes(
+                                &mut chan_pipe.demod,
+                                &mut chan_pipe.prev_dcd_any,
+                                chan_id,
+                                0,
+                            );
                             for c in dcd_changes {
                                 self.dcd_transitions += 1;
                                 let msg = IpcMessage::dcd_change(DcdChange {
@@ -536,11 +542,42 @@ fn take_demod_frames(demod: &mut ChannelDemod) -> Vec<DecodedFrame> {
     }
 }
 
-fn take_demod_dcd_changes(demod: &mut ChannelDemod) -> Vec<crate::demod_afsk::DcdChange> {
+fn take_demod_dcd_changes(
+    demod: &mut ChannelDemod,
+    prev_dcd: &mut bool,
+    chan: usize,
+    subchan: usize,
+) -> Vec<crate::demod_afsk::DcdChange> {
     match demod {
         ChannelDemod::Afsk(d) => d.take_dcd_changes(),
-        // PSK and 9600 don't produce DcdChange events in the same way
-        ChannelDemod::Psk(_) | ChannelDemod::Baseband9600(_) => Vec::new(),
+        ChannelDemod::Psk(d) => {
+            let cur = d.data_detect();
+            if cur != *prev_dcd {
+                *prev_dcd = cur;
+                vec![crate::demod_afsk::DcdChange {
+                    chan,
+                    subchan,
+                    slice: 0,
+                    data_detect: cur,
+                }]
+            } else {
+                Vec::new()
+            }
+        }
+        ChannelDemod::Baseband9600(d) => {
+            let cur = d.data_detect();
+            if cur != *prev_dcd {
+                *prev_dcd = cur;
+                vec![crate::demod_afsk::DcdChange {
+                    chan,
+                    subchan,
+                    slice: 0,
+                    data_detect: cur,
+                }]
+            } else {
+                Vec::new()
+            }
+        }
     }
 }
 

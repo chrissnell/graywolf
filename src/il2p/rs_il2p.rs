@@ -6,16 +6,19 @@
 
 use crate::fx25::rs::RsCodec;
 
+/// IL2P uses FCR=0 (unlike FX.25 which uses FCR=1).
+const IL2P_FCR: usize = 0;
+
 /// Encode IL2P header (13 bytes) → 2 parity bytes.
 pub fn rs_encode_header(data: &[u8; 13]) -> [u8; 2] {
-    let rs = RsCodec::new(2);
+    let rs = RsCodec::with_fcr(2, IL2P_FCR);
     let parity = rs.encode(data);
     [parity[0], parity[1]]
 }
 
 /// Decode IL2P header (15 bytes in-place). Returns true on success.
 pub fn rs_decode_header(block: &mut [u8; 15]) -> bool {
-    let rs = RsCodec::new(2);
+    let rs = RsCodec::with_fcr(2, IL2P_FCR);
     let mut v = block.to_vec();
     match rs.decode(&mut v) {
         Some(true) => {
@@ -28,13 +31,13 @@ pub fn rs_decode_header(block: &mut [u8; 15]) -> bool {
 
 /// Encode IL2P payload block → parity bytes.
 pub fn rs_encode_payload(data: &[u8], ncheck: usize) -> Vec<u8> {
-    let rs = RsCodec::new(ncheck);
+    let rs = RsCodec::with_fcr(ncheck, IL2P_FCR);
     rs.encode(data)
 }
 
 /// Decode IL2P payload block in-place. Returns true on success.
 pub fn rs_decode_payload(block: &mut Vec<u8>, _ndata: usize, ncheck: usize) -> bool {
-    let rs = RsCodec::new(ncheck);
+    let rs = RsCodec::with_fcr(ncheck, IL2P_FCR);
     matches!(rs.decode(block), Some(true))
 }
 

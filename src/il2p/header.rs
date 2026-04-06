@@ -4,18 +4,87 @@
 //! PID, and payload length in a compact binary format. It is RS-encoded
 //! to 15 bytes (13 data + 2 parity) for transmission.
 //!
-//! Ported from direwolf il2p_header.c.
+//! Byte layout (direwolf-compatible):
+//!   Bits 0-5 of bytes 0-11: callsign chars in DEC SIXBIT
+//!     - bytes 0-5: destination, bytes 6-11: source
+//!   Bit 6 of bytes 0-11: UI(1) + PID(4) + Control(7)
+//!   Bit 7 of bytes 0-11: FEC(1) + HdrType(1) + PayloadLen(10)
+//!   Byte 12: dest_ssid(hi nibble) | src_ssid(lo nibble)
 
 use super::rs_il2p;
 
-/// IL2P header (decoded).
+// DEC SIXBIT conversions
+fn ascii_to_sixbit(a: u8) -> u8 {
+    if a >= b' ' && a <= b'_' { a - b' ' } else { 31 }
+}
+
+fn sixbit_to_ascii(s: u8) -> u8 {
+    s + b' '
+}
+
+// Encode an AX.25 PID into IL2P 4-bit PID field. Returns None if not representable.
+fn encode_pid(pid: u8) -> Option<u8> {
+    match pid {
+        p if (p & 0x30) == 0x20 => Some(0x2), // AX.25 Layer 3
+        p if (p & 0x30) == 0x10 => Some(0x2),
+        0x01 => Some(0x3), // ISO 8208
+        0x06 => Some(0x4), // Compressed TCP/IP
+        0x07 => Some(0x5), // Uncompressed TCP/IP
+        0x08 => Some(0x6), // Segmentation fragment
+        0xcc => Some(0xb), // ARPA Internet Protocol
+        0xcd => Some(0xc), // ARPA Address Resolution
+        0xce => Some(0xd), // FlexNet
+        0xcf => Some(0xe), // TheNET
+        0xf0 => Some(0xf), // No L3
+        _ => None,
+    }
+}
+
+// Decode IL2P 4-bit PID to AX.25 8-bit PID.
+fn decode_pid(pid: u8) -> u8 {
+    const AXPID: [u8; 16] = [
+        0xf0, 0xf0, 0x20, 0x01, 0x06, 0x07, 0x08, 0xf0,
+        0xf0, 0xf0, 0xf0, 0xcc, 0xcd, 0xce, 0xcf, 0xf0,
+    ];
+    AXPID[(pid & 0x0f) as usize]
+}
+
+// Set a multi-bit field in the header, one bit per byte at the given bit position.
+// value LSB goes into hdr[lsb_index], next bit into hdr[lsb_index-1], etc.
+fn set_field(hdr: &mut [u8; 13], bit_num: u8, lsb_index: usize, width: usize, value: u32) {
+    let mut val = value;
+    let mut idx = lsb_index;
+    for _ in 0..width {
+        if val & 1 != 0 {
+            hdr[idx] |= 1 << bit_num;
+        }
+        val >>= 1;
+        if idx == 0 { break; }
+        idx -= 1;
+    }
+}
+
+// Extract a multi-bit field from the header.
+fn get_field(hdr: &[u8; 13], bit_num: u8, lsb_index: usize, width: usize) -> u32 {
+    let mut result = 0u32;
+    let msb_index = lsb_index - (width - 1);
+    for i in 0..width {
+        result <<= 1;
+        if hdr[msb_index + i] & (1 << bit_num) != 0 {
+            result |= 1;
+        }
+    }
+    result
+}
+
+/// IL2P header (decoded to AX.25-level fields).
 #[derive(Clone, Debug)]
 pub struct Il2pHeader {
-    /// Destination callsign (up to 6 chars, space-padded).
+    /// Destination callsign (up to 6 ASCII chars, space-padded).
     pub dest_call: [u8; 6],
     /// Destination SSID (0-15).
     pub dest_ssid: u8,
-    /// Source callsign (up to 6 chars, space-padded).
+    /// Source callsign (up to 6 ASCII chars, space-padded).
     pub src_call: [u8; 6],
     /// Source SSID (0-15).
     pub src_ssid: u8,
@@ -32,17 +101,26 @@ pub struct Il2pHeader {
     /// Command/Response bits.
     pub cr_dest: bool,
     pub cr_src: bool,
+    /// Header type (0 = transparent, 1 = compact).
+    pub hdr_type: u8,
+    /// Max FEC flag.
+    pub max_fec: bool,
+    /// IL2P-encoded control field (7 bits).
+    il2p_control: u8,
+    /// IL2P-encoded PID field (4 bits).
+    il2p_pid: u8,
 }
 
 impl Il2pHeader {
     /// Build from an AX.25 frame (without FCS).
+    /// Returns None if the frame can't be encoded as type 1 header.
     pub fn from_ax25(ax25: &[u8]) -> Option<Self> {
         if ax25.len() < 15 {
             return None; // minimum: dest(7) + src(7) + ctrl(1)
         }
 
         // Parse destination address
-        let mut dest_call = [0x20u8; 6]; // space-filled
+        let mut dest_call = [b' '; 6];
         for i in 0..6 {
             dest_call[i] = ax25[i] >> 1;
         }
@@ -50,7 +128,7 @@ impl Il2pHeader {
         let cr_dest = (ax25[6] & 0x80) != 0;
 
         // Parse source address
-        let mut src_call = [0x20u8; 6];
+        let mut src_call = [b' '; 6];
         for i in 0..6 {
             src_call[i] = ax25[7 + i] >> 1;
         }
@@ -58,34 +136,33 @@ impl Il2pHeader {
         let cr_src = (ax25[13] & 0x80) != 0;
         let last_addr = (ax25[13] & 0x01) != 0;
 
-        // Find end of address field (digipeaters)
-        let mut addr_end = 14;
+        // Type 1 headers only support exactly 2 addresses
         if !last_addr {
-            // Skip digipeater addresses
-            let mut idx = 14;
-            while idx + 6 < ax25.len() {
-                if ax25[idx + 6] & 0x01 != 0 {
-                    addr_end = idx + 7;
-                    break;
-                }
-                idx += 7;
-            }
-            if addr_end == 14 {
-                addr_end = ax25.len().min(14 + 8 * 7); // max 10 addresses
+            return None;
+        }
+
+        // Validate callsign chars are DEC SIXBIT representable
+        for &c in dest_call.iter().chain(src_call.iter()) {
+            if c < b' ' || c > b'_' {
+                return None;
             }
         }
 
-        let control = if addr_end < ax25.len() { ax25[addr_end] } else { 0x03 };
-        let is_ui = control == 0x03 || control == 0x13;
+        let addr_end = 14;
+        let control = if addr_end < ax25.len() { ax25[addr_end] } else { return None; };
 
-        let pid = if is_ui && addr_end + 1 < ax25.len() {
-            ax25[addr_end + 1]
+        // Determine frame type from AX.25 control byte
+        let (_il2p_ui, il2p_pid, il2p_control, is_ui, ax25_pid) =
+            classify_ax25_control(control, ax25, addr_end, cr_dest)?;
+
+        let info_offset = if is_ui || (control & 0x01) == 0 {
+            // UI frames and I frames have a PID byte
+            addr_end + 2
         } else {
-            0xF0
+            // S frames and non-UI U frames have no PID byte
+            addr_end + 1
         };
-
-        let info_offset = if is_ui { addr_end + 2 } else { addr_end + 1 };
-        let payload_len = if info_offset < ax25.len() {
+        let payload_len = if info_offset <= ax25.len() {
             ax25.len() - info_offset
         } else {
             0
@@ -97,12 +174,16 @@ impl Il2pHeader {
             src_call,
             src_ssid,
             control,
-            pid,
+            pid: ax25_pid,
             payload_len,
             ax25_info_offset: info_offset,
             is_ui,
             cr_dest,
             cr_src,
+            hdr_type: 1,
+            max_fec: false,
+            il2p_control,
+            il2p_pid,
         })
     }
 
@@ -133,89 +214,84 @@ impl Il2pHeader {
         // Control
         frame.push(self.control);
 
-        // PID (only for UI frames)
-        if self.is_ui {
+        // PID for I and UI frames
+        if self.is_ui || (self.control & 0x01) == 0 {
             frame.push(self.pid);
         }
 
         Some(frame)
     }
 
-    /// Serialize header to 13 bytes for RS encoding.
+    /// Serialize header to 13 bytes matching direwolf's il2p_type_1_header().
     pub fn to_bytes(&self) -> [u8; 13] {
-        let mut bytes = [0u8; 13];
+        let mut hdr = [0u8; 13];
 
-        // Bytes 0-5: destination callsign (6 chars, shifted left by 1, space-padded)
+        // Bytes 0-5: destination callsign in DEC SIXBIT (low 6 bits)
         for i in 0..6 {
-            bytes[i] = self.dest_call[i];
+            hdr[i] = ascii_to_sixbit(self.dest_call[i]);
         }
 
-        // Byte 6: dest SSID and flags
-        bytes[6] = self.dest_ssid | if self.cr_dest { 0x80 } else { 0 };
-
-        // Bytes 7-12: encode src call, SSID, control, PID, payload length
-        // This is a compact encoding following IL2P spec
+        // Bytes 6-11: source callsign in DEC SIXBIT (low 6 bits)
         for i in 0..6 {
-            bytes[7 + i] = self.src_call[i];
+            hdr[i + 6] = ascii_to_sixbit(self.src_call[i]);
         }
 
-        // We need to pack: src_ssid(4), control(8), pid(8), payload_len(10), cr_src(1), is_ui(1)
-        // into bytes 6..12. Let me use a simpler flat layout:
-        // Repacking to fit 13 bytes total:
-        // [dest_call(6)][dest_ssid_flags(1)][src_call_compressed(4)][ctrl_pid_len(2)]
+        // Byte 12: dest SSID (high nibble) | src SSID (low nibble)
+        hdr[12] = (self.dest_ssid << 4) | (self.src_ssid & 0x0f);
 
-        // Actually, let's follow a straightforward layout:
-        // bytes[0..6] = dest callsign (6 bytes, ASCII right-shifted)
-        // bytes[6] = dest_ssid | flags
-        // bytes[7] = src callsign first 3 chars packed: (call[0]-0x20)<<2 | (call[1]-0x20)>>4
-        // This gets complex. Let's use the direwolf approach of a 13-byte header block.
+        // Bit 6 fields: UI(1) + PID(4) + Control(7)
+        set_field(&mut hdr, 6, 0, 1, self.il2p_ui() as u32);
+        set_field(&mut hdr, 6, 4, 4, self.il2p_pid as u32);
+        set_field(&mut hdr, 6, 11, 7, self.il2p_control as u32);
 
-        // Simpler: just store the fields directly
-        bytes[0] = self.dest_call[0];
-        bytes[1] = self.dest_call[1];
-        bytes[2] = self.dest_call[2];
-        bytes[3] = self.dest_call[3];
-        bytes[4] = self.dest_call[4];
-        bytes[5] = self.dest_call[5];
-        bytes[6] = (self.dest_ssid & 0x0F) | (if self.cr_dest { 0x80 } else { 0 })
-            | (if self.is_ui { 0x40 } else { 0 });
-        bytes[7] = self.src_call[0];
-        bytes[8] = self.src_call[1];
-        bytes[9] = self.src_call[2];
-        bytes[10] = self.src_call[3];
-        // Pack remaining into last 2 bytes
-        // byte 11: src_ssid(4 bits) | src_call[4] high nibble (4 bits)
-        bytes[11] = (self.src_ssid & 0x0F) | ((self.src_call[4] & 0xF0));
-        // byte 12: payload_len low 8 bits. High 2 bits in byte 6 bits 4-5.
-        bytes[12] = (self.payload_len & 0xFF) as u8;
-        bytes[6] |= ((self.payload_len >> 8) as u8 & 0x03) << 4;
+        // Bit 7 fields: FEC(1) + HdrType(1) + PayloadLen(10)
+        set_field(&mut hdr, 7, 0, 1, self.max_fec as u32);
+        set_field(&mut hdr, 7, 1, 1, self.hdr_type as u32);
+        set_field(&mut hdr, 7, 11, 10, self.payload_len as u32);
 
-        bytes
+        hdr
     }
 
-    /// Deserialize from 13 bytes.
+    fn il2p_ui(&self) -> bool {
+        self.is_ui
+    }
+
+    /// Deserialize from 13-byte IL2P header, matching direwolf's
+    /// il2p_decode_header_type_1().
     pub fn from_bytes(bytes: &[u8; 13]) -> Self {
-        let mut dest_call = [0x20u8; 6];
-        dest_call[..6].copy_from_slice(&bytes[..6]);
+        // Extract callsigns from DEC SIXBIT
+        let mut dest_call = [b' '; 6];
+        for i in 0..6 {
+            dest_call[i] = sixbit_to_ascii(bytes[i] & 0x3f);
+        }
+        let mut src_call = [b' '; 6];
+        for i in 0..6 {
+            src_call[i] = sixbit_to_ascii(bytes[i + 6] & 0x3f);
+        }
 
-        let dest_ssid = bytes[6] & 0x0F;
-        let cr_dest = (bytes[6] & 0x80) != 0;
-        let is_ui = (bytes[6] & 0x40) != 0;
-        let payload_len_high = ((bytes[6] >> 4) & 0x03) as usize;
+        // Byte 12: SSIDs
+        let dest_ssid = (bytes[12] >> 4) & 0x0f;
+        let src_ssid = bytes[12] & 0x0f;
 
-        let mut src_call = [0x20u8; 6];
-        src_call[0] = bytes[7];
-        src_call[1] = bytes[8];
-        src_call[2] = bytes[9];
-        src_call[3] = bytes[10];
-        src_call[4] = bytes[11] & 0xF0 | 0x20; // reconstruct
-        // src_call[5] stays 0x20 (space)
+        // Extract bit-6 fields
+        let ui = get_field(bytes, 6, 0, 1);
+        let il2p_pid_val = get_field(bytes, 6, 4, 4) as u8;
+        let il2p_ctrl = get_field(bytes, 6, 11, 7) as u8;
 
-        let src_ssid = bytes[11] & 0x0F;
-        let payload_len = (payload_len_high << 8) | bytes[12] as usize;
+        // Extract bit-7 fields
+        let max_fec = get_field(bytes, 7, 0, 1) != 0;
+        let hdr_type = get_field(bytes, 7, 1, 1) as u8;
+        let payload_len = get_field(bytes, 7, 11, 10) as usize;
 
-        let control = if is_ui { 0x03 } else { 0x03 }; // simplified
-        let pid = if is_ui { 0xF0 } else { 0xF0 };
+        // Reconstruct AX.25 control and PID from IL2P compact encoding.
+        // C bit (command/response) is at bit 2 of il2p_ctrl.
+        let cr_dest = (il2p_ctrl & 0x04) != 0;
+        let cr_src = !cr_dest; // IL2P assumes opposite
+
+        let (control, pid, is_ui) = decode_il2p_control(ui != 0, il2p_pid_val, il2p_ctrl);
+
+        // info offset: 14 (addresses) + 1 (control) + optional 1 (PID)
+        let ax25_info_offset = if is_ui || (control & 0x01) == 0 { 16 } else { 15 };
 
         Il2pHeader {
             dest_call,
@@ -225,11 +301,108 @@ impl Il2pHeader {
             control,
             pid,
             payload_len,
-            ax25_info_offset: if is_ui { 16 } else { 15 },
+            ax25_info_offset,
             is_ui,
             cr_dest,
-            cr_src: false,
+            cr_src,
+            hdr_type,
+            max_fec,
+            il2p_control: il2p_ctrl,
+            il2p_pid: il2p_pid_val,
         }
+    }
+}
+
+/// Classify AX.25 control byte into IL2P compact fields.
+/// Returns (ui, il2p_pid, il2p_control, is_ui, ax25_pid).
+fn classify_ax25_control(
+    control: u8, ax25: &[u8], addr_end: usize, cr_dest: bool,
+) -> Option<(bool, u8, u8, bool, u8)> {
+    let c_bit = if cr_dest { 1u8 } else { 0 };
+
+    // Check frame type from AX.25 control byte
+    if control & 0x01 == 0 {
+        // I frame: N(S) P/F N(R) 0 (mod 8)
+        let ns = (control >> 1) & 0x07;
+        let pf = (control >> 4) & 0x01;
+        let nr = (control >> 5) & 0x07;
+        let ax25_pid = if addr_end + 1 < ax25.len() { ax25[addr_end + 1] } else { 0xf0 };
+        let il2p_pid = encode_pid(ax25_pid)?;
+        let il2p_ctrl = (pf << 6) | (nr << 3) | ns;
+        Some((false, il2p_pid, il2p_ctrl, false, ax25_pid))
+    } else if control & 0x02 == 0 {
+        // S frame: x x x P/F N(R) S S 0 1
+        let ss = (control >> 2) & 0x03;
+        let pf = (control >> 4) & 0x01;
+        let nr = (control >> 5) & 0x07;
+        let il2p_ctrl = (pf << 6) | (nr << 3) | (c_bit << 2) | ss;
+        Some((false, 0, il2p_ctrl, false, 0))
+    } else {
+        // U frame: various
+        let pf = (control >> 4) & 0x01;
+        let (opcode, is_ui) = match control & 0xEF {
+            0x2F => (0, false), // SABM
+            0x43 => (1, false), // DISC
+            0x0F => (2, false), // DM
+            0x63 => (3, false), // UA
+            0x87 => (4, false), // FRMR
+            0x03 => (5, true),  // UI
+            0xAF => (6, false), // XID
+            0xE3 => (7, false), // TEST
+            0x6F => return None, // SABME — can't represent in type 1
+            _ => return None,
+        };
+
+        if is_ui {
+            let ax25_pid = if addr_end + 1 < ax25.len() { ax25[addr_end + 1] } else { 0xf0 };
+            let il2p_pid = encode_pid(ax25_pid)?;
+            let il2p_ctrl = (pf << 6) | (opcode << 3) | (c_bit << 2);
+            Some((true, il2p_pid, il2p_ctrl, true, ax25_pid))
+        } else {
+            let il2p_ctrl = (pf << 6) | (opcode << 3) | (c_bit << 2);
+            Some((false, 1, il2p_ctrl, false, 0))
+        }
+    }
+}
+
+/// Decode IL2P compact control/PID back to AX.25 control byte and PID.
+fn decode_il2p_control(ui: bool, il2p_pid: u8, il2p_ctrl: u8) -> (u8, u8, bool) {
+    let pf = (il2p_ctrl >> 6) & 0x01;
+
+    if il2p_pid == 0 {
+        // S frame: P/F N(R) C S S
+        let ss = il2p_ctrl & 0x03;
+        let nr = (il2p_ctrl >> 3) & 0x07;
+        // AX.25 S frame control: N(R) P/F S S 0 1
+        let control = (nr << 5) | (pf << 4) | (ss << 2) | 0x01;
+        (control, 0, false)
+    } else if il2p_pid == 1 {
+        // U frame (not UI): P/F OPCODE[3] C x x
+        let opcode = (il2p_ctrl >> 3) & 0x07;
+        let control = match opcode {
+            0 => 0x2F | (pf << 4), // SABM
+            1 => 0x43 | (pf << 4), // DISC
+            2 => 0x0F | (pf << 4), // DM
+            3 => 0x63 | (pf << 4), // UA
+            4 => 0x87 | (pf << 4), // FRMR
+            5 => 0x03 | (pf << 4), // UI (shouldn't happen with pid==1)
+            6 => 0xAF | (pf << 4), // XID
+            _ => 0xE3 | (pf << 4), // TEST
+        };
+        (control, 0, false)
+    } else if ui {
+        // UI frame
+        let ax25_pid = decode_pid(il2p_pid);
+        let control = 0x03 | (pf << 4); // UI control byte
+        (control, ax25_pid, true)
+    } else {
+        // I frame: P/F N(R) N(S)
+        let nr = (il2p_ctrl >> 3) & 0x07;
+        let ns = il2p_ctrl & 0x07;
+        let ax25_pid = decode_pid(il2p_pid);
+        // AX.25 I frame control: N(R) P/F N(S) 0
+        let control = (nr << 5) | (pf << 4) | (ns << 1);
+        (control, ax25_pid, false)
     }
 }
 
@@ -281,15 +454,23 @@ mod tests {
             is_ui: true,
             cr_dest: true,
             cr_src: false,
+            hdr_type: 1,
+            max_fec: false,
+            il2p_control: (5 << 3) | (1 << 2), // UI opcode + C bit
+            il2p_pid: 0x0f, // No L3
         };
 
         let bytes = hdr.to_bytes();
         let recovered = Il2pHeader::from_bytes(&bytes);
         assert_eq!(recovered.dest_call, hdr.dest_call);
         assert_eq!(recovered.dest_ssid, hdr.dest_ssid);
+        assert_eq!(recovered.src_call, hdr.src_call);
+        assert_eq!(recovered.src_ssid, hdr.src_ssid);
         assert_eq!(recovered.payload_len, hdr.payload_len);
         assert_eq!(recovered.is_ui, hdr.is_ui);
         assert_eq!(recovered.cr_dest, hdr.cr_dest);
+        // Control should round-trip through IL2P encoding
+        assert_eq!(recovered.pid, 0xF0);
     }
 
     #[test]
@@ -306,6 +487,10 @@ mod tests {
             is_ui: true,
             cr_dest: false,
             cr_src: false,
+            hdr_type: 1,
+            max_fec: false,
+            il2p_control: 5 << 3, // UI opcode, no C bit
+            il2p_pid: 0x0f, // No L3
         };
 
         let encoded = encode_header(&hdr).unwrap();
@@ -314,5 +499,79 @@ mod tests {
         let decoded = decode_header(&encoded).unwrap();
         assert_eq!(decoded.dest_call, hdr.dest_call);
         assert_eq!(decoded.payload_len, hdr.payload_len);
+    }
+
+    #[test]
+    fn sixbit_encoding() {
+        // Space -> 0, 'A' -> 0x21-0x20 = 1, etc.
+        assert_eq!(ascii_to_sixbit(b' '), 0);
+        assert_eq!(ascii_to_sixbit(b'A'), 0x21);
+        assert_eq!(sixbit_to_ascii(0), b' ');
+        assert_eq!(sixbit_to_ascii(0x21), b'A');
+    }
+
+    #[test]
+    fn from_ax25_ui_frame() {
+        // Build AX.25 UI frame: CQ-0 > WB2OSZ-0
+        let mut ax25 = Vec::new();
+        for &c in b"CQ    " { ax25.push(c << 1); }
+        ax25.push(0xe0); // SSID 0, C=1, not last — wait, for 2 addresses with last bit:
+        // Actually: dest SSID byte with C bit set for command
+        ax25[6] = 0xe0; // C=1, SSID=0, RR bits set
+        for &c in b"WB2OSZ" { ax25.push(c << 1); }
+        ax25.push(0x61); // last address, SSID 0, C=0
+        ax25.push(0x03); // UI control
+        ax25.push(0xF0); // No L3 PID
+        ax25.extend_from_slice(b"test");
+
+        let hdr = Il2pHeader::from_ax25(&ax25).unwrap();
+        assert_eq!(&hdr.dest_call, b"CQ    ");
+        assert_eq!(&hdr.src_call, b"WB2OSZ");
+        assert!(hdr.is_ui);
+        assert_eq!(hdr.pid, 0xF0);
+        assert_eq!(hdr.payload_len, 4);
+
+        // Roundtrip through to_bytes/from_bytes
+        let bytes = hdr.to_bytes();
+        let recovered = Il2pHeader::from_bytes(&bytes);
+        assert_eq!(recovered.dest_call, hdr.dest_call);
+        assert_eq!(recovered.src_call, hdr.src_call);
+        assert_eq!(recovered.payload_len, hdr.payload_len);
+        assert!(recovered.is_ui);
+        assert_eq!(recovered.pid, 0xF0);
+    }
+
+    #[test]
+    fn pid_encode_decode_roundtrip() {
+        // Test all encodable PIDs
+        let test_pids: &[u8] = &[0x20, 0xf0, 0x01, 0x06, 0x07, 0x08, 0xcc, 0xcd, 0xce, 0xcf];
+        for &pid in test_pids {
+            let encoded = encode_pid(pid);
+            assert!(encoded.is_some(), "PID 0x{:02x} should be encodable", pid);
+            let decoded = decode_pid(encoded.unwrap());
+            // Note: some PIDs map to the same IL2P code (e.g., 0x20 and 0x10 both → 2 → 0x20)
+            if pid == 0x20 {
+                assert_eq!(decoded, 0x20);
+            } else {
+                assert_eq!(decoded, pid, "PID 0x{:02x} didn't roundtrip", pid);
+            }
+        }
+    }
+
+    #[test]
+    fn direwolf_callsign_packing() {
+        // Verify 6th character of source callsign is preserved
+        let mut ax25 = Vec::new();
+        for &c in b"APRS  " { ax25.push(c << 1); }
+        ax25.push(0x60); // dest SSID
+        for &c in b"WB2OSZ" { ax25.push(c << 1); }
+        ax25.push(0x61); // src SSID, last
+        ax25.push(0x03); // UI
+        ax25.push(0xF0); // PID
+
+        let hdr = Il2pHeader::from_ax25(&ax25).unwrap();
+        let bytes = hdr.to_bytes();
+        let recovered = Il2pHeader::from_bytes(&bytes);
+        assert_eq!(recovered.src_call, *b"WB2OSZ");
     }
 }

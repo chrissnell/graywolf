@@ -32,11 +32,8 @@ pub fn payload_block_sizes(payload_len: usize) -> Vec<(usize, usize)> {
 
     for _ in 0..num_blocks {
         let block_data = remaining.min(MAX_BLOCK_DATA);
-        // Parity is always 16 for full blocks, but scaled for small blocks
-        // per IL2P spec: parity = min(16, 2 * ceil(block_data / 16))
-        // Actually direwolf uses a fixed 16 parity symbols per block
-        let parity = if block_data <= 16 { 2 } else { PARITY_PER_BLOCK };
-        sizes.push((block_data, parity));
+        // Direwolf uses 16 parity symbols for ALL payload blocks (max_fec path)
+        sizes.push((block_data, PARITY_PER_BLOCK));
         remaining -= block_data;
     }
     sizes

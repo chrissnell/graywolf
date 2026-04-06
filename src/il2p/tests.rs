@@ -83,6 +83,75 @@ fn direwolf_il2p_header_encoding() {
     assert!(hdr.is_ui);
 }
 
+/// Direwolf byte-exact test vector: scrambler.
+/// From direwolf il2p_test.c example 2 (UI frame, no payload).
+/// Pre-scramble:  63 f1 40 40 40 00 6b 2b 54 28 25 2a 0f
+/// Post-scramble: 6a ea 9c c2 01 11 fc 14 1f da 6e f2 53
+#[test]
+fn direwolf_test_vector_scramble() {
+    let input: [u8; 13] = [0x63, 0xf1, 0x40, 0x40, 0x40, 0x00,
+                            0x6b, 0x2b, 0x54, 0x28, 0x25, 0x2a, 0x0f];
+    let expected: [u8; 13] = [0x6a, 0xea, 0x9c, 0xc2, 0x01, 0x11,
+                               0xfc, 0x14, 0x1f, 0xda, 0x6e, 0xf2, 0x53];
+
+    let scrambled = il2p_scramble(&input);
+    assert_eq!(scrambled.as_slice(), &expected,
+        "scrambler output differs from direwolf.\n  got:      {:02x?}\n  expected: {:02x?}",
+        scrambled, expected);
+
+    let recovered = il2p_descramble(&scrambled);
+    assert_eq!(recovered.as_slice(), &input);
+}
+
+/// Direwolf byte-exact test vector: S-frame (RR) header scramble.
+/// From direwolf il2p_test.c example 1.
+/// Pre-scramble:  2b a1 12 24 25 77 6b 2b 54 68 25 2a 27
+/// Post-scramble: 26 57 4d 57 f1 96 cc 85 42 e7 24 f7 2e
+#[test]
+fn direwolf_test_vector_sframe_scramble() {
+    let prescramble: [u8; 13] = [
+        0x2b, 0xa1, 0x12, 0x24, 0x25, 0x77,
+        0x6b, 0x2b, 0x54, 0x68, 0x25, 0x2a, 0x27,
+    ];
+    let expected: [u8; 13] = [
+        0x26, 0x57, 0x4d, 0x57, 0xf1, 0x96,
+        0xcc, 0x85, 0x42, 0xe7, 0x24, 0xf7, 0x2e,
+    ];
+
+    let scrambled = il2p_scramble(&prescramble);
+    assert_eq!(scrambled.as_slice(), &expected,
+        "S-frame scramble mismatch.\n  got:      {:02x?}\n  expected: {:02x?}",
+        scrambled, expected);
+}
+
+/// Direwolf byte-exact test vector: RS parity on scrambled S-frame header.
+/// Scrambled header: 26 57 4d 57 f1 96 cc 85 42 e7 24 f7 2e
+/// Expected RS(15,13) parity: 8a 97
+#[test]
+fn direwolf_test_vector_header_rs_parity() {
+    let scrambled: [u8; 13] = [
+        0x26, 0x57, 0x4d, 0x57, 0xf1, 0x96,
+        0xcc, 0x85, 0x42, 0xe7, 0x24, 0xf7, 0x2e,
+    ];
+    let parity = rs_il2p::rs_encode_header(&scrambled);
+    assert_eq!(&parity, &[0x8a, 0x97],
+        "RS parity mismatch.\n  got:      {:02x?}\n  expected: [8a, 97]", parity);
+}
+
+/// Direwolf byte-exact test vector: RS parity on scrambled UI header.
+/// Scrambled header: 6a ea 9c c2 01 11 fc 14 1f da 6e f2 53
+/// Expected RS(15,13) parity: 91 bd
+#[test]
+fn direwolf_test_vector_ui_header_rs_parity() {
+    let scrambled: [u8; 13] = [
+        0x6a, 0xea, 0x9c, 0xc2, 0x01, 0x11,
+        0xfc, 0x14, 0x1f, 0xda, 0x6e, 0xf2, 0x53,
+    ];
+    let parity = rs_il2p::rs_encode_header(&scrambled);
+    assert_eq!(&parity, &[0x91, 0xbd],
+        "RS parity mismatch.\n  got:      {:02x?}\n  expected: [91, bd]", parity);
+}
+
 /// Test receiver with bit-by-bit processing.
 #[test]
 fn il2p_receiver_basic() {

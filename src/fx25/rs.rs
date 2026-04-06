@@ -8,7 +8,7 @@
 
 const PRIM_POLY: u32 = 0x11d;
 const NN: usize = 255;
-const FCR: usize = 1;
+const FX25_FCR: usize = 1;
 
 /// GF(2^8) arithmetic tables.
 pub struct GfTables {
@@ -46,23 +46,30 @@ impl GfTables {
 /// Reed-Solomon codec.
 pub struct RsCodec {
     pub(crate) ncheck: usize,
+    fcr: usize,
     gf: GfTables,
     gen_poly: Vec<u8>,
 }
 
 impl RsCodec {
+    /// Create RS codec with FCR=1 (FX.25 convention).
     pub fn new(ncheck: usize) -> Self {
+        Self::with_fcr(ncheck, FX25_FCR)
+    }
+
+    /// Create RS codec with specified first consecutive root.
+    pub fn with_fcr(ncheck: usize, fcr: usize) -> Self {
         let gf = GfTables::new();
         let mut gen = vec![0u8; ncheck + 1];
         gen[0] = 1;
         for i in 0..ncheck {
-            let root = gf.exp[FCR + i];
+            let root = gf.exp[fcr + i];
             for j in (1..=i + 1).rev() {
                 gen[j] = gen[j - 1] ^ gf.mul(gen[j], root);
             }
             gen[0] = gf.mul(gen[0], root);
         }
-        RsCodec { ncheck, gf, gen_poly: gen }
+        RsCodec { ncheck, fcr, gf, gen_poly: gen }
     }
 
     pub fn encode(&self, data: &[u8]) -> Vec<u8> {
@@ -101,7 +108,7 @@ impl RsCodec {
         let mut syn = vec![0u8; self.ncheck];
         let mut has_err = false;
         for i in 0..self.ncheck {
-            let alpha = self.gf.exp[FCR + i];
+            let alpha = self.gf.exp[self.fcr + i];
             let mut s = 0u8;
             for &c in work {
                 s = self.gf.mul(s, alpha) ^ c;
@@ -200,8 +207,16 @@ impl RsCodec {
             if lprime == 0 { return None; }
 
             // e = X_j^{1-FCR} · Ω(X_j^{-1}) / Λ'(X_j^{-1})
-            // With FCR=1: X_j^0 = 1
-            let mag = self.gf.mul(omega_val, self.gf.inv(lprime));
+            let xj_power = if self.fcr == 0 {
+                // X_j^1 = α^{asc_pos}
+                self.gf.exp[asc_pos % 255]
+            } else {
+                // General: X_j^{1-FCR} = α^{asc_pos*(1-FCR)}
+                // For FCR=1: X_j^0 = 1
+                let exp = (asc_pos as isize * (1 - self.fcr as isize)).rem_euclid(255) as usize;
+                self.gf.exp[exp]
+            };
+            let mag = self.gf.mul(xj_power, self.gf.mul(omega_val, self.gf.inv(lprime)));
 
             // Convert ascending position to descending position in data[]
             let desc_pos = NN - 1 - asc_pos;
