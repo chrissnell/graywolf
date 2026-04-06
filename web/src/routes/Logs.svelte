@@ -8,7 +8,7 @@
   let filter = $state('');
   let dirFilter = $state('all');
   let limit = $state('100');
-  let loading = $state(false);
+  let loading = $state(true);
 
   const dirOptions = [
     { value: 'all', label: 'All' },
@@ -16,26 +16,50 @@
     { value: 'tx', label: 'TX Only' },
   ];
 
-  onMount(loadPackets);
+  let pollTimer;
+
+  onMount(() => {
+    loadPackets();
+    pollTimer = setInterval(loadPackets, 2000);
+    return () => clearInterval(pollTimer);
+  });
 
   async function loadPackets() {
-    loading = true;
     try {
       packets = await api.get(`/packets?limit=${limit}`) || [];
     } catch (_) { /* mock fallback */ }
     loading = false;
   }
 
+  // Extract callsign from the display string "SRC>DEST,DIGI*:info"
+  function parseDisplay(pkt) {
+    const d = pkt.decoded;
+    if (d) return { src: d.source || '', dst: d.dest || '' };
+    const s = pkt.display || '';
+    const gt = s.indexOf('>');
+    if (gt < 0) return { src: '', dst: '' };
+    const src = s.substring(0, gt);
+    const rest = s.substring(gt + 1);
+    // dest is up to the first comma or colon
+    const end = rest.search(/[,:]/);
+    const dst = end >= 0 ? rest.substring(0, end) : rest;
+    return { src, dst };
+  }
+
   let filtered = $derived(() => {
     let list = packets;
-    if (dirFilter !== 'all') list = list.filter((p) => p.direction === dirFilter);
+    if (dirFilter !== 'all') {
+      const want = dirFilter.toUpperCase();
+      list = list.filter((p) => (p.direction || '').toUpperCase() === want);
+    }
     if (filter.trim()) {
       const q = filter.toLowerCase();
-      list = list.filter((p) =>
-        p.source.toLowerCase().includes(q) ||
-        p.destination.toLowerCase().includes(q) ||
-        p.raw.toLowerCase().includes(q)
-      );
+      list = list.filter((p) => {
+        const { src, dst } = parseDisplay(p);
+        return src.toLowerCase().includes(q) ||
+          dst.toLowerCase().includes(q) ||
+          (p.display || '').toLowerCase().includes(q);
+      });
     }
     return list;
   });
@@ -45,10 +69,11 @@
   }
 
   function exportCsv() {
-    const rows = filtered().map((p) =>
-      `"${p.timestamp}","${p.direction}","${p.source}","${p.destination}","${p.raw}"`
-    );
-    const csv = 'Timestamp,Direction,Source,Destination,Raw\n' + rows.join('\n');
+    const rows = filtered().map((p) => {
+      const { src, dst } = parseDisplay(p);
+      return `"${p.timestamp}","${p.direction}","${src}","${dst}","${p.display || ''}"`;
+    });
+    const csv = 'Timestamp,Direction,Source,Destination,Display\n' + rows.join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -96,27 +121,28 @@
             <tr>
               <th>Time</th>
               <th>Dir</th>
-              <th>Channel</th>
+              <th>Ch</th>
               <th>Source</th>
               <th>Destination</th>
               <th>Type</th>
-              <th>Raw</th>
+              <th>Info</th>
             </tr>
           </thead>
           <tbody>
             {#each filtered() as pkt}
+              {@const calls = parseDisplay(pkt)}
               <tr>
                 <td class="col-time">{formatTime(pkt.timestamp)}</td>
                 <td>
-                  <span class="dir-badge" class:rx={pkt.direction === 'rx'} class:tx={pkt.direction === 'tx'}>
-                    {pkt.direction.toUpperCase()}
+                  <span class="dir-badge" class:rx={pkt.direction === 'RX'} class:tx={pkt.direction === 'TX'}>
+                    {pkt.direction}
                   </span>
                 </td>
                 <td>{pkt.channel || '—'}</td>
-                <td class="col-call">{pkt.source}</td>
-                <td>{pkt.destination}</td>
+                <td class="col-call">{calls.src}</td>
+                <td>{calls.dst}</td>
                 <td>{pkt.type || '—'}</td>
-                <td class="col-raw">{pkt.raw}</td>
+                <td class="col-info">{pkt.display || ''}</td>
               </tr>
             {/each}
           </tbody>
@@ -167,7 +193,7 @@
   }
   .col-time { color: var(--text-muted); white-space: nowrap; }
   .col-call { color: var(--accent); font-weight: 500; }
-  .col-raw { color: var(--text-secondary); word-break: break-all; max-width: 300px; }
+  .col-info { color: var(--text-secondary); word-break: break-all; max-width: 400px; font-family: var(--font-mono); }
   .dir-badge {
     font-weight: 700;
     font-size: 10px;

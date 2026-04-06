@@ -100,10 +100,20 @@ func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// HandleSetup creates the first user when no users exist. Returns 403 if
-// users already exist (preventing privilege escalation).
-// POST /api/auth/setup
+// HandleSetup handles first-run account creation.
+//   GET  /api/auth/setup → {"needs_setup": bool}
+//   POST /api/auth/setup → creates the first user (403 if users exist)
 func (h *Handlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		count, err := h.Auth.UserCount(r.Context())
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to check users")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"needs_setup": count == 0})
+		return
+	}
 	if r.Method != http.MethodPost {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return

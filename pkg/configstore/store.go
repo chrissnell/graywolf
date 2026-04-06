@@ -109,6 +109,7 @@ func (s *Store) seedDefaults() error {
 
 	dev := &AudioDevice{
 		Name:       "Default Input",
+		Direction:  "input",
 		SourceType: "soundcard",
 		SourcePath: "default",
 		SampleRate: 48000,

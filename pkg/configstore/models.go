@@ -11,8 +11,9 @@ import "time"
 type AudioDevice struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name       string    `gorm:"not null" json:"name"`
-	SourceType string    `gorm:"not null" json:"source_type"` // soundcard|flac|stdin|sdr_udp
-	SourcePath string    `json:"device_path"`                 // cpal name or file path
+	Direction  string    `gorm:"not null;default:'input'" json:"direction"` // input|output
+	SourceType string    `gorm:"not null" json:"source_type"`              // soundcard|flac|stdin|sdr_udp
+	SourcePath string    `json:"device_path"`                              // cpal name or file path
 	SampleRate uint32    `gorm:"not null;default:48000" json:"sample_rate"`
 	Channels   uint32    `gorm:"not null;default:1" json:"channels"`
 	Format     string    `gorm:"not null;default:'s16le'" json:"format"`

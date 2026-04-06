@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,6 +51,7 @@ func main() {
 		modemPath  = flag.String("modem", "./target/release/graywolf-modem", "path to graywolf-modem binary")
 		httpAddr   = flag.String("http", "127.0.0.1:8080", "HTTP listen address")
 		shutdownTO = flag.Duration("shutdown-timeout", 10*time.Second, "max time to wait for clean shutdown")
+		flacFile   = flag.String("flac", "", "override audio device with a FLAC file for testing")
 	)
 	flag.Parse()
 
@@ -62,6 +64,32 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+
+	// -flac flag: override the first audio device to use a FLAC file.
+	if *flacFile != "" {
+		absPath, err := filepath.Abs(*flacFile)
+		if err != nil {
+			logger.Error("resolve flac path", "err", err)
+			os.Exit(1)
+		}
+		if _, err := os.Stat(absPath); err != nil {
+			logger.Error("flac file not found", "path", absPath)
+			os.Exit(1)
+		}
+		devs, _ := store.ListAudioDevices()
+		if len(devs) == 0 {
+			logger.Error("no audio devices to override")
+			os.Exit(1)
+		}
+		devs[0].SourceType = "flac"
+		devs[0].SourcePath = absPath
+		devs[0].SampleRate = 44100
+		if err := store.UpdateAudioDevice(&devs[0]); err != nil {
+			logger.Error("update audio device for flac", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("audio device overridden", "source", "flac", "path", absPath)
+	}
 
 	m := metrics.New()
 
@@ -84,20 +112,10 @@ func main() {
 	plog := packetlog.New(packetlog.Config{Capacity: 2000, MaxAge: 30 * time.Minute})
 
 	// RX hook: record every received frame into the packet log.
+	// This is a fast pre-record for frames that may not decode as AX.25;
+	// successfully decoded frames get a richer entry in the fan-out below.
 	bridge.SetRxHook(func(rf *pb.ReceivedFrame) {
-		if rf == nil {
-			return
-		}
-		e := packetlog.Entry{
-			Channel:   rf.Channel,
-			Direction: packetlog.DirRX,
-			Source:    "modem",
-			Raw:       rf.Data,
-		}
-		if f, err := ax25.Decode(rf.Data); err == nil {
-			e.Display = f.String()
-		}
-		plog.Record(e)
+		// no-op: recording moved to fan-out goroutine for richer data
 	})
 
 	// --- TX governor ----------------------------------------------------
@@ -428,7 +446,7 @@ func main() {
 		}
 	}()
 
-	// --- RX fan-out: modem → KISS broadcast + AGW monitor + digi + APRS log
+	// --- RX fan-out: modem → KISS broadcast + AGW monitor + digi + APRS log + packet log
 	go func() {
 		for rf := range bridge.Frames() {
 			if rf == nil {
@@ -441,7 +459,23 @@ func main() {
 
 			f, err := ax25.Decode(rf.Data)
 			if err != nil {
+				// Undecoded frame — record raw only.
+				plog.Record(packetlog.Entry{
+					Channel:   rf.Channel,
+					Direction: packetlog.DirRX,
+					Source:    "modem",
+					Raw:       rf.Data,
+				})
 				continue
+			}
+
+			// Build packet log entry with decoded callsigns.
+			e := packetlog.Entry{
+				Channel:   rf.Channel,
+				Direction: packetlog.DirRX,
+				Source:    "modem",
+				Raw:       rf.Data,
+				Display:   f.String(),
 			}
 
 			// AGW monitor.
@@ -458,6 +492,8 @@ func main() {
 				// APRS parse → fan-out.
 				if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
 					pkt.Channel = int(rf.Channel)
+					e.Type = string(pkt.Type)
+					e.Decoded = pkt
 					select {
 					case aprsQueue <- pkt:
 					default:
@@ -474,6 +510,8 @@ func main() {
 					}
 				}
 			}
+
+			plog.Record(e)
 		}
 	}()
 
@@ -543,7 +581,8 @@ func main() {
 
 	httpSrv := &http.Server{Addr: *httpAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
-		logger.Info("http listening", "addr", *httpAddr)
+		scheme := "http"
+		logger.Info("web UI available", "url", fmt.Sprintf("%s://%s", scheme, *httpAddr))
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("http server", "err", err)
 		}

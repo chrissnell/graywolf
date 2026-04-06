@@ -116,6 +116,7 @@ function getMockData(method, path, body) {
   // Auth
   if (path === '/auth/login' && method === 'POST') return delay({ ok: true });
   if (path === '/auth/logout' && method === 'POST') return delay({ ok: true });
+  if (path === '/auth/setup' && method === 'GET') return delay({ needs_setup: true });
   if (path === '/auth/setup' && method === 'POST') return delay({ ok: true });
 
   // Channels

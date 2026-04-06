@@ -7,10 +7,15 @@
   let packets = $state([]);
   let stats = $state({ packets_rx: 0, packets_tx: 0, igated: 0, uptime: 0 });
   let position = $state(null);
+  let audioDevices = $state([]);
   let pollTimer = $state(null);
+
+  let hasInput = $derived(audioDevices.some(d => d.direction === 'input'));
+  let hasOutput = $derived(audioDevices.some(d => d.direction === 'output'));
 
   onMount(() => {
     loadData();
+    loadAudioDevices();
     pollTimer = setInterval(loadData, 5000);
     return () => clearInterval(pollTimer);
   });
@@ -28,6 +33,12 @@
     } catch (_) { /* mock fallback handles it */ }
   }
 
+  async function loadAudioDevices() {
+    try {
+      audioDevices = await api.get('/audio-devices') || [];
+    } catch (_) { /* ignore */ }
+  }
+
   function formatUptime(s) {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -40,6 +51,17 @@
 </script>
 
 <PageHeader title="Dashboard" subtitle="Live station overview" />
+
+<div class="readiness-row">
+  <div class="ready-chip" class:ok={hasInput}>
+    <span class="ready-dot">{hasInput ? '●' : '○'}</span>
+    <span>RX {hasInput ? 'Ready' : 'No Input'}</span>
+  </div>
+  <div class="ready-chip" class:ok={hasOutput}>
+    <span class="ready-dot">{hasOutput ? '●' : '○'}</span>
+    <span>TX Audio {hasOutput ? 'Ready' : 'No Output'}</span>
+  </div>
+</div>
 
 <div class="dashboard-grid">
   <Box title="Station Stats">
@@ -129,6 +151,31 @@
 </Box>
 
 <style>
+  .readiness-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .ready-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 999px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+  }
+  .ready-chip.ok {
+    border-color: var(--success, #3fb950);
+    color: var(--success, #3fb950);
+  }
+  .ready-dot {
+    font-size: 10px;
+  }
   .dashboard-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

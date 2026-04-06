@@ -12,10 +12,15 @@
   let loading = $state(false);
   let errors = $state({});
 
-  // Check if first run on mount
+  // Check if first run on mount.
   $effect(() => {
-    let unsub = isFirstRun.subscribe((v) => { setupMode = v; });
-    return unsub;
+    fetch('/api/auth/setup')
+      .then(r => r.json())
+      .then(data => {
+        setupMode = data.needs_setup === true;
+        isFirstRun.set(setupMode);
+      })
+      .catch(() => {});
   });
 
   function validate() {
