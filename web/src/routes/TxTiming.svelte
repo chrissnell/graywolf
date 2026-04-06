@@ -51,8 +51,7 @@
     return Object.keys(e).length === 0;
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave() {
     if (!validate()) return;
     const data = {
       channel: parseInt(form.channel),
@@ -90,7 +89,6 @@
 <DataTable {columns} rows={items} onEdit={openEdit} onDelete={handleDelete} />
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit TX Timing' : 'New TX Timing'}>
-  <form onsubmit={handleSave}>
     <FormField label="Channel" id="tx-ch">
       <Input id="tx-ch" bind:value={form.channel} type="number" />
     </FormField>
@@ -109,9 +107,8 @@
     <Toggle bind:checked={form.full_dup} label="Duplex" />
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
+      <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
-  </form>
 </Modal>
 
 <style>

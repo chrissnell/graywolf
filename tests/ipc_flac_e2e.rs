@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use direwolf_demod::ipc::framing::{read_frame, write_frame};
-use direwolf_demod::ipc::proto::{
+use graywolf_demod::ipc::framing::{read_frame, write_frame};
+use graywolf_demod::ipc::proto::{
     ipc_message::Payload, ConfigureAudio, ConfigureChannel, IpcMessage, StartAudio,
 };
 
@@ -149,7 +149,7 @@ fn flac_end_to_end_yields_frames() {
     // Shutdown.
     let shutdown = IpcMessage {
         payload: Some(Payload::Shutdown(
-            direwolf_demod::ipc::proto::Shutdown { timeout_ms: 1000 },
+            graywolf_demod::ipc::proto::Shutdown { timeout_ms: 1000 },
         )),
     };
     let _ = write_frame(&mut client, &shutdown);

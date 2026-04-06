@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use direwolf_demod::demod_afsk::AfskDemodulator;
-use direwolf_demod::types::*;
+use graywolf_demod::demod_afsk::AfskDemodulator;
+use graywolf_demod::types::*;
 
 fn bench_process_sample(c: &mut Criterion) {
     let mut demod = AfskDemodulator::new(

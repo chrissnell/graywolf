@@ -50,8 +50,7 @@
     modalOpen = true;
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave() {
     if (!form.callsign.trim()) { toasts.error('Callsign required'); return; }
     const data = { ...form, interval: parseInt(form.interval) };
     try {
@@ -140,7 +139,6 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'}>
-  <form onsubmit={handleSave}>
     <FormField label="Callsign" id="bcn-call">
       <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
     </FormField>
@@ -159,9 +157,8 @@
     <Toggle bind:checked={form.enabled} label="Enabled" />
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
+      <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
-  </form>
 </Modal>
 
 <style>

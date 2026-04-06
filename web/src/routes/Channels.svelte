@@ -33,12 +33,12 @@
     { key: 'bit_rate', label: 'Bit Rate' },
     { key: 'input_device_id', label: 'Input Device', format: (v) => {
       const d = audioDevices.find(d => d.id === v);
-      return d ? d.name : String(v);
+      return d ? `${d.name} (${v})` : String(v);
     }},
     { key: 'output_device_id', label: 'Output Device', format: (v) => {
       if (v === 0) return 'None';
       const d = audioDevices.find(d => d.id === v);
-      return d ? d.name : String(v);
+      return d ? `${d.name} (${v})` : String(v);
     }},
   ];
 
@@ -102,8 +102,7 @@
     return Object.keys(e).length === 0;
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave() {
     if (!validate()) return;
     const data = {
       ...form,
@@ -149,41 +148,39 @@
 <DataTable {columns} rows={channels} onEdit={openEdit} onDelete={handleDelete} />
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Channel' : 'New Channel'}>
-  <form onsubmit={handleSave}>
-    <FormField label="Name" error={errors.name} id="ch-name">
-      <Input id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
+  <FormField label="Name" error={errors.name} id="ch-name">
+    <Input id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
+  </FormField>
+  <FormField label="Input Device" error={errors.input_device_id} id="ch-indev">
+    <Select id="ch-indev" bind:value={form.input_device_id} options={inputDeviceOptions} />
+  </FormField>
+  <FormField label="Input Channel" id="ch-inch">
+    <Select id="ch-inch" bind:value={form.input_channel} options={channelOptions} />
+  </FormField>
+  <FormField label="Output Device" id="ch-outdev">
+    <Select id="ch-outdev" bind:value={form.output_device_id} options={outputDeviceOptions} />
+  </FormField>
+  {#if form.output_device_id !== '0'}
+    <FormField label="Output Channel" id="ch-outch">
+      <Select id="ch-outch" bind:value={form.output_channel} options={channelOptions} />
     </FormField>
-    <FormField label="Input Device" error={errors.input_device_id} id="ch-indev">
-      <Select id="ch-indev" bind:value={form.input_device_id} options={inputDeviceOptions} />
-    </FormField>
-    <FormField label="Input Channel" id="ch-inch">
-      <Select id="ch-inch" bind:value={form.input_channel} options={channelOptions} />
-    </FormField>
-    <FormField label="Output Device" id="ch-outdev">
-      <Select id="ch-outdev" bind:value={form.output_device_id} options={outputDeviceOptions} />
-    </FormField>
-    {#if form.output_device_id !== '0'}
-      <FormField label="Output Channel" id="ch-outch">
-        <Select id="ch-outch" bind:value={form.output_channel} options={channelOptions} />
-      </FormField>
-    {/if}
-    <FormField label="Modem Type" id="ch-modem">
-      <Select id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
-    </FormField>
-    <FormField label="Bit Rate" id="ch-baud">
-      <Input id="ch-baud" bind:value={form.bit_rate} type="number" placeholder="1200" />
-    </FormField>
-    <FormField label="Mark Freq (Hz)" id="ch-mark">
-      <Input id="ch-mark" bind:value={form.mark_freq} type="number" placeholder="1200" />
-    </FormField>
-    <FormField label="Space Freq (Hz)" id="ch-space">
-      <Input id="ch-space" bind:value={form.space_freq} type="number" placeholder="2200" />
-    </FormField>
-    <div class="modal-actions">
-      <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
-    </div>
-  </form>
+  {/if}
+  <FormField label="Modem Type" id="ch-modem">
+    <Select id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
+  </FormField>
+  <FormField label="Bit Rate" id="ch-baud">
+    <Input id="ch-baud" bind:value={form.bit_rate} type="number" placeholder="1200" />
+  </FormField>
+  <FormField label="Mark Freq (Hz)" id="ch-mark">
+    <Input id="ch-mark" bind:value={form.mark_freq} type="number" placeholder="1200" />
+  </FormField>
+  <FormField label="Space Freq (Hz)" id="ch-space">
+    <Input id="ch-space" bind:value={form.space_freq} type="number" placeholder="2200" />
+  </FormField>
+  <div class="modal-actions">
+    <Button onclick={() => modalOpen = false}>Cancel</Button>
+    <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
+  </div>
 </Modal>
 
 <style>

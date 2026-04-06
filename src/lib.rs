@@ -54,8 +54,8 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use direwolf_demod::demod_afsk::AfskDemodulator;
-//! use direwolf_demod::types::AfskProfile;
+//! use graywolf_demod::demod_afsk::AfskDemodulator;
+//! use graywolf_demod::types::AfskProfile;
 //!
 //! let mut demod = AfskDemodulator::new(
 //!     44100,  // sample rate

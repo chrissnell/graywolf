@@ -1,9 +1,10 @@
 CARGO   ?= cargo
 RUSTFLAGS_NATIVE := -C target-cpu=native
 
-.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test
+.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test web graywolf
 
-all: build
+all: release web
+	go build -o graywolf ./cmd/graywolf/
 
 build:
 	$(CARGO) build
@@ -39,11 +40,18 @@ proto:
 	protoc --go_out=. --go_opt=module=github.com/chrissnell/graywolf \
 		proto/graywolf.proto
 
+web:
+	cd web && npm run build
+
 go-build:
 	go build ./...
 
 go-test:
 	go test ./...
+
+# Build everything: Rust release, Svelte UI, Go binary
+graywolf: release web
+	go build -o graywolf ./cmd/graywolf/
 
 run-bench: release
 	@echo "Usage: make run-bench FLAC=<file> [ITER=5]"

@@ -39,8 +39,7 @@
     modalOpen = true;
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave() {
     const data = { ...form, tcp_port: parseInt(form.tcp_port), baud_rate: parseInt(form.baud_rate) };
     try {
       if (editing) {
@@ -72,7 +71,6 @@
 <DataTable {columns} rows={items} onEdit={openEdit} onDelete={handleDelete} />
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit KISS' : 'New KISS Interface'}>
-  <form onsubmit={handleSave}>
     <FormField label="Type" id="kiss-type">
       <Select id="kiss-type" bind:value={form.type} options={typeOptions} />
     </FormField>
@@ -90,9 +88,8 @@
     {/if}
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
+      <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
-  </form>
 </Modal>
 
 <style>

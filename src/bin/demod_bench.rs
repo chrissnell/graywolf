@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::time::Instant;
 
-use direwolf_demod::demod_afsk::AfskDemodulator;
-use direwolf_demod::types::*;
+use graywolf_demod::demod_afsk::AfskDemodulator;
+use graywolf_demod::types::*;
 
 fn usage() {
     eprintln!("Usage: demod-bench [options] <audio-file>");

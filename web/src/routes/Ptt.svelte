@@ -96,8 +96,7 @@
     return Object.keys(e).length === 0;
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave() {
     if (!validate()) return;
     const data = { ...form, channel_id: parseInt(form.channel_id), gpio_pin: parseInt(form.gpio_pin) };
     try {
@@ -237,7 +236,6 @@
 
 <!-- Add/Edit modal -->
 <Modal bind:open={modalOpen} title={editing ? 'Edit PTT Config' : 'New PTT Config'} onClose={handleModalClose}>
-  <form onsubmit={handleSave}>
     <FormField label="Channel ID" id="ptt-ch">
       <Input id="ptt-ch" bind:value={form.channel_id} type="number" />
     </FormField>
@@ -256,9 +254,8 @@
     {/if}
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
+      <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
-  </form>
 </Modal>
 
 <!-- Delete confirmation -->

@@ -12,8 +12,8 @@
 
 use std::process::ExitCode;
 
-use direwolf_demod::ipc::server::IpcServer;
-use direwolf_demod::modem::Modem;
+use graywolf_demod::ipc::server::IpcServer;
+use graywolf_demod::modem::Modem;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();

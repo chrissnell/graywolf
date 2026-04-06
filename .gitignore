@@ -7,3 +7,7 @@ aprs-test-tracks/
 .claude/
 scratch/
 node_modules/
+graywolf
+graywolf.db
+graywolf.db-shm
+graywolf.db-wal

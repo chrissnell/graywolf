@@ -55,8 +55,7 @@
     modalOpen = true;
   }
 
-  async function handleSaveRule(e) {
-    e.preventDefault();
+  async function handleSaveRule() {
     if (!form.alias.trim()) { toasts.error('Alias required'); return; }
     try {
       if (editing) {
@@ -105,7 +104,6 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Rule' : 'New Rule'}>
-  <form onsubmit={handleSaveRule}>
     <FormField label="Alias" id="rule-alias">
       <Input id="rule-alias" bind:value={form.alias} placeholder="WIDE1-1" />
     </FormField>
@@ -116,9 +114,8 @@
     </div>
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>
+      <Button variant="primary" onclick={handleSaveRule}>{editing ? 'Save' : 'Create'}</Button>
     </div>
-  </form>
 </Modal>
 
 <style>

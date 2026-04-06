@@ -81,8 +81,7 @@
     return Object.keys(e).length === 0;
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave() {
     if (!validate()) return;
     const data = { ...form, sample_rate: parseInt(form.sample_rate), channels: parseInt(form.channels) };
     try {
@@ -234,47 +233,45 @@
 
 <!-- Add/Edit modal -->
 <Modal bind:open={modalOpen} title={editing ? 'Edit Audio Device' : 'Add Audio Device'} onClose={handleModalClose}>
-  <form onsubmit={handleSave}>
-    <FormField label="Name" error={errors.name} id="ad-name">
-      <Input id="ad-name" bind:value={form.name} placeholder="USB Sound Card" />
-    </FormField>
-    <FormField label="Device Path" error={errors.device_path} id="ad-path">
-      <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
-    </FormField>
-    <FormField label="Direction" id="ad-dir">
-      <Select id="ad-dir" bind:value={form.direction} options={[
-        { value: 'input', label: 'Input (Microphone / Receiver)' },
-        { value: 'output', label: 'Output (Speaker / Transmitter)' },
-      ]} />
-    </FormField>
-    <FormField label="Source Type" id="ad-type">
-      <Select id="ad-type" bind:value={form.source_type} options={[
-        { value: 'soundcard', label: 'Sound Card' },
-        { value: 'flac', label: 'FLAC File' },
-        { value: 'stdin', label: 'Standard Input' },
-        { value: 'sdr_udp', label: 'SDR UDP Stream' },
-      ]} />
-    </FormField>
-    <FormField label="Sample Rate" id="ad-rate">
-      <Select id="ad-rate" bind:value={form.sample_rate} options={[
-        { value: '8000', label: '8000 Hz' },
-        { value: '16000', label: '16000 Hz' },
-        { value: '44100', label: '44100 Hz' },
-        { value: '48000', label: '48000 Hz' },
-        { value: '96000', label: '96000 Hz' },
-      ]} />
-    </FormField>
-    <FormField label="Channels" id="ad-ch">
-      <Select id="ad-ch" bind:value={form.channels} options={[
-        { value: '1', label: 'Mono' },
-        { value: '2', label: 'Stereo' },
-      ]} />
-    </FormField>
-    <div class="modal-actions">
-      <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" type="submit">{editing ? 'Save' : 'Add'}</Button>
-    </div>
-  </form>
+  <FormField label="Name" error={errors.name} id="ad-name">
+    <Input id="ad-name" bind:value={form.name} placeholder="USB Sound Card" />
+  </FormField>
+  <FormField label="Device Path" error={errors.device_path} id="ad-path">
+    <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
+  </FormField>
+  <FormField label="Direction" id="ad-dir">
+    <Select id="ad-dir" bind:value={form.direction} options={[
+      { value: 'input', label: 'Input (Microphone / Receiver)' },
+      { value: 'output', label: 'Output (Speaker / Transmitter)' },
+    ]} />
+  </FormField>
+  <FormField label="Source Type" id="ad-type">
+    <Select id="ad-type" bind:value={form.source_type} options={[
+      { value: 'soundcard', label: 'Sound Card' },
+      { value: 'flac', label: 'FLAC File' },
+      { value: 'stdin', label: 'Standard Input' },
+      { value: 'sdr_udp', label: 'SDR UDP Stream' },
+    ]} />
+  </FormField>
+  <FormField label="Sample Rate" id="ad-rate">
+    <Select id="ad-rate" bind:value={form.sample_rate} options={[
+      { value: '8000', label: '8000 Hz' },
+      { value: '16000', label: '16000 Hz' },
+      { value: '44100', label: '44100 Hz' },
+      { value: '48000', label: '48000 Hz' },
+      { value: '96000', label: '96000 Hz' },
+    ]} />
+  </FormField>
+  <FormField label="Channels" id="ad-ch">
+    <Select id="ad-ch" bind:value={form.channels} options={[
+      { value: '1', label: 'Mono' },
+      { value: '2', label: 'Stereo' },
+    ]} />
+  </FormField>
+  <div class="modal-actions">
+    <Button onclick={() => modalOpen = false}>Cancel</Button>
+    <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Add'}</Button>
+  </div>
 </Modal>
 
 <!-- Delete confirmation -->
