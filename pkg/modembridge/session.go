@@ -173,9 +173,13 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) error {
 	// Emit one ConfigureChannel + ConfigurePtt per channel.
 	for _, ch := range channels {
 		cmsg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigureChannel{ConfigureChannel: &pb.ConfigureChannel{
-			Channel:       ch.ID,
-			DeviceId:      ch.AudioDeviceID,
-			AudioChannel:  ch.AudioChannel,
+			Channel:        ch.ID,
+			DeviceId:       ch.InputDeviceID,  // backward compat
+			AudioChannel:   ch.InputChannel,   // backward compat
+			InputDeviceId:  ch.InputDeviceID,
+			InputChannel:   ch.InputChannel,
+			OutputDeviceId: ch.OutputDeviceID,
+			OutputChannel:  ch.OutputChannel,
 			Baud:          ch.BitRate,
 			MarkFreq:      ch.MarkFreq,
 			SpaceFreq:     ch.SpaceFreq,

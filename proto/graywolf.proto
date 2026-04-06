@@ -137,6 +137,10 @@ message ConfigureChannel {
   int32 decoder_offset = 12;    // multi-modem: frequency offset step in Hz
   bool fx25_encode = 13;        // enable FX.25 RS FEC on transmit
   bool il2p_encode = 14;        // enable IL2P encoding on transmit
+  uint32 input_device_id = 15;  // input audio device (replaces device_id)
+  uint32 input_channel = 16;    // input stereo select (replaces audio_channel)
+  uint32 output_device_id = 17; // output audio device, 0 = RX-only
+  uint32 output_channel = 18;   // output stereo select
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).

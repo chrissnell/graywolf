@@ -76,6 +76,7 @@ func TestFlacRoundTrip(t *testing.T) {
 
 	dev := &configstore.AudioDevice{
 		Name:       "test-flac",
+		Direction:  "input",
 		SourceType: "flac",
 		SourcePath: flacPath,
 		SampleRate: 44100,
@@ -87,7 +88,7 @@ func TestFlacRoundTrip(t *testing.T) {
 	}
 	ch := &configstore.Channel{
 		Name:          "rx0",
-		AudioDeviceID: dev.ID,
+		InputDeviceID: dev.ID,
 		ModemType:     "afsk",
 		BitRate:       1200,
 		MarkFreq:      1200,

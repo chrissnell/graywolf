@@ -105,13 +105,13 @@ func TestAudioDeviceCRUD(t *testing.T) {
 func TestChannelAndPtt(t *testing.T) {
 	s := newTestStore(t)
 
-	dev := &AudioDevice{Name: "a", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	dev := &AudioDevice{Name: "a", Direction: "input", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
 	if err := s.CreateAudioDevice(dev); err != nil {
 		t.Fatal(err)
 	}
 	ch := &Channel{
 		Name:          "rx1",
-		AudioDeviceID: dev.ID,
+		InputDeviceID: dev.ID,
 		ModemType:     "afsk",
 		BitRate:       1200,
 		MarkFreq:      1200,
@@ -156,59 +156,101 @@ func TestChannelAndPtt(t *testing.T) {
 func TestChannelValidation_InvalidDeviceID(t *testing.T) {
 	s := newTestStore(t)
 	ch := &Channel{
-		Name: "bad", AudioDeviceID: 999, ModemType: "afsk",
+		Name: "bad", InputDeviceID: 999, ModemType: "afsk",
 		BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
 	err := s.CreateChannel(ch)
 	if err == nil {
-		t.Fatal("expected error for invalid device_id")
+		t.Fatal("expected error for invalid input_device_id")
 	}
 }
 
-func TestChannelValidation_AudioChannelOutOfRange(t *testing.T) {
+func TestChannelValidation_InputChannelOutOfRange(t *testing.T) {
 	s := newTestStore(t)
-	dev := &AudioDevice{Name: "mono", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	dev := &AudioDevice{Name: "mono", Direction: "input", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
 	if err := s.CreateAudioDevice(dev); err != nil {
 		t.Fatal(err)
 	}
 	ch := &Channel{
-		Name: "bad", AudioDeviceID: dev.ID, AudioChannel: 1, // mono device, channel 1 is out of range
+		Name: "bad", InputDeviceID: dev.ID, InputChannel: 1, // mono device, channel 1 is out of range
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
 	err := s.CreateChannel(ch)
 	if err == nil {
-		t.Fatal("expected error for audio_channel out of range")
+		t.Fatal("expected error for input_channel out of range")
 	}
 }
 
 func TestChannelValidation_StereoDeviceAcceptsBothChannels(t *testing.T) {
 	s := newTestStore(t)
-	dev := &AudioDevice{Name: "stereo", SourceType: "soundcard", SampleRate: 48000, Channels: 2, Format: "s16le"}
+	dev := &AudioDevice{Name: "stereo", Direction: "input", SourceType: "soundcard", SampleRate: 48000, Channels: 2, Format: "s16le"}
 	if err := s.CreateAudioDevice(dev); err != nil {
 		t.Fatal(err)
 	}
 	for _, ac := range []uint32{0, 1} {
 		ch := &Channel{
-			Name: "ch", AudioDeviceID: dev.ID, AudioChannel: ac,
+			Name: "ch", InputDeviceID: dev.ID, InputChannel: ac,
 			ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 			Profile: "A", NumSlicers: 1, FixBits: "none",
 		}
 		if err := s.CreateChannel(ch); err != nil {
-			t.Fatalf("audio_channel %d should be valid on stereo device: %v", ac, err)
+			t.Fatalf("input_channel %d should be valid on stereo device: %v", ac, err)
 		}
+	}
+}
+
+func TestChannelValidation_DirectionEnforcement(t *testing.T) {
+	s := newTestStore(t)
+	outDev := &AudioDevice{Name: "out", Direction: "output", SourceType: "soundcard", SampleRate: 48000, Channels: 1, Format: "s16le"}
+	if err := s.CreateAudioDevice(outDev); err != nil {
+		t.Fatal(err)
+	}
+	inDev := &AudioDevice{Name: "in", Direction: "input", SourceType: "soundcard", SampleRate: 48000, Channels: 1, Format: "s16le"}
+	if err := s.CreateAudioDevice(inDev); err != nil {
+		t.Fatal(err)
+	}
+
+	// Input device must have direction=input
+	ch := &Channel{
+		Name: "bad", InputDeviceID: outDev.ID,
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := s.CreateChannel(ch); err == nil {
+		t.Fatal("expected error when input_device_id references an output device")
+	}
+
+	// Output device must have direction=output
+	ch2 := &Channel{
+		Name: "bad2", InputDeviceID: inDev.ID, OutputDeviceID: inDev.ID,
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := s.CreateChannel(ch2); err == nil {
+		t.Fatal("expected error when output_device_id references an input device")
+	}
+
+	// RX-only (OutputDeviceID=0) is valid
+	ch3 := &Channel{
+		Name: "rxonly", InputDeviceID: inDev.ID, OutputDeviceID: 0,
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := s.CreateChannel(ch3); err != nil {
+		t.Fatalf("rx-only channel should be valid: %v", err)
 	}
 }
 
 func TestFX25IL2PConfig(t *testing.T) {
 	s := newTestStore(t)
-	dev := &AudioDevice{Name: "d", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	dev := &AudioDevice{Name: "d", Direction: "input", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
 	if err := s.CreateAudioDevice(dev); err != nil {
 		t.Fatal(err)
 	}
 	ch := &Channel{
-		Name: "rx0", AudioDeviceID: dev.ID,
+		Name: "rx0", InputDeviceID: dev.ID,
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}

@@ -25,8 +25,10 @@ type AudioDevice struct {
 type Channel struct {
 	ID            uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name          string    `gorm:"not null" json:"name"`
-	AudioDeviceID uint32    `gorm:"not null;index" json:"audio_device_id"`
-	AudioChannel  uint32    `gorm:"not null;default:0" json:"audio_channel"` // 0=left/mono, 1=right
+	InputDeviceID  uint32    `gorm:"not null;index" json:"input_device_id"`
+	InputChannel   uint32    `gorm:"not null;default:0" json:"input_channel"`   // 0=left/mono, 1=right
+	OutputDeviceID uint32    `gorm:"not null;default:0;index" json:"output_device_id"` // 0=RX-only
+	OutputChannel  uint32    `gorm:"not null;default:0" json:"output_channel"`
 	ModemType     string    `gorm:"not null;default:'afsk'" json:"modem_type"`
 	BitRate       uint32    `gorm:"not null;default:1200" json:"bit_rate"`
 	MarkFreq      uint32    `gorm:"not null;default:1200" json:"mark_freq"`

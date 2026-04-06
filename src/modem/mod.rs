@@ -25,8 +25,10 @@ use crate::types::{AfskProfile, RetryType, V26Alternative};
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
     pub channel: u32,
-    pub device_id: u32,
-    pub audio_channel: u32,
+    pub input_device_id: u32,
+    pub input_channel: u32,
+    pub output_device_id: u32,
+    pub output_channel: u32,
     pub baud: u32,
     pub mark_freq: u32,
     pub space_freq: u32,
@@ -44,8 +46,10 @@ impl Default for ChannelConfig {
     fn default() -> Self {
         Self {
             channel: 0,
-            device_id: 0,
-            audio_channel: 0,
+            input_device_id: 0,
+            input_channel: 0,
+            output_device_id: 0,
+            output_channel: 0,
             baud: 1200,
             mark_freq: 1200,
             space_freq: 2200,
@@ -101,7 +105,7 @@ enum ChannelDemod {
 struct ChannelPipeline {
     channel_id: u32,
     #[allow(dead_code)]
-    audio_channel: u32,
+    input_channel: u32,
     demod: ChannelDemod,
     // Multi-modem: parallel demodulators with frequency offsets
     extra_demods: Vec<ChannelDemod>,
@@ -250,11 +254,11 @@ impl Modem {
         // Stop existing pipelines first
         self.stop_all_audio();
 
-        // Group channels by device_id
+        // Group channels by input_device_id
         let mut channels_by_device: HashMap<u32, Vec<ChannelConfig>> = HashMap::new();
         for ccfg in self.channel_configs.values() {
             channels_by_device
-                .entry(ccfg.device_id)
+                .entry(ccfg.input_device_id)
                 .or_default()
                 .push(ccfg.clone());
         }
@@ -280,7 +284,7 @@ impl Modem {
                         device_name: acfg.device_name.clone(),
                         sample_rate: acfg.sample_rate,
                         channels: acfg.channels,
-                        audio_channel: channel_cfgs.first().map(|c| c.audio_channel).unwrap_or(0),
+                        audio_channel: channel_cfgs.first().map(|c| c.input_channel).unwrap_or(0),
                     },
                     tx,
                 )?,
@@ -288,7 +292,7 @@ impl Modem {
                     audio::flac::FlacConfig {
                         path: acfg.device_name.clone(),
                         rate_override: 0,
-                        audio_channel: channel_cfgs.first().map(|c| c.audio_channel).unwrap_or(0),
+                        audio_channel: channel_cfgs.first().map(|c| c.input_channel).unwrap_or(0),
                     },
                     tx,
                 )?,
@@ -325,7 +329,7 @@ impl Modem {
 
                 chan_pipelines.push(ChannelPipeline {
                     channel_id: ccfg.channel,
-                    audio_channel: ccfg.audio_channel,
+                    input_channel: ccfg.input_channel,
                     demod,
                     extra_demods,
                     prev_dcd_any: false,
@@ -688,10 +692,15 @@ fn parse_channel(c: &ConfigureChannel) -> ChannelConfig {
         "double" => RetryType::InvertDouble,
         _ => RetryType::None,
     };
+    // Prefer new split fields; fall back to legacy device_id/audio_channel
+    let input_device_id = if c.input_device_id != 0 { c.input_device_id } else { c.device_id };
+    let input_channel = if c.input_device_id != 0 { c.input_channel } else { c.audio_channel };
     ChannelConfig {
         channel: c.channel,
-        device_id: c.device_id,
-        audio_channel: c.audio_channel,
+        input_device_id,
+        input_channel,
+        output_device_id: c.output_device_id,
+        output_channel: c.output_channel,
         baud: if c.baud == 0 { 1200 } else { c.baud },
         mark_freq: if c.mark_freq == 0 { 1200 } else { c.mark_freq },
         space_freq: if c.space_freq == 0 { 2200 } else { c.space_freq },

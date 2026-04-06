@@ -935,23 +935,27 @@ func (x *TransmitFrame) GetPriority() uint32 {
 
 // Configure a logical radio channel's demodulator parameters.
 type ConfigureChannel struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Channel       uint32                 `protobuf:"varint,1,opt,name=channel,proto3" json:"channel,omitempty"`
-	DeviceId      uint32                 `protobuf:"varint,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`             // audio device this channel reads from
-	AudioChannel  uint32                 `protobuf:"varint,3,opt,name=audio_channel,json=audioChannel,proto3" json:"audio_channel,omitempty"` // 0=left / mono, 1=right
-	Baud          uint32                 `protobuf:"varint,4,opt,name=baud,proto3" json:"baud,omitempty"`                                     // 1200, 2400, 4800, 9600
-	MarkFreq      uint32                 `protobuf:"varint,5,opt,name=mark_freq,json=markFreq,proto3" json:"mark_freq,omitempty"`
-	SpaceFreq     uint32                 `protobuf:"varint,6,opt,name=space_freq,json=spaceFreq,proto3" json:"space_freq,omitempty"`
-	ModemType     string                 `protobuf:"bytes,7,opt,name=modem_type,json=modemType,proto3" json:"modem_type,omitempty"` // "afsk" (phase 1), "psk", "9600" later
-	Profile       string                 `protobuf:"bytes,8,opt,name=profile,proto3" json:"profile,omitempty"`                      // "A" | "B"
-	NumSlicers    uint32                 `protobuf:"varint,9,opt,name=num_slicers,json=numSlicers,proto3" json:"num_slicers,omitempty"`
-	FixBits       string                 `protobuf:"bytes,10,opt,name=fix_bits,json=fixBits,proto3" json:"fix_bits,omitempty"`                    // "none" | "single" | "double"
-	NumDecoders   uint32                 `protobuf:"varint,11,opt,name=num_decoders,json=numDecoders,proto3" json:"num_decoders,omitempty"`       // multi-modem: number of parallel decoders
-	DecoderOffset int32                  `protobuf:"varint,12,opt,name=decoder_offset,json=decoderOffset,proto3" json:"decoder_offset,omitempty"` // multi-modem: frequency offset step in Hz
-	Fx25Encode    bool                   `protobuf:"varint,13,opt,name=fx25_encode,json=fx25Encode,proto3" json:"fx25_encode,omitempty"`          // enable FX.25 RS FEC on transmit
-	Il2PEncode    bool                   `protobuf:"varint,14,opt,name=il2p_encode,json=il2pEncode,proto3" json:"il2p_encode,omitempty"`          // enable IL2P encoding on transmit
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Channel        uint32                 `protobuf:"varint,1,opt,name=channel,proto3" json:"channel,omitempty"`
+	DeviceId       uint32                 `protobuf:"varint,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`             // audio device this channel reads from
+	AudioChannel   uint32                 `protobuf:"varint,3,opt,name=audio_channel,json=audioChannel,proto3" json:"audio_channel,omitempty"` // 0=left / mono, 1=right
+	Baud           uint32                 `protobuf:"varint,4,opt,name=baud,proto3" json:"baud,omitempty"`                                     // 1200, 2400, 4800, 9600
+	MarkFreq       uint32                 `protobuf:"varint,5,opt,name=mark_freq,json=markFreq,proto3" json:"mark_freq,omitempty"`
+	SpaceFreq      uint32                 `protobuf:"varint,6,opt,name=space_freq,json=spaceFreq,proto3" json:"space_freq,omitempty"`
+	ModemType      string                 `protobuf:"bytes,7,opt,name=modem_type,json=modemType,proto3" json:"modem_type,omitempty"` // "afsk" (phase 1), "psk", "9600" later
+	Profile        string                 `protobuf:"bytes,8,opt,name=profile,proto3" json:"profile,omitempty"`                      // "A" | "B"
+	NumSlicers     uint32                 `protobuf:"varint,9,opt,name=num_slicers,json=numSlicers,proto3" json:"num_slicers,omitempty"`
+	FixBits        string                 `protobuf:"bytes,10,opt,name=fix_bits,json=fixBits,proto3" json:"fix_bits,omitempty"`                         // "none" | "single" | "double"
+	NumDecoders    uint32                 `protobuf:"varint,11,opt,name=num_decoders,json=numDecoders,proto3" json:"num_decoders,omitempty"`            // multi-modem: number of parallel decoders
+	DecoderOffset  int32                  `protobuf:"varint,12,opt,name=decoder_offset,json=decoderOffset,proto3" json:"decoder_offset,omitempty"`      // multi-modem: frequency offset step in Hz
+	Fx25Encode     bool                   `protobuf:"varint,13,opt,name=fx25_encode,json=fx25Encode,proto3" json:"fx25_encode,omitempty"`               // enable FX.25 RS FEC on transmit
+	Il2PEncode     bool                   `protobuf:"varint,14,opt,name=il2p_encode,json=il2pEncode,proto3" json:"il2p_encode,omitempty"`               // enable IL2P encoding on transmit
+	InputDeviceId  uint32                 `protobuf:"varint,15,opt,name=input_device_id,json=inputDeviceId,proto3" json:"input_device_id,omitempty"`    // input audio device (replaces device_id)
+	InputChannel   uint32                 `protobuf:"varint,16,opt,name=input_channel,json=inputChannel,proto3" json:"input_channel,omitempty"`         // input stereo select (replaces audio_channel)
+	OutputDeviceId uint32                 `protobuf:"varint,17,opt,name=output_device_id,json=outputDeviceId,proto3" json:"output_device_id,omitempty"` // output audio device, 0 = RX-only
+	OutputChannel  uint32                 `protobuf:"varint,18,opt,name=output_channel,json=outputChannel,proto3" json:"output_channel,omitempty"`      // output stereo select
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ConfigureChannel) Reset() {
@@ -1080,6 +1084,34 @@ func (x *ConfigureChannel) GetIl2PEncode() bool {
 		return x.Il2PEncode
 	}
 	return false
+}
+
+func (x *ConfigureChannel) GetInputDeviceId() uint32 {
+	if x != nil {
+		return x.InputDeviceId
+	}
+	return 0
+}
+
+func (x *ConfigureChannel) GetInputChannel() uint32 {
+	if x != nil {
+		return x.InputChannel
+	}
+	return 0
+}
+
+func (x *ConfigureChannel) GetOutputDeviceId() uint32 {
+	if x != nil {
+		return x.OutputDeviceId
+	}
+	return 0
+}
+
+func (x *ConfigureChannel) GetOutputChannel() uint32 {
+	if x != nil {
+		return x.OutputChannel
+	}
+	return 0
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
@@ -1522,7 +1554,7 @@ const file_proto_graywolf_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12.\n" +
 	"\x13txdelay_override_ms\x18\x03 \x01(\rR\x11txdelayOverrideMs\x12,\n" +
 	"\x12txtail_override_ms\x18\x04 \x01(\rR\x10txtailOverrideMs\x12\x1a\n" +
-	"\bpriority\x18\x05 \x01(\rR\bpriority\"\xbf\x03\n" +
+	"\bpriority\x18\x05 \x01(\rR\bpriority\"\xdd\x04\n" +
 	"\x10ConfigureChannel\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\rR\bdeviceId\x12#\n" +
@@ -1543,7 +1575,11 @@ const file_proto_graywolf_proto_rawDesc = "" +
 	"\vfx25_encode\x18\r \x01(\bR\n" +
 	"fx25Encode\x12\x1f\n" +
 	"\vil2p_encode\x18\x0e \x01(\bR\n" +
-	"il2pEncode\"\xc4\x01\n" +
+	"il2pEncode\x12&\n" +
+	"\x0finput_device_id\x18\x0f \x01(\rR\rinputDeviceId\x12#\n" +
+	"\rinput_channel\x18\x10 \x01(\rR\finputChannel\x12(\n" +
+	"\x10output_device_id\x18\x11 \x01(\rR\x0eoutputDeviceId\x12%\n" +
+	"\x0eoutput_channel\x18\x12 \x01(\rR\routputChannel\"\xc4\x01\n" +
 	"\x0eConfigureAudio\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\rR\bdeviceId\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +

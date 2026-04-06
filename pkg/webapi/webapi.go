@@ -161,17 +161,23 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		s.notifyBridgeForDevice(r.Context(), c.AudioDeviceID)
+		s.notifyBridgeForDevice(r.Context(), c.InputDeviceID)
+		if c.OutputDeviceID != 0 {
+			s.notifyBridgeForDevice(r.Context(), c.OutputDeviceID)
+		}
 		writeJSON(w, http.StatusOK, c)
 	case http.MethodDelete:
-		// Look up device ID before deleting so we can notify the bridge.
+		// Look up device IDs before deleting so we can notify the bridge.
 		ch, _ := s.store.GetChannel(id)
 		if err := s.store.DeleteChannel(id); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		if ch != nil {
-			s.notifyBridgeForDevice(r.Context(), ch.AudioDeviceID)
+			s.notifyBridgeForDevice(r.Context(), ch.InputDeviceID)
+			if ch.OutputDeviceID != 0 {
+				s.notifyBridgeForDevice(r.Context(), ch.OutputDeviceID)
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -366,7 +372,7 @@ func (s *Server) notifyBridgeForDevice(ctx context.Context, deviceID uint32) {
 	}
 }
 
-// notifyBridgeForChannel looks up the channel's audio device and reconfigures it.
+// notifyBridgeForChannel looks up the channel's audio devices and reconfigures them.
 func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
 	if s.bridge == nil {
 		return
@@ -376,7 +382,10 @@ func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
 		s.logger.Warn("bridge reconfigure: get channel", "channel_id", channelID, "err", err)
 		return
 	}
-	s.notifyBridgeForDevice(ctx, ch.AudioDeviceID)
+	s.notifyBridgeForDevice(ctx, ch.InputDeviceID)
+	if ch.OutputDeviceID != 0 {
+		s.notifyBridgeForDevice(ctx, ch.OutputDeviceID)
+	}
 }
 
 func parseID(s string) (uint32, error) {

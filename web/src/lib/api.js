@@ -63,6 +63,11 @@ const mockPtt = [
   { id: 1, channel_id: 1, method: 'serial_rts', device_path: '/dev/ttyUSB0', gpio_pin: 0 },
 ];
 
+const mockPttAvailable = [
+  { path: '/dev/ttyUSB0', type: 'serial', name: 'ttyUSB0' },
+  { path: '/dev/ttyACM0', type: 'serial', name: 'ttyACM0' },
+];
+
 const mockTxTiming = [
   { id: 1, channel_id: 1, txdelay: 300, txtail: 50, slottime: 100, persist: 63, duplex: false },
 ];
@@ -137,6 +142,7 @@ function getMockData(method, path, body) {
   // PTT
   if (path === '/ptt' && method === 'GET') return delay(mockPtt);
   if (path === '/ptt' && method === 'POST') return delay({ id: 2, ...body });
+  if (path === '/ptt/available') return delay(mockPttAvailable);
   if (path.match(/^\/ptt\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/ptt\/\d+$/) && method === 'DELETE') return delay(null);
 

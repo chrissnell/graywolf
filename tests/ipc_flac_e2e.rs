@@ -118,6 +118,10 @@ fn flac_end_to_end_yields_frames() {
             decoder_offset: 0,
             fx25_encode: false,
             il2p_encode: false,
+            input_device_id: 0,
+            input_channel: 0,
+            output_device_id: 0,
+            output_channel: 0,
         })),
     };
     write_frame(&mut client, &cfg_chan).unwrap();

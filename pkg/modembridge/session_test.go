@@ -47,6 +47,7 @@ func seedStore(t *testing.T) *configstore.Store {
 	}
 	dev := &configstore.AudioDevice{
 		Name:       "test",
+		Direction:  "input",
 		SourceType: "flac",
 		SourcePath: "/tmp/does-not-exist.flac",
 		SampleRate: 44100,
@@ -58,7 +59,7 @@ func seedStore(t *testing.T) *configstore.Store {
 	}
 	ch := &configstore.Channel{
 		Name:          "rx1",
-		AudioDeviceID: dev.ID,
+		InputDeviceID: dev.ID,
 		ModemType:     "afsk",
 		BitRate:       1200,
 		MarkFreq:      1200,

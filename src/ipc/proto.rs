@@ -68,6 +68,10 @@ mod tests {
                 decoder_offset: 0,
                 fx25_encode: false,
                 il2p_encode: false,
+                input_device_id: 1,
+                input_channel: 0,
+                output_device_id: 0,
+                output_channel: 0,
             })),
         };
         let mut buf = Vec::new();

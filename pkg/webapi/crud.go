@@ -6,30 +6,48 @@ import (
 	"strings"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/pttdevice"
 )
 
 // --- PTT ---
 
 func (s *Server) handlePttCollection(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.store.ListPttConfigs()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
+	case http.MethodPost:
+		var p configstore.PttConfig
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := s.store.UpsertPttConfig(&p); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.notifyBridgeForChannel(r.Context(), p.ChannelID)
+		writeJSON(w, http.StatusCreated, p)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	var p configstore.PttConfig
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
-	}
-	if err := s.store.UpsertPttConfig(&p); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	s.notifyBridgeForChannel(r.Context(), p.ChannelID)
-	writeJSON(w, http.StatusCreated, p)
 }
 
 func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(strings.TrimPrefix(r.URL.Path, "/api/ptt/"))
+	rest := strings.TrimPrefix(r.URL.Path, "/api/ptt/")
+	if rest == "available" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handlePttAvailable(w, r)
+		return
+	}
+	id, err := parseID(rest)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid channel id"})
 		return
@@ -55,6 +73,13 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 		}
 		s.notifyBridgeForChannel(r.Context(), id)
 		writeJSON(w, http.StatusOK, p)
+	case http.MethodDelete:
+		if err := s.store.DeletePttConfig(id); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.notifyBridgeForChannel(r.Context(), id)
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -373,6 +398,13 @@ func (s *Server) handleDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// --- PTT available devices ---
+
+func (s *Server) handlePttAvailable(w http.ResponseWriter, _ *http.Request) {
+	devs := pttdevice.Enumerate()
+	writeJSON(w, http.StatusOK, devs)
 }
 
 // --- GPS (singleton) ---

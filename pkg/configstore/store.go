@@ -77,7 +77,7 @@ func (s *Store) Close() error {
 
 // Migrate brings the schema up to date. Safe to call repeatedly.
 func (s *Store) Migrate() error {
-	return s.db.AutoMigrate(
+	if err := s.db.AutoMigrate(
 		&AudioDevice{},
 		&Channel{},
 		&PttConfig{},
@@ -92,7 +92,31 @@ func (s *Store) Migrate() error {
 		&Beacon{},
 		&PacketFilter{},
 		&GPSConfig{},
-	)
+	); err != nil {
+		return err
+	}
+	return s.migrateChannelDeviceFields()
+}
+
+// migrateChannelDeviceFields migrates the old single audio_device_id/audio_channel
+// columns to the new input_device_id/input_channel/output_device_id/output_channel
+// split. No-op if the old columns no longer exist.
+func (s *Store) migrateChannelDeviceFields() error {
+	var count int
+	s.db.Raw("SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name='audio_device_id'").Scan(&count)
+	if count == 0 {
+		return nil // already migrated or fresh DB
+	}
+	if err := s.db.Exec("UPDATE channels SET input_device_id = audio_device_id, input_channel = audio_channel, output_device_id = 0, output_channel = 0 WHERE input_device_id = 0").Error; err != nil {
+		return fmt.Errorf("migrate channel device fields: %w", err)
+	}
+	if err := s.db.Exec("ALTER TABLE channels DROP COLUMN audio_device_id").Error; err != nil {
+		return fmt.Errorf("drop audio_device_id: %w", err)
+	}
+	if err := s.db.Exec("ALTER TABLE channels DROP COLUMN audio_channel").Error; err != nil {
+		return fmt.Errorf("drop audio_channel: %w", err)
+	}
+	return nil
 }
 
 // seedDefaults populates a first-run database with a sensible starting
@@ -121,9 +145,10 @@ func (s *Store) seedDefaults() error {
 	}
 
 	ch := &Channel{
-		Name:          "Channel 1",
-		AudioDeviceID: dev.ID,
-		AudioChannel:  0,
+		Name:           "Channel 1",
+		InputDeviceID:  dev.ID,
+		InputChannel:   0,
+		OutputDeviceID: 0,
 		ModemType:     "afsk",
 		BitRate:       1200,
 		MarkFreq:      1200,
@@ -228,24 +253,55 @@ func (s *Store) GetPttConfigForChannel(channelID uint32) (*PttConfig, error) {
 	return &p, nil
 }
 
+func (s *Store) ListPttConfigs() ([]PttConfig, error) {
+	var list []PttConfig
+	if err := s.db.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (s *Store) DeletePttConfig(id uint32) error {
+	return s.db.Delete(&PttConfig{}, id).Error
+}
+
 
 // ---------------------------------------------------------------------------
 // Channel validation
 // ---------------------------------------------------------------------------
 
-// validateChannel checks that a channel's device_id references a valid audio
-// device, audio_channel is within the device's channel count, and channel_num
-// (ID) is unique. excludeID is the channel's own ID (for updates) or 0 (for
-// creates).
+// validateChannel checks that a channel's input/output device references are
+// valid, channels are within bounds, and the channel ID is unique.
+// excludeID is the channel's own ID (for updates) or 0 (for creates).
 func (s *Store) validateChannel(c *Channel, excludeID uint32) error {
-	dev, err := s.GetAudioDevice(c.AudioDeviceID)
+	// Validate input device (required)
+	inDev, err := s.GetAudioDevice(c.InputDeviceID)
 	if err != nil {
-		return fmt.Errorf("invalid device_id %d: device not found", c.AudioDeviceID)
+		return fmt.Errorf("invalid input_device_id %d: device not found", c.InputDeviceID)
 	}
-	if c.AudioChannel >= dev.Channels {
-		return fmt.Errorf("audio_channel %d out of range for device %q (%d channels)",
-			c.AudioChannel, dev.Name, dev.Channels)
+	if inDev.Direction != "input" {
+		return fmt.Errorf("input_device_id %d: device %q is not an input device", c.InputDeviceID, inDev.Name)
 	}
+	if c.InputChannel >= inDev.Channels {
+		return fmt.Errorf("input_channel %d out of range for device %q (%d channels)",
+			c.InputChannel, inDev.Name, inDev.Channels)
+	}
+
+	// Validate output device (optional, 0 = RX-only)
+	if c.OutputDeviceID != 0 {
+		outDev, err := s.GetAudioDevice(c.OutputDeviceID)
+		if err != nil {
+			return fmt.Errorf("invalid output_device_id %d: device not found", c.OutputDeviceID)
+		}
+		if outDev.Direction != "output" {
+			return fmt.Errorf("output_device_id %d: device %q is not an output device", c.OutputDeviceID, outDev.Name)
+		}
+		if c.OutputChannel >= outDev.Channels {
+			return fmt.Errorf("output_channel %d out of range for device %q (%d channels)",
+				c.OutputChannel, outDev.Name, outDev.Channels)
+		}
+	}
+
 	// Check ID uniqueness only when the caller has set a specific ID (non-zero
 	// on update, or when the caller pre-assigns an ID on create).
 	if c.ID != 0 {

@@ -1,4 +1,4 @@
-//! # direwolf-demod
+//! # graywolf-demod
 //!
 //! High-performance AFSK (Audio Frequency Shift Keying) demodulator, ported
 //! from the [Dire Wolf](https://github.com/wb2osz/direwolf) amateur radio

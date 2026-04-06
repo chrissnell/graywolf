@@ -21,14 +21,14 @@ func newTestServer(t *testing.T) (*Server, *modembridge.Bridge) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	dev := &configstore.AudioDevice{
-		Name: "test", SourceType: "flac", SourcePath: "/tmp/x.flac",
+		Name: "test", Direction: "input", SourceType: "flac", SourcePath: "/tmp/x.flac",
 		SampleRate: 44100, Channels: 1, Format: "s16le",
 	}
 	if err := store.CreateAudioDevice(dev); err != nil {
 		t.Fatal(err)
 	}
 	ch := &configstore.Channel{
-		Name: "rx0", AudioDeviceID: dev.ID,
+		Name: "rx0", InputDeviceID: dev.ID,
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
