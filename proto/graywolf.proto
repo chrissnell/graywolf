@@ -24,6 +24,8 @@ message IpcMessage {
     StatusUpdate status_update = 3;
     ModemReady modem_ready = 4;
     AudioDeviceList audio_device_list = 5;
+    TestToneResult test_tone_result = 6;
+    DeviceLevelUpdate device_level_update = 7;
 
     // Go application → Rust modem
     TransmitFrame transmit_frame = 10;
@@ -34,6 +36,8 @@ message IpcMessage {
     StopAudio stop_audio = 15;
     Shutdown shutdown = 16;
     EnumerateAudioDevices enumerate_audio_devices = 17;
+    PlayTestTone play_test_tone = 18;
+    SetDeviceGain set_device_gain = 19;
   }
 }
 
@@ -151,6 +155,7 @@ message ConfigureAudio {
   uint32 channels = 4;          // 1=mono, 2=stereo
   string source_type = 5;       // "soundcard" | "stdin" | "flac" | "sdr_udp"
   string format = 6;            // "s16le" | "f32" etc. (source-specific)
+  float gain_db = 7;            // software gain in dB (-60 to +12), 0 = unity
 }
 
 // Configure PTT (push-to-talk) control for a channel.
@@ -181,4 +186,33 @@ message Shutdown {
 message EnumerateAudioDevices {
   uint32 request_id = 1;        // echoed back in AudioDeviceList
   bool include_output = 2;      // include output devices in response
+}
+
+// Request a brief test tone on an output device.
+message PlayTestTone {
+  uint32 request_id = 1;        // echoed back in TestToneResult
+  string device_name = 2;       // cpal output device name
+  uint32 sample_rate = 3;
+  uint32 channels = 4;
+}
+
+// Result of a test tone attempt.
+message TestToneResult {
+  uint32 request_id = 1;
+  bool success = 2;
+  string error = 3;             // empty on success
+}
+
+// Set software gain for an audio device (live update, no restart).
+message SetDeviceGain {
+  uint32 device_id = 1;
+  float gain_db = 2;            // -60.0 to +12.0, 0.0 = unity
+}
+
+// Per-device audio level report, emitted ~5 Hz by the modem.
+message DeviceLevelUpdate {
+  uint32 device_id = 1;
+  float peak_dbfs = 2;          // instantaneous peak in dBFS
+  float rms_dbfs = 3;           // RMS level in dBFS
+  bool clipping = 4;            // true if post-gain samples exceeded -1 dBFS
 }

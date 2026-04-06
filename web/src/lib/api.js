@@ -111,11 +111,18 @@ const mockPackets = [
   { id: 2, timestamp: new Date(Date.now() - 5000).toISOString(), source: 'W5ABC-7', destination: 'APGW00', path: 'WIDE2-1', type: 'position', raw: 'W5ABC-7>APGW00,WIDE2-1:@092345z3501.00N/10601.00W_090/005', direction: 'rx', channel: 'VHF APRS' },
 ];
 
-const mockPosition = { latitude: 35.0, longitude: -106.0, altitude: 1500, speed: 0, course: 0, fix: '3D', satellites: 8 };
+const mockPosition = { valid: true, lat: 35.0, lon: -106.0, alt_m: 1500, has_alt: true, speed_kt: 0, heading_deg: 0, has_course: false };
 
 const mockSimulation = { enabled: false, packets: mockPackets };
 
-const mockStats = { packets_rx: 142, packets_tx: 23, igated: 89, uptime: 3600 };
+const mockStatus = {
+  uptime_seconds: 3600,
+  channels: [
+    { id: 1, name: 'VHF APRS', modem_type: 'afsk', bit_rate: 1200, rx_frames: 142, tx_frames: 23, dcd_state: false, audio_peak: -12.0 },
+    { id: 2, name: '9600 Data', modem_type: 'gfsk', bit_rate: 9600, rx_frames: 0, tx_frames: 0, dcd_state: false, audio_peak: 0 },
+  ],
+  igate: { connected: true, server: 'rotate.aprs2.net', callsign: 'N0CALL-10', rf_to_is_gated: 89, is_to_rf_gated: 0, packets_filtered: 12, rf_to_is_dropped: 0 },
+};
 
 function getMockData(method, path, body) {
   // Auth
@@ -130,7 +137,7 @@ function getMockData(method, path, body) {
   if (path.match(/^\/channels\/\d+$/) && method === 'GET') return delay(mockChannels[0]);
   if (path.match(/^\/channels\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/channels\/\d+$/) && method === 'DELETE') return delay(null);
-  if (path.match(/^\/channels\/\d+\/stats$/)) return delay(mockStats);
+  if (path.match(/^\/channels\/\d+\/stats$/)) return delay(mockStatus.channels[0]);
 
   // Audio devices
   if (path === '/audio-devices' && method === 'GET') return delay(mockAudioDevices);
@@ -189,6 +196,9 @@ function getMockData(method, path, body) {
   // GPS
   if (path === '/gps' && method === 'GET') return delay(mockGps);
   if (path === '/gps' && method === 'PUT') return delay(body);
+
+  // Status (aggregated dashboard data)
+  if (path === '/status') return delay(mockStatus);
 
   // Packets
   if (path.startsWith('/packets')) return delay(mockPackets);

@@ -18,9 +18,11 @@ import (
 // Server routes /api/* requests. It does not own the underlying
 // listener; cmd/graywolf composes it into its main mux.
 type Server struct {
-	store  *configstore.Store
-	bridge *modembridge.Bridge
-	logger *slog.Logger
+	store        *configstore.Store
+	bridge       *modembridge.Bridge
+	logger       *slog.Logger
+	startedAt    time.Time
+	igateStatusFn func() IgateStatus
 }
 
 // Config bundles the dependencies for NewServer.
@@ -41,9 +43,10 @@ func NewServer(cfg Config) (*Server, error) {
 		logger = slog.Default()
 	}
 	return &Server{
-		store:  cfg.Store,
-		bridge: cfg.Bridge,
-		logger: logger.With("component", "webapi"),
+		store:     cfg.Store,
+		bridge:    cfg.Bridge,
+		logger:    logger.With("component", "webapi"),
+		startedAt: time.Now(),
 	}, nil
 }
 
@@ -93,6 +96,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// /api/packets — in packets.go (RegisterPackets)
 	// /api/position — in position.go (RegisterPosition)
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/status", s.handleStatus)
 }
 
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
@@ -380,9 +384,75 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"time":   time.Now().UTC().Format(time.RFC3339),
+		"status":     "ok",
+		"time":       time.Now().UTC().Format(time.RFC3339),
+		"started_at": s.startedAt.UTC().Format(time.RFC3339),
 	})
+}
+
+// SetIgateStatusFn installs the function used by /api/status to report igate counters.
+func (s *Server) SetIgateStatusFn(fn func() IgateStatus) {
+	s.igateStatusFn = fn
+}
+
+// StatusDTO is the JSON shape returned by GET /api/status.
+type StatusDTO struct {
+	UptimeSeconds int64                            `json:"uptime_seconds"`
+	Channels      []StatusChannel                  `json:"channels"`
+	Igate         *IgateStatus                     `json:"igate,omitempty"`
+}
+
+// StatusChannel pairs a channel config with its live stats.
+type StatusChannel struct {
+	ID        uint32  `json:"id"`
+	Name      string  `json:"name"`
+	ModemType string  `json:"modem_type"`
+	BitRate   uint32  `json:"bit_rate"`
+	RxFrames  uint64  `json:"rx_frames"`
+	TxFrames  uint64  `json:"tx_frames"`
+	DcdState  bool    `json:"dcd_state"`
+	AudioPeak float32 `json:"audio_peak"`
+}
+
+// GET /api/status — aggregated dashboard data
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dto := StatusDTO{
+		UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
+	}
+
+	// Channels + stats
+	channels, err := s.store.ListChannels()
+	if err == nil {
+		for _, ch := range channels {
+			sc := StatusChannel{
+				ID:        ch.ID,
+				Name:      ch.Name,
+				ModemType: ch.ModemType,
+				BitRate:   ch.BitRate,
+			}
+			if s.bridge != nil {
+				if stats, ok := s.bridge.GetChannelStats(uint32(ch.ID)); ok {
+					sc.RxFrames = stats.RxFrames
+					sc.TxFrames = stats.TxFrames
+					sc.DcdState = stats.DcdState
+					sc.AudioPeak = stats.AudioLevelPeak
+				}
+			}
+			dto.Channels = append(dto.Channels, sc)
+		}
+	}
+
+	// iGate
+	if s.igateStatusFn != nil {
+		st := s.igateStatusFn()
+		dto.Igate = &st
+	}
+
+	writeJSON(w, http.StatusOK, dto)
 }
 
 // notifyBridgeForDevice tells the modem bridge to hot-reconfigure a device.

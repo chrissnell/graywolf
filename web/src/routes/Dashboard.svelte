@@ -5,13 +5,17 @@
   import PageHeader from '../components/PageHeader.svelte';
 
   let packets = $state([]);
-  let stats = $state({ packets_rx: 0, packets_tx: 0, igated: 0, uptime: 0 });
+  let status = $state(null);
   let position = $state(null);
   let audioDevices = $state([]);
   let pollTimer = $state(null);
 
   let hasInput = $derived(audioDevices.some(d => d.direction === 'input'));
   let hasOutput = $derived(audioDevices.some(d => d.direction === 'output'));
+
+  let totalRx = $derived(status?.channels?.reduce((sum, ch) => sum + (ch.rx_frames || 0), 0) ?? 0);
+  let totalTx = $derived(status?.channels?.reduce((sum, ch) => sum + (ch.tx_frames || 0), 0) ?? 0);
+  let igated = $derived(status?.igate?.rf_to_is_gated ?? 0);
 
   onMount(() => {
     loadData();
@@ -24,11 +28,11 @@
     const [pkts, pos, st] = await Promise.allSettled([
       api.get('/packets?limit=20'),
       api.get('/position'),
-      api.get('/channels/1/stats'),
+      api.get('/status'),
     ]);
     if (pkts.status === 'fulfilled') packets = pkts.value || [];
     if (pos.status === 'fulfilled') position = pos.value;
-    if (st.status === 'fulfilled' && st.value) stats = st.value;
+    if (st.status === 'fulfilled' && st.value) status = st.value;
   }
 
   async function loadAudioDevices() {
@@ -38,6 +42,7 @@
   }
 
   function formatUptime(s) {
+    if (!s && s !== 0) return '—';
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
     return `${h}h ${m}m`;
@@ -49,7 +54,7 @@
 
   function parseDisplay(pkt) {
     const d = pkt.decoded;
-    if (d?.source) return { src: d.source, dst: d.dest || '' };
+    if (d?.Source) return { src: d.Source, dst: d.Dest || '' };
     const s = pkt.display || '';
     const gt = s.indexOf('>');
     if (gt < 0) return { src: '', dst: '' };
@@ -58,6 +63,26 @@
     const end = rest.search(/[,:]/);
     const dst = end >= 0 ? rest.substring(0, end) : rest;
     return { src, dst };
+  }
+
+  function formatCoord(val, posChar, negChar) {
+    if (val == null) return '—';
+    const abs = Math.abs(val);
+    const dir = val >= 0 ? posChar : negChar;
+    return `${abs.toFixed(4)}°${dir}`;
+  }
+
+  /** Convert dBFS peak level to a 0–100% bar width */
+  function peakToPercent(peak) {
+    if (!peak && peak !== 0) return 0;
+    // peak is typically negative dBFS; -60 = silence, 0 = clipping
+    const clamped = Math.max(-60, Math.min(0, peak));
+    return ((clamped + 60) / 60) * 100;
+  }
+
+  function formatPeak(peak) {
+    if (!peak && peak !== 0) return '— dB';
+    return `${peak.toFixed(0)} dB`;
   }
 
   let feedEntries = $derived(packets.map(pkt => {
@@ -107,19 +132,19 @@
   <Box title="Station Stats">
     <div class="stats-grid">
       <div class="stat">
-        <span class="stat-value">{stats.packets_rx}</span>
+        <span class="stat-value">{totalRx}</span>
         <span class="stat-label">Packets RX</span>
       </div>
       <div class="stat">
-        <span class="stat-value">{stats.packets_tx}</span>
+        <span class="stat-value">{totalTx}</span>
         <span class="stat-label">Packets TX</span>
       </div>
       <div class="stat">
-        <span class="stat-value">{stats.igated}</span>
+        <span class="stat-value">{igated}</span>
         <span class="stat-label">iGated</span>
       </div>
       <div class="stat">
-        <span class="stat-value">{formatUptime(stats.uptime)}</span>
+        <span class="stat-value">{formatUptime(status?.uptime_seconds)}</span>
         <span class="stat-label">Uptime</span>
       </div>
     </div>
@@ -127,41 +152,46 @@
 
   <Box title="DCD Status">
     <div class="dcd-row">
-      <div class="dcd-indicator">
-        <span class="dcd-dot dcd-idle"></span>
-        <span>CH1 — VHF APRS</span>
-      </div>
-      <div class="dcd-indicator">
-        <span class="dcd-dot dcd-idle"></span>
-        <span>CH2 — 9600 Data</span>
-      </div>
+      {#if status?.channels?.length}
+        {#each status.channels as ch}
+          <div class="dcd-indicator">
+            <span class="dcd-dot" class:dcd-active={ch.dcd_state} class:dcd-idle={!ch.dcd_state}></span>
+            <span>CH{ch.id} — {ch.name}</span>
+          </div>
+        {/each}
+      {:else}
+        <span class="text-muted">No channels configured</span>
+      {/if}
     </div>
   </Box>
 
   <Box title="Audio Levels">
     <div class="levels">
-      <div class="level-row">
-        <span class="level-label">CH1 RX</span>
-        <div class="level-bar">
-          <div class="level-fill" style="width: 35%"></div>
-        </div>
-        <span class="level-value">-12 dB</span>
-      </div>
-      <div class="level-row">
-        <span class="level-label">CH1 TX</span>
-        <div class="level-bar">
-          <div class="level-fill level-tx" style="width: 0%"></div>
-        </div>
-        <span class="level-value">— dB</span>
-      </div>
+      {#if status?.channels?.length}
+        {#each status.channels as ch}
+          <div class="level-row">
+            <span class="level-label">CH{ch.id}</span>
+            <div class="level-bar">
+              <div class="level-fill" style="width: {peakToPercent(ch.audio_peak)}%"></div>
+            </div>
+            <span class="level-value">{formatPeak(ch.audio_peak)}</span>
+          </div>
+        {/each}
+      {:else}
+        <span class="text-muted">No channels configured</span>
+      {/if}
     </div>
   </Box>
 
   <Box title="GPS Position">
-    {#if position?.latitude != null}
+    {#if position?.valid}
       <div class="position-info">
-        <span>{position.latitude.toFixed(4)}°N, {position.longitude.toFixed(4)}°W</span>
-        <span class="pos-detail">Alt: {position.altitude}m | Fix: {position.fix} | Sats: {position.satellites}</span>
+        <span>{formatCoord(position.lat, 'N', 'S')}, {formatCoord(position.lon, 'E', 'W')}</span>
+        <span class="pos-detail">
+          {position.has_alt ? `Alt: ${position.alt_m?.toFixed(0)}m` : ''}
+          {position.has_alt && position.has_course ? ' | ' : ''}
+          {position.has_course ? `Hdg: ${position.heading_deg?.toFixed(0)}° | Spd: ${position.speed_kt?.toFixed(1)}kt` : ''}
+        </span>
       </div>
     {:else}
       <span class="text-muted">No GPS fix</span>
@@ -264,6 +294,10 @@
   .dcd-idle {
     background: var(--text-muted);
   }
+  .dcd-active {
+    background: var(--success, #3fb950);
+    box-shadow: 0 0 6px var(--success, #3fb950);
+  }
   .levels {
     display: flex;
     flex-direction: column;
@@ -291,9 +325,6 @@
     background: var(--success);
     border-radius: 4px;
     transition: width 0.3s;
-  }
-  .level-tx {
-    background: var(--accent);
   }
   .level-value {
     width: 50px;

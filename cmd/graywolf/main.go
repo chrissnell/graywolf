@@ -564,6 +564,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Wire igate status into /api/status for dashboard.
+	if ig != nil {
+		apiSrv.SetIgateStatusFn(func() webapi.IgateStatus {
+			s := ig.Status()
+			return webapi.IgateStatus{
+				Connected:      s.Connected,
+				Server:         s.Server,
+				Callsign:       s.Callsign,
+				SimulationMode: s.SimulationMode,
+				LastConnected:  s.LastConnected,
+				Gated:          s.Gated,
+				Downlinked:     s.Downlinked,
+				Filtered:       s.Filtered,
+				DroppedOffline: s.DroppedOffline,
+			}
+		})
+	}
+
 	// Auth endpoints (public, no middleware).
 	authHandlers := &webauth.Handlers{Auth: authStore, Secure: secure}
 	mux.HandleFunc("/api/auth/login", authHandlers.HandleLogin)
