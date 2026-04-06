@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -110,13 +111,16 @@ type ChannelStats struct {
 	DcdState        bool    `json:"dcd_state"`
 }
 
-// AudioDeviceInfo describes an audio device returned by enumeration.
-type AudioDeviceInfo struct {
-	Name       string `json:"name"`
-	Channels   uint32 `json:"channels"`
-	SampleRate uint32 `json:"sample_rate"`
-	IsDefault  bool   `json:"is_default"`
-	IsInput    bool   `json:"is_input"`
+// AvailableDevice describes an audio device discovered by cpal enumeration.
+// Field names match the frontend's expected shape.
+type AvailableDevice struct {
+	Name        string   `json:"name"`
+	Path        string   `json:"path"` // cpal device name (used as device_path)
+	SampleRates []uint32 `json:"sample_rates"`
+	Channels    []uint32 `json:"channels"`
+	HostAPI     string   `json:"host_api"`
+	IsDefault   bool     `json:"is_default"`
+	IsInput     bool     `json:"is_input"`
 }
 
 // RxHook is invoked for every received frame before it is delivered on
@@ -156,6 +160,12 @@ type Bridge struct {
 	// DcdSubscribe appends an additional channel that the broadcaster
 	// in supervise() writes to.
 	dcdSubs []chan *pb.DcdChange
+
+	// enumReqID is an atomic counter for EnumerateAudioDevices request IDs.
+	enumReqID atomic.Uint32
+	// enumPending maps request_id → response channel for device enumeration.
+	enumMu      sync.Mutex
+	enumPending map[uint32]chan *pb.AudioDeviceList
 }
 
 // New builds a bridge. Call Start to run it.
@@ -168,6 +178,7 @@ func New(cfg Config) *Bridge {
 		dcd:         make(chan *pb.DcdChange, cfg.DcdBufferSize),
 		state:       StateStopped,
 		statusCache: make(map[uint32]*ChannelStats),
+		enumPending: make(map[uint32]chan *pb.AudioDeviceList),
 	}
 }
 
@@ -489,6 +500,78 @@ func (b *Bridge) ReconfigureAudioDevice(ctx context.Context, deviceID uint32) er
 		return fmt.Errorf("send StartAudio: %w", err)
 	}
 	return nil
+}
+
+// EnumerateAudioDevices asks the Rust modem to list available audio devices
+// via cpal and waits for the response. Returns nil slice if the bridge is not
+// running or the request times out.
+func (b *Bridge) EnumerateAudioDevices(ctx context.Context) ([]AvailableDevice, error) {
+	if b.State() != StateRunning {
+		return nil, errors.New("modembridge: not in RUNNING state")
+	}
+
+	reqID := b.enumReqID.Add(1)
+	ch := make(chan *pb.AudioDeviceList, 1)
+
+	b.enumMu.Lock()
+	b.enumPending[reqID] = ch
+	b.enumMu.Unlock()
+	defer func() {
+		b.enumMu.Lock()
+		delete(b.enumPending, reqID)
+		b.enumMu.Unlock()
+	}()
+
+	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_EnumerateAudioDevices{
+		EnumerateAudioDevices: &pb.EnumerateAudioDevices{
+			RequestId:     reqID,
+			IncludeOutput: false, // input devices only for now
+		},
+	}}
+	if err := b.sendIPC(msg); err != nil {
+		return nil, fmt.Errorf("send EnumerateAudioDevices: %w", err)
+	}
+
+	// Wait for response with timeout.
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case resp := <-ch:
+		return convertDeviceList(resp), nil
+	case <-timer.C:
+		return nil, errors.New("modembridge: enumerate timeout")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// dispatchEnumResponse delivers an AudioDeviceList to the waiting caller.
+func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
+	b.enumMu.Lock()
+	ch, ok := b.enumPending[list.RequestId]
+	b.enumMu.Unlock()
+	if ok {
+		select {
+		case ch <- list:
+		default:
+		}
+	}
+}
+
+func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
+	out := make([]AvailableDevice, 0, len(list.Devices))
+	for _, d := range list.Devices {
+		out = append(out, AvailableDevice{
+			Name:        d.Name,
+			Path:        d.Name, // cpal device name is the path
+			SampleRates: d.SampleRates,
+			Channels:    d.ChannelCounts,
+			HostAPI:     d.HostApi,
+			IsDefault:   d.IsDefault,
+			IsInput:     d.Kind == pb.AudioDeviceKind_AUDIO_DEVICE_KIND_INPUT,
+		})
+	}
+	return out
 }
 
 // sendIPC writes an IPC message using the current session's send function.

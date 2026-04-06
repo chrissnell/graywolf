@@ -9,50 +9,50 @@ import "time"
 //   - "stdin":     raw s16le on stdin
 //   - "sdr_udp":   SDR UDP stream (later phases)
 type AudioDevice struct {
-	ID         uint32 `gorm:"primaryKey;autoIncrement"`
-	Name       string `gorm:"not null"`
-	SourceType string `gorm:"not null"` // soundcard|flac|stdin|sdr_udp
-	SourcePath string // cpal name or file path
-	SampleRate uint32 `gorm:"not null;default:48000"`
-	Channels   uint32 `gorm:"not null;default:1"`
-	Format     string `gorm:"not null;default:'s16le'"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name       string    `gorm:"not null" json:"name"`
+	SourceType string    `gorm:"not null" json:"source_type"` // soundcard|flac|stdin|sdr_udp
+	SourcePath string    `json:"device_path"`                 // cpal name or file path
+	SampleRate uint32    `gorm:"not null;default:48000" json:"sample_rate"`
+	Channels   uint32    `gorm:"not null;default:1" json:"channels"`
+	Format     string    `gorm:"not null;default:'s16le'" json:"format"`
+	CreatedAt  time.Time `json:"-"`
+	UpdatedAt  time.Time `json:"-"`
 }
 
 // Channel is a logical radio channel tied to an audio device.
 type Channel struct {
-	ID            uint32 `gorm:"primaryKey;autoIncrement"`
-	Name          string `gorm:"not null"`
-	AudioDeviceID uint32 `gorm:"not null;index"`
-	AudioChannel  uint32 `gorm:"not null;default:0"` // 0=left/mono, 1=right
-	ModemType     string `gorm:"not null;default:'afsk'"`
-	BitRate       uint32 `gorm:"not null;default:1200"`
-	MarkFreq      uint32 `gorm:"not null;default:1200"`
-	SpaceFreq     uint32 `gorm:"not null;default:2200"`
-	Profile       string `gorm:"not null;default:'A'"`
-	NumSlicers    uint32 `gorm:"not null;default:1"`
-	FixBits       string `gorm:"not null;default:'none'"` // none|single|double
-	FX25Encode    bool   `gorm:"not null;default:false"`
-	IL2PEncode    bool   `gorm:"column:il2p_encode;not null;default:false"`
-	NumDecoders   uint32 `gorm:"not null;default:1"`
-	DecoderOffset int32  `gorm:"not null;default:0"`
-	TxDelayMs     uint32 `gorm:"not null;default:300"`
-	TxTailMs      uint32 `gorm:"not null;default:100"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID            uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name          string    `gorm:"not null" json:"name"`
+	AudioDeviceID uint32    `gorm:"not null;index" json:"audio_device_id"`
+	AudioChannel  uint32    `gorm:"not null;default:0" json:"audio_channel"` // 0=left/mono, 1=right
+	ModemType     string    `gorm:"not null;default:'afsk'" json:"modem_type"`
+	BitRate       uint32    `gorm:"not null;default:1200" json:"bit_rate"`
+	MarkFreq      uint32    `gorm:"not null;default:1200" json:"mark_freq"`
+	SpaceFreq     uint32    `gorm:"not null;default:2200" json:"space_freq"`
+	Profile       string    `gorm:"not null;default:'A'" json:"profile"`
+	NumSlicers    uint32    `gorm:"not null;default:1" json:"num_slicers"`
+	FixBits       string    `gorm:"not null;default:'none'" json:"fix_bits"` // none|single|double
+	FX25Encode    bool      `gorm:"not null;default:false" json:"fx25_encode"`
+	IL2PEncode    bool      `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
+	NumDecoders   uint32    `gorm:"not null;default:1" json:"num_decoders"`
+	DecoderOffset int32     `gorm:"not null;default:0" json:"decoder_offset"`
+	TxDelayMs     uint32    `gorm:"not null;default:300" json:"tx_delay_ms"`
+	TxTailMs      uint32    `gorm:"not null;default:100" json:"tx_tail_ms"`
+	CreatedAt     time.Time `json:"-"`
+	UpdatedAt     time.Time `json:"-"`
 }
 
 // PttConfig holds push-to-talk configuration for a channel.
 type PttConfig struct {
-	ID         uint32 `gorm:"primaryKey;autoIncrement"`
-	ChannelID  uint32 `gorm:"not null;uniqueIndex"`
-	Method     string `gorm:"not null;default:'none'"` // serial_rts|serial_dtr|gpio|cm108|none
-	Device     string
-	GpioPin    uint32
-	SlotTimeMs uint32 `gorm:"not null;default:10"`
-	Persist    uint32 `gorm:"not null;default:63"`
-	DwaitMs    uint32 `gorm:"not null;default:0"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	ChannelID  uint32    `gorm:"not null;uniqueIndex" json:"channel_id"`
+	Method     string    `gorm:"not null;default:'none'" json:"method"` // serial_rts|serial_dtr|gpio|cm108|none
+	Device     string    `json:"device_path"`
+	GpioPin    uint32    `json:"gpio_pin"`
+	SlotTimeMs uint32    `gorm:"not null;default:10" json:"slot_time_ms"`
+	Persist    uint32    `gorm:"not null;default:63" json:"persist"`
+	DwaitMs    uint32    `gorm:"not null;default:0" json:"dwait_ms"`
+	CreatedAt  time.Time `json:"-"`
+	UpdatedAt  time.Time `json:"-"`
 }

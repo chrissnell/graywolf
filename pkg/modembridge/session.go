@@ -130,6 +130,8 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 				"detected", p.DcdChange.Detected)
 			// Fan out to the primary channel + every DcdSubscribe() consumer.
 			b.dispatchDcd(p.DcdChange)
+		case *pb.IpcMessage_AudioDeviceList:
+			b.dispatchEnumResponse(p.AudioDeviceList)
 		default:
 			b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 		}

@@ -11,23 +11,23 @@
   let items = $state([]);
   let modalOpen = $state(false);
   let editing = $state(null);
-  let form = $state({ channel_id: '1', txdelay: '300', txtail: '50', slottime: '100', persist: '63', duplex: false });
+  let form = $state({ channel: '1', tx_delay_ms: '300', tx_tail_ms: '50', slot_ms: '100', persist: '63', full_dup: false });
   let errors = $state({});
 
   const columns = [
-    { key: 'channel_id', label: 'Channel' },
-    { key: 'txdelay', label: 'TXDelay (ms)' },
-    { key: 'txtail', label: 'TXTail (ms)' },
-    { key: 'slottime', label: 'Slot Time (ms)' },
+    { key: 'channel', label: 'Channel' },
+    { key: 'tx_delay_ms', label: 'TXDelay (ms)' },
+    { key: 'tx_tail_ms', label: 'TXTail (ms)' },
+    { key: 'slot_ms', label: 'Slot Time (ms)' },
     { key: 'persist', label: 'Persist' },
-    { key: 'duplex', label: 'Duplex' },
+    { key: 'full_dup', label: 'Duplex' },
   ];
 
   onMount(async () => { items = await api.get('/tx-timing') || []; });
 
   function openCreate() {
     editing = null;
-    form = { channel_id: '1', txdelay: '300', txtail: '50', slottime: '100', persist: '63', duplex: false };
+    form = { channel: '1', tx_delay_ms: '300', tx_tail_ms: '50', slot_ms: '100', persist: '63', full_dup: false };
     errors = {};
     modalOpen = true;
   }
@@ -35,9 +35,9 @@
   function openEdit(row) {
     editing = row;
     form = {
-      channel_id: String(row.channel_id), txdelay: String(row.txdelay),
-      txtail: String(row.txtail), slottime: String(row.slottime),
-      persist: String(row.persist), duplex: row.duplex,
+      channel: String(row.channel), tx_delay_ms: String(row.tx_delay_ms),
+      tx_tail_ms: String(row.tx_tail_ms), slot_ms: String(row.slot_ms),
+      persist: String(row.persist), full_dup: row.full_dup,
     };
     errors = {};
     modalOpen = true;
@@ -55,10 +55,10 @@
     e.preventDefault();
     if (!validate()) return;
     const data = {
-      channel_id: parseInt(form.channel_id),
-      txdelay: parseInt(form.txdelay), txtail: parseInt(form.txtail),
-      slottime: parseInt(form.slottime), persist: parseInt(form.persist),
-      duplex: form.duplex,
+      channel: parseInt(form.channel),
+      tx_delay_ms: parseInt(form.tx_delay_ms), tx_tail_ms: parseInt(form.tx_tail_ms),
+      slot_ms: parseInt(form.slot_ms), persist: parseInt(form.persist),
+      full_dup: form.full_dup,
     };
     try {
       if (editing) {
@@ -91,22 +91,22 @@
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit TX Timing' : 'New TX Timing'}>
   <form onsubmit={handleSave}>
-    <FormField label="Channel ID" id="tx-ch">
-      <Input id="tx-ch" bind:value={form.channel_id} type="number" />
+    <FormField label="Channel" id="tx-ch">
+      <Input id="tx-ch" bind:value={form.channel} type="number" />
     </FormField>
     <FormField label="TXDelay (ms)" id="tx-delay">
-      <Input id="tx-delay" bind:value={form.txdelay} type="number" placeholder="300" />
+      <Input id="tx-delay" bind:value={form.tx_delay_ms} type="number" placeholder="300" />
     </FormField>
     <FormField label="TXTail (ms)" id="tx-tail">
-      <Input id="tx-tail" bind:value={form.txtail} type="number" placeholder="50" />
+      <Input id="tx-tail" bind:value={form.tx_tail_ms} type="number" placeholder="50" />
     </FormField>
     <FormField label="Slot Time (ms)" id="tx-slot">
-      <Input id="tx-slot" bind:value={form.slottime} type="number" placeholder="100" />
+      <Input id="tx-slot" bind:value={form.slot_ms} type="number" placeholder="100" />
     </FormField>
     <FormField label="Persist (0-255)" error={errors.persist} id="tx-persist">
       <Input id="tx-persist" bind:value={form.persist} type="number" placeholder="63" />
     </FormField>
-    <Toggle bind:checked={form.duplex} label="Duplex" />
+    <Toggle bind:checked={form.full_dup} label="Duplex" />
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
       <Button variant="primary" type="submit">{editing ? 'Save' : 'Create'}</Button>

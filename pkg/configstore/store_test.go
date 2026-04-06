@@ -19,6 +19,44 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestSeedDefaults(t *testing.T) {
+	s := newTestStore(t)
+
+	// Empty DB should seed one device and one channel.
+	if err := s.seedDefaults(); err != nil {
+		t.Fatalf("seedDefaults: %v", err)
+	}
+	devs, _ := s.ListAudioDevices()
+	if len(devs) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(devs))
+	}
+	if devs[0].SourceType != "soundcard" {
+		t.Errorf("expected soundcard, got %q", devs[0].SourceType)
+	}
+	if devs[0].SourcePath != "default" {
+		t.Errorf("expected source_path 'default', got %q", devs[0].SourcePath)
+	}
+	if devs[0].SampleRate != 48000 {
+		t.Errorf("expected sample_rate 48000, got %d", devs[0].SampleRate)
+	}
+	chs, _ := s.ListChannels()
+	if len(chs) != 1 {
+		t.Fatalf("expected 1 channel, got %d", len(chs))
+	}
+	if chs[0].ModemType != "afsk" || chs[0].BitRate != 1200 {
+		t.Errorf("unexpected channel config: %+v", chs[0])
+	}
+
+	// Calling again should be a no-op.
+	if err := s.seedDefaults(); err != nil {
+		t.Fatalf("seedDefaults second call: %v", err)
+	}
+	devs2, _ := s.ListAudioDevices()
+	if len(devs2) != 1 {
+		t.Fatalf("expected still 1 device after re-seed, got %d", len(devs2))
+	}
+}
+
 func TestAudioDeviceCRUD(t *testing.T) {
 	s := newTestStore(t)
 	d := &AudioDevice{

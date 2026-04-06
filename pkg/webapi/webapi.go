@@ -228,8 +228,22 @@ func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/audio-devices/")
 	if rest == "available" {
-		// Placeholder until Rust DSP IPC provides device enumeration.
-		writeJSON(w, http.StatusOK, []any{})
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if s.bridge == nil {
+			writeJSON(w, http.StatusOK, []any{})
+			return
+		}
+		devices, err := s.bridge.EnumerateAudioDevices(r.Context())
+		if err != nil {
+			s.logger.Warn("enumerate audio devices", "err", err)
+			// Return empty list rather than error — bridge may not be running yet.
+			writeJSON(w, http.StatusOK, []any{})
+			return
+		}
+		writeJSON(w, http.StatusOK, devices)
 		return
 	}
 	id, err := parseID(rest)
