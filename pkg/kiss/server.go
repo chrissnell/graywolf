@@ -45,6 +45,10 @@ type ServerConfig struct {
 	// OnClientChange is invoked with the new active-client count whenever
 	// a client connects or disconnects. Optional.
 	OnClientChange func(active int)
+	// Broadcast, when false, disables BroadcastFromChannel fan-out (the
+	// interface is TX-only from the KISS client's perspective). Default
+	// true — kiss_interfaces.broadcast in the configstore drives this.
+	Broadcast bool
 }
 
 // Server is a multi-client KISS TCP server. A single Server instance
@@ -217,7 +221,8 @@ func (s *Server) removeClient(c *clientConn) {
 
 // Broadcast sends a received AX.25 frame to every connected KISS client
 // (KISSCOPY equivalent). Errors on individual clients are logged but do not
-// stop the broadcast.
+// stop the broadcast. Does not consult the Broadcast flag; callers that
+// want per-interface honoring should use BroadcastFromChannel instead.
 func (s *Server) Broadcast(port uint8, axBytes []byte) {
 	raw := Encode(port, axBytes)
 	s.mu.Lock()
@@ -234,6 +239,33 @@ func (s *Server) Broadcast(port uint8, axBytes []byte) {
 			s.logger.Debug("kiss broadcast write failed", "err", err)
 		}
 	}
+}
+
+// BroadcastFromChannel honors the interface's Broadcast flag and the
+// ChannelMap: the received frame is only forwarded if Broadcast is true
+// and at least one mapped port exists for channel. The KISS port byte
+// in the outgoing frame is the first port whose ChannelMap entry equals
+// channel (falling back to 0 if the map is empty).
+func (s *Server) BroadcastFromChannel(channel uint32, axBytes []byte) {
+	if !s.cfg.Broadcast {
+		return
+	}
+	port := uint8(0)
+	found := false
+	for p, ch := range s.cfg.ChannelMap {
+		if ch == channel {
+			port = p
+			found = true
+			break
+		}
+	}
+	// If the interface has a ChannelMap but channel isn't in it, skip —
+	// this interface doesn't serve that channel. An empty map is
+	// interpreted as "default channel 1 on port 0" per channelFor().
+	if !found && len(s.cfg.ChannelMap) > 0 {
+		return
+	}
+	s.Broadcast(port, axBytes)
 }
 
 // ServeTransport runs a single-client KISS session over any

@@ -76,6 +76,17 @@ func (s *Store) Migrate() error {
 		&PttConfig{},
 		&WebAuth{},
 		&WebSession{},
+		// Phase 4 additions.
+		&KissInterface{},
+		&AgwConfig{},
+		&TxTiming{},
+		&DigipeaterConfig{},
+		&DigipeaterRule{},
+		&IGateConfig{},
+		&IGateRfFilter{},
+		&Beacon{},
+		&PacketFilter{},
+		&GPSConfig{},
 	)
 }
 

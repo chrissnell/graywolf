@@ -18,7 +18,6 @@ type Metrics struct {
 
 	RxFrames        *prometheus.CounterVec
 	DcdTransitions  *prometheus.CounterVec
-	IpcReconnects   prometheus.Counter
 	ChildRestarts   prometheus.Counter
 	AudioLevel      *prometheus.GaugeVec
 	DcdActive       *prometheus.GaugeVec
@@ -32,6 +31,13 @@ type Metrics struct {
 	TxDeduped         prometheus.Counter
 	TxQueueDropped    prometheus.Counter
 	AprsOutDropped    prometheus.Counter
+
+	// Phase 4: digipeater + packet log + beacon.
+	DigipeaterPackets prometheus.Counter
+	DigipeaterDeduped prometheus.Counter
+	PacketlogEntries  prometheus.Gauge
+	BeaconPackets     *prometheus.CounterVec // label: "type"
+	SmartBeaconRate   *prometheus.GaugeVec   // label: "channel"
 
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
@@ -53,10 +59,6 @@ func New() *Metrics {
 			Name: "graywolf_dcd_transitions_total",
 			Help: "Data-carrier-detect state transitions, by channel.",
 		}, []string{"channel"}),
-		IpcReconnects: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "graywolf_ipc_reconnects_total",
-			Help: "Number of times the Go side reconnected to the modem IPC socket.",
-		}),
 		ChildRestarts: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "graywolf_child_restarts_total",
 			Help: "Number of times the Rust modem child process was restarted.",
@@ -101,12 +103,31 @@ func New() *Metrics {
 			Name: "graywolf_aprs_out_dropped_total",
 			Help: "Decoded APRS packets dropped because the output worker queue was full.",
 		}),
+		DigipeaterPackets: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_digipeater_packets_total",
+			Help: "Packets successfully digipeated (path mutated and resubmitted).",
+		}),
+		DigipeaterDeduped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_digipeater_deduped_total",
+			Help: "Packets suppressed by the digipeater dedup window.",
+		}),
+		PacketlogEntries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "graywolf_packetlog_entries_current",
+			Help: "Current number of entries in the packet log ring buffer.",
+		}),
+		BeaconPackets: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_beacon_packets_total",
+			Help: "Beacon packets transmitted, by beacon type.",
+		}, []string{"type"}),
+		SmartBeaconRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "graywolf_smartbeacon_rate_seconds",
+			Help: "Current SmartBeaconing interval in seconds, by channel.",
+		}, []string{"channel"}),
 		lastDcdTransitions: make(map[uint32]uint64),
 	}
 	reg.MustRegister(
 		m.RxFrames,
 		m.DcdTransitions,
-		m.IpcReconnects,
 		m.ChildRestarts,
 		m.AudioLevel,
 		m.DcdActive,
@@ -118,6 +139,11 @@ func New() *Metrics {
 		m.TxDeduped,
 		m.TxQueueDropped,
 		m.AprsOutDropped,
+		m.DigipeaterPackets,
+		m.DigipeaterDeduped,
+		m.PacketlogEntries,
+		m.BeaconPackets,
+		m.SmartBeaconRate,
 	)
 	return m
 }

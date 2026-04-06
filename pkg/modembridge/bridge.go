@@ -97,6 +97,11 @@ func (c *Config) applyDefaults() {
 	}
 }
 
+// RxHook is invoked for every received frame before it is delivered on
+// the Frames() channel. It runs inline in the session goroutine, so
+// implementations must be fast and non-blocking.
+type RxHook func(*pb.ReceivedFrame)
+
 // Bridge supervises the Rust modem child and exposes received frames to
 // consumers.
 type Bridge struct {
@@ -116,6 +121,15 @@ type Bridge struct {
 	// Runtime fields guarded by mu.
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	// rxHook is invoked for every received frame before delivery.
+	rxHook RxHook
+
+	// dcdSubs is a fan-out list of subscriber channels for DCD events.
+	// The original Bridge.dcd channel remains wired to the txgovernor;
+	// DcdSubscribe appends an additional channel that the broadcaster
+	// in supervise() writes to.
+	dcdSubs []chan *pb.DcdChange
 }
 
 // New builds a bridge. Call Start to run it.
@@ -133,7 +147,62 @@ func New(cfg Config) *Bridge {
 // DcdEvents returns a channel of DCD state-change events from the modem.
 // Consumers (e.g. txgovernor) use these to time transmissions against
 // channel-busy state. The channel is closed when Stop completes.
+//
+// Deprecated: for multi-subscriber use, call DcdSubscribe instead. This
+// method remains as a compat shim for the existing txgovernor wiring
+// and returns the primary channel.
 func (b *Bridge) DcdEvents() <-chan *pb.DcdChange { return b.dcd }
+
+// DcdSubscribe returns a new buffered channel that will receive every
+// DcdChange event seen by the bridge. Multiple subscribers are
+// supported; each receives a copy of every event. Slow subscribers
+// will drop events (non-blocking send). The channel is closed when
+// Stop completes.
+func (b *Bridge) DcdSubscribe() <-chan *pb.DcdChange {
+	ch := make(chan *pb.DcdChange, 32)
+	b.mu.Lock()
+	b.dcdSubs = append(b.dcdSubs, ch)
+	b.mu.Unlock()
+	return ch
+}
+
+// SetRxHook installs (or clears) the received-frame hook. Safe to call
+// at any time; nil clears.
+func (b *Bridge) SetRxHook(h RxHook) {
+	b.mu.Lock()
+	b.rxHook = h
+	b.mu.Unlock()
+}
+
+// dispatchDcd sends ev to the primary channel and all subscribers.
+// Non-blocking sends: a slow subscriber drops rather than stalls the
+// modem session goroutine.
+func (b *Bridge) dispatchDcd(ev *pb.DcdChange) {
+	select {
+	case b.dcd <- ev:
+	default:
+	}
+	b.mu.Lock()
+	subs := append([]chan *pb.DcdChange(nil), b.dcdSubs...)
+	b.mu.Unlock()
+	for _, c := range subs {
+		select {
+		case c <- ev:
+		default:
+		}
+	}
+}
+
+// dispatchRx calls the installed RxHook if any. Kept package-local so
+// session.go can invoke it inline with its frame forwarder.
+func (b *Bridge) dispatchRx(rf *pb.ReceivedFrame) {
+	b.mu.Lock()
+	h := b.rxHook
+	b.mu.Unlock()
+	if h != nil {
+		h(rf)
+	}
+}
 
 // SendTransmitFrame queues a TransmitFrame IPC message to the currently
 // connected modem session. Returns an error if no session is active.
@@ -208,6 +277,15 @@ func (b *Bridge) supervise(ctx context.Context) {
 	defer close(b.done)
 	defer close(b.frames)
 	defer close(b.dcd)
+	defer func() {
+		b.mu.Lock()
+		subs := b.dcdSubs
+		b.dcdSubs = nil
+		b.mu.Unlock()
+		for _, c := range subs {
+			close(c)
+		}
+	}()
 
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second

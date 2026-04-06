@@ -116,6 +116,13 @@ func (c *Config) timingFor(channel uint32) ChannelTiming {
 	return t
 }
 
+// TxHook is invoked after a frame has been successfully submitted to the
+// downstream Sender. It runs inline in the governor's worker goroutine,
+// so implementations must be fast and non-blocking (packetlog record,
+// counter bumps, etc). Zero or one hook is supported; use a fanout
+// wrapper for multiple consumers.
+type TxHook func(channel uint32, frame *ax25.Frame, source SubmitSource)
+
 // Stats exposes counters for metrics.
 type Stats struct {
 	Enqueued     uint64
@@ -137,9 +144,30 @@ type Governor struct {
 	rateLog map[uint32][]time.Time // timestamps of recent sends per channel
 	dcd     map[uint32]bool        // current DCD per channel
 
-	wake   chan struct{}
-	stats  Stats
-	closed bool
+	wake    chan struct{}
+	stats   Stats
+	closed  bool
+	txHook  TxHook
+}
+
+// SetTxHook installs (or clears) the post-send hook. Safe to call at
+// any time. Passing nil removes the hook.
+func (g *Governor) SetTxHook(h TxHook) {
+	g.mu.Lock()
+	g.txHook = h
+	g.mu.Unlock()
+}
+
+// SetChannelTiming installs or replaces the timing parameters for one
+// channel under the governor's lock. Safe to call from startup and
+// live-reconfig paths.
+func (g *Governor) SetChannelTiming(channel uint32, t ChannelTiming) {
+	g.mu.Lock()
+	if g.cfg.Channels == nil {
+		g.cfg.Channels = make(map[uint32]ChannelTiming)
+	}
+	g.cfg.Channels[channel] = t
+	g.mu.Unlock()
 }
 
 // New builds a Governor. Call Run to start its background loop.
@@ -333,6 +361,13 @@ func (g *Governor) processOne(ctx context.Context) {
 	}
 	if err := g.cfg.Sender(tf); err != nil {
 		g.logger.Warn("send transmit frame", "err", err, "channel", top.channel)
+	} else {
+		g.mu.Lock()
+		hook := g.txHook
+		g.mu.Unlock()
+		if hook != nil {
+			hook(top.channel, top.frame, top.source)
+		}
 	}
 	// Touch ctx just to satisfy lint if unused on some paths.
 	_ = ctx

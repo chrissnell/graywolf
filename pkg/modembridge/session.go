@@ -108,6 +108,7 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 			if b.cfg.Metrics != nil {
 				b.cfg.Metrics.ObserveReceivedFrame(p.ReceivedFrame.Channel)
 			}
+			b.dispatchRx(p.ReceivedFrame)
 			// Non-blocking send: drop frames if the consumer isn't keeping up
 			// rather than stalling the IPC read loop.
 			select {
@@ -126,13 +127,8 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 			b.logger.Debug("dcd change",
 				"channel", p.DcdChange.Channel,
 				"detected", p.DcdChange.Detected)
-			// Forward to DcdEvents() consumers (txgovernor). Non-blocking:
-			// drop if no consumer is keeping up.
-			select {
-			case b.dcd <- p.DcdChange:
-			default:
-				b.logger.Warn("dcd channel full, dropping event")
-			}
+			// Fan out to the primary channel + every DcdSubscribe() consumer.
+			b.dispatchDcd(p.DcdChange)
 		default:
 			b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 		}
