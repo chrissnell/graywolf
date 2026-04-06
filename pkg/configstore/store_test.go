@@ -118,6 +118,86 @@ func TestChannelAndPtt(t *testing.T) {
 	}
 }
 
+func TestChannelValidation_InvalidDeviceID(t *testing.T) {
+	s := newTestStore(t)
+	ch := &Channel{
+		Name: "bad", AudioDeviceID: 999, ModemType: "afsk",
+		BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	err := s.CreateChannel(ch)
+	if err == nil {
+		t.Fatal("expected error for invalid device_id")
+	}
+}
+
+func TestChannelValidation_AudioChannelOutOfRange(t *testing.T) {
+	s := newTestStore(t)
+	dev := &AudioDevice{Name: "mono", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	if err := s.CreateAudioDevice(dev); err != nil {
+		t.Fatal(err)
+	}
+	ch := &Channel{
+		Name: "bad", AudioDeviceID: dev.ID, AudioChannel: 1, // mono device, channel 1 is out of range
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	err := s.CreateChannel(ch)
+	if err == nil {
+		t.Fatal("expected error for audio_channel out of range")
+	}
+}
+
+func TestChannelValidation_StereoDeviceAcceptsBothChannels(t *testing.T) {
+	s := newTestStore(t)
+	dev := &AudioDevice{Name: "stereo", SourceType: "soundcard", SampleRate: 48000, Channels: 2, Format: "s16le"}
+	if err := s.CreateAudioDevice(dev); err != nil {
+		t.Fatal(err)
+	}
+	for _, ac := range []uint32{0, 1} {
+		ch := &Channel{
+			Name: "ch", AudioDeviceID: dev.ID, AudioChannel: ac,
+			ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+			Profile: "A", NumSlicers: 1, FixBits: "none",
+		}
+		if err := s.CreateChannel(ch); err != nil {
+			t.Fatalf("audio_channel %d should be valid on stereo device: %v", ac, err)
+		}
+	}
+}
+
+func TestFX25IL2PConfig(t *testing.T) {
+	s := newTestStore(t)
+	dev := &AudioDevice{Name: "d", SourceType: "flac", SourcePath: "x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	if err := s.CreateAudioDevice(dev); err != nil {
+		t.Fatal(err)
+	}
+	ch := &Channel{
+		Name: "rx0", AudioDeviceID: dev.ID,
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := s.CreateChannel(ch); err != nil {
+		t.Fatal(err)
+	}
+	if ch.FX25Encode || ch.IL2PEncode {
+		t.Fatal("expected defaults to be false")
+	}
+	if err := s.SetChannelFX25(ch.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetChannelIL2P(ch.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetChannel(ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.FX25Encode || !got.IL2PEncode {
+		t.Fatalf("expected both true, got fx25=%v il2p=%v", got.FX25Encode, got.IL2PEncode)
+	}
+}
+
 func TestWebAuthAndSession(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.UpsertWebAuth(&WebAuth{Username: "admin", BcryptHash: "$2a$..."}); err != nil {

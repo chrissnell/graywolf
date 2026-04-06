@@ -124,6 +124,9 @@ func (s *Store) DeleteAudioDevice(id uint32) error {
 // ---------------------------------------------------------------------------
 
 func (s *Store) CreateChannel(c *Channel) error {
+	if err := s.validateChannel(c, 0); err != nil {
+		return err
+	}
 	return s.db.Create(c).Error
 }
 
@@ -141,6 +144,9 @@ func (s *Store) ListChannels() ([]Channel, error) {
 }
 
 func (s *Store) UpdateChannel(c *Channel) error {
+	if err := s.validateChannel(c, c.ID); err != nil {
+		return err
+	}
 	return s.db.Save(c).Error
 }
 
@@ -203,4 +209,47 @@ func (s *Store) GetWebSession(token string) (*WebSession, error) {
 
 func (s *Store) DeleteWebSession(token string) error {
 	return s.db.Delete(&WebSession{}, "token = ?", token).Error
+}
+
+// ---------------------------------------------------------------------------
+// Channel validation
+// ---------------------------------------------------------------------------
+
+// validateChannel checks that a channel's device_id references a valid audio
+// device, audio_channel is within the device's channel count, and channel_num
+// (ID) is unique. excludeID is the channel's own ID (for updates) or 0 (for
+// creates).
+func (s *Store) validateChannel(c *Channel, excludeID uint32) error {
+	dev, err := s.GetAudioDevice(c.AudioDeviceID)
+	if err != nil {
+		return fmt.Errorf("invalid device_id %d: device not found", c.AudioDeviceID)
+	}
+	if c.AudioChannel >= dev.Channels {
+		return fmt.Errorf("audio_channel %d out of range for device %q (%d channels)",
+			c.AudioChannel, dev.Name, dev.Channels)
+	}
+	// Check ID uniqueness only when the caller has set a specific ID (non-zero
+	// on update, or when the caller pre-assigns an ID on create).
+	if c.ID != 0 {
+		var dup Channel
+		q := s.db.Where("id = ? AND id != ?", c.ID, excludeID).First(&dup)
+		if q.Error == nil {
+			return fmt.Errorf("duplicate channel_num %d", c.ID)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// FX.25 / IL2P TX config helpers
+// ---------------------------------------------------------------------------
+
+// SetChannelFX25 sets FX.25 encoding for a channel.
+func (s *Store) SetChannelFX25(id uint32, enable bool) error {
+	return s.db.Model(&Channel{}).Where("id = ?", id).Update("fx25_encode", enable).Error
+}
+
+// SetChannelIL2P sets IL2P encoding for a channel.
+func (s *Store) SetChannelIL2P(id uint32, enable bool) error {
+	return s.db.Model(&Channel{}).Where("id = ?", id).Update("il2p_encode", enable).Error
 }

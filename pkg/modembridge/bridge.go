@@ -97,6 +97,28 @@ func (c *Config) applyDefaults() {
 	}
 }
 
+// ChannelStats holds per-channel statistics sourced from StatusUpdate messages.
+type ChannelStats struct {
+	Channel         uint32  `json:"channel"`
+	RxFrames        uint64  `json:"rx_frames"`
+	RxBadFCS        uint64  `json:"rx_bad_fcs"`
+	TxFrames        uint64  `json:"tx_frames"`
+	DcdTransitions  uint64  `json:"dcd_transitions"`
+	AudioLevelMark  float32 `json:"audio_level_mark"`
+	AudioLevelSpace float32 `json:"audio_level_space"`
+	AudioLevelPeak  float32 `json:"audio_level_peak"`
+	DcdState        bool    `json:"dcd_state"`
+}
+
+// AudioDeviceInfo describes an audio device returned by enumeration.
+type AudioDeviceInfo struct {
+	Name       string `json:"name"`
+	Channels   uint32 `json:"channels"`
+	SampleRate uint32 `json:"sample_rate"`
+	IsDefault  bool   `json:"is_default"`
+	IsInput    bool   `json:"is_input"`
+}
+
 // RxHook is invoked for every received frame before it is delivered on
 // the Frames() channel. It runs inline in the session goroutine, so
 // implementations must be fast and non-blocking.
@@ -125,6 +147,10 @@ type Bridge struct {
 	// rxHook is invoked for every received frame before delivery.
 	rxHook RxHook
 
+	// Per-channel status cache, updated from StatusUpdate IPC messages.
+	statusMu    sync.RWMutex
+	statusCache map[uint32]*ChannelStats
+
 	// dcdSubs is a fan-out list of subscriber channels for DCD events.
 	// The original Bridge.dcd channel remains wired to the txgovernor;
 	// DcdSubscribe appends an additional channel that the broadcaster
@@ -136,11 +162,12 @@ type Bridge struct {
 func New(cfg Config) *Bridge {
 	cfg.applyDefaults()
 	return &Bridge{
-		cfg:    cfg,
-		logger: cfg.Logger,
-		frames: make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
-		dcd:    make(chan *pb.DcdChange, cfg.DcdBufferSize),
-		state:  StateStopped,
+		cfg:         cfg,
+		logger:      cfg.Logger,
+		frames:      make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
+		dcd:         make(chan *pb.DcdChange, cfg.DcdBufferSize),
+		state:       StateStopped,
+		statusCache: make(map[uint32]*ChannelStats),
 	}
 }
 
@@ -222,6 +249,9 @@ func (b *Bridge) setSender(fn func(*pb.IpcMessage) error) {
 	b.sendFn = fn
 	b.mu.Unlock()
 }
+
+// ConfigStore returns the attached configstore (may be nil).
+func (b *Bridge) ConfigStore() *configstore.Store { return b.cfg.Store }
 
 // Frames returns a channel of received AX.25 frames. The channel is closed
 // when Stop completes.
@@ -370,6 +400,123 @@ func (b *Bridge) runOnce(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// GetChannelStats returns cached stats for a single channel.
+func (b *Bridge) GetChannelStats(channel uint32) (*ChannelStats, bool) {
+	b.statusMu.RLock()
+	defer b.statusMu.RUnlock()
+	s, ok := b.statusCache[channel]
+	if !ok {
+		return nil, false
+	}
+	cp := *s
+	return &cp, true
+}
+
+// GetAllChannelStats returns cached stats for all channels.
+func (b *Bridge) GetAllChannelStats() map[uint32]*ChannelStats {
+	b.statusMu.RLock()
+	defer b.statusMu.RUnlock()
+	out := make(map[uint32]*ChannelStats, len(b.statusCache))
+	for k, v := range b.statusCache {
+		cp := *v
+		out[k] = &cp
+	}
+	return out
+}
+
+// updateStatusCache stores the latest StatusUpdate for a channel.
+func (b *Bridge) updateStatusCache(s *pb.StatusUpdate) {
+	b.statusMu.Lock()
+	defer b.statusMu.Unlock()
+	b.statusCache[s.Channel] = &ChannelStats{
+		Channel:         s.Channel,
+		RxFrames:        s.RxFrames,
+		RxBadFCS:        s.RxBadFcs,
+		TxFrames:        s.TxFrames,
+		DcdTransitions:  s.DcdTransitions,
+		AudioLevelMark:  s.AudioLevelMark,
+		AudioLevelSpace: s.AudioLevelSpace,
+		AudioLevelPeak:  s.AudioLevelPeak,
+		DcdState:        s.DcdState,
+	}
+}
+
+// ReconfigureAudioDevice performs a hot-swap of an audio device's configuration.
+// Sequence: StopAudio -> wait -> ConfigureAudio -> StartAudio.
+// Only the specified device is reconfigured; unaffected channels continue.
+func (b *Bridge) ReconfigureAudioDevice(ctx context.Context, deviceID uint32) error {
+	if b.State() != StateRunning {
+		return errors.New("modembridge: not in RUNNING state")
+	}
+	store := b.cfg.Store
+	if store == nil {
+		return errors.New("modembridge: no configstore")
+	}
+	dev, err := store.GetAudioDevice(deviceID)
+	if err != nil {
+		return fmt.Errorf("get audio device %d: %w", deviceID, err)
+	}
+
+	// Stop audio processing.
+	if err := b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_StopAudio{StopAudio: &pb.StopAudio{}}}); err != nil {
+		return fmt.Errorf("send StopAudio: %w", err)
+	}
+
+	// Brief pause for the modem to finish audio teardown.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// Send updated ConfigureAudio for this device.
+	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigureAudio{ConfigureAudio: &pb.ConfigureAudio{
+		DeviceId:   dev.ID,
+		DeviceName: audioDeviceName(dev),
+		SampleRate: dev.SampleRate,
+		Channels:   dev.Channels,
+		SourceType: dev.SourceType,
+		Format:     dev.Format,
+	}}}
+	if err := b.sendIPC(msg); err != nil {
+		return fmt.Errorf("send ConfigureAudio: %w", err)
+	}
+
+	// Re-start audio.
+	if err := b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_StartAudio{StartAudio: &pb.StartAudio{}}}); err != nil {
+		return fmt.Errorf("send StartAudio: %w", err)
+	}
+	return nil
+}
+
+// sendIPC writes an IPC message using the current session's send function.
+func (b *Bridge) sendIPC(msg *pb.IpcMessage) error {
+	b.mu.Lock()
+	fn := b.sendFn
+	b.mu.Unlock()
+	if fn == nil {
+		return errors.New("modembridge: not connected")
+	}
+	return fn(msg)
+}
+
+// InjectStatusForTest populates the status cache directly. Test-only.
+func (b *Bridge) InjectStatusForTest(channel uint32, rxFrames, rxBadFCS, txFrames uint64,
+	markLevel, spaceLevel, peakLevel float32, dcd bool) {
+	b.statusMu.Lock()
+	defer b.statusMu.Unlock()
+	b.statusCache[channel] = &ChannelStats{
+		Channel:         channel,
+		RxFrames:        rxFrames,
+		RxBadFCS:        rxBadFCS,
+		TxFrames:        txFrames,
+		AudioLevelMark:  markLevel,
+		AudioLevelSpace: spaceLevel,
+		AudioLevelPeak:  peakLevel,
+		DcdState:        dcd,
+	}
 }
 
 // waitForReadiness blocks until the child writes a byte (expected '\n') to

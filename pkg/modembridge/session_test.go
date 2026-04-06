@@ -190,6 +190,167 @@ func TestRunSessionRejectsNonReadyFirstMessage(t *testing.T) {
 	}
 }
 
+func TestChannelStatsCache(t *testing.T) {
+	b := New(Config{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+
+	// Initially empty.
+	if _, ok := b.GetChannelStats(0); ok {
+		t.Fatal("expected no stats initially")
+	}
+
+	// Inject via the test helper.
+	b.InjectStatusForTest(0, 100, 5, 10, 0.4, 0.3, 0.5, true)
+	b.InjectStatusForTest(1, 200, 0, 20, 0.1, 0.1, 0.2, false)
+
+	s0, ok := b.GetChannelStats(0)
+	if !ok || s0.RxFrames != 100 || !s0.DcdState {
+		t.Fatalf("unexpected stats for ch0: %+v", s0)
+	}
+	s1, ok := b.GetChannelStats(1)
+	if !ok || s1.RxFrames != 200 || s1.DcdState {
+		t.Fatalf("unexpected stats for ch1: %+v", s1)
+	}
+
+	all := b.GetAllChannelStats()
+	if len(all) != 2 {
+		t.Fatalf("expected 2 channels, got %d", len(all))
+	}
+}
+
+func TestReconfigureAudioDevice(t *testing.T) {
+	store := seedStore(t)
+	defer store.Close()
+
+	b := New(Config{
+		Store:  store,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+
+	// Not running -> should fail.
+	err := b.ReconfigureAudioDevice(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error when not running")
+	}
+
+	// Simulate RUNNING state with a fake send function that captures messages.
+	b.setState(StateRunning)
+	var sent []*pb.IpcMessage
+	b.setSender(func(msg *pb.IpcMessage) error {
+		sent = append(sent, msg)
+		return nil
+	})
+
+	devices, _ := store.ListAudioDevices()
+	if len(devices) == 0 {
+		t.Fatal("no devices seeded")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err = b.ReconfigureAudioDevice(ctx, devices[0].ID)
+	if err != nil {
+		t.Fatalf("ReconfigureAudioDevice: %v", err)
+	}
+
+	// Expect: StopAudio, ConfigureAudio, StartAudio
+	if len(sent) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(sent))
+	}
+	if sent[0].GetStopAudio() == nil {
+		t.Errorf("first message should be StopAudio, got %T", sent[0].GetPayload())
+	}
+	if sent[1].GetConfigureAudio() == nil {
+		t.Errorf("second message should be ConfigureAudio, got %T", sent[1].GetPayload())
+	}
+	if sent[2].GetStartAudio() == nil {
+		t.Errorf("third message should be StartAudio, got %T", sent[2].GetPayload())
+	}
+}
+
+func TestReconfigureAudioDevice_BadDeviceID(t *testing.T) {
+	store := seedStore(t)
+	defer store.Close()
+
+	b := New(Config{
+		Store:  store,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	b.setState(StateRunning)
+	b.setSender(func(msg *pb.IpcMessage) error { return nil })
+
+	err := b.ReconfigureAudioDevice(context.Background(), 999)
+	if err == nil {
+		t.Fatal("expected error for nonexistent device")
+	}
+}
+
+func TestStatusUpdatePopulatesCache(t *testing.T) {
+	store := seedStore(t)
+	defer store.Close()
+
+	b := New(Config{
+		Store:           store,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		FrameBufferSize: 16,
+	})
+
+	client, server := newPipePair()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Send ModemReady.
+		_ = writeFrame(server, &pb.IpcMessage{Payload: &pb.IpcMessage_ModemReady{
+			ModemReady: &pb.ModemReady{Version: "mock", Pid: 1},
+		}})
+		// Read config messages (ConfigureAudio, ConfigureChannel, ConfigurePtt, StartAudio).
+		for i := 0; i < 4; i++ {
+			if _, err := readFrame(server); err != nil {
+				return
+			}
+		}
+		// Send a StatusUpdate.
+		_ = writeFrame(server, &pb.IpcMessage{Payload: &pb.IpcMessage_StatusUpdate{
+			StatusUpdate: &pb.StatusUpdate{
+				Channel: 1, RxFrames: 77, AudioLevelPeak: 0.8, DcdState: true,
+			},
+		}})
+		// Wait for Shutdown.
+		if m, err := readFrame(server); err == nil && m.GetShutdown() != nil {
+			_ = writeFrame(server, &pb.IpcMessage{Payload: &pb.IpcMessage_StatusUpdate{
+				StatusUpdate: &pb.StatusUpdate{ShutdownComplete: true},
+			}})
+		}
+		_ = server.Close()
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sessionDone := make(chan error, 1)
+	go func() {
+		sessionDone <- b.runSession(ctx, client)
+	}()
+
+	// Wait briefly for the status update to be processed.
+	time.Sleep(200 * time.Millisecond)
+
+	stats, ok := b.GetChannelStats(1)
+	if !ok {
+		t.Fatal("expected stats for channel 1 after StatusUpdate")
+	}
+	if stats.RxFrames != 77 || !stats.DcdState {
+		t.Errorf("unexpected stats: %+v", stats)
+	}
+
+	cancel()
+	select {
+	case <-sessionDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("session did not return")
+	}
+	<-done
+}
+
 func TestStateTransitions(t *testing.T) {
 	b := New(Config{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if b.State() != StateStopped {

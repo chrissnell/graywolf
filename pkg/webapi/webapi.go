@@ -1,7 +1,4 @@
-// Package webapi is graywolf's REST management API. Phase 3 scope is a
-// skeleton with two working read-only endpoints (GET /api/channels and
-// GET /api/beacons) plus stubs for the rest. Phase 6 will flesh out the
-// write endpoints, authentication, and live-reconfig hooks.
+// Package webapi is graywolf's REST management API.
 package webapi
 
 import (
@@ -9,23 +6,26 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/modembridge"
 )
 
-// Server is an http.Handler that routes /api/* to the typed handlers
-// below and rejects unknown paths with 404. It does not own the
-// underlying listener; cmd/graywolf composes it into its main mux.
+// Server routes /api/* requests. It does not own the underlying
+// listener; cmd/graywolf composes it into its main mux.
 type Server struct {
 	store  *configstore.Store
+	bridge *modembridge.Bridge
 	logger *slog.Logger
 }
 
 // Config bundles the dependencies for NewServer.
 type Config struct {
 	Store  *configstore.Store
+	Bridge *modembridge.Bridge
 	Logger *slog.Logger
 }
 
@@ -39,18 +39,20 @@ func NewServer(cfg Config) (*Server, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{store: cfg.Store, logger: logger.With("component", "webapi")}, nil
+	return &Server{
+		store:  cfg.Store,
+		bridge: cfg.Bridge,
+		logger: logger.With("component", "webapi"),
+	}, nil
 }
 
-// RegisterRoutes installs the /api/* handlers on mux. Call this from
-// cmd/graywolf after constructing the main http.ServeMux so /metrics
-// and /api/* share a listener.
+// RegisterRoutes installs the /api/* handlers on mux.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/channels", s.handleChannels)
-	mux.HandleFunc("/api/channels/", s.handleChannels)
+	mux.HandleFunc("/api/channels/", s.handleChannelsSubpath)
 	mux.HandleFunc("/api/beacons", s.handleBeacons)
 	mux.HandleFunc("/api/beacons/", s.handleBeacons)
-	mux.HandleFunc("/api/audio-devices", s.stub("audio-devices"))
+	mux.HandleFunc("/api/audio-devices", s.handleAudioDevices)
 	mux.HandleFunc("/api/ptt", s.stub("ptt"))
 	mux.HandleFunc("/api/kiss-interfaces", s.stub("kiss-interfaces"))
 	mux.HandleFunc("/api/agw", s.stub("agw"))
@@ -61,9 +63,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/health", s.handleHealth)
 }
 
-// ChannelDTO is the JSON shape returned by GET /api/channels. Fields
-// are a subset of configstore.Channel sufficient for the Phase 3 web UI
-// to populate the channel list view.
+// ChannelDTO is the JSON shape returned by GET /api/channels.
 type ChannelDTO struct {
 	ID            uint32 `json:"id"`
 	Name          string `json:"name"`
@@ -78,10 +78,7 @@ type ChannelDTO struct {
 	TxTailMs      uint32 `json:"tx_tail_ms"`
 }
 
-// BeaconDTO is the JSON shape returned by GET /api/beacons. The
-// underlying configstore table does not exist yet (Phase 4 adds it);
-// until then the endpoint returns an empty list so the web UI can
-// round-trip without crashing.
+// BeaconDTO is the JSON shape returned by GET /api/beacons.
 type BeaconDTO struct {
 	ID        uint32    `json:"id"`
 	Channel   uint32    `json:"channel"`
@@ -122,13 +119,59 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleChannelsSubpath routes /api/channels/{id}/stats
+func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/channels/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) == 2 && parts[1] == "stats" {
+		s.handleChannelStats(w, r, parts[0])
+		return
+	}
+	s.handleChannels(w, r)
+}
+
+// GET /api/channels/{id}/stats
+func (s *Server) handleChannelStats(w http.ResponseWriter, _ *http.Request, idStr string) {
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		http.Error(w, "invalid channel id", http.StatusBadRequest)
+		return
+	}
+	if s.bridge == nil {
+		http.Error(w, "bridge not available", http.StatusServiceUnavailable)
+		return
+	}
+	stats, ok := s.bridge.GetChannelStats(uint32(id))
+	if !ok {
+		http.Error(w, "no stats for channel", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// GET /api/audio-devices
+func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	devices, err := s.store.ListAudioDevices()
+	if err != nil {
+		http.Error(w, "list devices: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, devices)
+}
+
 func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Phase 4 adds the beacons table to configstore; until then we
-	// return an empty list with a 200 so the UI can render the page.
 	writeJSON(w, http.StatusOK, []BeaconDTO{})
 }
 

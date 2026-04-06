@@ -473,7 +473,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", m.Handler())
 
-	apiSrv, err := webapi.NewServer(webapi.Config{Store: store, Logger: logger})
+	apiSrv, err := webapi.NewServer(webapi.Config{Store: store, Bridge: bridge, Logger: logger})
 	if err != nil {
 		logger.Error("webapi new", "err", err)
 		os.Exit(1)
