@@ -14,3 +14,4 @@ graywolf.db-wal
 web/dist/
 dist/
 rust-bin/
+rust-artifacts/

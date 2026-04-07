@@ -110,7 +110,13 @@ jobs:
           node-version: 22
 
       - name: Build frontend
-        run: cd web && npm ci && npm install @rollup/rollup-linux-x64-gnu && npx vite build
+        run: |
+          cd web
+          npm ci
+          npm install @rollup/rollup-linux-x64-gnu
+          npx vite build
+          cd ..
+          git checkout -- web/
 
       - name: Set up Go
         uses: actions/setup-go@v6
