@@ -8,7 +8,7 @@ RUN apk add --no-cache alsa-lib && \
     adduser -D -u 1000 graywolf
 
 COPY graywolf /usr/bin/graywolf
-COPY graywolf-modem-amd64 /usr/bin/graywolf-modem
+COPY graywolf-modem-arm64 /usr/bin/graywolf-modem
 
 USER graywolf
 EXPOSE 8080

@@ -75,7 +75,7 @@ dockers:
     goos: linux
     goarch: amd64
     extra_files:
-      - rust-bin/linux_amd64/graywolf-modem
+      - graywolf-modem-amd64
     build_flag_templates:
       - "--pull"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -85,12 +85,12 @@ dockers:
       - "--label=org.opencontainers.image.source={{.GitURL}}"
   - image_templates:
       - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
-    dockerfile: Dockerfile.goreleaser
+    dockerfile: Dockerfile.goreleaser.arm64
     use: docker
     goos: linux
     goarch: arm64
     extra_files:
-      - rust-bin/linux_arm64/graywolf-modem
+      - graywolf-modem-arm64
     build_flag_templates:
       - "--pull"
       - "--label=org.opencontainers.image.created={{.Date}}"

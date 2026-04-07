@@ -15,3 +15,5 @@ web/dist/
 dist/
 rust-bin/
 rust-artifacts/
+graywolf-modem-amd64
+graywolf-modem-arm64

@@ -151,6 +151,9 @@ jobs:
           cp rust-artifacts/rust-darwin-arm64/graywolf-modem      rust-bin/darwin_arm64/
           cp rust-artifacts/rust-windows-amd64/graywolf-modem.exe rust-bin/windows_amd64/
           chmod +x rust-bin/*/graywolf-modem || true
+          # Flat copies for Docker builds (extra_files path is preserved in context)
+          cp rust-bin/linux_amd64/graywolf-modem graywolf-modem-amd64
+          cp rust-bin/linux_arm64/graywolf-modem graywolf-modem-arm64
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
