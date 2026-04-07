@@ -98,6 +98,7 @@ fn flac_end_to_end_yields_frames() {
             channels: 1,
             source_type: "flac".into(),
             format: "s16le".into(),
+            gain_db: 0.0,
         })),
     };
     write_frame(&mut client, &cfg_audio).unwrap();

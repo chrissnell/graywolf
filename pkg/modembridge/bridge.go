@@ -111,6 +111,14 @@ type ChannelStats struct {
 	DcdState        bool    `json:"dcd_state"`
 }
 
+// DeviceLevel holds the latest per-device audio level from the modem.
+type DeviceLevel struct {
+	DeviceID uint32  `json:"device_id"`
+	PeakDBFS float32 `json:"peak_dbfs"`
+	RmsDBFS  float32 `json:"rms_dbfs"`
+	Clipping bool    `json:"clipping"`
+}
+
 // AvailableDevice describes an audio device discovered by cpal enumeration.
 // Field names match the frontend's expected shape.
 type AvailableDevice struct {
@@ -162,10 +170,19 @@ type Bridge struct {
 	dcdSubs []chan *pb.DcdChange
 
 	// enumReqID is an atomic counter for EnumerateAudioDevices request IDs.
+	// Also used for PlayTestTone request IDs.
 	enumReqID atomic.Uint32
 	// enumPending maps request_id → response channel for device enumeration.
 	enumMu      sync.Mutex
 	enumPending map[uint32]chan *pb.AudioDeviceList
+
+	// tonePending maps request_id ��� response channel for test tone results.
+	toneMu      sync.Mutex
+	tonePending map[uint32]chan *pb.TestToneResult
+
+	// Per-device audio level cache, updated from DeviceLevelUpdate IPC messages.
+	deviceLevelMu    sync.RWMutex
+	deviceLevelCache map[uint32]*DeviceLevel
 }
 
 // New builds a bridge. Call Start to run it.
@@ -177,8 +194,10 @@ func New(cfg Config) *Bridge {
 		frames:      make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
 		dcd:         make(chan *pb.DcdChange, cfg.DcdBufferSize),
 		state:       StateStopped,
-		statusCache: make(map[uint32]*ChannelStats),
-		enumPending: make(map[uint32]chan *pb.AudioDeviceList),
+		statusCache:      make(map[uint32]*ChannelStats),
+		enumPending:      make(map[uint32]chan *pb.AudioDeviceList),
+		tonePending:      make(map[uint32]chan *pb.TestToneResult),
+		deviceLevelCache: make(map[uint32]*DeviceLevel),
 	}
 }
 
@@ -490,6 +509,7 @@ func (b *Bridge) ReconfigureAudioDevice(ctx context.Context, deviceID uint32) er
 		Channels:   dev.Channels,
 		SourceType: dev.SourceType,
 		Format:     dev.Format,
+		GainDb:     dev.GainDB,
 	}}}
 	if err := b.sendIPC(msg); err != nil {
 		return fmt.Errorf("send ConfigureAudio: %w", err)
@@ -570,6 +590,101 @@ func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 			IsDefault:   d.IsDefault,
 			IsInput:     d.Kind == pb.AudioDeviceKind_AUDIO_DEVICE_KIND_INPUT,
 		})
+	}
+	return out
+}
+
+// PlayTestTone asks the Rust modem to play a test tone on the named output
+// device and waits for the result. Follows the same request/response pattern
+// as EnumerateAudioDevices.
+func (b *Bridge) PlayTestTone(ctx context.Context, deviceID uint32, deviceName string, sampleRate, channels uint32) error {
+	if b.State() != StateRunning {
+		return errors.New("modembridge: not in RUNNING state")
+	}
+
+	reqID := b.enumReqID.Add(1)
+	ch := make(chan *pb.TestToneResult, 1)
+
+	b.toneMu.Lock()
+	b.tonePending[reqID] = ch
+	b.toneMu.Unlock()
+	defer func() {
+		b.toneMu.Lock()
+		delete(b.tonePending, reqID)
+		b.toneMu.Unlock()
+	}()
+
+	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_PlayTestTone{
+		PlayTestTone: &pb.PlayTestTone{
+			RequestId:  reqID,
+			DeviceName: deviceName,
+			SampleRate: sampleRate,
+			Channels:   channels,
+			DeviceId:   deviceID,
+		},
+	}}
+	if err := b.sendIPC(msg); err != nil {
+		return fmt.Errorf("send PlayTestTone: %w", err)
+	}
+
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case resp := <-ch:
+		if !resp.Success {
+			return fmt.Errorf("test tone failed: %s", resp.Error)
+		}
+		return nil
+	case <-timer.C:
+		return errors.New("modembridge: test tone timeout")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// dispatchToneResponse delivers a TestToneResult to the waiting caller.
+func (b *Bridge) dispatchToneResponse(r *pb.TestToneResult) {
+	b.toneMu.Lock()
+	ch, ok := b.tonePending[r.RequestId]
+	b.toneMu.Unlock()
+	if ok {
+		select {
+		case ch <- r:
+		default:
+		}
+	}
+}
+
+// SetDeviceGain sends a live gain adjustment to the modem (fire-and-forget).
+func (b *Bridge) SetDeviceGain(deviceID uint32, gainDB float32) error {
+	return b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_SetDeviceGain{
+		SetDeviceGain: &pb.SetDeviceGain{
+			DeviceId: deviceID,
+			GainDb:   gainDB,
+		},
+	}})
+}
+
+// updateDeviceLevelCache stores the latest DeviceLevelUpdate for a device.
+func (b *Bridge) updateDeviceLevelCache(u *pb.DeviceLevelUpdate) {
+	b.deviceLevelMu.Lock()
+	defer b.deviceLevelMu.Unlock()
+	b.deviceLevelCache[u.DeviceId] = &DeviceLevel{
+		DeviceID: u.DeviceId,
+		PeakDBFS: u.PeakDbfs,
+		RmsDBFS:  u.RmsDbfs,
+		Clipping: u.Clipping,
+	}
+}
+
+// GetAllDeviceLevels returns the latest cached audio levels for all devices.
+func (b *Bridge) GetAllDeviceLevels() map[uint32]*DeviceLevel {
+	b.deviceLevelMu.RLock()
+	defer b.deviceLevelMu.RUnlock()
+	out := make(map[uint32]*DeviceLevel, len(b.deviceLevelCache))
+	for k, v := range b.deviceLevelCache {
+		cp := *v
+		out[k] = &cp
 	}
 	return out
 }

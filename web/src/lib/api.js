@@ -143,6 +143,9 @@ function getMockData(method, path, body) {
   if (path === '/audio-devices' && method === 'GET') return delay(mockAudioDevices);
   if (path === '/audio-devices' && method === 'POST') return delay({ id: 2, ...body });
   if (path === '/audio-devices/available') return delay(mockAvailableDevices);
+  if (path === '/audio-devices/levels') return delay({ 1: { device_id: 1, peak_dbfs: -18 + Math.random() * 6, rms_dbfs: -24 + Math.random() * 6, clipping: false } });
+  if (path.match(/^\/audio-devices\/\d+\/test-tone$/) && method === 'POST') return delay({ status: 'ok' });
+  if (path.match(/^\/audio-devices\/\d+\/gain$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/audio-devices\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/audio-devices\/\d+$/) && method === 'DELETE') return delay(null);
 

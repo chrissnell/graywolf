@@ -23,6 +23,12 @@ impl IpcMessage {
     pub fn audio_device_list(l: AudioDeviceList) -> Self {
         Self { payload: Some(ipc_message::Payload::AudioDeviceList(l)) }
     }
+    pub fn test_tone_result(r: TestToneResult) -> Self {
+        Self { payload: Some(ipc_message::Payload::TestToneResult(r)) }
+    }
+    pub fn device_level_update(u: DeviceLevelUpdate) -> Self {
+        Self { payload: Some(ipc_message::Payload::DeviceLevelUpdate(u)) }
+    }
 }
 
 #[cfg(test)]

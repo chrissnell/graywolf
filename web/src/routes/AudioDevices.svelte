@@ -18,12 +18,86 @@
   let deleteOpen = $state(false);
   let deleteAffectedChannels = $state([]);
   let deleteCascadeAcked = $state(false);
+  let deviceLevels = $state({});
+  let testingTone = $state(null);
+  let gainTimers = {};
 
   function emptyForm() {
     return { name: '', device_path: '', sample_rate: '48000', channels: '1', source_type: 'soundcard', direction: 'input' };
   }
 
-  onMount(loadDevices);
+  onMount(() => {
+    loadDevices();
+    const interval = setInterval(pollLevels, 200);
+    return () => {
+      clearInterval(interval);
+      Object.values(gainTimers).forEach(clearTimeout);
+    };
+  });
+
+  async function pollLevels() {
+    try {
+      deviceLevels = await api.get('/audio-devices/levels') || {};
+    } catch (_) {}
+  }
+
+  async function playTestTone(dev) {
+    testingTone = dev.id;
+    try {
+      await api.post(`/audio-devices/${dev.id}/test-tone`);
+      toasts.success(`Test tone played on "${dev.name}"`);
+    } catch (err) {
+      toasts.error(`Test tone failed: ${err.message}`);
+    } finally {
+      testingTone = null;
+    }
+  }
+
+  // Slider uses linear amplitude (0–225%), converted to/from dB for the API.
+  // Max ~+7 dB so clipping of typical -6 dBFS content occurs near 90% of travel.
+  const GAIN_SLIDER_MAX = 225;
+
+  function dbToSlider(db) {
+    if (db <= -60) return 0;
+    return Math.min(GAIN_SLIDER_MAX, Math.round(Math.pow(10, db / 20) * 100));
+  }
+
+  function sliderToDb(slider) {
+    if (slider <= 0) return -60;
+    return 20 * Math.log10(slider / 100);
+  }
+
+  function handleGainChange(dev, sliderValue) {
+    const gainDB = sliderToDb(parseFloat(sliderValue));
+    dev.gain_db = gainDB;
+    // Debounce API call
+    if (gainTimers[dev.id]) clearTimeout(gainTimers[dev.id]);
+    gainTimers[dev.id] = setTimeout(async () => {
+      try {
+        await api.put(`/audio-devices/${dev.id}/gain`, { gain_db: gainDB });
+      } catch (err) {
+        toasts.error(`Gain update failed: ${err.message}`);
+      }
+    }, 300);
+  }
+
+  function levelToPercent(dbfs) {
+    if (dbfs == null) return 0;
+    const clamped = Math.max(-60, Math.min(0, dbfs));
+    return ((clamped + 60) / 60) * 100;
+  }
+
+  function levelColor(dbfs) {
+    if (dbfs == null) return 'var(--text-muted)';
+    if (dbfs > -6) return 'var(--color-danger, #f85149)';
+    if (dbfs > -20) return 'var(--color-warning, #d29922)';
+    return 'var(--success, #3fb950)';
+  }
+
+  function formatLevel(dbfs) {
+    if (dbfs == null) return '— dB';
+    return `${dbfs.toFixed(0)} dB`;
+  }
 
   async function loadDevices() {
     devices = await api.get('/audio-devices') || [];
@@ -213,7 +287,45 @@
             <span class="detail-value">{dev.channels === 1 ? 'Mono' : 'Stereo'}</span>
           </div>
         </div>
+        <!-- Audio level meter -->
+        <div class="level-section">
+          <div class="level-row">
+            <span class="level-label">Level</span>
+            <div class="level-track">
+              <div class="level-fill" style="width: {levelToPercent(deviceLevels[dev.id]?.peak_dbfs)}%; background: {levelColor(deviceLevels[dev.id]?.peak_dbfs)}"></div>
+            </div>
+            <span class="level-value" class:clipping={deviceLevels[dev.id]?.clipping}>
+              {deviceLevels[dev.id]?.clipping ? 'CLIP' : formatLevel(deviceLevels[dev.id]?.peak_dbfs)}
+            </span>
+          </div>
+          <!-- Gain slider -->
+          <div class="gain-row">
+            <span class="gain-label">Gain</span>
+            <input
+              type="range"
+              class="gain-slider"
+              min="0"
+              max={GAIN_SLIDER_MAX}
+              step="1"
+              value={dbToSlider(dev.gain_db ?? 0)}
+              oninput={(e) => handleGainChange(dev, e.target.value)}
+              title="Software gain. For significant amplification, use your OS mixer (alsamixer / Audio MIDI Setup)."
+            />
+            <button class="gain-value" onclick={() => handleGainChange(dev, 100)} title="Reset to 0 dB">
+              {(dev.gain_db ?? 0).toFixed(1)} dB
+            </button>
+          </div>
+        </div>
         <div class="device-actions">
+          {#if dev.direction === 'output'}
+            <Button
+              variant="ghost"
+              onclick={() => playTestTone(dev)}
+              disabled={testingTone === dev.id}
+            >
+              {testingTone === dev.id ? 'Playing...' : 'Test Tone'}
+            </Button>
+          {/if}
           <Button variant="ghost" onclick={() => openEdit(dev)}>Edit</Button>
           <Button variant="danger" onclick={() => confirmDelete(dev)}>Delete</Button>
         </div>
@@ -458,6 +570,105 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Audio level meter + gain */
+  .level-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+  }
+  .level-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .level-label, .gain-label {
+    color: var(--text-secondary);
+    width: 36px;
+    flex-shrink: 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .level-track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-tertiary, #161b22);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .level-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.15s ease-out, background 0.15s;
+    min-width: 0;
+  }
+  .level-value {
+    width: 48px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+  .level-value.clipping {
+    color: var(--color-danger, #f85149);
+    font-weight: 700;
+  }
+  .gain-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .gain-slider {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-tertiary, #161b22);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .gain-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent, #58a6ff);
+    border: 2px solid var(--bg-primary, #0d1117);
+    cursor: pointer;
+  }
+  .gain-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent, #58a6ff);
+    border: 2px solid var(--bg-primary, #0d1117);
+    cursor: pointer;
+  }
+  .gain-value {
+    width: 56px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .gain-value:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
   .device-actions {
     display: flex;
     gap: 8px;

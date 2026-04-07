@@ -5,15 +5,18 @@
 //! multiple demodulator types (AFSK, PSK, 9600).
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::audio::{self, AudioChunk, AudioSource, CHUNK_QUEUE_DEPTH};
 use crate::demod_afsk::AfskDemodulator;
 use crate::hdlc::DecodedFrame;
 use crate::ipc::proto::{
-    ipc_message::Payload, ConfigureChannel, ConfigurePtt, DcdChange, IpcMessage, ReceivedFrame,
-    StatusUpdate, AudioDeviceList, AudioDeviceInfo, AudioDeviceKind,
+    ipc_message::Payload, ConfigureChannel, ConfigurePtt, DcdChange, DeviceLevelUpdate,
+    IpcMessage, ReceivedFrame, StatusUpdate, TestToneResult,
+    AudioDeviceList, AudioDeviceInfo, AudioDeviceKind,
     EnumerateAudioDevices,
 };
 use crate::ipc::server::{IpcHandle, IpcInbound};
@@ -73,6 +76,7 @@ pub struct AudioConfig {
     pub channels: u32,
     pub source_type: String,
     pub format: String,
+    pub gain_db: f32,
 }
 
 impl Default for AudioConfig {
@@ -84,6 +88,7 @@ impl Default for AudioConfig {
             channels: 1,
             source_type: "soundcard".into(),
             format: "s16le".into(),
+            gain_db: 0.0,
         }
     }
 }
@@ -93,6 +98,7 @@ struct DevicePipeline {
     source: AudioSource,
     sample_rx: Receiver<AudioChunk>,
     channels: Vec<ChannelPipeline>,
+    gain: Arc<AtomicU32>, // f32 gain_db stored via f32::to_bits/from_bits
 }
 
 /// Per-channel demodulator (within a device pipeline).
@@ -124,6 +130,9 @@ pub struct Modem {
     channel_configs: HashMap<u32, ChannelConfig>,
     _ptt_cfgs: HashMap<u32, ConfigurePtt>,
 
+    // Live gain atomics, keyed by device_id (shared with DevicePipeline)
+    gain_atoms: HashMap<u32, Arc<AtomicU32>>,
+
     // Active audio pipelines, keyed by device_id
     active_devices: HashMap<u32, DevicePipeline>,
 
@@ -132,6 +141,7 @@ pub struct Modem {
     rx_bad_fcs: u64,
     dcd_transitions: u64,
     last_status_tx: Instant,
+    last_level_tx: HashMap<u32, Instant>,
 }
 
 impl Modem {
@@ -142,11 +152,13 @@ impl Modem {
             audio_configs: HashMap::new(),
             channel_configs: HashMap::new(),
             _ptt_cfgs: HashMap::new(),
+            gain_atoms: HashMap::new(),
             active_devices: HashMap::new(),
             rx_frames: 0,
             rx_bad_fcs: 0,
             dcd_transitions: 0,
             last_status_tx: Instant::now(),
+            last_level_tx: HashMap::new(),
         }
     }
 
@@ -205,6 +217,7 @@ impl Modem {
     fn handle_ipc(&mut self, msg: IpcMessage) -> bool {
         match msg.payload {
             Some(Payload::ConfigureAudio(c)) => {
+                let gain_db = c.gain_db.clamp(-60.0, 12.0);
                 self.audio_configs.insert(c.device_id, AudioConfig {
                     device_id: c.device_id,
                     device_name: c.device_name,
@@ -212,7 +225,13 @@ impl Modem {
                     channels: c.channels,
                     source_type: c.source_type,
                     format: c.format,
+                    gain_db,
                 });
+                // Update or create the gain atomic
+                let atom = self.gain_atoms
+                    .entry(c.device_id)
+                    .or_insert_with(|| Arc::new(AtomicU32::new(0f32.to_bits())));
+                atom.store(gain_db.to_bits(), Ordering::Relaxed);
             }
             Some(Payload::ConfigureChannel(c)) => {
                 self.channel_configs.insert(c.channel, parse_channel(&c));
@@ -231,6 +250,19 @@ impl Modem {
             Some(Payload::EnumerateAudioDevices(req)) => {
                 self.handle_enumerate_devices(req);
             }
+            Some(Payload::PlayTestTone(req)) => {
+                self.handle_play_test_tone(req);
+            }
+            Some(Payload::SetDeviceGain(g)) => {
+                let gain_db = g.gain_db.clamp(-60.0, 12.0);
+                if let Some(acfg) = self.audio_configs.get_mut(&g.device_id) {
+                    acfg.gain_db = gain_db;
+                }
+                let atom = self.gain_atoms
+                    .entry(g.device_id)
+                    .or_insert_with(|| Arc::new(AtomicU32::new(0f32.to_bits())));
+                atom.store(gain_db.to_bits(), Ordering::Relaxed);
+            }
             Some(Payload::TransmitFrame(_)) => {
                 eprintln!("graywolf-modem: TransmitFrame ignored (not implemented)");
             }
@@ -242,7 +274,9 @@ impl Modem {
             | Some(Payload::DcdChange(_))
             | Some(Payload::StatusUpdate(_))
             | Some(Payload::ModemReady(_))
-            | Some(Payload::AudioDeviceList(_)) => {
+            | Some(Payload::AudioDeviceList(_))
+            | Some(Payload::TestToneResult(_))
+            | Some(Payload::DeviceLevelUpdate(_)) => {
                 // Rust → Go only; ignore if echoed back.
             }
             None => {}
@@ -339,10 +373,15 @@ impl Modem {
                 });
             }
 
+            let gain_atom = self.gain_atoms
+                .entry(*device_id)
+                .or_insert_with(|| Arc::new(AtomicU32::new(acfg.gain_db.to_bits())))
+                .clone();
             self.active_devices.insert(*device_id, DevicePipeline {
                 source,
                 sample_rx: rx,
                 channels: chan_pipelines,
+                gain: gain_atom,
             });
         }
 
@@ -358,21 +397,74 @@ impl Modem {
     fn pump_all_audio(&mut self) -> bool {
         let mut got_any = false;
         let device_ids: Vec<u32> = self.active_devices.keys().cloned().collect();
+        let now = Instant::now();
 
         for device_id in device_ids {
             if let Some(pipe) = self.active_devices.get_mut(&device_id) {
                 match pipe.sample_rx.recv_timeout(Duration::from_millis(1)) {
-                    Ok(chunk) => {
+                    Ok(mut chunk) => {
                         got_any = true;
+
+                        // Apply software gain
+                        let gain_db = f32::from_bits(pipe.gain.load(Ordering::Relaxed));
+                        let mut clipping = false;
+                        if gain_db.abs() > f32::EPSILON {
+                            let gain_linear = 10f32.powf(gain_db / 20.0);
+                            for s in &mut chunk {
+                                let amplified = (*s as f32) * gain_linear;
+                                let limited = if gain_db > 0.0 {
+                                    (amplified / 32768.0).tanh() * 32768.0
+                                } else {
+                                    amplified
+                                };
+                                if limited.abs() > 32000.0 {
+                                    clipping = true;
+                                }
+                                *s = limited.clamp(-32767.0, 32767.0) as i16;
+                            }
+                        }
+
+                        // Compute per-device peak and RMS (post-gain)
+                        let mut peak_abs: f32 = 0.0;
+                        let mut sum_sq: f64 = 0.0;
+                        for &s in &chunk {
+                            let a = (s as f32).abs();
+                            if a > peak_abs { peak_abs = a; }
+                            sum_sq += (s as f64) * (s as f64);
+                        }
+                        let peak_linear = peak_abs / 32768.0;
+                        let rms_linear = if !chunk.is_empty() {
+                            ((sum_sq / chunk.len() as f64).sqrt() / 32768.0) as f32
+                        } else {
+                            0.0
+                        };
+                        let peak_dbfs = if peak_linear > 0.0 {
+                            (20.0 * peak_linear.log10()).max(-60.0)
+                        } else {
+                            -60.0
+                        };
+                        let rms_dbfs = if rms_linear > 0.0 {
+                            (20.0 * rms_linear.log10()).max(-60.0)
+                        } else {
+                            -60.0
+                        };
+
+                        // Emit DeviceLevelUpdate at ~5 Hz
+                        let last = self.last_level_tx.entry(device_id).or_insert(now - Duration::from_secs(1));
+                        if now.duration_since(*last) >= Duration::from_millis(200) {
+                            let msg = IpcMessage::device_level_update(DeviceLevelUpdate {
+                                device_id,
+                                peak_dbfs,
+                                rms_dbfs,
+                                clipping,
+                            });
+                            let _ = self.handle.send(&msg);
+                            *last = now;
+                        }
+
                         // Feed chunk to all channels on this device
                         for chan_pipe in &mut pipe.channels {
-                            // Update peak level
-                            let mut peak = chan_pipe.latest_peak;
-                            for &s in &chunk {
-                                let a = (s as i32).unsigned_abs() as f32 / 32768.0;
-                                if a > peak { peak = a; }
-                            }
-                            chan_pipe.latest_peak = peak * 0.95;
+                            chan_pipe.latest_peak = peak_linear;
 
                             // Feed primary demod
                             for s in &chunk {
@@ -445,6 +537,23 @@ impl Modem {
         if let Err(e) = self.handle.send(&msg) {
             eprintln!("graywolf-modem: send AudioDeviceList failed: {}", e);
         }
+    }
+
+    fn handle_play_test_tone(&self, req: crate::ipc::proto::PlayTestTone) {
+        let device_id = req.device_id;
+        let gain_atom = self.gain_atoms
+            .get(&device_id)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(AtomicU32::new(0f32.to_bits())));
+        let handle = self.handle.clone();
+        std::thread::Builder::new()
+            .name("test-tone".into())
+            .spawn(move || {
+                let result = play_test_tone_blocking(&req, &handle, device_id, &gain_atom);
+                let msg = IpcMessage::test_tone_result(result);
+                let _ = handle.send(&msg);
+            })
+            .ok();
     }
 
     fn emit_status(&mut self, final_: bool) {
@@ -741,4 +850,145 @@ fn now_ns() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0)
+}
+
+fn play_test_tone_blocking(
+    req: &crate::ipc::proto::PlayTestTone,
+    handle: &IpcHandle,
+    device_id: u32,
+    gain_atom: &Arc<AtomicU32>,
+) -> TestToneResult {
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use std::sync::atomic::{AtomicBool, AtomicU64};
+
+    let host = cpal::default_host();
+    let device = match host.output_devices() {
+        Ok(mut devs) => devs.find(|d| d.name().map(|n| n == req.device_name).unwrap_or(false)),
+        Err(e) => {
+            return TestToneResult {
+                request_id: req.request_id,
+                success: false,
+                error: format!("enumerate output devices: {}", e),
+            };
+        }
+    };
+    let device = match device {
+        Some(d) => d,
+        None => {
+            return TestToneResult {
+                request_id: req.request_id,
+                success: false,
+                error: format!("output device not found: {}", req.device_name),
+            };
+        }
+    };
+
+    let sample_rate = if req.sample_rate > 0 { req.sample_rate } else { 48000 };
+    let channels = req.channels.max(1) as u16;
+    let config = cpal::StreamConfig {
+        channels,
+        sample_rate: cpal::SampleRate(sample_rate),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let tone_freq = 1000.0_f64;
+    let amplitude = 0.5_f64; // -6 dBFS
+    let duration_samples = (sample_rate as u64) * 3 / 2; // 1.5 seconds
+    let phase_inc = tone_freq * 2.0 * std::f64::consts::PI / sample_rate as f64;
+
+    let phase_counter = Arc::new(AtomicU64::new(0));
+    let done = Arc::new(AtomicBool::new(false));
+
+    let pc = phase_counter.clone();
+    let d = done.clone();
+    let ch = channels as usize;
+    let dur = duration_samples;
+    let ga = gain_atom.clone();
+
+    let stream = match device.build_output_stream(
+        &config,
+        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            let gain_db = f32::from_bits(ga.load(Ordering::Relaxed));
+            let gain_linear = if gain_db.abs() > f32::EPSILON {
+                10f32.powf(gain_db / 20.0)
+            } else {
+                1.0
+            };
+            for frame in data.chunks_mut(ch) {
+                let sample_idx = pc.fetch_add(1, Ordering::Relaxed);
+                let raw = if sample_idx < dur {
+                    (sample_idx as f64 * phase_inc).sin() * amplitude
+                } else {
+                    d.store(true, Ordering::Relaxed);
+                    0.0
+                };
+                let gained = (raw as f32) * gain_linear;
+                let out = gained.clamp(-1.0, 1.0);
+                for s in frame.iter_mut() {
+                    *s = out;
+                }
+            }
+        },
+        move |e| eprintln!("graywolf-modem: test tone stream error: {}", e),
+        None,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            return TestToneResult {
+                request_id: req.request_id,
+                success: false,
+                error: format!("build output stream: {}", e),
+            };
+        }
+    };
+
+    if let Err(e) = stream.play() {
+        return TestToneResult {
+            request_id: req.request_id,
+            success: false,
+            error: format!("play stream: {}", e),
+        };
+    }
+
+    // Wait for tone to finish, emitting level updates at ~5 Hz
+    while !done.load(Ordering::Relaxed) {
+        let gain_db = f32::from_bits(gain_atom.load(Ordering::Relaxed));
+        let gain_linear = 10f32.powf(gain_db / 20.0);
+        let effective_amp = (amplitude as f32) * gain_linear;
+        let peak_dbfs = if effective_amp > 0.0 {
+            (20.0 * effective_amp.log10()).clamp(-60.0, 0.0)
+        } else {
+            -60.0
+        };
+        let rms_dbfs = if effective_amp > 0.0 {
+            // RMS of sine = peak / sqrt(2), i.e. -3.01 dB below peak
+            (peak_dbfs - 3.01).max(-60.0)
+        } else {
+            -60.0
+        };
+        let _ = handle.send(&IpcMessage::device_level_update(DeviceLevelUpdate {
+            device_id,
+            peak_dbfs,
+            rms_dbfs,
+            clipping: effective_amp > 1.0,
+        }));
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    // Final silent level after tone ends
+    let _ = handle.send(&IpcMessage::device_level_update(DeviceLevelUpdate {
+        device_id,
+        peak_dbfs: -60.0,
+        rms_dbfs: -60.0,
+        clipping: false,
+    }));
+
+    std::thread::sleep(Duration::from_millis(100));
+    drop(stream);
+
+    TestToneResult {
+        request_id: req.request_id,
+        success: true,
+        error: String::new(),
+    }
 }

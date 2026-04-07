@@ -234,7 +234,7 @@ func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// /api/audio-devices/{id} or /api/audio-devices/available
+// /api/audio-devices/{id} or /api/audio-devices/available or /api/audio-devices/levels
 func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/audio-devices/")
 	if rest == "available" {
@@ -256,6 +256,35 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, devices)
 		return
 	}
+	if rest == "levels" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleDeviceLevels(w)
+		return
+	}
+
+	// /api/audio-devices/{id}/test-tone or /api/audio-devices/{id}/gain
+	if parts := strings.SplitN(rest, "/", 2); len(parts) == 2 {
+		switch parts[1] {
+		case "test-tone":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleTestTone(w, r, parts[0])
+			return
+		case "gain":
+			if r.Method != http.MethodPut {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleSetGain(w, r, parts[0])
+			return
+		}
+	}
+
 	id, err := parseID(rest)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -316,6 +345,89 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// GET /api/audio-devices/levels — per-device audio levels for meters.
+func (s *Server) handleDeviceLevels(w http.ResponseWriter) {
+	if s.bridge == nil {
+		writeJSON(w, http.StatusOK, map[string]any{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.bridge.GetAllDeviceLevels())
+}
+
+// POST /api/audio-devices/{id}/test-tone — play a test tone on an output device.
+func (s *Server) handleTestTone(w http.ResponseWriter, r *http.Request, idStr string) {
+	id, err := parseID(idStr)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if s.bridge == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "bridge not available"})
+		return
+	}
+	dev, err := s.store.GetAudioDevice(id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "device not found"})
+		return
+	}
+	if dev.Direction != "output" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "test tone only supported on output devices"})
+		return
+	}
+	deviceName := audioDeviceName(dev)
+	if err := s.bridge.PlayTestTone(r.Context(), id, deviceName, dev.SampleRate, dev.Channels); err != nil {
+		s.logger.Warn("test tone failed", "device_id", id, "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// PUT /api/audio-devices/{id}/gain — set software gain for a device.
+func (s *Server) handleSetGain(w http.ResponseWriter, r *http.Request, idStr string) {
+	id, err := parseID(idStr)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		GainDB float32 `json:"gain_db"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if body.GainDB < -60 || body.GainDB > 12 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "gain_db must be between -60 and +12"})
+		return
+	}
+	dev, err := s.store.GetAudioDevice(id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "device not found"})
+		return
+	}
+	dev.GainDB = body.GainDB
+	if err := s.store.UpdateAudioDevice(dev); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	// Live update to modem — no full reconfig needed.
+	if s.bridge != nil {
+		if err := s.bridge.SetDeviceGain(id, body.GainDB); err != nil {
+			s.logger.Warn("set device gain", "device_id", id, "err", err)
+		}
+	}
+	writeJSON(w, http.StatusOK, dev)
+}
+
+// audioDeviceName picks the cpal device name from an AudioDevice.
+func audioDeviceName(d *configstore.AudioDevice) string {
+	if d.SourcePath != "" {
+		return d.SourcePath
+	}
+	return d.Name
 }
 
 // /api/beacons — list + create

@@ -17,6 +17,7 @@ type AudioDevice struct {
 	SampleRate uint32    `gorm:"not null;default:48000" json:"sample_rate"`
 	Channels   uint32    `gorm:"not null;default:1" json:"channels"`
 	Format     string    `gorm:"not null;default:'s16le'" json:"format"`
+	GainDB     float32   `gorm:"not null;default:0" json:"gain_db"`    // software gain: -60 to +12 dB, 0 = unity
 	CreatedAt  time.Time `json:"-"`
 	UpdatedAt  time.Time `json:"-"`
 }

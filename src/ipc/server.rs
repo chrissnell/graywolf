@@ -192,6 +192,7 @@ mod tests {
                 channels: 1,
                 source_type: "stdin".into(),
                 format: "s16le".into(),
+                gain_db: 0.0,
             })),
         };
         write_frame(&mut client, &cfg).unwrap();

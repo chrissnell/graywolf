@@ -135,6 +135,10 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 			b.dispatchDcd(p.DcdChange)
 		case *pb.IpcMessage_AudioDeviceList:
 			b.dispatchEnumResponse(p.AudioDeviceList)
+		case *pb.IpcMessage_TestToneResult:
+			b.dispatchToneResponse(p.TestToneResult)
+		case *pb.IpcMessage_DeviceLevelUpdate:
+			b.updateDeviceLevelCache(p.DeviceLevelUpdate)
 		default:
 			b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 		}
@@ -184,6 +188,7 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) (bool, error
 			Channels:   d.Channels,
 			SourceType: d.SourceType,
 			Format:     d.Format,
+			GainDb:     d.GainDB,
 		}}}
 		if err := send(msg); err != nil {
 			return false, err
