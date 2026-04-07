@@ -2,10 +2,14 @@ package webapi
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/pttdevice"
 )
 
@@ -147,6 +151,80 @@ func (s *Server) handleTxTimingByChannel(w http.ResponseWriter, r *http.Request)
 
 // --- KISS ---
 
+// kissRequest matches the JSON the frontend sends for KISS interfaces.
+// The frontend uses tcp_port (int) rather than listen_addr (host:port string).
+type kissRequest struct {
+	Type         string `json:"type"`
+	TcpPort      int    `json:"tcp_port"`
+	SerialDevice string `json:"serial_device"`
+	BaudRate     uint32 `json:"baud_rate"`
+	Channel      uint32 `json:"channel"`
+}
+
+func kissRequestToModel(req kissRequest) configstore.KissInterface {
+	ch := req.Channel
+	if ch == 0 {
+		ch = 1
+	}
+	ki := configstore.KissInterface{
+		InterfaceType: req.Type,
+		Device:        req.SerialDevice,
+		BaudRate:      req.BaudRate,
+		Channel:       ch,
+		Enabled:       true,
+		Broadcast:     true,
+	}
+	if req.Type == "tcp" && req.TcpPort > 0 {
+		ki.ListenAddr = fmt.Sprintf("0.0.0.0:%d", req.TcpPort)
+		ki.Name = fmt.Sprintf("kiss-tcp-%d", req.TcpPort)
+	} else if req.SerialDevice != "" {
+		ki.Name = fmt.Sprintf("kiss-serial-%s", req.SerialDevice)
+	}
+	return ki
+}
+
+// notifyKissManager starts or restarts the KISS server for the given
+// interface. For non-TCP or disabled interfaces the server is stopped.
+func (s *Server) notifyKissManager(ki configstore.KissInterface) {
+	if s.kissManager == nil {
+		return
+	}
+	if !ki.Enabled || ki.InterfaceType != "tcp" || ki.ListenAddr == "" {
+		s.kissManager.Stop(ki.ID)
+		return
+	}
+	ch := ki.Channel
+	if ch == 0 {
+		ch = 1
+	}
+	s.kissManager.Start(s.kissCtx, ki.ID, kiss.ServerConfig{
+		Name:       ki.Name,
+		ListenAddr: ki.ListenAddr,
+		Logger:     s.logger,
+		ChannelMap: map[uint8]uint32{0: ch},
+		Broadcast:  ki.Broadcast,
+	})
+}
+
+func kissModelToResponse(ki configstore.KissInterface) map[string]any {
+	resp := map[string]any{
+		"id":            ki.ID,
+		"type":          ki.InterfaceType,
+		"serial_device": ki.Device,
+		"baud_rate":     ki.BaudRate,
+		"channel":       ki.Channel,
+		"tcp_port":      0,
+	}
+	if ki.ListenAddr != "" {
+		if _, portStr, err := net.SplitHostPort(ki.ListenAddr); err == nil {
+			if p, err := strconv.Atoi(portStr); err == nil {
+				resp["tcp_port"] = p
+			}
+		}
+	}
+	return resp
+}
+
 func (s *Server) handleKissCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -155,18 +233,24 @@ func (s *Server) handleKissCollection(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, list)
+		out := make([]map[string]any, len(list))
+		for i, ki := range list {
+			out[i] = kissModelToResponse(ki)
+		}
+		writeJSON(w, http.StatusOK, out)
 	case http.MethodPost:
-		var k configstore.KissInterface
-		if err := json.NewDecoder(r.Body).Decode(&k); err != nil {
+		var req kissRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
+		k := kissRequestToModel(req)
 		if err := s.store.CreateKissInterface(&k); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusCreated, k)
+		s.notifyKissManager(k)
+		writeJSON(w, http.StatusCreated, kissModelToResponse(k))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -185,23 +269,28 @@ func (s *Server) handleKissItem(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
-		writeJSON(w, http.StatusOK, k)
+		writeJSON(w, http.StatusOK, kissModelToResponse(*k))
 	case http.MethodPut:
-		var k configstore.KissInterface
-		if err := json.NewDecoder(r.Body).Decode(&k); err != nil {
+		var req kissRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
+		k := kissRequestToModel(req)
 		k.ID = id
 		if err := s.store.UpdateKissInterface(&k); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, k)
+		s.notifyKissManager(k)
+		writeJSON(w, http.StatusOK, kissModelToResponse(k))
 	case http.MethodDelete:
 		if err := s.store.DeleteKissInterface(id); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
+		}
+		if s.kissManager != nil {
+			s.kissManager.Stop(id)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:

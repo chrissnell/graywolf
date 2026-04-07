@@ -255,21 +255,23 @@ func main() {
 	}()
 
 	// --- KISS TCP servers (from configstore) ----------------------------
-	var kissServers []*kiss.Server
+	kissMgr := kiss.NewManager(kiss.ManagerConfig{
+		Sink:   &kissSinkAdapter{gov: gov},
+		Logger: logger,
+	})
 	kissIfaces, _ := store.ListKissInterfaces()
 	for _, ki := range kissIfaces {
 		if !ki.Enabled || ki.InterfaceType != "tcp" || ki.ListenAddr == "" {
 			continue
 		}
-		name := ki.Name
 		ch := ki.Channel
 		if ch == 0 {
 			ch = 1
 		}
-		ks := kiss.NewServer(kiss.ServerConfig{
+		name := ki.Name
+		kissMgr.Start(ctx, ki.ID, kiss.ServerConfig{
 			Name:       name,
 			ListenAddr: ki.ListenAddr,
-			Sink:       &kissSinkAdapter{gov: gov},
 			Logger:     logger,
 			ChannelMap: map[uint8]uint32{0: ch},
 			Broadcast:  ki.Broadcast,
@@ -277,12 +279,6 @@ func main() {
 				m.SetKissClients(name, n)
 			},
 		})
-		kissServers = append(kissServers, ks)
-		go func() {
-			if err := ks.ListenAndServe(ctx); err != nil {
-				logger.Error("kiss server", "name", name, "err", err)
-			}
-		}()
 	}
 
 	// --- AGW TCP server (from configstore) ------------------------------
@@ -477,9 +473,7 @@ func main() {
 				continue
 			}
 			// KISS broadcast to all interfaces.
-			for _, ks := range kissServers {
-				ks.BroadcastFromChannel(rf.Channel, rf.Data)
-			}
+			kissMgr.BroadcastFromChannel(rf.Channel, rf.Data)
 
 			f, err := ax25.Decode(rf.Data)
 			if err != nil {
@@ -558,7 +552,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", m.Handler())
 
-	apiSrv, err := webapi.NewServer(webapi.Config{Store: store, Bridge: bridge, Logger: logger})
+	apiSrv, err := webapi.NewServer(webapi.Config{Store: store, Bridge: bridge, KissManager: kissMgr, KissCtx: ctx, Logger: logger})
 	if err != nil {
 		logger.Error("webapi new", "err", err)
 		os.Exit(1)

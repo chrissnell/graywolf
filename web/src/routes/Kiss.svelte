@@ -9,15 +9,17 @@
   import FormField from '../components/FormField.svelte';
 
   let items = $state([]);
+  let channels = $state([]);
   let modalOpen = $state(false);
   let editing = $state(null);
-  let form = $state({ type: 'tcp', tcp_port: '8001', serial_device: '', baud_rate: '9600' });
+  let form = $state({ type: 'tcp', tcp_port: '8001', serial_device: '', baud_rate: '9600', channel: '1' });
 
   const columns = [
     { key: 'type', label: 'Type' },
     { key: 'tcp_port', label: 'TCP Port' },
     { key: 'serial_device', label: 'Serial Device' },
     { key: 'baud_rate', label: 'Baud Rate' },
+    { key: 'channel', label: 'Channel' },
   ];
 
   const typeOptions = [
@@ -25,22 +27,25 @@
     { value: 'serial', label: 'Serial' },
   ];
 
-  onMount(async () => { items = await api.get('/kiss') || []; });
+  onMount(async () => {
+    items = await api.get('/kiss') || [];
+    channels = (await api.get('/channels') || []).map(c => ({ value: String(c.id), label: c.name || `Channel ${c.id}` }));
+  });
 
   function openCreate() {
     editing = null;
-    form = { type: 'tcp', tcp_port: '8001', serial_device: '', baud_rate: '9600' };
+    form = { type: 'tcp', tcp_port: '8001', serial_device: '', baud_rate: '9600', channel: '1' };
     modalOpen = true;
   }
 
   function openEdit(row) {
     editing = row;
-    form = { ...row, tcp_port: String(row.tcp_port), baud_rate: String(row.baud_rate) };
+    form = { ...row, tcp_port: String(row.tcp_port), baud_rate: String(row.baud_rate), channel: String(row.channel || 1) };
     modalOpen = true;
   }
 
   async function handleSave() {
-    const data = { ...form, tcp_port: parseInt(form.tcp_port), baud_rate: parseInt(form.baud_rate) };
+    const data = { ...form, tcp_port: parseInt(form.tcp_port), baud_rate: parseInt(form.baud_rate), channel: parseInt(form.channel) };
     try {
       if (editing) {
         await api.put(`/kiss/${editing.id}`, data);
@@ -86,6 +91,13 @@
         <Input id="kiss-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
       </FormField>
     {/if}
+    <FormField label="Channel" id="kiss-channel">
+      {#if channels.length > 0}
+        <Select id="kiss-channel" bind:value={form.channel} options={channels} />
+      {:else}
+        <Input id="kiss-channel" bind:value={form.channel} type="number" placeholder="1" />
+      {/if}
+    </FormField>
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
       <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>

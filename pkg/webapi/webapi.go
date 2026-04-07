@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 )
 
@@ -20,6 +21,8 @@ import (
 type Server struct {
 	store        *configstore.Store
 	bridge       *modembridge.Bridge
+	kissManager  *kiss.Manager
+	kissCtx      context.Context // long-lived context for KISS server goroutines
 	logger       *slog.Logger
 	startedAt    time.Time
 	igateStatusFn func() IgateStatus
@@ -27,9 +30,11 @@ type Server struct {
 
 // Config bundles the dependencies for NewServer.
 type Config struct {
-	Store  *configstore.Store
-	Bridge *modembridge.Bridge
-	Logger *slog.Logger
+	Store       *configstore.Store
+	Bridge      *modembridge.Bridge
+	KissManager *kiss.Manager
+	KissCtx     context.Context // parent context for dynamically started KISS servers
+	Logger      *slog.Logger
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -42,11 +47,17 @@ func NewServer(cfg Config) (*Server, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	kissCtx := cfg.KissCtx
+	if kissCtx == nil {
+		kissCtx = context.Background()
+	}
 	return &Server{
-		store:     cfg.Store,
-		bridge:    cfg.Bridge,
-		logger:    logger.With("component", "webapi"),
-		startedAt: time.Now(),
+		store:       cfg.Store,
+		bridge:      cfg.Bridge,
+		kissManager: cfg.KissManager,
+		kissCtx:     kissCtx,
+		logger:      logger.With("component", "webapi"),
+		startedAt:   time.Now(),
 	}, nil
 }
 
