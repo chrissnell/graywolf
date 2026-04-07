@@ -7,7 +7,6 @@
     { path: '/channels', label: 'Channels', icon: '📻' },
     { path: '/audio-devices', label: 'Audio Devices', icon: '🔊' },
     { path: '/ptt', label: 'PTT', icon: '🎙' },
-    { path: '/tx-timing', label: 'TX Timing', icon: '⏱' },
     { path: '/kiss', label: 'KISS', icon: '🔌' },
     { path: '/agw', label: 'AGW', icon: '🌐' },
     { path: '/igate', label: 'iGate', icon: '🛰' },

@@ -9,7 +9,6 @@
   import Channels from './routes/Channels.svelte';
   import AudioDevices from './routes/AudioDevices.svelte';
   import Ptt from './routes/Ptt.svelte';
-  import TxTiming from './routes/TxTiming.svelte';
   import Kiss from './routes/Kiss.svelte';
   import Agw from './routes/Agw.svelte';
   import Igate from './routes/Igate.svelte';
@@ -26,7 +25,6 @@
     '/channels': Channels,
     '/audio-devices': AudioDevices,
     '/ptt': Ptt,
-    '/tx-timing': TxTiming,
     '/kiss': Kiss,
     '/agw': Agw,
     '/igate': Igate,

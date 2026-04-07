@@ -68,10 +68,6 @@ const mockPttAvailable = [
   { path: '/dev/ttyACM0', type: 'serial', name: 'ttyACM0' },
 ];
 
-const mockTxTiming = [
-  { id: 1, channel_id: 1, txdelay: 300, txtail: 50, slottime: 100, persist: 63, duplex: false },
-];
-
 const mockKiss = [
   { id: 1, type: 'tcp', tcp_port: 8001, serial_device: '', baud_rate: 0 },
 ];
@@ -156,11 +152,9 @@ function getMockData(method, path, body) {
   if (path.match(/^\/ptt\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/ptt\/\d+$/) && method === 'DELETE') return delay(null);
 
-  // TX Timing
-  if (path === '/tx-timing' && method === 'GET') return delay(mockTxTiming);
-  if (path === '/tx-timing' && method === 'POST') return delay({ id: 2, ...body });
+  // TX Timing (used by channel editor)
+  if (path === '/tx-timing' && method === 'GET') return delay([]);
   if (path.match(/^\/tx-timing\/\d+$/) && method === 'PUT') return delay(body);
-  if (path.match(/^\/tx-timing\/\d+$/) && method === 'DELETE') return delay(null);
 
   // KISS
   if (path === '/kiss' && method === 'GET') return delay(mockKiss);

@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Badge, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Badge, Toggle, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -9,6 +9,7 @@
 
   let channels = $state([]);
   let audioDevices = $state([]);
+  let txTimings = $state({});
   let modalOpen = $state(false);
   let editing = $state(null);
   let deleteTarget = $state(null);
@@ -17,8 +18,11 @@
     name: '', input_device_id: '0', input_channel: '0',
     output_device_id: '0', output_channel: '0',
     modem_type: 'afsk', bit_rate: '1200', mark_freq: '1200', space_freq: '2200',
+    tx_delay_ms: '300', tx_tail_ms: '100', slot_ms: '100', persist: '63', full_dup: false,
   });
   let errors = $state({});
+
+  let isTxEnabled = $derived(form.output_device_id !== '0');
 
   let inputDevices = $derived(audioDevices.filter(d => d.direction === 'input'));
   let outputDevices = $derived(audioDevices.filter(d => d.direction === 'output'));
@@ -40,8 +44,12 @@
     { value: '1', label: '1 (Right)' },
   ];
 
+  const txTimingDefaults = {
+    tx_delay_ms: '300', tx_tail_ms: '100', slot_ms: '100', persist: '63', full_dup: false,
+  };
+
   onMount(async () => {
-    await Promise.all([loadChannels(), loadDevices()]);
+    await Promise.all([loadChannels(), loadDevices(), loadTxTimings()]);
   });
 
   async function loadChannels() {
@@ -50,6 +58,13 @@
 
   async function loadDevices() {
     audioDevices = await api.get('/audio-devices') || [];
+  }
+
+  async function loadTxTimings() {
+    const list = await api.get('/tx-timing') || [];
+    const map = {};
+    for (const t of list) map[t.channel] = t;
+    txTimings = map;
   }
 
   function deviceName(id) {
@@ -69,13 +84,15 @@
       name: '', input_device_id: defaultInput, input_channel: '0',
       output_device_id: '0', output_channel: '0',
       modem_type: 'afsk', bit_rate: '1200', mark_freq: '1200', space_freq: '2200',
+      ...txTimingDefaults,
     };
     errors = {};
     modalOpen = true;
   }
 
-  function openEdit(row) {
+  async function openEdit(row) {
     editing = row;
+    const timing = txTimings[row.id] || {};
     form = {
       ...row,
       input_device_id: String(row.input_device_id),
@@ -85,6 +102,11 @@
       bit_rate: String(row.bit_rate),
       mark_freq: String(row.mark_freq),
       space_freq: String(row.space_freq),
+      tx_delay_ms: String(timing.tx_delay_ms ?? 300),
+      tx_tail_ms: String(timing.tx_tail_ms ?? 100),
+      slot_ms: String(timing.slot_ms ?? 100),
+      persist: String(timing.persist ?? 63),
+      full_dup: timing.full_dup ?? false,
     };
     errors = {};
     modalOpen = true;
@@ -94,6 +116,10 @@
     const e = {};
     if (!form.name.trim()) e.name = 'Required';
     if (!form.input_device_id || form.input_device_id === '0') e.input_device_id = 'Required';
+    if (isTxEnabled) {
+      const p = parseInt(form.persist);
+      if (isNaN(p) || p < 0 || p > 255) e.persist = 'Must be 0–255';
+    }
     errors = e;
     return Object.keys(e).length === 0;
   }
@@ -110,16 +136,40 @@
       mark_freq: parseInt(form.mark_freq, 10),
       space_freq: parseInt(form.space_freq, 10),
     };
+    // Strip TX timing fields before sending channel data
+    delete data.tx_delay_ms;
+    delete data.tx_tail_ms;
+    delete data.slot_ms;
+    delete data.persist;
+    delete data.full_dup;
+
     try {
+      let channelId;
       if (editing) {
         await api.put(`/channels/${editing.id}`, data);
+        channelId = editing.id;
         toasts.success('Channel updated');
       } else {
-        await api.post('/channels', data);
+        const created = await api.post('/channels', data);
+        channelId = created.id;
         toasts.success('Channel created');
       }
+
+      // Save TX timing if this is a TX-capable channel
+      if (isTxEnabled && channelId) {
+        const timingData = {
+          channel: channelId,
+          tx_delay_ms: parseInt(form.tx_delay_ms, 10),
+          tx_tail_ms: parseInt(form.tx_tail_ms, 10),
+          slot_ms: parseInt(form.slot_ms, 10),
+          persist: parseInt(form.persist, 10),
+          full_dup: form.full_dup,
+        };
+        await api.put(`/tx-timing/${channelId}`, timingData);
+      }
+
       modalOpen = false;
-      await loadChannels();
+      await Promise.all([loadChannels(), loadTxTimings()]);
     } catch (err) {
       toasts.error(err.message);
     }
@@ -135,7 +185,7 @@
     try {
       await api.delete(`/channels/${deleteTarget.id}`);
       toasts.success('Channel deleted');
-      await loadChannels();
+      await Promise.all([loadChannels(), loadTxTimings()]);
     } catch (err) {
       toasts.error(err.message);
     } finally {
@@ -195,6 +245,17 @@
             <span class="detail-label">Mark / Space</span>
             <span class="detail-value">{ch.mark_freq} / {ch.space_freq} Hz</span>
           </div>
+          {#if ch.output_device_id && ch.output_device_id !== 0 && txTimings[ch.id]}
+            {@const t = txTimings[ch.id]}
+            <div class="detail-row">
+              <span class="detail-label">TXD / Tail</span>
+              <span class="detail-value">{t.tx_delay_ms} / {t.tx_tail_ms} ms</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">CSMA</span>
+              <span class="detail-value">p{t.persist} slot {t.slot_ms}ms{t.full_dup ? ' FDX' : ''}</span>
+            </div>
+          {/if}
         </div>
 
         <div class="channel-actions">
@@ -207,41 +268,102 @@
 {/if}
 
 <!-- Add/Edit modal -->
+<div class="wide-modal">
 <Modal bind:open={modalOpen} title={editing ? 'Edit Channel' : 'New Channel'}>
-  <FormField label="Name" error={errors.name} id="ch-name">
-    <Input id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
-  </FormField>
-  <FormField label="Input Device" error={errors.input_device_id} id="ch-indev">
-    <Select id="ch-indev" bind:value={form.input_device_id} options={inputDeviceOptions} />
-  </FormField>
-  <FormField label="Input Channel" id="ch-inch">
-    <Select id="ch-inch" bind:value={form.input_channel} options={channelOptions} />
-  </FormField>
-  <FormField label="Output Device" id="ch-outdev">
-    <Select id="ch-outdev" bind:value={form.output_device_id} options={outputDeviceOptions} />
-  </FormField>
-  {#if form.output_device_id !== '0'}
-    <FormField label="Output Channel" id="ch-outch">
-      <Select id="ch-outch" bind:value={form.output_channel} options={channelOptions} />
+  <div class="form-grid">
+    <FormField label="Name" error={errors.name} id="ch-name">
+      <Input id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
     </FormField>
+    <FormField label="Modem Type" id="ch-modem">
+      <Select id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
+    </FormField>
+  </div>
+  <div class="form-grid">
+    <FormField label="Input Device" error={errors.input_device_id} id="ch-indev">
+      <Select id="ch-indev" bind:value={form.input_device_id} options={inputDeviceOptions} />
+    </FormField>
+    <FormField label="Input Channel" id="ch-inch">
+      <Select id="ch-inch" bind:value={form.input_channel} options={channelOptions} />
+    </FormField>
+  </div>
+  <div class="form-grid">
+    <FormField label="Output Device" id="ch-outdev">
+      <Select id="ch-outdev" bind:value={form.output_device_id} options={outputDeviceOptions} />
+    </FormField>
+    {#if isTxEnabled}
+      <FormField label="Output Channel" id="ch-outch">
+        <Select id="ch-outch" bind:value={form.output_channel} options={channelOptions} />
+      </FormField>
+    {/if}
+  </div>
+  <div class="form-grid">
+    <FormField label="Bit Rate" id="ch-baud">
+      <Input id="ch-baud" bind:value={form.bit_rate} type="number" placeholder="1200" />
+    </FormField>
+    <FormField label="Mark Freq (Hz)" id="ch-mark">
+      <Input id="ch-mark" bind:value={form.mark_freq} type="number" placeholder="1200" />
+    </FormField>
+    <FormField label="Space Freq (Hz)" id="ch-space">
+      <Input id="ch-space" bind:value={form.space_freq} type="number" placeholder="2200" />
+    </FormField>
+  </div>
+
+  {#if isTxEnabled}
+    <div class="tx-timing-section">
+      <h4 class="section-label">Transmit Timing</h4>
+      <p class="section-intro">
+        When your station transmits, it needs to coordinate with other stations sharing the frequency.
+        These settings control how your transmitter keys up and how it avoids collisions with other
+        stations' transmissions.
+      </p>
+
+      <h5 class="section-sublabel">Keying Timing</h5>
+      <p class="section-desc">
+        Before sending data, the radio keys up the transmitter and waits briefly for it to reach
+        full power. After the last byte, it holds the transmitter on so the final data isn't clipped.
+      </p>
+      <div class="tx-grid">
+        <FormField label="TX Delay (ms)" id="ch-txd"
+          hint="How long to hold the transmitter key before sending data. This gives your radio time to fully power up. 300ms is standard for most radios; some need more.">
+          <Input id="ch-txd" bind:value={form.tx_delay_ms} type="number" placeholder="300" />
+        </FormField>
+        <FormField label="TX Tail (ms)" id="ch-txt"
+          hint="How long to keep transmitting after the last byte of data. Prevents the end of your packet from being clipped. 100ms is typical.">
+          <Input id="ch-txt" bind:value={form.tx_tail_ms} type="number" placeholder="100" />
+        </FormField>
+      </div>
+
+      <h5 class="section-sublabel">Channel Access (CSMA)</h5>
+      <p class="section-desc">
+        Before transmitting, the radio listens to check if the channel is busy.
+        If the channel is clear, it decides whether to transmit based on the persistence
+        value — like flipping a weighted coin each time slot.
+        This prevents multiple stations from transmitting at the same time.
+      </p>
+      <div class="tx-grid">
+        <FormField label="Slot Time (ms)" id="ch-slot"
+          hint="How often to check if the channel is clear. 100ms matches the standard KISS TNC slot time.">
+          <Input id="ch-slot" bind:value={form.slot_ms} type="number" placeholder="100" />
+        </FormField>
+        <FormField label="Persistence (0-255)" id="ch-persist" error={errors.persist}
+          hint="The probability of transmitting when the channel is clear: probability = (value + 1) / 256. Lower values are more polite but slower. 63 (~25% chance) is the standard default.">
+          <Input id="ch-persist" bind:value={form.persist} type="number" placeholder="63" />
+        </FormField>
+      </div>
+      <Toggle bind:checked={form.full_dup} label="Full Duplex" />
+      <p class="section-hint">
+        Skip the listen-before-talk check entirely. Only enable this if your station uses separate
+        transmit and receive frequencies so it can't hear its own transmissions.
+      </p>
+    </div>
   {/if}
-  <FormField label="Modem Type" id="ch-modem">
-    <Select id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
-  </FormField>
-  <FormField label="Bit Rate" id="ch-baud">
-    <Input id="ch-baud" bind:value={form.bit_rate} type="number" placeholder="1200" />
-  </FormField>
-  <FormField label="Mark Freq (Hz)" id="ch-mark">
-    <Input id="ch-mark" bind:value={form.mark_freq} type="number" placeholder="1200" />
-  </FormField>
-  <FormField label="Space Freq (Hz)" id="ch-space">
-    <Input id="ch-space" bind:value={form.space_freq} type="number" placeholder="2200" />
-  </FormField>
+
   <div class="modal-actions">
     <Button onclick={() => modalOpen = false}>Cancel</Button>
     <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
   </div>
 </Modal>
+</div>
 
 <!-- Delete confirmation -->
 <AlertDialog bind:open={deleteOpen}>
@@ -383,6 +505,59 @@
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid var(--border-color);
+  }
+
+  /* Wider modal for channel editor */
+  .wide-modal :global(.modal) {
+    width: min(680px, 92vw);
+  }
+  .wide-modal :global(.modal-body) {
+    overflow-y: auto;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0 16px;
+  }
+
+  /* TX Timing section in modal */
+  .tx-timing-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+  }
+  .section-label {
+    margin: 0 0 6px 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .section-intro {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 16px 0;
+  }
+  .section-sublabel {
+    margin: 16px 0 4px 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .section-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 8px 0;
+  }
+  .section-hint {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-text-muted, #888);
+    margin: 4px 0 0 0;
+  }
+  .tx-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0 16px;
   }
 
   .modal-actions {
