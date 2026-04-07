@@ -1,7 +1,10 @@
 //! IPC between the Rust modem and the Go application.
 //!
-//! Transport: Unix domain socket, bidirectional, length-prefixed protobuf
-//! frames. Each frame is `[4 bytes big-endian length][IpcMessage bytes]`.
+//! Transport: bidirectional, length-prefixed protobuf frames over a
+//! platform-specific stream. Each frame is `[4 bytes big-endian length][IpcMessage bytes]`.
+//!
+//! - Unix: Unix domain socket at a caller-chosen path.
+//! - Windows: TCP on 127.0.0.1 (loopback only).
 //!
 //! The protobuf schema is `proto/graywolf.proto`. Rust message types are
 //! defined with `prost` derive in [`proto`] so that we do not take a build

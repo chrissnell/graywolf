@@ -4,11 +4,15 @@
 //!
 //! Skipped at runtime if the WB2OSZ test tracks are not present.
 
-use std::io::{BufReader, Read};
-use std::os::unix::net::UnixStream;
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+#[cfg(windows)]
+use std::net::TcpStream;
 
 use graywolf_demod::ipc::framing::{read_frame, write_frame};
 use graywolf_demod::ipc::proto::{
@@ -48,13 +52,17 @@ fn flac_end_to_end_yields_frames() {
         panic!("graywolf-modem binary not built at {}", bin.display());
     }
 
+    // Build platform-specific socket path / args.
+    #[cfg(unix)]
     let sock = std::env::temp_dir().join(format!(
         "graywolf-e2e-{}-{}.sock",
         std::process::id(),
         Instant::now().elapsed().as_nanos()
     ));
+    #[cfg(unix)]
     let _ = std::fs::remove_file(&sock);
 
+    #[cfg(unix)]
     let mut child = Command::new(&bin)
         .arg(&sock)
         .stdout(Stdio::piped())
@@ -62,28 +70,54 @@ fn flac_end_to_end_yields_frames() {
         .spawn()
         .expect("spawn graywolf-modem");
 
-    // Wait for readiness byte.
+    #[cfg(windows)]
+    let mut child = Command::new(&bin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("spawn graywolf-modem");
+
+    // Read the readiness signal from stdout.
+    let stdout = child.stdout.as_mut().expect("child stdout");
+    let mut reader = BufReader::new(stdout);
+
+    #[cfg(unix)]
     {
-        let stdout = child.stdout.as_mut().expect("child stdout");
-        let mut reader = BufReader::new(stdout);
         let mut one = [0u8; 1];
         reader.read_exact(&mut one).expect("readiness byte");
         assert_eq!(one[0], b'\n');
     }
 
-    // Connect.
-    let mut client = None;
-    for _ in 0..50 {
-        if let Ok(s) = UnixStream::connect(&sock) {
-            client = Some(s);
-            break;
+    #[cfg(windows)]
+    let tcp_addr = {
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("readiness line");
+        let port: u16 = line.trim().parse().expect("port number from modem");
+        format!("127.0.0.1:{}", port)
+    };
+
+    // Connect to the modem.
+    #[cfg(unix)]
+    let mut client = {
+        let mut conn = None;
+        for _ in 0..50 {
+            if let Ok(s) = UnixStream::connect(&sock) {
+                conn = Some(s);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
         }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let mut client = client.expect("connect to modem socket");
-    client
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .unwrap();
+        let c = conn.expect("connect to modem socket");
+        c.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+        c
+    };
+
+    #[cfg(windows)]
+    let mut client = {
+        let c = TcpStream::connect(&tcp_addr).expect("connect to modem TCP");
+        c.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+        c
+    };
 
     // Expect ModemReady first.
     let ready = read_frame(&mut client).unwrap().unwrap();
@@ -155,6 +189,8 @@ fn flac_end_to_end_yields_frames() {
     };
     let _ = write_frame(&mut client, &shutdown);
     let _ = child.wait();
+
+    #[cfg(unix)]
     let _ = std::fs::remove_file(&sock);
 
     assert!(frames > 0, "expected at least one decoded frame from track");

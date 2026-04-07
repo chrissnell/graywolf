@@ -3,19 +3,15 @@
 package modembridge
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
@@ -388,10 +384,11 @@ func (b *Bridge) supervise(ctx context.Context) {
 // returns whatever error caused the session to end (or nil on clean shutdown
 // via context cancel).
 func (b *Bridge) runOnce(ctx context.Context) error {
-	sockPath := filepath.Join(b.cfg.SocketDir, fmt.Sprintf("graywolf-modem-%d.sock", os.Getpid()))
-	_ = os.Remove(sockPath)
+	listenAddr := modemListenAddr(b.cfg.SocketDir)
+	cleanupListenAddr(listenAddr)
 
-	cmd := exec.CommandContext(ctx, b.cfg.BinaryPath, sockPath)
+	args := modemExtraArgs(listenAddr)
+	cmd := exec.CommandContext(ctx, b.cfg.BinaryPath, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe: %w", err)
@@ -400,36 +397,33 @@ func (b *Bridge) runOnce(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s: %w", b.cfg.BinaryPath, err)
 	}
-	b.logger.Info("spawned modem", "pid", cmd.Process.Pid, "socket", sockPath)
+	b.logger.Info("spawned modem", "pid", cmd.Process.Pid, "addr", listenAddr)
 	if b.cfg.Metrics != nil {
 		b.cfg.Metrics.SetChildUp(true)
 	}
 
-	// Always ensure the child is cleaned up on return.
 	defer func() {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
+		terminateChild(cmd.Process)
 		_ = cmd.Wait()
-		_ = os.Remove(sockPath)
+		cleanupListenAddr(listenAddr)
 	}()
 
-	// Readiness handshake: Rust writes exactly one '\n' byte to stdout once
-	// the listener is bound.
-	if err := waitForReadiness(stdout, b.cfg.ReadinessTimeout); err != nil {
+	// Readiness handshake: blocks until the Rust child signals it is
+	// accepting connections. Returns the address to dial (on Unix this is
+	// the socket path we already know; on Windows it is parsed from stdout).
+	dialAddr, err := readDialAddr(stdout, b.cfg.ReadinessTimeout, listenAddr)
+	if err != nil {
 		return fmt.Errorf("readiness: %w", err)
 	}
-	// Drain subsequent stdout so the pipe doesn't back up.
 	go io.Copy(io.Discard, stdout)
 
-	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
+	conn, err := dialModem(dialAddr, 2*time.Second)
 	if err != nil {
-		return fmt.Errorf("dial %s: %w", sockPath, err)
+		return fmt.Errorf("dial %s: %w", dialAddr, err)
 	}
 	defer conn.Close()
 
-	if err := b.runSession(ctx, conn); err != nil {
-		return err
-	}
-	return nil
+	return b.runSession(ctx, conn)
 }
 
 // GetChannelStats returns cached stats for a single channel.
@@ -717,29 +711,3 @@ func (b *Bridge) InjectStatusForTest(channel uint32, rxFrames, rxBadFCS, txFrame
 	}
 }
 
-// waitForReadiness blocks until the child writes a byte (expected '\n') to
-// stdout or the timeout expires.
-func waitForReadiness(r io.Reader, timeout time.Duration) error {
-	type result struct {
-		b   byte
-		err error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		br := bufio.NewReader(r)
-		b, err := br.ReadByte()
-		ch <- result{b, err}
-	}()
-	select {
-	case res := <-ch:
-		if res.err != nil {
-			return res.err
-		}
-		if res.b != '\n' {
-			return fmt.Errorf("unexpected readiness byte %q", res.b)
-		}
-		return nil
-	case <-time.After(timeout):
-		return fmt.Errorf("timeout after %s", timeout)
-	}
-}

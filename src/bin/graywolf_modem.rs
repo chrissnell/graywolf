@@ -1,12 +1,20 @@
 //! `graywolf-modem` — the Rust DSP child process for graywolf.
 //!
-//! Usage:
+//! Usage (Unix):
 //!
 //!     graywolf-modem <socket-path>
 //!
+//! Usage (Windows):
+//!
+//!     graywolf-modem
+//!
+//! On Unix the IPC listener is a Unix domain socket at the given path. On
+//! Windows it is a TCP socket on 127.0.0.1 with an OS-assigned port; the
+//! port is printed to stdout as the readiness signal.
+//!
 //! Lifecycle:
-//!  1. Bind the Unix socket at `<socket-path>`.
-//!  2. Write `\n` to stdout (readiness signal for the Go parent).
+//!  1. Bind the IPC listener.
+//!  2. Write readiness signal to stdout (the Go parent waits on this).
 //!  3. Accept one IPC client, send `ModemReady`.
 //!  4. Serve control + audio messages until `Shutdown` or disconnect.
 
@@ -21,16 +29,12 @@ fn main() -> ExitCode {
         println!("{}", env!("GRAYWOLF_VERSION"));
         return ExitCode::SUCCESS;
     }
-    if args.len() != 2 {
-        eprintln!("usage: graywolf-modem <socket-path>");
-        return ExitCode::from(2);
-    }
-    let socket_path = &args[1];
 
-    let server = match IpcServer::bind(socket_path) {
+    let server = bind_server(&args);
+    let server = match server {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("graywolf-modem: bind {}: {}", socket_path, e);
+            eprintln!("graywolf-modem: bind: {}", e);
             return ExitCode::from(1);
         }
     };
@@ -46,4 +50,18 @@ fn main() -> ExitCode {
     let modem = Modem::new(handle, inbound);
     modem.run();
     ExitCode::SUCCESS
+}
+
+#[cfg(unix)]
+fn bind_server(args: &[String]) -> Result<IpcServer, Box<dyn std::error::Error>> {
+    if args.len() != 2 {
+        eprintln!("usage: graywolf-modem <socket-path>");
+        std::process::exit(2);
+    }
+    Ok(IpcServer::bind(&args[1])?)
+}
+
+#[cfg(windows)]
+fn bind_server(_args: &[String]) -> Result<IpcServer, Box<dyn std::error::Error>> {
+    Ok(IpcServer::bind()?)
 }
