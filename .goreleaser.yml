@@ -1,0 +1,144 @@
+version: 2
+
+project_name: graywolf
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: graywolf
+    binary: graywolf
+    main: ./cmd/graywolf/
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -w
+      - -s
+      - -X main.Version=v{{.Version}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: graywolf
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- if eq .Os "darwin" }}macOS{{ else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE*
+      - README*
+      - src: "rust-bin/{{ .Os }}_{{ .Arch }}/graywolf-modem{{ if eq .Os \"windows\" }}.exe{{ end }}"
+        dst: .
+        strip_parent: true
+
+nfpms:
+  - id: graywolf
+    package_name: graywolf
+    vendor: chrissnell
+    homepage: https://github.com/chrissnell/graywolf
+    maintainer: Chris Snell
+    description: APRS radio transceiver, digipeater, and Internet gateway
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: packaging/systemd/graywolf.service
+        dst: /usr/lib/systemd/system/graywolf.service
+      - src: "rust-bin/linux_{{ .Arch }}/graywolf-modem"
+        dst: /usr/bin/graywolf-modem
+    scripts:
+      postinstall: packaging/scripts/postinstall.sh
+      preremove: packaging/scripts/preremove.sh
+
+dockers:
+  - image_templates:
+      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: docker
+    goos: linux
+    goarch: amd64
+    extra_files:
+      - rust-bin/linux_amd64/graywolf-modem
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+  - image_templates:
+      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: docker
+    goos: linux
+    goarch: arm64
+    extra_files:
+      - rust-bin/linux_arm64/graywolf-modem
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+
+docker_manifests:
+  - name_template: "ghcr.io/chrissnell/graywolf:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-amd64"
+      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
+  - name_template: "ghcr.io/chrissnell/graywolf:latest"
+    image_templates:
+      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-amd64"
+      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  draft: false
+  replace_existing_draft: true
+  replace_existing_artifacts: true
+  target_commitish: '{{ .Commit }}'
+  prerelease: auto
+  mode: replace
+
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "Build and dependencies"
+      regexp: '^.*?build(\([[:word:]]+\))??!?:.+$'
+      order: 30
+    - title: Misc
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+
+snapshot:
+  version_template: "{{ .Version }}-{{.ShortCommit}}"

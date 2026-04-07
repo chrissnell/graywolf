@@ -39,11 +39,20 @@ import (
 	"github.com/chrissnell/graywolf/web"
 )
 
+// Version is set at build time via -ldflags.
+var Version = "dev"
+
 func main() {
-	// Handle "auth" subcommand before flag parsing.
-	if len(os.Args) > 1 && os.Args[1] == "auth" {
-		handleAuthSubcommand(os.Args[2:])
-		return
+	// Handle subcommands before flag parsing.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "auth":
+			handleAuthSubcommand(os.Args[2:])
+			return
+		case "version":
+			fmt.Println(Version)
+			return
+		}
 	}
 
 	var (
@@ -576,7 +585,12 @@ func main() {
 		})
 	}
 
-	// Auth endpoints (public, no middleware).
+	// Public endpoints (no auth).
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"version":%q}`, Version)
+	})
+
 	authHandlers := &webauth.Handlers{Auth: authStore, Secure: secure}
 	mux.HandleFunc("/api/auth/login", authHandlers.HandleLogin)
 	mux.HandleFunc("/api/auth/logout", authHandlers.HandleLogout)

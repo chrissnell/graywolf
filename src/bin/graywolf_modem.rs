@@ -17,6 +17,10 @@ use graywolf_demod::modem::Modem;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--version" {
+        println!("{}", env!("GRAYWOLF_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     if args.len() != 2 {
         eprintln!("usage: graywolf-modem <socket-path>");
         return ExitCode::from(2);

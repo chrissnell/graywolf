@@ -1,0 +1,16 @@
+FROM alpine:latest
+
+LABEL org.opencontainers.image.title="graywolf" \
+  org.opencontainers.image.vendor="chrissnell" \
+  org.opencontainers.image.description="APRS radio transceiver, digipeater, and Internet gateway"
+
+RUN apk add --no-cache alsa-lib && \
+    adduser -D -u 1000 graywolf
+
+COPY graywolf /usr/bin/graywolf
+COPY graywolf-modem /usr/bin/graywolf-modem
+
+USER graywolf
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/bin/graywolf", "-modem", "/usr/bin/graywolf-modem"]

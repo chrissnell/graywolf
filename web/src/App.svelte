@@ -43,6 +43,14 @@
   });
 
   let isLoginPage = $derived(currentPath === '/login');
+
+  let version = $state('');
+  $effect(() => {
+    fetch('/api/version')
+      .then(r => r.json())
+      .then(d => { version = d.version; })
+      .catch(() => {});
+  });
 </script>
 
 <Toaster />
@@ -54,6 +62,11 @@
     <Sidebar />
     <main class="main-content">
       <Router {routes} />
+      <footer class="app-footer">
+        <a href="https://github.com/chrissnell/graywolf" target="_blank" rel="noopener">
+          graywolf {version ? `v${version}` : ''}
+        </a>
+      </footer>
     </main>
   </div>
 {/if}
@@ -68,6 +81,22 @@
     margin-left: var(--sidebar-width);
     padding: 24px;
     max-width: 1200px;
+    display: flex;
+    flex-direction: column;
+  }
+  .app-footer {
+    margin-top: auto;
+    padding: 24px 0 8px;
+    text-align: center;
+    font-size: 0.75rem;
+    opacity: 0.5;
+  }
+  .app-footer a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .app-footer a:hover {
+    text-decoration: underline;
   }
 
   @media (max-width: 768px) {

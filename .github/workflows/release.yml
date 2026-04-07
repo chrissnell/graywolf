@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  rust-build:
+    name: Rust (${{ matrix.goos }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: amd64
+            goos: linux
+            use_cross: false
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            goos: linux
+            use_cross: true
+          - os: macos-13
+            target: x86_64-apple-darwin
+            arch: amd64
+            goos: darwin
+            use_cross: false
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            arch: arm64
+            goos: darwin
+            use_cross: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: amd64
+            goos: windows
+            use_cross: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install ALSA dev (Linux amd64)
+        if: matrix.goos == 'linux' && matrix.use_cross == false
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Install cross (Linux arm64)
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build with cross
+        if: matrix.use_cross
+        env:
+          GRAYWOLF_VERSION: ${{ github.ref_name }}
+        run: cross build --release --target ${{ matrix.target }} --bin graywolf-modem
+
+      - name: Build with cargo
+        if: matrix.use_cross == false
+        env:
+          GRAYWOLF_VERSION: ${{ github.ref_name }}
+        run: cargo build --release --target ${{ matrix.target }} --bin graywolf-modem
+
+      - name: Upload Rust binary (Unix)
+        if: matrix.goos != 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-${{ matrix.goos }}-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/graywolf-modem
+          retention-days: 1
+
+      - name: Upload Rust binary (Windows)
+        if: matrix.goos == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-${{ matrix.goos }}-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/graywolf-modem.exe
+          retention-days: 1
+
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    needs: rust-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build frontend
+        run: cd web && npm install && npx vite build
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all Rust binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: rust-artifacts/
+          pattern: rust-*
+
+      - name: Arrange Rust binaries for GoReleaser
+        run: |
+          mkdir -p rust-bin/{linux_amd64,linux_arm64,darwin_amd64,darwin_arm64,windows_amd64}
+          cp rust-artifacts/rust-linux-amd64/graywolf-modem   rust-bin/linux_amd64/
+          cp rust-artifacts/rust-linux-arm64/graywolf-modem   rust-bin/linux_arm64/
+          cp rust-artifacts/rust-darwin-amd64/graywolf-modem  rust-bin/darwin_amd64/
+          cp rust-artifacts/rust-darwin-arm64/graywolf-modem  rust-bin/darwin_arm64/
+          cp rust-artifacts/rust-windows-amd64/graywolf-modem.exe rust-bin/windows_amd64/
+          chmod +x rust-bin/*/graywolf-modem
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows binary for MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64-binary
+          path: dist/graywolf_windows_amd64_v1/graywolf.exe
+          retention-days: 1
+
+  msi:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    needs: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows Go binary
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-amd64-binary
+          path: bin
+
+      - name: Download Windows Rust binary
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-windows-amd64
+          path: modem-bin
+
+      - name: Install WiX
+        run: dotnet tool install --global wix
+
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $binaryPath = (Resolve-Path "bin/graywolf.exe").Path
+          $modemPath = (Resolve-Path "modem-bin/graywolf-modem.exe").Path
+          $outFile = "graywolf_${version}_Windows_x86_64.msi"
+          wix build -acceptEula wix7 -d Version=$version -d BinaryPath=$binaryPath -d ModemPath=$modemPath -o $outFile packaging/wix/graywolf.wxs
+
+      - name: Upload MSI to release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          gh release upload "${{ github.ref_name }}" "graywolf_${VERSION}_Windows_x86_64.msi"
