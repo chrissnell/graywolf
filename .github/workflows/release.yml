@@ -110,7 +110,7 @@ jobs:
           node-version: 22
 
       - name: Build frontend
-        run: cd web && rm -rf node_modules package-lock.json && npm install && npx vite build
+        run: cd web && rm -rf node_modules && npm ci && npx vite build
 
       - name: Set up Go
         uses: actions/setup-go@v6
