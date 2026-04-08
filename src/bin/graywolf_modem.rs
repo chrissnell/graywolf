@@ -47,7 +47,13 @@ fn main() -> ExitCode {
         }
     };
 
-    let modem = Modem::new(handle, inbound);
+    let modem = match Modem::new(handle, inbound) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("graywolf-modem: init failed: {}", e);
+            return ExitCode::from(1);
+        }
+    };
     modem.run();
     ExitCode::SUCCESS
 }

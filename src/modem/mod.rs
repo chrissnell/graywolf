@@ -4,6 +4,8 @@
 //! Supports multiple audio devices, multiple channels per device, and
 //! multiple demodulator types (AFSK, PSK, 9600).
 
+mod tx_worker;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
@@ -14,10 +16,10 @@ use crate::audio::{self, AudioChunk, AudioSource, CHUNK_QUEUE_DEPTH};
 use crate::demod_afsk::AfskDemodulator;
 use crate::hdlc::DecodedFrame;
 use crate::ipc::proto::{
-    ipc_message::Payload, ConfigureChannel, ConfigurePtt, DcdChange, DeviceLevelUpdate,
-    IpcMessage, ReceivedFrame, StatusUpdate, TestToneResult,
-    AudioDeviceList, AudioDeviceInfo, AudioDeviceKind,
-    EnumerateAudioDevices, ScanInputLevels, InputLevelScanResult, InputDeviceLevel,
+    ipc_message::Payload, AudioDeviceInfo, AudioDeviceKind, AudioDeviceList, ConfigureChannel,
+    ConfigurePtt, DcdChange, DeviceLevelUpdate, EnumerateAudioDevices, InputDeviceLevel,
+    InputLevelScanResult, IpcMessage, ReceivedFrame, ScanInputLevels, StatusUpdate, TestToneResult,
+    TransmitFrame,
 };
 use crate::ipc::server::{IpcHandle, IpcInbound};
 use crate::modem_9600::Demod9600;
@@ -136,6 +138,10 @@ pub struct Modem {
     // Active audio pipelines, keyed by device_id
     active_devices: HashMap<u32, DevicePipeline>,
 
+    // Dedicated TX worker: owns every output sink, serializes TX across
+    // all channels, and keeps audio drain off the IPC thread.
+    tx_worker: tx_worker::TxWorker,
+
     // Metrics
     rx_frames: u64,
     rx_bad_fcs: u64,
@@ -145,8 +151,9 @@ pub struct Modem {
 }
 
 impl Modem {
-    pub fn new(handle: IpcHandle, inbound: Receiver<IpcInbound>) -> Self {
-        Self {
+    pub fn new(handle: IpcHandle, inbound: Receiver<IpcInbound>) -> Result<Self, String> {
+        let tx_worker = tx_worker::TxWorker::spawn()?;
+        Ok(Self {
             handle,
             inbound,
             audio_configs: HashMap::new(),
@@ -154,12 +161,13 @@ impl Modem {
             _ptt_cfgs: HashMap::new(),
             gain_atoms: HashMap::new(),
             active_devices: HashMap::new(),
+            tx_worker,
             rx_frames: 0,
             rx_bad_fcs: 0,
             dcd_transitions: 0,
             last_status_tx: Instant::now(),
             last_level_tx: HashMap::new(),
-        }
+        })
     }
 
     /// Main loop: multiplex IPC control messages with audio sample chunks.
@@ -266,8 +274,8 @@ impl Modem {
                     .or_insert_with(|| Arc::new(AtomicU32::new(0f32.to_bits())));
                 atom.store(gain_db.to_bits(), Ordering::Relaxed);
             }
-            Some(Payload::TransmitFrame(_)) => {
-                eprintln!("graywolf-modem: TransmitFrame ignored (not implemented)");
+            Some(Payload::TransmitFrame(tf)) => {
+                self.handle_transmit_frame(tf);
             }
             Some(Payload::Shutdown(_)) => {
                 self.graceful_shutdown();
@@ -396,6 +404,11 @@ impl Modem {
         for (_, pipe) in self.active_devices.drain() {
             pipe.source.stop();
         }
+        // Symmetry with the input side: stop means stop. Tell the TX
+        // worker to drop its cached sinks so a subsequent ConfigureAudio
+        // re-opens the device with the new settings instead of reusing a
+        // sink built from stale config.
+        self.tx_worker.release_sinks();
     }
 
     fn pump_all_audio(&mut self) -> bool {
@@ -611,6 +624,79 @@ impl Modem {
         self.stop_all_audio();
         self.emit_status(true);
         let _ = self.handle.shutdown_write();
+    }
+
+    /// Dispatch a single TransmitFrame: build AFSK samples on the IPC
+    /// thread (pure DSP, sub-millisecond) and hand off to the TX worker
+    /// for the slow I/O (sink creation, sample play-out, PTT sequencing,
+    /// drain). This returns immediately; audio drain does not block the
+    /// IPC loop and RX audio keeps flowing through `pump_all_audio`.
+    fn handle_transmit_frame(&mut self, tf: TransmitFrame) {
+        let ccfg = match self.channel_configs.get(&tf.channel) {
+            Some(c) => c,
+            None => {
+                eprintln!(
+                    "graywolf-modem: TransmitFrame: unknown channel {}",
+                    tf.channel
+                );
+                return;
+            }
+        };
+
+        let acfg = match self.audio_configs.get(&ccfg.output_device_id) {
+            Some(a) => a,
+            None => {
+                eprintln!(
+                    "graywolf-modem: TransmitFrame: no audio config for output_device_id {}",
+                    ccfg.output_device_id
+                );
+                return;
+            }
+        };
+
+        let ptt_cfg = self._ptt_cfgs.get(&tf.channel);
+        let txdelay_ms = effective_ms(tf.txdelay_override_ms, ptt_cfg.map(|p| p.txdelay_ms), 300);
+        let txtail_ms = effective_ms(tf.txtail_override_ms, ptt_cfg.map(|p| p.txtail_ms), 100);
+
+        let samples =
+            match crate::tx::build_samples(&tf.data, txdelay_ms, txtail_ms, acfg.sample_rate) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("graywolf-modem: TransmitFrame: build_samples failed: {}", e);
+                    return;
+                }
+            };
+
+        let job = tx_worker::TxJob {
+            channel: tf.channel,
+            samples,
+            sample_rate: acfg.sample_rate,
+            output_device_id: ccfg.output_device_id,
+            sink_config: audio::soundcard::SoundcardOutputConfig {
+                device_name: acfg.device_name.clone(),
+                sample_rate: acfg.sample_rate,
+                channels: acfg.channels,
+                audio_channel: ccfg.output_channel,
+            },
+        };
+
+        if let Err(e) = self.tx_worker.transmit(job) {
+            eprintln!("graywolf-modem: TransmitFrame: {}", e);
+        }
+    }
+}
+
+/// Resolve a TX timing parameter: explicit override wins, then the stored
+/// PTT config, else the hardcoded default. Zero is treated as "not set" in
+/// both the override and the stored config — callers set it to 0 to mean
+/// "inherit".
+fn effective_ms(override_ms: u32, configured_ms: Option<u32>, default_ms: u32) -> u32 {
+    if override_ms != 0 {
+        return override_ms;
+    }
+    match configured_ms {
+        Some(v) if v != 0 => v,
+        _ => default_ms,
     }
 }
 
@@ -1267,5 +1353,66 @@ fn play_test_tone_blocking(
         request_id: req.request_id,
         success: true,
         error: String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ipc::proto::TransmitFrame;
+    use crate::ipc::server::IpcHandle;
+
+
+    #[test]
+    fn transmit_frame_for_unknown_channel_returns_without_panicking() {
+        let (handle, _peer) = IpcHandle::test_pair();
+        let (_ipc_tx, ipc_rx) = std::sync::mpsc::channel::<IpcInbound>();
+        let mut modem = Modem::new(handle, ipc_rx).expect("Modem::new");
+        let msg = IpcMessage {
+            payload: Some(Payload::TransmitFrame(TransmitFrame {
+                channel: 99,
+                data: vec![0x82, 0xa0, 0xa4, 0xa6, 0x40, 0x40, 0x60, 0x03, 0xf0, b'x'],
+                txdelay_override_ms: 0,
+                txtail_override_ms: 0,
+                priority: 0,
+            })),
+        };
+        let should_exit = modem.handle_ipc(msg);
+        assert!(!should_exit);
+    }
+
+    #[test]
+    fn transmit_frame_with_channel_but_no_audio_config_returns_without_panicking() {
+        let (handle, _peer) = IpcHandle::test_pair();
+        let (_ipc_tx, ipc_rx) = std::sync::mpsc::channel::<IpcInbound>();
+        let mut modem = Modem::new(handle, ipc_rx).expect("Modem::new");
+        modem.channel_configs.insert(
+            0,
+            ChannelConfig {
+                channel: 0,
+                output_device_id: 7,
+                output_channel: 0,
+                ..ChannelConfig::default()
+            },
+        );
+        let msg = IpcMessage {
+            payload: Some(Payload::TransmitFrame(TransmitFrame {
+                channel: 0,
+                data: vec![0x82, 0xa0, 0xa4, 0xa6, 0x40, 0x40, 0x60, 0x03, 0xf0, b'x'],
+                txdelay_override_ms: 0,
+                txtail_override_ms: 0,
+                priority: 0,
+            })),
+        };
+        let should_exit = modem.handle_ipc(msg);
+        assert!(!should_exit);
+    }
+
+    #[test]
+    fn effective_ms_prefers_override_then_config_then_default() {
+        assert_eq!(effective_ms(250, Some(500), 100), 250);
+        assert_eq!(effective_ms(0, Some(500), 100), 500);
+        assert_eq!(effective_ms(0, Some(0), 100), 100);
+        assert_eq!(effective_ms(0, None, 100), 100);
     }
 }

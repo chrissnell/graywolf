@@ -75,6 +75,42 @@ impl IpcHandle {
         let guard = self.stream.lock().unwrap();
         guard.shutdown(std::net::Shutdown::Write)
     }
+
+    /// Construct a handle backed by one end of a local stream pair, for
+    /// unit tests that need a `Modem` without a live peer.
+    ///
+    /// WARNING: the caller receives the other end and must keep it alive
+    /// for the duration of the test. Dropping it closes the far side, and
+    /// any code path under test that calls [`IpcHandle::send`] (directly
+    /// or indirectly) will then fail with `EPIPE`. Current tests only
+    /// exercise early-return paths that never send; new tests must either
+    /// preserve the peer or deliberately tolerate send failures.
+    #[cfg(test)]
+    pub(crate) fn test_pair() -> (Self, IpcStream) {
+        #[cfg(unix)]
+        {
+            let (a, b) = UnixStream::pair().expect("UnixStream::pair");
+            (
+                Self {
+                    stream: Arc::new(Mutex::new(a)),
+                },
+                b,
+            )
+        }
+        #[cfg(windows)]
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            let addr = listener.local_addr().expect("local_addr");
+            let client = TcpStream::connect(addr).expect("connect");
+            let (server_stream, _) = listener.accept().expect("accept");
+            (
+                Self {
+                    stream: Arc::new(Mutex::new(server_stream)),
+                },
+                client,
+            )
+        }
+    }
 }
 
 pub struct IpcServer {
