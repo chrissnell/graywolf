@@ -58,19 +58,27 @@
 
   function openCreate() {
     editing = null;
-    form = {
-      callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
-      symbol_table: '/', symbol: '-', overlay: '',
-      pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
-      comment: defaultComment, interval: '600', enabled: true,
-    };
+    form.callsign = '';
+    form.destination = 'APGW00';
+    form.path = 'WIDE1-1,WIDE2-1';
+    form.symbol_table = '/';
+    form.symbol = '-';
+    form.overlay = '';
+    form.pos_source = 'gps';
+    form.latitude = '';
+    form.longitude = '';
+    form.alt_ft = '';
+    form.comment = defaultComment;
+    form.interval = '600';
+    form.enabled = true;
     modalOpen = true;
   }
 
   function openEdit(row) {
     editing = row;
-    form = {
-      ...row,
+    // Mutate form in place (rather than reassigning) so nested bind:value
+    // on the RadioGroup picks up the new value reliably.
+    Object.assign(form, row, {
       symbol_table: row.symbol_table || '/',
       symbol: row.symbol || '-',
       overlay: row.overlay || '',
@@ -79,7 +87,7 @@
       longitude: row.longitude != null ? String(row.longitude) : '',
       alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
       interval: String(row.interval),
-    };
+    });
     modalOpen = true;
   }
 
