@@ -54,6 +54,7 @@ type PttConfig struct {
 	Method     string    `gorm:"not null;default:'none'" json:"method"` // serial_rts|serial_dtr|gpio|cm108|none
 	Device     string    `json:"device_path"`
 	GpioPin    uint32    `json:"gpio_pin"`
+	Invert     bool      `gorm:"not null;default:false" json:"invert"` // reverse polarity for rigs wired backwards
 	SlotTimeMs uint32    `gorm:"not null;default:10" json:"slot_time_ms"`
 	Persist    uint32    `gorm:"not null;default:63" json:"persist"`
 	DwaitMs    uint32    `gorm:"not null;default:0" json:"dwait_ms"`

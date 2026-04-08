@@ -24,6 +24,7 @@ use crate::ipc::proto::{
 use crate::ipc::server::{IpcHandle, IpcInbound};
 use crate::modem_9600::Demod9600;
 use crate::modem_psk::PskDemodulator;
+use crate::tx::ptt::PortRegistry;
 use crate::types::{AfskProfile, RetryType, V26Alternative};
 
 /// Current configured state for a single channel.
@@ -130,7 +131,12 @@ pub struct Modem {
     // Configuration storage (may have multiple audio devices and channels)
     audio_configs: HashMap<u32, AudioConfig>,
     channel_configs: HashMap<u32, ChannelConfig>,
-    _ptt_cfgs: HashMap<u32, ConfigurePtt>,
+    ptt_cfgs: HashMap<u32, ConfigurePtt>,
+
+    // Shared cache of open PTT hardware (serial fds today, HID handles
+    // and gpiochip handles in later phases). One port is opened at most
+    // once per device path; see `src/tx/ptt.rs` for why.
+    ptt_registry: PortRegistry,
 
     // Live gain atomics, keyed by device_id (shared with DevicePipeline)
     gain_atoms: HashMap<u32, Arc<AtomicU32>>,
@@ -138,8 +144,9 @@ pub struct Modem {
     // Active audio pipelines, keyed by device_id
     active_devices: HashMap<u32, DevicePipeline>,
 
-    // Dedicated TX worker: owns every output sink, serializes TX across
-    // all channels, and keeps audio drain off the IPC thread.
+    // Dedicated TX worker: owns every output sink and every PTT driver,
+    // serializes TX across all channels, and keeps audio drain off the
+    // IPC thread.
     tx_worker: tx_worker::TxWorker,
 
     // Metrics
@@ -158,7 +165,8 @@ impl Modem {
             inbound,
             audio_configs: HashMap::new(),
             channel_configs: HashMap::new(),
-            _ptt_cfgs: HashMap::new(),
+            ptt_cfgs: HashMap::new(),
+            ptt_registry: PortRegistry::new(),
             gain_atoms: HashMap::new(),
             active_devices: HashMap::new(),
             tx_worker,
@@ -245,7 +253,7 @@ impl Modem {
                 self.channel_configs.insert(c.channel, parse_channel(&c));
             }
             Some(Payload::ConfigurePtt(p)) => {
-                self._ptt_cfgs.insert(p.channel, p);
+                self.apply_ptt_config(p);
             }
             Some(Payload::StartAudio(_)) => {
                 if let Err(e) = self.start_audio() {
@@ -626,6 +634,41 @@ impl Modem {
         let _ = self.handle.shutdown_write();
     }
 
+    /// Persist the latest `ConfigurePtt` for a channel and (re)build the
+    /// corresponding PTT driver on the TX worker. Opening the serial
+    /// port (or later the HID / gpiochip handle) happens here on the
+    /// IPC thread; the resulting `Box<dyn PttDriver>` is shipped across
+    /// the channel to the worker, which owns it for the channel's
+    /// lifetime. A driver build failure leaves the channel registered
+    /// in the worker as-absent, so the next `TransmitFrame` logs a
+    /// missing-driver error rather than silently keying nothing.
+    fn apply_ptt_config(&mut self, cfg: ConfigurePtt) {
+        let channel = cfg.channel;
+        match self.ptt_registry.build_driver(&cfg) {
+            Ok(driver) => {
+                if let Err(e) = self.tx_worker.register_driver(channel, driver) {
+                    eprintln!(
+                        "graywolf-modem: ConfigurePtt: register driver for channel {}: {}",
+                        channel, e
+                    );
+                } else {
+                    eprintln!(
+                        "graywolf-modem: PTT configured for channel {} ({})",
+                        channel, cfg.method
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "graywolf-modem: ConfigurePtt: build driver for channel {} ({}): {}",
+                    channel, cfg.method, e
+                );
+                self.tx_worker.release_driver(channel);
+            }
+        }
+        self.ptt_cfgs.insert(channel, cfg);
+    }
+
     /// Dispatch a single TransmitFrame: build AFSK samples on the IPC
     /// thread (pure DSP, sub-millisecond) and hand off to the TX worker
     /// for the slow I/O (sink creation, sample play-out, PTT sequencing,
@@ -654,7 +697,7 @@ impl Modem {
             }
         };
 
-        let ptt_cfg = self._ptt_cfgs.get(&tf.channel);
+        let ptt_cfg = self.ptt_cfgs.get(&tf.channel);
         let txdelay_ms = effective_ms(tf.txdelay_override_ms, ptt_cfg.map(|p| p.txdelay_ms), 300);
         let txtail_ms = effective_ms(tf.txtail_override_ms, ptt_cfg.map(|p| p.txtail_ms), 100);
 
@@ -1414,5 +1457,105 @@ mod tests {
         assert_eq!(effective_ms(0, Some(500), 100), 500);
         assert_eq!(effective_ms(0, Some(0), 100), 100);
         assert_eq!(effective_ms(0, None, 100), 100);
+    }
+
+    #[test]
+    fn configure_ptt_with_method_none_registers_a_no_op_driver_on_the_worker() {
+        let (handle, _peer) = IpcHandle::test_pair();
+        let (_ipc_tx, ipc_rx) = std::sync::mpsc::channel::<IpcInbound>();
+        let mut modem = Modem::new(handle, ipc_rx).expect("Modem::new");
+        let msg = IpcMessage {
+            payload: Some(Payload::ConfigurePtt(ConfigurePtt {
+                channel: 3,
+                method: "none".into(),
+                device: String::new(),
+                txdelay_ms: 250,
+                txtail_ms: 80,
+                slottime_ms: 10,
+                persist: 63,
+                dwait_ms: 0,
+                invert: false,
+            })),
+        };
+        assert!(!modem.handle_ipc(msg));
+        let stored = modem.ptt_cfgs.get(&3).expect("PttConfig stored");
+        assert_eq!(stored.method, "none");
+        assert_eq!(stored.txdelay_ms, 250);
+        assert_eq!(stored.txtail_ms, 80);
+        // Verify the driver actually landed on the worker thread —
+        // previously we only asserted the local `ptt_cfgs` map, which
+        // would have passed even if `register_driver` silently no-opped.
+        assert_eq!(
+            modem.tx_worker.driver_count(),
+            1,
+            "worker should have one NonePtt driver registered"
+        );
+    }
+
+    #[test]
+    fn configure_ptt_with_serial_rts_and_empty_device_stores_config_without_registering_driver() {
+        // A misconfigured serial PTT should fail loudly (driver build
+        // returns Err) but must still persist the ConfigurePtt so that
+        // txdelay_ms / txtail_ms flow through to the next
+        // `TransmitFrame`. The next TX attempt on this channel will
+        // then log a missing-driver error, which is the observable
+        // behaviour the user needs to debug their config.
+        let (handle, _peer) = IpcHandle::test_pair();
+        let (_ipc_tx, ipc_rx) = std::sync::mpsc::channel::<IpcInbound>();
+        let mut modem = Modem::new(handle, ipc_rx).expect("Modem::new");
+        let msg = IpcMessage {
+            payload: Some(Payload::ConfigurePtt(ConfigurePtt {
+                channel: 0,
+                method: "serial_rts".into(),
+                device: String::new(),
+                txdelay_ms: 300,
+                txtail_ms: 100,
+                slottime_ms: 10,
+                persist: 63,
+                dwait_ms: 0,
+                invert: false,
+            })),
+        };
+        assert!(!modem.handle_ipc(msg));
+        let stored = modem.ptt_cfgs.get(&0).expect("PttConfig stored");
+        assert_eq!(stored.method, "serial_rts");
+        assert_eq!(
+            modem.tx_worker.driver_count(),
+            0,
+            "driver build failed → worker must have no driver registered"
+        );
+    }
+
+    #[test]
+    fn configure_ptt_with_unknown_method_leaves_worker_without_a_driver() {
+        // A typo in the method string ("serial-rts" with a dash
+        // instead of an underscore) must surface as an explicit error
+        // at build_driver time, not silently map to NonePtt. The
+        // observable behaviour is: config stored, no driver on the
+        // worker, next TX attempt logs "no PTT driver registered".
+        let (handle, _peer) = IpcHandle::test_pair();
+        let (_ipc_tx, ipc_rx) = std::sync::mpsc::channel::<IpcInbound>();
+        let mut modem = Modem::new(handle, ipc_rx).expect("Modem::new");
+        let msg = IpcMessage {
+            payload: Some(Payload::ConfigurePtt(ConfigurePtt {
+                channel: 2,
+                method: "serial-rts".into(),
+                device: "/dev/null".into(),
+                txdelay_ms: 300,
+                txtail_ms: 100,
+                slottime_ms: 10,
+                persist: 63,
+                dwait_ms: 0,
+                invert: false,
+            })),
+        };
+        assert!(!modem.handle_ipc(msg));
+        let stored = modem.ptt_cfgs.get(&2).expect("PttConfig stored");
+        assert_eq!(stored.method, "serial-rts");
+        assert_eq!(
+            modem.tx_worker.driver_count(),
+            0,
+            "unknown method should not silently register a NonePtt driver"
+        );
     }
 }

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 )
 
 // sessionConn is the subset of net.Conn that the session loop needs. It
@@ -201,23 +201,23 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) (bool, error
 	for _, ch := range channels {
 		cmsg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigureChannel{ConfigureChannel: &pb.ConfigureChannel{
 			Channel:        ch.ID,
-			DeviceId:       ch.InputDeviceID,  // backward compat
-			AudioChannel:   ch.InputChannel,   // backward compat
+			DeviceId:       ch.InputDeviceID, // backward compat
+			AudioChannel:   ch.InputChannel,  // backward compat
 			InputDeviceId:  ch.InputDeviceID,
 			InputChannel:   ch.InputChannel,
 			OutputDeviceId: ch.OutputDeviceID,
 			OutputChannel:  ch.OutputChannel,
-			Baud:          ch.BitRate,
-			MarkFreq:      ch.MarkFreq,
-			SpaceFreq:     ch.SpaceFreq,
-			ModemType:     ch.ModemType,
-			Profile:       ch.Profile,
-			NumSlicers:    ch.NumSlicers,
-			FixBits:       ch.FixBits,
-			NumDecoders:   ch.NumDecoders,
-			DecoderOffset: ch.DecoderOffset,
-			Fx25Encode:    ch.FX25Encode,
-			Il2PEncode:    ch.IL2PEncode,
+			Baud:           ch.BitRate,
+			MarkFreq:       ch.MarkFreq,
+			SpaceFreq:      ch.SpaceFreq,
+			ModemType:      ch.ModemType,
+			Profile:        ch.Profile,
+			NumSlicers:     ch.NumSlicers,
+			FixBits:        ch.FixBits,
+			NumDecoders:    ch.NumDecoders,
+			DecoderOffset:  ch.DecoderOffset,
+			Fx25Encode:     ch.FX25Encode,
+			Il2PEncode:     ch.IL2PEncode,
 		}}}
 		if err := send(cmsg); err != nil {
 			return false, err
@@ -232,6 +232,7 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) (bool, error
 			Channel:    ch.ID,
 			Method:     ptt.Method,
 			Device:     ptt.Device,
+			Invert:     ptt.Invert,
 			TxdelayMs:  ch.TxDelayMs,
 			TxtailMs:   ch.TxTailMs,
 			SlottimeMs: ptt.SlotTimeMs,

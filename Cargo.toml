@@ -10,6 +10,22 @@ prost = "0.13"
 bytes = "1"
 cpal = "0.15"
 
+[target.'cfg(unix)'.dependencies]
+# Direct POSIX access for serial PTT: fcntl::open + libc TIOCMSET ioctls.
+# Matches direwolf's approach (no termios calls at all on PTT-only fds).
+nix = { version = "0.29", features = ["fs", "ioctl"] }
+
+[target.'cfg(windows)'.dependencies]
+# Windows PTT: CreateFileW + EscapeCommFunction. Microsoft's official
+# idiomatic Rust wrapper around Win32, not raw windows-sys. Version
+# pinned to match cpal's transitive dep to avoid a duplicate copy.
+windows = { version = "0.54", features = [
+    "Win32_Devices_Communication",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+] }
+
 [build-dependencies]
 prost-build = "0.13"
 

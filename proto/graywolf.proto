@@ -171,6 +171,7 @@ message ConfigurePtt {
   uint32 slottime_ms = 6;
   uint32 persist = 7;           // p-persistence 0..255
   uint32 dwait_ms = 8;
+  bool invert = 9;              // reverse polarity for rigs wired backwards
 }
 
 // Begin audio processing on all configured devices.

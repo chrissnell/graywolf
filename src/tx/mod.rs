@@ -9,6 +9,7 @@
 pub mod afsk_mod;
 mod error;
 pub mod hdlc_encode;
+pub(crate) mod ptt;
 
 pub use error::TxError;
 

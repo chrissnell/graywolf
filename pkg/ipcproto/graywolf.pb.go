@@ -1322,6 +1322,7 @@ type ConfigurePtt struct {
 	SlottimeMs    uint32                 `protobuf:"varint,6,opt,name=slottime_ms,json=slottimeMs,proto3" json:"slottime_ms,omitempty"`
 	Persist       uint32                 `protobuf:"varint,7,opt,name=persist,proto3" json:"persist,omitempty"` // p-persistence 0..255
 	DwaitMs       uint32                 `protobuf:"varint,8,opt,name=dwait_ms,json=dwaitMs,proto3" json:"dwait_ms,omitempty"`
+	Invert        bool                   `protobuf:"varint,9,opt,name=invert,proto3" json:"invert,omitempty"` // reverse polarity for rigs wired backwards
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1410,6 +1411,13 @@ func (x *ConfigurePtt) GetDwaitMs() uint32 {
 		return x.DwaitMs
 	}
 	return 0
+}
+
+func (x *ConfigurePtt) GetInvert() bool {
+	if x != nil {
+		return x.Invert
+	}
+	return false
 }
 
 // Begin audio processing on all configured devices.
@@ -2145,7 +2153,7 @@ const file_proto_graywolf_proto_rawDesc = "" +
 	"\vsource_type\x18\x05 \x01(\tR\n" +
 	"sourceType\x12\x16\n" +
 	"\x06format\x18\x06 \x01(\tR\x06format\x12\x17\n" +
-	"\again_db\x18\a \x01(\x02R\x06gainDb\"\xea\x01\n" +
+	"\again_db\x18\a \x01(\x02R\x06gainDb\"\x82\x02\n" +
 	"\fConfigurePtt\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x16\n" +
@@ -2156,7 +2164,8 @@ const file_proto_graywolf_proto_rawDesc = "" +
 	"\vslottime_ms\x18\x06 \x01(\rR\n" +
 	"slottimeMs\x12\x18\n" +
 	"\apersist\x18\a \x01(\rR\apersist\x12\x19\n" +
-	"\bdwait_ms\x18\b \x01(\rR\adwaitMs\"\f\n" +
+	"\bdwait_ms\x18\b \x01(\rR\adwaitMs\x12\x16\n" +
+	"\x06invert\x18\t \x01(\bR\x06invert\"\f\n" +
 	"\n" +
 	"StartAudio\"\v\n" +
 	"\tStopAudio\")\n" +
