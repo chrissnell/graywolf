@@ -26,6 +26,7 @@ message IpcMessage {
     AudioDeviceList audio_device_list = 5;
     TestToneResult test_tone_result = 6;
     DeviceLevelUpdate device_level_update = 7;
+    InputLevelScanResult input_level_scan_result = 8;
 
     // Go application → Rust modem
     TransmitFrame transmit_frame = 10;
@@ -38,6 +39,7 @@ message IpcMessage {
     EnumerateAudioDevices enumerate_audio_devices = 17;
     PlayTestTone play_test_tone = 18;
     SetDeviceGain set_device_gain = 19;
+    ScanInputLevels scan_input_levels = 20;
   }
 }
 
@@ -104,6 +106,7 @@ message AudioDeviceInfo {
   repeated uint32 channel_counts = 5;
   string host_api = 6;           // "CoreAudio", "ALSA", "WASAPI"
   bool is_default = 7;
+  string description = 8;        // human-friendly name (e.g. USB product string)
 }
 
 enum AudioDeviceKind {
@@ -216,4 +219,24 @@ message DeviceLevelUpdate {
   float peak_dbfs = 2;          // instantaneous peak in dBFS
   float rms_dbfs = 3;           // RMS level in dBFS
   bool clipping = 4;            // true if post-gain samples exceeded -1 dBFS
+}
+
+// Request a brief input level scan on all available input devices.
+message ScanInputLevels {
+  uint32 request_id = 1;        // echoed back in InputLevelScanResult
+  uint32 duration_ms = 2;       // how long to sample each device (default 500ms)
+}
+
+// Result of an input level scan.
+message InputLevelScanResult {
+  uint32 request_id = 1;
+  repeated InputDeviceLevel devices = 2;
+}
+
+// Level reading for a single input device.
+message InputDeviceLevel {
+  string name = 1;              // cpal device name
+  float peak_dbfs = 2;          // peak level during scan
+  bool has_signal = 3;          // true if peak > -40 dBFS
+  string error = 4;             // non-empty if device couldn't be opened
 }

@@ -11,9 +11,12 @@ import (
 
 // AvailableDevice describes a detected PTT-capable device.
 type AvailableDevice struct {
-	Path string `json:"path"`
-	Type string `json:"type"` // serial, gpio, cm108
-	Name string `json:"name"`
+	Path        string `json:"path"`
+	Type        string `json:"type"`        // serial, gpio, cm108
+	Name        string `json:"name"`
+	Description string `json:"description"` // human-friendly label (USB product, GPIO chip)
+	USBVendor   string `json:"usb_vendor,omitempty"`
+	USBProduct  string `json:"usb_product,omitempty"`
 }
 
 // Enumerate returns all detected PTT-capable devices on the host.
@@ -60,10 +63,14 @@ func enumerateSerial() []AvailableDevice {
 					continue
 				}
 			}
+			vendor, product, desc := usbInfoFromSysfs(m)
 			devs = append(devs, AvailableDevice{
-				Path: m,
-				Type: "serial",
-				Name: filepath.Base(m),
+				Path:        m,
+				Type:        "serial",
+				Name:        filepath.Base(m),
+				Description: desc,
+				USBVendor:   vendor,
+				USBProduct:  product,
 			})
 		}
 	}
@@ -78,9 +85,10 @@ func enumerateGPIO() []AvailableDevice {
 	matches, _ := filepath.Glob("/dev/gpiochip*")
 	for _, m := range matches {
 		devs = append(devs, AvailableDevice{
-			Path: m,
-			Type: "gpio",
-			Name: filepath.Base(m),
+			Path:        m,
+			Type:        "gpio",
+			Name:        filepath.Base(m),
+			Description: gpioChipDescription(m),
 		})
 	}
 	return devs
@@ -94,10 +102,14 @@ func enumerateCM108() []AvailableDevice {
 	// CM108-compatible USB audio adapters expose HID interfaces under /dev/hidraw*
 	matches, _ := filepath.Glob("/dev/hidraw*")
 	for _, m := range matches {
+		vendor, product, desc := usbInfoFromSysfs(m)
 		devs = append(devs, AvailableDevice{
-			Path: m,
-			Type: "cm108",
-			Name: filepath.Base(m),
+			Path:        m,
+			Type:        "cm108",
+			Name:        filepath.Base(m),
+			Description: desc,
+			USBVendor:   vendor,
+			USBProduct:  product,
 		})
 	}
 	return devs

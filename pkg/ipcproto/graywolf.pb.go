@@ -10,7 +10,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.1
-// source: graywolf.proto
+// source: proto/graywolf.proto
 
 package ipcproto
 
@@ -62,11 +62,11 @@ func (x AudioDeviceKind) String() string {
 }
 
 func (AudioDeviceKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_graywolf_proto_enumTypes[0].Descriptor()
+	return file_proto_graywolf_proto_enumTypes[0].Descriptor()
 }
 
 func (AudioDeviceKind) Type() protoreflect.EnumType {
-	return &file_graywolf_proto_enumTypes[0]
+	return &file_proto_graywolf_proto_enumTypes[0]
 }
 
 func (x AudioDeviceKind) Number() protoreflect.EnumNumber {
@@ -75,7 +75,7 @@ func (x AudioDeviceKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AudioDeviceKind.Descriptor instead.
 func (AudioDeviceKind) EnumDescriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{0}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{0}
 }
 
 type IpcMessage struct {
@@ -89,6 +89,7 @@ type IpcMessage struct {
 	//	*IpcMessage_AudioDeviceList
 	//	*IpcMessage_TestToneResult
 	//	*IpcMessage_DeviceLevelUpdate
+	//	*IpcMessage_InputLevelScanResult
 	//	*IpcMessage_TransmitFrame
 	//	*IpcMessage_ConfigureChannel
 	//	*IpcMessage_ConfigureAudio
@@ -99,6 +100,7 @@ type IpcMessage struct {
 	//	*IpcMessage_EnumerateAudioDevices
 	//	*IpcMessage_PlayTestTone
 	//	*IpcMessage_SetDeviceGain
+	//	*IpcMessage_ScanInputLevels
 	Payload       isIpcMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -106,7 +108,7 @@ type IpcMessage struct {
 
 func (x *IpcMessage) Reset() {
 	*x = IpcMessage{}
-	mi := &file_graywolf_proto_msgTypes[0]
+	mi := &file_proto_graywolf_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -118,7 +120,7 @@ func (x *IpcMessage) String() string {
 func (*IpcMessage) ProtoMessage() {}
 
 func (x *IpcMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[0]
+	mi := &file_proto_graywolf_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -131,7 +133,7 @@ func (x *IpcMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IpcMessage.ProtoReflect.Descriptor instead.
 func (*IpcMessage) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{0}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *IpcMessage) GetPayload() isIpcMessage_Payload {
@@ -199,6 +201,15 @@ func (x *IpcMessage) GetDeviceLevelUpdate() *DeviceLevelUpdate {
 	if x != nil {
 		if x, ok := x.Payload.(*IpcMessage_DeviceLevelUpdate); ok {
 			return x.DeviceLevelUpdate
+		}
+	}
+	return nil
+}
+
+func (x *IpcMessage) GetInputLevelScanResult() *InputLevelScanResult {
+	if x != nil {
+		if x, ok := x.Payload.(*IpcMessage_InputLevelScanResult); ok {
+			return x.InputLevelScanResult
 		}
 	}
 	return nil
@@ -294,6 +305,15 @@ func (x *IpcMessage) GetSetDeviceGain() *SetDeviceGain {
 	return nil
 }
 
+func (x *IpcMessage) GetScanInputLevels() *ScanInputLevels {
+	if x != nil {
+		if x, ok := x.Payload.(*IpcMessage_ScanInputLevels); ok {
+			return x.ScanInputLevels
+		}
+	}
+	return nil
+}
+
 type isIpcMessage_Payload interface {
 	isIpcMessage_Payload()
 }
@@ -325,6 +345,10 @@ type IpcMessage_TestToneResult struct {
 
 type IpcMessage_DeviceLevelUpdate struct {
 	DeviceLevelUpdate *DeviceLevelUpdate `protobuf:"bytes,7,opt,name=device_level_update,json=deviceLevelUpdate,proto3,oneof"`
+}
+
+type IpcMessage_InputLevelScanResult struct {
+	InputLevelScanResult *InputLevelScanResult `protobuf:"bytes,8,opt,name=input_level_scan_result,json=inputLevelScanResult,proto3,oneof"`
 }
 
 type IpcMessage_TransmitFrame struct {
@@ -368,6 +392,10 @@ type IpcMessage_SetDeviceGain struct {
 	SetDeviceGain *SetDeviceGain `protobuf:"bytes,19,opt,name=set_device_gain,json=setDeviceGain,proto3,oneof"`
 }
 
+type IpcMessage_ScanInputLevels struct {
+	ScanInputLevels *ScanInputLevels `protobuf:"bytes,20,opt,name=scan_input_levels,json=scanInputLevels,proto3,oneof"`
+}
+
 func (*IpcMessage_ReceivedFrame) isIpcMessage_Payload() {}
 
 func (*IpcMessage_DcdChange) isIpcMessage_Payload() {}
@@ -381,6 +409,8 @@ func (*IpcMessage_AudioDeviceList) isIpcMessage_Payload() {}
 func (*IpcMessage_TestToneResult) isIpcMessage_Payload() {}
 
 func (*IpcMessage_DeviceLevelUpdate) isIpcMessage_Payload() {}
+
+func (*IpcMessage_InputLevelScanResult) isIpcMessage_Payload() {}
 
 func (*IpcMessage_TransmitFrame) isIpcMessage_Payload() {}
 
@@ -402,6 +432,8 @@ func (*IpcMessage_PlayTestTone) isIpcMessage_Payload() {}
 
 func (*IpcMessage_SetDeviceGain) isIpcMessage_Payload() {}
 
+func (*IpcMessage_ScanInputLevels) isIpcMessage_Payload() {}
+
 // A successfully decoded AX.25 frame with demodulator metadata.
 type ReceivedFrame struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -421,7 +453,7 @@ type ReceivedFrame struct {
 
 func (x *ReceivedFrame) Reset() {
 	*x = ReceivedFrame{}
-	mi := &file_graywolf_proto_msgTypes[1]
+	mi := &file_proto_graywolf_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -433,7 +465,7 @@ func (x *ReceivedFrame) String() string {
 func (*ReceivedFrame) ProtoMessage() {}
 
 func (x *ReceivedFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[1]
+	mi := &file_proto_graywolf_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -446,7 +478,7 @@ func (x *ReceivedFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceivedFrame.ProtoReflect.Descriptor instead.
 func (*ReceivedFrame) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{1}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ReceivedFrame) GetChannel() uint32 {
@@ -533,7 +565,7 @@ type DcdChange struct {
 
 func (x *DcdChange) Reset() {
 	*x = DcdChange{}
-	mi := &file_graywolf_proto_msgTypes[2]
+	mi := &file_proto_graywolf_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +577,7 @@ func (x *DcdChange) String() string {
 func (*DcdChange) ProtoMessage() {}
 
 func (x *DcdChange) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[2]
+	mi := &file_proto_graywolf_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +590,7 @@ func (x *DcdChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DcdChange.ProtoReflect.Descriptor instead.
 func (*DcdChange) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{2}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DcdChange) GetChannel() uint32 {
@@ -616,7 +648,7 @@ type StatusUpdate struct {
 
 func (x *StatusUpdate) Reset() {
 	*x = StatusUpdate{}
-	mi := &file_graywolf_proto_msgTypes[3]
+	mi := &file_proto_graywolf_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -628,7 +660,7 @@ func (x *StatusUpdate) String() string {
 func (*StatusUpdate) ProtoMessage() {}
 
 func (x *StatusUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[3]
+	mi := &file_proto_graywolf_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -641,7 +673,7 @@ func (x *StatusUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusUpdate.ProtoReflect.Descriptor instead.
 func (*StatusUpdate) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{3}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *StatusUpdate) GetChannel() uint32 {
@@ -733,7 +765,7 @@ type ModemReady struct {
 
 func (x *ModemReady) Reset() {
 	*x = ModemReady{}
-	mi := &file_graywolf_proto_msgTypes[4]
+	mi := &file_proto_graywolf_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -745,7 +777,7 @@ func (x *ModemReady) String() string {
 func (*ModemReady) ProtoMessage() {}
 
 func (x *ModemReady) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[4]
+	mi := &file_proto_graywolf_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -758,7 +790,7 @@ func (x *ModemReady) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModemReady.ProtoReflect.Descriptor instead.
 func (*ModemReady) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{4}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ModemReady) GetVersion() string {
@@ -786,7 +818,7 @@ type AudioDeviceList struct {
 
 func (x *AudioDeviceList) Reset() {
 	*x = AudioDeviceList{}
-	mi := &file_graywolf_proto_msgTypes[5]
+	mi := &file_proto_graywolf_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -798,7 +830,7 @@ func (x *AudioDeviceList) String() string {
 func (*AudioDeviceList) ProtoMessage() {}
 
 func (x *AudioDeviceList) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[5]
+	mi := &file_proto_graywolf_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -811,7 +843,7 @@ func (x *AudioDeviceList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AudioDeviceList.ProtoReflect.Descriptor instead.
 func (*AudioDeviceList) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{5}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AudioDeviceList) GetRequestId() uint32 {
@@ -837,13 +869,14 @@ type AudioDeviceInfo struct {
 	ChannelCounts []uint32               `protobuf:"varint,5,rep,packed,name=channel_counts,json=channelCounts,proto3" json:"channel_counts,omitempty"`
 	HostApi       string                 `protobuf:"bytes,6,opt,name=host_api,json=hostApi,proto3" json:"host_api,omitempty"` // "CoreAudio", "ALSA", "WASAPI"
 	IsDefault     bool                   `protobuf:"varint,7,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	Description   string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"` // human-friendly name (e.g. USB product string)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AudioDeviceInfo) Reset() {
 	*x = AudioDeviceInfo{}
-	mi := &file_graywolf_proto_msgTypes[6]
+	mi := &file_proto_graywolf_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +888,7 @@ func (x *AudioDeviceInfo) String() string {
 func (*AudioDeviceInfo) ProtoMessage() {}
 
 func (x *AudioDeviceInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[6]
+	mi := &file_proto_graywolf_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +901,7 @@ func (x *AudioDeviceInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AudioDeviceInfo.ProtoReflect.Descriptor instead.
 func (*AudioDeviceInfo) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{6}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AudioDeviceInfo) GetName() string {
@@ -920,6 +953,13 @@ func (x *AudioDeviceInfo) GetIsDefault() bool {
 	return false
 }
 
+func (x *AudioDeviceInfo) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 // Request transmission of a raw AX.25 frame on a specific channel.
 type TransmitFrame struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -934,7 +974,7 @@ type TransmitFrame struct {
 
 func (x *TransmitFrame) Reset() {
 	*x = TransmitFrame{}
-	mi := &file_graywolf_proto_msgTypes[7]
+	mi := &file_proto_graywolf_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -946,7 +986,7 @@ func (x *TransmitFrame) String() string {
 func (*TransmitFrame) ProtoMessage() {}
 
 func (x *TransmitFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[7]
+	mi := &file_proto_graywolf_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -959,7 +999,7 @@ func (x *TransmitFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransmitFrame.ProtoReflect.Descriptor instead.
 func (*TransmitFrame) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{7}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TransmitFrame) GetChannel() uint32 {
@@ -1024,7 +1064,7 @@ type ConfigureChannel struct {
 
 func (x *ConfigureChannel) Reset() {
 	*x = ConfigureChannel{}
-	mi := &file_graywolf_proto_msgTypes[8]
+	mi := &file_proto_graywolf_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1036,7 +1076,7 @@ func (x *ConfigureChannel) String() string {
 func (*ConfigureChannel) ProtoMessage() {}
 
 func (x *ConfigureChannel) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[8]
+	mi := &file_proto_graywolf_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1049,7 +1089,7 @@ func (x *ConfigureChannel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureChannel.ProtoReflect.Descriptor instead.
 func (*ConfigureChannel) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{8}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ConfigureChannel) GetChannel() uint32 {
@@ -1194,7 +1234,7 @@ type ConfigureAudio struct {
 
 func (x *ConfigureAudio) Reset() {
 	*x = ConfigureAudio{}
-	mi := &file_graywolf_proto_msgTypes[9]
+	mi := &file_proto_graywolf_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1206,7 +1246,7 @@ func (x *ConfigureAudio) String() string {
 func (*ConfigureAudio) ProtoMessage() {}
 
 func (x *ConfigureAudio) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[9]
+	mi := &file_proto_graywolf_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1219,7 +1259,7 @@ func (x *ConfigureAudio) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureAudio.ProtoReflect.Descriptor instead.
 func (*ConfigureAudio) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{9}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ConfigureAudio) GetDeviceId() uint32 {
@@ -1288,7 +1328,7 @@ type ConfigurePtt struct {
 
 func (x *ConfigurePtt) Reset() {
 	*x = ConfigurePtt{}
-	mi := &file_graywolf_proto_msgTypes[10]
+	mi := &file_proto_graywolf_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1300,7 +1340,7 @@ func (x *ConfigurePtt) String() string {
 func (*ConfigurePtt) ProtoMessage() {}
 
 func (x *ConfigurePtt) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[10]
+	mi := &file_proto_graywolf_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1313,7 +1353,7 @@ func (x *ConfigurePtt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigurePtt.ProtoReflect.Descriptor instead.
 func (*ConfigurePtt) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{10}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ConfigurePtt) GetChannel() uint32 {
@@ -1381,7 +1421,7 @@ type StartAudio struct {
 
 func (x *StartAudio) Reset() {
 	*x = StartAudio{}
-	mi := &file_graywolf_proto_msgTypes[11]
+	mi := &file_proto_graywolf_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1393,7 +1433,7 @@ func (x *StartAudio) String() string {
 func (*StartAudio) ProtoMessage() {}
 
 func (x *StartAudio) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[11]
+	mi := &file_proto_graywolf_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1406,7 +1446,7 @@ func (x *StartAudio) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartAudio.ProtoReflect.Descriptor instead.
 func (*StartAudio) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{11}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{11}
 }
 
 // Stop audio processing (for device hot-swap). Safe to follow with a new
@@ -1419,7 +1459,7 @@ type StopAudio struct {
 
 func (x *StopAudio) Reset() {
 	*x = StopAudio{}
-	mi := &file_graywolf_proto_msgTypes[12]
+	mi := &file_proto_graywolf_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1431,7 +1471,7 @@ func (x *StopAudio) String() string {
 func (*StopAudio) ProtoMessage() {}
 
 func (x *StopAudio) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[12]
+	mi := &file_proto_graywolf_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1444,7 +1484,7 @@ func (x *StopAudio) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopAudio.ProtoReflect.Descriptor instead.
 func (*StopAudio) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{12}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{12}
 }
 
 // Graceful shutdown: finish current TX, deassert PTT, drain queues, exit.
@@ -1457,7 +1497,7 @@ type Shutdown struct {
 
 func (x *Shutdown) Reset() {
 	*x = Shutdown{}
-	mi := &file_graywolf_proto_msgTypes[13]
+	mi := &file_proto_graywolf_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1469,7 +1509,7 @@ func (x *Shutdown) String() string {
 func (*Shutdown) ProtoMessage() {}
 
 func (x *Shutdown) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[13]
+	mi := &file_proto_graywolf_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1482,7 +1522,7 @@ func (x *Shutdown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shutdown.ProtoReflect.Descriptor instead.
 func (*Shutdown) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{13}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Shutdown) GetTimeoutMs() uint32 {
@@ -1503,7 +1543,7 @@ type EnumerateAudioDevices struct {
 
 func (x *EnumerateAudioDevices) Reset() {
 	*x = EnumerateAudioDevices{}
-	mi := &file_graywolf_proto_msgTypes[14]
+	mi := &file_proto_graywolf_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1515,7 +1555,7 @@ func (x *EnumerateAudioDevices) String() string {
 func (*EnumerateAudioDevices) ProtoMessage() {}
 
 func (x *EnumerateAudioDevices) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[14]
+	mi := &file_proto_graywolf_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1528,7 +1568,7 @@ func (x *EnumerateAudioDevices) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnumerateAudioDevices.ProtoReflect.Descriptor instead.
 func (*EnumerateAudioDevices) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{14}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *EnumerateAudioDevices) GetRequestId() uint32 {
@@ -1559,7 +1599,7 @@ type PlayTestTone struct {
 
 func (x *PlayTestTone) Reset() {
 	*x = PlayTestTone{}
-	mi := &file_graywolf_proto_msgTypes[15]
+	mi := &file_proto_graywolf_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1571,7 +1611,7 @@ func (x *PlayTestTone) String() string {
 func (*PlayTestTone) ProtoMessage() {}
 
 func (x *PlayTestTone) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[15]
+	mi := &file_proto_graywolf_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1584,7 +1624,7 @@ func (x *PlayTestTone) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayTestTone.ProtoReflect.Descriptor instead.
 func (*PlayTestTone) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{15}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PlayTestTone) GetRequestId() uint32 {
@@ -1634,7 +1674,7 @@ type TestToneResult struct {
 
 func (x *TestToneResult) Reset() {
 	*x = TestToneResult{}
-	mi := &file_graywolf_proto_msgTypes[16]
+	mi := &file_proto_graywolf_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1646,7 +1686,7 @@ func (x *TestToneResult) String() string {
 func (*TestToneResult) ProtoMessage() {}
 
 func (x *TestToneResult) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[16]
+	mi := &file_proto_graywolf_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1659,7 +1699,7 @@ func (x *TestToneResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestToneResult.ProtoReflect.Descriptor instead.
 func (*TestToneResult) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{16}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TestToneResult) GetRequestId() uint32 {
@@ -1694,7 +1734,7 @@ type SetDeviceGain struct {
 
 func (x *SetDeviceGain) Reset() {
 	*x = SetDeviceGain{}
-	mi := &file_graywolf_proto_msgTypes[17]
+	mi := &file_proto_graywolf_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1706,7 +1746,7 @@ func (x *SetDeviceGain) String() string {
 func (*SetDeviceGain) ProtoMessage() {}
 
 func (x *SetDeviceGain) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[17]
+	mi := &file_proto_graywolf_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1719,7 +1759,7 @@ func (x *SetDeviceGain) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDeviceGain.ProtoReflect.Descriptor instead.
 func (*SetDeviceGain) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{17}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SetDeviceGain) GetDeviceId() uint32 {
@@ -1749,7 +1789,7 @@ type DeviceLevelUpdate struct {
 
 func (x *DeviceLevelUpdate) Reset() {
 	*x = DeviceLevelUpdate{}
-	mi := &file_graywolf_proto_msgTypes[18]
+	mi := &file_proto_graywolf_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1761,7 +1801,7 @@ func (x *DeviceLevelUpdate) String() string {
 func (*DeviceLevelUpdate) ProtoMessage() {}
 
 func (x *DeviceLevelUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_graywolf_proto_msgTypes[18]
+	mi := &file_proto_graywolf_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1774,7 +1814,7 @@ func (x *DeviceLevelUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceLevelUpdate.ProtoReflect.Descriptor instead.
 func (*DeviceLevelUpdate) Descriptor() ([]byte, []int) {
-	return file_graywolf_proto_rawDescGZIP(), []int{18}
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeviceLevelUpdate) GetDeviceId() uint32 {
@@ -1805,11 +1845,187 @@ func (x *DeviceLevelUpdate) GetClipping() bool {
 	return false
 }
 
-var File_graywolf_proto protoreflect.FileDescriptor
+// Request a brief input level scan on all available input devices.
+type ScanInputLevels struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     uint32                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`    // echoed back in InputLevelScanResult
+	DurationMs    uint32                 `protobuf:"varint,2,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"` // how long to sample each device (default 500ms)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_graywolf_proto_rawDesc = "" +
+func (x *ScanInputLevels) Reset() {
+	*x = ScanInputLevels{}
+	mi := &file_proto_graywolf_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanInputLevels) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanInputLevels) ProtoMessage() {}
+
+func (x *ScanInputLevels) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_graywolf_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanInputLevels.ProtoReflect.Descriptor instead.
+func (*ScanInputLevels) Descriptor() ([]byte, []int) {
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ScanInputLevels) GetRequestId() uint32 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *ScanInputLevels) GetDurationMs() uint32 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+// Result of an input level scan.
+type InputLevelScanResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     uint32                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Devices       []*InputDeviceLevel    `protobuf:"bytes,2,rep,name=devices,proto3" json:"devices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InputLevelScanResult) Reset() {
+	*x = InputLevelScanResult{}
+	mi := &file_proto_graywolf_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InputLevelScanResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InputLevelScanResult) ProtoMessage() {}
+
+func (x *InputLevelScanResult) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_graywolf_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InputLevelScanResult.ProtoReflect.Descriptor instead.
+func (*InputLevelScanResult) Descriptor() ([]byte, []int) {
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *InputLevelScanResult) GetRequestId() uint32 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *InputLevelScanResult) GetDevices() []*InputDeviceLevel {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
+// Level reading for a single input device.
+type InputDeviceLevel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                             // cpal device name
+	PeakDbfs      float32                `protobuf:"fixed32,2,opt,name=peak_dbfs,json=peakDbfs,proto3" json:"peak_dbfs,omitempty"`   // peak level during scan
+	HasSignal     bool                   `protobuf:"varint,3,opt,name=has_signal,json=hasSignal,proto3" json:"has_signal,omitempty"` // true if peak > -40 dBFS
+	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`                           // non-empty if device couldn't be opened
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InputDeviceLevel) Reset() {
+	*x = InputDeviceLevel{}
+	mi := &file_proto_graywolf_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InputDeviceLevel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InputDeviceLevel) ProtoMessage() {}
+
+func (x *InputDeviceLevel) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_graywolf_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InputDeviceLevel.ProtoReflect.Descriptor instead.
+func (*InputDeviceLevel) Descriptor() ([]byte, []int) {
+	return file_proto_graywolf_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *InputDeviceLevel) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *InputDeviceLevel) GetPeakDbfs() float32 {
+	if x != nil {
+		return x.PeakDbfs
+	}
+	return 0
+}
+
+func (x *InputDeviceLevel) GetHasSignal() bool {
+	if x != nil {
+		return x.HasSignal
+	}
+	return false
+}
+
+func (x *InputDeviceLevel) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+var File_proto_graywolf_proto protoreflect.FileDescriptor
+
+const file_proto_graywolf_proto_rawDesc = "" +
 	"\n" +
-	"\x0egraywolf.proto\x12\bgraywolf\"\xf5\b\n" +
+	"\x14proto/graywolf.proto\x12\bgraywolf\"\x97\n" +
+	"\n" +
 	"\n" +
 	"IpcMessage\x12@\n" +
 	"\x0ereceived_frame\x18\x01 \x01(\v2\x17.graywolf.ReceivedFrameH\x00R\rreceivedFrame\x124\n" +
@@ -1820,7 +2036,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"modemReady\x12G\n" +
 	"\x11audio_device_list\x18\x05 \x01(\v2\x19.graywolf.AudioDeviceListH\x00R\x0faudioDeviceList\x12D\n" +
 	"\x10test_tone_result\x18\x06 \x01(\v2\x18.graywolf.TestToneResultH\x00R\x0etestToneResult\x12M\n" +
-	"\x13device_level_update\x18\a \x01(\v2\x1b.graywolf.DeviceLevelUpdateH\x00R\x11deviceLevelUpdate\x12@\n" +
+	"\x13device_level_update\x18\a \x01(\v2\x1b.graywolf.DeviceLevelUpdateH\x00R\x11deviceLevelUpdate\x12W\n" +
+	"\x17input_level_scan_result\x18\b \x01(\v2\x1e.graywolf.InputLevelScanResultH\x00R\x14inputLevelScanResult\x12@\n" +
 	"\x0etransmit_frame\x18\n" +
 	" \x01(\v2\x17.graywolf.TransmitFrameH\x00R\rtransmitFrame\x12I\n" +
 	"\x11configure_channel\x18\v \x01(\v2\x1a.graywolf.ConfigureChannelH\x00R\x10configureChannel\x12C\n" +
@@ -1833,7 +2050,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"\bshutdown\x18\x10 \x01(\v2\x12.graywolf.ShutdownH\x00R\bshutdown\x12Y\n" +
 	"\x17enumerate_audio_devices\x18\x11 \x01(\v2\x1f.graywolf.EnumerateAudioDevicesH\x00R\x15enumerateAudioDevices\x12>\n" +
 	"\x0eplay_test_tone\x18\x12 \x01(\v2\x16.graywolf.PlayTestToneH\x00R\fplayTestTone\x12A\n" +
-	"\x0fset_device_gain\x18\x13 \x01(\v2\x17.graywolf.SetDeviceGainH\x00R\rsetDeviceGainB\t\n" +
+	"\x0fset_device_gain\x18\x13 \x01(\v2\x17.graywolf.SetDeviceGainH\x00R\rsetDeviceGain\x12G\n" +
+	"\x11scan_input_levels\x18\x14 \x01(\v2\x19.graywolf.ScanInputLevelsH\x00R\x0fscanInputLevelsB\t\n" +
 	"\apayload\"\xb7\x02\n" +
 	"\rReceivedFrame\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x18\n" +
@@ -1875,7 +2093,7 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x0fAudioDeviceList\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\rR\trequestId\x123\n" +
-	"\adevices\x18\x02 \x03(\v2\x19.graywolf.AudioDeviceInfoR\adevices\"\xf5\x01\n" +
+	"\adevices\x18\x02 \x03(\v2\x19.graywolf.AudioDeviceInfoR\adevices\"\x97\x02\n" +
 	"\x0fAudioDeviceInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tstable_id\x18\x02 \x01(\tR\bstableId\x12-\n" +
@@ -1884,7 +2102,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x0echannel_counts\x18\x05 \x03(\rR\rchannelCounts\x12\x19\n" +
 	"\bhost_api\x18\x06 \x01(\tR\ahostApi\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\a \x01(\bR\tisDefault\"\xb7\x01\n" +
+	"is_default\x18\a \x01(\bR\tisDefault\x12 \n" +
+	"\vdescription\x18\b \x01(\tR\vdescription\"\xb7\x01\n" +
 	"\rTransmitFrame\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12.\n" +
@@ -1969,27 +2188,42 @@ const file_graywolf_proto_rawDesc = "" +
 	"\tdevice_id\x18\x01 \x01(\rR\bdeviceId\x12\x1b\n" +
 	"\tpeak_dbfs\x18\x02 \x01(\x02R\bpeakDbfs\x12\x19\n" +
 	"\brms_dbfs\x18\x03 \x01(\x02R\armsDbfs\x12\x1a\n" +
-	"\bclipping\x18\x04 \x01(\bR\bclipping*o\n" +
+	"\bclipping\x18\x04 \x01(\bR\bclipping\"Q\n" +
+	"\x0fScanInputLevels\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\rR\trequestId\x12\x1f\n" +
+	"\vduration_ms\x18\x02 \x01(\rR\n" +
+	"durationMs\"k\n" +
+	"\x14InputLevelScanResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\rR\trequestId\x124\n" +
+	"\adevices\x18\x02 \x03(\v2\x1a.graywolf.InputDeviceLevelR\adevices\"x\n" +
+	"\x10InputDeviceLevel\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
+	"\tpeak_dbfs\x18\x02 \x01(\x02R\bpeakDbfs\x12\x1d\n" +
+	"\n" +
+	"has_signal\x18\x03 \x01(\bR\thasSignal\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error*o\n" +
 	"\x0fAudioDeviceKind\x12!\n" +
 	"\x1dAUDIO_DEVICE_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17AUDIO_DEVICE_KIND_INPUT\x10\x01\x12\x1c\n" +
 	"\x18AUDIO_DEVICE_KIND_OUTPUT\x10\x02B-Z+github.com/chrissnell/graywolf/pkg/ipcprotob\x06proto3"
 
 var (
-	file_graywolf_proto_rawDescOnce sync.Once
-	file_graywolf_proto_rawDescData []byte
+	file_proto_graywolf_proto_rawDescOnce sync.Once
+	file_proto_graywolf_proto_rawDescData []byte
 )
 
-func file_graywolf_proto_rawDescGZIP() []byte {
-	file_graywolf_proto_rawDescOnce.Do(func() {
-		file_graywolf_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_graywolf_proto_rawDesc), len(file_graywolf_proto_rawDesc)))
+func file_proto_graywolf_proto_rawDescGZIP() []byte {
+	file_proto_graywolf_proto_rawDescOnce.Do(func() {
+		file_proto_graywolf_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_graywolf_proto_rawDesc), len(file_proto_graywolf_proto_rawDesc)))
 	})
-	return file_graywolf_proto_rawDescData
+	return file_proto_graywolf_proto_rawDescData
 }
 
-var file_graywolf_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_graywolf_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
-var file_graywolf_proto_goTypes = []any{
+var file_proto_graywolf_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_graywolf_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_proto_graywolf_proto_goTypes = []any{
 	(AudioDeviceKind)(0),          // 0: graywolf.AudioDeviceKind
 	(*IpcMessage)(nil),            // 1: graywolf.IpcMessage
 	(*ReceivedFrame)(nil),         // 2: graywolf.ReceivedFrame
@@ -2010,8 +2244,11 @@ var file_graywolf_proto_goTypes = []any{
 	(*TestToneResult)(nil),        // 17: graywolf.TestToneResult
 	(*SetDeviceGain)(nil),         // 18: graywolf.SetDeviceGain
 	(*DeviceLevelUpdate)(nil),     // 19: graywolf.DeviceLevelUpdate
+	(*ScanInputLevels)(nil),       // 20: graywolf.ScanInputLevels
+	(*InputLevelScanResult)(nil),  // 21: graywolf.InputLevelScanResult
+	(*InputDeviceLevel)(nil),      // 22: graywolf.InputDeviceLevel
 }
-var file_graywolf_proto_depIdxs = []int32{
+var file_proto_graywolf_proto_depIdxs = []int32{
 	2,  // 0: graywolf.IpcMessage.received_frame:type_name -> graywolf.ReceivedFrame
 	3,  // 1: graywolf.IpcMessage.dcd_change:type_name -> graywolf.DcdChange
 	4,  // 2: graywolf.IpcMessage.status_update:type_name -> graywolf.StatusUpdate
@@ -2019,31 +2256,34 @@ var file_graywolf_proto_depIdxs = []int32{
 	6,  // 4: graywolf.IpcMessage.audio_device_list:type_name -> graywolf.AudioDeviceList
 	17, // 5: graywolf.IpcMessage.test_tone_result:type_name -> graywolf.TestToneResult
 	19, // 6: graywolf.IpcMessage.device_level_update:type_name -> graywolf.DeviceLevelUpdate
-	8,  // 7: graywolf.IpcMessage.transmit_frame:type_name -> graywolf.TransmitFrame
-	9,  // 8: graywolf.IpcMessage.configure_channel:type_name -> graywolf.ConfigureChannel
-	10, // 9: graywolf.IpcMessage.configure_audio:type_name -> graywolf.ConfigureAudio
-	11, // 10: graywolf.IpcMessage.configure_ptt:type_name -> graywolf.ConfigurePtt
-	12, // 11: graywolf.IpcMessage.start_audio:type_name -> graywolf.StartAudio
-	13, // 12: graywolf.IpcMessage.stop_audio:type_name -> graywolf.StopAudio
-	14, // 13: graywolf.IpcMessage.shutdown:type_name -> graywolf.Shutdown
-	15, // 14: graywolf.IpcMessage.enumerate_audio_devices:type_name -> graywolf.EnumerateAudioDevices
-	16, // 15: graywolf.IpcMessage.play_test_tone:type_name -> graywolf.PlayTestTone
-	18, // 16: graywolf.IpcMessage.set_device_gain:type_name -> graywolf.SetDeviceGain
-	7,  // 17: graywolf.AudioDeviceList.devices:type_name -> graywolf.AudioDeviceInfo
-	0,  // 18: graywolf.AudioDeviceInfo.kind:type_name -> graywolf.AudioDeviceKind
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	21, // 7: graywolf.IpcMessage.input_level_scan_result:type_name -> graywolf.InputLevelScanResult
+	8,  // 8: graywolf.IpcMessage.transmit_frame:type_name -> graywolf.TransmitFrame
+	9,  // 9: graywolf.IpcMessage.configure_channel:type_name -> graywolf.ConfigureChannel
+	10, // 10: graywolf.IpcMessage.configure_audio:type_name -> graywolf.ConfigureAudio
+	11, // 11: graywolf.IpcMessage.configure_ptt:type_name -> graywolf.ConfigurePtt
+	12, // 12: graywolf.IpcMessage.start_audio:type_name -> graywolf.StartAudio
+	13, // 13: graywolf.IpcMessage.stop_audio:type_name -> graywolf.StopAudio
+	14, // 14: graywolf.IpcMessage.shutdown:type_name -> graywolf.Shutdown
+	15, // 15: graywolf.IpcMessage.enumerate_audio_devices:type_name -> graywolf.EnumerateAudioDevices
+	16, // 16: graywolf.IpcMessage.play_test_tone:type_name -> graywolf.PlayTestTone
+	18, // 17: graywolf.IpcMessage.set_device_gain:type_name -> graywolf.SetDeviceGain
+	20, // 18: graywolf.IpcMessage.scan_input_levels:type_name -> graywolf.ScanInputLevels
+	7,  // 19: graywolf.AudioDeviceList.devices:type_name -> graywolf.AudioDeviceInfo
+	0,  // 20: graywolf.AudioDeviceInfo.kind:type_name -> graywolf.AudioDeviceKind
+	22, // 21: graywolf.InputLevelScanResult.devices:type_name -> graywolf.InputDeviceLevel
+	22, // [22:22] is the sub-list for method output_type
+	22, // [22:22] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
-func init() { file_graywolf_proto_init() }
-func file_graywolf_proto_init() {
-	if File_graywolf_proto != nil {
+func init() { file_proto_graywolf_proto_init() }
+func file_proto_graywolf_proto_init() {
+	if File_proto_graywolf_proto != nil {
 		return
 	}
-	file_graywolf_proto_msgTypes[0].OneofWrappers = []any{
+	file_proto_graywolf_proto_msgTypes[0].OneofWrappers = []any{
 		(*IpcMessage_ReceivedFrame)(nil),
 		(*IpcMessage_DcdChange)(nil),
 		(*IpcMessage_StatusUpdate)(nil),
@@ -2051,6 +2291,7 @@ func file_graywolf_proto_init() {
 		(*IpcMessage_AudioDeviceList)(nil),
 		(*IpcMessage_TestToneResult)(nil),
 		(*IpcMessage_DeviceLevelUpdate)(nil),
+		(*IpcMessage_InputLevelScanResult)(nil),
 		(*IpcMessage_TransmitFrame)(nil),
 		(*IpcMessage_ConfigureChannel)(nil),
 		(*IpcMessage_ConfigureAudio)(nil),
@@ -2061,23 +2302,24 @@ func file_graywolf_proto_init() {
 		(*IpcMessage_EnumerateAudioDevices)(nil),
 		(*IpcMessage_PlayTestTone)(nil),
 		(*IpcMessage_SetDeviceGain)(nil),
+		(*IpcMessage_ScanInputLevels)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_graywolf_proto_rawDesc), len(file_graywolf_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_graywolf_proto_rawDesc), len(file_proto_graywolf_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   19,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_graywolf_proto_goTypes,
-		DependencyIndexes: file_graywolf_proto_depIdxs,
-		EnumInfos:         file_graywolf_proto_enumTypes,
-		MessageInfos:      file_graywolf_proto_msgTypes,
+		GoTypes:           file_proto_graywolf_proto_goTypes,
+		DependencyIndexes: file_proto_graywolf_proto_depIdxs,
+		EnumInfos:         file_proto_graywolf_proto_enumTypes,
+		MessageInfos:      file_proto_graywolf_proto_msgTypes,
 	}.Build()
-	File_graywolf_proto = out.File
-	file_graywolf_proto_goTypes = nil
-	file_graywolf_proto_depIdxs = nil
+	File_proto_graywolf_proto = out.File
+	file_proto_graywolf_proto_goTypes = nil
+	file_proto_graywolf_proto_depIdxs = nil
 }

@@ -81,7 +81,7 @@
       <Router {routes} />
       <footer class="app-footer">
         <a href="https://github.com/chrissnell/graywolf" target="_blank" rel="noopener">
-          graywolf {version ? `v${version}` : ''}
+          graywolf {version ? version : ''}
         </a>
       </footer>
     </main>

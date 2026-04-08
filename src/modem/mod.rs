@@ -17,7 +17,7 @@ use crate::ipc::proto::{
     ipc_message::Payload, ConfigureChannel, ConfigurePtt, DcdChange, DeviceLevelUpdate,
     IpcMessage, ReceivedFrame, StatusUpdate, TestToneResult,
     AudioDeviceList, AudioDeviceInfo, AudioDeviceKind,
-    EnumerateAudioDevices,
+    EnumerateAudioDevices, ScanInputLevels, InputLevelScanResult, InputDeviceLevel,
 };
 use crate::ipc::server::{IpcHandle, IpcInbound};
 use crate::modem_9600::Demod9600;
@@ -253,6 +253,9 @@ impl Modem {
             Some(Payload::PlayTestTone(req)) => {
                 self.handle_play_test_tone(req);
             }
+            Some(Payload::ScanInputLevels(req)) => {
+                self.handle_scan_input_levels(req);
+            }
             Some(Payload::SetDeviceGain(g)) => {
                 let gain_db = g.gain_db.clamp(-60.0, 12.0);
                 if let Some(acfg) = self.audio_configs.get_mut(&g.device_id) {
@@ -276,7 +279,8 @@ impl Modem {
             | Some(Payload::ModemReady(_))
             | Some(Payload::AudioDeviceList(_))
             | Some(Payload::TestToneResult(_))
-            | Some(Payload::DeviceLevelUpdate(_)) => {
+            | Some(Payload::DeviceLevelUpdate(_))
+            | Some(Payload::InputLevelScanResult(_)) => {
                 // Rust → Go only; ignore if echoed back.
             }
             None => {}
@@ -539,6 +543,22 @@ impl Modem {
         }
     }
 
+    fn handle_scan_input_levels(&self, req: ScanInputLevels) {
+        let handle = self.handle.clone();
+        std::thread::Builder::new()
+            .name("scan-input-levels".into())
+            .spawn(move || {
+                let duration_ms = if req.duration_ms == 0 { 500 } else { req.duration_ms };
+                let results = scan_input_levels(duration_ms);
+                let msg = IpcMessage::input_level_scan_result(InputLevelScanResult {
+                    request_id: req.request_id,
+                    devices: results,
+                });
+                let _ = handle.send(&msg);
+            })
+            .ok();
+    }
+
     fn handle_play_test_tone(&self, req: crate::ipc::proto::PlayTestTone) {
         let device_id = req.device_id;
         let gain_atom = self.gain_atoms
@@ -694,6 +714,62 @@ fn take_demod_dcd_changes(
     }
 }
 
+/// On Linux/ALSA, resolve a friendly description by reading /proc/asound/cards.
+/// Returns an empty string on non-Linux or if lookup fails (caller falls back to name).
+#[cfg(target_os = "linux")]
+fn alsa_card_description(cpal_name: &str) -> String {
+    // cpal ALSA names: "hw:CARD=Device,DEV=0", "plughw:CARD=Device,DEV=0",
+    // "default:CARD=Device", "front:CARD=Device,DEV=0", "sysdefault:CARD=Device"
+    let card_id = cpal_name
+        .split("CARD=")
+        .nth(1)
+        .and_then(|s| s.split(|c: char| c == ',' || c == ':').next())
+        .unwrap_or("");
+    if card_id.is_empty() {
+        return String::new();
+    }
+
+    // /proc/asound/cards format:
+    //  0 [Device         ]: USB-Audio - C-Media USB Headphone Set
+    //                       C-Media USB Headphone Set at usb-0000:00:14.0-1
+    let contents = match std::fs::read_to_string("/proc/asound/cards") {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        // Match " 0 [ShortName   ]: driver - LongName"
+        if !trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            continue;
+        }
+        let bracket_start = match trimmed.find('[') {
+            Some(i) => i,
+            None => continue,
+        };
+        let bracket_end = match trimmed.find(']') {
+            Some(i) => i,
+            None => continue,
+        };
+        let num_str = trimmed[..bracket_start].trim();
+        let short_name = trimmed[bracket_start + 1..bracket_end].trim();
+
+        if num_str == card_id || short_name == card_id {
+            if let Some(pos) = trimmed.find(" - ") {
+                let long_name = trimmed[pos + 3..].trim();
+                if !long_name.is_empty() {
+                    return long_name.to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn alsa_card_description(_cpal_name: &str) -> String {
+    String::new()
+}
+
 fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
@@ -732,6 +808,7 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
                 }
 
                 let is_default = default_input_name.as_deref() == Some(&name);
+                let description = alsa_card_description(&name);
 
                 devices.push(AudioDeviceInfo {
                     name: name.clone(),
@@ -741,6 +818,7 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
                     channel_counts,
                     host_api: host_name.clone(),
                     is_default,
+                    description,
                 });
             }
         }
@@ -773,6 +851,7 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
                     }
 
                     let is_default = default_output_name.as_deref() == Some(&name);
+                    let description = alsa_card_description(&name);
 
                     devices.push(AudioDeviceInfo {
                         name: name.clone(),
@@ -782,6 +861,7 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
                         channel_counts,
                         host_api: host_name.clone(),
                         is_default,
+                        description,
                     });
                 }
             }
@@ -789,6 +869,108 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     }
 
     devices
+}
+
+/// Briefly open each available input device and measure peak level.
+fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+
+    let host = cpal::default_host();
+    let inputs = match host.input_devices() {
+        Ok(i) => i.collect::<Vec<_>>(),
+        Err(_) => return Vec::new(),
+    };
+
+    let duration = std::time::Duration::from_millis(duration_ms as u64);
+    let mut results = Vec::new();
+
+    for dev in inputs {
+        let name = match dev.name() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let cfg = match dev.default_input_config() {
+            Ok(c) => c,
+            Err(e) => {
+                results.push(InputDeviceLevel {
+                    name,
+                    peak_dbfs: -96.0,
+                    has_signal: false,
+                    error: format!("{}", e),
+                });
+                continue;
+            }
+        };
+
+        let peak = Arc::new(AtomicU32::new(0f32.to_bits()));
+        let peak_w = peak.clone();
+
+        let stream_cfg = cpal::StreamConfig {
+            channels: cfg.channels(),
+            sample_rate: cfg.sample_rate(),
+            buffer_size: cpal::BufferSize::Default,
+        };
+
+        let stream = dev.build_input_stream(
+            &stream_cfg,
+            move |data: &[f32], _| {
+                let mut local_peak: f32 = 0.0;
+                for &s in data {
+                    let abs = s.abs();
+                    if abs > local_peak {
+                        local_peak = abs;
+                    }
+                }
+                // Atomic max
+                loop {
+                    let old_bits = peak_w.load(Ordering::Relaxed);
+                    let old = f32::from_bits(old_bits);
+                    if local_peak <= old { break; }
+                    if peak_w.compare_exchange_weak(
+                        old_bits, local_peak.to_bits(),
+                        Ordering::Relaxed, Ordering::Relaxed,
+                    ).is_ok() { break; }
+                }
+            },
+            |e| eprintln!("scan level error: {}", e),
+            None,
+        );
+
+        match stream {
+            Ok(s) => {
+                if s.play().is_ok() {
+                    std::thread::sleep(duration);
+                }
+                drop(s);
+
+                let peak_lin = f32::from_bits(peak.load(Ordering::Relaxed));
+                let peak_db = if peak_lin > 0.0 {
+                    20.0 * peak_lin.log10()
+                } else {
+                    -96.0
+                };
+
+                results.push(InputDeviceLevel {
+                    name,
+                    peak_dbfs: peak_db,
+                    has_signal: peak_db > -40.0,
+                    error: String::new(),
+                });
+            }
+            Err(e) => {
+                results.push(InputDeviceLevel {
+                    name,
+                    peak_dbfs: -96.0,
+                    has_signal: false,
+                    error: format!("{}", e),
+                });
+            }
+        }
+    }
+
+    results
 }
 
 fn parse_channel(c: &ConfigureChannel) -> ChannelConfig {

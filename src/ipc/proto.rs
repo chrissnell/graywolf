@@ -29,6 +29,9 @@ impl IpcMessage {
     pub fn device_level_update(u: DeviceLevelUpdate) -> Self {
         Self { payload: Some(ipc_message::Payload::DeviceLevelUpdate(u)) }
     }
+    pub fn input_level_scan_result(r: InputLevelScanResult) -> Self {
+        Self { payload: Some(ipc_message::Payload::InputLevelScanResult(r)) }
+    }
 }
 
 #[cfg(test)]
@@ -114,6 +117,7 @@ mod tests {
                 channel_counts: vec![1, 2],
                 host_api: "CoreAudio".into(),
                 is_default: true,
+                description: "Built-in Microphone".into(),
             }],
         });
         let mut buf = Vec::new();

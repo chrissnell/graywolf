@@ -139,6 +139,8 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 			b.dispatchToneResponse(p.TestToneResult)
 		case *pb.IpcMessage_DeviceLevelUpdate:
 			b.updateDeviceLevelCache(p.DeviceLevelUpdate)
+		case *pb.IpcMessage_InputLevelScanResult:
+			b.dispatchScanResponse(p.InputLevelScanResult)
 		default:
 			b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 		}

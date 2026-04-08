@@ -267,6 +267,24 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, devices)
 		return
 	}
+	if rest == "scan-levels" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if s.bridge == nil {
+			writeJSON(w, http.StatusOK, []any{})
+			return
+		}
+		levels, err := s.bridge.ScanInputLevels(r.Context())
+		if err != nil {
+			s.logger.Warn("scan input levels", "err", err)
+			writeJSON(w, http.StatusOK, []any{})
+			return
+		}
+		writeJSON(w, http.StatusOK, levels)
+		return
+	}
 	if rest == "levels" {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

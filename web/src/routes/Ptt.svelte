@@ -223,12 +223,15 @@
     {#each available as dev}
       <button class="avail-card" onclick={() => openCreateFromAvail(dev)}>
         <div class="avail-header">
-          <strong class="avail-name">{dev.name}</strong>
+          <strong class="avail-name">{dev.description || dev.name}</strong>
           <Badge variant={typeBadgeVariant(dev.type)}>
             {dev.type}
           </Badge>
         </div>
-        <span class="avail-path" title={dev.path}>{truncatePath(dev.path, 50)}</span>
+        <span class="avail-path" title={dev.path}>{dev.path}</span>
+        {#if dev.usb_vendor && dev.usb_product}
+          <span class="avail-usb">USB {dev.usb_vendor}:{dev.usb_product}</span>
+        {/if}
       </button>
     {/each}
   </div>
@@ -462,6 +465,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .avail-usb {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
   }
 
   .modal-actions {

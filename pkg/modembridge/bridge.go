@@ -120,7 +120,8 @@ type DeviceLevel struct {
 // Field names match the frontend's expected shape.
 type AvailableDevice struct {
 	Name        string   `json:"name"`
-	Path        string   `json:"path"` // cpal device name (used as device_path)
+	Description string   `json:"description"` // human-friendly name (e.g. USB product string)
+	Path        string   `json:"path"`        // cpal device name (used as device_path)
 	SampleRates []uint32 `json:"sample_rates"`
 	Channels    []uint32 `json:"channels"`
 	HostAPI     string   `json:"host_api"`
@@ -177,6 +178,10 @@ type Bridge struct {
 	toneMu      sync.Mutex
 	tonePending map[uint32]chan *pb.TestToneResult
 
+	// scanPending maps request_id → response channel for input level scans.
+	scanMu      sync.Mutex
+	scanPending map[uint32]chan *pb.InputLevelScanResult
+
 	// Per-device audio level cache, updated from DeviceLevelUpdate IPC messages.
 	deviceLevelMu    sync.RWMutex
 	deviceLevelCache map[uint32]*DeviceLevel
@@ -194,6 +199,7 @@ func New(cfg Config) *Bridge {
 		statusCache:      make(map[uint32]*ChannelStats),
 		enumPending:      make(map[uint32]chan *pb.AudioDeviceList),
 		tonePending:      make(map[uint32]chan *pb.TestToneResult),
+		scanPending:      make(map[uint32]chan *pb.InputLevelScanResult),
 		deviceLevelCache: make(map[uint32]*DeviceLevel),
 	}
 }
@@ -573,6 +579,80 @@ func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
 	}
 }
 
+// InputLevel holds the level scan result for a single input device.
+type InputLevel struct {
+	Name      string  `json:"name"`
+	PeakDBFS  float32 `json:"peak_dbfs"`
+	HasSignal bool    `json:"has_signal"`
+	Error     string  `json:"error,omitempty"`
+}
+
+// ScanInputLevels asks the Rust modem to briefly open each input device,
+// measure peak levels, and return the results.
+func (b *Bridge) ScanInputLevels(ctx context.Context) ([]InputLevel, error) {
+	if b.State() != StateRunning {
+		return nil, errors.New("modembridge: not in RUNNING state")
+	}
+
+	reqID := b.enumReqID.Add(1)
+	ch := make(chan *pb.InputLevelScanResult, 1)
+
+	b.scanMu.Lock()
+	b.scanPending[reqID] = ch
+	b.scanMu.Unlock()
+	defer func() {
+		b.scanMu.Lock()
+		delete(b.scanPending, reqID)
+		b.scanMu.Unlock()
+	}()
+
+	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_ScanInputLevels{
+		ScanInputLevels: &pb.ScanInputLevels{
+			RequestId:  reqID,
+			DurationMs: 500,
+		},
+	}}
+	if err := b.sendIPC(msg); err != nil {
+		return nil, fmt.Errorf("send ScanInputLevels: %w", err)
+	}
+
+	timer := time.NewTimer(30 * time.Second) // scanning many devices takes time
+	defer timer.Stop()
+	select {
+	case resp := <-ch:
+		return convertScanResult(resp), nil
+	case <-timer.C:
+		return nil, errors.New("modembridge: scan timeout")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func convertScanResult(r *pb.InputLevelScanResult) []InputLevel {
+	out := make([]InputLevel, 0, len(r.Devices))
+	for _, d := range r.Devices {
+		out = append(out, InputLevel{
+			Name:      d.Name,
+			PeakDBFS:  d.PeakDbfs,
+			HasSignal: d.HasSignal,
+			Error:     d.Error,
+		})
+	}
+	return out
+}
+
+func (b *Bridge) dispatchScanResponse(r *pb.InputLevelScanResult) {
+	b.scanMu.Lock()
+	ch, ok := b.scanPending[r.RequestId]
+	b.scanMu.Unlock()
+	if ok {
+		select {
+		case ch <- r:
+		default:
+		}
+	}
+}
+
 // isUsableAudioDevice filters out ALSA virtual devices that aren't useful
 // for APRS (surround, HDMI, S/PDIF, dmix, etc.).
 func isUsableAudioDevice(name string) bool {
@@ -593,6 +673,7 @@ func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 		}
 		out = append(out, AvailableDevice{
 			Name:        d.Name,
+			Description: d.Description,
 			Path:        d.Name, // cpal device name is the path
 			SampleRates: d.SampleRates,
 			Channels:    d.ChannelCounts,

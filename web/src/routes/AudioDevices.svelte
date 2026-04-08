@@ -10,6 +10,8 @@
   let devices = $state([]);
   let available = $state([]);
   let loadingAvail = $state(false);
+  let scanLevels = $state({});
+  let scanning = $state(false);
   let modalOpen = $state(false);
   let editing = $state(null);
   let form = $state(emptyForm());
@@ -115,6 +117,25 @@
     }
   }
 
+  async function scanInputLevels() {
+    scanning = true;
+    scanLevels = {};
+    try {
+      const results = await api.post('/audio-devices/scan-levels') || [];
+      const map = {};
+      for (const r of results) {
+        map[r.name] = r;
+      }
+      scanLevels = map;
+      const active = results.filter(r => r.has_signal).length;
+      toasts.success(`Scan complete — ${active} input(s) with signal`);
+    } catch (err) {
+      toasts.error(`Level scan failed: ${err.message}`);
+    } finally {
+      scanning = false;
+    }
+  }
+
   function openCreate() {
     editing = null;
     form = emptyForm();
@@ -132,7 +153,7 @@
   function openCreateFromAvail(dev) {
     editing = null;
     form = {
-      name: dev.name,
+      name: dev.description || dev.name,
       device_path: dev.path,
       sample_rate: String(dev.sample_rates[dev.sample_rates.length - 1]),
       channels: String(dev.channels[0]),
@@ -216,6 +237,7 @@
   let hasOutput = $derived(devices.some(d => d.direction === 'output'));
   let inputDevices = $derived(devices.filter(d => d.direction === 'input'));
   let outputDevices = $derived(devices.filter(d => d.direction === 'output'));
+  let configuredPaths = $derived(new Set(devices.map(d => d.device_path)));
 
   function truncatePath(p, max = 40) {
     if (!p || p.length <= max) return p || '—';
@@ -227,6 +249,11 @@
   <Button onclick={refreshAvailable} disabled={loadingAvail}>
     {loadingAvail ? 'Scanning...' : 'Detect Devices'}
   </Button>
+  {#if available.some(d => d.is_input)}
+    <Button onclick={scanInputLevels} disabled={scanning}>
+      {scanning ? 'Scanning...' : 'Scan Input Levels'}
+    </Button>
+  {/if}
   <Button variant="primary" onclick={openCreate}>+ Add Device</Button>
 </PageHeader>
 
@@ -340,23 +367,41 @@
   <p class="section-hint">Click a device to add it to your configuration.</p>
   <div class="avail-grid">
     {#each available as dev}
-      <button class="avail-card" onclick={() => openCreateFromAvail(dev)}>
+      <button class="avail-card" class:added={configuredPaths.has(dev.path)} onclick={() => openCreateFromAvail(dev)}>
         <div class="avail-header">
-          <strong class="avail-name">{dev.name}</strong>
-          <Badge variant={dev.is_input ? 'info' : 'success'}>
-            {dev.is_input ? 'Input' : 'Output'}
-          </Badge>
+          <strong class="avail-name">{dev.description || dev.name}</strong>
+          <div class="avail-badges">
+            {#if configuredPaths.has(dev.path)}
+              <Badge variant="success">Added</Badge>
+            {/if}
+            <Badge variant={dev.is_input ? 'info' : 'success'}>
+              {dev.is_input ? 'Input' : 'Output'}
+            </Badge>
+          </div>
         </div>
         {#if dev.host_api}
           <span class="avail-api">{dev.host_api}</span>
         {/if}
-        <span class="avail-path" title={dev.path}>{truncatePath(dev.path, 50)}</span>
+        <span class="avail-path" title={dev.path}>{dev.name}</span>
         <div class="avail-caps">
           <span>Rates: {dev.sample_rates.join(', ')} Hz</span>
           <span>Channels: {dev.channels.join(', ')}</span>
         </div>
         {#if dev.is_default}
           <Badge variant="success">System Default</Badge>
+        {/if}
+        {#if dev.is_input && scanLevels[dev.name]}
+          {@const lev = scanLevels[dev.name]}
+          {#if lev.error}
+            <span class="scan-error">Error: {lev.error}</span>
+          {:else}
+            <div class="scan-level">
+              <div class="scan-bar">
+                <div class="scan-fill" class:has-signal={lev.has_signal} style="width: {Math.max(0, ((lev.peak_dbfs + 60) / 60) * 100)}%"></div>
+              </div>
+              <span class="scan-value">{lev.peak_dbfs.toFixed(0)} dB{lev.has_signal ? ' — signal detected' : ''}</span>
+            </div>
+          {/if}
         {/if}
       </button>
     {/each}
@@ -703,10 +748,19 @@
     border-color: var(--accent);
     background: var(--bg-secondary);
   }
+  .avail-card.added {
+    border-color: var(--success, #3fb950);
+    opacity: 0.7;
+  }
   .avail-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+  .avail-badges {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
   }
   .avail-name {
     font-size: 14px;
@@ -735,6 +789,35 @@
     gap: 2px;
     font-size: 12px;
     color: var(--text-muted);
+  }
+  .scan-level {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 4px;
+  }
+  .scan-bar {
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .scan-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--text-muted);
+    transition: width 0.3s;
+  }
+  .scan-fill.has-signal {
+    background: var(--success, #3fb950);
+  }
+  .scan-value {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .scan-error {
+    font-size: 11px;
+    color: var(--color-danger, #f85149);
   }
 
   .modal-actions {
