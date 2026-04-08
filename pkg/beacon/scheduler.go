@@ -100,8 +100,9 @@ type Scheduler struct {
 	observer Observer
 	clock    Clock
 
-	mu      sync.Mutex
-	beacons []Config
+	mu       sync.Mutex
+	beacons  []Config
+	reloadCh chan struct{}
 }
 
 // Options configures a Scheduler.
@@ -132,21 +133,71 @@ func New(opts Options) (*Scheduler, error) {
 		logger:   logger.With("component", "beacon"),
 		observer: opts.Observer,
 		clock:    clock,
+		reloadCh: make(chan struct{}, 1),
 	}, nil
 }
 
-// SetBeacons replaces the beacon list. Call before Run, or while Run is
-// active to live-reconfigure (a new Run is required to pick up changes;
-// Phase 6 will add hot-reload).
+// SetBeacons replaces the beacon list. If Run is active, call Reload
+// instead to also restart per-beacon goroutines with the new config.
 func (s *Scheduler) SetBeacons(b []Config) {
 	s.mu.Lock()
 	s.beacons = append([]Config(nil), b...)
 	s.mu.Unlock()
 }
 
+// Reload atomically swaps in a new beacon list and signals Run to cancel
+// the currently-running per-beacon goroutines and re-spawn them from the
+// new config. Safe to call from any goroutine; non-blocking — coalesces
+// rapid successive calls into one re-spawn cycle.
+func (s *Scheduler) Reload(b []Config) {
+	s.SetBeacons(b)
+	select {
+	case s.reloadCh <- struct{}{}:
+	default:
+	}
+}
+
 // Run launches one goroutine per enabled beacon and blocks until ctx is
-// cancelled or all beacon goroutines exit.
+// cancelled. On Reload, the current goroutines are cancelled and a fresh
+// generation is spawned from the latest beacons slice.
 func (s *Scheduler) Run(ctx context.Context) error {
+	for {
+		genCtx, cancel := context.WithCancel(ctx)
+		done := s.runGeneration(genCtx)
+
+		select {
+		case <-ctx.Done():
+			cancel()
+			<-done
+			return nil
+		case <-s.reloadCh:
+			s.logger.Info("beacon scheduler reloading")
+			cancel()
+			<-done
+			// Drain any extra reload signals that arrived during shutdown
+			// so we don't immediately re-cycle on the next iteration.
+			select {
+			case <-s.reloadCh:
+			default:
+			}
+		case <-done:
+			// All beacons exited on their own (none enabled, or all errored
+			// out). Wait for ctx or a reload before deciding what to do.
+			cancel()
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-s.reloadCh:
+				s.logger.Info("beacon scheduler reloading")
+			}
+		}
+	}
+}
+
+// runGeneration spawns one goroutine per enabled beacon and returns a
+// channel closed when all of them have exited. The caller is responsible
+// for cancelling genCtx to make them exit.
+func (s *Scheduler) runGeneration(genCtx context.Context) <-chan struct{} {
 	s.mu.Lock()
 	beacons := append([]Config(nil), s.beacons...)
 	s.mu.Unlock()
@@ -160,11 +211,16 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.runBeacon(ctx, b)
+			s.runBeacon(genCtx, b)
 		}()
 	}
-	wg.Wait()
-	return nil
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	return done
 }
 
 // runBeacon drives one beacon entry's schedule and send loop.

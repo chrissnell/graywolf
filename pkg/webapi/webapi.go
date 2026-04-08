@@ -27,6 +27,7 @@ type Server struct {
 	startedAt    time.Time
 	igateStatusFn func() IgateStatus
 	gpsReload    chan struct{} // signalled when GPS config changes
+	beaconReload chan struct{} // signalled when beacon config changes
 }
 
 // Config bundles the dependencies for NewServer.
@@ -481,6 +482,7 @@ func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.signalBeaconReload()
 		writeJSON(w, http.StatusCreated, b)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -513,15 +515,29 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.signalBeaconReload()
 		writeJSON(w, http.StatusOK, b)
 	case http.MethodDelete:
 		if err := s.store.DeleteBeacon(id); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.signalBeaconReload()
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// signalBeaconReload performs a non-blocking send on the beacon reload
+// channel; coalesces if a previous signal is still buffered.
+func (s *Server) signalBeaconReload() {
+	if s.beaconReload == nil {
+		return
+	}
+	select {
+	case s.beaconReload <- struct{}{}:
+	default:
 	}
 }
 
@@ -536,6 +552,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // SetGPSReload installs the channel signalled when GPS config is saved.
 func (s *Server) SetGPSReload(ch chan struct{}) {
 	s.gpsReload = ch
+}
+
+// SetBeaconReload installs the channel signalled when beacon config is
+// created, updated, or deleted.
+func (s *Server) SetBeaconReload(ch chan struct{}) {
+	s.beaconReload = ch
 }
 
 // SetIgateStatusFn installs the function used by /api/status to report igate counters.

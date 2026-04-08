@@ -363,9 +363,15 @@ func main() {
 		logger.Error("beacon scheduler init", "err", err)
 		os.Exit(1)
 	}
-	if beacons, err := store.ListBeacons(); err == nil && len(beacons) > 0 {
+	beaconReload := make(chan struct{}, 1)
+	loadBeaconConfigs := func() []beacon.Config {
+		stored, err := store.ListBeacons()
+		if err != nil {
+			logger.Warn("beacon load", "err", err)
+			return nil
+		}
 		var configs []beacon.Config
-		for _, b := range beacons {
+		for _, b := range stored {
 			if !b.Enabled {
 				continue
 			}
@@ -376,13 +382,26 @@ func main() {
 			}
 			configs = append(configs, bc)
 		}
-		beaconSched.SetBeacons(configs)
-		go func() {
-			if err := beaconSched.Run(ctx); err != nil {
-				logger.Error("beacon scheduler", "err", err)
-			}
-		}()
+		return configs
 	}
+	beaconSched.SetBeacons(loadBeaconConfigs())
+	go func() {
+		if err := beaconSched.Run(ctx); err != nil {
+			logger.Error("beacon scheduler", "err", err)
+		}
+	}()
+	// Re-read store and reload the scheduler whenever the API signals a
+	// beacon config change.
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-beaconReload:
+				beaconSched.Reload(loadBeaconConfigs())
+			}
+		}
+	}()
 
 	// --- iGate ----------------------------------------------------------
 	var ig *igate.Igate
@@ -561,6 +580,7 @@ func main() {
 	}
 
 	apiSrv.SetGPSReload(gpsReload)
+	apiSrv.SetBeaconReload(beaconReload)
 
 	// Public endpoints (no auth).
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -751,6 +771,15 @@ func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
 	symCode := byte('-')
 	if len(b.Symbol) > 0 {
 		symCode = b.Symbol[0]
+	}
+	// Overlay (A-Z, 0-9) replaces the alternate-table marker on the air,
+	// per APRS101: an alphanumeric byte at the table position signals an
+	// alternate-table symbol with that overlay character.
+	if len(b.Overlay) > 0 && symTable == '\\' {
+		c := b.Overlay[0]
+		if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') {
+			symTable = c
+		}
 	}
 
 	cfg := beacon.Config{

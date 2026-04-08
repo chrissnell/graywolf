@@ -1,0 +1,186 @@
+CODE	DSTCALL	DESCRIPTION	ROTATEDEG
+/!	BB	Police station	
+"/"""	BC		
+/#	BD	Digipeater	
+/$	BE	Telephone	
+/%	BF	DX cluster	
+/&	BG	HF gateway	
+/'	BH	Small aircraft	
+/(	BI	Mobile satellite station	
+/)	BJ	Wheelchair, handicapped	
+/*	BK	Snowmobile	
+/+	BL	Red Cross	
+/,	BM	Boy Scouts	
+/-	BN	House	
+/.	BO	Red X	
+//	BP	Red dot	
+/0	P0	Numbered circle: 0	
+/1	P1	Numbered circle: 1	
+/2	P2	Numbered circle: 2	
+/3	P3	Numbered circle: 3	
+/4	P4	Numbered circle: 4	
+/5	P5	Numbered circle: 5	
+/6	P6	Numbered circle: 6	
+/7	P7	Numbered circle: 7	
+/8	P8	Numbered circle: 8	
+/9	P9	Numbered circle: 9	
+/:	MR	Fire	
+/;	MS	Campground, tent	
+/<	MT	Motorcycle	
+/=	MU	Railroad engine	
+/>	MV	Car	
+/?	MW	File server	
+/@	MX	Hurricane predicted path	
+/A	PA	Aid station	
+/B	PB	BBS	
+/C	PC	Canoe	
+/D	PD		
+/E	PE	Eyeball	
+/F	PF	Farm vehicle, tractor	
+/G	PG	Grid square, 3 by 3	
+/H	PH	Hotel	
+/I	PI	TCP/IP network station	
+/J	PJ		
+/K	PK	School	
+/L	PL	PC user	
+/M	PM	Mac apple	
+/N	PN	NTS station	
+/O	PO	Balloon	
+/P	PP	Police car	
+/Q	PQ		
+/R	PR	Recreational vehicle	
+/S	PS	Space Shuttle	
+/T	PT	SSTV	
+/U	PU	Bus	
+/V	PV	ATV, Amateur Television	
+/W	PW	Weather service site	
+/X	PX	Helicopter	
+/Y	PY	Sailboat	
+/Z	PZ	Windows flag	
+/[	HS	Human	
+/\	HT	DF triangle	
+/]	HU	Mailbox, post office	
+/^	HV	Large aircraft	
+/_	HW	Weather station	
+/`	HX	Satellite dish antenna	
+/a	LA	Ambulance	
+/b	LB	Bicycle	
+/c	LC	Incident command post	
+/d	LD	Fire station	
+/e	LE	Horse, equestrian	
+/f	LF	Fire truck	
+/g	LG	Glider	
+/h	LH	Hospital	
+/i	LI	IOTA, islands on the air	
+/j	LJ	Jeep	
+/k	LK	Truck	
+/l	LL	Laptop	
+/m	LM	Mic-E repeater	
+/n	LN	Node, black bulls-eye	
+/o	LO	Emergency operations center	
+/p	LP	Dog	
+/q	LQ	Grid square, 2 by 2	
+/r	LR	Repeater tower	
+/s	LS	Ship, power boat	
+/t	LT	Truck stop	
+/u	LU	Semi-trailer truck, 18-wheeler	
+/v	LV	Van	
+/w	LW	Water station	
+/x	LX	X / Unix	
+/y	LY	House, yagi antenna	
+/z	LZ	Shelter	
+/{	J1		
+/}	J3		
+			
+\!	OB	Emergency	
+"\"""	OC		
+\#	OD	Digipeater, green star	
+\$	OE	Bank or ATM	
+\%	OF		
+\&	OG	Gateway station	
+\'	OH	Crash / incident site	
+\(	OI	Cloudy	
+\)	OJ	Firenet MEO, MODIS Earth Observation	
+\*	OK	Snow	
+\+	OL	Church	
+\,	OM	Girl Scouts	
+\-	ON	House, HF antenna	
+\.	OO	Ambiguous, question mark inside circle	
+\/	OP	Waypoint destination	
+\0	A0	Circle, IRLP / Echolink/WIRES	
+\1	A1		
+\2	A2		
+\3	A3		
+\4	A4		
+\5	A5		
+\6	A6		
+\7	A7		
+\8	A8	802.11 WiFi or other network node	
+\9	A9	Gas station	
+\:	NR	Hail	
+\;	NS	Park, picnic area	
+\<	NT	Advisory, single red flag	
+\=	NU		
+\>	NV	Red car	
+\?	NW	Info kiosk	
+\@	NX	Hurricane, Tropical storm	
+\A	AA	White box	
+\B	AB	Blowing snow	
+\C	AC	Coast Guard	
+\D	AD	Drizzling rain	
+\E	AE	Smoke, Chimney	
+\F	AF	Freezing rain	
+\G	AG	Snow shower	
+\H	AH	Haze	
+\I	AI	Rain shower	
+\J	AJ	Lightning	
+\K	AK	Kenwood HT	
+\L	AL	Lighthouse	
+\M	AM		
+\N	AN	Navigation buoy	
+\O	AO	Rocket	
+\P	AP	Parking	
+\Q	AQ	Earthquake	
+\R	AR	Restaurant	
+\S	AS	Satellite	
+\T	AT	Thunderstorm	
+\U	AU	Sunny	
+\V	AV	VORTAC, Navigational aid	
+\W	AW	NWS site	
+\X	AX	Pharmacy	
+\Y	AY		
+\Z	AZ		
+\[	DS	Wall Cloud	
+\\	DT		
+\]	DU		
+\^	DV	Aircraft	
+\_	DW	Weather site	
+\`	DX	Rain	
+\a	SA	Red diamond	
+\b	SB	Blowing dust, sand	
+\c	SC	CD triangle, RACES, CERTS, SATERN	
+\d	SD	DX spot	
+\e	SE	Sleet	
+\f	SF	Funnel cloud	
+\g	SG	Gale, two red flags	
+\h	SH	Store	
+\i	SI	Black box, point of interest	
+\j	SJ	Work zone, excavating machine	
+\k	SK	SUV, ATV	
+\l	SL		
+\m	SM	Value sign, 3 digit display	
+\n	SN	Red triangle	
+\o	SO	Small circle	
+\p	SP	Partly cloudy	
+\q	SQ		
+\r	SR	Restrooms	
+\s	SS	Ship, boat	
+\t	ST	Tornado	
+\u	SU	Truck	
+\v	SV	Van	
+\w	SW	Flooding	
+\x	SX		
+\y	SY	Skywarn	
+\z	SZ	Shelter	
+\{	Q1	Fog	
+\}	Q3		

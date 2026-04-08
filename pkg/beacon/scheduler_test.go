@@ -199,6 +199,92 @@ func TestScheduler_ObjectBeacon(t *testing.T) {
 	}
 }
 
+// TestScheduler_Reload verifies that calling Reload while Run is active
+// cancels the running per-beacon goroutines and re-spawns them from the
+// new beacon list. We start with a beacon that uses one comment, reload
+// with a different comment, and check that subsequent frames carry the
+// new comment.
+func TestScheduler_Reload(t *testing.T) {
+	sink := newMockSink(100) // arbitrarily large; we drive completion ourselves
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, _ := New(Options{Sink: sink, Logger: logger})
+
+	mkBeacon := func(comment string) Config {
+		return Config{
+			ID:      1,
+			Type:    TypePosition,
+			Channel: 0,
+			Source:  mustAddr(t, "N0CALL-9"),
+			Dest:    mustAddr(t, "APGW00"),
+			Delay:   5 * time.Millisecond,
+			Every:   20 * time.Millisecond,
+			Slot:    -1,
+			Lat:     37.0, Lon: -122.0,
+			SymbolTable: '/', SymbolCode: '-',
+			Comment: comment,
+			Enabled: true,
+		}
+	}
+	s.SetBeacons([]Config{mkBeacon("first")})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	runDone := make(chan struct{})
+	go func() {
+		s.Run(ctx)
+		close(runDone)
+	}()
+
+	// Wait for at least one frame from the first generation.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(sink.Frames()) >= 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := len(sink.Frames()); got == 0 {
+		t.Fatalf("no frames from initial generation")
+	}
+
+	// Snapshot the count and reload with a beacon carrying a new comment.
+	beforeReload := len(sink.Frames())
+	s.Reload([]Config{mkBeacon("second")})
+
+	// Wait for at least one new frame after the reload.
+	deadline = time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(sink.Frames()) > beforeReload {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	frames := sink.Frames()
+	if len(frames) <= beforeReload {
+		t.Fatalf("no frames after reload; before=%d after=%d", beforeReload, len(frames))
+	}
+
+	// The most recent frame must carry the new comment, proving the
+	// generation was rebuilt from the reloaded config.
+	last := string(frames[len(frames)-1].Info)
+	if !strings.Contains(last, "second") {
+		t.Errorf("post-reload frame missing new comment: %q", last)
+	}
+	// And no first-generation frame can appear after the reload point.
+	for i := beforeReload; i < len(frames); i++ {
+		if strings.Contains(string(frames[i].Info), "first") {
+			t.Errorf("frame %d after reload still carries old comment: %q", i, frames[i].Info)
+		}
+	}
+
+	cancel()
+	select {
+	case <-runDone:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not exit after ctx cancel")
+	}
+}
+
 func TestTimeToNextSlot(t *testing.T) {
 	// 10:00:00 UTC, slot=30 → 30 seconds
 	now := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)

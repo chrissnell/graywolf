@@ -7,6 +7,11 @@
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
+  import SymbolPicker from '../components/SymbolPicker.svelte';
+  import {
+    PRIMARY_TABLE, ALTERNATE_TABLE, SPRITE_URLS, CELL_PX,
+    backgroundPosition, loadSymbols, describe,
+  } from '../lib/aprsSymbols.js';
 
   let beacons = $state([]);
   let smartBeacon = $state({
@@ -15,8 +20,15 @@
   });
   let modalOpen = $state(false);
   let editing = $state(null);
-  let form = $state({ callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1', comment: '', interval: '600', enabled: true });
+  let form = $state({
+    callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
+    symbol_table: '/', symbol: '-', overlay: '',
+    comment: '', interval: '600', enabled: true,
+  });
   let savingSB = $state(false);
+  let pickerOpen = $state(false);
+  let symbolMeta = $state(null);
+  loadSymbols().then((m) => symbolMeta = m);
 
   const columns = [
     { key: 'callsign', label: 'Callsign' },
@@ -40,13 +52,23 @@
 
   function openCreate() {
     editing = null;
-    form = { callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1', comment: '', interval: '600', enabled: true };
+    form = {
+      callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
+      symbol_table: '/', symbol: '-', overlay: '',
+      comment: '', interval: '600', enabled: true,
+    };
     modalOpen = true;
   }
 
   function openEdit(row) {
     editing = row;
-    form = { ...row, interval: String(row.interval) };
+    form = {
+      ...row,
+      symbol_table: row.symbol_table || '/',
+      symbol: row.symbol || '-',
+      overlay: row.overlay || '',
+      interval: String(row.interval),
+    };
     modalOpen = true;
   }
 
@@ -171,11 +193,30 @@
     <FormField label="Callsign" id="bcn-call">
       <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
     </FormField>
-    <FormField label="Destination" id="bcn-dest">
+    <FormField label="Destination" id="bcn-dest"
+      hint="APRS tocall identifying the originating software. Leave as APGW00 unless you know you need to change it.">
       <Input id="bcn-dest" bind:value={form.destination} placeholder="APGW00" />
     </FormField>
     <FormField label="Path" id="bcn-path">
       <Input id="bcn-path" bind:value={form.path} placeholder="WIDE1-1,WIDE2-1" />
+    </FormField>
+    <FormField label="Symbol" id="bcn-symbol"
+      hint="The icon shown for this station on aprs.fi and other APRS maps.">
+      <div class="symbol-row">
+        <span
+          class="symbol-swatch"
+          style="background-image: url({SPRITE_URLS[form.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(form.symbol || '-', CELL_PX)};"
+          aria-hidden="true"
+        >
+          {#if form.overlay && form.symbol_table === ALTERNATE_TABLE}
+            <span class="symbol-swatch-overlay">{form.overlay}</span>
+          {/if}
+        </span>
+        <span class="symbol-name">
+          {describe(symbolMeta, form.symbol_table || '/', form.symbol || '-') || '\u2014'}
+        </span>
+        <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
+      </div>
     </FormField>
     <FormField label="Comment" id="bcn-comment">
       <Input id="bcn-comment" bind:value={form.comment} placeholder="graywolf" />
@@ -189,6 +230,13 @@
       <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
 </Modal>
+
+<SymbolPicker
+  bind:open={pickerOpen}
+  bind:table={form.symbol_table}
+  bind:symbol={form.symbol}
+  bind:overlay={form.overlay}
+/>
 
 <style>
   .sb-intro {
@@ -216,4 +264,41 @@
   }
   .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  .symbol-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .symbol-swatch {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    background-repeat: no-repeat;
+    background-color: var(--color-bg-elevated, #1a1a1a);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    position: relative;
+  }
+  .symbol-swatch-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #000;
+    text-shadow: 0 0 1px #fff, 0 0 1px #fff, 0 0 1px #fff;
+    pointer-events: none;
+  }
+  .symbol-name {
+    flex: 1 1 auto;
+    font-size: 13px;
+    color: var(--color-text, #ddd);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>
