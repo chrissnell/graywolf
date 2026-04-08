@@ -264,7 +264,7 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 				"alt", fix.Altitude, "speed_kt", fix.Speed)
 		}
 		if time.Since(lastStats) >= statsInterval {
-			logger.Info("gps stream stats",
+			logger.Debug("gps stream stats",
 				"lines", lines, "fixes", fixes, "voids", voids, "parse_errs", parseErrs)
 			lastStats = time.Now()
 		}
