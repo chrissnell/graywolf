@@ -61,10 +61,15 @@ func main() {
 		httpAddr   = flag.String("http", "127.0.0.1:8080", "HTTP listen address")
 		shutdownTO = flag.Duration("shutdown-timeout", 10*time.Second, "max time to wait for clean shutdown")
 		flacFile   = flag.String("flac", "", "override audio device with a FLAC file for testing")
+		debug      = flag.Bool("debug", false, "enable debug-level logging")
 	)
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logLevel := slog.LevelInfo
+	if *debug {
+		logLevel = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 	slog.SetDefault(logger)
 
 	store, err := configstore.Open(*dbPath)

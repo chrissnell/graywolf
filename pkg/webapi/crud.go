@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/pttdevice"
 )
@@ -497,6 +498,22 @@ func (s *Server) handlePttAvailable(w http.ResponseWriter, _ *http.Request) {
 }
 
 // --- GPS (singleton) ---
+
+// handleGpsAvailable returns the list of serial ports the OS can see, for
+// the GPS configuration UI's "Detect Devices" button.
+func (s *Server) handleGpsAvailable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ports, err := gps.EnumerateSerialPorts()
+	if err != nil {
+		s.logger.Warn("enumerate serial ports", "err", err)
+		writeJSON(w, http.StatusOK, []gps.SerialPortInfo{})
+		return
+	}
+	writeJSON(w, http.StatusOK, ports)
+}
 
 func (s *Server) handleGps(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

@@ -226,6 +226,17 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 	// NMEA sentences are at most 82 bytes, but some receivers emit longer
 	// proprietary ones; allow up to 4 KiB per line.
 	scanner.Buffer(make([]byte, 0, 4096), 4096)
+
+	var (
+		lines     int
+		fixes     int
+		voids     int
+		parseErrs int
+		firstLine = true
+		lastStats = time.Now()
+	)
+	statsInterval := 10 * time.Second
+
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -233,18 +244,37 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 		default:
 		}
 		line := scanner.Text()
+		lines++
+		if firstLine {
+			logger.Info("gps: first line received from device", "line", line)
+			firstLine = false
+		}
 		fix, active, err := ParseNMEA(line)
 		if err != nil {
-			logger.Debug("nmea parse", "err", err, "line", line)
-			continue
+			parseErrs++
+			logger.Debug("nmea parse error", "err", err, "line", line)
+		} else if !active {
+			voids++
+			logger.Debug("nmea void/no-fix sentence", "line", line)
+		} else {
+			fixes++
+			cache.Update(fix)
+			logger.Debug("nmea fix accepted",
+				"lat", fix.Latitude, "lon", fix.Longitude,
+				"alt", fix.Altitude, "speed_kt", fix.Speed)
 		}
-		if !active {
-			continue
+		if time.Since(lastStats) >= statsInterval {
+			logger.Info("gps stream stats",
+				"lines", lines, "fixes", fixes, "voids", voids, "parse_errs", parseErrs)
+			lastStats = time.Now()
 		}
-		cache.Update(fix)
 	}
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
+		logger.Warn("gps stream ended with error",
+			"err", err, "lines", lines, "fixes", fixes, "voids", voids, "parse_errs", parseErrs)
 		return err
 	}
+	logger.Info("gps stream ended",
+		"lines", lines, "fixes", fixes, "voids", voids, "parse_errs", parseErrs)
 	return nil
 }

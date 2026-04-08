@@ -101,8 +101,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/digipeater/rules", s.handleDigipeaterRules)
 	mux.HandleFunc("/api/digipeater/rules/", s.handleDigipeaterRule)
 
-	// GPS — singleton get/update
+	// GPS — singleton get/update + serial port enumeration
 	mux.HandleFunc("/api/gps", s.handleGps)
+	mux.HandleFunc("/api/gps/available", s.handleGpsAvailable)
 
 	// /api/igate — status + simulation in igate.go (RegisterIgate)
 	// /api/packets — in packets.go (RegisterPackets)
