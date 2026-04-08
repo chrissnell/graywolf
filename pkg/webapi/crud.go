@@ -513,9 +513,17 @@ func (s *Server) handleGps(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
+		// Derive Enabled from SourceType so the UI doesn't need a toggle.
+		c.Enabled = c.SourceType != "" && c.SourceType != "none"
 		if err := s.store.UpsertGPSConfig(&c); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
+		}
+		if s.gpsReload != nil {
+			select {
+			case s.gpsReload <- struct{}{}:
+			default:
+			}
 		}
 		writeJSON(w, http.StatusOK, c)
 	default:

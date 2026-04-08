@@ -26,6 +26,7 @@ type Server struct {
 	logger       *slog.Logger
 	startedAt    time.Time
 	igateStatusFn func() IgateStatus
+	gpsReload    chan struct{} // signalled when GPS config changes
 }
 
 // Config bundles the dependencies for NewServer.
@@ -529,6 +530,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"time":       time.Now().UTC().Format(time.RFC3339),
 		"started_at": s.startedAt.UTC().Format(time.RFC3339),
 	})
+}
+
+// SetGPSReload installs the channel signalled when GPS config is saved.
+func (s *Server) SetGPSReload(ch chan struct{}) {
+	s.gpsReload = ch
 }
 
 // SetIgateStatusFn installs the function used by /api/status to report igate counters.
