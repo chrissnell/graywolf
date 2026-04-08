@@ -632,7 +632,36 @@ func main() {
 	httpSrv := &http.Server{Addr: *httpAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		scheme := "http"
-		logger.Info("web UI available", "url", fmt.Sprintf("%s://%s", scheme, *httpAddr))
+		host, port, _ := net.SplitHostPort(*httpAddr)
+		if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+			// List reachable URLs for every interface address.
+			if ifaces, err := net.Interfaces(); err == nil {
+				for _, iface := range ifaces {
+					if iface.Flags&net.FlagUp == 0 {
+						continue
+					}
+					addrs, err := iface.Addrs()
+					if err != nil {
+						continue
+					}
+					for _, a := range addrs {
+						ipNet, ok := a.(*net.IPNet)
+						if !ok {
+							continue
+						}
+						ifIP := ipNet.IP
+						if ifIP.IsLoopback() || ifIP.IsLinkLocalMulticast() || ifIP.IsLinkLocalUnicast() {
+							continue
+						}
+						addr := net.JoinHostPort(ifIP.String(), port)
+						logger.Info("web UI available", "url", fmt.Sprintf("%s://%s", scheme, addr), "iface", iface.Name)
+					}
+				}
+			}
+			logger.Info("web UI available", "url", fmt.Sprintf("%s://127.0.0.1:%s", scheme, port), "iface", "lo")
+		} else {
+			logger.Info("web UI available", "url", fmt.Sprintf("%s://%s", scheme, *httpAddr))
+		}
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("http server", "err", err)
 		}
