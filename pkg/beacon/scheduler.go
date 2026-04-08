@@ -157,6 +157,29 @@ func (s *Scheduler) Reload(b []Config) {
 	}
 }
 
+// SendNow finds the beacon with the given id in the current beacon list
+// and transmits it once immediately, independently of its scheduled
+// interval. Returns an error if the id is not present. The Enabled flag
+// is intentionally ignored — operators may want to test a beacon that
+// is otherwise disabled.
+func (s *Scheduler) SendNow(ctx context.Context, id uint32) error {
+	s.mu.Lock()
+	var found *Config
+	for i := range s.beacons {
+		if s.beacons[i].ID == id {
+			b := s.beacons[i]
+			found = &b
+			break
+		}
+	}
+	s.mu.Unlock()
+	if found == nil {
+		return fmt.Errorf("beacon: id %d not found", id)
+	}
+	s.sendBeacon(ctx, *found)
+	return nil
+}
+
 // Run launches one goroutine per enabled beacon and blocks until ctx is
 // cancelled. On Reload, the current goroutines are cancelled and a fresh
 // generation is spawned from the latest beacons slice.

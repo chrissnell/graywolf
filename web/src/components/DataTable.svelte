@@ -1,7 +1,18 @@
 <script>
   import { Table, Badge, Button } from '@chrissnell/chonky-ui';
 
-  let { columns = [], rows = [], onEdit = undefined, onDelete = undefined } = $props();
+  // extraActions: optional array of {icon, title, variant, onClick: (row) => any}
+  // rendered before the built-in edit/delete buttons. Lets callers add custom
+  // row actions without bloating this component with feature-specific props.
+  let {
+    columns = [],
+    rows = [],
+    onEdit = undefined,
+    onDelete = undefined,
+    extraActions = [],
+  } = $props();
+
+  let hasActions = $derived(!!onEdit || !!onDelete || extraActions.length > 0);
 </script>
 
 <div class="table-wrapper">
@@ -11,7 +22,7 @@
         {#each columns as col}
           <th>{col.label}</th>
         {/each}
-        {#if onEdit || onDelete}
+        {#if hasActions}
           <th class="actions-col">Actions</th>
         {/if}
       </tr>
@@ -19,7 +30,7 @@
     <tbody>
       {#if rows.length === 0}
         <tr>
-          <td colspan={columns.length + (onEdit || onDelete ? 1 : 0)} class="empty-row">
+          <td colspan={columns.length + (hasActions ? 1 : 0)} class="empty-row">
             No items configured
           </td>
         </tr>
@@ -35,13 +46,21 @@
                 {/if}
               </td>
             {/each}
-            {#if onEdit || onDelete}
+            {#if hasActions}
               <td class="actions-cell">
+                {#each extraActions as action}
+                  <Button
+                    size="sm"
+                    variant={action.variant ?? 'ghost'}
+                    title={action.title ?? ''}
+                    onclick={() => action.onClick(row)}
+                  >{action.icon}</Button>
+                {/each}
                 {#if onEdit}
-                  <Button size="sm" variant="ghost" onclick={() => onEdit(row)}>✎</Button>
+                  <Button size="sm" variant="ghost" title="Edit" onclick={() => onEdit(row)}>✎</Button>
                 {/if}
                 {#if onDelete}
-                  <Button size="sm" variant="danger" onclick={() => onDelete(row)}>✕</Button>
+                  <Button size="sm" variant="danger" title="Delete" onclick={() => onDelete(row)}>✕</Button>
                 {/if}
               </td>
             {/if}

@@ -115,6 +115,13 @@ func TestScheduler_PositionBeacon(t *testing.T) {
 	if !strings.Contains(info, "hello") {
 		t.Errorf("comment missing from %q", info)
 	}
+	// Observer is called *after* sink.Submit returns, so the test thread
+	// may wake from sink.done before the worker finishes the observer
+	// call. Poll briefly to let it catch up.
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for obs.sent.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
 	if obs.sent.Load() < 2 {
 		t.Errorf("observer sent count = %d", obs.sent.Load())
 	}
@@ -282,6 +289,47 @@ func TestScheduler_Reload(t *testing.T) {
 	case <-runDone:
 	case <-time.After(time.Second):
 		t.Fatal("Run did not exit after ctx cancel")
+	}
+}
+
+// TestScheduler_SendNow verifies that SendNow transmits a one-shot frame
+// for an existing beacon id and returns an error for unknown ids.
+// SendNow must work without Run being active and without regard to the
+// Enabled flag.
+func TestScheduler_SendNow(t *testing.T) {
+	sink := newMockSink(1)
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, _ := New(Options{Sink: sink, Logger: logger})
+
+	s.SetBeacons([]Config{
+		{
+			ID:      42,
+			Type:    TypePosition,
+			Channel: 0,
+			Source:  mustAddr(t, "N0CALL-9"),
+			Dest:    mustAddr(t, "APGW00"),
+			Slot:    -1,
+			Lat:     37.0, Lon: -122.0,
+			SymbolTable: '/', SymbolCode: '-',
+			Comment: "test",
+			Enabled: false, // disabled — SendNow should still send it
+		},
+	})
+
+	if err := s.SendNow(context.Background(), 42); err != nil {
+		t.Fatalf("SendNow(42): %v", err)
+	}
+	frames := sink.Frames()
+	if len(frames) != 1 {
+		t.Fatalf("expected 1 frame, got %d", len(frames))
+	}
+	if !strings.Contains(string(frames[0].Info), "test") {
+		t.Errorf("missing comment in %q", frames[0].Info)
+	}
+
+	// Unknown id should error.
+	if err := s.SendNow(context.Background(), 999); err == nil {
+		t.Errorf("SendNow(999) returned nil error for unknown id")
 	}
 }
 

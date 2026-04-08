@@ -97,6 +97,19 @@
     beacons = await api.get('/beacons') || [];
   }
 
+  async function handleSendNow(row) {
+    try {
+      await api.post(`/beacons/${row.id}/send`, {});
+      toasts.success(`Beacon sent: ${row.callsign}`);
+    } catch (err) {
+      toasts.error(err.message);
+    }
+  }
+
+  const rowActions = [
+    { icon: '📡', title: 'Beacon now', variant: 'ghost', onClick: handleSendNow },
+  ];
+
   async function saveSmartBeacon(e) {
     e.preventDefault();
     savingSB = true;
@@ -124,7 +137,7 @@
   <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
 </PageHeader>
 
-<DataTable {columns} rows={beacons} onEdit={openEdit} onDelete={handleDelete} />
+<DataTable {columns} rows={beacons} extraActions={rowActions} onEdit={openEdit} onDelete={handleDelete} />
 
 <div style="margin-top: 24px;">
   <Box title="SmartBeaconing">

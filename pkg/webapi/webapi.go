@@ -28,6 +28,7 @@ type Server struct {
 	igateStatusFn func() IgateStatus
 	gpsReload    chan struct{} // signalled when GPS config changes
 	beaconReload chan struct{} // signalled when beacon config changes
+	beaconSendNow func(ctx context.Context, id uint32) error // installed by main.go to trigger immediate beacon send
 }
 
 // Config bundles the dependencies for NewServer.
@@ -489,13 +490,39 @@ func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// /api/beacons/{id} — get, update, delete
+// /api/beacons/{id}        — get, update, delete
+// /api/beacons/{id}/send   — POST: trigger an immediate one-shot transmission
 func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(strings.TrimPrefix(r.URL.Path, "/api/beacons/"))
+	path := strings.TrimPrefix(r.URL.Path, "/api/beacons/")
+	parts := strings.SplitN(path, "/", 2)
+
+	id, err := parseID(parts[0])
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
+
+	if len(parts) == 2 && parts[1] == "send" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if s.beaconSendNow == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "beacon scheduler not available"})
+			return
+		}
+		if _, err := s.store.GetBeacon(id); err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if err := s.beaconSendNow(r.Context(), id); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		b, err := s.store.GetBeacon(id)
@@ -558,6 +585,12 @@ func (s *Server) SetGPSReload(ch chan struct{}) {
 // created, updated, or deleted.
 func (s *Server) SetBeaconReload(ch chan struct{}) {
 	s.beaconReload = ch
+}
+
+// SetBeaconSendNow installs the callback used by POST /api/beacons/{id}/send
+// to trigger an immediate one-shot transmission of a beacon.
+func (s *Server) SetBeaconSendNow(fn func(ctx context.Context, id uint32) error) {
+	s.beaconSendNow = fn
 }
 
 // SetIgateStatusFn installs the function used by /api/status to report igate counters.

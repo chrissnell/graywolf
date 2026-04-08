@@ -187,6 +187,7 @@ function getMockData(method, path, body) {
   if (path === '/beacons' && method === 'POST') return delay({ id: 2, ...body });
   if (path.match(/^\/beacons\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/beacons\/\d+$/) && method === 'DELETE') return delay(null);
+  if (path.match(/^\/beacons\/\d+\/send$/) && method === 'POST') return delay({ status: 'sent' });
   if (path === '/smart-beacon' && method === 'GET') return delay(mockSmartBeacon);
   if (path === '/smart-beacon' && method === 'PUT') return delay(body);
 

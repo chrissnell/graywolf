@@ -364,6 +364,9 @@ func main() {
 		os.Exit(1)
 	}
 	beaconReload := make(chan struct{}, 1)
+	// loadBeaconConfigs returns ALL stored beacons (including disabled ones).
+	// runGeneration filters disabled beacons out of the run loop, but SendNow
+	// needs to find disabled entries so operators can manually test them.
 	loadBeaconConfigs := func() []beacon.Config {
 		stored, err := store.ListBeacons()
 		if err != nil {
@@ -372,9 +375,6 @@ func main() {
 		}
 		var configs []beacon.Config
 		for _, b := range stored {
-			if !b.Enabled {
-				continue
-			}
 			bc, err := beaconConfigFromStore(b)
 			if err != nil {
 				logger.Warn("beacon config", "id", b.ID, "err", err)
@@ -581,6 +581,7 @@ func main() {
 
 	apiSrv.SetGPSReload(gpsReload)
 	apiSrv.SetBeaconReload(beaconReload)
+	apiSrv.SetBeaconSendNow(beaconSched.SendNow)
 
 	// Public endpoints (no auth).
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
