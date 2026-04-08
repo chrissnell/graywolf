@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Toggle, Box, Radio, RadioGroup } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Toggle, Box, Radio, RadioGroup } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -14,6 +14,7 @@
   } from '../lib/aprsSymbols.js';
 
   let beacons = $state([]);
+  let channels = $state([]);
   let smartBeacon = $state({
     enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
     min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
@@ -22,17 +23,26 @@
   let modalOpen = $state(false);
   let editing = $state(null);
   let form = $state({
-    callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
+    channel: '', callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', enabled: true,
   });
+
+  // Channels rendered as Select options. Label shows name + id so an
+  // operator with two channels called "VHF APRS" can still tell them
+  // apart, and the value is stringified for the Select component's
+  // bind:value (we parseInt on save).
+  let channelOptions = $derived(
+    channels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
+  );
   let savingSB = $state(false);
   let pickerOpen = $state(false);
   let symbolMeta = $state(null);
   loadSymbols().then((m) => symbolMeta = m);
 
   const columns = [
+    { key: 'channel', label: 'Channel' },
     { key: 'callsign', label: 'Callsign' },
     { key: 'destination', label: 'Destination' },
     { key: 'path', label: 'Path' },
@@ -42,6 +52,7 @@
 
   onMount(async () => {
     beacons = await api.get('/beacons') || [];
+    channels = await api.get('/channels') || [];
     const sb = await api.get('/smart-beacon');
     if (sb) smartBeacon = {
       enabled: sb.enabled,
@@ -57,7 +68,12 @@
   });
 
   function openCreate() {
+    if (channels.length === 0) {
+      toasts.error('Create a channel first on the Channels page');
+      return;
+    }
     editing = null;
+    form.channel = String(channels[0].id);
     form.callsign = '';
     form.destination = 'APGW00';
     form.path = 'WIDE1-1,WIDE2-1';
@@ -79,6 +95,7 @@
     // Mutate form in place (rather than reassigning) so nested bind:value
     // on the RadioGroup picks up the new value reliably.
     Object.assign(form, row, {
+      channel: String(row.channel),
       symbol_table: row.symbol_table || '/',
       symbol: row.symbol || '-',
       overlay: row.overlay || '',
@@ -93,6 +110,11 @@
 
   async function handleSave() {
     if (!form.callsign.trim()) { toasts.error('Callsign required'); return; }
+    const channelId = parseInt(form.channel);
+    if (!Number.isFinite(channelId) || channelId <= 0) {
+      toasts.error('Channel required');
+      return;
+    }
     const useGps = form.pos_source === 'gps';
     const latStr = form.latitude.trim();
     const lonStr = form.longitude.trim();
@@ -110,6 +132,7 @@
     }
     const data = {
       ...form,
+      channel: channelId,
       use_gps: useGps,
       interval: parseInt(form.interval),
       latitude: lat,
@@ -245,6 +268,10 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'}>
+    <FormField label="Channel" id="bcn-channel"
+      hint="Radio channel this beacon transmits on. Defined on the Channels page.">
+      <Select id="bcn-channel" bind:value={form.channel} options={channelOptions} />
+    </FormField>
     <FormField label="Callsign" id="bcn-call">
       <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
     </FormField>
