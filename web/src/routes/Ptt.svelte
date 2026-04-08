@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Badge, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Badge, Toggle, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -8,6 +8,7 @@
   import FormField from '../components/FormField.svelte';
 
   let items = $state([]);
+  let channels = $state([]);
   let available = $state([]);
   let loadingAvail = $state(false);
   let modalOpen = $state(false);
@@ -27,14 +28,29 @@
 
   const methodLabels = Object.fromEntries(methodOptions.map(o => [o.value, o.label]));
 
-  function emptyForm() {
-    return { channel_id: '1', method: 'none', device_path: '', gpio_pin: '0' };
+  let channelOptions = $derived(
+    channels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
+  );
+
+  function channelName(id) {
+    const c = channels.find(c => c.id === id);
+    return c ? c.name : null;
   }
 
-  onMount(loadItems);
+  function emptyForm() {
+    return { channel_id: '', method: 'none', device_path: '', gpio_pin: '0', invert: false };
+  }
+
+  onMount(async () => {
+    await Promise.all([loadItems(), loadChannels()]);
+  });
 
   async function loadItems() {
     items = await api.get('/ptt') || [];
+  }
+
+  async function loadChannels() {
+    channels = await api.get('/channels') || [];
   }
 
   async function refreshAvailable() {
@@ -50,8 +66,13 @@
   }
 
   function openCreate() {
+    if (channels.length === 0) {
+      toasts.error('Create a channel first on the Channels page');
+      return;
+    }
     editing = null;
     form = emptyForm();
+    form.channel_id = String(channels[0].id);
     errors = {};
     modalOpen = true;
   }
@@ -63,21 +84,27 @@
       method: item.method,
       device_path: item.device_path || '',
       gpio_pin: String(item.gpio_pin || 0),
+      invert: !!item.invert,
     };
     errors = {};
     modalOpen = true;
   }
 
   function openCreateFromAvail(dev) {
+    if (channels.length === 0) {
+      toasts.error('Create a channel first on the Channels page');
+      return;
+    }
     editing = null;
     const method = dev.type === 'gpio' ? 'gpio'
       : dev.type === 'cm108' ? 'cm108'
       : 'serial_rts';
     form = {
-      channel_id: '1',
+      channel_id: String(channels[0].id),
       method,
       device_path: dev.path,
       gpio_pin: '0',
+      invert: false,
     };
     errors = {};
     modalOpen = true;
@@ -98,7 +125,7 @@
 
   async function handleSave() {
     if (!validate()) return;
-    const data = { ...form, channel_id: parseInt(form.channel_id), gpio_pin: parseInt(form.gpio_pin) };
+    const data = { ...form, channel_id: parseInt(form.channel_id), gpio_pin: parseInt(form.gpio_pin), invert: !!form.invert };
     try {
       if (editing) {
         await api.put(`/ptt/${editing.id}`, data);
@@ -179,7 +206,7 @@
     {#each items as item}
       <div class="device-card">
         <div class="device-header">
-          <span class="device-name">Channel {item.channel_id}</span>
+          <span class="device-name">{channelName(item.channel_id) || `Channel ${item.channel_id}`}</span>
           <div class="device-badges">
             <Badge variant={item.method === 'none' ? 'default' : 'success'}>
               {methodLabels[item.method] || item.method}
@@ -239,8 +266,9 @@
 
 <!-- Add/Edit modal -->
 <Modal bind:open={modalOpen} title={editing ? 'Edit PTT Config' : 'New PTT Config'} onClose={handleModalClose}>
-    <FormField label="Channel ID" id="ptt-ch">
-      <Input id="ptt-ch" bind:value={form.channel_id} type="number" />
+    <FormField label="Channel" id="ptt-ch"
+      hint="Radio channel this PTT controls. Defined on the Channels page.">
+      <Select id="ptt-ch" bind:value={form.channel_id} options={channelOptions} />
     </FormField>
     <FormField label="Method" id="ptt-method">
       <Select id="ptt-method" bind:value={form.method} options={methodOptions} />
@@ -249,10 +277,18 @@
       <FormField label="Device Path" error={errors.device_path} id="ptt-dev">
         <Input id="ptt-dev" bind:value={form.device_path} placeholder="Select a detected device or enter path" />
       </FormField>
+      {#if form.method === 'serial_rts' || form.method === 'serial_dtr'}
+        <p class="field-hint">On macOS use <code>/dev/cu.usbserial-*</code>, not <code>/dev/tty.usbserial-*</code> (the tty.* variant blocks forever on DCD).</p>
+      {/if}
     {/if}
     {#if form.method === 'gpio'}
       <FormField label="GPIO Pin" id="ptt-gpio">
         <Input id="ptt-gpio" bind:value={form.gpio_pin} type="number" />
+      </FormField>
+    {/if}
+    {#if form.method !== 'none'}
+      <FormField label="Invert Polarity" id="ptt-invert">
+        <Toggle bind:checked={form.invert} label="Key radio on LOW instead of HIGH" />
       </FormField>
     {/if}
     <div class="modal-actions">
@@ -266,7 +302,7 @@
   <AlertDialog.Content>
     <AlertDialog.Title>Delete PTT Config</AlertDialog.Title>
     <AlertDialog.Description>
-      Are you sure you want to delete the PTT configuration for Channel {deleteTarget?.channel_id}? This cannot be undone.
+      Are you sure you want to delete the PTT configuration for {deleteTarget ? (channelName(deleteTarget.channel_id) || `Channel ${deleteTarget.channel_id}`) : ''}? This cannot be undone.
     </AlertDialog.Description>
     <div class="modal-footer">
       <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
@@ -336,6 +372,18 @@
     font-size: 13px;
     color: var(--text-muted);
     margin: -4px 0 10px;
+  }
+  .field-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: -6px 0 10px;
+  }
+  .field-hint code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    padding: 1px 4px;
+    background: var(--bg-secondary);
+    border-radius: 3px;
   }
 
   .empty-state {
