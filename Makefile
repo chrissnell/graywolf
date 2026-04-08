@@ -1,6 +1,8 @@
 CARGO   ?= cargo
 RUSTFLAGS_NATIVE := -C target-cpu=native
-VERSION ?= $(shell cat VERSION 2>/dev/null || echo dev)
+# Version is derived from the latest git tag (e.g. v0.7.9 → 0.7.9). Falls back
+# to the VERSION file for source tarballs without git history.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || cat VERSION 2>/dev/null || echo dev)
 GIT_REMOTE ?= origin
 
 GO_LDFLAGS := -X main.Version=$(VERSION)
