@@ -18,6 +18,7 @@
     enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
     min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
   });
+  let defaultComment = $state('Graywolf');
   let modalOpen = $state(false);
   let editing = $state(null);
   let form = $state({
@@ -49,6 +50,10 @@
       min_turn_angle: String(sb.min_turn_angle), turn_slope: String(sb.turn_slope),
       min_turn_time: String(sb.min_turn_time),
     };
+    try {
+      const v = await fetch('/api/version').then(r => r.json());
+      if (v && v.version) defaultComment = `Graywolf/${v.version}`;
+    } catch { /* leave default */ }
   });
 
   function openCreate() {
@@ -57,7 +62,7 @@
       callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
       symbol_table: '/', symbol: '-', overlay: '',
       pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
-      comment: '', interval: '600', enabled: true,
+      comment: defaultComment, interval: '600', enabled: true,
     };
     modalOpen = true;
   }
@@ -284,7 +289,7 @@
       </FormField>
     {/if}
     <FormField label="Comment" id="bcn-comment">
-      <Input id="bcn-comment" bind:value={form.comment} placeholder="graywolf" />
+      <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
     </FormField>
     <FormField label="Interval (seconds)" id="bcn-interval">
       <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
