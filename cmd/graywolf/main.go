@@ -550,11 +550,11 @@ func main() {
 	}
 
 	// Warn if binding to non-loopback address.
+	// Secure cookies require HTTPS; since we don't support TLS, always false.
 	secure := false
 	host, _, _ := net.SplitHostPort(*httpAddr)
 	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
 		logger.Warn(fmt.Sprintf("Web server binding to %s — accessible from all network interfaces", *httpAddr))
-		secure = true
 	}
 
 	// --- HTTP -----------------------------------------------------------
