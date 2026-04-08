@@ -475,19 +475,17 @@ func (b *Bridge) updateStatusCache(s *pb.StatusUpdate) {
 }
 
 // ReconfigureAudioDevice performs a hot-swap of an audio device's configuration.
-// Sequence: StopAudio -> wait -> ConfigureAudio -> StartAudio.
-// Only the specified device is reconfigured; unaffected channels continue.
-func (b *Bridge) ReconfigureAudioDevice(ctx context.Context, deviceID uint32) error {
+// It stops all audio, re-reads the full config from the database, and restarts.
+// This handles both updates and deletes correctly.
+func (b *Bridge) ReconfigureAudioDevice(ctx context.Context, _ uint32) error {
+	return b.ReloadConfiguration(ctx)
+}
+
+// ReloadConfiguration stops all modem audio processing, re-reads the full
+// configuration from the database, and restarts. Safe to call after deletes.
+func (b *Bridge) ReloadConfiguration(ctx context.Context) error {
 	if b.State() != StateRunning {
 		return errors.New("modembridge: not in RUNNING state")
-	}
-	store := b.cfg.Store
-	if store == nil {
-		return errors.New("modembridge: no configstore")
-	}
-	dev, err := store.GetAudioDevice(deviceID)
-	if err != nil {
-		return fmt.Errorf("get audio device %d: %w", deviceID, err)
 	}
 
 	// Stop audio processing.
@@ -502,23 +500,16 @@ func (b *Bridge) ReconfigureAudioDevice(ctx context.Context, deviceID uint32) er
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	// Send updated ConfigureAudio for this device.
-	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigureAudio{ConfigureAudio: &pb.ConfigureAudio{
-		DeviceId:   dev.ID,
-		DeviceName: audioDeviceName(dev),
-		SampleRate: dev.SampleRate,
-		Channels:   dev.Channels,
-		SourceType: dev.SourceType,
-		Format:     dev.Format,
-		GainDb:     dev.GainDB,
-	}}}
-	if err := b.sendIPC(msg); err != nil {
-		return fmt.Errorf("send ConfigureAudio: %w", err)
+	// Re-push whatever is currently in the database.
+	configured, err := b.pushConfiguration(b.sendIPC)
+	if err != nil {
+		return fmt.Errorf("push configuration: %w", err)
 	}
 
-	// Re-start audio.
-	if err := b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_StartAudio{StartAudio: &pb.StartAudio{}}}); err != nil {
-		return fmt.Errorf("send StartAudio: %w", err)
+	if configured {
+		if err := b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_StartAudio{StartAudio: &pb.StartAudio{}}}); err != nil {
+			return fmt.Errorf("send StartAudio: %w", err)
+		}
 	}
 	return nil
 }
