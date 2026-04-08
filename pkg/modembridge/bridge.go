@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -539,7 +540,7 @@ func (b *Bridge) EnumerateAudioDevices(ctx context.Context) ([]AvailableDevice, 
 	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_EnumerateAudioDevices{
 		EnumerateAudioDevices: &pb.EnumerateAudioDevices{
 			RequestId:     reqID,
-			IncludeOutput: false, // input devices only for now
+			IncludeOutput: true,
 		},
 	}}
 	if err := b.sendIPC(msg); err != nil {
@@ -572,9 +573,24 @@ func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
 	}
 }
 
+// isUsableAudioDevice filters out ALSA virtual devices that aren't useful
+// for APRS (surround, HDMI, S/PDIF, dmix, etc.).
+func isUsableAudioDevice(name string) bool {
+	prefix, _, _ := strings.Cut(name, ":")
+	switch prefix {
+	case "surround21", "surround40", "surround41", "surround50", "surround51", "surround71",
+		"hdmi", "iec958", "dmix", "dsnoop", "null":
+		return false
+	}
+	return true
+}
+
 func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 	out := make([]AvailableDevice, 0, len(list.Devices))
 	for _, d := range list.Devices {
+		if !isUsableAudioDevice(d.Name) {
+			continue
+		}
 		out = append(out, AvailableDevice{
 			Name:        d.Name,
 			Path:        d.Name, // cpal device name is the path
