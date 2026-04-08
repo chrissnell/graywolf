@@ -714,12 +714,27 @@ fn take_demod_dcd_changes(
     }
 }
 
-/// On Linux/ALSA, resolve a friendly description by reading /proc/asound/cards.
-/// Returns an empty string on non-Linux or if lookup fails (caller falls back to name).
+/// Known USB vendor:product → friendly name for common ham radio audio devices.
+#[cfg(target_os = "linux")]
+fn known_usb_audio_name(vid: &str, pid: &str) -> Option<&'static str> {
+    match (vid, pid) {
+        ("0d8c", "000c") | ("0d8c", "000e") => Some("CM108 USB Audio (Digirig / generic)"),
+        ("0d8c", "0008") => Some("CM108B USB Audio"),
+        ("0d8c", "0012") | ("0d8c", "0014") => Some("CM108AH USB Audio"),
+        ("0d8c", "013c") => Some("CM108 USB Audio"),
+        ("0d8c", "0013") => Some("CM119 USB Audio"),
+        ("0d8c", "0139") => Some("CM119A USB Audio"),
+        ("08bb", "2912") => Some("Texas Instruments PCM2912A (SignaLink USB)"),
+        ("08bb", "29b0") | ("08bb", "29b3") => Some("Texas Instruments PCM2900 USB Audio"),
+        ("0bda", "4014") => Some("Realtek USB Audio"),
+        _ => None,
+    }
+}
+
+/// On Linux/ALSA, resolve a friendly description by reading /proc/asound/cards
+/// and USB sysfs attributes. Returns an empty string on non-Linux.
 #[cfg(target_os = "linux")]
 fn alsa_card_description(cpal_name: &str) -> String {
-    // cpal ALSA names: "hw:CARD=Device,DEV=0", "plughw:CARD=Device,DEV=0",
-    // "default:CARD=Device", "front:CARD=Device,DEV=0", "sysdefault:CARD=Device"
     let card_id = cpal_name
         .split("CARD=")
         .nth(1)
@@ -729,40 +744,72 @@ fn alsa_card_description(cpal_name: &str) -> String {
         return String::new();
     }
 
-    // /proc/asound/cards format:
-    //  0 [Device         ]: USB-Audio - C-Media USB Headphone Set
-    //                       C-Media USB Headphone Set at usb-0000:00:14.0-1
-    let contents = match std::fs::read_to_string("/proc/asound/cards") {
-        Ok(c) => c,
-        Err(_) => return String::new(),
-    };
-    for line in contents.lines() {
-        let trimmed = line.trim();
-        // Match " 0 [ShortName   ]: driver - LongName"
-        if !trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
-            continue;
-        }
-        let bracket_start = match trimmed.find('[') {
-            Some(i) => i,
-            None => continue,
-        };
-        let bracket_end = match trimmed.find(']') {
-            Some(i) => i,
-            None => continue,
-        };
-        let num_str = trimmed[..bracket_start].trim();
-        let short_name = trimmed[bracket_start + 1..bracket_end].trim();
+    // Resolve card number from /proc/asound/cards.
+    let mut card_num = String::new();
+    let mut long_name = String::new();
+    if let Ok(contents) = std::fs::read_to_string("/proc/asound/cards") {
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if !trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                continue;
+            }
+            let bracket_start = match trimmed.find('[') { Some(i) => i, None => continue };
+            let bracket_end = match trimmed.find(']') { Some(i) => i, None => continue };
+            let num = trimmed[..bracket_start].trim();
+            let short = trimmed[bracket_start + 1..bracket_end].trim();
 
-        if num_str == card_id || short_name == card_id {
-            if let Some(pos) = trimmed.find(" - ") {
-                let long_name = trimmed[pos + 3..].trim();
-                if !long_name.is_empty() {
-                    return long_name.to_string();
+            if num == card_id || short == card_id {
+                card_num = num.to_string();
+                if let Some(pos) = trimmed.find(" - ") {
+                    long_name = trimmed[pos + 3..].trim().to_string();
                 }
+                break;
             }
         }
     }
-    String::new()
+
+    // Try sysfs USB vendor:product lookup for a better name.
+    if !card_num.is_empty() {
+        let sysfs_dir = format!("/sys/class/sound/card{}/device", card_num);
+        if let Ok(resolved) = std::fs::read_link(&sysfs_dir) {
+            // Walk up to find USB device directory.
+            let mut dir = std::path::PathBuf::from(&sysfs_dir);
+            if resolved.is_relative() {
+                dir = std::path::Path::new(&sysfs_dir).parent().unwrap_or(std::path::Path::new("/")).join(&resolved);
+            }
+            for _ in 0..6 {
+                let vid_path = dir.join("idVendor");
+                if vid_path.exists() {
+                    let vid = read_sysfs(&vid_path);
+                    let pid = read_sysfs(&dir.join("idProduct"));
+                    if let Some(name) = known_usb_audio_name(&vid, &pid) {
+                        return name.to_string();
+                    }
+                    // Use USB product string if it's more specific than the generic.
+                    let usb_product = read_sysfs(&dir.join("product"));
+                    if !usb_product.is_empty() && usb_product != "USB Audio Device"
+                        && usb_product != "USB PnP Sound Device"
+                    {
+                        return usb_product;
+                    }
+                    break;
+                }
+                dir = match dir.parent() {
+                    Some(p) => p.to_path_buf(),
+                    None => break,
+                };
+            }
+        }
+    }
+
+    long_name
+}
+
+#[cfg(target_os = "linux")]
+fn read_sysfs(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -874,6 +921,7 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
 /// Briefly open each available input device and measure peak level.
 fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use cpal::SampleFormat;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
 
@@ -891,7 +939,7 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
             Ok(n) => n,
             Err(_) => continue,
         };
-        let cfg = match dev.default_input_config() {
+        let supported = match dev.default_input_config() {
             Ok(c) => c,
             Err(e) => {
                 results.push(InputDeviceLevel {
@@ -905,38 +953,44 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
         };
 
         let peak = Arc::new(AtomicU32::new(0f32.to_bits()));
-        let peak_w = peak.clone();
+        let sample_format = supported.sample_format();
 
         let stream_cfg = cpal::StreamConfig {
-            channels: cfg.channels(),
-            sample_rate: cfg.sample_rate(),
+            channels: supported.channels(),
+            sample_rate: supported.sample_rate(),
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let stream = dev.build_input_stream(
-            &stream_cfg,
-            move |data: &[f32], _| {
-                let mut local_peak: f32 = 0.0;
-                for &s in data {
-                    let abs = s.abs();
-                    if abs > local_peak {
-                        local_peak = abs;
-                    }
-                }
-                // Atomic max
-                loop {
-                    let old_bits = peak_w.load(Ordering::Relaxed);
-                    let old = f32::from_bits(old_bits);
-                    if local_peak <= old { break; }
-                    if peak_w.compare_exchange_weak(
-                        old_bits, local_peak.to_bits(),
-                        Ordering::Relaxed, Ordering::Relaxed,
-                    ).is_ok() { break; }
-                }
-            },
-            |e| eprintln!("scan level error: {}", e),
-            None,
-        );
+        // Build stream using the device's native sample format.
+        let stream = match sample_format {
+            SampleFormat::F32 => {
+                let pw = peak.clone();
+                dev.build_input_stream(&stream_cfg,
+                    move |data: &[f32], _| update_peak_f32(&pw, data),
+                    |e| eprintln!("scan level error: {}", e), None)
+            }
+            SampleFormat::I16 => {
+                let pw = peak.clone();
+                dev.build_input_stream(&stream_cfg,
+                    move |data: &[i16], _| update_peak_i16(&pw, data),
+                    |e| eprintln!("scan level error: {}", e), None)
+            }
+            SampleFormat::U16 => {
+                let pw = peak.clone();
+                dev.build_input_stream(&stream_cfg,
+                    move |data: &[u16], _| update_peak_u16(&pw, data),
+                    |e| eprintln!("scan level error: {}", e), None)
+            }
+            _ => {
+                results.push(InputDeviceLevel {
+                    name,
+                    peak_dbfs: -96.0,
+                    has_signal: false,
+                    error: format!("unsupported format: {:?}", sample_format),
+                });
+                continue;
+            }
+        };
 
         match stream {
             Ok(s) => {
@@ -971,6 +1025,47 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
     }
 
     results
+}
+
+// Peak-tracking callbacks for each sample format.
+fn update_peak_f32(peak: &std::sync::Arc<std::sync::atomic::AtomicU32>, data: &[f32]) {
+    let mut local_peak: f32 = 0.0;
+    for &s in data {
+        let abs = s.abs();
+        if abs > local_peak { local_peak = abs; }
+    }
+    atomic_max_f32(peak, local_peak);
+}
+
+fn update_peak_i16(peak: &std::sync::Arc<std::sync::atomic::AtomicU32>, data: &[i16]) {
+    let mut local_peak: f32 = 0.0;
+    for &s in data {
+        let v = (s as f32 / 32768.0).abs();
+        if v > local_peak { local_peak = v; }
+    }
+    atomic_max_f32(peak, local_peak);
+}
+
+fn update_peak_u16(peak: &std::sync::Arc<std::sync::atomic::AtomicU32>, data: &[u16]) {
+    let mut local_peak: f32 = 0.0;
+    for &s in data {
+        let v = ((s as f32 - 32768.0) / 32768.0).abs();
+        if v > local_peak { local_peak = v; }
+    }
+    atomic_max_f32(peak, local_peak);
+}
+
+fn atomic_max_f32(atom: &std::sync::atomic::AtomicU32, val: f32) {
+    use std::sync::atomic::Ordering;
+    loop {
+        let old_bits = atom.load(Ordering::Relaxed);
+        let old = f32::from_bits(old_bits);
+        if val <= old { break; }
+        if atom.compare_exchange_weak(
+            old_bits, val.to_bits(),
+            Ordering::Relaxed, Ordering::Relaxed,
+        ).is_ok() { break; }
+    }
 }
 
 fn parse_channel(c: &ConfigureChannel) -> ChannelConfig {
