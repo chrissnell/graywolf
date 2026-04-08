@@ -45,11 +45,28 @@
   let isLoginPage = $derived(currentPath === '/login');
 
   let version = $state('');
+  let authChecked = $state(false);
+
   $effect(() => {
-    fetch('/api/version')
+    // Probe auth state before rendering protected routes.
+    // /api/auth/setup is unauthenticated, so it always works.
+    fetch('/api/auth/setup')
       .then(r => r.json())
-      .then(d => { version = d.version; })
-      .catch(() => {});
+      .then(data => {
+        if (data.needs_setup) {
+          window.location.hash = '#/login';
+          authChecked = true;
+          return;
+        }
+        // Not first-run — check if we have a valid session.
+        // Fetch version (public endpoint) in parallel with auth probe.
+        fetch('/api/version').then(r => r.json()).then(d => { version = d.version; }).catch(() => {});
+        return fetch('/api/status', { credentials: 'same-origin' }).then(r => {
+          if (r.status === 401) window.location.hash = '#/login';
+          authChecked = true;
+        });
+      })
+      .catch(() => { authChecked = true; });
   });
 </script>
 
@@ -57,7 +74,7 @@
 
 {#if isLoginPage}
   <Router {routes} />
-{:else}
+{:else if authChecked}
   <div class="app-layout">
     <Sidebar />
     <main class="main-content">
