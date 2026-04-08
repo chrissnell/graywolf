@@ -19,15 +19,15 @@ import (
 // Server routes /api/* requests. It does not own the underlying
 // listener; cmd/graywolf composes it into its main mux.
 type Server struct {
-	store        *configstore.Store
-	bridge       *modembridge.Bridge
-	kissManager  *kiss.Manager
-	kissCtx      context.Context // long-lived context for KISS server goroutines
-	logger       *slog.Logger
-	startedAt    time.Time
+	store         *configstore.Store
+	bridge        *modembridge.Bridge
+	kissManager   *kiss.Manager
+	kissCtx       context.Context // long-lived context for KISS server goroutines
+	logger        *slog.Logger
+	startedAt     time.Time
 	igateStatusFn func() IgateStatus
-	gpsReload    chan struct{} // signalled when GPS config changes
-	beaconReload chan struct{} // signalled when beacon config changes
+	gpsReload     chan struct{}                              // signalled when GPS config changes
+	beaconReload  chan struct{}                              // signalled when beacon config changes
 	beaconSendNow func(ctx context.Context, id uint32) error // installed by main.go to trigger immediate beacon send
 }
 
@@ -463,6 +463,19 @@ func audioDeviceName(d *configstore.AudioDevice) string {
 	return d.Name
 }
 
+// validateBeacon rejects configurations that would cause the scheduler to
+// skip transmission at send time. Position/igate beacons must either source
+// coordinates from the GPS cache or carry non-zero fixed coordinates.
+func validateBeacon(b *configstore.Beacon) error {
+	switch b.Type {
+	case "position", "igate":
+		if !b.UseGps && b.Latitude == 0 && b.Longitude == 0 {
+			return fmt.Errorf("latitude/longitude required when use_gps is false")
+		}
+	}
+	return nil
+}
+
 // /api/beacons — list + create
 func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -477,6 +490,10 @@ func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 		var b configstore.Beacon
 		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := validateBeacon(&b); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		if err := s.store.CreateBeacon(&b); err != nil {
@@ -535,6 +552,10 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 		var b configstore.Beacon
 		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := validateBeacon(&b); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		b.ID = id
@@ -600,9 +621,9 @@ func (s *Server) SetIgateStatusFn(fn func() IgateStatus) {
 
 // StatusDTO is the JSON shape returned by GET /api/status.
 type StatusDTO struct {
-	UptimeSeconds int64                            `json:"uptime_seconds"`
-	Channels      []StatusChannel                  `json:"channels"`
-	Igate         *IgateStatus                     `json:"igate,omitempty"`
+	UptimeSeconds int64           `json:"uptime_seconds"`
+	Channels      []StatusChannel `json:"channels"`
+	Igate         *IgateStatus    `json:"igate,omitempty"`
 }
 
 // StatusChannel pairs a channel config with its live stats.

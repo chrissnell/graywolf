@@ -12,39 +12,39 @@ type AudioDevice struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name       string    `gorm:"not null" json:"name"`
 	Direction  string    `gorm:"not null;default:'input'" json:"direction"` // input|output
-	SourceType string    `gorm:"not null" json:"source_type"`              // soundcard|flac|stdin|sdr_udp
-	SourcePath string    `json:"device_path"`                              // cpal name or file path
+	SourceType string    `gorm:"not null" json:"source_type"`               // soundcard|flac|stdin|sdr_udp
+	SourcePath string    `json:"device_path"`                               // cpal name or file path
 	SampleRate uint32    `gorm:"not null;default:48000" json:"sample_rate"`
 	Channels   uint32    `gorm:"not null;default:1" json:"channels"`
 	Format     string    `gorm:"not null;default:'s16le'" json:"format"`
-	GainDB     float32   `gorm:"not null;default:0" json:"gain_db"`    // software gain: -60 to +12 dB, 0 = unity
+	GainDB     float32   `gorm:"not null;default:0" json:"gain_db"` // software gain: -60 to +12 dB, 0 = unity
 	CreatedAt  time.Time `json:"-"`
 	UpdatedAt  time.Time `json:"-"`
 }
 
 // Channel is a logical radio channel tied to an audio device.
 type Channel struct {
-	ID            uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name          string    `gorm:"not null" json:"name"`
+	ID             uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name           string    `gorm:"not null" json:"name"`
 	InputDeviceID  uint32    `gorm:"not null;index" json:"input_device_id"`
-	InputChannel   uint32    `gorm:"not null;default:0" json:"input_channel"`   // 0=left/mono, 1=right
+	InputChannel   uint32    `gorm:"not null;default:0" json:"input_channel"`          // 0=left/mono, 1=right
 	OutputDeviceID uint32    `gorm:"not null;default:0;index" json:"output_device_id"` // 0=RX-only
 	OutputChannel  uint32    `gorm:"not null;default:0" json:"output_channel"`
-	ModemType     string    `gorm:"not null;default:'afsk'" json:"modem_type"`
-	BitRate       uint32    `gorm:"not null;default:1200" json:"bit_rate"`
-	MarkFreq      uint32    `gorm:"not null;default:1200" json:"mark_freq"`
-	SpaceFreq     uint32    `gorm:"not null;default:2200" json:"space_freq"`
-	Profile       string    `gorm:"not null;default:'A'" json:"profile"`
-	NumSlicers    uint32    `gorm:"not null;default:1" json:"num_slicers"`
-	FixBits       string    `gorm:"not null;default:'none'" json:"fix_bits"` // none|single|double
-	FX25Encode    bool      `gorm:"not null;default:false" json:"fx25_encode"`
-	IL2PEncode    bool      `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
-	NumDecoders   uint32    `gorm:"not null;default:1" json:"num_decoders"`
-	DecoderOffset int32     `gorm:"not null;default:0" json:"decoder_offset"`
-	TxDelayMs     uint32    `gorm:"not null;default:300" json:"tx_delay_ms"`
-	TxTailMs      uint32    `gorm:"not null;default:100" json:"tx_tail_ms"`
-	CreatedAt     time.Time `json:"-"`
-	UpdatedAt     time.Time `json:"-"`
+	ModemType      string    `gorm:"not null;default:'afsk'" json:"modem_type"`
+	BitRate        uint32    `gorm:"not null;default:1200" json:"bit_rate"`
+	MarkFreq       uint32    `gorm:"not null;default:1200" json:"mark_freq"`
+	SpaceFreq      uint32    `gorm:"not null;default:2200" json:"space_freq"`
+	Profile        string    `gorm:"not null;default:'A'" json:"profile"`
+	NumSlicers     uint32    `gorm:"not null;default:1" json:"num_slicers"`
+	FixBits        string    `gorm:"not null;default:'none'" json:"fix_bits"` // none|single|double
+	FX25Encode     bool      `gorm:"not null;default:false" json:"fx25_encode"`
+	IL2PEncode     bool      `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
+	NumDecoders    uint32    `gorm:"not null;default:1" json:"num_decoders"`
+	DecoderOffset  int32     `gorm:"not null;default:0" json:"decoder_offset"`
+	TxDelayMs      uint32    `gorm:"not null;default:300" json:"tx_delay_ms"`
+	TxTailMs       uint32    `gorm:"not null;default:100" json:"tx_tail_ms"`
+	CreatedAt      time.Time `json:"-"`
+	UpdatedAt      time.Time `json:"-"`
 }
 
 // PttConfig holds push-to-talk configuration for a channel.

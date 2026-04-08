@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Toggle, Box } from '@chrissnell/chonky-ui';
+  import { Button, Input, Toggle, Box, Radio, RadioGroup } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -23,6 +23,7 @@
   let form = $state({
     callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
+    pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', enabled: true,
   });
   let savingSB = $state(false);
@@ -55,6 +56,7 @@
     form = {
       callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
       symbol_table: '/', symbol: '-', overlay: '',
+      pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
       comment: '', interval: '600', enabled: true,
     };
     modalOpen = true;
@@ -67,6 +69,10 @@
       symbol_table: row.symbol_table || '/',
       symbol: row.symbol || '-',
       overlay: row.overlay || '',
+      pos_source: row.use_gps ? 'gps' : 'fixed',
+      latitude: row.latitude != null ? String(row.latitude) : '',
+      longitude: row.longitude != null ? String(row.longitude) : '',
+      alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
       interval: String(row.interval),
     };
     modalOpen = true;
@@ -74,7 +80,30 @@
 
   async function handleSave() {
     if (!form.callsign.trim()) { toasts.error('Callsign required'); return; }
-    const data = { ...form, interval: parseInt(form.interval) };
+    const useGps = form.pos_source === 'gps';
+    const latStr = form.latitude.trim();
+    const lonStr = form.longitude.trim();
+    const altStr = form.alt_ft.trim();
+    const lat = latStr === '' ? 0 : parseFloat(latStr);
+    const lon = lonStr === '' ? 0 : parseFloat(lonStr);
+    const altFt = altStr === '' ? 0 : parseFloat(altStr);
+    if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(altFt)) {
+      toasts.error('Latitude, longitude, and altitude must be numeric');
+      return;
+    }
+    if (!useGps && lat === 0 && lon === 0) {
+      toasts.error('Latitude/longitude required when not using GPS');
+      return;
+    }
+    const data = {
+      ...form,
+      use_gps: useGps,
+      interval: parseInt(form.interval),
+      latitude: lat,
+      longitude: lon,
+      alt_ft: altFt,
+    };
+    delete data.pos_source;
     try {
       if (editing) {
         await api.put(`/beacons/${editing.id}`, data);
@@ -231,6 +260,29 @@
         <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
       </div>
     </FormField>
+    <FormField label="Position source" id="bcn-pos-source"
+      hint="Choose whether this beacon's coordinates come from the live GPS fix or from fixed values you enter below.">
+      <RadioGroup bind:value={form.pos_source}>
+        <div class="pos-source-row">
+          <Radio value="gps" label="Use latest fix from GPS" />
+          <Radio value="fixed" label="Use fixed coordinates" />
+        </div>
+      </RadioGroup>
+    </FormField>
+    {#if form.pos_source === 'fixed'}
+      <FormField label="Latitude" id="bcn-lat"
+        hint="Decimal degrees, north positive (e.g. 37.5 for Half Moon Bay; -33.86 for Sydney).">
+        <Input id="bcn-lat" bind:value={form.latitude} placeholder="37.5" />
+      </FormField>
+      <FormField label="Longitude" id="bcn-lon"
+        hint="Decimal degrees, east positive (e.g. -122.4 for San Francisco; 151.2 for Sydney).">
+        <Input id="bcn-lon" bind:value={form.longitude} placeholder="-122.4" />
+      </FormField>
+      <FormField label="Altitude (feet)" id="bcn-alt"
+        hint="Antenna height above sea level. Optional; leave blank or 0 to omit.">
+        <Input id="bcn-alt" bind:value={form.alt_ft} placeholder="0" />
+      </FormField>
+    {/if}
     <FormField label="Comment" id="bcn-comment">
       <Input id="bcn-comment" bind:value={form.comment} placeholder="graywolf" />
     </FormField>
@@ -282,6 +334,11 @@
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+  .pos-source-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
   .symbol-swatch {
     flex: 0 0 auto;

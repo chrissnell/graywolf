@@ -72,3 +72,49 @@ func TestPhase4Migrations(t *testing.T) {
 		t.Fatalf("gps config get: %v %+v", err, gc)
 	}
 }
+
+// TestBeaconUseGpsRoundTrip verifies that the use_gps column survives
+// AutoMigrate + Create + Read. Guards against accidental tag drift or a
+// dropped column on the Beacon model.
+func TestBeaconUseGpsRoundTrip(t *testing.T) {
+	s, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer s.Close()
+
+	gpsBeacon := &Beacon{
+		Type: "position", Channel: 1, Callsign: "N0CAL-1", Path: "WIDE1-1",
+		UseGps: true, SymbolTable: "/", Symbol: ">",
+		EverySeconds: 1800, Enabled: true,
+	}
+	if err := s.CreateBeacon(gpsBeacon); err != nil {
+		t.Fatalf("create gps beacon: %v", err)
+	}
+	fixedBeacon := &Beacon{
+		Type: "position", Channel: 1, Callsign: "N0CAL-2", Path: "WIDE1-1",
+		Latitude: 37.5, Longitude: -122.0, SymbolTable: "/", Symbol: ">",
+		EverySeconds: 1800, Enabled: true,
+	}
+	if err := s.CreateBeacon(fixedBeacon); err != nil {
+		t.Fatalf("create fixed beacon: %v", err)
+	}
+
+	got, err := s.GetBeacon(gpsBeacon.ID)
+	if err != nil {
+		t.Fatalf("get gps beacon: %v", err)
+	}
+	if !got.UseGps {
+		t.Errorf("use_gps not persisted: %+v", got)
+	}
+	got, err = s.GetBeacon(fixedBeacon.ID)
+	if err != nil {
+		t.Fatalf("get fixed beacon: %v", err)
+	}
+	if got.UseGps {
+		t.Errorf("use_gps should default to false, got true: %+v", got)
+	}
+	if got.Latitude != 37.5 || got.Longitude != -122.0 {
+		t.Errorf("lat/lon not persisted: %+v", got)
+	}
+}

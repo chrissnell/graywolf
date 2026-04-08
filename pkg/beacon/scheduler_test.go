@@ -52,7 +52,7 @@ type countingObserver struct {
 	rate atomic.Int64
 }
 
-func (c *countingObserver) OnBeaconSent(_ Type)                      { c.sent.Add(1) }
+func (c *countingObserver) OnBeaconSent(_ Type)                         { c.sent.Add(1) }
 func (c *countingObserver) OnSmartBeaconRate(_ uint32, _ time.Duration) { c.rate.Add(1) }
 
 func mustAddr(t *testing.T, s string) ax25.Address {
@@ -167,6 +167,142 @@ func TestScheduler_TrackerFromGPS(t *testing.T) {
 	if !strings.Contains(info, "/A=") {
 		t.Errorf("missing altitude ext in %q", info)
 	}
+}
+
+// TestScheduler_PositionUseGps covers the use_gps source selection on
+// position/igate beacons: fixed coordinates take precedence when use_gps
+// is false (even if a cache is present), GPS coordinates are used when
+// use_gps is true, and invalid configurations (no fix, or 0/0 fixed
+// coordinates) refuse to transmit.
+func TestScheduler_PositionUseGps(t *testing.T) {
+	mkBeacon := func(useGps bool, lat, lon float64) Config {
+		return Config{
+			ID:          7,
+			Type:        TypePosition,
+			Channel:     0,
+			Source:      mustAddr(t, "N0CALL-9"),
+			Dest:        mustAddr(t, "APGW00"),
+			Path:        []ax25.Address{mustAddr(t, "WIDE1-1")},
+			Slot:        -1,
+			UseGps:      useGps,
+			Lat:         lat,
+			Lon:         lon,
+			SymbolTable: '/',
+			SymbolCode:  '-',
+			Comment:     "test",
+			Enabled:     true,
+		}
+	}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	ctx := context.Background()
+
+	newScheduler := func(t *testing.T, sink TxSink, cache gps.PositionCache) *Scheduler {
+		t.Helper()
+		s, err := New(Options{Sink: sink, Cache: cache, Logger: logger})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return s
+	}
+
+	t.Run("fixed coordinates ignore cache", func(t *testing.T) {
+		sink := newMockSink(1)
+		cache := gps.NewMemCache()
+		// A populated cache must NOT bleed into a fixed-coordinate beacon.
+		cache.Update(gps.Fix{Latitude: 47.6062, Longitude: -122.3321})
+		s := newScheduler(t, sink, cache)
+		s.sendBeacon(ctx, mkBeacon(false, 37.5, -122.0))
+
+		frames := sink.Frames()
+		if len(frames) != 1 {
+			t.Fatalf("got %d frames, want 1", len(frames))
+		}
+		info := string(frames[0].Info)
+		if !strings.Contains(info, "3730.00N") || !strings.Contains(info, "12200.00W") {
+			t.Errorf("expected fixed 37.5/-122.0 encoding, got %q", info)
+		}
+		if strings.Contains(info, "4736.37N") {
+			t.Errorf("frame contains GPS cache coords; should be fixed: %q", info)
+		}
+	})
+
+	t.Run("use_gps with valid fix and altitude", func(t *testing.T) {
+		sink := newMockSink(1)
+		cache := gps.NewMemCache()
+		cache.Update(gps.Fix{
+			Latitude: 47.6062, Longitude: -122.3321,
+			HasAlt: true, Altitude: 100,
+		})
+		s := newScheduler(t, sink, cache)
+		s.sendBeacon(ctx, mkBeacon(true, 37.5, -122.0))
+
+		frames := sink.Frames()
+		if len(frames) != 1 {
+			t.Fatalf("got %d frames, want 1", len(frames))
+		}
+		info := string(frames[0].Info)
+		if !strings.Contains(info, "4736.37N") || !strings.Contains(info, "12219.93W") {
+			t.Errorf("expected GPS cache encoding, got %q", info)
+		}
+		// 100m → 328 ft, padded to 6 digits.
+		if !strings.Contains(info, "/A=000328") {
+			t.Errorf("expected altitude /A=000328, got %q", info)
+		}
+	})
+
+	t.Run("use_gps with fix but no altitude drops /A=", func(t *testing.T) {
+		sink := newMockSink(1)
+		cache := gps.NewMemCache()
+		// HasAlt=false: must not reuse the stale fixed AltFt below.
+		cache.Update(gps.Fix{Latitude: 47.6062, Longitude: -122.3321})
+		s := newScheduler(t, sink, cache)
+		b := mkBeacon(true, 37.5, -122.0)
+		b.AltFt = 1234 // stale fixed altitude — must be ignored
+		s.sendBeacon(ctx, b)
+
+		frames := sink.Frames()
+		if len(frames) != 1 {
+			t.Fatalf("got %d frames, want 1", len(frames))
+		}
+		info := string(frames[0].Info)
+		if strings.Contains(info, "/A=") {
+			t.Errorf("expected no altitude extension, got %q", info)
+		}
+	})
+
+	t.Run("igate type flows through same validation", func(t *testing.T) {
+		sink := newMockSink(1)
+		s := newScheduler(t, sink, nil)
+		b := mkBeacon(false, 37.5, -122.0)
+		b.Type = TypeIGate
+		s.sendBeacon(ctx, b)
+
+		frames := sink.Frames()
+		if len(frames) != 1 {
+			t.Fatalf("got %d frames, want 1", len(frames))
+		}
+	})
+
+	t.Run("use_gps with empty cache refuses to send", func(t *testing.T) {
+		sink := newMockSink(0)
+		cache := gps.NewMemCache()
+		s := newScheduler(t, sink, cache)
+		s.sendBeacon(ctx, mkBeacon(true, 0, 0))
+
+		if got := len(sink.Frames()); got != 0 {
+			t.Errorf("expected no frames, got %d", got)
+		}
+	})
+
+	t.Run("zero fixed coordinates refuse to send", func(t *testing.T) {
+		sink := newMockSink(0)
+		s := newScheduler(t, sink, nil)
+		s.sendBeacon(ctx, mkBeacon(false, 0, 0))
+
+		if got := len(sink.Frames()); got != 0 {
+			t.Errorf("expected no frames, got %d", got)
+		}
+	})
 }
 
 // TestScheduler_ObjectBeacon covers OBEACON formatting.

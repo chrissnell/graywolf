@@ -149,13 +149,13 @@ func (s *Store) seedDefaults() error {
 		InputDeviceID:  dev.ID,
 		InputChannel:   0,
 		OutputDeviceID: 0,
-		ModemType:     "afsk",
-		BitRate:       1200,
-		MarkFreq:      1200,
-		SpaceFreq:     2200,
-		Profile:       "A",
-		NumSlicers:    1,
-		NumDecoders:   1,
+		ModemType:      "afsk",
+		BitRate:        1200,
+		MarkFreq:       1200,
+		SpaceFreq:      2200,
+		Profile:        "A",
+		NumSlicers:     1,
+		NumDecoders:    1,
 	}
 	if err := s.CreateChannel(ch); err != nil {
 		return fmt.Errorf("seed channel: %w", err)
@@ -292,7 +292,6 @@ func (s *Store) ListPttConfigs() ([]PttConfig, error) {
 func (s *Store) DeletePttConfig(id uint32) error {
 	return s.db.Delete(&PttConfig{}, id).Error
 }
-
 
 // ---------------------------------------------------------------------------
 // Channel validation

@@ -60,6 +60,7 @@ type Config struct {
 	Delay       time.Duration // initial delay
 	Every       time.Duration // periodic interval
 	Slot        int           // seconds past the hour; -1 means unset
+	UseGps      bool          // if true, source lat/lon/alt from the GPS cache instead of Lat/Lon/AltFt
 	Lat, Lon    float64       // fixed position
 	AltFt       float64
 	SymbolTable byte
@@ -67,8 +68,8 @@ type Config struct {
 	Comment     string
 	CommentCmd  []string // already-split argv; empty = static comment
 	Messaging   bool
-	ObjectName  string     // for TypeObject
-	CustomInfo  string     // for TypeCustom (raw info field override)
+	ObjectName  string             // for TypeObject
+	CustomInfo  string             // for TypeCustom (raw info field override)
 	SmartBeacon *SmartBeaconConfig // non-nil + .Enabled → use for tracker
 	Enabled     bool
 }
@@ -394,8 +395,26 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 
 	switch b.Type {
 	case TypePosition, TypeIGate:
-		altM := b.AltFt / 3.28084
-		return PositionInfo(b.Lat, b.Lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
+		lat, lon, altM := b.Lat, b.Lon, b.AltFt/3.28084
+		if b.UseGps {
+			if s.cache == nil {
+				return "", fmt.Errorf("%s beacon: use_gps set but no GPS cache configured", b.Type)
+			}
+			fix, ok := s.cache.Get()
+			if !ok {
+				return "", fmt.Errorf("%s beacon: use_gps set but no GPS fix available", b.Type)
+			}
+			lat, lon = fix.Latitude, fix.Longitude
+			if fix.HasAlt {
+				altM = fix.Altitude
+			} else {
+				// Never mix GPS lat/lon with a stale fixed AltFt.
+				altM = 0
+			}
+		} else if lat == 0 && lon == 0 {
+			return "", fmt.Errorf("%s beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)", b.Type)
+		}
+		return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
 
 	case TypeTracker:
 		if s.cache == nil {

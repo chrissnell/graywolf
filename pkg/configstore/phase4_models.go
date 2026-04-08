@@ -9,9 +9,9 @@ import "time"
 type KissInterface struct {
 	ID            uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name          string    `gorm:"not null;uniqueIndex" json:"name"`
-	InterfaceType string    `gorm:"not null;default:'tcp'" json:"type"`            // tcp|serial|bluetooth
-	ListenAddr    string    `json:"listen_addr"`                                  // host:port for tcp
-	Device        string    `json:"serial_device"`                                // /dev/ttyUSB0 or bluetooth mac
+	InterfaceType string    `gorm:"not null;default:'tcp'" json:"type"` // tcp|serial|bluetooth
+	ListenAddr    string    `json:"listen_addr"`                        // host:port for tcp
+	Device        string    `json:"serial_device"`                      // /dev/ttyUSB0 or bluetooth mac
 	BaudRate      uint32    `gorm:"default:9600" json:"baud_rate"`
 	Channel       uint32    `gorm:"not null;default:1" json:"channel"` // default radio channel for this interface
 	Broadcast     bool      `gorm:"not null;default:true" json:"broadcast"`
@@ -63,20 +63,22 @@ type DigipeaterConfig struct {
 // against an unconsumed path entry.
 //
 // Action enumeration:
-//   "repeat"   — retransmit on ToChannel, consume this alias slot
-//   "drop"     — match and suppress (filter-only rule)
+//
+//	"repeat"   — retransmit on ToChannel, consume this alias slot
+//	"drop"     — match and suppress (filter-only rule)
 //
 // AliasType enumeration:
-//   "widen"    — WIDEn-N style (Alias is the base e.g. "WIDE"; consumes 1 hop, decrements SSID)
-//   "exact"    — exact callsign match (Alias is full "CALL[-SSID]"); e.g. the local callsign (preemptive)
-//   "trace"    — TRACEn-N behaves like WIDEn-N but also inserts the local callsign before the alias
+//
+//	"widen"    — WIDEn-N style (Alias is the base e.g. "WIDE"; consumes 1 hop, decrements SSID)
+//	"exact"    — exact callsign match (Alias is full "CALL[-SSID]"); e.g. the local callsign (preemptive)
+//	"trace"    — TRACEn-N behaves like WIDEn-N but also inserts the local callsign before the alias
 type DigipeaterRule struct {
 	ID          uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	FromChannel uint32    `gorm:"not null;index" json:"from_channel"`
 	ToChannel   uint32    `gorm:"not null" json:"to_channel"`
 	Alias       string    `gorm:"not null" json:"alias"`
 	AliasType   string    `gorm:"not null;default:'widen'" json:"alias_type"` // widen|exact|trace
-	MaxHops     uint32    `gorm:"not null;default:2" json:"max_hops"`        // maximum N-N accepted (e.g. WIDE2-2)
+	MaxHops     uint32    `gorm:"not null;default:2" json:"max_hops"`         // maximum N-N accepted (e.g. WIDE2-2)
 	Action      string    `gorm:"not null;default:'repeat'" json:"action"`
 	Priority    uint32    `gorm:"not null;default:100" json:"priority"` // lower = evaluated first
 	Enabled     bool      `gorm:"not null;default:true" json:"enabled"`
@@ -96,11 +98,11 @@ type IGateConfig struct {
 	SimulationMode  bool      `gorm:"not null;default:false" json:"simulation_mode"`
 	GateRfToIs      bool      `gorm:"not null;default:true" json:"gate_rf_to_is"`
 	GateIsToRf      bool      `gorm:"not null;default:false" json:"gate_is_to_rf"`
-	RfChannel       uint32    `gorm:"not null;default:1" json:"rf_channel"`            // channel used when gating IS->RF
-	MaxMsgHops      uint32    `gorm:"not null;default:2" json:"max_msg_hops"`          // WIDE hops for IS->RF messages
+	RfChannel       uint32    `gorm:"not null;default:1" json:"rf_channel"`             // channel used when gating IS->RF
+	MaxMsgHops      uint32    `gorm:"not null;default:2" json:"max_msg_hops"`           // WIDE hops for IS->RF messages
 	SoftwareName    string    `gorm:"not null;default:'graywolf'" json:"software_name"` // APRS-IS login banner software name
-	SoftwareVersion string    `gorm:"not null;default:'0.1'" json:"software_version"`  // APRS-IS login banner version
-	TxChannel       uint32    `gorm:"not null;default:1" json:"tx_channel"`            // radio channel for IS->RF submissions
+	SoftwareVersion string    `gorm:"not null;default:'0.1'" json:"software_version"`   // APRS-IS login banner version
+	TxChannel       uint32    `gorm:"not null;default:1" json:"tx_channel"`             // radio channel for IS->RF submissions
 	CreatedAt       time.Time `json:"-"`
 	UpdatedAt       time.Time `json:"-"`
 }
@@ -124,7 +126,7 @@ type IGateRfFilter struct {
 type GPSConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	SourceType string    `gorm:"not null;default:'none'" json:"source"` // none|serial|gpsd
-	Device     string    `json:"serial_port"`                              // serial device path, e.g. /dev/ttyUSB0
+	Device     string    `json:"serial_port"`                           // serial device path, e.g. /dev/ttyUSB0
 	BaudRate   uint32    `gorm:"not null;default:4800" json:"baud_rate"`
 	GpsdHost   string    `gorm:"not null;default:'localhost'" json:"gpsd_host"`
 	GpsdPort   uint32    `gorm:"not null;default:2947" json:"gpsd_port"`
@@ -141,26 +143,27 @@ type Beacon struct {
 	Callsign      string    `gorm:"not null" json:"callsign"`
 	Destination   string    `gorm:"not null;default:'APGRWF'" json:"destination"`
 	Path          string    `gorm:"not null;default:'WIDE1-1'" json:"path"`
+	UseGps        bool      `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
 	Latitude      float64   `json:"latitude"`
 	Longitude     float64   `json:"longitude"`
 	AltFt         float64   `json:"alt_ft"` // altitude in feet for position reports
 	Ambiguity     uint32    `gorm:"not null;default:0" json:"ambiguity"`
 	SymbolTable   string    `gorm:"not null;default:'/'" json:"symbol_table"`
 	Symbol        string    `gorm:"not null;default:'-'" json:"symbol"`
-	Overlay       string    `json:"overlay"`                                    // alternate symbol table overlay character
-	Compress      bool      `gorm:"not null;default:false" json:"compress"`     // use compressed position encoding
-	Messaging     bool      `gorm:"not null;default:false" json:"messaging"`    // '=' instead of '!' prefix
+	Overlay       string    `json:"overlay"`                                 // alternate symbol table overlay character
+	Compress      bool      `gorm:"not null;default:false" json:"compress"`  // use compressed position encoding
+	Messaging     bool      `gorm:"not null;default:false" json:"messaging"` // '=' instead of '!' prefix
 	Comment       string    `json:"comment"`
-	CommentCmd    string    `json:"comment_cmd"`  // shell command whose stdout is appended as comment
-	CustomInfo    string    `json:"custom_info"`  // raw info field override for Type=="custom"
-	ObjectName    string    `json:"object_name"`  // for Type=="object"
-	Power         uint32    `gorm:"not null;default:0" json:"power"`   // watts for PHG
-	Height        uint32    `gorm:"not null;default:0" json:"height"`  // feet HAAT for PHG
-	Gain          uint32    `gorm:"not null;default:0" json:"gain"`    // dBi for PHG
-	Dir           uint32    `gorm:"not null;default:0" json:"dir"`     // antenna direction 0..8 for PHG
-	Freq          string    `json:"freq"`                               // frequency string for freq info
-	Tone          string    `json:"tone"`                               // CTCSS/DCS tone
-	FreqOffset    string    `json:"freq_offset"`                        // repeater offset
+	CommentCmd    string    `json:"comment_cmd"`                      // shell command whose stdout is appended as comment
+	CustomInfo    string    `json:"custom_info"`                      // raw info field override for Type=="custom"
+	ObjectName    string    `json:"object_name"`                      // for Type=="object"
+	Power         uint32    `gorm:"not null;default:0" json:"power"`  // watts for PHG
+	Height        uint32    `gorm:"not null;default:0" json:"height"` // feet HAAT for PHG
+	Gain          uint32    `gorm:"not null;default:0" json:"gain"`   // dBi for PHG
+	Dir           uint32    `gorm:"not null;default:0" json:"dir"`    // antenna direction 0..8 for PHG
+	Freq          string    `json:"freq"`                             // frequency string for freq info
+	Tone          string    `json:"tone"`                             // CTCSS/DCS tone
+	FreqOffset    string    `json:"freq_offset"`                      // repeater offset
 	DelaySeconds  uint32    `gorm:"not null;default:30" json:"delay_seconds"`
 	EverySeconds  uint32    `gorm:"not null;default:1800" json:"interval"`
 	SlotSeconds   int32     `gorm:"not null;default:-1" json:"slot_seconds"`

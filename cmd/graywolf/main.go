@@ -793,6 +793,7 @@ func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
 		Delay:       time.Duration(b.DelaySeconds) * time.Second,
 		Every:       time.Duration(b.EverySeconds) * time.Second,
 		Slot:        int(b.SlotSeconds),
+		UseGps:      b.UseGps,
 		Lat:         b.Latitude,
 		Lon:         b.Longitude,
 		AltFt:       b.AltFt,
