@@ -92,3 +92,4 @@ pub mod modem_psk;
 pub mod modem_9600;
 pub mod fx25;
 pub mod il2p;
+pub mod tx;
