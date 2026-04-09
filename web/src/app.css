@@ -85,6 +85,14 @@ input, select, textarea, button {
   font-size: 14px;
 }
 
+/* chonky-ui .modal is a flex column with max-height:85vh, but .modal-body
+   has no overflow handling, so long forms (e.g. the beacon edit dialog)
+   spill their footer buttons below the modal where they can't be clicked. */
+.modal-body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
