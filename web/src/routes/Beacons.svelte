@@ -1,10 +1,9 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Toggle, Box, Radio, RadioGroup } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Toggle, Box, Radio, RadioGroup, Badge, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
   import SymbolPicker from '../components/SymbolPicker.svelte';
@@ -22,6 +21,8 @@
   let defaultComment = $state('Graywolf');
   let modalOpen = $state(false);
   let editing = $state(null);
+  let deleteTarget = $state(null);
+  let deleteOpen = $state(false);
   let form = $state({
     channel: '', callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
@@ -41,14 +42,29 @@
   let symbolMeta = $state(null);
   loadSymbols().then((m) => symbolMeta = m);
 
-  const columns = [
-    { key: 'channel', label: 'Channel' },
-    { key: 'callsign', label: 'Callsign' },
-    { key: 'destination', label: 'Destination' },
-    { key: 'path', label: 'Path' },
-    { key: 'interval', label: 'Interval (s)' },
-    { key: 'enabled', label: 'Enabled' },
-  ];
+  function channelName(id) {
+    const c = channels.find(c => c.id === id);
+    return c ? c.name : `Channel #${id}`;
+  }
+
+  function formatInterval(seconds) {
+    if (!seconds) return '—';
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return s === 0 ? `${m}m` : `${m}m ${s}s`;
+    }
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+
+  function formatCoords(row) {
+    if (row.use_gps) return 'Live GPS fix';
+    if (row.latitude === 0 && row.longitude === 0) return '—';
+    return `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`;
+  }
 
   onMount(async () => {
     beacons = await api.get('/beacons') || [];
@@ -155,11 +171,23 @@
     }
   }
 
-  async function handleDelete(row) {
-    if (!confirm(`Delete beacon for ${row.callsign}?`)) return;
-    await api.delete(`/beacons/${row.id}`);
-    toasts.success('Deleted');
-    beacons = await api.get('/beacons') || [];
+  function confirmDelete(row) {
+    deleteTarget = row;
+    deleteOpen = true;
+  }
+
+  async function executeDelete() {
+    if (!deleteTarget) return;
+    try {
+      await api.delete(`/beacons/${deleteTarget.id}`);
+      toasts.success('Beacon deleted');
+      beacons = await api.get('/beacons') || [];
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      deleteOpen = false;
+      deleteTarget = null;
+    }
   }
 
   async function handleSendNow(row) {
@@ -170,10 +198,6 @@
       toasts.error(err.message);
     }
   }
-
-  const rowActions = [
-    { icon: '📡', title: 'Beacon now', variant: 'ghost', onClick: handleSendNow },
-  ];
 
   async function saveSmartBeacon(e) {
     e.preventDefault();
@@ -202,7 +226,69 @@
   <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
 </PageHeader>
 
-<DataTable {columns} rows={beacons} extraActions={rowActions} onEdit={openEdit} onDelete={handleDelete} />
+{#if beacons.length === 0}
+  <div class="empty-state">No beacons configured. Add a beacon to start transmitting position reports.</div>
+{:else}
+  <div class="beacon-grid">
+    {#each beacons as b}
+      <div class="beacon-card">
+        <div class="beacon-header">
+          <div class="beacon-identity">
+            <span
+              class="symbol-swatch"
+              style="background-image: url({SPRITE_URLS[b.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(b.symbol || '-', CELL_PX)};"
+              aria-hidden="true"
+            >
+              {#if b.overlay && b.symbol_table === ALTERNATE_TABLE}
+                <span class="symbol-swatch-overlay">{b.overlay}</span>
+              {/if}
+            </span>
+            <span class="beacon-callsign">{b.callsign}</span>
+          </div>
+          <div class="beacon-badges">
+            <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
+          </div>
+        </div>
+
+        <div class="beacon-channel">
+          <span class="channel-label">Channel</span>
+          <span class="channel-value">{channelName(b.channel)}</span>
+        </div>
+
+        <div class="beacon-details">
+          <div class="detail-row">
+            <span class="detail-label">Destination</span>
+            <span class="detail-value">{b.destination}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Path</span>
+            <span class="detail-value">{b.path || '—'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Position</span>
+            <span class="detail-value">{formatCoords(b)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Interval</span>
+            <span class="detail-value">{formatInterval(b.interval)}</span>
+          </div>
+          {#if b.comment}
+            <div class="detail-row">
+              <span class="detail-label">Comment</span>
+              <span class="detail-value detail-comment">{b.comment}</span>
+            </div>
+          {/if}
+        </div>
+
+        <div class="beacon-actions">
+          <Button variant="ghost" onclick={() => handleSendNow(b)}>Beacon Now</Button>
+          <Button variant="ghost" onclick={() => openEdit(b)}>Edit</Button>
+          <Button variant="danger" onclick={() => confirmDelete(b)}>Delete</Button>
+        </div>
+      </div>
+    {/each}
+  </div>
+{/if}
 
 <div style="margin-top: 24px;">
   <Box title="SmartBeaconing">
@@ -343,7 +429,151 @@
   bind:overlay={form.overlay}
 />
 
+<!-- Delete confirmation -->
+<AlertDialog bind:open={deleteOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>Delete Beacon</AlertDialog.Title>
+    <AlertDialog.Description>
+      Are you sure you want to delete the beacon for "{deleteTarget?.callsign}"? This cannot be undone.
+    </AlertDialog.Description>
+    <div class="modal-footer">
+      <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action class="danger-action" onclick={executeDelete}>Delete</AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
+
 <style>
+  .empty-state {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 32px;
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius);
+  }
+
+  .beacon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+  }
+
+  .beacon-card {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+  }
+
+  .beacon-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    gap: 8px;
+  }
+  .beacon-identity {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .beacon-callsign {
+    font-weight: 600;
+    font-size: 15px;
+    font-family: var(--font-mono);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .beacon-badges {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .beacon-channel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 10px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+  }
+  .channel-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--color-info);
+    background: var(--color-info-muted);
+    padding: 2px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .channel-value {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .beacon-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    gap: 12px;
+  }
+  .detail-label {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+  .detail-value {
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    text-align: right;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail-comment {
+    font-family: inherit;
+  }
+
+  .beacon-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .modal-footer {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding: 1.25rem 1.5rem 1.5rem;
+  }
+  :global(.danger-action) {
+    background: var(--color-danger) !important;
+    color: white !important;
+  }
+
   .sb-intro {
     font-size: 14px;
     line-height: 1.5;
