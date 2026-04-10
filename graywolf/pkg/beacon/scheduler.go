@@ -11,8 +11,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand"
-	"strings"
 	"sync"
 	"time"
 
@@ -498,20 +496,3 @@ func timeToNextSlot(now time.Time, slot int) time.Duration {
 	}
 	return time.Duration(diff)*time.Second - time.Duration(now.Nanosecond())
 }
-
-// Jitter adds random +/- half-interval jitter to prevent multiple
-// schedulers from beaconing in lock-step. Reserved for Phase 4 carry
-// over — currently unused.
-var _ = func(r *rand.Rand, d time.Duration) time.Duration {
-	if d <= 0 {
-		return d
-	}
-	return d + time.Duration(r.Int63n(int64(d/10)))
-}
-
-// cleanCall is reserved for cmd/graywolf's config mapping (strip
-// whitespace before ParseAddress). Kept here so future edits land in the
-// same file.
-func cleanCall(s string) string { return strings.TrimSpace(s) }
-
-var _ = cleanCall
