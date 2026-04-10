@@ -3,6 +3,7 @@
 package modembridge
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -186,7 +187,20 @@ type Bridge struct {
 	// Per-device audio level cache, updated from DeviceLevelUpdate IPC messages.
 	deviceLevelMu    sync.RWMutex
 	deviceLevelCache map[uint32]*DeviceLevel
+
+	// stdoutRing is a bounded ring buffer of the most recent lines the
+	// child wrote to stdout. It replaces the unbounded
+	// io.Copy(io.Discard, stdout) drain so crash diagnostics can show
+	// the child's final output, and so the reader goroutine does not
+	// leak if the child deadlocks on stdout.
+	stdoutMu   sync.Mutex
+	stdoutRing []string
 }
+
+// stdoutRingMax is the maximum number of lines retained in the stdout
+// ring buffer. Sized to capture a typical Rust panic trace plus a few
+// surrounding log lines.
+const stdoutRingMax = 16
 
 // New builds a bridge. Call Start to run it.
 func New(cfg Config) *Bridge {
@@ -446,8 +460,17 @@ func (b *Bridge) runOnce(ctx context.Context) error {
 		b.cfg.Metrics.SetChildUp(true)
 	}
 
+	// stdoutDone is closed by the scanner goroutine when it sees EOF
+	// (the child's stdout pipe closed because the child exited) or an
+	// error. The defer below waits on it after terminating the child
+	// and before cmd.Wait so the scanner finishes its reads cleanly.
+	var stdoutDone chan struct{}
+
 	defer func() {
 		terminateChild(cmd.Process)
+		if stdoutDone != nil {
+			<-stdoutDone
+		}
 		_ = cmd.Wait()
 		cleanupListenAddr(listenAddr)
 	}()
@@ -459,7 +482,11 @@ func (b *Bridge) runOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("readiness: %w", err)
 	}
-	go io.Copy(io.Discard, stdout)
+	// Drain stdout into the bounded ring buffer so the child's final
+	// output is available for crash diagnostics and so this reader
+	// goroutine cannot accumulate across restart storms.
+	stdoutDone = make(chan struct{})
+	go b.scanModemStdout(stdout, stdoutDone)
 
 	conn, err := dialModem(dialAddr, 2*time.Second)
 	if err != nil {
@@ -468,6 +495,44 @@ func (b *Bridge) runOnce(ctx context.Context) error {
 	defer conn.Close()
 
 	return b.runSession(ctx, conn)
+}
+
+// LastModemStdout returns a snapshot of the last stdoutRingMax lines the
+// modem child wrote to stdout. Useful for including the child's final
+// output in crash diagnostics.
+func (b *Bridge) LastModemStdout() []string {
+	b.stdoutMu.Lock()
+	defer b.stdoutMu.Unlock()
+	out := make([]string, len(b.stdoutRing))
+	copy(out, b.stdoutRing)
+	return out
+}
+
+// appendStdoutLine adds line to the ring buffer, evicting the oldest
+// entry if the buffer is full.
+func (b *Bridge) appendStdoutLine(line string) {
+	b.stdoutMu.Lock()
+	if len(b.stdoutRing) >= stdoutRingMax {
+		// Shift left by one. The ring is small (16) so this is cheap.
+		copy(b.stdoutRing, b.stdoutRing[1:])
+		b.stdoutRing = b.stdoutRing[:stdoutRingMax-1]
+	}
+	b.stdoutRing = append(b.stdoutRing, line)
+	b.stdoutMu.Unlock()
+}
+
+// scanModemStdout reads newline-terminated lines from r into the ring
+// buffer until r yields EOF or an error, then closes done to signal
+// runOnce that the reader goroutine has exited.
+func (b *Bridge) scanModemStdout(r io.Reader, done chan struct{}) {
+	defer close(done)
+	scanner := bufio.NewScanner(r)
+	// Bump the max line size so a long Rust panic line does not
+	// truncate the ring's view of the final output.
+	scanner.Buffer(make([]byte, 0, 4096), 64*1024)
+	for scanner.Scan() {
+		b.appendStdoutLine(scanner.Text())
+	}
 }
 
 // GetChannelStats returns cached stats for a single channel.
