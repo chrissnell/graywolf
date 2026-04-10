@@ -2,9 +2,15 @@
   <img src="assets/graywolf.svg" alt="Graywolf" width="300">
 </p>
 
-Graywolf is a modern APRS station with a software modem, digipeater, iGate, and web UI. It bundles everything you need to put a packet station on the air — from raw audio demodulation to APRS-IS gating — into a single binary with a browser-based configuration interface. Written by Chris Snell, NW5W. The modem began as a Rust port of the AFSK demodulator from [Dire Wolf](https://github.com/wb2osz/direwolf) by WB2OSZ.
+Graywolf is a modern APRS station with a software modem, digipeater, iGate, and web UI. It bundles everything you need to put an APRS station on the air — from raw audio demodulation to APRS-IS gating — into a single binary with a browser-based configuration interface. 
 
-> **Important**: Graywolf is an independent project. Please **do not** send support requests, bug reports, or feature requests for Graywolf to the Dire Wolf project. If you have issues with Graywolf, please file them [here](https://github.com/chrissnell/graywolf/issues).
+Written by Chris Snell, [NW5W](https://nw5w.com). 
+
+The modem is written in Rust and includes a port of the AFSK demodulator from [Dire Wolf](https://github.com/wb2osz/direwolf) by WB2OSZ.
+
+The AX.25 decoding, APRS operatations (beacons, digipeater, and iGate), and the web API is handled by a service written in the Go programming language.
+
+The web frontend was built in Svelte.
 
 ## Features
 
