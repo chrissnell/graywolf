@@ -137,7 +137,14 @@ type Bridge struct {
 	logger *slog.Logger
 
 	frames chan *pb.ReceivedFrame
-	dcd    chan *pb.DcdChange
+
+	// dcd is the per-Bridge DCD publisher. It owns the primary subscriber
+	// channel returned by DcdEvents() (held in dcdPrimary), plus any
+	// additional DcdSubscribe() subscribers. It is Closed from supervise's
+	// defer chain once, at Stop; each subscriber's range consumer exits
+	// then.
+	dcd        *dcdPublisher
+	dcdPrimary <-chan *pb.DcdChange
 
 	mu    sync.Mutex
 	state State
@@ -153,12 +160,6 @@ type Bridge struct {
 	// Per-channel status cache, updated from StatusUpdate IPC messages.
 	statusMu    sync.RWMutex
 	statusCache map[uint32]*ChannelStats
-
-	// dcdSubs is a fan-out list of subscriber channels for DCD events.
-	// The original Bridge.dcd channel remains wired to the txgovernor;
-	// DcdSubscribe appends an additional channel that the broadcaster
-	// in supervise() writes to.
-	dcdSubs []chan *pb.DcdChange
 
 	// Generic dispatchers correlate per-request IDs with reply channels
 	// for the three request/response IPC exchanges the bridge supports.
@@ -191,11 +192,17 @@ const stdoutRingMax = 16
 // New builds a bridge. Call Start to run it.
 func New(cfg Config) *Bridge {
 	cfg.applyDefaults()
-	return &Bridge{
+	var incDcdDropped func()
+	// Metrics does not yet carry a DCD-drop counter; if/when it does the
+	// Bridge can pass a direct increment here. For now drops are logged
+	// at debug with a 10s rate limit inside dcdPublisher.
+	_ = incDcdDropped
+	pub := newDcdPublisher(cfg.Logger, incDcdDropped)
+	b := &Bridge{
 		cfg:              cfg,
 		logger:           cfg.Logger,
 		frames:           make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
-		dcd:              make(chan *pb.DcdChange, cfg.DcdBufferSize),
+		dcd:              pub,
 		state:            StateStopped,
 		statusCache:      make(map[uint32]*ChannelStats),
 		enumDispatcher:   newDispatcher[*pb.AudioDeviceList](),
@@ -203,6 +210,12 @@ func New(cfg Config) *Bridge {
 		scanDispatcher:   newDispatcher[*pb.InputLevelScanResult](),
 		deviceLevelCache: make(map[uint32]*DeviceLevel),
 	}
+	// Hold a long-lived "primary" subscription so DcdEvents() can return
+	// a stable channel for the txgovernor wiring path that predates
+	// DcdSubscribe. The publisher closes it alongside the other
+	// subscribers at Stop time.
+	b.dcdPrimary = pub.Subscribe()
+	return b
 }
 
 // DcdEvents returns a channel of DCD state-change events from the modem.
@@ -211,40 +224,25 @@ func New(cfg Config) *Bridge {
 //
 // Deprecated: for multi-subscriber use, call DcdSubscribe instead. This
 // method remains as a compat shim for the existing txgovernor wiring
-// and returns the primary channel.
-func (b *Bridge) DcdEvents() <-chan *pb.DcdChange { return b.dcd }
+// and returns the long-lived primary subscription allocated in New.
+func (b *Bridge) DcdEvents() <-chan *pb.DcdChange { return b.dcdPrimary }
 
 // DcdSubscribe returns a new buffered channel that will receive every
 // DcdChange event seen by the bridge. Multiple subscribers are
-// supported; each receives a copy of every event. Slow subscribers
-// will drop events (non-blocking send). The channel is closed when
-// Stop completes.
-func (b *Bridge) DcdSubscribe() <-chan *pb.DcdChange {
-	ch := make(chan *pb.DcdChange, 32)
-	b.mu.Lock()
-	b.dcdSubs = append(b.dcdSubs, ch)
-	b.mu.Unlock()
-	return ch
-}
+// supported; each receives a copy of every event. Slow subscribers will
+// drop events (non-blocking send). The channel is closed when Stop
+// completes or when the caller passes it to DcdUnsubscribe.
+func (b *Bridge) DcdSubscribe() <-chan *pb.DcdChange { return b.dcd.Subscribe() }
 
-// dispatchDcd sends ev to the primary channel and all subscribers.
-// Non-blocking sends: a slow subscriber drops rather than stalls the
-// modem session goroutine.
-func (b *Bridge) dispatchDcd(ev *pb.DcdChange) {
-	select {
-	case b.dcd <- ev:
-	default:
-	}
-	b.mu.Lock()
-	subs := append([]chan *pb.DcdChange(nil), b.dcdSubs...)
-	b.mu.Unlock()
-	for _, c := range subs {
-		select {
-		case c <- ev:
-		default:
-		}
-	}
-}
+// DcdUnsubscribe removes a previously Subscribed channel and closes it
+// so the caller's range loop exits. Callers that drop their subscription
+// without calling this method leak memory on every Publish fan-out.
+func (b *Bridge) DcdUnsubscribe(ch <-chan *pb.DcdChange) { b.dcd.Unsubscribe(ch) }
+
+// dispatchDcd sends ev to every subscriber. Non-blocking: a slow
+// subscriber's event is dropped and the drop is accounted for in the
+// publisher rather than stalling the modem session goroutine.
+func (b *Bridge) dispatchDcd(ev *pb.DcdChange) { b.dcd.Publish(ev) }
 
 // SendTransmitFrame queues a TransmitFrame IPC message to the currently
 // connected modem session. Returns an error if no session is active.
@@ -352,17 +350,8 @@ func (b *Bridge) supervise(ctx context.Context) {
 
 	defer close(b.done)
 	defer close(b.frames)
-	defer close(b.dcd)
+	defer b.dcd.Close()
 	defer b.closePendingRequests()
-	defer func() {
-		b.mu.Lock()
-		subs := b.dcdSubs
-		b.dcdSubs = nil
-		b.mu.Unlock()
-		for _, c := range subs {
-			close(c)
-		}
-	}()
 
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
