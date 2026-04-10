@@ -57,10 +57,10 @@
                   >{action.icon}</Button>
                 {/each}
                 {#if onEdit}
-                  <Button size="sm" variant="ghost" title="Edit" onclick={() => onEdit(row)}>✎</Button>
+                  <Button size="sm" variant="ghost" onclick={() => onEdit(row)}>Edit</Button>
                 {/if}
                 {#if onDelete}
-                  <Button size="sm" variant="danger" title="Delete" onclick={() => onDelete(row)}>✕</Button>
+                  <Button size="sm" variant="danger" onclick={() => onDelete(row)}>Delete</Button>
                 {/if}
               </td>
             {/if}
@@ -87,7 +87,7 @@
     padding: 24px;
   }
   .actions-col {
-    width: 100px;
+    width: 160px;
     text-align: right;
   }
   .actions-cell {
