@@ -126,10 +126,10 @@ func (a *App) Config() Config { return a.cfg }
 //
 // The shutdown context is derived from context.Background() because
 // ctx itself has already been cancelled by the time shutdown begins;
-// deriving from ctx would yield an already-dead deadline. This is the
-// second of three deliberate context.Background() exceptions in
-// pkg/app (QueryModemVersion is the first; the third is the configstore
-// open in wireServices which predates any context).
+// deriving from ctx would yield an already-dead deadline. This is
+// one of only two deliberate context.Background() uses in pkg/app;
+// QueryModemVersion in modem.go is the other, and for the same kind
+// of reason (it runs before the App context exists).
 func (a *App) Run(ctx context.Context) error {
 	if err := a.wireServices(ctx); err != nil {
 		return fmt.Errorf("wire services: %w", err)
