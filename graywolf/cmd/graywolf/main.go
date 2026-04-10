@@ -733,7 +733,6 @@ func main() {
 	apiMux := http.NewServeMux()
 	apiSrv.RegisterRoutes(apiMux)
 
-	// Phase 4 real endpoint registrations (replace stubs).
 	webapi.RegisterPackets(apiSrv, plog)(apiMux)
 	webapi.RegisterPosition(apiSrv, gpsCache, apiMux)
 	if ig != nil {
