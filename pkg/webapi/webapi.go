@@ -26,9 +26,10 @@ type Server struct {
 	logger        *slog.Logger
 	startedAt     time.Time
 	igateStatusFn func() IgateStatus
-	gpsReload     chan struct{}                              // signalled when GPS config changes
-	beaconReload  chan struct{}                              // signalled when beacon config changes
-	beaconSendNow func(ctx context.Context, id uint32) error // installed by main.go to trigger immediate beacon send
+	gpsReload        chan struct{}                              // signalled when GPS config changes
+	beaconReload     chan struct{}                              // signalled when beacon config changes
+	digipeaterReload chan struct{}                              // signalled when digipeater config/rules change
+	beaconSendNow    func(ctx context.Context, id uint32) error // installed by main.go to trigger immediate beacon send
 }
 
 // Config bundles the dependencies for NewServer.
@@ -612,6 +613,16 @@ func (s *Server) SetBeaconReload(ch chan struct{}) {
 // to trigger an immediate one-shot transmission of a beacon.
 func (s *Server) SetBeaconSendNow(fn func(ctx context.Context, id uint32) error) {
 	s.beaconSendNow = fn
+}
+
+// SetDigipeaterReload installs the channel signalled after successful
+// digipeater config/rule writes. main.go drains it from a dedicated
+// goroutine that pushes updated state into the running digipeater
+// engine (enabled flag, mycall, dedup window, rules), so changes take
+// effect without a restart. The channel is expected to be buffered
+// (size 1) so signals coalesce under rapid edits.
+func (s *Server) SetDigipeaterReload(ch chan struct{}) {
+	s.digipeaterReload = ch
 }
 
 // SetIgateStatusFn installs the function used by /api/status to report igate counters.

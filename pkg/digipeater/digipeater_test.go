@@ -58,6 +58,8 @@ func newTestDigi(t *testing.T, rules []Rule, mycall string) (*Digipeater, *fakeS
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	// New() now defaults to disabled; tests want a live engine.
+	d.SetEnabled(true)
 	return d, sink
 }
 

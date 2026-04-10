@@ -82,12 +82,13 @@ type Stats struct {
 
 // Digipeater is the engine.
 type Digipeater struct {
-	mu     sync.RWMutex
-	mycall ax25.Address
-	window time.Duration
-	rules  []Rule
-	submit func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
-	logger *slog.Logger
+	mu      sync.RWMutex
+	enabled bool
+	mycall  ax25.Address
+	window  time.Duration
+	rules   []Rule
+	submit  func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
+	logger  *slog.Logger
 	onPkt   func(note string, fromChan, toChan uint32, f *ax25.Frame)
 	onDedup func()
 
@@ -107,15 +108,40 @@ func New(cfg Config) (*Digipeater, error) {
 		cfg.Logger = slog.Default()
 	}
 	return &Digipeater{
-		mycall: cfg.MyCall,
-		window: cfg.DedupeWindow,
-		rules:  append([]Rule(nil), cfg.Rules...),
-		submit: cfg.Submit,
-		logger: cfg.Logger.With("component", "digipeater"),
+		// Default off. Callers must SetEnabled(true) once the engine
+		// has been populated with rules / mycall / window from config.
+		// This avoids a brief window where a freshly-constructed engine
+		// could accept frames with empty rules and no callsign.
+		enabled: false,
+		mycall:  cfg.MyCall,
+		window:  cfg.DedupeWindow,
+		rules:   append([]Rule(nil), cfg.Rules...),
+		submit:  cfg.Submit,
+		logger:  cfg.Logger.With("component", "digipeater"),
 		onPkt:   cfg.OnPacket,
 		onDedup: cfg.OnDedup,
 		dedup:   make(map[string]time.Time),
 	}, nil
+}
+
+// SetEnabled toggles the engine on or off for live reconfig. When
+// disabled, Handle short-circuits and returns false without touching
+// the dedup map or rules.
+func (d *Digipeater) SetEnabled(on bool) {
+	d.mu.Lock()
+	d.enabled = on
+	d.mu.Unlock()
+}
+
+// SetDedupeWindow updates the dedupe window under the lock. A
+// non-positive duration is ignored to preserve a sane default.
+func (d *Digipeater) SetDedupeWindow(w time.Duration) {
+	if w <= 0 {
+		return
+	}
+	d.mu.Lock()
+	d.window = w
+	d.mu.Unlock()
 }
 
 // SetRules replaces the rule set under the lock. Safe for live reconfig.
@@ -168,6 +194,10 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 		return false
 	}
 	d.mu.Lock()
+	if !d.enabled {
+		d.mu.Unlock()
+		return false
+	}
 	mycall := d.mycall
 	window := d.window
 	rules := d.rules

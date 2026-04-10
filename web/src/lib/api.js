@@ -84,12 +84,13 @@ const mockIgateFilters = [
 ];
 
 const mockDigipeater = {
-  enabled: false, callsign: 'N0CALL-1',
-  rules: [
-    { id: 1, alias: 'WIDE1-1', substitute: true, preempt: false, enabled: true },
-    { id: 2, alias: 'WIDE2-1', substitute: true, preempt: false, enabled: true },
-  ],
+  id: 1, enabled: false, my_call: 'N0CALL-1', dedupe_window_seconds: 30,
 };
+
+const mockDigipeaterRules = [
+  { id: 1, from_channel: 1, to_channel: 1, alias: 'WIDE', alias_type: 'widen', max_hops: 1, action: 'repeat', priority: 100, enabled: true },
+  { id: 2, from_channel: 1, to_channel: 1, alias: 'WIDE', alias_type: 'widen', max_hops: 2, action: 'repeat', priority: 100, enabled: true },
+];
 
 const mockBeacons = [
   { id: 1, callsign: 'N0CALL-9', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1', comment: 'graywolf', interval: 600, enabled: true },
@@ -177,7 +178,7 @@ function getMockData(method, path, body) {
   // Digipeater
   if (path === '/digipeater' && method === 'GET') return delay(mockDigipeater);
   if (path === '/digipeater' && method === 'PUT') return delay(body);
-  if (path === '/digipeater/rules' && method === 'GET') return delay(mockDigipeater.rules);
+  if (path === '/digipeater/rules' && method === 'GET') return delay(mockDigipeaterRules);
   if (path === '/digipeater/rules' && method === 'POST') return delay({ id: 3, ...body });
   if (path.match(/^\/digipeater\/rules\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/digipeater\/rules\/\d+$/) && method === 'DELETE') return delay(null);

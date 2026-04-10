@@ -429,6 +429,7 @@ func (s *Server) handleDigipeaterConfig(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.signalDigipeaterReload()
 		writeJSON(w, http.StatusOK, c)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -454,6 +455,7 @@ func (s *Server) handleDigipeaterRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.signalDigipeaterReload()
 		writeJSON(w, http.StatusCreated, rule)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -478,15 +480,31 @@ func (s *Server) handleDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.signalDigipeaterReload()
 		writeJSON(w, http.StatusOK, rule)
 	case http.MethodDelete:
 		if err := s.store.DeleteDigipeaterRule(id); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		s.signalDigipeaterReload()
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// signalDigipeaterReload performs a non-blocking send on the
+// digipeater reload channel; coalesces if a previous signal is still
+// buffered. Called from webapi handlers after successful persistence
+// so main.go can push the new state into the running engine.
+func (s *Server) signalDigipeaterReload() {
+	if s.digipeaterReload == nil {
+		return
+	}
+	select {
+	case s.digipeaterReload <- struct{}{}:
+	default:
 	}
 }
 

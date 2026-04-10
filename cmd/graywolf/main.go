@@ -320,32 +320,67 @@ func main() {
 	}
 
 	// --- Digipeater -----------------------------------------------------
-	var digi *digipeater.Digipeater
-	if digiCfg, err := store.GetDigipeaterConfig(); err == nil && digiCfg != nil && digiCfg.Enabled {
-		digiRules, _ := store.ListDigipeaterRules()
-		mycall, _ := ax25.ParseAddress(digiCfg.MyCall)
-		digi, err = digipeater.New(digipeater.Config{
-			MyCall:       mycall,
-			DedupeWindow: time.Duration(digiCfg.DedupeWindowSeconds) * time.Second,
-			Rules:        digipeater.RulesFromStore(digiRules),
-			Submit:       gov.Submit,
-			Logger:       logger,
-			OnPacket: func(note string, fromChan, toChan uint32, f *ax25.Frame) {
-				m.DigipeaterPackets.Inc()
-				plog.Record(packetlog.Entry{
-					Channel:   toChan,
-					Direction: packetlog.DirTX,
-					Source:    "digipeater",
-					Display:   f.String(),
-					Notes:     note,
-				})
-			},
-			OnDedup: func() { m.DigipeaterDeduped.Inc() },
-		})
-		if err != nil {
-			logger.Error("digipeater init", "err", err)
-		}
+	//
+	// Constructed unconditionally so the engine is always present and
+	// can be toggled at runtime via SetEnabled from the reload goroutine
+	// below. Initial enabled/mycall/window/rules state comes from the
+	// store; a missing row is treated as disabled with safe defaults.
+	digi, err := digipeater.New(digipeater.Config{
+		DedupeWindow: 30 * time.Second,
+		Submit:       gov.Submit,
+		Logger:       logger,
+		OnPacket: func(note string, fromChan, toChan uint32, f *ax25.Frame) {
+			m.DigipeaterPackets.Inc()
+			plog.Record(packetlog.Entry{
+				Channel:   toChan,
+				Direction: packetlog.DirTX,
+				Source:    "digipeater",
+				Display:   f.String(),
+				Notes:     note,
+			})
+		},
+		OnDedup: func() { m.DigipeaterDeduped.Inc() },
+	})
+	if err != nil {
+		logger.Error("digipeater init", "err", err)
+		os.Exit(1)
 	}
+
+	// reloadDigipeater pulls the current config + rules from the store
+	// and pushes them into the running engine. Called once here at
+	// startup and again from a goroutine that drains digipeaterReload
+	// whenever the webapi signals a config/rule write.
+	reloadDigipeater := func() {
+		cfg, err := store.GetDigipeaterConfig()
+		if err != nil || cfg == nil {
+			digi.SetEnabled(false)
+			digi.SetRules(nil)
+			return
+		}
+		mycall, _ := ax25.ParseAddress(cfg.MyCall)
+		digi.SetMyCall(mycall)
+		digi.SetDedupeWindow(time.Duration(cfg.DedupeWindowSeconds) * time.Second)
+		rules, err := store.ListDigipeaterRules()
+		if err != nil {
+			logger.Warn("digipeater rules load", "err", err)
+			rules = nil
+		}
+		digi.SetRules(digipeater.RulesFromStore(rules))
+		digi.SetEnabled(cfg.Enabled)
+	}
+	reloadDigipeater()
+
+	digipeaterReload := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-digipeaterReload:
+				reloadDigipeater()
+			}
+		}
+	}()
 
 	// --- GPS cache + reader ---------------------------------------------
 	gpsCache := gps.NewMemCache()
@@ -506,9 +541,7 @@ func main() {
 				}
 
 				// Digipeater.
-				if digi != nil {
-					digi.Handle(ctx, rf.Channel, f)
-				}
+				digi.Handle(ctx, rf.Channel, f)
 
 				// APRS parse → fan-out.
 				if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
@@ -582,6 +615,7 @@ func main() {
 	apiSrv.SetGPSReload(gpsReload)
 	apiSrv.SetBeaconReload(beaconReload)
 	apiSrv.SetBeaconSendNow(beaconSched.SendNow)
+	apiSrv.SetDigipeaterReload(digipeaterReload)
 
 	// Public endpoints (no auth).
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
