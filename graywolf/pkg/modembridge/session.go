@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -23,18 +22,15 @@ type sessionConn interface {
 
 // runSession drives one connected IPC session: wait for ModemReady, push
 // configuration, StartAudio, then pump inbound messages until the peer
-// closes or the context is cancelled.
+// closes or the context is cancelled. The framing-level read/write
+// primitives come from ipcLoop; runSession stays responsible for the
+// protocol state (handshake → configure → running → shutdown).
 func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
-	// A writer mutex keeps ConfigureX messages and the eventual Shutdown
-	// from interleaving with TransmitFrame writes from the txgovernor.
-	var writeMu sync.Mutex
-	send := func(m *pb.IpcMessage) error {
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		return writeFrame(conn, m)
-	}
-	// Publish the sender so Bridge.SendTransmitFrame can reach this session.
-	b.setSender(send)
+	loop := newIpcLoop(conn, b.logger)
+
+	// Publish the sender so Bridge.SendTransmitFrame can reach this
+	// session's write path.
+	b.setSender(loop.Send)
 	defer b.setSender(nil)
 
 	// ------------------------------------------------------------------
@@ -57,12 +53,12 @@ func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 	// CONFIGURING: send audio/channel/ptt, then StartAudio.
 	// ------------------------------------------------------------------
 	b.setState(StateConfiguring)
-	hasChannels, err := b.pushConfiguration(send)
+	hasChannels, err := b.pushConfiguration(loop.Send)
 	if err != nil {
 		return fmt.Errorf("configure: %w", err)
 	}
 	if hasChannels {
-		if err := send(&pb.IpcMessage{Payload: &pb.IpcMessage_StartAudio{StartAudio: &pb.StartAudio{}}}); err != nil {
+		if err := loop.Send(&pb.IpcMessage{Payload: &pb.IpcMessage_StartAudio{StartAudio: &pb.StartAudio{}}}); err != nil {
 			return fmt.Errorf("StartAudio: %w", err)
 		}
 	}
@@ -74,7 +70,7 @@ func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 
 	readErr := make(chan error, 1)
 	go func() {
-		readErr <- b.readLoop(conn)
+		readErr <- loop.Run(b.dispatchIPC)
 	}()
 
 	select {
@@ -83,7 +79,7 @@ func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 	case <-ctx.Done():
 		// Graceful shutdown: send Shutdown, wait for read loop to finish
 		// (peer half-closes after final StatusUpdate).
-		_ = send(&pb.IpcMessage{Payload: &pb.IpcMessage_Shutdown{Shutdown: &pb.Shutdown{TimeoutMs: 2000}}})
+		_ = loop.Send(&pb.IpcMessage{Payload: &pb.IpcMessage_Shutdown{Shutdown: &pb.Shutdown{TimeoutMs: 2000}}})
 		select {
 		case <-readErr:
 		case <-time.After(b.cfg.ShutdownTimeout):
@@ -95,54 +91,42 @@ func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 	}
 }
 
-// readLoop consumes frames until error or EOF. It dispatches to Bridge's
-// channels / metrics.
-func (b *Bridge) readLoop(conn sessionConn) error {
-	for {
-		msg, err := readFrame(conn)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
+// dispatchIPC routes one inbound IpcMessage to the appropriate Bridge
+// subsystem: frames channel, status cache, DCD publisher, dispatchers,
+// or device-level cache. Called by ipcLoop.Run for every received frame.
+func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
+	switch p := msg.GetPayload().(type) {
+	case *pb.IpcMessage_ReceivedFrame:
+		if b.cfg.Metrics != nil {
+			b.cfg.Metrics.ObserveReceivedFrame(p.ReceivedFrame.Channel)
 		}
-		switch p := msg.GetPayload().(type) {
-		case *pb.IpcMessage_ReceivedFrame:
-			if b.cfg.Metrics != nil {
-				b.cfg.Metrics.ObserveReceivedFrame(p.ReceivedFrame.Channel)
-			}
-			// Non-blocking send: drop frames if the consumer isn't keeping up
-			// rather than stalling the IPC read loop.
-			select {
-			case b.frames <- p.ReceivedFrame:
-			default:
-				b.logger.Warn("frame channel full, dropping frame")
-			}
-		case *pb.IpcMessage_StatusUpdate:
-			b.updateStatusCache(p.StatusUpdate)
-			if b.cfg.Metrics != nil {
-				b.cfg.Metrics.UpdateFromStatus(p.StatusUpdate)
-			}
-			if p.StatusUpdate.ShutdownComplete {
-				// Final status before modem exits; wait for EOF next iter.
-			}
-		case *pb.IpcMessage_DcdChange:
-			b.logger.Debug("dcd change",
-				"channel", p.DcdChange.Channel,
-				"detected", p.DcdChange.Detected)
-			// Fan out to the primary channel + every DcdSubscribe() consumer.
-			b.dispatchDcd(p.DcdChange)
-		case *pb.IpcMessage_AudioDeviceList:
-			b.dispatchEnumResponse(p.AudioDeviceList)
-		case *pb.IpcMessage_TestToneResult:
-			b.dispatchToneResponse(p.TestToneResult)
-		case *pb.IpcMessage_DeviceLevelUpdate:
-			b.updateDeviceLevelCache(p.DeviceLevelUpdate)
-		case *pb.IpcMessage_InputLevelScanResult:
-			b.dispatchScanResponse(p.InputLevelScanResult)
+		// Non-blocking send: drop frames if the consumer isn't keeping up
+		// rather than stalling the IPC read loop.
+		select {
+		case b.frames <- p.ReceivedFrame:
 		default:
-			b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
+			b.logger.Warn("frame channel full, dropping frame")
 		}
+	case *pb.IpcMessage_StatusUpdate:
+		b.updateStatusCache(p.StatusUpdate)
+		if b.cfg.Metrics != nil {
+			b.cfg.Metrics.UpdateFromStatus(p.StatusUpdate)
+		}
+	case *pb.IpcMessage_DcdChange:
+		b.logger.Debug("dcd change",
+			"channel", p.DcdChange.Channel,
+			"detected", p.DcdChange.Detected)
+		b.dispatchDcd(p.DcdChange)
+	case *pb.IpcMessage_AudioDeviceList:
+		b.dispatchEnumResponse(p.AudioDeviceList)
+	case *pb.IpcMessage_TestToneResult:
+		b.dispatchToneResponse(p.TestToneResult)
+	case *pb.IpcMessage_DeviceLevelUpdate:
+		b.updateDeviceLevelCache(p.DeviceLevelUpdate)
+	case *pb.IpcMessage_InputLevelScanResult:
+		b.dispatchScanResponse(p.InputLevelScanResult)
+	default:
+		b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 	}
 }
 
