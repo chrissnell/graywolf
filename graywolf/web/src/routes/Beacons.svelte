@@ -388,7 +388,7 @@
         </div>
       </FormField>
       <FormField label="Comment" id="bcn-comment"
-        hint={"Tip: use {{version}} to insert the running graywolf version. It's re-rendered on every beacon send, so upgrades show up automatically."}>
+        hint={"Tip: use {{version}} to insert the running graywolf version."}>
         <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
       </FormField>
     </div>
