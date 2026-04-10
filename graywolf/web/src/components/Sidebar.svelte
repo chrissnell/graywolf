@@ -41,7 +41,7 @@
   });
 </script>
 
-<nav class="sidebar" role="navigation" aria-label="Main navigation">
+<nav class="sidebar" aria-label="Main navigation">
   <div class="sidebar-header">
     <a href="/" use:link class="logo-link" aria-label="Dashboard">
       <img src={logoUrl} alt="" class="logo-img" />
