@@ -335,12 +335,48 @@ func (b *Bridge) Stop() {
 	<-done
 }
 
+// errBridgeStopped is returned to any caller whose request/response dispatch
+// channel was closed because the supervisor exited.
+var errBridgeStopped = errors.New("modembridge: bridge stopped")
+
+// closePendingRequests closes every reply channel in the three dispatch
+// maps (enum/tone/scan) and empties the maps. Callers blocked in their
+// per-call select see a nil zero-value on the channel and return
+// errBridgeStopped without waiting for their 5s / 30s per-call timeout.
+//
+// Must only be invoked from supervise()'s defer chain: at that point the
+// session goroutine has already returned, so no dispatcher is in flight
+// and double-close is impossible.
+func (b *Bridge) closePendingRequests() {
+	b.enumMu.Lock()
+	for _, ch := range b.enumPending {
+		close(ch)
+	}
+	b.enumPending = make(map[uint32]chan *pb.AudioDeviceList)
+	b.enumMu.Unlock()
+
+	b.toneMu.Lock()
+	for _, ch := range b.tonePending {
+		close(ch)
+	}
+	b.tonePending = make(map[uint32]chan *pb.TestToneResult)
+	b.toneMu.Unlock()
+
+	b.scanMu.Lock()
+	for _, ch := range b.scanPending {
+		close(ch)
+	}
+	b.scanPending = make(map[uint32]chan *pb.InputLevelScanResult)
+	b.scanMu.Unlock()
+}
+
 // supervise is the top-level loop: spawn the child, drive one session, back
 // off on error, repeat until the context is cancelled.
 func (b *Bridge) supervise(ctx context.Context) {
 	defer close(b.done)
 	defer close(b.frames)
 	defer close(b.dcd)
+	defer b.closePendingRequests()
 	defer func() {
 		b.mu.Lock()
 		subs := b.dcdSubs
@@ -550,6 +586,9 @@ func (b *Bridge) EnumerateAudioDevices(ctx context.Context) ([]AvailableDevice, 
 	defer timer.Stop()
 	select {
 	case resp := <-ch:
+		if resp == nil {
+			return nil, errBridgeStopped
+		}
 		return convertDeviceList(resp), nil
 	case <-timer.C:
 		return nil, errors.New("modembridge: enumerate timeout")
@@ -612,6 +651,9 @@ func (b *Bridge) ScanInputLevels(ctx context.Context) ([]InputLevel, error) {
 	defer timer.Stop()
 	select {
 	case resp := <-ch:
+		if resp == nil {
+			return nil, errBridgeStopped
+		}
 		return convertScanResult(resp), nil
 	case <-timer.C:
 		return nil, errors.New("modembridge: scan timeout")
@@ -714,6 +756,9 @@ func (b *Bridge) PlayTestTone(ctx context.Context, deviceID uint32, deviceName s
 	defer timer.Stop()
 	select {
 	case resp := <-ch:
+		if resp == nil {
+			return errBridgeStopped
+		}
 		if !resp.Success {
 			return fmt.Errorf("test tone failed: %s", resp.Error)
 		}
