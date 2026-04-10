@@ -24,11 +24,23 @@ func counterValue(t *testing.T, c prometheus.Counter) float64 {
 	return m.GetCounter().GetValue()
 }
 
+// stubGovernor is a minimal GovernorSubmitter whose Submit delegates to
+// an embedded function, so each test can install its own behavior
+// (accept, block forever, return an error).
+type stubGovernor struct {
+	fn func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
+}
+
+func (s *stubGovernor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+	return s.fn(ctx, channel, frame, src)
+}
+
 // gateableLine is a TNC2-format APRS-IS line that will parse into a
-// position packet the filter engine accepts by default.
+// position packet the filter engine accepts under the prefix rule
+// installed by newTestIgate.
 const gateableLine = "W5ABC-7>APRS,WIDE1-1:!3725.00N/12158.00W>hi"
 
-func newTestIgate(t *testing.T) *Igate {
+func newTestIgate(t *testing.T, gov GovernorSubmitter) *Igate {
 	t.Helper()
 	ig, err := New(Config{
 		Server:   "127.0.0.1:1",
@@ -36,6 +48,7 @@ func newTestIgate(t *testing.T) *Igate {
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
+		Governor: gov,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,22 +56,27 @@ func newTestIgate(t *testing.T) *Igate {
 	return ig
 }
 
-// TestHandleISLineSubmitHappyPath: when the injected submit function
-// accepts the frame, the gated counter increments and the drop counter
-// stays at zero.
-func TestHandleISLineSubmitHappyPath(t *testing.T) {
-	ig := newTestIgate(t)
+// setSessCtx replaces the iGate's session context, used by tests that
+// need to exercise cancellation without calling Start.
+func setSessCtx(ig *Igate, ctx context.Context) {
+	ig.sessCtx.Store(&sessCtxHolder{ctx: ctx})
+}
 
+// TestHandleISLineSubmitHappyPath: when the governor accepts the frame,
+// the gated counter increments and the drop counter stays at zero.
+func TestHandleISLineSubmitHappyPath(t *testing.T) {
 	var calls int32
-	ig.submitFn = func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
-		atomic.AddInt32(&calls, 1)
-		return nil
-	}
+	ig := newTestIgate(t, &stubGovernor{
+		fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+			atomic.AddInt32(&calls, 1)
+			return nil
+		},
+	})
 
 	ig.handleISLine(gateableLine)
 
 	if got := atomic.LoadInt32(&calls); got != 1 {
-		t.Fatalf("submitFn calls = %d, want 1", got)
+		t.Fatalf("Submit calls = %d, want 1", got)
 	}
 	st := ig.Status()
 	if st.Downlinked != 1 {
@@ -69,23 +87,22 @@ func TestHandleISLineSubmitHappyPath(t *testing.T) {
 	}
 }
 
-// TestHandleISLineSubmitTimesOut: when the injected submit blocks
-// forever, handleISLine must return within the timeout budget
-// (igateSubmitTimeout = 2s) plus slack, the drop counter must
-// increment, and the gated counter must stay at zero.
+// TestHandleISLineSubmitTimesOut: when Submit blocks forever,
+// handleISLine must return within the timeout budget (igateSubmitTimeout
+// = 2s) plus slack, the drop counter must increment, and the gated
+// counter must stay at zero.
 func TestHandleISLineSubmitTimesOut(t *testing.T) {
-	ig := newTestIgate(t)
-	ig.ctx = context.Background()
-
 	block := make(chan struct{}) // never closed, no senders
-	ig.submitFn = func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
-		select {
-		case <-block:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+	ig := newTestIgate(t, &stubGovernor{
+		fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+			select {
+			case <-block:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	})
 
 	done := make(chan struct{})
 	start := time.Now()
@@ -117,21 +134,21 @@ func TestHandleISLineSubmitTimesOut(t *testing.T) {
 // cancelled mid-submit, the caller must also observe a drop (not a
 // silent return) and must unblock promptly.
 func TestHandleISLineSessionCtxCancelled(t *testing.T) {
-	ig := newTestIgate(t)
+	block := make(chan struct{})
+	ig := newTestIgate(t, &stubGovernor{
+		fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+			select {
+			case <-block:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ig.ctx = ctx
-
-	block := make(chan struct{})
-	ig.submitFn = func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
-		select {
-		case <-block:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+	setSessCtx(ig, ctx)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -169,11 +186,11 @@ func TestHandleISLineSessionCtxCancelled(t *testing.T) {
 // TestHandleISLineSubmitErrorCountsDrop: a plain non-nil error from
 // Submit (not context-related) must still bump the drop counter.
 func TestHandleISLineSubmitErrorCountsDrop(t *testing.T) {
-	ig := newTestIgate(t)
-
-	ig.submitFn = func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
-		return errors.New("queue full")
-	}
+	ig := newTestIgate(t, &stubGovernor{
+		fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+			return errors.New("queue full")
+		},
+	})
 
 	ig.handleISLine(gateableLine)
 
@@ -183,4 +200,33 @@ func TestHandleISLineSubmitErrorCountsDrop(t *testing.T) {
 	if ig.Status().Downlinked != 0 {
 		t.Fatalf("Downlinked must stay 0 on submit error")
 	}
+}
+
+// TestHandleISLineFanoutDropCounted: the PacketInput fan-out drops
+// frames when no consumer is draining; those drops must be counted.
+func TestHandleISLineFanoutDropCounted(t *testing.T) {
+	ig := newTestIgate(t, &stubGovernor{
+		fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+			return nil
+		},
+	})
+
+	// inputCh has capacity 64 and no consumer. Send 65 gateable
+	// frames with distinct sources so dedup does not swallow them.
+	// The first 64 fit in the buffer; the 65th must be counted as
+	// a fan-out drop.
+	for i := 0; i < 65; i++ {
+		line := makeGateableLine(byte('A' + i/26), byte('A'+i%26))
+		ig.handleISLine(line)
+	}
+
+	if got := counterValue(t, ig.mFanoutDropped); got < 1 {
+		t.Fatalf("fanout dropped counter = %v, want >=1", got)
+	}
+}
+
+// makeGateableLine builds a TNC2 line whose source varies so dedup
+// does not merge successive calls in TestHandleISLineFanoutDropCounted.
+func makeGateableLine(a, b byte) string {
+	return "W5" + string([]byte{a, b}) + ">APRS,WIDE1-1:!3725.00N/12158.00W>hi"
 }

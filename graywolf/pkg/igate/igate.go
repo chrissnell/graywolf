@@ -42,6 +42,14 @@ const igateSubmitTimeout = 2 * time.Second
 // submit is dropped, so a saturated governor cannot flood the logs.
 const submitDropLogInterval = 10 * time.Second
 
+// GovernorSubmitter is the narrow surface of the TX governor that the
+// iGate's IS->RF path depends on. txgovernor.Governor satisfies it.
+// Broken out as an interface so tests can inject a stub and so that the
+// iGate does not take a hard dependency on the governor's full API.
+type GovernorSubmitter interface {
+	Submit(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
+}
+
 // Config is the iGate's runtime configuration. Fields marked "required"
 // must be set before Start. The orchestrator will eventually source
 // most of these from configstore's igate_config row (owned by agent 4C).
@@ -64,8 +72,10 @@ type Config struct {
 	// TxChannel is the radio channel IS->RF frames are submitted on.
 	TxChannel uint32
 	// Governor is the TX governor for IS->RF submissions. Required for
-	// downlink; leave nil for IS->RF=disabled.
-	Governor *txgovernor.Governor
+	// downlink; leave nil for IS->RF=disabled. Declared as an
+	// interface so tests can inject a stub; *txgovernor.Governor
+	// satisfies it.
+	Governor GovernorSubmitter
 	// SimulationMode starts with log-only APRS-IS sends when true.
 	SimulationMode bool
 	// Logger is optional; defaults to slog.Default().
@@ -120,6 +130,7 @@ type Igate struct {
 	mConnectedGauge prometheus.Gauge
 	mDroppedOffline prometheus.Counter
 	mSubmitDropped  prometheus.Counter
+	mFanoutDropped  prometheus.Counter
 
 	// Stats snapshot for Status().
 	statGated      uint64
@@ -128,21 +139,27 @@ type Igate struct {
 	statDropped    uint64
 
 	// session plumbing
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan struct{}
-	client *client
-
-	// submitFn is the IS->RF submit entry point; defaults to
-	// cfg.Governor.Submit when a governor is configured. Exposed as a
-	// field so tests can inject a stub that blocks or fails on demand
-	// without needing a real TX governor.
-	submitFn func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
+	//
+	// sessCtx holds the context handleISLine uses as the parent for
+	// its bounded per-submit timeout. It is swapped in at Start() time
+	// and loaded lock-free on every IS->RF line; keeping it out of
+	// ig.mu avoids coupling the read-loop hot path to the RF->IS
+	// connected/lastConnected mutex.
+	sessCtx atomic.Pointer[sessCtxHolder]
+	cancel  context.CancelFunc
+	done    chan struct{}
+	client  *client
 
 	// lastSubmitDropLogNano holds the UnixNano of the most recent
 	// rate-limited IS->RF submit-drop debug log, for throttling.
 	lastSubmitDropLogNano atomic.Int64
 }
+
+// sessCtxHolder wraps a context.Context for storage in an atomic.Pointer.
+// The wrapper sidesteps atomic.Value's "consistent dynamic type"
+// requirement, since different context implementations (Background,
+// WithCancel, WithTimeout) have different underlying types.
+type sessCtxHolder struct{ ctx context.Context }
 
 // New constructs an Igate. Call Start to open the APRS-IS session.
 func New(cfg Config) (*Igate, error) {
@@ -167,12 +184,9 @@ func New(cfg Config) (*Igate, error) {
 		dedup:   newDedupCache(),
 		inputCh: make(chan *aprs.InboundPacket, 64),
 		done:    make(chan struct{}),
-		ctx:     context.Background(),
 	}
+	ig.sessCtx.Store(&sessCtxHolder{ctx: context.Background()})
 	ig.simulation.Store(cfg.SimulationMode)
-	if cfg.Governor != nil {
-		ig.submitFn = cfg.Governor.Submit
-	}
 	if err := ig.initMetrics(); err != nil {
 		return nil, err
 	}
@@ -200,9 +214,13 @@ func (ig *Igate) initMetrics() error {
 		Name: "igate_is_to_rf_submit_dropped_total",
 		Help: "IS->RF packets dropped because the TX governor submit timed out, was cancelled, or returned an error.",
 	})
+	ig.mFanoutDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "igate_is_to_rf_fanout_dropped_total",
+		Help: "IS->RF frames dropped from the PacketInput fan-out because no consumer was ready.",
+	})
 	if ig.cfg.Registry != nil {
 		for _, c := range []prometheus.Collector{
-			ig.mGatedTotal, ig.mFilteredTotal, ig.mConnectedGauge, ig.mDroppedOffline, ig.mSubmitDropped,
+			ig.mGatedTotal, ig.mFilteredTotal, ig.mConnectedGauge, ig.mDroppedOffline, ig.mSubmitDropped, ig.mFanoutDropped,
 		} {
 			if err := ig.cfg.Registry.Register(c); err != nil {
 				// An AlreadyRegisteredError is fine (tests may call
@@ -226,9 +244,9 @@ func (ig *Igate) Start(ctx context.Context) error {
 		return errors.New("igate: already started")
 	}
 	sessCtx, cancel := context.WithCancel(ctx)
-	ig.ctx = sessCtx
 	ig.cancel = cancel
 	ig.mu.Unlock()
+	ig.sessCtx.Store(&sessCtxHolder{ctx: sessCtx})
 	go ig.supervise(sessCtx)
 	return nil
 }
@@ -314,18 +332,16 @@ func (ig *Igate) handleISLine(line string) {
 		ig.mFilteredTotal.Inc()
 		return
 	}
-	if ig.submitFn == nil {
+	if ig.cfg.Governor == nil {
 		ig.logger.Debug("IS->RF drop: no governor configured")
 		return
 	}
-	// ig.ctx is initialized in New and replaced with the session
-	// context in Start, so it is always non-nil by the time any read
-	// loop invokes handleISLine.
-	ig.mu.Lock()
-	parent := ig.ctx
-	ig.mu.Unlock()
+	// sessCtx is initialized in New and replaced with the real session
+	// context in Start, so Load always returns a non-nil holder on the
+	// read-loop hot path.
+	parent := ig.sessCtx.Load().ctx
 	submitCtx, cancel := context.WithTimeout(parent, igateSubmitTimeout)
-	err = ig.submitFn(submitCtx, ig.cfg.TxChannel, frame, txgovernor.SubmitSource{
+	err = ig.cfg.Governor.Submit(submitCtx, ig.cfg.TxChannel, frame, txgovernor.SubmitSource{
 		Kind:     "igate",
 		Detail:   "is2rf",
 		Priority: txgovernor.PriorityIGateMsg,
@@ -340,9 +356,12 @@ func (ig *Igate) handleISLine(line string) {
 	ig.mGatedTotal.WithLabelValues("is_to_rf").Inc()
 
 	// Also publish into the PacketInput fan-out for any listeners.
+	// Drops are counted but not logged: inputCh is a best-effort tap
+	// and a slow consumer should not back-pressure gating.
 	select {
 	case ig.inputCh <- &aprs.InboundPacket{Raw: mustEncode(frame), Source: "aprs-is", Channel: int(ig.cfg.TxChannel)}:
 	default:
+		ig.mFanoutDropped.Inc()
 	}
 }
 

@@ -184,11 +184,20 @@ func New(cfg Config) *Governor {
 }
 
 // Submit enqueues a frame. Deduplicates, rate-checks are deferred to the
-// worker loop so Submit never blocks on the channel. Returns an error only
-// if the queue is full or the governor is closed.
+// worker loop so Submit never blocks on the channel. Returns an error if
+// the queue is full, the governor is closed, or the caller's context has
+// already been cancelled. Submit honors ctx so that a caller-imposed
+// deadline (e.g. the iGate's IS->RF timeout) propagates into the
+// governor's accept path and so that a cancelled session cannot be
+// charged a newly enqueued frame.
 func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame, src SubmitSource) error {
 	if frame == nil {
 		return errors.New("txgovernor: nil frame")
+	}
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 	}
 	now := time.Now()
 
