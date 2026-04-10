@@ -46,7 +46,7 @@ func RegisterPackets(srv *Server, log *packetlog.Log) func(mux *http.ServeMux) {
 			if s := q.Get("since"); s != "" {
 				t, err := time.Parse(time.RFC3339, s)
 				if err != nil {
-					http.Error(w, "bad since: "+err.Error(), http.StatusBadRequest)
+					http.Error(w, "bad since (expected RFC3339)", http.StatusBadRequest)
 					return
 				}
 				f.Since = t
