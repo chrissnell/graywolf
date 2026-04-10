@@ -3,14 +3,12 @@
 package modembridge
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
+	"net"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -146,8 +144,13 @@ type Bridge struct {
 	dcd        *dcdPublisher
 	dcdPrimary <-chan *pb.DcdChange
 
-	mu    sync.Mutex
-	state State
+	// sup owns the child process lifecycle (spawn, ready handshake, dial,
+	// restart backoff) and the stdout ring buffer. It is the only place
+	// that touches state; Bridge.State() and Bridge.setState() delegate
+	// through it.
+	sup *supervisor
+
+	mu sync.Mutex
 
 	// sendFn is the current session's write function, or nil if no session
 	// is active. Guarded by mu.
@@ -171,20 +174,7 @@ type Bridge struct {
 	enumDispatcher *dispatcher[*pb.AudioDeviceList]
 	toneDispatcher *dispatcher[*pb.TestToneResult]
 	scanDispatcher *dispatcher[*pb.InputLevelScanResult]
-
-	// stdoutRing is a bounded ring buffer of the most recent lines the
-	// child wrote to stdout. It replaces the unbounded
-	// io.Copy(io.Discard, stdout) drain so crash diagnostics can show
-	// the child's final output, and so the reader goroutine does not
-	// leak if the child deadlocks on stdout.
-	stdoutMu   sync.Mutex
-	stdoutRing []string
 }
-
-// stdoutRingMax is the maximum number of lines retained in the stdout
-// ring buffer. Sized to capture a typical Rust panic trace plus a few
-// surrounding log lines.
-const stdoutRingMax = 16
 
 // New builds a bridge. Call Start to run it.
 func New(cfg Config) *Bridge {
@@ -200,7 +190,6 @@ func New(cfg Config) *Bridge {
 		logger:         cfg.Logger,
 		frames:         make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
 		dcd:            pub,
-		state:          StateStopped,
 		status:         newStatusCache(),
 		enumDispatcher: newDispatcher[*pb.AudioDeviceList](),
 		toneDispatcher: newDispatcher[*pb.TestToneResult](),
@@ -211,6 +200,19 @@ func New(cfg Config) *Bridge {
 	// DcdSubscribe. The publisher closes it alongside the other
 	// subscribers at Stop time.
 	b.dcdPrimary = pub.Subscribe()
+	// The supervisor's RunSession callback runs the existing in-place
+	// session loop so the extraction stays mechanical; runSession still
+	// lives in session.go and owns ModemReady handshake, config push,
+	// and graceful shutdown.
+	b.sup = newSupervisor(supervisorConfig{
+		BinaryPath:       cfg.BinaryPath,
+		SocketDir:        cfg.SocketDir,
+		ReadinessTimeout: cfg.ReadinessTimeout,
+		Metrics:          cfg.Metrics,
+		RunSession: func(ctx context.Context, conn net.Conn) error {
+			return b.runSession(ctx, conn)
+		},
+	}, cfg.Logger)
 	return b
 }
 
@@ -267,18 +269,11 @@ func (b *Bridge) ConfigStore() configstore.ConfigStore { return b.cfg.Store }
 func (b *Bridge) Frames() <-chan *pb.ReceivedFrame { return b.frames }
 
 // State returns the current supervisor state.
-func (b *Bridge) State() State {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.state
-}
+func (b *Bridge) State() State { return b.sup.State() }
 
-func (b *Bridge) setState(s State) {
-	b.mu.Lock()
-	b.state = s
-	b.mu.Unlock()
-	b.logger.Info("modembridge state", "state", s.String())
-}
+// setState exposes the supervisor's state setter to the session-loop
+// code in session.go (which still uses the Bridge receiver).
+func (b *Bridge) setState(s State) { b.sup.setState(s) }
 
 // Start launches the supervisor goroutine. It returns immediately.
 func (b *Bridge) Start(ctx context.Context) error {
@@ -332,8 +327,10 @@ func (b *Bridge) closePendingRequests() {
 	b.scanDispatcher.Close()
 }
 
-// supervise is the top-level loop: spawn the child, drive one session, back
-// off on error, repeat until the context is cancelled.
+// supervise runs the supervisor's main loop inside the Bridge's
+// goroutine, wrapping it with the Bridge-scope resets and close/cleanup
+// defers so dispatcher state and the dcd publisher are lifecycle-bound
+// to Start/Stop rather than spread across individual pieces.
 func (b *Bridge) supervise(ctx context.Context) {
 	// Reset the dispatchers in case a previous supervise run closed them.
 	// Callers that register a request before we transition to
@@ -353,139 +350,13 @@ func (b *Bridge) supervise(ctx context.Context) {
 	defer b.dcd.Close()
 	defer b.closePendingRequests()
 
-	backoff := time.Second
-	const maxBackoff = 30 * time.Second
-
-	for {
-		if ctx.Err() != nil {
-			b.setState(StateStopped)
-			return
-		}
-		b.setState(StateStarting)
-
-		err := b.runOnce(ctx)
-		if ctx.Err() != nil {
-			b.setState(StateStopped)
-			return
-		}
-		if err != nil {
-			b.logger.Error("modembridge session ended", "err", err)
-		}
-		if b.cfg.Metrics != nil {
-			b.cfg.Metrics.ChildRestarts.Inc()
-			b.cfg.Metrics.SetChildUp(false)
-		}
-
-		b.setState(StateRestarting)
-		select {
-		case <-ctx.Done():
-			b.setState(StateStopped)
-			return
-		case <-time.After(backoff):
-		}
-		backoff *= 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-	}
-}
-
-// runOnce brings the child up, runs one session, and tears it down. It
-// returns whatever error caused the session to end (or nil on clean shutdown
-// via context cancel).
-func (b *Bridge) runOnce(ctx context.Context) error {
-	listenAddr := modemListenAddr(b.cfg.SocketDir)
-	cleanupListenAddr(listenAddr)
-
-	args := modemExtraArgs(listenAddr)
-	cmd := exec.CommandContext(ctx, b.cfg.BinaryPath, args...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("stdout pipe: %w", err)
-	}
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start %s: %w", b.cfg.BinaryPath, err)
-	}
-	b.logger.Info("spawned modem", "pid", cmd.Process.Pid, "addr", listenAddr)
-	if b.cfg.Metrics != nil {
-		b.cfg.Metrics.SetChildUp(true)
-	}
-
-	// stdoutDone is closed by the scanner goroutine when it sees EOF
-	// (the child's stdout pipe closed because the child exited) or an
-	// error. The defer below waits on it after terminating the child
-	// and before cmd.Wait so the scanner finishes its reads cleanly.
-	var stdoutDone chan struct{}
-
-	defer func() {
-		terminateChild(cmd.Process)
-		if stdoutDone != nil {
-			<-stdoutDone
-		}
-		_ = cmd.Wait()
-		cleanupListenAddr(listenAddr)
-	}()
-
-	// Readiness handshake: blocks until the Rust child signals it is
-	// accepting connections. Returns the address to dial (on Unix this is
-	// the socket path we already know; on Windows it is parsed from stdout).
-	dialAddr, err := readDialAddr(stdout, b.cfg.ReadinessTimeout, listenAddr)
-	if err != nil {
-		return fmt.Errorf("readiness: %w", err)
-	}
-	// Drain stdout into the bounded ring buffer so the child's final
-	// output is available for crash diagnostics and so this reader
-	// goroutine cannot accumulate across restart storms.
-	stdoutDone = make(chan struct{})
-	go b.scanModemStdout(stdout, stdoutDone)
-
-	conn, err := dialModem(dialAddr, 2*time.Second)
-	if err != nil {
-		return fmt.Errorf("dial %s: %w", dialAddr, err)
-	}
-	defer conn.Close()
-
-	return b.runSession(ctx, conn)
+	b.sup.Run(ctx)
 }
 
 // LastModemStdout returns a snapshot of the last stdoutRingMax lines the
 // modem child wrote to stdout. Useful for including the child's final
 // output in crash diagnostics.
-func (b *Bridge) LastModemStdout() []string {
-	b.stdoutMu.Lock()
-	defer b.stdoutMu.Unlock()
-	out := make([]string, len(b.stdoutRing))
-	copy(out, b.stdoutRing)
-	return out
-}
-
-// appendStdoutLine adds line to the ring buffer, evicting the oldest
-// entry if the buffer is full.
-func (b *Bridge) appendStdoutLine(line string) {
-	b.stdoutMu.Lock()
-	if len(b.stdoutRing) >= stdoutRingMax {
-		// Shift left by one. The ring is small (16) so this is cheap.
-		copy(b.stdoutRing, b.stdoutRing[1:])
-		b.stdoutRing = b.stdoutRing[:stdoutRingMax-1]
-	}
-	b.stdoutRing = append(b.stdoutRing, line)
-	b.stdoutMu.Unlock()
-}
-
-// scanModemStdout reads newline-terminated lines from r into the ring
-// buffer until r yields EOF or an error, then closes done to signal
-// runOnce that the reader goroutine has exited.
-func (b *Bridge) scanModemStdout(r io.Reader, done chan struct{}) {
-	defer close(done)
-	scanner := bufio.NewScanner(r)
-	// Bump the max line size so a long Rust panic line does not
-	// truncate the ring's view of the final output.
-	scanner.Buffer(make([]byte, 0, 4096), 64*1024)
-	for scanner.Scan() {
-		b.appendStdoutLine(scanner.Text())
-	}
-}
+func (b *Bridge) LastModemStdout() []string { return b.sup.LastStdout() }
 
 // GetChannelStats returns cached stats for a single channel.
 func (b *Bridge) GetChannelStats(channel uint32) (*ChannelStats, bool) {

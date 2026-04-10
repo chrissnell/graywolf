@@ -8,16 +8,22 @@ import (
 	"time"
 )
 
+// newTestSupervisor returns a bare supervisor suitable for driving
+// scanModemStdout directly. The Run loop is never started.
+func newTestSupervisor() *supervisor {
+	return newSupervisor(supervisorConfig{}, slog.Default())
+}
+
 // TestScanModemStdoutRingBuffer writes more lines than stdoutRingMax to
 // a pipe feeding scanModemStdout, then closes the writer so the scanner
 // sees EOF. The ring must contain only the last stdoutRingMax lines and
 // the reader goroutine must actually exit (done closes).
 func TestScanModemStdoutRingBuffer(t *testing.T) {
-	b := New(Config{Logger: slog.Default()})
+	s := newTestSupervisor()
 
 	pr, pw := io.Pipe()
 	done := make(chan struct{})
-	go b.scanModemStdout(pr, done)
+	go s.scanModemStdout(pr, done)
 
 	const total = 20
 	for i := 0; i < total; i++ {
@@ -33,7 +39,7 @@ func TestScanModemStdoutRingBuffer(t *testing.T) {
 		t.Fatal("scanner goroutine did not exit after pipe close")
 	}
 
-	ring := b.LastModemStdout()
+	ring := s.LastStdout()
 	if len(ring) != stdoutRingMax {
 		t.Fatalf("ring len = %d, want %d", len(ring), stdoutRingMax)
 	}
@@ -52,13 +58,13 @@ func TestScanModemStdoutRingBuffer(t *testing.T) {
 // TestScanModemStdoutEmpty verifies an immediate EOF results in an
 // empty ring and a cleanly exited goroutine.
 func TestScanModemStdoutEmpty(t *testing.T) {
-	b := New(Config{Logger: slog.Default()})
+	s := newTestSupervisor()
 
 	pr, pw := io.Pipe()
 	_ = pw.Close()
 
 	done := make(chan struct{})
-	go b.scanModemStdout(pr, done)
+	go s.scanModemStdout(pr, done)
 
 	select {
 	case <-done:
@@ -66,7 +72,7 @@ func TestScanModemStdoutEmpty(t *testing.T) {
 		t.Fatal("scanner goroutine did not exit")
 	}
 
-	if got := len(b.LastModemStdout()); got != 0 {
+	if got := len(s.LastStdout()); got != 0 {
 		t.Fatalf("ring len = %d, want 0", got)
 	}
 }
