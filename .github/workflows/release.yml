@@ -66,18 +66,28 @@ jobs:
         if: matrix.use_cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
+      - name: Compute version metadata
+        id: ver
+        shell: bash
+        run: |
+          ref="${{ github.ref_name }}"
+          echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build with cross
         if: matrix.use_cross
         working-directory: graywolf-modem
         env:
-          GRAYWOLF_VERSION: ${{ github.ref_name }}
+          GRAYWOLF_VERSION: ${{ steps.ver.outputs.version }}
+          GRAYWOLF_GIT_COMMIT: ${{ steps.ver.outputs.commit }}
         run: cross build --release --target ${{ matrix.target }} --bin graywolf-modem
 
       - name: Build with cargo
         if: matrix.use_cross == false
         working-directory: graywolf-modem
         env:
-          GRAYWOLF_VERSION: ${{ github.ref_name }}
+          GRAYWOLF_VERSION: ${{ steps.ver.outputs.version }}
+          GRAYWOLF_GIT_COMMIT: ${{ steps.ver.outputs.commit }}
         run: cargo build --release --target ${{ matrix.target }} --bin graywolf-modem
 
       - name: Upload Rust binary (Unix)

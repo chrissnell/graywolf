@@ -93,3 +93,20 @@ pub mod modem_9600;
 pub mod fx25;
 pub mod il2p;
 pub mod tx;
+
+/// Base semver string ("0.7.13"), injected at build time from the repo's
+/// VERSION file (via the GRAYWOLF_VERSION env var set by the Makefile / CI).
+pub const VERSION: &str = env!("GRAYWOLF_VERSION");
+
+/// Short git commit hash, optionally suffixed with "-dirty" if the working
+/// tree had uncommitted changes at build time. Injected via the
+/// GRAYWOLF_GIT_COMMIT env var, or derived from `git rev-parse` by build.rs.
+pub const GIT_COMMIT: &str = env!("GRAYWOLF_GIT_COMMIT");
+
+/// Returns the full display-format version string, e.g. "v0.7.13-abcdef1"
+/// or "v0.7.13-abcdef1-dirty". The Go parent process prints this at
+/// startup and compares it to its own full version; any mismatch produces
+/// a warning about a potentially inconsistent build.
+pub fn full_version() -> String {
+    format!("v{}-{}", VERSION, GIT_COMMIT)
+}

@@ -26,7 +26,9 @@ use graywolf_demod::modem::Modem;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 2 && args[1] == "--version" {
-        println!("{}", env!("GRAYWOLF_VERSION"));
+        // Go parent parses this exact string to compare against its own
+        // build version; keep the format stable.
+        println!("{}", graywolf_demod::full_version());
         return ExitCode::SUCCESS;
     }
 

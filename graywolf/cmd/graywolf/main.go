@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -39,8 +40,73 @@ import (
 	"github.com/chrissnell/graywolf/web"
 )
 
-// Version is set at build time via -ldflags.
-var Version = "dev"
+// Version and GitCommit are injected at build time via -ldflags. Both
+// sides of the build (Go + Rust) format their display string as
+// "v<Version>-<GitCommit>"; the Rust side must produce a byte-identical
+// string so the startup banner's mismatch check works.
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+)
+
+// fullVersion returns the display-format version string shared with
+// graywolf-modem, e.g. "v0.7.13-abcdef1" or "v0.7.13-abcdef1-dirty".
+func fullVersion() string {
+	return fmt.Sprintf("v%s-%s", Version, GitCommit)
+}
+
+// resolveModemPath figures out where to find the graywolf-modem binary.
+// The search order is:
+//  1. explicit -modem flag value (used verbatim, no existence check so
+//     the resulting error message points at the user-supplied path)
+//  2. $GRAYWOLF_MODEM env var
+//  3. sibling of the current executable — handles the installed case
+//     (/usr/bin/graywolf → /usr/bin/graywolf-modem) and the dev case
+//     (./bin/graywolf → ./bin/graywolf-modem) uniformly
+//  4. ./graywolf-modem/target/release/graywolf-modem — lets a developer
+//     run the freshly-built Go binary straight from the repo root
+//     against a cargo release build without staging into bin/
+//  5. $PATH lookup as a last resort
+func resolveModemPath(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	if env := os.Getenv("GRAYWOLF_MODEM"); env != "" {
+		return env, nil
+	}
+	if exe, err := os.Executable(); err == nil {
+		// Resolve symlinks so /usr/local/bin/graywolf → /opt/graywolf/bin
+		// still looks for the modem in the real install dir.
+		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+			exe = resolved
+		}
+		cand := filepath.Join(filepath.Dir(exe), "graywolf-modem")
+		if _, err := os.Stat(cand); err == nil {
+			return cand, nil
+		}
+	}
+	devPath := filepath.FromSlash("./graywolf-modem/target/release/graywolf-modem")
+	if _, err := os.Stat(devPath); err == nil {
+		return devPath, nil
+	}
+	if p, err := exec.LookPath("graywolf-modem"); err == nil {
+		return p, nil
+	}
+	return "", errors.New("graywolf-modem binary not found; pass -modem, set GRAYWOLF_MODEM, place it next to graywolf, or build with `make release`")
+}
+
+// queryModemVersion runs `<path> --version` and returns its stdout
+// trimmed of whitespace. The Rust side formats it to exactly match
+// graywolf's own fullVersion() so string equality is sufficient.
+func queryModemVersion(path string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--version").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
 
 func main() {
 	// Handle subcommands before flag parsing.
@@ -50,14 +116,14 @@ func main() {
 			handleAuthSubcommand(os.Args[2:])
 			return
 		case "version":
-			fmt.Println(Version)
+			fmt.Println(fullVersion())
 			return
 		}
 	}
 
 	var (
 		dbPath     = flag.String("config", "./graywolf.db", "path to SQLite config database")
-		modemPath  = flag.String("modem", "./graywolf-modem/target/release/graywolf-modem", "path to graywolf-modem binary")
+		modemPath  = flag.String("modem", "", "path to graywolf-modem binary (default: $GRAYWOLF_MODEM, then next to graywolf, then ./graywolf-modem/target/release/graywolf-modem, then $PATH)")
 		httpAddr   = flag.String("http", "127.0.0.1:8080", "HTTP listen address")
 		shutdownTO = flag.Duration("shutdown-timeout", 10*time.Second, "max time to wait for clean shutdown")
 		flacFile   = flag.String("flac", "", "override audio device with a FLAC file for testing")
@@ -131,9 +197,33 @@ func main() {
 
 	m := metrics.New()
 
+	// --- Modem binary resolution + version banner ----------------------
+	resolvedModem, err := resolveModemPath(*modemPath)
+	if err != nil {
+		logger.Error("locate graywolf-modem", "err", err)
+		os.Exit(1)
+	}
+	modemVersion, verr := queryModemVersion(resolvedModem)
+	if verr != nil {
+		// Not fatal: log the error but still try to start. If the binary
+		// is really broken, bridge.Start's handshake will surface it.
+		logger.Warn("query graywolf-modem version",
+			"path", resolvedModem, "err", verr)
+		modemVersion = "unknown"
+	}
+	logger.Info("starting graywolf",
+		"graywolf", fullVersion(),
+		"graywolf-modem", modemVersion)
+	if modemVersion != "unknown" && modemVersion != fullVersion() {
+		logger.Warn("graywolf and graywolf-modem versions disagree — possibly a mixed build",
+			"graywolf", fullVersion(),
+			"graywolf-modem", modemVersion,
+			"modem_path", resolvedModem)
+	}
+
 	// --- Modem bridge ---------------------------------------------------
 	bridge := modembridge.New(modembridge.Config{
-		BinaryPath: *modemPath,
+		BinaryPath: resolvedModem,
 		Store:      store,
 		Metrics:    m,
 		Logger:     logger,

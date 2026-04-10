@@ -172,8 +172,11 @@ impl IpcServer {
         let handle = IpcHandle { stream: Arc::new(Mutex::new(stream)) };
 
         // Send ModemReady immediately so the Go side knows IPC is live.
+        // The version field carries the full display string (matching
+        // `graywolf-modem --version`) so the Go log line "modem ready
+        // version=..." agrees with the startup banner.
         let ready = IpcMessage::modem_ready(ModemReady {
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: crate::full_version(),
             pid: std::process::id() as u64,
         });
         handle.send(&ready)?;

@@ -1,11 +1,17 @@
 CARGO   ?= cargo
 RUSTFLAGS_NATIVE := -C target-cpu=native
-# Version is derived from the latest git tag (e.g. v0.7.9 → 0.7.9). Falls back
-# to the VERSION file for source tarballs without git history.
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || cat VERSION 2>/dev/null || echo dev)
+
+# Version comes from the VERSION file (authoritative). Commit hash + dirty
+# flag come from git. The two are joined into v<VERSION>-<COMMIT>[-dirty]
+# at display time by both the Go and Rust sides, so keep them separate here.
+VERSION     ?= $(shell cat VERSION 2>/dev/null || echo dev)
+GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_DIRTY   := $(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
+FULL_COMMIT := $(GIT_COMMIT)$(GIT_DIRTY)
+
 GIT_REMOTE ?= origin
 
-GO_LDFLAGS := -X main.Version=$(VERSION)
+GO_LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(FULL_COMMIT)
 
 # Subproject directories (see refactor/split-modem-and-app).
 MODEM_DIR := graywolf-modem
@@ -14,16 +20,21 @@ WEB_DIR   := $(APP_DIR)/web
 
 MANIFEST := --manifest-path $(MODEM_DIR)/Cargo.toml
 
+# Rust picks up these env vars in build.rs.
+CARGO_ENV := GRAYWOLF_VERSION="$(VERSION)" GRAYWOLF_GIT_COMMIT="$(FULL_COMMIT)"
+
 .PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test web graywolf version bump-minor bump-point
 
 all: release web
-	mkdir -p bin && cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
+	mkdir -p bin
+	cp $(MODEM_DIR)/target/release/graywolf-modem bin/
+	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
 
 build:
-	GRAYWOLF_VERSION="$(VERSION)" $(CARGO) build $(MANIFEST)
+	$(CARGO_ENV) $(CARGO) build $(MANIFEST)
 
 release:
-	GRAYWOLF_VERSION="$(VERSION)" RUSTFLAGS="$(RUSTFLAGS_NATIVE)" $(CARGO) build --release $(MANIFEST)
+	$(CARGO_ENV) RUSTFLAGS="$(RUSTFLAGS_NATIVE)" $(CARGO) build --release $(MANIFEST)
 
 check:
 	$(CARGO) check $(MANIFEST)
@@ -64,9 +75,13 @@ go-build:
 go-test:
 	cd $(APP_DIR) && go test ./...
 
-# Build everything: Rust release, Svelte UI, Go binary
+# Build everything: Rust release, Svelte UI, Go binary.
+# Also stages graywolf-modem into bin/ so ./bin/graywolf can find it via
+# the next-to-executable lookup.
 graywolf: release web
-	mkdir -p bin && cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
+	mkdir -p bin
+	cp $(MODEM_DIR)/target/release/graywolf-modem bin/
+	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
 
 run-bench: release
 	@echo "Usage: make run-bench FLAC=<file> [ITER=5]"
@@ -74,7 +89,7 @@ run-bench: release
 	$(MODEM_DIR)/bench.sh "$(FLAC)" "$(or $(ITER),5)"
 
 version:
-	@echo "v$(VERSION)"
+	@echo "v$(VERSION)-$(FULL_COMMIT)"
 
 bump-minor:
 	@echo "Current version: $(VERSION)"

@@ -17,7 +17,8 @@ builds:
     ldflags:
       - -w
       - -s
-      - -X main.Version=v{{.Version}}
+      - -X main.Version={{.Version}}
+      - -X main.GitCommit={{.ShortCommit}}
     goos:
       - linux
       - darwin
