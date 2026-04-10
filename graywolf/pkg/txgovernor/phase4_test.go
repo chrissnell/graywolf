@@ -45,7 +45,17 @@ func TestSetChannelTimingUnderConcurrentSubmits(t *testing.T) {
 
 func TestTxHookInvoked(t *testing.T) {
 	cap := &captureSender{}
-	g := New(Config{Sender: cap.Send, Logger: silentLogger()})
+	// Use a full-duplex channel so the CSMA p-persistence roll is
+	// skipped entirely — without this the default Persist=63 defers
+	// ~75% of attempts by one 100ms slot and the 1s deadline can
+	// expire after a run of unlucky rolls.
+	g := New(Config{
+		Sender: cap.Send,
+		Logger: silentLogger(),
+		Channels: map[uint32]ChannelTiming{
+			1: {FullDup: true},
+		},
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go g.Run(ctx)
