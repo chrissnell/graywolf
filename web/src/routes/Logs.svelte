@@ -195,7 +195,7 @@
     text-align: center;
   }
   :global(.logs-viewer .dir-badge.rx) { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-  :global(.logs-viewer .dir-badge.tx) { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
+  :global(.logs-viewer .dir-badge.tx) { background: #ffaa00; color: #000; }
   :global(.logs-viewer .ch-badge) {
     background: var(--bg-tertiary);
     color: var(--text-secondary);

@@ -364,7 +364,7 @@
     text-align: center;
   }
   :global(.feed-viewer .dir-badge.rx) { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-  :global(.feed-viewer .dir-badge.tx) { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
+  :global(.feed-viewer .dir-badge.tx) { background: #ffaa00; color: #000; }
   :global(.feed-viewer .ch-badge) {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
