@@ -1104,24 +1104,53 @@ func openAuthDB(dbPath string) (*configstore.Store, *webauth.AuthStore) {
 
 // runGPSManager manages the GPS reader goroutine, restarting it whenever
 // the config changes (signalled via reload) or the reader exits with an error.
+//
+// A restart cancels the previous reader's context and then waits for the
+// previous goroutine to actually exit before spawning a replacement. Without
+// that wait the old reader could still be closing its serial port while the
+// new one tried to open it, producing intermittent port-busy errors. The
+// wait is bounded by gpsReaderShutdownGrace so a stuck reader cannot block
+// a config reload indefinitely.
 func runGPSManager(ctx context.Context, store *configstore.Store, cache *gps.MemCache, reload <-chan struct{}, logger *slog.Logger) {
-	var cancel context.CancelFunc
+	const gpsReaderShutdownGrace = 2 * time.Second
+
+	var (
+		cancel   context.CancelFunc
+		readerDn chan struct{}
+	)
+
+	stopReader := func() {
+		if cancel == nil {
+			return
+		}
+		cancel()
+		cancel = nil
+		if readerDn == nil {
+			return
+		}
+		select {
+		case <-readerDn:
+		case <-time.After(gpsReaderShutdownGrace):
+			logger.Warn("previous gps reader did not exit in time; starting new reader anyway")
+		}
+		readerDn = nil
+	}
 
 	startReader := func() {
-		if cancel != nil {
-			cancel()
-		}
+		stopReader()
 		gpsCfg, err := store.GetGPSConfig()
 		if err != nil || gpsCfg == nil || !gpsCfg.Enabled {
 			logger.Info("gps reader disabled")
-			cancel = nil
 			return
 		}
 		var readerCtx context.Context
 		readerCtx, cancel = context.WithCancel(ctx)
+		done := make(chan struct{})
+		readerDn = done
 		switch gpsCfg.SourceType {
 		case "serial":
 			go func() {
+				defer close(done)
 				for {
 					err := gps.RunSerial(readerCtx, gps.SerialConfig{
 						Device:   gpsCfg.Device,
@@ -1131,11 +1160,16 @@ func runGPSManager(ctx context.Context, store *configstore.Store, cache *gps.Mem
 						return
 					}
 					logger.Warn("gps serial reader exited", "err", err)
-					time.Sleep(5 * time.Second)
+					select {
+					case <-readerCtx.Done():
+						return
+					case <-time.After(5 * time.Second):
+					}
 				}
 			}()
 		case "gpsd":
 			go func() {
+				defer close(done)
 				for {
 					err := gps.RunGPSD(readerCtx, gps.GPSDConfig{
 						Host: gpsCfg.GpsdHost,
@@ -1145,13 +1179,19 @@ func runGPSManager(ctx context.Context, store *configstore.Store, cache *gps.Mem
 						return
 					}
 					logger.Warn("gpsd reader exited", "err", err)
-					time.Sleep(5 * time.Second)
+					select {
+					case <-readerCtx.Done():
+						return
+					case <-time.After(5 * time.Second):
+					}
 				}
 			}()
 		default:
 			logger.Info("gps source type not recognized", "type", gpsCfg.SourceType)
 			cancel()
 			cancel = nil
+			close(done)
+			readerDn = nil
 		}
 	}
 
@@ -1162,9 +1202,7 @@ func runGPSManager(ctx context.Context, store *configstore.Store, cache *gps.Mem
 	for {
 		select {
 		case <-ctx.Done():
-			if cancel != nil {
-				cancel()
-			}
+			stopReader()
 			return
 		case <-reload:
 			logger.Info("gps config changed, restarting reader")
