@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -282,5 +285,115 @@ func TestLoginLogout(t *testing.T) {
 	_, err := s.GetSessionByToken(ctx, sessionCookieValue)
 	if err == nil {
 		t.Fatal("session should have been deleted")
+	}
+}
+
+// TestStoreHonorsContextCancellation verifies that a cancelled context
+// prevents any store work from hitting the database.
+func TestStoreHonorsContextCancellation(t *testing.T) {
+	s := testAuthStore(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := s.CreateUser(ctx, "admin", "hash")
+	if err == nil {
+		t.Fatal("expected error from cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+
+	// No row should have been inserted.
+	count, cerr := s.UserCount(context.Background())
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 users after cancelled CreateUser, got %d", count)
+	}
+}
+
+// TestCreateFirstUserConcurrent spins many goroutines that all try to create
+// the first user simultaneously. Exactly one should win; everyone else must
+// see ErrSetupAlreadyComplete.
+func TestCreateFirstUserConcurrent(t *testing.T) {
+	s := testAuthStore(t)
+
+	const n = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var successes atomic.Int32
+	var alreadyComplete atomic.Int32
+	var other atomic.Int32
+
+	for i := 0; i < n; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			username := "admin" + string(rune('0'+i))
+			_, err := s.CreateFirstUser(context.Background(), username, "hash")
+			switch {
+			case err == nil:
+				successes.Add(1)
+			case errors.Is(err, ErrSetupAlreadyComplete):
+				alreadyComplete.Add(1)
+			default:
+				other.Add(1)
+				t.Errorf("unexpected error: %v", err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if successes.Load() != 1 {
+		t.Fatalf("expected exactly 1 success, got %d", successes.Load())
+	}
+	if alreadyComplete.Load() != n-1 {
+		t.Fatalf("expected %d ErrSetupAlreadyComplete, got %d", n-1, alreadyComplete.Load())
+	}
+	if other.Load() != 0 {
+		t.Fatalf("expected 0 unexpected errors, got %d", other.Load())
+	}
+
+	// DB should hold exactly one user.
+	count, err := s.UserCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 user in db, got %d", count)
+	}
+}
+
+// TestHandleSetupErrorSanitization confirms that a second setup attempt
+// returns a clean "setup already completed" error body — not a leaked DB
+// message like a UNIQUE constraint violation.
+func TestHandleSetupErrorSanitization(t *testing.T) {
+	s := testAuthStore(t)
+	h := &Handlers{Auth: s}
+
+	// Seed one user directly so the setup endpoint sees a populated DB.
+	if _, err := s.CreateUser(context.Background(), "existing", "hash"); err != nil {
+		t.Fatal(err)
+	}
+
+	body, _ := json.Marshal(setupRequest{Username: "newbie", Password: "secret"})
+	req := httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.HandleSetup(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v (body=%s)", err, rec.Body.String())
+	}
+	if got := resp["error"]; got != "setup already completed" {
+		t.Fatalf("expected sanitized error, got %q", got)
 	}
 }
