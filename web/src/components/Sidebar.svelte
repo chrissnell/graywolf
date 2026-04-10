@@ -2,19 +2,35 @@
   import { link } from 'svelte-spa-router';
   import { location } from 'svelte-spa-router';
 
-  const navItems = [
-    { path: '/', label: 'Dashboard' },
-    { path: '/channels', label: 'Channels' },
-    { path: '/audio-devices', label: 'Audio Devices' },
-    { path: '/ptt', label: 'PTT' },
-    { path: '/kiss', label: 'KISS' },
-    { path: '/agw', label: 'AGW' },
-    { path: '/igate', label: 'iGate' },
-    { path: '/digipeater', label: 'Digipeater' },
-    { path: '/beacons', label: 'Beacons' },
-    { path: '/gps', label: 'GPS' },
-    { path: '/simulation', label: 'Simulation' },
-    { path: '/logs', label: 'Logs' },
+  const dashboardItem = { path: '/', label: 'Dashboard' };
+
+  const navGroups = [
+    {
+      label: 'Operations',
+      items: [
+        { path: '/beacons', label: 'Beacons' },
+        { path: '/digipeater', label: 'Digipeater' },
+        { path: '/igate', label: 'iGate' },
+        { path: '/logs', label: 'Logs' },
+      ],
+    },
+    {
+      label: 'Settings',
+      items: [
+        { path: '/channels', label: 'Channels' },
+        { path: '/audio-devices', label: 'Audio Devices' },
+        { path: '/ptt', label: 'PTT' },
+        { path: '/gps', label: 'GPS' },
+        { path: '/simulation', label: 'Simulation' },
+      ],
+    },
+    {
+      label: 'Interfaces',
+      items: [
+        { path: '/kiss', label: 'KISS' },
+        { path: '/agw', label: 'AGW' },
+      ],
+    },
   ];
 
   let currentPath = $state('');
@@ -28,21 +44,41 @@
   <div class="sidebar-header">
     <h1 class="logo">graywolf</h1>
   </div>
-  <ul class="nav-list">
-    {#each navItems as item}
+  <div class="nav-scroll">
+    <ul class="nav-list dashboard-list">
       <li>
         <a
-          href={item.path}
+          href={dashboardItem.path}
           use:link
-          class="nav-link"
-          class:active={currentPath === item.path || (item.path !== '/' && currentPath.startsWith(item.path))}
-          aria-current={currentPath === item.path ? 'page' : undefined}
+          class="nav-link dashboard-link"
+          class:active={currentPath === dashboardItem.path}
+          aria-current={currentPath === dashboardItem.path ? 'page' : undefined}
         >
-          <span class="nav-label">{item.label}</span>
+          <span class="nav-label">{dashboardItem.label}</span>
         </a>
       </li>
+    </ul>
+    {#each navGroups as group}
+      <div class="nav-group">
+        <h2 class="nav-group-label">{group.label}</h2>
+        <ul class="nav-list">
+          {#each group.items as item}
+            <li>
+              <a
+                href={item.path}
+                use:link
+                class="nav-link"
+                class:active={currentPath === item.path || currentPath.startsWith(item.path + '/')}
+                aria-current={currentPath === item.path ? 'page' : undefined}
+              >
+                <span class="nav-label">{item.label}</span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
     {/each}
-  </ul>
+  </div>
 </nav>
 
 <style>
@@ -72,10 +108,37 @@
     letter-spacing: 1px;
   }
 
+  .nav-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0 12px;
+  }
+
   .nav-list {
     list-style: none;
-    padding: 8px 0;
-    flex: 1;
+    padding: 0;
+  }
+
+  .dashboard-list {
+    padding: 4px 0 8px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 8px;
+    background: var(--bg-tertiary);
+  }
+
+  .nav-group {
+    padding: 8px 0 4px;
+  }
+
+  .nav-group-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    padding: 6px 16px;
+    margin: 0;
   }
 
   .nav-link {
@@ -86,6 +149,10 @@
     color: var(--text-secondary);
     transition: background 0.15s, color 0.15s;
     font-size: 13px;
+  }
+
+  .dashboard-link {
+    font-weight: 600;
   }
 
   .nav-link:hover {
@@ -112,9 +179,21 @@
       border-top: 1px solid var(--border-color);
     }
     .sidebar-header { display: none; }
-    .nav-list {
+    .nav-scroll {
+      flex: 1;
       display: flex;
       overflow-x: auto;
+      padding: 0;
+    }
+    .nav-group, .dashboard-list {
+      padding: 0;
+      margin: 0;
+      border: none;
+      background: transparent;
+    }
+    .nav-group-label { display: none; }
+    .nav-list {
+      display: flex;
       padding: 0;
     }
     .nav-link {
