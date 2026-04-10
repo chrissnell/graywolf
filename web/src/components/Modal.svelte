@@ -1,7 +1,7 @@
 <script>
   import { Modal as ChonkyModal } from '@chrissnell/chonky-ui';
 
-  let { open = $bindable(false), title = '', onClose = undefined, children } = $props();
+  let { open = $bindable(false), title = '', onClose = undefined, class: className = '', children } = $props();
 
   const Header = ChonkyModal.Header;
   const Body = ChonkyModal.Body;
@@ -13,7 +13,7 @@
   }
 </script>
 
-<ChonkyModal bind:open onClose={handleClose}>
+<ChonkyModal bind:open onClose={handleClose} class={className}>
   <Header>
     <h3 class="modal-title">{title}</h3>
     <Close />

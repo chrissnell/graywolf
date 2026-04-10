@@ -353,73 +353,80 @@
   </Box>
 </div>
 
-<Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'}>
-    <FormField label="Channel" id="bcn-channel"
-      hint="Radio channel this beacon transmits on. Defined on the Channels page.">
-      <Select id="bcn-channel" bind:value={form.channel} options={channelOptions} />
-    </FormField>
-    <FormField label="Callsign" id="bcn-call">
-      <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
-    </FormField>
-    <FormField label="Destination" id="bcn-dest"
-      hint="APRS tocall identifying the originating software. Leave as APGW00 unless you know you need to change it.">
-      <Input id="bcn-dest" bind:value={form.destination} placeholder="APGW00" />
-    </FormField>
-    <FormField label="Path" id="bcn-path">
-      <Input id="bcn-path" bind:value={form.path} placeholder="WIDE1-1,WIDE2-1" />
-    </FormField>
-    <FormField label="Symbol" id="bcn-symbol"
-      hint="The icon shown for this station on aprs.fi and other APRS maps.">
-      <div class="symbol-row">
-        <span
-          class="symbol-swatch"
-          style="background-image: url({SPRITE_URLS[form.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(form.symbol || '-', CELL_PX)};"
-          aria-hidden="true"
-        >
-          {#if form.overlay && form.symbol_table === ALTERNATE_TABLE}
-            <span class="symbol-swatch-overlay">{form.overlay}</span>
-          {/if}
-        </span>
-        <span class="symbol-name">
-          {describe(symbolMeta, form.symbol_table || '/', form.symbol || '-') || '\u2014'}
-        </span>
-        <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
-      </div>
-    </FormField>
-    <FormField label="Position source" id="bcn-pos-source"
-      hint="Choose whether this beacon's coordinates come from the live GPS fix or from fixed values you enter below.">
-      <RadioGroup bind:value={form.pos_source}>
-        <div class="pos-source-row">
-          <Radio value="gps" label="Use latest fix from GPS" />
-          <Radio value="fixed" label="Use fixed coordinates" />
+<Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'} class="beacon-modal">
+  <div class="beacon-form-grid">
+    <div class="beacon-form-col">
+      <FormField label="Channel" id="bcn-channel"
+        hint="Radio channel this beacon transmits on. Defined on the Channels page.">
+        <Select id="bcn-channel" bind:value={form.channel} options={channelOptions} />
+      </FormField>
+      <FormField label="Callsign" id="bcn-call">
+        <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
+      </FormField>
+      <FormField label="Destination" id="bcn-dest"
+        hint="APRS tocall identifying the originating software. Leave as APGW00 unless you know you need to change it.">
+        <Input id="bcn-dest" bind:value={form.destination} placeholder="APGW00" />
+      </FormField>
+      <FormField label="Path" id="bcn-path">
+        <Input id="bcn-path" bind:value={form.path} placeholder="WIDE1-1,WIDE2-1" />
+      </FormField>
+      <FormField label="Symbol" id="bcn-symbol"
+        hint="The icon shown for this station on aprs.fi and other APRS maps.">
+        <div class="symbol-row">
+          <span
+            class="symbol-swatch"
+            style="background-image: url({SPRITE_URLS[form.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(form.symbol || '-', CELL_PX)};"
+            aria-hidden="true"
+          >
+            {#if form.overlay && form.symbol_table === ALTERNATE_TABLE}
+              <span class="symbol-swatch-overlay">{form.overlay}</span>
+            {/if}
+          </span>
+          <span class="symbol-name">
+            {describe(symbolMeta, form.symbol_table || '/', form.symbol || '-') || '\u2014'}
+          </span>
+          <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
         </div>
-      </RadioGroup>
-    </FormField>
-    {#if form.pos_source === 'fixed'}
-      <FormField label="Latitude" id="bcn-lat"
-        hint="Decimal degrees, north positive (e.g. 37.5 for Half Moon Bay; -33.86 for Sydney).">
-        <Input id="bcn-lat" bind:value={form.latitude} placeholder="37.5" />
       </FormField>
-      <FormField label="Longitude" id="bcn-lon"
-        hint="Decimal degrees, east positive (e.g. -122.4 for San Francisco; 151.2 for Sydney).">
-        <Input id="bcn-lon" bind:value={form.longitude} placeholder="-122.4" />
+      <FormField label="Comment" id="bcn-comment">
+        <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
       </FormField>
-      <FormField label="Altitude (feet)" id="bcn-alt"
-        hint="Antenna height above sea level. Optional; leave blank or 0 to omit.">
-        <Input id="bcn-alt" bind:value={form.alt_ft} placeholder="0" />
-      </FormField>
-    {/if}
-    <FormField label="Comment" id="bcn-comment">
-      <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
-    </FormField>
-    <FormField label="Interval (seconds)" id="bcn-interval">
-      <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
-    </FormField>
-    <Toggle bind:checked={form.enabled} label="Enabled" />
-    <div class="modal-actions">
-      <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
+
+    <div class="beacon-form-col">
+      <FormField label="Position source" id="bcn-pos-source"
+        hint="Choose whether this beacon's coordinates come from the live GPS fix or from fixed values you enter below.">
+        <RadioGroup bind:value={form.pos_source}>
+          <div class="pos-source-row">
+            <Radio value="gps" label="Use latest fix from GPS" />
+            <Radio value="fixed" label="Use fixed coordinates" />
+          </div>
+        </RadioGroup>
+      </FormField>
+      {#if form.pos_source === 'fixed'}
+        <FormField label="Latitude" id="bcn-lat"
+          hint="Decimal degrees, north positive (e.g. 37.5 for Half Moon Bay; -33.86 for Sydney).">
+          <Input id="bcn-lat" bind:value={form.latitude} placeholder="37.5" />
+        </FormField>
+        <FormField label="Longitude" id="bcn-lon"
+          hint="Decimal degrees, east positive (e.g. -122.4 for San Francisco; 151.2 for Sydney).">
+          <Input id="bcn-lon" bind:value={form.longitude} placeholder="-122.4" />
+        </FormField>
+        <FormField label="Altitude (feet)" id="bcn-alt"
+          hint="Antenna height above sea level. Optional; leave blank or 0 to omit.">
+          <Input id="bcn-alt" bind:value={form.alt_ft} placeholder="0" />
+        </FormField>
+      {/if}
+      <FormField label="Interval (seconds)" id="bcn-interval">
+        <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
+      </FormField>
+      <Toggle bind:checked={form.enabled} label="Enabled" />
+    </div>
+  </div>
+  <div class="modal-actions">
+    <Button onclick={() => modalOpen = false}>Cancel</Button>
+    <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
+  </div>
 </Modal>
 
 <SymbolPicker
@@ -599,6 +606,24 @@
   }
   .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  /* Wider modal for the two-column beacon form. */
+  :global(.modal.beacon-modal) {
+    width: min(820px, 92vw);
+  }
+  .beacon-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 24px;
+  }
+  @media (max-width: 640px) {
+    .beacon-form-grid { grid-template-columns: 1fr; }
+  }
+  .beacon-form-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
 
   .symbol-row {
     display: flex;
