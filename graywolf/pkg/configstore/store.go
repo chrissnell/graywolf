@@ -218,32 +218,45 @@ func (s *Store) DeleteAudioDevice(id uint32) error {
 	return s.db.Delete(&AudioDevice{}, id).Error
 }
 
-// ChannelsForDevice returns all channels that reference the given device as
-// either their input or output device.
-func (s *Store) ChannelsForDevice(deviceID uint32) ([]Channel, error) {
-	var out []Channel
-	err := s.db.Where("input_device_id = ? OR output_device_id = ?", deviceID, deviceID).
-		Order("id").Find(&out).Error
-	return out, err
-}
-
-// DeleteAudioDeviceCascade deletes the audio device and any channels that
-// reference it (as input or output) in a single transaction.
-func (s *Store) DeleteAudioDeviceCascade(id uint32) ([]Channel, error) {
-	var deleted []Channel
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+// DeleteAudioDeviceChecked atomically checks for channels referencing the
+// device and either refuses the delete (cascade=false with refs) or
+// cascades through them (cascade=true, or no refs) within a single
+// transaction. There is no window for a concurrent writer to slip in a
+// new referencing channel between the check and the delete, so an
+// operator who declined to cascade can never have a channel silently
+// swept away.
+//
+// Return shapes:
+//   - refs non-empty, deleted nil: operator refused to cascade; nothing
+//     was modified. Caller should surface refs to the user and ask.
+//   - refs nil, deleted: the device is gone; deleted lists the channels
+//     that went with it (possibly empty if nothing referenced the device).
+func (s *Store) DeleteAudioDeviceChecked(id uint32, cascade bool) (deleted []Channel, refs []Channel, err error) {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var found []Channel
 		if err := tx.Where("input_device_id = ? OR output_device_id = ?", id, id).
-			Find(&deleted).Error; err != nil {
+			Order("id").Find(&found).Error; err != nil {
 			return err
 		}
-		for _, ch := range deleted {
+		if len(found) > 0 && !cascade {
+			refs = found
+			return nil
+		}
+		for _, ch := range found {
 			if err := tx.Delete(&Channel{}, ch.ID).Error; err != nil {
 				return fmt.Errorf("delete channel %d: %w", ch.ID, err)
 			}
 		}
-		return tx.Delete(&AudioDevice{}, id).Error
+		if err := tx.Delete(&AudioDevice{}, id).Error; err != nil {
+			return err
+		}
+		deleted = found
+		return nil
 	})
-	return deleted, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return deleted, refs, nil
 }
 
 // ---------------------------------------------------------------------------

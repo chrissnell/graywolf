@@ -346,35 +346,20 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, d)
 	case http.MethodDelete:
 		cascade := r.URL.Query().Get("cascade") == "true"
-		deps, err := s.store.ChannelsForDevice(id)
+		deleted, refs, err := s.store.DeleteAudioDeviceChecked(id, cascade)
 		if err != nil {
-			s.internalError(w, r, "channels for device", err)
+			s.internalError(w, r, "delete audio device", err)
 			return
 		}
-		if len(deps) > 0 && !cascade {
-			names := make([]string, len(deps))
-			for i, ch := range deps {
-				names[i] = ch.Name
-			}
+		if len(refs) > 0 {
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error":    "device is referenced by channels",
-				"channels": names,
+				"channels": refs,
 			})
 			return
 		}
-		if len(deps) > 0 {
-			if _, err := s.store.DeleteAudioDeviceCascade(id); err != nil {
-				s.internalError(w, r, "delete audio device cascade", err)
-				return
-			}
-		} else {
-			if err := s.store.DeleteAudioDevice(id); err != nil {
-				s.internalError(w, r, "delete audio device", err)
-				return
-			}
-		}
 		s.notifyBridgeForDevice(r.Context(), id)
-		w.WriteHeader(http.StatusNoContent)
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

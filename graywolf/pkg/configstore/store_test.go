@@ -243,9 +243,60 @@ func TestChannelValidation_DirectionEnforcement(t *testing.T) {
 	}
 }
 
-func TestDeleteAudioDeviceCascade(t *testing.T) {
+func TestDeleteAudioDeviceChecked_NoRefs(t *testing.T) {
 	s := newTestStore(t)
+	dev := &AudioDevice{Name: "unused", Direction: "input", SourceType: "soundcard", SourcePath: "hw:0", SampleRate: 48000, Channels: 1, Format: "s16le"}
+	if err := s.CreateAudioDevice(dev); err != nil {
+		t.Fatal(err)
+	}
 
+	deleted, refs, err := s.DeleteAudioDeviceChecked(dev.ID, false)
+	if err != nil {
+		t.Fatalf("DeleteAudioDeviceChecked: %v", err)
+	}
+	if len(refs) != 0 {
+		t.Fatalf("expected no refs, got %+v", refs)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("expected no cascaded channels, got %+v", deleted)
+	}
+	if _, err := s.GetAudioDevice(dev.ID); err == nil {
+		t.Fatal("expected device to be gone")
+	}
+}
+
+func TestDeleteAudioDeviceChecked_RefsRefusesWithoutCascade(t *testing.T) {
+	s := newTestStore(t)
+	inDev := &AudioDevice{Name: "mic", Direction: "input", SourceType: "soundcard", SourcePath: "hw:0", SampleRate: 48000, Channels: 1, Format: "s16le"}
+	if err := s.CreateAudioDevice(inDev); err != nil {
+		t.Fatal(err)
+	}
+	ch := &Channel{Name: "ch1", InputDeviceID: inDev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
+	if err := s.CreateChannel(ch); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, refs, err := s.DeleteAudioDeviceChecked(inDev.ID, false)
+	if err != nil {
+		t.Fatalf("DeleteAudioDeviceChecked: %v", err)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("expected nothing deleted when refusing, got %+v", deleted)
+	}
+	if len(refs) != 1 || refs[0].ID != ch.ID {
+		t.Fatalf("expected refs=[ch1], got %+v", refs)
+	}
+	// Device and channel must still exist.
+	if _, err := s.GetAudioDevice(inDev.ID); err != nil {
+		t.Fatalf("device should still exist: %v", err)
+	}
+	if _, err := s.GetChannel(ch.ID); err != nil {
+		t.Fatalf("channel should still exist: %v", err)
+	}
+}
+
+func TestDeleteAudioDeviceChecked_CascadeDeletesRefs(t *testing.T) {
+	s := newTestStore(t)
 	inDev := &AudioDevice{Name: "mic", Direction: "input", SourceType: "soundcard", SourcePath: "hw:0", SampleRate: 48000, Channels: 1, Format: "s16le"}
 	if err := s.CreateAudioDevice(inDev); err != nil {
 		t.Fatal(err)
@@ -254,7 +305,6 @@ func TestDeleteAudioDeviceCascade(t *testing.T) {
 	if err := s.CreateAudioDevice(outDev); err != nil {
 		t.Fatal(err)
 	}
-
 	ch1 := &Channel{Name: "ch1", InputDeviceID: inDev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
 	ch2 := &Channel{Name: "ch2", InputDeviceID: inDev.ID, OutputDeviceID: outDev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
 	if err := s.CreateChannel(ch1); err != nil {
@@ -264,58 +314,26 @@ func TestDeleteAudioDeviceCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ChannelsForDevice should find both channels for the input device
-	deps, err := s.ChannelsForDevice(inDev.ID)
+	deleted, refs, err := s.DeleteAudioDeviceChecked(inDev.ID, true)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("DeleteAudioDeviceChecked: %v", err)
 	}
-	if len(deps) != 2 {
-		t.Fatalf("expected 2 dependent channels, got %d", len(deps))
-	}
-
-	// ChannelsForDevice should find one channel for the output device
-	deps, err = s.ChannelsForDevice(outDev.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(deps) != 1 || deps[0].Name != "ch2" {
-		t.Fatalf("expected 1 dependent channel (ch2), got %+v", deps)
-	}
-
-	// Cascade delete the input device — should remove both channels
-	deleted, err := s.DeleteAudioDeviceCascade(inDev.ID)
-	if err != nil {
-		t.Fatal(err)
+	if len(refs) != 0 {
+		t.Fatalf("expected no refs returned when cascading, got %+v", refs)
 	}
 	if len(deleted) != 2 {
-		t.Fatalf("expected 2 deleted channels, got %d", len(deleted))
+		t.Fatalf("expected 2 cascaded channels, got %+v", deleted)
+	}
+	if _, err := s.GetAudioDevice(inDev.ID); err == nil {
+		t.Fatal("expected input device to be gone")
 	}
 	remaining, _ := s.ListChannels()
 	if len(remaining) != 0 {
 		t.Fatalf("expected 0 channels remaining, got %d", len(remaining))
 	}
-	if _, err := s.GetAudioDevice(inDev.ID); err == nil {
-		t.Fatal("expected device to be deleted")
-	}
-
-	// Output device should still exist
+	// Output device is untouched.
 	if _, err := s.GetAudioDevice(outDev.ID); err != nil {
 		t.Fatalf("output device should still exist: %v", err)
-	}
-}
-
-func TestDeleteAudioDeviceNoDeps(t *testing.T) {
-	s := newTestStore(t)
-	dev := &AudioDevice{Name: "unused", Direction: "input", SourceType: "soundcard", SourcePath: "hw:0", SampleRate: 48000, Channels: 1, Format: "s16le"}
-	if err := s.CreateAudioDevice(dev); err != nil {
-		t.Fatal(err)
-	}
-	deps, _ := s.ChannelsForDevice(dev.ID)
-	if len(deps) != 0 {
-		t.Fatalf("expected no deps, got %d", len(deps))
-	}
-	if err := s.DeleteAudioDevice(dev.ID); err != nil {
-		t.Fatal(err)
 	}
 }
 
