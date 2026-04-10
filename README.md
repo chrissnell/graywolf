@@ -2,7 +2,7 @@
   <img src="assets/graywolf.svg" alt="Graywolf" width="300">
 </p>
 
-Graywolf is a modern APRS station with a software modem, digipeater, iGate, and web UI. It bundles everything you need to put an APRS station on the air — from raw audio demodulation to APRS-IS gating — into a single binary with a browser-based configuration interface. 
+Graywolf is a modern APRS station with a software modem, digipeater, iGate, and web UI. It bundles everything you need to put an APRS station on the air — from raw audio demodulation to APRS-IS gating — and makes it easy with a browser-based configuration interface. 
 
 Written by Chris Snell, [NW5W](https://nw5w.com). 
 
