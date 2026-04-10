@@ -52,6 +52,8 @@ type Server struct {
 	cfg     ServerConfig
 	logger  *slog.Logger
 	mu      sync.Mutex
+	ln      net.Listener
+	wg      sync.WaitGroup
 	clients map[*clientState]struct{}
 	active  int32
 }
@@ -83,20 +85,46 @@ func NewServer(cfg ServerConfig) *Server {
 // ActiveClients returns the current client count.
 func (s *Server) ActiveClients() int { return int(atomic.LoadInt32(&s.active)) }
 
-// ListenAndServe binds and serves until ctx is cancelled. Blocks.
+// LocalAddr returns the actual bound listener address. Returns nil until
+// ListenAndServe has successfully bound. Useful for tests that pass
+// ":0" and want the OS-assigned port.
+func (s *Server) LocalAddr() net.Addr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ln == nil {
+		return nil
+	}
+	return s.ln.Addr()
+}
+
+// ListenAndServe binds and serves until ctx is cancelled. Blocks. When
+// it returns, the listener is closed and the bound port is free.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.cfg.ListenAddr)
 	if err != nil {
 		return err
 	}
-	s.logger.Info("agw server listening", "addr", s.cfg.ListenAddr)
+	s.mu.Lock()
+	s.ln = ln
+	s.mu.Unlock()
+	s.logger.Info("agw server listening", "addr", ln.Addr().String())
 
+	// Close the listener on ctx cancel. Tracked in s.wg so ListenAndServe
+	// cannot return until the listener is actually closed and its port
+	// released — a rapid Stop/Start otherwise races the previous close
+	// against the new bind. A local done channel lets ListenAndServe
+	// unblock the watcher if it exits for any other reason.
+	localDone := make(chan struct{})
+	s.wg.Add(1)
 	go func() {
-		<-ctx.Done()
+		defer s.wg.Done()
+		select {
+		case <-ctx.Done():
+		case <-localDone:
+		}
 		_ = ln.Close()
 	}()
 
-	var wg sync.WaitGroup
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -106,13 +134,14 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			s.logger.Warn("accept error", "err", err)
 			continue
 		}
-		wg.Add(1)
+		s.wg.Add(1)
 		go func(c net.Conn) {
-			defer wg.Done()
+			defer s.wg.Done()
 			s.handleClient(ctx, c)
 		}(conn)
 	}
-	wg.Wait()
+	close(localDone)
+	s.wg.Wait()
 	return nil
 }
 

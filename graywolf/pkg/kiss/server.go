@@ -54,13 +54,13 @@ type ServerConfig struct {
 // Server is a multi-client KISS TCP server. A single Server instance
 // corresponds to one row in the kiss_interfaces table.
 type Server struct {
-	cfg      ServerConfig
-	logger   *slog.Logger
-	ln       net.Listener
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	clients  map[*clientConn]struct{}
-	active   int32 // atomic: current client count
+	cfg     ServerConfig
+	logger  *slog.Logger
+	ln      net.Listener
+	wg      sync.WaitGroup
+	mu      sync.Mutex
+	clients map[*clientConn]struct{}
+	active  int32 // atomic: current client count
 }
 
 type clientConn struct {
@@ -83,19 +83,45 @@ func NewServer(cfg ServerConfig) *Server {
 // ActiveClients returns the current number of connected KISS clients.
 func (s *Server) ActiveClients() int { return int(atomic.LoadInt32(&s.active)) }
 
+// LocalAddr returns the actual bound listener address. Returns nil until
+// ListenAndServe has successfully bound. Useful for tests that pass
+// ":0" and want the OS-assigned port.
+func (s *Server) LocalAddr() net.Addr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ln == nil {
+		return nil
+	}
+	return s.ln.Addr()
+}
+
 // ListenAndServe binds the configured TCP address and serves clients until
-// the context is cancelled. It blocks.
+// the context is cancelled. It blocks. When it returns, the listener is
+// closed and the bound port is free — callers may immediately rebind.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.cfg.ListenAddr)
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
 	s.ln = ln
-	s.logger.Info("kiss server listening", "addr", s.cfg.ListenAddr)
+	s.mu.Unlock()
+	s.logger.Info("kiss server listening", "addr", ln.Addr().String())
 
-	// Close listener on context cancel to break Accept.
+	// Close the listener on context cancel to break Accept. Tracked in
+	// s.wg so ListenAndServe cannot return until this goroutine has
+	// actually finished closing the listener — otherwise a rapid
+	// Stop/Start could race the old close against the new bind. A local
+	// done channel lets ListenAndServe unblock the watcher if it exits
+	// for any reason other than ctx cancellation.
+	localDone := make(chan struct{})
+	s.wg.Add(1)
 	go func() {
-		<-ctx.Done()
+		defer s.wg.Done()
+		select {
+		case <-ctx.Done():
+		case <-localDone:
+		}
 		_ = ln.Close()
 	}()
 
@@ -117,6 +143,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			s.handleClient(ctx, c)
 		}(conn)
 	}
+	close(localDone)
 	s.wg.Wait()
 	return nil
 }
