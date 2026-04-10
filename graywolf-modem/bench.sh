@@ -21,42 +21,49 @@ else
 fi
 
 # --- Build both ---
-echo "Building C (atest)..."
+echo "Building Direwolf (atest)..."
 if [ -d "$DIREWOLF_DIR/build" ]; then
     (cd "$DIREWOLF_DIR/build" && make atest 2>/dev/null) || echo "Warning: C build failed"
 fi
 
-echo "Building Rust (demod_bench)..."
-(cd "$RUST_DIR" && RUSTFLAGS="-C target-cpu=native" cargo build --release 2>/dev/null)
+echo "Building Graywolf (demod_bench)..."
+(cd "$RUST_DIR" && RUSTFLAGS="-C target-cpu=native" cargo build --release --bin demod-bench 2>/dev/null)
 
-# cmake puts atest under build/src/ — check both locations
+# Resolve cargo target directory (handles workspace vs package layouts)
+TARGET_DIR="$(cd "$RUST_DIR" && cargo metadata --format-version 1 --no-deps 2>/dev/null \
+    | perl -ne 'print $1 if /"target_directory":"([^"]+)"/')"
+TARGET_DIR="${TARGET_DIR:-$RUST_DIR/target}"
+
+# cmake puts atest under build/src/ — check both locations, then fall back to PATH
 if [ -x "$DIREWOLF_DIR/build/src/atest" ]; then
     ATEST="$DIREWOLF_DIR/build/src/atest"
 elif [ -x "$DIREWOLF_DIR/build/atest" ]; then
     ATEST="$DIREWOLF_DIR/build/atest"
+elif command -v atest >/dev/null 2>&1; then
+    ATEST="$(command -v atest)"
 else
     ATEST=""
 fi
 
-DEMOD_BENCH="$RUST_DIR/target/release/demod_bench"
+DEMOD_BENCH="$TARGET_DIR/release/demod-bench"
 
 # --- Benchmark C ---
 echo ""
-echo "=== C (atest) — $ITERATIONS iterations ==="
+echo "=== Direwolf (atest) — $ITERATIONS iterations ==="
 if [ -n "$ATEST" ]; then
-    for i in $(seq 1 "$ITERATIONS"); do
+    for _ in $(seq 1 "$ITERATIONS"); do
         "$ATEST" -B 1200 "$WAV_FILE" 2>&1 \
             | perl -pe 's/\e\[[0-9;]*m//g' \
             | grep "packets decoded" \
             || echo "(no summary line found)"
     done
 else
-    echo "C atest not found (looked in $DIREWOLF_DIR/build/{src/,}atest)"
+    echo "Direwolf atest not found (looked in $DIREWOLF_DIR/build/{src/,}atest)"
 fi
 
 # --- Benchmark Rust ---
 echo ""
-echo "=== Rust (demod_bench) — $ITERATIONS iterations ==="
-for i in $(seq 1 "$ITERATIONS"); do
+echo "=== Graywolf (demod_bench) — $ITERATIONS iterations ==="
+for _ in $(seq 1 "$ITERATIONS"); do
     "$DEMOD_BENCH" "$AUDIO_FILE" 2>&1 | tail -1
 done

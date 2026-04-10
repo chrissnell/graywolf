@@ -12,6 +12,19 @@ The AX.25 decoding, APRS operatations (beacons, digipeater, and iGate), and the 
 
 The web frontend was built in Svelte.
 
+## Performance
+Graywolf achieves high decoding performance using inexpensive, off-the-shelf hardware. Its AFSK decoder can decode 1005 packets off track 1 of the WA8LMF CD, identical in performance to Direwolf, from which Graywolf was ported.
+```% ./bench.sh aprs-test-tracks/02_100-Mic-E-Bursts-DE-emphasized.flac 1
+Building Direwolf (atest)...
+Building Graywolf (demod_bench)...
+
+=== Direwolf (atest) — 1 iterations ===
+982 packets decoded in 45.614 seconds.  34.0 x realtime
+
+=== Graywolf (demod_bench) — 1 iterations ===
+982 packets decoded in 6.792s.  228.2 x realtime
+```
+
 ## Features
 
 - **Modern Web UI** - Configure and monitor your station from your browser, with live packet logs and preset-driven setup for digipeater and iGate
