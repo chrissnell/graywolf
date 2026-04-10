@@ -162,30 +162,6 @@ func TestLifecycleStopCollectsAllErrors(t *testing.T) {
 	}
 }
 
-// TestRunExitsOnContextCancel smoke-tests the full Run path with an
-// empty startOrder. Because wireServices is a no-op in commit 4, the
-// App immediately blocks on ctx.Done; cancelling the context must
-// make Run return a nil error.
-func TestRunExitsOnContextCancel(t *testing.T) {
-	a := quietApp(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- a.Run(ctx) }()
-
-	// Give Run a tick to enter the block; then cancel.
-	time.Sleep(10 * time.Millisecond)
-	cancel()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not exit after ctx cancel")
-	}
-}
-
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

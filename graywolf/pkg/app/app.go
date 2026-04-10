@@ -4,6 +4,23 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"sync"
+
+	"github.com/chrissnell/graywolf/pkg/agw"
+	"github.com/chrissnell/graywolf/pkg/aprs"
+	"github.com/chrissnell/graywolf/pkg/beacon"
+	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/digipeater"
+	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/igate"
+	"github.com/chrissnell/graywolf/pkg/kiss"
+	"github.com/chrissnell/graywolf/pkg/metrics"
+	"github.com/chrissnell/graywolf/pkg/modembridge"
+	"github.com/chrissnell/graywolf/pkg/packetlog"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
+	"github.com/chrissnell/graywolf/pkg/webapi"
+	"github.com/chrissnell/graywolf/pkg/webauth"
 )
 
 // namedComponent is one entry in the App's ordered startup list. Each
@@ -29,6 +46,55 @@ type App struct {
 	cfg    Config
 	logger *slog.Logger
 
+	// --- Owned components (populated by wireServices) ------------------
+	store       *configstore.Store
+	authStore   *webauth.AuthStore
+	metrics     *metrics.Metrics
+	plog        *packetlog.Log
+	bridge      *modembridge.Bridge
+	gov         *txgovernor.Governor
+	kissMgr     *kiss.Manager
+	agwServer   *agw.Server // nil if AGW is disabled in config
+	digi        *digipeater.Digipeater
+	gpsCache    *gps.MemCache
+	gpsMgr      *gpsManager
+	beaconSched *beacon.Scheduler
+	ig          *igate.Igate // nil if iGate is disabled in config
+	apiSrv      *webapi.Server
+	httpSrv     *http.Server
+
+	// resolvedModem is the absolute path to the graywolf-modem binary
+	// after running through ResolveModemPath. Retained so diagnostic
+	// messages can name the exact binary being used.
+	resolvedModem string
+
+	// --- Reload channels (webapi signals, drained by reload goroutines) -
+	gpsReload        chan struct{}
+	beaconReload     chan struct{}
+	digipeaterReload chan struct{}
+
+	// --- APRS fan-out plumbing ------------------------------------------
+	aprsQueue       chan *aprs.DecodedAPRSPacket
+	fanOutWG        sync.WaitGroup
+	frameConsumerWG sync.WaitGroup
+
+	// --- Per-component goroutine tracking ------------------------------
+	// Each component that spawns its own goroutine(s) gets an isolated
+	// WaitGroup so the stop closure can wait on exactly the work it
+	// owns without tangling with siblings. Having one catchall WG would
+	// force every stop to wait for every other component to exit,
+	// defeating the ordered-teardown contract.
+	govWG            sync.WaitGroup
+	statsWG          sync.WaitGroup
+	kissWG           sync.WaitGroup
+	agwWG            sync.WaitGroup
+	digiReloadWG     sync.WaitGroup
+	gpsWG            sync.WaitGroup
+	beaconWG         sync.WaitGroup
+	beaconReloadWG   sync.WaitGroup
+	httpWG           sync.WaitGroup
+
+	// --- Lifecycle ------------------------------------------------------
 	// startOrder is the full list of components wireServices produced.
 	// It is populated before Start runs; tests may set it directly.
 	startOrder []namedComponent

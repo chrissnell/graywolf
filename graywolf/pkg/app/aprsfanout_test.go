@@ -1,9 +1,7 @@
-package main
+package app
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -51,16 +49,12 @@ func (r *recordingOutput) count() int {
 	return len(r.pkts)
 }
 
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
 func TestAPRSFanOut_NormalFlow(t *testing.T) {
 	queue := make(chan *aprs.DecodedAPRSPacket, 4)
 	counter := &fakeCounter{}
 	out := &recordingOutput{}
 
-	submit := newAPRSSubmitter(queue, counter, discardLogger())
+	submit := newAPRSSubmitter(queue, counter, quietLogger())
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -90,7 +84,7 @@ func TestAPRSFanOut_OverflowCountedExactlyOnce(t *testing.T) {
 	const cap = 2
 	queue := make(chan *aprs.DecodedAPRSPacket, cap)
 	counter := &fakeCounter{}
-	submit := newAPRSSubmitter(queue, counter, discardLogger())
+	submit := newAPRSSubmitter(queue, counter, quietLogger())
 
 	for i := 0; i < cap; i++ {
 		submit.submit(&aprs.DecodedAPRSPacket{})
@@ -112,7 +106,7 @@ func TestAPRSFanOut_ShutdownDrains(t *testing.T) {
 	queue := make(chan *aprs.DecodedAPRSPacket, 8)
 	counter := &fakeCounter{}
 	out := &recordingOutput{}
-	submit := newAPRSSubmitter(queue, counter, discardLogger())
+	submit := newAPRSSubmitter(queue, counter, quietLogger())
 
 	var wg sync.WaitGroup
 	wg.Add(1)

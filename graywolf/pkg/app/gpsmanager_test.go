@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+// quietLogger returns a logger that discards everything. Shared by
+// every _test.go in pkg/app that needs to construct a real slog.Logger
+// without cluttering test output. Defined here because this was the
+// first test file to need it.
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
