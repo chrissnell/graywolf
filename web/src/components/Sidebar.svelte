@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { location } from 'svelte-spa-router';
+  import logoUrl from '../assets/graywolf.svg';
 
   const dashboardItem = { path: '/', label: 'Dashboard' };
 
@@ -42,7 +43,10 @@
 
 <nav class="sidebar" role="navigation" aria-label="Main navigation">
   <div class="sidebar-header">
-    <h1 class="logo">graywolf</h1>
+    <a href="/" use:link class="logo-link" aria-label="Dashboard">
+      <img src={logoUrl} alt="" class="logo-img" />
+      <h1 class="logo">graywolf</h1>
+    </a>
   </div>
   <div class="nav-scroll">
     <ul class="nav-list dashboard-list">
@@ -101,17 +105,33 @@
     border-bottom: 1px solid var(--border-color);
   }
 
+  .logo-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+  }
+
+  .logo-img {
+    width: 64px;
+    height: 64px;
+    display: block;
+  }
+
   .logo {
     font-size: 18px;
     font-weight: 700;
-    color: var(--accent);
+    color: var(--text-secondary);
     letter-spacing: 1px;
+    text-align: center;
+    margin: 0;
   }
 
   .nav-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 8px 0 12px;
+    padding: 0 0 12px;
   }
 
   .nav-list {
@@ -120,10 +140,7 @@
   }
 
   .dashboard-list {
-    padding: 4px 0 8px;
-    border-bottom: 1px solid var(--border-color);
-    margin-bottom: 8px;
-    background: var(--bg-tertiary);
+    padding: 0;
   }
 
   .nav-group {
