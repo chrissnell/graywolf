@@ -2,11 +2,16 @@ package webauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+// ErrSetupAlreadyComplete is returned by CreateFirstUser when a user already
+// exists in the database.
+var ErrSetupAlreadyComplete = errors.New("webauth: setup already complete")
 
 // WebUser is a credential record for the web UI.
 type WebUser struct {
@@ -46,6 +51,31 @@ func NewAuthStore(db *gorm.DB) (*AuthStore, error) {
 func (s *AuthStore) CreateUser(ctx context.Context, username, passwordHash string) (*WebUser, error) {
 	u := &WebUser{Username: username, PasswordHash: passwordHash}
 	if err := s.db.WithContext(ctx).Create(u).Error; err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// CreateFirstUser atomically creates the first user in the system. Returns
+// ErrSetupAlreadyComplete if any user already exists. Safe under concurrent
+// requests.
+//
+// Relies on SQLite serializable writers; if we move to a concurrent DB this
+// needs a different strategy (e.g. an explicit advisory lock or an INSERT
+// guarded by a WHERE NOT EXISTS subquery).
+func (s *AuthStore) CreateFirstUser(ctx context.Context, username, passwordHash string) (*WebUser, error) {
+	u := &WebUser{Username: username, PasswordHash: passwordHash}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&WebUser{}).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrSetupAlreadyComplete
+		}
+		return tx.Create(u).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return u, nil

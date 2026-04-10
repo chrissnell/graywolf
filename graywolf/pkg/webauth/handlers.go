@@ -2,6 +2,7 @@ package webauth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -118,16 +119,6 @@ func (h *Handlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	count, err := h.Auth.UserCount(r.Context())
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to check users")
-		return
-	}
-	if count > 0 {
-		jsonError(w, http.StatusForbidden, "setup already completed")
-		return
-	}
-
 	var req setupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")
@@ -143,7 +134,11 @@ func (h *Handlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "failed to hash password")
 		return
 	}
-	if _, err := h.Auth.CreateUser(r.Context(), req.Username, hash); err != nil {
+	if _, err := h.Auth.CreateFirstUser(r.Context(), req.Username, hash); err != nil {
+		if errors.Is(err, ErrSetupAlreadyComplete) {
+			jsonError(w, http.StatusForbidden, "setup already completed")
+			return
+		}
 		jsonError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
