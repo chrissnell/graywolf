@@ -9,17 +9,10 @@ import (
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 )
 
-// RegisterPackets installs a real GET /api/packets handler backed by
-// the supplied packetlog.Log onto mux. It replaces the stub registered
-// by Server.RegisterRoutes — call this after RegisterRoutes.
-//
-// NOTE: because net/http ServeMux panics on duplicate pattern
-// registration, the orchestrator must remove the
-//
-//	mux.HandleFunc("/api/packets", s.stub("packets"))
-//
-// line from webapi.go before merging this worktree. See
-// scratch/phase4-4c-report.md.
+// RegisterPackets installs a GET /api/packets handler backed by the
+// supplied packetlog.Log. Server.RegisterRoutes intentionally omits
+// /api/packets so this helper can own the route without triggering a
+// net/http ServeMux duplicate-pattern panic.
 //
 // Query parameters:
 //

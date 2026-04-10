@@ -81,7 +81,6 @@ func (s *Store) Migrate() error {
 		&AudioDevice{},
 		&Channel{},
 		&PttConfig{},
-		// Phase 4 additions.
 		&KissInterface{},
 		&AgwConfig{},
 		&TxTiming{},

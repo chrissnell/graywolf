@@ -405,7 +405,7 @@ func decodeMicEManufacturer(rest []byte) (string, string) {
 
 // EncodeMicEDest builds the 6-character destination callsign for a
 // Mic-E transmission from a latitude and the message bits / hemisphere
-// selectors. Exposed for the beacon encoder (Phase 4) and unit tests.
+// selectors. Exposed for the beacon encoder and unit tests.
 func EncodeMicEDest(lat float64, msgCode int, lonOffset100 bool, westLong bool) string {
 	north := lat >= 0
 	if lat < 0 {

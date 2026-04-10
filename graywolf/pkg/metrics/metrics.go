@@ -32,7 +32,7 @@ type Metrics struct {
 	TxQueueDropped    prometheus.Counter
 	AprsOutDropped    prometheus.Counter
 
-	// Phase 4: digipeater + packet log + beacon.
+	// digipeater, packet log, and beacon metrics.
 	DigipeaterPackets prometheus.Counter
 	DigipeaterDeduped prometheus.Counter
 	PacketlogEntries  prometheus.Gauge

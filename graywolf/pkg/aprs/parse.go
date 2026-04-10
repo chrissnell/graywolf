@@ -67,10 +67,10 @@ func ParseInfo(info []byte) (*DecodedAPRSPacket, error) {
 // sub-parser fails, parseInfo falls back to PacketUnknown and stores the
 // text in pkt.Comment so the caller still sees something useful.
 //
-// TODO (Phase 4+): APRS101 Table 5-1 lists ~30 prefix bytes. Still
-// unhandled: '$' (raw GPS NMEA), '#' (Peet Bros U-II), '*' (Peet Bros
-// complete), '%' (Agrelo DFjr), '&' (reserved), ',' (invalid/test),
-// '[' (Maidenhead grid locator beacon), '{' (user-defined).
+// TODO: APRS101 Table 5-1 lists ~30 prefix bytes. Still unhandled:
+// '$' (raw GPS NMEA), '#' (Peet Bros U-II), '*' (Peet Bros complete),
+// '%' (Agrelo DFjr), '&' (reserved), ',' (invalid/test), '[' (Maidenhead
+// grid locator beacon), '{' (user-defined).
 func parseInfo(pkt *DecodedAPRSPacket, info []byte, frame *ax25.Frame) error {
 	return parseInfoDepth(pkt, info, frame, 0)
 }
