@@ -120,8 +120,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		channels, err := s.store.ListChannels()
 		if err != nil {
-			s.logger.Warn("list channels", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			s.internalError(w, r, "list channels", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, channels)
@@ -132,7 +131,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.CreateChannel(&c); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "create channel", err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, c)
@@ -178,7 +177,7 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 		}
 		c.ID = id
 		if err := s.store.UpdateChannel(&c); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "update channel", err)
 			return
 		}
 		s.notifyBridgeForDevice(r.Context(), c.InputDeviceID)
@@ -190,7 +189,7 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 		// Look up device IDs before deleting so we can notify the bridge.
 		ch, _ := s.store.GetChannel(id)
 		if err := s.store.DeleteChannel(id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "delete channel", err)
 			return
 		}
 		if ch != nil {
@@ -230,7 +229,7 @@ func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		devices, err := s.store.ListAudioDevices()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "list audio devices", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, devices)
@@ -241,7 +240,7 @@ func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.CreateAudioDevice(&d); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "create audio device", err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, d)
@@ -340,7 +339,7 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		d.ID = id
 		if err := s.store.UpdateAudioDevice(&d); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "update audio device", err)
 			return
 		}
 		s.notifyBridgeForDevice(r.Context(), id)
@@ -349,7 +348,7 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		cascade := r.URL.Query().Get("cascade") == "true"
 		deps, err := s.store.ChannelsForDevice(id)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "channels for device", err)
 			return
 		}
 		if len(deps) > 0 && !cascade {
@@ -365,12 +364,12 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(deps) > 0 {
 			if _, err := s.store.DeleteAudioDeviceCascade(id); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				s.internalError(w, r, "delete audio device cascade", err)
 				return
 			}
 		} else {
 			if err := s.store.DeleteAudioDevice(id); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				s.internalError(w, r, "delete audio device", err)
 				return
 			}
 		}
@@ -412,8 +411,7 @@ func (s *Server) handleTestTone(w http.ResponseWriter, r *http.Request, idStr st
 	}
 	deviceName := audioDeviceName(dev)
 	if err := s.bridge.PlayTestTone(r.Context(), id, deviceName, dev.SampleRate, dev.Channels); err != nil {
-		s.logger.Warn("test tone failed", "device_id", id, "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		s.internalError(w, r, "play test tone", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -444,7 +442,7 @@ func (s *Server) handleSetGain(w http.ResponseWriter, r *http.Request, idStr str
 	}
 	dev.GainDB = body.GainDB
 	if err := s.store.UpdateAudioDevice(dev); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		s.internalError(w, r, "update audio device gain", err)
 		return
 	}
 	// Live update to modem — no full reconfig needed.
@@ -483,7 +481,7 @@ func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		beacons, err := s.store.ListBeacons()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "list beacons", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, beacons)
@@ -498,7 +496,7 @@ func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.CreateBeacon(&b); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "create beacon", err)
 			return
 		}
 		s.signalBeaconReload()
@@ -534,7 +532,7 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.beaconSendNow(r.Context(), id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "beacon send now", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
@@ -561,14 +559,14 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 		}
 		b.ID = id
 		if err := s.store.UpdateBeacon(&b); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "update beacon", err)
 			return
 		}
 		s.signalBeaconReload()
 		writeJSON(w, http.StatusOK, b)
 	case http.MethodDelete:
 		if err := s.store.DeleteBeacon(id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "delete beacon", err)
 			return
 		}
 		s.signalBeaconReload()
@@ -715,6 +713,15 @@ func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
 	if ch.OutputDeviceID != 0 {
 		s.notifyBridgeForDevice(ctx, ch.OutputDeviceID)
 	}
+}
+
+// internalError logs the real error with request context and writes a
+// generic message to the client. Use for every 5xx response so we don't
+// leak GORM/driver strings (e.g. "UNIQUE constraint failed: users.username")
+// that enable account or schema enumeration.
+func (s *Server) internalError(w http.ResponseWriter, r *http.Request, op string, err error) {
+	s.logger.ErrorContext(r.Context(), "webapi internal error", "op", op, "err", err)
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 }
 
 func parseID(s string) (uint32, error) {

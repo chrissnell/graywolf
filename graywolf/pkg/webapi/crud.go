@@ -21,7 +21,7 @@ func (s *Server) handlePttCollection(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		list, err := s.store.ListPttConfigs()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "list ptt configs", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, list)
@@ -32,7 +32,7 @@ func (s *Server) handlePttCollection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.UpsertPttConfig(&p); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert ptt config", err)
 			return
 		}
 		s.notifyBridgeForChannel(r.Context(), p.ChannelID)
@@ -73,14 +73,14 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 		}
 		p.ChannelID = id
 		if err := s.store.UpsertPttConfig(&p); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert ptt config", err)
 			return
 		}
 		s.notifyBridgeForChannel(r.Context(), id)
 		writeJSON(w, http.StatusOK, p)
 	case http.MethodDelete:
 		if err := s.store.DeletePttConfig(id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "delete ptt config", err)
 			return
 		}
 		s.notifyBridgeForChannel(r.Context(), id)
@@ -97,7 +97,7 @@ func (s *Server) handleTxTimingCollection(w http.ResponseWriter, r *http.Request
 	case http.MethodGet:
 		timings, err := s.store.ListTxTimings()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "list tx timings", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, timings)
@@ -108,7 +108,7 @@ func (s *Server) handleTxTimingCollection(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if err := s.store.UpsertTxTiming(&t); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert tx timing", err)
 			return
 		}
 		s.notifyBridgeForChannel(r.Context(), t.Channel)
@@ -140,7 +140,7 @@ func (s *Server) handleTxTimingByChannel(w http.ResponseWriter, r *http.Request)
 		}
 		t.Channel = id
 		if err := s.store.UpsertTxTiming(&t); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert tx timing", err)
 			return
 		}
 		s.notifyBridgeForChannel(r.Context(), id)
@@ -231,7 +231,7 @@ func (s *Server) handleKissCollection(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		list, err := s.store.ListKissInterfaces()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "list kiss interfaces", err)
 			return
 		}
 		out := make([]map[string]any, len(list))
@@ -247,7 +247,7 @@ func (s *Server) handleKissCollection(w http.ResponseWriter, r *http.Request) {
 		}
 		k := kissRequestToModel(req)
 		if err := s.store.CreateKissInterface(&k); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "create kiss interface", err)
 			return
 		}
 		s.notifyKissManager(k)
@@ -280,14 +280,14 @@ func (s *Server) handleKissItem(w http.ResponseWriter, r *http.Request) {
 		k := kissRequestToModel(req)
 		k.ID = id
 		if err := s.store.UpdateKissInterface(&k); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "update kiss interface", err)
 			return
 		}
 		s.notifyKissManager(k)
 		writeJSON(w, http.StatusOK, kissModelToResponse(k))
 	case http.MethodDelete:
 		if err := s.store.DeleteKissInterface(id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "delete kiss interface", err)
 			return
 		}
 		if s.kissManager != nil {
@@ -317,7 +317,7 @@ func (s *Server) handleAgw(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.UpsertAgwConfig(&c); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert agw config", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, c)
@@ -344,7 +344,7 @@ func (s *Server) handleIgateConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.UpsertIGateConfig(&c); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert igate config", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, c)
@@ -358,7 +358,7 @@ func (s *Server) handleIgateFilters(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		list, err := s.store.ListIGateRfFilters()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "list igate rf filters", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, list)
@@ -369,7 +369,7 @@ func (s *Server) handleIgateFilters(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.CreateIGateRfFilter(&f); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "create igate rf filter", err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, f)
@@ -393,13 +393,13 @@ func (s *Server) handleIgateFilter(w http.ResponseWriter, r *http.Request) {
 		}
 		f.ID = id
 		if err := s.store.UpdateIGateRfFilter(&f); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "update igate rf filter", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, f)
 	case http.MethodDelete:
 		if err := s.store.DeleteIGateRfFilter(id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "delete igate rf filter", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -426,7 +426,7 @@ func (s *Server) handleDigipeaterConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if err := s.store.UpsertDigipeaterConfig(&c); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert digipeater config", err)
 			return
 		}
 		s.signalDigipeaterReload()
@@ -441,7 +441,7 @@ func (s *Server) handleDigipeaterRules(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		list, err := s.store.ListDigipeaterRules()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "list digipeater rules", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, list)
@@ -452,7 +452,7 @@ func (s *Server) handleDigipeaterRules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.CreateDigipeaterRule(&rule); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "create digipeater rule", err)
 			return
 		}
 		s.signalDigipeaterReload()
@@ -477,14 +477,14 @@ func (s *Server) handleDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 		}
 		rule.ID = id
 		if err := s.store.UpdateDigipeaterRule(&rule); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "update digipeater rule", err)
 			return
 		}
 		s.signalDigipeaterReload()
 		writeJSON(w, http.StatusOK, rule)
 	case http.MethodDelete:
 		if err := s.store.DeleteDigipeaterRule(id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "delete digipeater rule", err)
 			return
 		}
 		s.signalDigipeaterReload()
@@ -551,7 +551,7 @@ func (s *Server) handleGps(w http.ResponseWriter, r *http.Request) {
 		// Derive Enabled from SourceType so the UI doesn't need a toggle.
 		c.Enabled = c.SourceType != "" && c.SourceType != "none"
 		if err := s.store.UpsertGPSConfig(&c); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.internalError(w, r, "upsert gps config", err)
 			return
 		}
 		if s.gpsReload != nil {
