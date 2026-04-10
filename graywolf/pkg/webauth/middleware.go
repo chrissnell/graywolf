@@ -44,9 +44,9 @@ func RequireAuth(auth *AuthStore) func(http.Handler) http.Handler {
 }
 
 // getUserByID is an internal helper.
-func (s *AuthStore) getUserByID(_ context.Context, id uint32) (*WebUser, error) {
+func (s *AuthStore) getUserByID(ctx context.Context, id uint32) (*WebUser, error) {
 	var u WebUser
-	if err := s.db.First(&u, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&u, id).Error; err != nil {
 		return nil, err
 	}
 	return &u, nil

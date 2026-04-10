@@ -43,67 +43,68 @@ func NewAuthStore(db *gorm.DB) (*AuthStore, error) {
 	return s, nil
 }
 
-func (s *AuthStore) CreateUser(_ context.Context, username, passwordHash string) (*WebUser, error) {
+func (s *AuthStore) CreateUser(ctx context.Context, username, passwordHash string) (*WebUser, error) {
 	u := &WebUser{Username: username, PasswordHash: passwordHash}
-	if err := s.db.Create(u).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(u).Error; err != nil {
 		return nil, err
 	}
 	return u, nil
 }
 
-func (s *AuthStore) GetUserByUsername(_ context.Context, username string) (*WebUser, error) {
+func (s *AuthStore) GetUserByUsername(ctx context.Context, username string) (*WebUser, error) {
 	var u WebUser
-	if err := s.db.Where("username = ?", username).First(&u).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("username = ?", username).First(&u).Error; err != nil {
 		return nil, err
 	}
 	return &u, nil
 }
 
-func (s *AuthStore) ListUsers(_ context.Context) ([]WebUser, error) {
+func (s *AuthStore) ListUsers(ctx context.Context) ([]WebUser, error) {
 	var out []WebUser
-	return out, s.db.Order("username").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("username").Find(&out).Error
 }
 
-func (s *AuthStore) DeleteUser(_ context.Context, username string) error {
+func (s *AuthStore) DeleteUser(ctx context.Context, username string) error {
 	// Delete associated sessions first.
+	db := s.db.WithContext(ctx)
 	var u WebUser
-	if err := s.db.Where("username = ?", username).First(&u).Error; err != nil {
+	if err := db.Where("username = ?", username).First(&u).Error; err != nil {
 		return err
 	}
-	if err := s.db.Where("user_id = ?", u.ID).Delete(&WebSession{}).Error; err != nil {
+	if err := db.Where("user_id = ?", u.ID).Delete(&WebSession{}).Error; err != nil {
 		return err
 	}
-	return s.db.Delete(&u).Error
+	return db.Delete(&u).Error
 }
 
-func (s *AuthStore) CreateSession(_ context.Context, userID uint32, token string, expiry time.Time) (*WebSession, error) {
+func (s *AuthStore) CreateSession(ctx context.Context, userID uint32, token string, expiry time.Time) (*WebSession, error) {
 	ws := &WebSession{Token: token, UserID: userID, ExpiresAt: expiry}
-	if err := s.db.Create(ws).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(ws).Error; err != nil {
 		return nil, err
 	}
 	return ws, nil
 }
 
 // GetSessionByToken returns the session only if it hasn't expired.
-func (s *AuthStore) GetSessionByToken(_ context.Context, token string) (*WebSession, error) {
+func (s *AuthStore) GetSessionByToken(ctx context.Context, token string) (*WebSession, error) {
 	var ws WebSession
-	err := s.db.Where("token = ? AND expires_at > ?", token, time.Now()).First(&ws).Error
+	err := s.db.WithContext(ctx).Where("token = ? AND expires_at > ?", token, time.Now()).First(&ws).Error
 	if err != nil {
 		return nil, err
 	}
 	return &ws, nil
 }
 
-func (s *AuthStore) DeleteSession(_ context.Context, token string) error {
-	return s.db.Where("token = ?", token).Delete(&WebSession{}).Error
+func (s *AuthStore) DeleteSession(ctx context.Context, token string) error {
+	return s.db.WithContext(ctx).Where("token = ?", token).Delete(&WebSession{}).Error
 }
 
-func (s *AuthStore) DeleteExpiredSessions(_ context.Context) (int64, error) {
-	tx := s.db.Where("expires_at <= ?", time.Now()).Delete(&WebSession{})
+func (s *AuthStore) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	tx := s.db.WithContext(ctx).Where("expires_at <= ?", time.Now()).Delete(&WebSession{})
 	return tx.RowsAffected, tx.Error
 }
 
-func (s *AuthStore) UserCount(_ context.Context) (int64, error) {
+func (s *AuthStore) UserCount(ctx context.Context) (int64, error) {
 	var count int64
-	return count, s.db.Model(&WebUser{}).Count(&count).Error
+	return count, s.db.WithContext(ctx).Model(&WebUser{}).Count(&count).Error
 }
