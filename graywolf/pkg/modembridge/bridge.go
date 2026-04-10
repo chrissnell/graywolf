@@ -157,9 +157,10 @@ type Bridge struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 
-	// Per-channel status cache, updated from StatusUpdate IPC messages.
-	statusMu    sync.RWMutex
-	statusCache map[uint32]*ChannelStats
+	// status owns the per-channel ChannelStats and per-device DeviceLevel
+	// caches. Reset at the top of every supervise iteration so stale
+	// state from a crashed child does not survive a restart.
+	status *statusCache
 
 	// Generic dispatchers correlate per-request IDs with reply channels
 	// for the three request/response IPC exchanges the bridge supports.
@@ -170,10 +171,6 @@ type Bridge struct {
 	enumDispatcher *dispatcher[*pb.AudioDeviceList]
 	toneDispatcher *dispatcher[*pb.TestToneResult]
 	scanDispatcher *dispatcher[*pb.InputLevelScanResult]
-
-	// Per-device audio level cache, updated from DeviceLevelUpdate IPC messages.
-	deviceLevelMu    sync.RWMutex
-	deviceLevelCache map[uint32]*DeviceLevel
 
 	// stdoutRing is a bounded ring buffer of the most recent lines the
 	// child wrote to stdout. It replaces the unbounded
@@ -199,16 +196,15 @@ func New(cfg Config) *Bridge {
 	_ = incDcdDropped
 	pub := newDcdPublisher(cfg.Logger, incDcdDropped)
 	b := &Bridge{
-		cfg:              cfg,
-		logger:           cfg.Logger,
-		frames:           make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
-		dcd:              pub,
-		state:            StateStopped,
-		statusCache:      make(map[uint32]*ChannelStats),
-		enumDispatcher:   newDispatcher[*pb.AudioDeviceList](),
-		toneDispatcher:   newDispatcher[*pb.TestToneResult](),
-		scanDispatcher:   newDispatcher[*pb.InputLevelScanResult](),
-		deviceLevelCache: make(map[uint32]*DeviceLevel),
+		cfg:            cfg,
+		logger:         cfg.Logger,
+		frames:         make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
+		dcd:            pub,
+		state:          StateStopped,
+		status:         newStatusCache(),
+		enumDispatcher: newDispatcher[*pb.AudioDeviceList](),
+		toneDispatcher: newDispatcher[*pb.TestToneResult](),
+		scanDispatcher: newDispatcher[*pb.InputLevelScanResult](),
 	}
 	// Hold a long-lived "primary" subscription so DcdEvents() can return
 	// a stable channel for the txgovernor wiring path that predates
@@ -347,6 +343,10 @@ func (b *Bridge) supervise(ctx context.Context) {
 	b.enumDispatcher.Reset()
 	b.toneDispatcher.Reset()
 	b.scanDispatcher.Reset()
+	// Drop any cached channel stats or device levels from a prior session
+	// so a restarted modem child starts with an empty view rather than
+	// stale counters.
+	b.status.Reset()
 
 	defer close(b.done)
 	defer close(b.frames)
@@ -489,44 +489,16 @@ func (b *Bridge) scanModemStdout(r io.Reader, done chan struct{}) {
 
 // GetChannelStats returns cached stats for a single channel.
 func (b *Bridge) GetChannelStats(channel uint32) (*ChannelStats, bool) {
-	b.statusMu.RLock()
-	defer b.statusMu.RUnlock()
-	s, ok := b.statusCache[channel]
-	if !ok {
-		return nil, false
-	}
-	cp := *s
-	return &cp, true
+	return b.status.Channel(channel)
 }
 
 // GetAllChannelStats returns cached stats for all channels.
 func (b *Bridge) GetAllChannelStats() map[uint32]*ChannelStats {
-	b.statusMu.RLock()
-	defer b.statusMu.RUnlock()
-	out := make(map[uint32]*ChannelStats, len(b.statusCache))
-	for k, v := range b.statusCache {
-		cp := *v
-		out[k] = &cp
-	}
-	return out
+	return b.status.AllChannels()
 }
 
 // updateStatusCache stores the latest StatusUpdate for a channel.
-func (b *Bridge) updateStatusCache(s *pb.StatusUpdate) {
-	b.statusMu.Lock()
-	defer b.statusMu.Unlock()
-	b.statusCache[s.Channel] = &ChannelStats{
-		Channel:         s.Channel,
-		RxFrames:        s.RxFrames,
-		RxBadFCS:        s.RxBadFcs,
-		TxFrames:        s.TxFrames,
-		DcdTransitions:  s.DcdTransitions,
-		AudioLevelMark:  s.AudioLevelMark,
-		AudioLevelSpace: s.AudioLevelSpace,
-		AudioLevelPeak:  s.AudioLevelPeak,
-		DcdState:        s.DcdState,
-	}
-}
+func (b *Bridge) updateStatusCache(s *pb.StatusUpdate) { b.status.UpdateStatus(s) }
 
 // ReconfigureAudioDevice performs a hot-swap of an audio device's configuration.
 // It stops all audio, re-reads the full config from the database, and restarts.
@@ -761,26 +733,12 @@ func (b *Bridge) SetDeviceGain(deviceID uint32, gainDB float32) error {
 
 // updateDeviceLevelCache stores the latest DeviceLevelUpdate for a device.
 func (b *Bridge) updateDeviceLevelCache(u *pb.DeviceLevelUpdate) {
-	b.deviceLevelMu.Lock()
-	defer b.deviceLevelMu.Unlock()
-	b.deviceLevelCache[u.DeviceId] = &DeviceLevel{
-		DeviceID: u.DeviceId,
-		PeakDBFS: u.PeakDbfs,
-		RmsDBFS:  u.RmsDbfs,
-		Clipping: u.Clipping,
-	}
+	b.status.UpdateDeviceLevel(u)
 }
 
 // GetAllDeviceLevels returns the latest cached audio levels for all devices.
 func (b *Bridge) GetAllDeviceLevels() map[uint32]*DeviceLevel {
-	b.deviceLevelMu.RLock()
-	defer b.deviceLevelMu.RUnlock()
-	out := make(map[uint32]*DeviceLevel, len(b.deviceLevelCache))
-	for k, v := range b.deviceLevelCache {
-		cp := *v
-		out[k] = &cp
-	}
-	return out
+	return b.status.AllDeviceLevels()
 }
 
 // sendIPC writes an IPC message using the current session's send function.
@@ -797,9 +755,7 @@ func (b *Bridge) sendIPC(msg *pb.IpcMessage) error {
 // InjectStatusForTest populates the status cache directly. Test-only.
 func (b *Bridge) InjectStatusForTest(channel uint32, rxFrames, rxBadFCS, txFrames uint64,
 	markLevel, spaceLevel, peakLevel float32, dcd bool) {
-	b.statusMu.Lock()
-	defer b.statusMu.Unlock()
-	b.statusCache[channel] = &ChannelStats{
+	b.status.InjectStatsForTest(&ChannelStats{
 		Channel:         channel,
 		RxFrames:        rxFrames,
 		RxBadFCS:        rxBadFCS,
@@ -808,5 +764,5 @@ func (b *Bridge) InjectStatusForTest(channel uint32, rxFrames, rxBadFCS, txFrame
 		AudioLevelSpace: spaceLevel,
 		AudioLevelPeak:  peakLevel,
 		DcdState:        dcd,
-	}
+	})
 }
