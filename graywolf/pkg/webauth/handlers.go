@@ -3,6 +3,7 @@ package webauth
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -13,6 +14,16 @@ const sessionMaxAge = 7 * 24 * time.Hour // 7 days
 type Handlers struct {
 	Auth   *AuthStore
 	Secure bool // set true when binding to non-loopback
+	// Logger receives structured error logs. If nil, slog.Default() is used.
+	Logger *slog.Logger
+}
+
+// logger returns the configured logger or slog.Default() if none was set.
+func (h *Handlers) logger() *slog.Logger {
+	if h.Logger != nil {
+		return h.Logger
+	}
+	return slog.Default()
 }
 
 type loginRequest struct {
@@ -54,11 +65,13 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, err := GenerateSessionToken()
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to generate session")
+		h.logger().ErrorContext(r.Context(), "handler failed", "op", "login.generate_token", "err", err)
+		jsonError(w, http.StatusInternalServerError, "failed to create session")
 		return
 	}
 	expiry := time.Now().Add(sessionMaxAge)
 	if _, err := h.Auth.CreateSession(r.Context(), user.ID, token, expiry); err != nil {
+		h.logger().ErrorContext(r.Context(), "handler failed", "op", "login.create_session", "err", err)
 		jsonError(w, http.StatusInternalServerError, "failed to create session")
 		return
 	}
@@ -108,6 +121,7 @@ func (h *Handlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		count, err := h.Auth.UserCount(r.Context())
 		if err != nil {
+			h.logger().ErrorContext(r.Context(), "handler failed", "op", "setup.user_count", "err", err)
 			jsonError(w, http.StatusInternalServerError, "failed to check users")
 			return
 		}
@@ -131,7 +145,8 @@ func (h *Handlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := HashPassword(req.Password)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to hash password")
+		h.logger().ErrorContext(r.Context(), "handler failed", "op", "setup.hash_password", "err", err)
+		jsonError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
 	if _, err := h.Auth.CreateFirstUser(r.Context(), req.Username, hash); err != nil {
@@ -139,6 +154,7 @@ func (h *Handlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusForbidden, "setup already completed")
 			return
 		}
+		h.logger().ErrorContext(r.Context(), "handler failed", "op", "setup.create_first_user", "err", err)
 		jsonError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}

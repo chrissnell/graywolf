@@ -730,7 +730,7 @@ func main() {
 		fmt.Fprintf(w, `{"version":%q}`, Version)
 	})
 
-	authHandlers := &webauth.Handlers{Auth: authStore, Secure: secure}
+	authHandlers := &webauth.Handlers{Auth: authStore, Secure: secure, Logger: logger}
 	mux.HandleFunc("/api/auth/login", authHandlers.HandleLogin)
 	mux.HandleFunc("/api/auth/logout", authHandlers.HandleLogout)
 	mux.HandleFunc("/api/auth/setup", authHandlers.HandleSetup)
