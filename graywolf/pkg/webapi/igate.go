@@ -3,25 +3,9 @@ package webapi
 import (
 	"encoding/json"
 	"net/http"
-	"time"
-)
 
-// IgateStatus mirrors pkg/igate.Status without importing pkg/igate
-// (which would drag in filters, prometheus, etc. — keeping webapi
-// dependency-light means the orchestrator wires the status provider
-// as a plain function). Field names match the iGate's JSON shape so
-// the UI consumes a single schema.
-type IgateStatus struct {
-	Connected      bool      `json:"connected"`
-	Server         string    `json:"server"`
-	Callsign       string    `json:"callsign"`
-	SimulationMode bool      `json:"simulation_mode"`
-	LastConnected  time.Time `json:"last_connected,omitempty"`
-	Gated          uint64    `json:"rf_to_is_gated"`
-	Downlinked     uint64    `json:"is_to_rf_gated"`
-	Filtered       uint64    `json:"packets_filtered"`
-	DroppedOffline uint64    `json:"rf_to_is_dropped"`
-}
+	"github.com/chrissnell/graywolf/pkg/igate"
+)
 
 // IgateToggleRequest is the POST body for /api/igate/simulation.
 type IgateToggleRequest struct {
@@ -29,14 +13,10 @@ type IgateToggleRequest struct {
 }
 
 // RegisterIgate installs /api/igate (GET status) and
-// /api/igate/simulation (POST toggle) on the Server's mux. It is
-// called from cmd/graywolf after the iGate is constructed; both
-// callbacks may be nil, in which case the endpoints return 503.
-//
-// The orchestrator is responsible for removing the placeholder
-// /api/igate stub in webapi.go before wiring this up; attempting to
-// register duplicate patterns would panic at mux installation.
-func RegisterIgate(srv *Server, mux *http.ServeMux, toggle func(bool) error, status func() IgateStatus) {
+// /api/igate/simulation (POST toggle) on mux. Both callbacks may be
+// nil, in which case the endpoints return 503. RegisterRoutes
+// intentionally omits /api/igate so this helper owns the path.
+func RegisterIgate(srv *Server, mux *http.ServeMux, toggle func(bool) error, status func() igate.Status) {
 	if srv == nil || mux == nil {
 		return
 	}

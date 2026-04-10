@@ -696,20 +696,7 @@ func main() {
 
 	// Wire igate status into /api/status for dashboard.
 	if ig != nil {
-		apiSrv.SetIgateStatusFn(func() webapi.IgateStatus {
-			s := ig.Status()
-			return webapi.IgateStatus{
-				Connected:      s.Connected,
-				Server:         s.Server,
-				Callsign:       s.Callsign,
-				SimulationMode: s.SimulationMode,
-				LastConnected:  s.LastConnected,
-				Gated:          s.Gated,
-				Downlinked:     s.Downlinked,
-				Filtered:       s.Filtered,
-				DroppedOffline: s.DroppedOffline,
-			}
-		})
+		apiSrv.SetIgateStatusFn(ig.Status)
 	}
 
 	apiSrv.SetGPSReload(gpsReload)
@@ -736,23 +723,7 @@ func main() {
 	webapi.RegisterPackets(apiSrv, plog)(apiMux)
 	webapi.RegisterPosition(apiSrv, gpsCache, apiMux)
 	if ig != nil {
-		webapi.RegisterIgate(apiSrv, apiMux,
-			ig.SetSimulationMode,
-			func() webapi.IgateStatus {
-				s := ig.Status()
-				return webapi.IgateStatus{
-					Connected:      s.Connected,
-					Server:         s.Server,
-					Callsign:       s.Callsign,
-					SimulationMode: s.SimulationMode,
-					LastConnected:  s.LastConnected,
-					Gated:          s.Gated,
-					Downlinked:     s.Downlinked,
-					Filtered:       s.Filtered,
-					DroppedOffline: s.DroppedOffline,
-				}
-			},
-		)
+		webapi.RegisterIgate(apiSrv, apiMux, ig.SetSimulationMode, ig.Status)
 	}
 
 	mux.Handle("/api/", webauth.RequireAuth(authStore)(apiMux))

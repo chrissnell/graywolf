@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 )
@@ -25,7 +26,7 @@ type Server struct {
 	kissCtx       context.Context // long-lived context for KISS server goroutines
 	logger        *slog.Logger
 	startedAt     time.Time
-	igateStatusFn func() IgateStatus
+	igateStatusFn func() igate.Status
 	gpsReload        chan struct{}                              // signalled when GPS config changes
 	beaconReload     chan struct{}                              // signalled when beacon config changes
 	digipeaterReload chan struct{}                              // signalled when digipeater config/rules change
@@ -609,7 +610,7 @@ func (s *Server) SetDigipeaterReload(ch chan struct{}) {
 }
 
 // SetIgateStatusFn installs the function used by /api/status to report igate counters.
-func (s *Server) SetIgateStatusFn(fn func() IgateStatus) {
+func (s *Server) SetIgateStatusFn(fn func() igate.Status) {
 	s.igateStatusFn = fn
 }
 
@@ -617,7 +618,7 @@ func (s *Server) SetIgateStatusFn(fn func() IgateStatus) {
 type StatusDTO struct {
 	UptimeSeconds int64           `json:"uptime_seconds"`
 	Channels      []StatusChannel `json:"channels"`
-	Igate         *IgateStatus    `json:"igate,omitempty"`
+	Igate         *igate.Status   `json:"igate,omitempty"`
 }
 
 // StatusChannel pairs a channel config with its live stats.
