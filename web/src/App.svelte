@@ -12,7 +12,6 @@
   import Kiss from './routes/Kiss.svelte';
   import Agw from './routes/Agw.svelte';
   import Igate from './routes/Igate.svelte';
-  import IgateFilters from './routes/IgateFilters.svelte';
   import Digipeater from './routes/Digipeater.svelte';
   import Beacons from './routes/Beacons.svelte';
   import Gps from './routes/Gps.svelte';
@@ -28,7 +27,6 @@
     '/kiss': Kiss,
     '/agw': Agw,
     '/igate': Igate,
-    '/igate/filters': IgateFilters,
     '/digipeater': Digipeater,
     '/beacons': Beacons,
     '/gps': Gps,

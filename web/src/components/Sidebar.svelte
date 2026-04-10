@@ -10,7 +10,6 @@
     { path: '/kiss', label: 'KISS' },
     { path: '/agw', label: 'AGW' },
     { path: '/igate', label: 'iGate' },
-    { path: '/igate/filters', label: 'iGate Filters' },
     { path: '/digipeater', label: 'Digipeater' },
     { path: '/beacons', label: 'Beacons' },
     { path: '/gps', label: 'GPS' },
