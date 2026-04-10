@@ -50,10 +50,10 @@ func TestDcdPublisherPublishesToAllSubscribers(t *testing.T) {
 
 // TestDcdPublisherSlowSubscriberDrops verifies that a full subscriber
 // channel drops events rather than stalling other subscribers, and that
-// the drop is counted via incDropped. The fast subscriber drains in a
-// helper goroutine so its buffer never fills; the slow one never drains
-// until after all Publish calls, so exactly (total - buffer) events
-// drop for it.
+// the drop is counted via incDropped. The test is deterministic: it
+// fills both subscribers' buffers in phase 1 (no drops expected), then
+// synchronously drains fast only in phase 2 and publishes 5 more events
+// — slow is still full so it must drop all 5 while fast receives all 5.
 func TestDcdPublisherSlowSubscriberDrops(t *testing.T) {
 	var dropCount atomic.Int64
 	p := newDcdPublisher(testLogger(), func() { dropCount.Add(1) })
@@ -62,50 +62,61 @@ func TestDcdPublisherSlowSubscriberDrops(t *testing.T) {
 	slow := p.Subscribe()
 	fast := p.Subscribe()
 
-	// Drain fast concurrently so its buffer never fills.
-	fastDone := make(chan int, 1)
-	go func() {
-		received := 0
-		for range fast {
-			received++
-		}
-		fastDone <- received
-	}()
-
-	const total = dcdPublisherBufferSize + 5
-	for i := 0; i < total; i++ {
+	// Phase 1: fill both subscribers' buffers exactly to capacity.
+	for i := 0; i < dcdPublisherBufferSize; i++ {
 		p.Publish(&pb.DcdChange{Channel: uint32(i)})
 	}
-
-	if got := dropCount.Load(); got != 5 {
-		t.Errorf("drop count = %d, want 5", got)
+	if got := dropCount.Load(); got != 0 {
+		t.Fatalf("phase 1 drop count = %d, want 0", got)
 	}
 
-	// slow should have exactly dcdPublisherBufferSize events queued.
+	// Drain fast completely; slow remains full.
+	for i := 0; i < dcdPublisherBufferSize; i++ {
+		select {
+		case <-fast:
+		case <-time.After(time.Second):
+			t.Fatalf("phase 1 drain stalled at %d", i)
+		}
+	}
+
+	// Phase 2: publish 5 more. slow drops all 5; fast queues all 5.
+	const extra = 5
+	for i := 0; i < extra; i++ {
+		p.Publish(&pb.DcdChange{Channel: uint32(dcdPublisherBufferSize + i)})
+	}
+	if got := dropCount.Load(); got != extra {
+		t.Errorf("phase 2 drop count = %d, want %d", got, extra)
+	}
+
+	// fast should have exactly extra new events queued.
 	queued := 0
+	for i := 0; i < extra; i++ {
+		select {
+		case <-fast:
+			queued++
+		case <-time.After(time.Second):
+			t.Fatalf("fast did not receive phase-2 event %d", i)
+		}
+	}
+	if queued != extra {
+		t.Errorf("fast received %d, want %d", queued, extra)
+	}
+
+	// slow should still have exactly dcdPublisherBufferSize events queued
+	// (its phase-1 fill was never drained and every phase-2 publish
+	// dropped on it).
+	slowQueued := 0
 DRAIN:
 	for {
 		select {
 		case <-slow:
-			queued++
+			slowQueued++
 		default:
 			break DRAIN
 		}
 	}
-	if queued != dcdPublisherBufferSize {
-		t.Errorf("slow subscriber queued = %d, want %d", queued, dcdPublisherBufferSize)
-	}
-
-	// Closing the publisher unblocks the fast-drain goroutine so the
-	// test doesn't leak it.
-	p.Close()
-	select {
-	case n := <-fastDone:
-		if n != total {
-			t.Errorf("fast subscriber received %d, want %d", n, total)
-		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("fast drainer did not exit after Close")
+	if slowQueued != dcdPublisherBufferSize {
+		t.Errorf("slow subscriber queued = %d, want %d", slowQueued, dcdPublisherBufferSize)
 	}
 }
 
