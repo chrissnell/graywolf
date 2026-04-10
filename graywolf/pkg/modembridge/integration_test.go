@@ -15,7 +15,8 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
-// repoRoot walks up from the test file's cwd looking for Cargo.toml to
+// repoRoot walks up from the test file's cwd looking for the graywolf-modem
+// directory (which contains Cargo.toml after the split-modem refactor) to
 // locate the graywolf repo root.
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -25,7 +26,7 @@ func repoRoot(t *testing.T) string {
 	}
 	dir := cwd
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "Cargo.toml")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "graywolf-modem", "Cargo.toml")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
@@ -36,16 +37,18 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// ensureModemBinary builds target/release/graywolf-modem if it's missing.
+// ensureModemBinary builds graywolf-modem/target/release/graywolf-modem if
+// it's missing.
 func ensureModemBinary(t *testing.T, root string) string {
 	t.Helper()
-	bin := filepath.Join(root, "target", "release", "graywolf-modem")
+	modemDir := filepath.Join(root, "graywolf-modem")
+	bin := filepath.Join(modemDir, "target", "release", "graywolf-modem")
 	if _, err := os.Stat(bin); err == nil {
 		return bin
 	}
 	t.Logf("building %s", bin)
 	cmd := exec.Command("cargo", "build", "--release", "--bin", "graywolf-modem")
-	cmd.Dir = root
+	cmd.Dir = modemDir
 	cmd.Env = append(os.Environ(), "PATH=/opt/homebrew/bin:/usr/bin:/bin")
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -63,7 +66,7 @@ func TestFlacRoundTrip(t *testing.T) {
 	root := repoRoot(t)
 	bin := ensureModemBinary(t, root)
 
-	flacPath := filepath.Join(root, "aprs-test-tracks", "03_100-Mic-E-Bursts-Flat.flac")
+	flacPath := filepath.Join(root, "graywolf-modem", "aprs-test-tracks", "03_100-Mic-E-Bursts-Flat.flac")
 	if _, err := os.Stat(flacPath); err != nil {
 		t.Fatalf("flac file missing: %v", err)
 	}

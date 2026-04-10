@@ -68,12 +68,14 @@ jobs:
 
       - name: Build with cross
         if: matrix.use_cross
+        working-directory: graywolf-modem
         env:
           GRAYWOLF_VERSION: ${{ github.ref_name }}
         run: cross build --release --target ${{ matrix.target }} --bin graywolf-modem
 
       - name: Build with cargo
         if: matrix.use_cross == false
+        working-directory: graywolf-modem
         env:
           GRAYWOLF_VERSION: ${{ github.ref_name }}
         run: cargo build --release --target ${{ matrix.target }} --bin graywolf-modem
@@ -83,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rust-${{ matrix.goos }}-${{ matrix.arch }}
-          path: target/${{ matrix.target }}/release/graywolf-modem
+          path: graywolf-modem/target/${{ matrix.target }}/release/graywolf-modem
           retention-days: 1
 
       - name: Upload Rust binary (Windows)
@@ -91,7 +93,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rust-${{ matrix.goos }}-${{ matrix.arch }}
-          path: target/${{ matrix.target }}/release/graywolf-modem.exe
+          path: graywolf-modem/target/${{ matrix.target }}/release/graywolf-modem.exe
           retention-days: 1
 
   release:
@@ -111,17 +113,17 @@ jobs:
 
       - name: Build frontend
         run: |
-          cd web
+          cd graywolf/web
           npm ci
           npm install @rollup/rollup-linux-x64-gnu
           npx vite build
-          cd ..
-          git checkout -- web/
+          cd ../..
+          git checkout -- graywolf/web/
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version-file: graywolf/go.mod
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

@@ -57,7 +57,7 @@ func main() {
 
 	var (
 		dbPath     = flag.String("config", "./graywolf.db", "path to SQLite config database")
-		modemPath  = flag.String("modem", "./target/release/graywolf-modem", "path to graywolf-modem binary")
+		modemPath  = flag.String("modem", "./graywolf-modem/target/release/graywolf-modem", "path to graywolf-modem binary")
 		httpAddr   = flag.String("http", "127.0.0.1:8080", "HTTP listen address")
 		shutdownTO = flag.Duration("shutdown-timeout", 10*time.Second, "max time to wait for clean shutdown")
 		flacFile   = flag.String("flac", "", "override audio device with a FLAC file for testing")

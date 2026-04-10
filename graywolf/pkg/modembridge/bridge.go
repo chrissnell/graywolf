@@ -51,7 +51,7 @@ func (s State) String() string {
 // Config drives a Bridge.
 type Config struct {
 	// BinaryPath is the path to graywolf-modem. Defaults to
-	// "./target/release/graywolf-modem".
+	// "./graywolf-modem/target/release/graywolf-modem".
 	BinaryPath string
 	// SocketDir is where the Unix socket file lives. Defaults to os.TempDir().
 	SocketDir string
@@ -73,7 +73,7 @@ type Config struct {
 
 func (c *Config) applyDefaults() {
 	if c.BinaryPath == "" {
-		c.BinaryPath = "./target/release/graywolf-modem"
+		c.BinaryPath = "./graywolf-modem/target/release/graywolf-modem"
 	}
 	if c.SocketDir == "" {
 		c.SocketDir = os.TempDir()

@@ -4,11 +4,13 @@ project_name: graywolf
 
 before:
   hooks:
-    - go mod tidy
+    - cmd: go mod tidy
+      dir: graywolf
 
 builds:
   - id: graywolf
     binary: graywolf
+    dir: graywolf
     main: ./cmd/graywolf/
     env:
       - CGO_ENABLED=0

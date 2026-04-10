@@ -7,11 +7,11 @@ aprs-test-tracks/
 .claude/
 scratch/
 node_modules/
-/graywolf
+/bin/
 graywolf.db
 graywolf.db-shm
 graywolf.db-wal
-web/dist/
+graywolf/web/dist/
 dist/
 rust-bin/
 rust-artifacts/
