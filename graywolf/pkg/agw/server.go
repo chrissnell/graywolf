@@ -49,13 +49,18 @@ type ServerConfig struct {
 
 // Server is a multi-client AGWPE-compatible TCP server.
 type Server struct {
-	cfg     ServerConfig
-	logger  *slog.Logger
-	mu      sync.Mutex
-	ln      net.Listener
-	wg      sync.WaitGroup
-	clients map[*clientState]struct{}
-	active  int32
+	cfg    ServerConfig
+	logger *slog.Logger
+	mu     sync.Mutex
+	ln     net.Listener
+	wg     sync.WaitGroup
+	// shutdownCh is created by ListenAndServe and closed by Shutdown so
+	// callers can tear the server down without having to cancel the
+	// parent context.
+	shutdownMu sync.Mutex
+	shutdownCh chan struct{}
+	clients    map[*clientState]struct{}
+	active     int32
 }
 
 type clientState struct {
@@ -97,8 +102,9 @@ func (s *Server) LocalAddr() net.Addr {
 	return s.ln.Addr()
 }
 
-// ListenAndServe binds and serves until ctx is cancelled. Blocks. When
-// it returns, the listener is closed and the bound port is free.
+// ListenAndServe binds and serves until ctx is cancelled or Shutdown is
+// called. Blocks. When it returns, the listener is closed and the bound
+// port is free.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.cfg.ListenAddr)
 	if err != nil {
@@ -109,18 +115,23 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.mu.Unlock()
 	s.logger.Info("agw server listening", "addr", ln.Addr().String())
 
-	// Close the listener on ctx cancel. Tracked in s.wg so ListenAndServe
-	// cannot return until the listener is actually closed and its port
-	// released — a rapid Stop/Start otherwise races the previous close
-	// against the new bind. A local done channel lets ListenAndServe
-	// unblock the watcher if it exits for any other reason.
-	localDone := make(chan struct{})
+	// shutdownCh lets Shutdown tear the listener down without requiring
+	// the caller's context to be cancelled. Recreated on every call so
+	// a restarted server gets a fresh channel.
+	s.shutdownMu.Lock()
+	s.shutdownCh = make(chan struct{})
+	shutdownCh := s.shutdownCh
+	s.shutdownMu.Unlock()
+
+	// Close the listener on ctx cancel or Shutdown. Tracked in s.wg so
+	// ListenAndServe cannot return until the listener is actually closed
+	// and its port released.
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		select {
 		case <-ctx.Done():
-		case <-localDone:
+		case <-shutdownCh:
 		}
 		_ = ln.Close()
 	}()
@@ -140,9 +151,63 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			s.handleClient(ctx, c)
 		}(conn)
 	}
-	close(localDone)
+	// Ensure the cancel-watcher exits even if we broke out for a reason
+	// other than ctx cancellation or Shutdown.
+	s.shutdownMu.Lock()
+	if s.shutdownCh != nil {
+		select {
+		case <-s.shutdownCh:
+		default:
+			close(s.shutdownCh)
+		}
+		s.shutdownCh = nil
+	}
+	s.shutdownMu.Unlock()
 	s.wg.Wait()
 	return nil
+}
+
+// Shutdown triggers an orderly exit of ListenAndServe without requiring
+// the caller's context to be cancelled. It closes the listener (breaking
+// Accept) and closes every live client connection to unblock their
+// readers, then waits for all tracked goroutines up to ctx's deadline.
+// Safe to call more than once; subsequent calls are no-ops.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.shutdownMu.Lock()
+	ch := s.shutdownCh
+	if ch != nil {
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+		s.shutdownCh = nil
+	}
+	s.shutdownMu.Unlock()
+
+	// Close every live client connection so their handleClient loops
+	// unblock and drain via s.wg.Wait() below.
+	s.mu.Lock()
+	conns := make([]net.Conn, 0, len(s.clients))
+	for c := range s.clients {
+		conns = append(conns, c.conn)
+	}
+	s.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
+
+	waitCh := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(waitCh)
+	}()
+	select {
+	case <-waitCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Server) handleClient(ctx context.Context, conn net.Conn) {

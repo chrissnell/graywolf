@@ -821,6 +821,16 @@ func main() {
 		ig.Stop()
 	}
 
+	// Close any live AGW connections and free the listener port so a
+	// quick restart is safe. ctx has already been cancelled, so the
+	// server would eventually exit on its own, but calling Shutdown
+	// explicitly also disconnects clients instead of waiting for them.
+	if agwServer != nil {
+		if err := agwServer.Shutdown(shutdownCtx); err != nil {
+			logger.Warn("agw server shutdown", "err", err)
+		}
+	}
+
 	done := make(chan struct{})
 	go func() { bridge.Stop(); close(done) }()
 	select {
