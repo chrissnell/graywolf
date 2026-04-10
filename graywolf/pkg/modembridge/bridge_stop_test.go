@@ -78,29 +78,73 @@ func TestBridgeStopCancelsPendingRequests(t *testing.T) {
 	}
 }
 
-// TestBridgeStopClearsPendingMaps verifies that closePendingRequests nils
-// the three dispatch maps so a caller that races past the StateRunning
-// fast-path check sees a nil map and rejects itself instead of leaking
-// an entry into a map that will never be drained again.
-func TestBridgeStopClearsPendingMaps(t *testing.T) {
+// TestBridgeStopClosesDispatchers verifies that closePendingRequests marks
+// the three dispatchers closed so a caller that races past the
+// StateRunning fast-path check sees a closed channel from Register and
+// rejects itself instead of leaking an entry into a dispatcher that will
+// never be drained again.
+func TestBridgeStopClosesDispatchers(t *testing.T) {
 	b := New(Config{Logger: slog.Default()})
 
-	// Install one pending entry in each map directly.
-	b.enumPending[1] = make(chan *pb.AudioDeviceList, 1)
-	b.tonePending[2] = make(chan *pb.TestToneResult, 1)
-	b.scanPending[3] = make(chan *pb.InputLevelScanResult, 1)
+	// Register a pending entry in each dispatcher directly so we can
+	// observe that Close drains them.
+	_, enumCh := b.enumDispatcher.Register()
+	_, toneCh := b.toneDispatcher.Register()
+	_, scanCh := b.scanDispatcher.Register()
 
 	b.closePendingRequests()
 
-	if b.enumPending != nil {
-		t.Errorf("enumPending not nil after closePendingRequests")
+	// Every waiting channel should receive a zero value (closed channel).
+	for name, ch := range map[string]<-chan any{
+		"enum": adaptPbAudioDeviceList(enumCh),
+		"tone": adaptPbTestToneResult(toneCh),
+		"scan": adaptPbInputLevelScanResult(scanCh),
+	} {
+		select {
+		case v, ok := <-ch:
+			if ok && v != nil {
+				t.Errorf("%s dispatcher delivered non-zero %+v after Close", name, v)
+			}
+		case <-time.After(100 * time.Millisecond):
+			t.Errorf("%s dispatcher did not close channel", name)
+		}
 	}
-	if b.tonePending != nil {
-		t.Errorf("tonePending not nil after closePendingRequests")
-	}
-	if b.scanPending != nil {
-		t.Errorf("scanPending not nil after closePendingRequests")
-	}
+}
+
+// The three tiny adapters below widen the typed dispatcher reply channels
+// to <-chan any so the preceding table-driven test can share one select.
+func adaptPbAudioDeviceList(c <-chan *pb.AudioDeviceList) <-chan any {
+	out := make(chan any, 1)
+	go func() {
+		v, ok := <-c
+		if ok {
+			out <- v
+		}
+		close(out)
+	}()
+	return out
+}
+func adaptPbTestToneResult(c <-chan *pb.TestToneResult) <-chan any {
+	out := make(chan any, 1)
+	go func() {
+		v, ok := <-c
+		if ok {
+			out <- v
+		}
+		close(out)
+	}()
+	return out
+}
+func adaptPbInputLevelScanResult(c <-chan *pb.InputLevelScanResult) <-chan any {
+	out := make(chan any, 1)
+	go func() {
+		v, ok := <-c
+		if ok {
+			out <- v
+		}
+		close(out)
+	}()
+	return out
 }
 
 // TestBridgeRegistrationAfterStopRejects verifies that once

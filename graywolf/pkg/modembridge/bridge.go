@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -161,20 +160,15 @@ type Bridge struct {
 	// in supervise() writes to.
 	dcdSubs []chan *pb.DcdChange
 
-	// enumReqID is an atomic counter for EnumerateAudioDevices request IDs.
-	// Also used for PlayTestTone request IDs.
-	enumReqID atomic.Uint32
-	// enumPending maps request_id → response channel for device enumeration.
-	enumMu      sync.Mutex
-	enumPending map[uint32]chan *pb.AudioDeviceList
-
-	// tonePending maps request_id ��� response channel for test tone results.
-	toneMu      sync.Mutex
-	tonePending map[uint32]chan *pb.TestToneResult
-
-	// scanPending maps request_id → response channel for input level scans.
-	scanMu      sync.Mutex
-	scanPending map[uint32]chan *pb.InputLevelScanResult
+	// Generic dispatchers correlate per-request IDs with reply channels
+	// for the three request/response IPC exchanges the bridge supports.
+	// supervise() calls Reset on each at the top of every iteration and
+	// Close in its defer, so callers blocked in their per-call select
+	// unblock with a zero-value response (treated as errBridgeStopped)
+	// rather than waiting for their per-call timeout.
+	enumDispatcher *dispatcher[*pb.AudioDeviceList]
+	toneDispatcher *dispatcher[*pb.TestToneResult]
+	scanDispatcher *dispatcher[*pb.InputLevelScanResult]
 
 	// Per-device audio level cache, updated from DeviceLevelUpdate IPC messages.
 	deviceLevelMu    sync.RWMutex
@@ -204,9 +198,9 @@ func New(cfg Config) *Bridge {
 		dcd:              make(chan *pb.DcdChange, cfg.DcdBufferSize),
 		state:            StateStopped,
 		statusCache:      make(map[uint32]*ChannelStats),
-		enumPending:      make(map[uint32]chan *pb.AudioDeviceList),
-		tonePending:      make(map[uint32]chan *pb.TestToneResult),
-		scanPending:      make(map[uint32]chan *pb.InputLevelScanResult),
+		enumDispatcher:   newDispatcher[*pb.AudioDeviceList](),
+		toneDispatcher:   newDispatcher[*pb.TestToneResult](),
+		scanDispatcher:   newDispatcher[*pb.InputLevelScanResult](),
 		deviceLevelCache: make(map[uint32]*DeviceLevel),
 	}
 }
@@ -326,58 +320,35 @@ func (b *Bridge) Stop() {
 // channel was closed because the supervisor exited.
 var errBridgeStopped = errors.New("modembridge: bridge stopped")
 
-// closePendingRequests closes every reply channel in the three dispatch
-// maps (enum/tone/scan) and leaves each map nil. Callers blocked in their
-// per-call select see a nil zero-value on the channel and return
-// errBridgeStopped without waiting for their 5s / 30s per-call timeout.
-// New registrations that race past the StateRunning fast-path check see
-// the nil map when they take the per-map mutex and reject themselves,
-// closing the TOCTOU window between "caller reads state RUNNING" and
-// "caller inserts into pending map".
+// closePendingRequests closes every reply channel in the three dispatchers
+// (enum/tone/scan). Callers blocked in their per-call select see a
+// zero-value response on the channel and return errBridgeStopped without
+// waiting for their 5s / 30s per-call timeout. New registrations that
+// race past the StateRunning fast-path check see a closed dispatcher
+// and receive a closed channel immediately, closing the TOCTOU window
+// between "caller reads state RUNNING" and "caller registers with the
+// dispatcher".
 //
 // Must only be invoked from supervise()'s defer chain: at that point the
-// session goroutine has already returned, so no dispatcher is in flight
-// and double-close is impossible.
+// session goroutine has already returned, so no Deliver is in flight and
+// double-close is impossible.
 func (b *Bridge) closePendingRequests() {
-	b.enumMu.Lock()
-	for _, ch := range b.enumPending {
-		close(ch)
-	}
-	b.enumPending = nil
-	b.enumMu.Unlock()
-
-	b.toneMu.Lock()
-	for _, ch := range b.tonePending {
-		close(ch)
-	}
-	b.tonePending = nil
-	b.toneMu.Unlock()
-
-	b.scanMu.Lock()
-	for _, ch := range b.scanPending {
-		close(ch)
-	}
-	b.scanPending = nil
-	b.scanMu.Unlock()
+	b.enumDispatcher.Close()
+	b.toneDispatcher.Close()
+	b.scanDispatcher.Close()
 }
 
 // supervise is the top-level loop: spawn the child, drive one session, back
 // off on error, repeat until the context is cancelled.
 func (b *Bridge) supervise(ctx context.Context) {
-	// Re-initialize the dispatch maps in case a previous supervise run
-	// left them nil via closePendingRequests. Callers that register a
-	// pending entry before we transition to StateRunning will either
-	// see StateStopped/StateStarting on their fast-path check and bail,
-	// or see the fresh map here and proceed normally.
-	b.enumMu.Lock()
-	b.enumPending = make(map[uint32]chan *pb.AudioDeviceList)
-	b.enumMu.Unlock()
-	b.toneMu.Lock()
-	b.tonePending = make(map[uint32]chan *pb.TestToneResult)
-	b.toneMu.Unlock()
-	b.scanMu.Lock()
-	b.scanPending = make(map[uint32]chan *pb.InputLevelScanResult)
-	b.scanMu.Unlock()
+	// Reset the dispatchers in case a previous supervise run closed them.
+	// Callers that register a request before we transition to
+	// StateRunning will either see StateStopped/StateStarting on their
+	// fast-path check and bail, or see an open dispatcher here and
+	// proceed normally.
+	b.enumDispatcher.Reset()
+	b.toneDispatcher.Reset()
+	b.scanDispatcher.Reset()
 
 	defer close(b.done)
 	defer close(b.frames)
@@ -616,21 +587,8 @@ func (b *Bridge) EnumerateAudioDevices(ctx context.Context) ([]AvailableDevice, 
 		return nil, errors.New("modembridge: not in RUNNING state")
 	}
 
-	reqID := b.enumReqID.Add(1)
-	ch := make(chan *pb.AudioDeviceList, 1)
-
-	b.enumMu.Lock()
-	if b.enumPending == nil {
-		b.enumMu.Unlock()
-		return nil, errBridgeStopped
-	}
-	b.enumPending[reqID] = ch
-	b.enumMu.Unlock()
-	defer func() {
-		b.enumMu.Lock()
-		delete(b.enumPending, reqID)
-		b.enumMu.Unlock()
-	}()
+	reqID, ch := b.enumDispatcher.Register()
+	defer b.enumDispatcher.Cancel(reqID)
 
 	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_EnumerateAudioDevices{
 		EnumerateAudioDevices: &pb.EnumerateAudioDevices{
@@ -660,15 +618,7 @@ func (b *Bridge) EnumerateAudioDevices(ctx context.Context) ([]AvailableDevice, 
 
 // dispatchEnumResponse delivers an AudioDeviceList to the waiting caller.
 func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
-	b.enumMu.Lock()
-	ch, ok := b.enumPending[list.RequestId]
-	b.enumMu.Unlock()
-	if ok {
-		select {
-		case ch <- list:
-		default:
-		}
-	}
+	b.enumDispatcher.Deliver(list.RequestId, list)
 }
 
 // InputLevel holds the level scan result for a single input device.
@@ -686,21 +636,8 @@ func (b *Bridge) ScanInputLevels(ctx context.Context) ([]InputLevel, error) {
 		return nil, errors.New("modembridge: not in RUNNING state")
 	}
 
-	reqID := b.enumReqID.Add(1)
-	ch := make(chan *pb.InputLevelScanResult, 1)
-
-	b.scanMu.Lock()
-	if b.scanPending == nil {
-		b.scanMu.Unlock()
-		return nil, errBridgeStopped
-	}
-	b.scanPending[reqID] = ch
-	b.scanMu.Unlock()
-	defer func() {
-		b.scanMu.Lock()
-		delete(b.scanPending, reqID)
-		b.scanMu.Unlock()
-	}()
+	reqID, ch := b.scanDispatcher.Register()
+	defer b.scanDispatcher.Cancel(reqID)
 
 	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_ScanInputLevels{
 		ScanInputLevels: &pb.ScanInputLevels{
@@ -741,15 +678,7 @@ func convertScanResult(r *pb.InputLevelScanResult) []InputLevel {
 }
 
 func (b *Bridge) dispatchScanResponse(r *pb.InputLevelScanResult) {
-	b.scanMu.Lock()
-	ch, ok := b.scanPending[r.RequestId]
-	b.scanMu.Unlock()
-	if ok {
-		select {
-		case ch <- r:
-		default:
-		}
-	}
+	b.scanDispatcher.Deliver(r.RequestId, r)
 }
 
 // isUsableAudioDevice filters out ALSA virtual devices that aren't useful
@@ -792,21 +721,8 @@ func (b *Bridge) PlayTestTone(ctx context.Context, deviceID uint32, deviceName s
 		return errors.New("modembridge: not in RUNNING state")
 	}
 
-	reqID := b.enumReqID.Add(1)
-	ch := make(chan *pb.TestToneResult, 1)
-
-	b.toneMu.Lock()
-	if b.tonePending == nil {
-		b.toneMu.Unlock()
-		return errBridgeStopped
-	}
-	b.tonePending[reqID] = ch
-	b.toneMu.Unlock()
-	defer func() {
-		b.toneMu.Lock()
-		delete(b.tonePending, reqID)
-		b.toneMu.Unlock()
-	}()
+	reqID, ch := b.toneDispatcher.Register()
+	defer b.toneDispatcher.Cancel(reqID)
 
 	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_PlayTestTone{
 		PlayTestTone: &pb.PlayTestTone{
@@ -841,15 +757,7 @@ func (b *Bridge) PlayTestTone(ctx context.Context, deviceID uint32, deviceName s
 
 // dispatchToneResponse delivers a TestToneResult to the waiting caller.
 func (b *Bridge) dispatchToneResponse(r *pb.TestToneResult) {
-	b.toneMu.Lock()
-	ch, ok := b.tonePending[r.RequestId]
-	b.toneMu.Unlock()
-	if ok {
-		select {
-		case ch <- r:
-		default:
-		}
-	}
+	b.toneDispatcher.Deliver(r.RequestId, r)
 }
 
 // SetDeviceGain sends a live gain adjustment to the modem (fire-and-forget).
