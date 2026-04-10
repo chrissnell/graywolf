@@ -4,6 +4,7 @@ package modembridge
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -31,7 +32,10 @@ func cleanupListenAddr(addr string) {
 // readDialAddr waits for the modem's readiness signal and returns the
 // address to dial. On Unix the address is the socket path we already know;
 // the readiness signal is a single '\n' byte.
-func readDialAddr(r io.Reader, timeout time.Duration, listenAddr string) (string, error) {
+//
+// On timeout, r is closed to unblock the reader goroutine and the channel is
+// drained before returning so no goroutine is leaked.
+func readDialAddr(r io.ReadCloser, timeout time.Duration, listenAddr string) (string, error) {
 	type result struct {
 		b   byte
 		err error
@@ -52,6 +56,11 @@ func readDialAddr(r io.Reader, timeout time.Duration, listenAddr string) (string
 		}
 		return listenAddr, nil
 	case <-time.After(timeout):
+		closeErr := r.Close()
+		<-ch
+		if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+			return "", fmt.Errorf("timeout after %s: close stdout: %w", timeout, closeErr)
+		}
 		return "", fmt.Errorf("timeout after %s", timeout)
 	}
 }
