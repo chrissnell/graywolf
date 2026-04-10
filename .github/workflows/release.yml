@@ -136,6 +136,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: graywolf/go.mod
+          cache-dependency-path: graywolf/go.sum
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
