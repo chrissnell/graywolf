@@ -850,6 +850,7 @@ func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
 		SymbolCode:  symCode,
 		Comment:     b.Comment,
 		CommentCmd:  commentCmd,
+		Compress:    b.Compress,
 		Messaging:   b.Messaging,
 		ObjectName:  b.ObjectName,
 		CustomInfo:  b.CustomInfo,

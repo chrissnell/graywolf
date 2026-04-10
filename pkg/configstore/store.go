@@ -95,7 +95,32 @@ func (s *Store) Migrate() error {
 	); err != nil {
 		return err
 	}
-	return s.migrateChannelDeviceFields()
+	if err := s.migrateChannelDeviceFields(); err != nil {
+		return err
+	}
+	return s.migrateBeaconCompressDefault()
+}
+
+// migrateBeaconCompressDefault flips every existing beacon row to
+// compress=1 exactly once. Earlier versions defaulted the column to
+// false but never wired it to the encoder, so any stored 0 is a legacy
+// artifact, not an operator choice. Gated by PRAGMA user_version so we
+// don't stomp a deliberate post-migration change.
+func (s *Store) migrateBeaconCompressDefault() error {
+	var version int
+	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
+		return fmt.Errorf("read user_version: %w", err)
+	}
+	if version >= 1 {
+		return nil
+	}
+	if err := s.db.Exec("UPDATE beacons SET compress = 1 WHERE compress = 0").Error; err != nil {
+		return fmt.Errorf("migrate beacon compress default: %w", err)
+	}
+	if err := s.db.Exec("PRAGMA user_version = 1").Error; err != nil {
+		return fmt.Errorf("set user_version: %w", err)
+	}
+	return nil
 }
 
 // migrateChannelDeviceFields migrates the old single audio_device_id/audio_channel

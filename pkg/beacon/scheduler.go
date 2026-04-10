@@ -67,6 +67,7 @@ type Config struct {
 	SymbolCode  byte
 	Comment     string
 	CommentCmd  []string // already-split argv; empty = static comment
+	Compress    bool     // use 13-byte base-91 compressed position format
 	Messaging   bool
 	ObjectName  string             // for TypeObject
 	CustomInfo  string             // for TypeCustom (raw info field override)
@@ -414,6 +415,9 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		} else if lat == 0 && lon == 0 {
 			return "", fmt.Errorf("%s beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)", b.Type)
 		}
+		if b.Compress {
+			return CompressedPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
+		}
 		return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
 
 	case TypeTracker:
@@ -434,6 +438,9 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		altM := 0.0
 		if fix.HasAlt {
 			altM = fix.Altitude
+		}
+		if b.Compress {
+			return CompressedPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
 		}
 		return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
 

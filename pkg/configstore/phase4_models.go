@@ -151,7 +151,7 @@ type Beacon struct {
 	SymbolTable   string    `gorm:"not null;default:'/'" json:"symbol_table"`
 	Symbol        string    `gorm:"not null;default:'-'" json:"symbol"`
 	Overlay       string    `json:"overlay"`                                 // alternate symbol table overlay character
-	Compress      bool      `gorm:"not null;default:false" json:"compress"`  // use compressed position encoding
+	Compress      bool      `gorm:"not null;default:true" json:"compress"`   // use 13-byte base-91 compressed position encoding (APRS101 ch 9)
 	Messaging     bool      `gorm:"not null;default:false" json:"messaging"` // '=' instead of '!' prefix
 	Comment       string    `json:"comment"`
 	CommentCmd    string    `json:"comment_cmd"`                      // shell command whose stdout is appended as comment
