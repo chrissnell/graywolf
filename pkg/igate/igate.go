@@ -61,6 +61,12 @@ type Config struct {
 	// Registry lets the iGate export its own Prometheus metrics into
 	// graywolf's registry without needing pkg/metrics changes.
 	Registry prometheus.Registerer
+	// RfToIsHook is called after a packet has been successfully gated
+	// from RF up to APRS-IS (or would have been, in simulation mode).
+	// Optional. Used by the orchestrator to record a distinct
+	// packetlog entry for the upload so it can be distinguished from
+	// the raw RX entry.
+	RfToIsHook func(pkt *aprs.DecodedAPRSPacket, line string)
 	// now is an optional clock for tests.
 	now func() time.Time
 }
@@ -349,6 +355,9 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 		ig.logger.Info("igate simulation send", "line", line)
 		atomic.AddUint64(&ig.statGated, 1)
 		ig.mGatedTotal.WithLabelValues("rf_to_is").Inc()
+		if ig.cfg.RfToIsHook != nil {
+			ig.cfg.RfToIsHook(pkt, line)
+		}
 		return
 	}
 	if err := ig.client.WriteLine(line); err != nil {
@@ -357,6 +366,9 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	}
 	atomic.AddUint64(&ig.statGated, 1)
 	ig.mGatedTotal.WithLabelValues("rf_to_is").Inc()
+	if ig.cfg.RfToIsHook != nil {
+		ig.cfg.RfToIsHook(pkt, line)
+	}
 }
 
 func pathBlocksGating(path []string) bool {

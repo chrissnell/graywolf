@@ -14,7 +14,22 @@
     { value: 'all', label: 'All' },
     { value: 'rx', label: 'RX Only' },
     { value: 'tx', label: 'TX Only' },
+    { value: 'is', label: 'IS Only' },
   ];
+
+  function originTag(pkt) {
+    const src = pkt.source || '';
+    const notes = pkt.notes || '';
+    switch (src) {
+      case 'digipeater': return { label: 'DIGI', cls: 'digi' };
+      case 'beacon':     return { label: 'BCN',  cls: 'bcn' };
+      case 'igate':
+        if (notes === 'is2rf') return { label: 'IS→RF', cls: 'igate-is2rf' };
+        if (notes === 'rf2is') return { label: 'RF→IS', cls: 'igate-rf2is' };
+        return { label: 'IGATE', cls: 'igate' };
+      default: return null;
+    }
+  }
 
   let pollTimer;
 
@@ -67,6 +82,7 @@
     return {
       time: new Date(pkt.timestamp).toLocaleString(),
       direction: pkt.direction || '',
+      origin: originTag(pkt),
       channel: pkt.channel || '—',
       source: calls.src,
       dest: calls.dst,
@@ -92,7 +108,15 @@
 </script>
 
 {#snippet dirBadge(value)}
-  <span class="dir-badge" class:rx={value === 'RX'} class:tx={value === 'TX'}>{value}</span>
+  <span class="dir-badge" class:rx={value === 'RX'} class:tx={value === 'TX'} class:is={value === 'IS'}>{value}</span>
+{/snippet}
+
+{#snippet originBadge(value)}
+  {#if value}
+    <span class="origin-badge origin-{value.cls}">{value.label}</span>
+  {:else}
+    <span class="origin-empty">—</span>
+  {/if}
 {/snippet}
 
 {#snippet chBadge(value)}
@@ -142,6 +166,7 @@
       columns={[
         { key: 'time', label: 'Time', width: '140px' },
         { key: 'direction', label: 'Dir', width: '50px', render: dirBadge },
+        { key: 'origin', label: 'Origin', width: '70px', render: originBadge },
         { key: 'channel', label: 'Ch', width: '50px', render: chBadge },
         { key: 'source', label: 'Source', width: '100px', render: srcCall },
         { key: 'dest', label: 'Dest', width: '100px', render: dstCall },
@@ -195,11 +220,29 @@
     text-align: center;
   }
   :global(.logs-viewer .dir-badge.rx) { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-  :global(.logs-viewer .dir-badge.tx) { background: #ffaa00; color: #000; }
+  :global(.logs-viewer .dir-badge.tx) { background: #ffd968; color: #000; }
+  :global(.logs-viewer .dir-badge.is) { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
   :global(.logs-viewer .ch-badge) {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
   }
+  :global(.logs-viewer .origin-badge) {
+    font-weight: 700;
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    display: inline-block;
+    text-align: center;
+  }
+  :global(.logs-viewer .origin-empty) {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  :global(.logs-viewer .origin-digi)        { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
+  :global(.logs-viewer .origin-bcn)         { background: rgba(63, 185, 80, 0.25);  color: #7ee787; }
+  :global(.logs-viewer .origin-igate)       { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
+  :global(.logs-viewer .origin-igate-is2rf) { background: rgba(255, 170, 0, 0.25);  color: #ffc863; }
+  :global(.logs-viewer .origin-igate-rf2is) { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
   :global(.logs-viewer .col-src) {
     color: #d4a040;
     font-weight: 500;

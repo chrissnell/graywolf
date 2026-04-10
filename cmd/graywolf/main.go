@@ -475,6 +475,21 @@ func main() {
 			SimulationMode:  igCfg.SimulationMode,
 			Logger:          logger,
 			Registry:        m.Registry,
+			RfToIsHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+				if pkt == nil {
+					return
+				}
+				plog.Record(packetlog.Entry{
+					Channel:   uint32(pkt.Channel),
+					Direction: packetlog.DirIS,
+					Source:    "igate",
+					Raw:       pkt.Raw,
+					Display:   line,
+					Type:      string(pkt.Type),
+					Decoded:   pkt,
+					Notes:     "rf2is",
+				})
+			},
 		})
 		if err != nil {
 			logger.Error("igate init", "err", err)
