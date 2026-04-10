@@ -85,7 +85,7 @@ func resolveModemPath(explicit string) (string, error) {
 			return cand, nil
 		}
 	}
-	devPath := filepath.FromSlash("./graywolf-modem/target/release/graywolf-modem")
+	devPath := filepath.FromSlash("./target/release/graywolf-modem")
 	if _, err := os.Stat(devPath); err == nil {
 		return devPath, nil
 	}

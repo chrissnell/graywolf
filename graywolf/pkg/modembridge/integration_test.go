@@ -37,18 +37,19 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// ensureModemBinary builds graywolf-modem/target/release/graywolf-modem if
-// it's missing.
+// ensureModemBinary builds target/release/graywolf-modem at the workspace
+// root if it's missing. The repo is a cargo workspace whose sole Rust
+// member is graywolf-modem, so cargo's output lands at <root>/target/
+// not at <root>/graywolf-modem/target/.
 func ensureModemBinary(t *testing.T, root string) string {
 	t.Helper()
-	modemDir := filepath.Join(root, "graywolf-modem")
-	bin := filepath.Join(modemDir, "target", "release", "graywolf-modem")
+	bin := filepath.Join(root, "target", "release", "graywolf-modem")
 	if _, err := os.Stat(bin); err == nil {
 		return bin
 	}
 	t.Logf("building %s", bin)
 	cmd := exec.Command("cargo", "build", "--release", "--bin", "graywolf-modem")
-	cmd.Dir = modemDir
+	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "PATH=/opt/homebrew/bin:/usr/bin:/bin")
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr

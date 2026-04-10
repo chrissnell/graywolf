@@ -74,9 +74,12 @@ jobs:
           echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      # Run cargo/cross from the workspace root so cross-rs mounts the
+      # whole repo (it needs access to ../proto/graywolf.proto, which is
+      # shared with the Go side and sits outside the graywolf-modem crate
+      # directory).
       - name: Build with cross
         if: matrix.use_cross
-        working-directory: graywolf-modem
         env:
           GRAYWOLF_VERSION: ${{ steps.ver.outputs.version }}
           GRAYWOLF_GIT_COMMIT: ${{ steps.ver.outputs.commit }}
@@ -84,7 +87,6 @@ jobs:
 
       - name: Build with cargo
         if: matrix.use_cross == false
-        working-directory: graywolf-modem
         env:
           GRAYWOLF_VERSION: ${{ steps.ver.outputs.version }}
           GRAYWOLF_GIT_COMMIT: ${{ steps.ver.outputs.commit }}
@@ -95,7 +97,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rust-${{ matrix.goos }}-${{ matrix.arch }}
-          path: graywolf-modem/target/${{ matrix.target }}/release/graywolf-modem
+          path: target/${{ matrix.target }}/release/graywolf-modem
           retention-days: 1
 
       - name: Upload Rust binary (Windows)
@@ -103,7 +105,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rust-${{ matrix.goos }}-${{ matrix.arch }}
-          path: graywolf-modem/target/${{ matrix.target }}/release/graywolf-modem.exe
+          path: target/${{ matrix.target }}/release/graywolf-modem.exe
           retention-days: 1
 
   release:

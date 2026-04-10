@@ -27,7 +27,7 @@ CARGO_ENV := GRAYWOLF_VERSION="$(VERSION)" GRAYWOLF_GIT_COMMIT="$(FULL_COMMIT)"
 
 all: release web
 	mkdir -p bin
-	cp $(MODEM_DIR)/target/release/graywolf-modem bin/
+	cp target/release/graywolf-modem bin/
 	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
 
 build:
@@ -80,7 +80,7 @@ go-test:
 # the next-to-executable lookup.
 graywolf: release web
 	mkdir -p bin
-	cp $(MODEM_DIR)/target/release/graywolf-modem bin/
+	cp target/release/graywolf-modem bin/
 	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
 
 run-bench: release

@@ -20,7 +20,12 @@ use graywolf_demod::ipc::proto::{
 };
 
 fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // The repo is a cargo workspace (root Cargo.toml lists graywolf-modem
+    // as a member), so cargo writes build artifacts to <workspace>/target
+    // — the parent of this crate's manifest directory, not inside it.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir.parent().expect("manifest has a parent");
+    let mut p = workspace_root.to_path_buf();
     p.push("target");
     p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
     p.push("graywolf-modem");

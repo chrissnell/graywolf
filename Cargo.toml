@@ -1,0 +1,13 @@
+[workspace]
+members = ["graywolf-modem"]
+resolver = "2"
+
+# This workspace manifest declares the repo root as a cargo workspace whose
+# sole member is the graywolf-modem crate. The reason it exists is to make
+# cross-rs's Docker-based cross builds mount the whole repo root (so the
+# shared proto/ schema and VERSION file are accessible from inside the
+# container), not just the crate subdirectory.
+#
+# As a side effect, cargo places the shared build output at /target/ rather
+# than graywolf-modem/target/ — several path references (Makefile, main.go,
+# bridge.go, integration tests, release workflow) depend on this location.
