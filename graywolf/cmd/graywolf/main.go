@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -601,17 +602,30 @@ func main() {
 	aprsOut := aprs.NewLogOutput(logger)
 
 	aprsQueue := make(chan *aprs.DecodedAPRSPacket, 256)
+	aprsSubmit := newAPRSSubmitter(aprsQueue, m.AprsOutDropped, logger)
+
+	// fanOutWG tracks the fan-out consumer; its Wait happens after the frame
+	// producer has closed aprsQueue, so shutdown cannot hang on a buffered
+	// packet.
+	var fanOutWG sync.WaitGroup
+	fanOutWG.Add(1)
 	go func() {
-		for pkt := range aprsQueue {
-			_ = aprsOut.SendPacket(ctx, pkt)
-			if igateOut != nil {
-				_ = igateOut.SendPacket(ctx, pkt)
-			}
+		defer fanOutWG.Done()
+		var igOut aprs.PacketOutput
+		if igateOut != nil {
+			igOut = igateOut
 		}
+		runAPRSFanOut(ctx, aprsQueue, aprsOut, igOut)
 	}()
 
+	// frameConsumerWG tracks the modem->fan-out producer. It closes
+	// aprsQueue on exit so the fan-out consumer can drain and return.
+	var frameConsumerWG sync.WaitGroup
+	frameConsumerWG.Add(1)
 	// --- RX fan-out: modem → KISS broadcast + AGW monitor + digi + APRS log + packet log
 	go func() {
+		defer frameConsumerWG.Done()
+		defer close(aprsQueue)
 		for rf := range bridge.Frames() {
 			if rf == nil {
 				continue
@@ -654,20 +668,7 @@ func main() {
 					pkt.Channel = int(rf.Channel)
 					e.Type = string(pkt.Type)
 					e.Decoded = pkt
-					select {
-					case aprsQueue <- pkt:
-					default:
-						select {
-						case <-aprsQueue:
-							m.AprsOutDropped.Inc()
-						default:
-						}
-						select {
-						case aprsQueue <- pkt:
-						default:
-							m.AprsOutDropped.Inc()
-						}
-					}
+					aprsSubmit.submit(pkt)
 				}
 			}
 
@@ -827,6 +828,21 @@ func main() {
 	case <-shutdownCtx.Done():
 		logger.Warn("modembridge shutdown timed out")
 	}
+
+	// Bridge is down, so bridge.Frames() is closed. Wait for the frame
+	// consumer (which defers close(aprsQueue)) then for the fan-out to
+	// drain. Both are bounded by shutdownCtx.
+	waitWG := func(name string, wg *sync.WaitGroup) {
+		waitCh := make(chan struct{})
+		go func() { wg.Wait(); close(waitCh) }()
+		select {
+		case <-waitCh:
+		case <-shutdownCtx.Done():
+			logger.Warn(name + " shutdown timed out")
+		}
+	}
+	waitWG("frame consumer", &frameConsumerWG)
+	waitWG("aprs fan-out", &fanOutWG)
 
 	_ = httpSrv.Shutdown(shutdownCtx)
 }
