@@ -111,7 +111,6 @@ func (b *Bridge) readLoop(conn sessionConn) error {
 			if b.cfg.Metrics != nil {
 				b.cfg.Metrics.ObserveReceivedFrame(p.ReceivedFrame.Channel)
 			}
-			b.dispatchRx(p.ReceivedFrame)
 			// Non-blocking send: drop frames if the consumer isn't keeping up
 			// rather than stalling the IPC read loop.
 			select {

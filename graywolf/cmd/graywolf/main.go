@@ -240,13 +240,6 @@ func main() {
 	// --- Packet log -----------------------------------------------------
 	plog := packetlog.New(packetlog.Config{Capacity: 2000, MaxAge: 30 * time.Minute})
 
-	// RX hook: record every received frame into the packet log.
-	// This is a fast pre-record for frames that may not decode as AX.25;
-	// successfully decoded frames get a richer entry in the fan-out below.
-	bridge.SetRxHook(func(rf *pb.ReceivedFrame) {
-		// no-op: recording moved to fan-out goroutine for richer data
-	})
-
 	// --- TX governor ----------------------------------------------------
 	txSender := func(tf *pb.TransmitFrame) error {
 		if err := bridge.SendTransmitFrame(tf); err != nil {
@@ -1111,4 +1104,3 @@ func openAuthDB(dbPath string) (*configstore.Store, *webauth.AuthStore) {
 	}
 	return store, authStore
 }
-

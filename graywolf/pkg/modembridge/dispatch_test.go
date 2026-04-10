@@ -38,14 +38,3 @@ func TestDcdFanOutToMultipleSubscribers(t *testing.T) {
 		t.Fatalf("subB got %d events want 5", n)
 	}
 }
-
-func TestRxHookInvoked(t *testing.T) {
-	b := New(Config{})
-	var count int
-	b.SetRxHook(func(rf *pb.ReceivedFrame) { count++ })
-	b.dispatchRx(&pb.ReceivedFrame{Channel: 1})
-	b.dispatchRx(&pb.ReceivedFrame{Channel: 2})
-	if count != 2 {
-		t.Fatalf("rx hook called %d times, want 2", count)
-	}
-}

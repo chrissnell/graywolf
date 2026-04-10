@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
@@ -131,11 +131,6 @@ type AvailableDevice struct {
 	IsInput     bool     `json:"is_input"`
 }
 
-// RxHook is invoked for every received frame before it is delivered on
-// the Frames() channel. It runs inline in the session goroutine, so
-// implementations must be fast and non-blocking.
-type RxHook func(*pb.ReceivedFrame)
-
 // Bridge supervises the Rust modem child and exposes received frames to
 // consumers.
 type Bridge struct {
@@ -155,9 +150,6 @@ type Bridge struct {
 	// Runtime fields guarded by mu.
 	cancel context.CancelFunc
 	done   chan struct{}
-
-	// rxHook is invoked for every received frame before delivery.
-	rxHook RxHook
 
 	// Per-channel status cache, updated from StatusUpdate IPC messages.
 	statusMu    sync.RWMutex
@@ -206,11 +198,11 @@ const stdoutRingMax = 16
 func New(cfg Config) *Bridge {
 	cfg.applyDefaults()
 	return &Bridge{
-		cfg:         cfg,
-		logger:      cfg.Logger,
-		frames:      make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
-		dcd:         make(chan *pb.DcdChange, cfg.DcdBufferSize),
-		state:       StateStopped,
+		cfg:              cfg,
+		logger:           cfg.Logger,
+		frames:           make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
+		dcd:              make(chan *pb.DcdChange, cfg.DcdBufferSize),
+		state:            StateStopped,
 		statusCache:      make(map[uint32]*ChannelStats),
 		enumPending:      make(map[uint32]chan *pb.AudioDeviceList),
 		tonePending:      make(map[uint32]chan *pb.TestToneResult),
@@ -241,14 +233,6 @@ func (b *Bridge) DcdSubscribe() <-chan *pb.DcdChange {
 	return ch
 }
 
-// SetRxHook installs (or clears) the received-frame hook. Safe to call
-// at any time; nil clears.
-func (b *Bridge) SetRxHook(h RxHook) {
-	b.mu.Lock()
-	b.rxHook = h
-	b.mu.Unlock()
-}
-
 // dispatchDcd sends ev to the primary channel and all subscribers.
 // Non-blocking sends: a slow subscriber drops rather than stalls the
 // modem session goroutine.
@@ -265,17 +249,6 @@ func (b *Bridge) dispatchDcd(ev *pb.DcdChange) {
 		case c <- ev:
 		default:
 		}
-	}
-}
-
-// dispatchRx calls the installed RxHook if any. Kept package-local so
-// session.go can invoke it inline with its frame forwarder.
-func (b *Bridge) dispatchRx(rf *pb.ReceivedFrame) {
-	b.mu.Lock()
-	h := b.rxHook
-	b.mu.Unlock()
-	if h != nil {
-		h(rf)
 	}
 }
 
@@ -940,4 +913,3 @@ func (b *Bridge) InjectStatusForTest(channel uint32, rxFrames, rxBadFCS, txFrame
 		DcdState:        dcd,
 	}
 }
-
