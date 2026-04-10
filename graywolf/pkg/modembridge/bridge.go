@@ -354,9 +354,13 @@ func (b *Bridge) Stop() {
 var errBridgeStopped = errors.New("modembridge: bridge stopped")
 
 // closePendingRequests closes every reply channel in the three dispatch
-// maps (enum/tone/scan) and empties the maps. Callers blocked in their
+// maps (enum/tone/scan) and leaves each map nil. Callers blocked in their
 // per-call select see a nil zero-value on the channel and return
 // errBridgeStopped without waiting for their 5s / 30s per-call timeout.
+// New registrations that race past the StateRunning fast-path check see
+// the nil map when they take the per-map mutex and reject themselves,
+// closing the TOCTOU window between "caller reads state RUNNING" and
+// "caller inserts into pending map".
 //
 // Must only be invoked from supervise()'s defer chain: at that point the
 // session goroutine has already returned, so no dispatcher is in flight
@@ -366,27 +370,42 @@ func (b *Bridge) closePendingRequests() {
 	for _, ch := range b.enumPending {
 		close(ch)
 	}
-	b.enumPending = make(map[uint32]chan *pb.AudioDeviceList)
+	b.enumPending = nil
 	b.enumMu.Unlock()
 
 	b.toneMu.Lock()
 	for _, ch := range b.tonePending {
 		close(ch)
 	}
-	b.tonePending = make(map[uint32]chan *pb.TestToneResult)
+	b.tonePending = nil
 	b.toneMu.Unlock()
 
 	b.scanMu.Lock()
 	for _, ch := range b.scanPending {
 		close(ch)
 	}
-	b.scanPending = make(map[uint32]chan *pb.InputLevelScanResult)
+	b.scanPending = nil
 	b.scanMu.Unlock()
 }
 
 // supervise is the top-level loop: spawn the child, drive one session, back
 // off on error, repeat until the context is cancelled.
 func (b *Bridge) supervise(ctx context.Context) {
+	// Re-initialize the dispatch maps in case a previous supervise run
+	// left them nil via closePendingRequests. Callers that register a
+	// pending entry before we transition to StateRunning will either
+	// see StateStopped/StateStarting on their fast-path check and bail,
+	// or see the fresh map here and proceed normally.
+	b.enumMu.Lock()
+	b.enumPending = make(map[uint32]chan *pb.AudioDeviceList)
+	b.enumMu.Unlock()
+	b.toneMu.Lock()
+	b.tonePending = make(map[uint32]chan *pb.TestToneResult)
+	b.toneMu.Unlock()
+	b.scanMu.Lock()
+	b.scanPending = make(map[uint32]chan *pb.InputLevelScanResult)
+	b.scanMu.Unlock()
+
 	defer close(b.done)
 	defer close(b.frames)
 	defer close(b.dcd)
@@ -628,6 +647,10 @@ func (b *Bridge) EnumerateAudioDevices(ctx context.Context) ([]AvailableDevice, 
 	ch := make(chan *pb.AudioDeviceList, 1)
 
 	b.enumMu.Lock()
+	if b.enumPending == nil {
+		b.enumMu.Unlock()
+		return nil, errBridgeStopped
+	}
 	b.enumPending[reqID] = ch
 	b.enumMu.Unlock()
 	defer func() {
@@ -694,6 +717,10 @@ func (b *Bridge) ScanInputLevels(ctx context.Context) ([]InputLevel, error) {
 	ch := make(chan *pb.InputLevelScanResult, 1)
 
 	b.scanMu.Lock()
+	if b.scanPending == nil {
+		b.scanMu.Unlock()
+		return nil, errBridgeStopped
+	}
 	b.scanPending[reqID] = ch
 	b.scanMu.Unlock()
 	defer func() {
@@ -796,6 +823,10 @@ func (b *Bridge) PlayTestTone(ctx context.Context, deviceID uint32, deviceName s
 	ch := make(chan *pb.TestToneResult, 1)
 
 	b.toneMu.Lock()
+	if b.tonePending == nil {
+		b.toneMu.Unlock()
+		return errBridgeStopped
+	}
 	b.tonePending[reqID] = ch
 	b.toneMu.Unlock()
 	defer func() {

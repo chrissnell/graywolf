@@ -78,8 +78,10 @@ func TestBridgeStopCancelsPendingRequests(t *testing.T) {
 	}
 }
 
-// TestBridgeStopClearsPendingMaps verifies that closePendingRequests empties
-// the three dispatch maps so follow-up requests do not see stale entries.
+// TestBridgeStopClearsPendingMaps verifies that closePendingRequests nils
+// the three dispatch maps so a caller that races past the StateRunning
+// fast-path check sees a nil map and rejects itself instead of leaking
+// an entry into a map that will never be drained again.
 func TestBridgeStopClearsPendingMaps(t *testing.T) {
 	b := New(Config{Logger: slog.Default()})
 
@@ -90,13 +92,36 @@ func TestBridgeStopClearsPendingMaps(t *testing.T) {
 
 	b.closePendingRequests()
 
-	if n := len(b.enumPending); n != 0 {
-		t.Errorf("enumPending len = %d, want 0", n)
+	if b.enumPending != nil {
+		t.Errorf("enumPending not nil after closePendingRequests")
 	}
-	if n := len(b.tonePending); n != 0 {
-		t.Errorf("tonePending len = %d, want 0", n)
+	if b.tonePending != nil {
+		t.Errorf("tonePending not nil after closePendingRequests")
 	}
-	if n := len(b.scanPending); n != 0 {
-		t.Errorf("scanPending len = %d, want 0", n)
+	if b.scanPending != nil {
+		t.Errorf("scanPending not nil after closePendingRequests")
+	}
+}
+
+// TestBridgeRegistrationAfterStopRejects verifies that once
+// closePendingRequests has nil'd the dispatch maps, a caller that forces
+// its way past the StateRunning fast-path sees errBridgeStopped at
+// registration time instead of leaking a stale pending entry.
+func TestBridgeRegistrationAfterStopRejects(t *testing.T) {
+	b := New(Config{Logger: slog.Default()})
+	b.setState(StateRunning)
+	b.setSender(func(*pb.IpcMessage) error { return nil })
+
+	// Drain the dispatch maps, as would happen in supervise's defer.
+	b.closePendingRequests()
+
+	if _, err := b.EnumerateAudioDevices(context.Background()); !errors.Is(err, errBridgeStopped) {
+		t.Errorf("EnumerateAudioDevices err = %v, want errBridgeStopped", err)
+	}
+	if _, err := b.ScanInputLevels(context.Background()); !errors.Is(err, errBridgeStopped) {
+		t.Errorf("ScanInputLevels err = %v, want errBridgeStopped", err)
+	}
+	if err := b.PlayTestTone(context.Background(), 0, "x", 48000, 1); !errors.Is(err, errBridgeStopped) {
+		t.Errorf("PlayTestTone err = %v, want errBridgeStopped", err)
 	}
 }
