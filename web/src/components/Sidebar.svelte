@@ -3,19 +3,19 @@
   import { location } from 'svelte-spa-router';
 
   const navItems = [
-    { path: '/', label: 'Dashboard', icon: '📊' },
-    { path: '/channels', label: 'Channels', icon: '📻' },
-    { path: '/audio-devices', label: 'Audio Devices', icon: '🔊' },
-    { path: '/ptt', label: 'PTT', icon: '🎙' },
-    { path: '/kiss', label: 'KISS', icon: '🔌' },
-    { path: '/agw', label: 'AGW', icon: '🌐' },
-    { path: '/igate', label: 'iGate', icon: '🛰' },
-    { path: '/igate/filters', label: 'iGate Filters', icon: '🔽' },
-    { path: '/digipeater', label: 'Digipeater', icon: '📡' },
-    { path: '/beacons', label: 'Beacons', icon: '📍' },
-    { path: '/gps', label: 'GPS', icon: '🧭' },
-    { path: '/simulation', label: 'Simulation', icon: '🧪' },
-    { path: '/logs', label: 'Logs', icon: '📋' },
+    { path: '/', label: 'Dashboard' },
+    { path: '/channels', label: 'Channels' },
+    { path: '/audio-devices', label: 'Audio Devices' },
+    { path: '/ptt', label: 'PTT' },
+    { path: '/kiss', label: 'KISS' },
+    { path: '/agw', label: 'AGW' },
+    { path: '/igate', label: 'iGate' },
+    { path: '/igate/filters', label: 'iGate Filters' },
+    { path: '/digipeater', label: 'Digipeater' },
+    { path: '/beacons', label: 'Beacons' },
+    { path: '/gps', label: 'GPS' },
+    { path: '/simulation', label: 'Simulation' },
+    { path: '/logs', label: 'Logs' },
   ];
 
   let currentPath = $state('');
@@ -39,7 +39,6 @@
           class:active={currentPath === item.path || (item.path !== '/' && currentPath.startsWith(item.path))}
           aria-current={currentPath === item.path ? 'page' : undefined}
         >
-          <span class="nav-icon">{item.icon}</span>
           <span class="nav-label">{item.label}</span>
         </a>
       </li>
@@ -83,7 +82,7 @@
   .nav-link {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 0;
     padding: 8px 16px;
     color: var(--text-secondary);
     transition: background 0.15s, color 0.15s;
@@ -102,13 +101,7 @@
     padding-left: 13px;
   }
 
-  .nav-icon {
-    font-size: 14px;
-    width: 20px;
-    text-align: center;
-  }
-
-  @media (max-width: 768px) {
+@media (max-width: 768px) {
     .sidebar {
       width: 100%;
       height: auto;
