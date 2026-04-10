@@ -30,6 +30,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// igateSubmitTimeout bounds how long a single IS->RF submit may block on
+// the TX governor. If exceeded, the packet is dropped and counted. This
+// timeout exists to prevent the APRS-IS read loop (which calls Submit
+// inline from its receive goroutine) from stalling when the TX queue is
+// saturated: a stalled read loop stops servicing keepalives, which
+// cascades into a silent reconnect loop with no IS->RF gating.
+const igateSubmitTimeout = 2 * time.Second
+
+// submitDropLogInterval rate-limits the debug log emitted when an IS->RF
+// submit is dropped, so a saturated governor cannot flood the logs.
+const submitDropLogInterval = 10 * time.Second
+
 // Config is the iGate's runtime configuration. Fields marked "required"
 // must be set before Start. The orchestrator will eventually source
 // most of these from configstore's igate_config row (owned by agent 4C).
@@ -107,6 +119,7 @@ type Igate struct {
 	mFilteredTotal  prometheus.Counter
 	mConnectedGauge prometheus.Gauge
 	mDroppedOffline prometheus.Counter
+	mSubmitDropped  prometheus.Counter
 
 	// Stats snapshot for Status().
 	statGated      uint64
@@ -115,9 +128,20 @@ type Igate struct {
 	statDropped    uint64
 
 	// session plumbing
+	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
 	client *client
+
+	// submitFn is the IS->RF submit entry point; defaults to
+	// cfg.Governor.Submit when a governor is configured. Exposed as a
+	// field so tests can inject a stub that blocks or fails on demand
+	// without needing a real TX governor.
+	submitFn func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
+
+	// lastSubmitDropLogNano holds the UnixNano of the most recent
+	// rate-limited IS->RF submit-drop debug log, for throttling.
+	lastSubmitDropLogNano atomic.Int64
 }
 
 // New constructs an Igate. Call Start to open the APRS-IS session.
@@ -143,8 +167,12 @@ func New(cfg Config) (*Igate, error) {
 		dedup:   newDedupCache(),
 		inputCh: make(chan *aprs.InboundPacket, 64),
 		done:    make(chan struct{}),
+		ctx:     context.Background(),
 	}
 	ig.simulation.Store(cfg.SimulationMode)
+	if cfg.Governor != nil {
+		ig.submitFn = cfg.Governor.Submit
+	}
 	if err := ig.initMetrics(); err != nil {
 		return nil, err
 	}
@@ -168,9 +196,13 @@ func (ig *Igate) initMetrics() error {
 		Name: "igate_rf_to_is_dropped_total",
 		Help: "RF->IS packets dropped because the APRS-IS session was down.",
 	})
+	ig.mSubmitDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "igate_is_to_rf_submit_dropped_total",
+		Help: "IS->RF packets dropped because the TX governor submit timed out, was cancelled, or returned an error.",
+	})
 	if ig.cfg.Registry != nil {
 		for _, c := range []prometheus.Collector{
-			ig.mGatedTotal, ig.mFilteredTotal, ig.mConnectedGauge, ig.mDroppedOffline,
+			ig.mGatedTotal, ig.mFilteredTotal, ig.mConnectedGauge, ig.mDroppedOffline, ig.mSubmitDropped,
 		} {
 			if err := ig.cfg.Registry.Register(c); err != nil {
 				// An AlreadyRegisteredError is fine (tests may call
@@ -194,6 +226,7 @@ func (ig *Igate) Start(ctx context.Context) error {
 		return errors.New("igate: already started")
 	}
 	sessCtx, cancel := context.WithCancel(ctx)
+	ig.ctx = sessCtx
 	ig.cancel = cancel
 	ig.mu.Unlock()
 	go ig.supervise(sessCtx)
@@ -281,16 +314,26 @@ func (ig *Igate) handleISLine(line string) {
 		ig.mFilteredTotal.Inc()
 		return
 	}
-	if ig.cfg.Governor == nil {
+	if ig.submitFn == nil {
 		ig.logger.Debug("IS->RF drop: no governor configured")
 		return
 	}
-	if err := ig.cfg.Governor.Submit(context.Background(), ig.cfg.TxChannel, frame, txgovernor.SubmitSource{
+	// ig.ctx is initialized in New and replaced with the session
+	// context in Start, so it is always non-nil by the time any read
+	// loop invokes handleISLine.
+	ig.mu.Lock()
+	parent := ig.ctx
+	ig.mu.Unlock()
+	submitCtx, cancel := context.WithTimeout(parent, igateSubmitTimeout)
+	err = ig.submitFn(submitCtx, ig.cfg.TxChannel, frame, txgovernor.SubmitSource{
 		Kind:     "igate",
 		Detail:   "is2rf",
 		Priority: txgovernor.PriorityIGateMsg,
-	}); err != nil {
-		ig.logger.Warn("IS->RF submit failed", "err", err)
+	})
+	cancel()
+	if err != nil {
+		ig.mSubmitDropped.Inc()
+		ig.logSubmitDrop(frame, err)
 		return
 	}
 	atomic.AddUint64(&ig.statDownlinked, 1)
@@ -301,6 +344,27 @@ func (ig *Igate) handleISLine(line string) {
 	case ig.inputCh <- &aprs.InboundPacket{Raw: mustEncode(frame), Source: "aprs-is", Channel: int(ig.cfg.TxChannel)}:
 	default:
 	}
+}
+
+// logSubmitDrop emits a rate-limited debug line for an IS->RF submit
+// that was dropped (timeout, cancellation, or governor error). The full
+// frame info is intentionally omitted because APRS-IS traffic is high
+// volume and logs would explode under saturation.
+func (ig *Igate) logSubmitDrop(frame *ax25.Frame, err error) {
+	now := time.Now().UnixNano()
+	last := ig.lastSubmitDropLogNano.Load()
+	if now-last < int64(submitDropLogInterval) {
+		return
+	}
+	if !ig.lastSubmitDropLogNano.CompareAndSwap(last, now) {
+		return
+	}
+	var src, dst string
+	if frame != nil {
+		src = frame.Source.String()
+		dst = frame.Dest.String()
+	}
+	ig.logger.Debug("IS->RF submit dropped", "source", src, "dest", dst, "err", err)
 }
 
 func mustEncode(f *ax25.Frame) []byte {
