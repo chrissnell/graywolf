@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/gps"
 )
@@ -72,7 +73,14 @@ type Config struct {
 	ObjectName  string             // for TypeObject
 	CustomInfo  string             // for TypeCustom (raw info field override)
 	SmartBeacon *SmartBeaconConfig // non-nil + .Enabled → use for tracker
-	Enabled     bool
+	// PHG radio-capability extension (APRS101 ch 7) for fixed-station
+	// position, igate, and object beacons. Emitted only when PHGPower
+	// > 0. Not valid for trackers (CSE/SPD occupies the same slot).
+	PHGPower       int // watts
+	PHGHeightFt    int // feet above average terrain
+	PHGGainDB      int // dBi
+	PHGDirectivity int // 0 = omni, 1..8 = 45° × d compass direction
+	Enabled        bool
 }
 
 // Observer is an optional hook for metrics. Scheduler calls these on
@@ -394,6 +402,16 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		}
 	}
 
+	// Pre-encode PHG once. Empty string means "no PHG extension".
+	phg := ""
+	if b.PHGPower > 0 {
+		if encoded, err := aprs.EncodePHG(b.PHGPower, b.PHGHeightFt, b.PHGGainDB, b.PHGDirectivity); err == nil {
+			phg = encoded
+		} else {
+			s.logger.Warn("invalid PHG config", "id", b.ID, "err", err)
+		}
+	}
+
 	switch b.Type {
 	case TypePosition, TypeIGate:
 		lat, lon, altM := b.Lat, b.Lon, b.AltFt/3.28084
@@ -416,9 +434,9 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 			return "", fmt.Errorf("%s beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)", b.Type)
 		}
 		if b.Compress {
-			return CompressedPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
+			return CompressedPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment), nil
 		}
-		return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
+		return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment), nil
 
 	case TypeTracker:
 		if s.cache == nil {
@@ -439,16 +457,17 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		if fix.HasAlt {
 			altM = fix.Altitude
 		}
+		// Trackers never emit PHG — CSE/SPD occupies the same slot.
 		if b.Compress {
-			return CompressedPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
+			return CompressedPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment), nil
 		}
-		return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, comment), nil
+		return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment), nil
 
 	case TypeObject:
 		if b.ObjectName == "" {
 			return "", fmt.Errorf("object beacon missing object_name")
 		}
-		return ObjectInfo(b.ObjectName, true, "", b.Lat, b.Lon, b.SymbolTable, b.SymbolCode, comment), nil
+		return ObjectInfo(b.ObjectName, true, "", b.Lat, b.Lon, b.SymbolTable, b.SymbolCode, phg, comment), nil
 
 	case TypeCustom:
 		if b.CustomInfo == "" {

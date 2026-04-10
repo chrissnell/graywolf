@@ -42,7 +42,7 @@ type Position struct {
 	Compressed bool
 	Timestamp  *time.Time // nil if positionless or no embedded time
 	LocalTime  bool       // true if the timestamp was the '/' local-time form (APRS101 ch 6)
-	PHG        string     // PHGphgd 4 digits (Power/Height/Gain/Directivity, APRS101 ch 7), empty if not present
+	PHG        *PHG       // decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present
 	DAODatum   byte       // DAO datum byte (APRS101 DAO extension), 0 if not present
 }
 

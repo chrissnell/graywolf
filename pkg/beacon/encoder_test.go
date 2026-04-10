@@ -21,7 +21,7 @@ func TestCompressedPositionInfoRoundTrip(t *testing.T) {
 		altM    = 1234.5 // metres
 	)
 
-	info := CompressedPositionInfo(lat, lon, course, speedKt, altM, '/', '>', false, "Graywolf")
+	info := CompressedPositionInfo(lat, lon, course, speedKt, altM, '/', '>', false, "", "Graywolf")
 
 	// Shape check: prefix + 13-byte compressed block + "/A=NNNNNN" + comment.
 	if info[0] != '!' {
@@ -71,10 +71,87 @@ func TestCompressedPositionInfoRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPositionInfoWithPHG verifies the uncompressed encoder emits
+// PHGphgd in the extension slot for fixed stations and that the
+// parser round-trips the decoded values.
+func TestPositionInfoWithPHG(t *testing.T) {
+	phg, err := aprs.EncodePHG(49, 1280, 0, 0)
+	if err != nil {
+		t.Fatalf("EncodePHG: %v", err)
+	}
+	info := PositionInfo(36.175, -115.136, 0, 0, 2566, '/', '#', false, phg, "WA6TLW Las Vegas")
+	if !strings.Contains(info, "PHG7700") {
+		t.Fatalf("missing PHG7700 in %q", info)
+	}
+	pkt, err := aprs.ParseInfo([]byte(info))
+	if err != nil {
+		t.Fatalf("parse: %v (%q)", err, info)
+	}
+	if pkt.Position == nil || pkt.Position.PHG == nil {
+		t.Fatalf("no decoded PHG: %+v", pkt.Position)
+	}
+	if pkt.Position.PHG.PowerWatts != 49 || pkt.Position.PHG.HeightFt != 1280 {
+		t.Errorf("PHG round-trip: %+v", pkt.Position.PHG)
+	}
+	if pkt.Comment != "WA6TLW Las Vegas" {
+		t.Errorf("comment %q", pkt.Comment)
+	}
+}
+
+// TestPositionInfoPHGSuppressedByCourse verifies PHG is omitted when
+// the station is moving (CSE/SPD wins the shared 7-byte slot).
+func TestPositionInfoPHGSuppressedByCourse(t *testing.T) {
+	info := PositionInfo(36.175, -115.136, 90, 30, 0, '/', '>', false, "PHG7700", "mobile")
+	if strings.Contains(info, "PHG7700") {
+		t.Errorf("PHG should be suppressed when moving: %q", info)
+	}
+	if !strings.Contains(info, "090/030") {
+		t.Errorf("expected CSE/SPD: %q", info)
+	}
+}
+
+// TestCompressedPositionInfoWithPHG verifies the compressed encoder
+// appends PHGphgd after the 13-byte compressed block.
+func TestCompressedPositionInfoWithPHG(t *testing.T) {
+	info := CompressedPositionInfo(45.0, -122.0, 0, 0, 0, '/', '#', false, "PHG5132", "")
+	if !strings.Contains(info, "PHG5132") {
+		t.Fatalf("missing PHG5132 in %q", info)
+	}
+	pkt, err := aprs.ParseInfo([]byte(info))
+	if err != nil {
+		t.Fatalf("parse: %v (%q)", err, info)
+	}
+	if pkt.Position == nil || !pkt.Position.Compressed || pkt.Position.PHG == nil {
+		t.Fatalf("compressed PHG not decoded: %+v", pkt.Position)
+	}
+	if pkt.Position.PHG.PowerWatts != 25 || pkt.Position.PHG.Directivity != 2 {
+		t.Errorf("PHG decode: %+v", pkt.Position.PHG)
+	}
+}
+
+// TestObjectInfoWithPHG verifies object reports carry PHG between the
+// symbol code and the comment.
+func TestObjectInfoWithPHG(t *testing.T) {
+	info := ObjectInfo("W6REPEATR", true, "", 37.5, -122.5, '/', '#', "PHG7700", "146.520")
+	pkt, err := aprs.ParseInfo([]byte(info))
+	if err != nil {
+		t.Fatalf("parse: %v (%q)", err, info)
+	}
+	if pkt.Object == nil || pkt.Object.Position == nil || pkt.Object.Position.PHG == nil {
+		t.Fatalf("object PHG not decoded: %+v", pkt.Object)
+	}
+	if pkt.Object.Position.PHG.PowerWatts != 49 {
+		t.Errorf("PHG watts: %+v", pkt.Object.Position.PHG)
+	}
+	if pkt.Object.Comment != "146.520" {
+		t.Errorf("object comment %q", pkt.Object.Comment)
+	}
+}
+
 // TestCompressedPositionInfoNoCSNoAlt verifies the no-course/no-speed
 // path emits two spaces in the cs field and omits the /A= extension.
 func TestCompressedPositionInfoNoCSNoAlt(t *testing.T) {
-	info := CompressedPositionInfo(37.5, -122.0, 0, 0, 0, '/', '-', true, "")
+	info := CompressedPositionInfo(37.5, -122.0, 0, 0, 0, '/', '-', true, "", "")
 	if info[0] != '=' {
 		t.Fatalf("messaging prefix: got %q want '='", info[0])
 	}

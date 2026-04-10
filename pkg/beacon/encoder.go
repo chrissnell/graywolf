@@ -74,7 +74,7 @@ func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, s
 // CompressedPositionInfo builds a 13-byte base-91 compressed APRS
 // position info-field per APRS101 ch 9:
 //
-//	!<sym_table>YYYYXXXX<sym_code><cs><T>[/A=NNNNNN][comment]
+//	!<sym_table>YYYYXXXX<sym_code><cs><T>[PHGphgd][/A=NNNNNN][comment]
 //
 // cs holds course/speed when either is set, otherwise two spaces
 // ("no data"). Altitude is emitted via the "/A=" extension rather
@@ -85,7 +85,12 @@ func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, s
 // The compression type byte T advertises: current GPS fix, NMEA
 // source "other", origin "software" — matching the value most
 // APRS software trackers emit.
-func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, comment string) string {
+//
+// phg, when non-empty, is the 7-byte "PHGphgd" extension appended
+// after the compressed block and before any /A= altitude. It is only
+// emitted when both course and speed are zero (PHG is for fixed
+// stations; CSE/SPD is already encoded in cs for moving ones).
+func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, phg string, comment string) string {
 	if symbolTable == 0 {
 		symbolTable = '/'
 	}
@@ -148,6 +153,10 @@ func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM 
 	sb.WriteByte(cByte)
 	sb.WriteByte(sByte)
 	sb.WriteByte(tByte)
+	// PHG only makes sense for stationary transmitters (no course/speed).
+	if phg != "" && course == 0 && speedKt == 0 {
+		sb.WriteString(phg)
+	}
 	if altM != 0 {
 		ft := altM * 3.28084
 		fmt.Fprintf(&sb, "/A=%06d", int(math.Round(ft)))
@@ -160,12 +169,13 @@ func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM 
 
 // ObjectInfo builds an APRS object report info-field.
 //
-//	;NAME     *DDHHMMzDDMM.hhN/DDDMM.hhW>comment
+//	;NAME     *DDHHMMzDDMM.hhN/DDDMM.hhW>[PHGphgd]comment
 //
 // objectName is padded/truncated to 9 characters. live=true sets '*'
 // (live) rather than '_' (killed). timestampDHM is a 6-char "DDHHMMz"
-// string; if empty, "111111z" is used (APRS wildcard).
-func ObjectInfo(objectName string, live bool, timestampDHM string, lat, lon float64, symbolTable, symbolCode byte, comment string) string {
+// string; if empty, "111111z" is used (APRS wildcard). phg is the
+// already-encoded "PHGphgd" 7-byte string (or "" for no extension).
+func ObjectInfo(objectName string, live bool, timestampDHM string, lat, lon float64, symbolTable, symbolCode byte, phg string, comment string) string {
 	if symbolTable == 0 {
 		symbolTable = '/'
 	}
@@ -196,6 +206,9 @@ func ObjectInfo(objectName string, live bool, timestampDHM string, lat, lon floa
 	sb.WriteByte(symbolTable)
 	sb.WriteString(encodeLon(lon))
 	sb.WriteByte(symbolCode)
+	if phg != "" {
+		sb.WriteString(phg)
+	}
 	sb.WriteString(comment)
 	return sb.String()
 }

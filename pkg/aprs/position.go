@@ -207,7 +207,9 @@ func parsePositionExtension(pos *Position, rest []byte) []byte {
 	// PHGphgd (APRS101 ch 7). "PHG" followed by 4 digits.
 	if len(rest) >= 7 && rest[0] == 'P' && rest[1] == 'H' && rest[2] == 'G' &&
 		isDigit(rest[3]) && isDigit(rest[4]) && isDigit(rest[5]) && isDigit(rest[6]) {
-		pos.PHG = string(rest[3:7])
+		if phg, err := ParsePHG(string(rest[3:7])); err == nil {
+			pos.PHG = phg
+		}
 		rest = rest[7:]
 	}
 	// /A=aaaaaa altitude in feet (any position within the comment).
