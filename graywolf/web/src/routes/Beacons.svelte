@@ -387,7 +387,8 @@
           <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
         </div>
       </FormField>
-      <FormField label="Comment" id="bcn-comment">
+      <FormField label="Comment" id="bcn-comment"
+        hint={"Tip: use {{version}} to insert the running graywolf version. It's re-rendered on every beacon send, so upgrades show up automatically."}>
         <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
       </FormField>
     </div>
