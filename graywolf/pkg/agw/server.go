@@ -219,9 +219,14 @@ func (s *Server) handleClient(ctx context.Context, conn net.Conn) {
 	s.logger.Info("agw client connected", "remote", remote)
 	defer s.logger.Info("agw client disconnected", "remote", remote)
 
+	// Close the connection on ctx cancel so ReadFrame unblocks. Tracked
+	// in s.wg so Shutdown's wg.Wait cannot return until this watcher
+	// has observed done and exited.
 	done := make(chan struct{})
 	defer close(done)
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		select {
 		case <-ctx.Done():
 			_ = conn.Close()

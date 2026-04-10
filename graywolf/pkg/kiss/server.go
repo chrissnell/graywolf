@@ -158,10 +158,13 @@ func (s *Server) handleClient(ctx context.Context, conn net.Conn) {
 	defer s.logger.Info("kiss client disconnected", "remote", addr)
 
 	// Close the connection if the context is cancelled so the decoder
-	// unblocks.
+	// unblocks. Tracked in s.wg so ListenAndServe's final Wait cannot
+	// return until this watcher has observed done and exited.
 	done := make(chan struct{})
 	defer close(done)
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		select {
 		case <-ctx.Done():
 			_ = conn.Close()
@@ -305,9 +308,14 @@ func (s *Server) ServeTransport(ctx context.Context, rwc io.ReadWriteCloser) err
 	c := &clientConn{w: rwc}
 	s.addClient(c)
 	defer s.removeClient(c)
+	// Close the transport on ctx cancel so the decoder unblocks. Tracked
+	// in s.wg so callers waiting on server shutdown can observe this
+	// goroutine has exited.
 	done := make(chan struct{})
 	defer close(done)
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		select {
 		case <-ctx.Done():
 			_ = rwc.Close()
