@@ -483,6 +483,7 @@ func main() {
 		Cache:    gpsCache,
 		Logger:   logger,
 		Observer: &beaconObserver{m: m},
+		Version:  Version,
 	})
 	if err != nil {
 		logger.Error("beacon scheduler init", "err", err)

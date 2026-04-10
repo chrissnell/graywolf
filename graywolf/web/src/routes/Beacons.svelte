@@ -18,7 +18,10 @@
     enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
     min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
   });
-  let defaultComment = $state('Graywolf');
+  // The server expands {{version}} through text/template at beacon
+  // send time, so storing the literal template lets the comment track
+  // upgrades without edits.
+  const defaultComment = 'Graywolf/{{version}}';
   let modalOpen = $state(false);
   let editing = $state(null);
   let deleteTarget = $state(null);
@@ -77,10 +80,6 @@
       min_turn_angle: String(sb.min_turn_angle), turn_slope: String(sb.turn_slope),
       min_turn_time: String(sb.min_turn_time),
     };
-    try {
-      const v = await fetch('/api/version').then(r => r.json());
-      if (v && v.version) defaultComment = `Graywolf/${v.version}`;
-    } catch { /* leave default */ }
   });
 
   function openCreate() {

@@ -109,6 +109,7 @@ type Scheduler struct {
 	logger   *slog.Logger
 	observer Observer
 	clock    Clock
+	version  string
 
 	mu       sync.Mutex
 	beacons  []Config
@@ -121,7 +122,8 @@ type Options struct {
 	Cache    gps.PositionCache // may be nil for fixed/igate-only deployments
 	Logger   *slog.Logger
 	Observer Observer
-	Clock    Clock // defaults to wall clock
+	Clock    Clock  // defaults to wall clock
+	Version  string // running graywolf version, used to expand {{version}} in comments
 }
 
 // New constructs a Scheduler.
@@ -143,6 +145,7 @@ func New(opts Options) (*Scheduler, error) {
 		logger:   logger.With("component", "beacon"),
 		observer: opts.Observer,
 		clock:    clock,
+		version:  opts.Version,
 		reloadCh: make(chan struct{}, 1),
 	}, nil
 }
@@ -387,7 +390,7 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 // buildInfo constructs the APRS info field for b, including optional
 // comment_cmd stdout appended to the static comment.
 func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
-	comment := b.Comment
+	comment := ExpandComment(b.Comment, s.version)
 	if len(b.CommentCmd) > 0 {
 		out, err := RunCommentCmd(ctx, b.CommentCmd, 5*time.Second)
 		if err != nil {
