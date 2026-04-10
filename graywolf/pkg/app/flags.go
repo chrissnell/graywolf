@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 )
 
 // ParseFlags parses the graywolf command-line flags (everything after
@@ -11,10 +12,15 @@ import (
 // flag.FlagSet in ContinueOnError mode so callers get real errors
 // instead of an os.Exit, making it testable.
 //
+// Help output is written to os.Stderr. When the user passes -h or
+// --help the FlagSet prints its usage and ParseFlags returns the
+// sentinel flag.ErrHelp wrapped with %w, so the caller can detect it
+// via errors.Is and exit 0 rather than 2.
+//
 // Version and GitCommit are left zero; the main shim sets them from
 // its build-time ldflags constants before calling app.New.
 func ParseFlags(args []string) (Config, error) {
-	return parseFlagsTo(args, nil)
+	return parseFlagsTo(args, os.Stderr)
 }
 
 // parseFlagsTo is the test hook: it lets tests redirect the FlagSet's
@@ -40,6 +46,9 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 	fs.BoolVar(&cfg.Debug, "debug", false, "enable debug-level logging")
 
 	if err := fs.Parse(args); err != nil {
+		// Preserve flag.ErrHelp as the wrapped cause so callers can
+		// errors.Is(err, flag.ErrHelp) to distinguish "user asked for
+		// help" from a real parse failure.
 		return Config{}, fmt.Errorf("parse flags: %w", err)
 	}
 	if leftover := fs.Args(); len(leftover) > 0 {
