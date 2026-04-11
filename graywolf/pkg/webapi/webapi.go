@@ -70,10 +70,7 @@ func NewServer(cfg Config) (*Server, error) {
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerChannels(mux)
 	s.registerAudioDevices(mux)
-
-	// Beacons — full CRUD
-	mux.HandleFunc("/api/beacons", s.handleBeacons)
-	mux.HandleFunc("/api/beacons/", s.handleBeacon)
+	s.registerBeacons(mux)
 
 	// PTT — upsert/get by channel
 	mux.HandleFunc("/api/ptt", s.handlePttCollection)
@@ -109,132 +106,6 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// /api/position — in position.go (RegisterPosition)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/status", s.handleStatus)
-}
-
-// validateBeacon rejects configurations that would cause the scheduler to
-// skip transmission at send time. Position/igate beacons must either source
-// coordinates from the GPS cache or carry non-zero fixed coordinates.
-func validateBeacon(b *configstore.Beacon) error {
-	switch b.Type {
-	case "position", "igate":
-		if !b.UseGps && b.Latitude == 0 && b.Longitude == 0 {
-			return fmt.Errorf("latitude/longitude required when use_gps is false")
-		}
-	}
-	return nil
-}
-
-// /api/beacons — list + create
-func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		beacons, err := s.store.ListBeacons(r.Context())
-		if err != nil {
-			s.internalError(w, r, "list beacons", err)
-			return
-		}
-		writeJSON(w, http.StatusOK, beacons)
-	case http.MethodPost:
-		var b configstore.Beacon
-		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-			return
-		}
-		if err := validateBeacon(&b); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		if err := s.store.CreateBeacon(r.Context(), &b); err != nil {
-			s.internalError(w, r, "create beacon", err)
-			return
-		}
-		s.signalBeaconReload()
-		writeJSON(w, http.StatusCreated, b)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// /api/beacons/{id}        — get, update, delete
-// /api/beacons/{id}/send   — POST: trigger an immediate one-shot transmission
-func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/beacons/")
-	parts := strings.SplitN(path, "/", 2)
-
-	id, err := parseID(parts[0])
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
-		return
-	}
-
-	if len(parts) == 2 && parts[1] == "send" {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if s.beaconSendNow == nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "beacon scheduler not available"})
-			return
-		}
-		if _, err := s.store.GetBeacon(r.Context(), id); err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-			return
-		}
-		if err := s.beaconSendNow(r.Context(), id); err != nil {
-			s.internalError(w, r, "beacon send now", err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
-		return
-	}
-
-	switch r.Method {
-	case http.MethodGet:
-		b, err := s.store.GetBeacon(r.Context(), id)
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-			return
-		}
-		writeJSON(w, http.StatusOK, b)
-	case http.MethodPut:
-		var b configstore.Beacon
-		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-			return
-		}
-		if err := validateBeacon(&b); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		b.ID = id
-		if err := s.store.UpdateBeacon(r.Context(), &b); err != nil {
-			s.internalError(w, r, "update beacon", err)
-			return
-		}
-		s.signalBeaconReload()
-		writeJSON(w, http.StatusOK, b)
-	case http.MethodDelete:
-		if err := s.store.DeleteBeacon(r.Context(), id); err != nil {
-			s.internalError(w, r, "delete beacon", err)
-			return
-		}
-		s.signalBeaconReload()
-		w.WriteHeader(http.StatusNoContent)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// signalBeaconReload performs a non-blocking send on the beacon reload
-// channel; coalesces if a previous signal is still buffered.
-func (s *Server) signalBeaconReload() {
-	if s.beaconReload == nil {
-		return
-	}
-	select {
-	case s.beaconReload <- struct{}{}:
-	default:
-	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
