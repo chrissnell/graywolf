@@ -9,6 +9,7 @@ package beacon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -70,6 +71,25 @@ type Config struct {
 type Observer interface {
 	OnBeaconSent(beaconType Type)
 	OnSmartBeaconRate(channel uint32, interval time.Duration)
+}
+
+// ErrorObserver is an optional interface the Observer may implement to
+// receive beacon failure notifications. The scheduler performs a type
+// assertion at call time, so existing Observer implementations (which
+// do not know about encode/submit errors) keep working unmodified.
+//
+// OnEncodeError fires once per beacon whose AX.25 encoding step
+// returned a non-nil error — typically a misconfigured source or
+// destination address. The beacon is dropped on the floor; the
+// scheduler will retry at the next tick but nothing changes in the
+// configuration, so a sustained non-zero count is an operator signal.
+//
+// OnSubmitError fires once per Submit call that returned an error.
+// reason is one of "queue_full", "timeout", or "other" — see
+// classifySubmitError.
+type ErrorObserver interface {
+	OnEncodeError(beaconName string)
+	OnSubmitError(beaconName string, reason string)
 }
 
 // Clock abstracts time for deterministic tests.
@@ -344,14 +364,26 @@ func (s *Scheduler) runTrackerSmart(ctx context.Context, b Config) {
 
 // sendBeacon builds and submits one beacon frame.
 func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
+	name := beaconName(b)
 	info, err := s.buildInfo(ctx, b)
 	if err != nil {
+		// Build errors (comment_cmd missing required GPS, bad PHG, etc.)
+		// are surfaced to the operator as warnings but are not
+		// "encode" errors in the AX.25 sense, so they do not feed the
+		// encode counter. The root cause is usually configuration.
 		s.logger.Warn("beacon build", "id", b.ID, "type", b.Type, "err", err)
 		return
 	}
 	frame, err := ax25.NewUIFrame(b.Source, b.Dest, b.Path, []byte(info))
 	if err != nil {
-		s.logger.Warn("beacon frame", "id", b.ID, "err", err)
+		// AX.25 encode failure (almost always a malformed callsign).
+		// Warn-level because the operator needs to fix the config;
+		// also counted so the dashboard can show "beacon X has been
+		// failing to encode for the last hour".
+		s.logger.Warn("beacon encode", "id", b.ID, "name", name, "err", err)
+		if eo, ok := s.observer.(ErrorObserver); ok && eo != nil {
+			eo.OnEncodeError(name)
+		}
 		return
 	}
 	src := txgovernor.SubmitSource{
@@ -360,13 +392,53 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 		Priority: ax25.PriorityBeacon,
 	}
 	if err := s.sink.Submit(ctx, b.Channel, frame, src); err != nil {
-		s.logger.Warn("beacon submit", "id", b.ID, "err", err)
+		reason := classifySubmitError(err)
+		s.logger.Warn("beacon submit", "id", b.ID, "name", name, "reason", reason, "err", err)
+		if eo, ok := s.observer.(ErrorObserver); ok && eo != nil {
+			eo.OnSubmitError(name, reason)
+		}
 		return
 	}
 	s.logger.Info("beacon sent", "id", b.ID, "type", b.Type, "channel", b.Channel, "info", info)
 	if s.observer != nil {
 		s.observer.OnBeaconSent(b.Type)
 	}
+}
+
+// beaconName returns a stable, human-readable label for a beacon,
+// used as the "beacon_name" metric label. Prefer ObjectName for
+// object beacons (so two distinct objects on the same schedule are
+// distinguishable); otherwise use "type/id" which is unique across
+// the schedule by construction.
+func beaconName(b Config) string {
+	if b.Type == TypeObject && b.ObjectName != "" {
+		return b.ObjectName
+	}
+	return fmt.Sprintf("%s/%d", b.Type, b.ID)
+}
+
+// classifySubmitError maps a Submit error to one of the three buckets
+// used by the beacon_submit_errors counter. The classification is
+// centralized here so ErrorObserver implementations don't need to
+// know the txgovernor sentinel set.
+//
+//   - context.DeadlineExceeded or context.Canceled => "timeout"
+//   - txgovernor.ErrQueueFull                      => "queue_full"
+//   - anything else                                => "other"
+//
+// Keep this list closed: if the governor grows a new sentinel, route
+// it here so the counter classification stays accurate.
+func classifySubmitError(err error) string {
+	if err == nil {
+		return "other"
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "timeout"
+	}
+	if errors.Is(err, txgovernor.ErrQueueFull) {
+		return "queue_full"
+	}
+	return "other"
 }
 
 // buildInfo constructs the APRS info field for b, including optional

@@ -35,11 +35,13 @@ type Metrics struct {
 	AprsOutDropped    prometheus.Counter
 
 	// digipeater, packet log, and beacon metrics.
-	DigipeaterPackets prometheus.Counter
-	DigipeaterDeduped prometheus.Counter
-	PacketlogEntries  prometheus.Gauge
-	BeaconPackets     *prometheus.CounterVec // label: "type"
-	SmartBeaconRate   *prometheus.GaugeVec   // label: "channel"
+	DigipeaterPackets   prometheus.Counter
+	DigipeaterDeduped   prometheus.Counter
+	PacketlogEntries    prometheus.Gauge
+	BeaconPackets       *prometheus.CounterVec // label: "type"
+	BeaconEncodeErrors  *prometheus.CounterVec // label: "beacon_name"
+	BeaconSubmitErrors  *prometheus.CounterVec // labels: "beacon_name", "reason"
+	SmartBeaconRate     *prometheus.GaugeVec   // label: "channel"
 
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
@@ -129,6 +131,14 @@ func New() *Metrics {
 			Name: "graywolf_beacon_packets_total",
 			Help: "Beacon packets transmitted, by beacon type.",
 		}, []string{"type"}),
+		BeaconEncodeErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_beacon_encode_errors_total",
+			Help: "Beacons that failed AX.25 encoding and were not transmitted.",
+		}, []string{"beacon_name"}),
+		BeaconSubmitErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_beacon_submit_errors_total",
+			Help: "Beacons that the TX governor rejected, classified by reason: queue_full (back-pressure), timeout (context deadline exceeded), or other.",
+		}, []string{"beacon_name", "reason"}),
 		SmartBeaconRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "graywolf_smartbeacon_rate_seconds",
 			Help: "Current SmartBeaconing interval in seconds, by channel.",
@@ -155,6 +165,8 @@ func New() *Metrics {
 		m.DigipeaterDeduped,
 		m.PacketlogEntries,
 		m.BeaconPackets,
+		m.BeaconEncodeErrors,
+		m.BeaconSubmitErrors,
 		m.SmartBeaconRate,
 	)
 	return m

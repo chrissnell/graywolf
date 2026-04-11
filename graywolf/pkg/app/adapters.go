@@ -24,6 +24,21 @@ func (o *beaconObserver) OnSmartBeaconRate(channel uint32, interval time.Duratio
 	o.m.SmartBeaconRate.WithLabelValues(strconv.FormatUint(uint64(channel), 10)).Set(interval.Seconds())
 }
 
+// OnEncodeError satisfies beacon.ErrorObserver and routes to the
+// shared metrics registry. Kept in the adapter package (rather than
+// pkg/beacon) so pkg/beacon does not need to import pkg/metrics.
+func (o *beaconObserver) OnEncodeError(beaconName string) {
+	o.m.BeaconEncodeErrors.WithLabelValues(beaconName).Inc()
+}
+
+// OnSubmitError satisfies beacon.ErrorObserver with the same rule.
+// reason is one of "queue_full", "timeout", or "other"; the beacon
+// scheduler classifies at the call site so this label stays stable
+// across governor sentinel changes.
+func (o *beaconObserver) OnSubmitError(beaconName string, reason string) {
+	o.m.BeaconSubmitErrors.WithLabelValues(beaconName, reason).Inc()
+}
+
 // --- Config mapping helpers ----------------------------------------------
 
 // beaconConfigFromStore converts a configstore.Beacon row into a
