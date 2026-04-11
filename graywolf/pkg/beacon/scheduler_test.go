@@ -11,40 +11,34 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
-// mockSink captures submitted frames for assertions.
+// mockSink wraps the shared testtx.Recorder with a count-to-N latch
+// so beacon tests can block until a known number of frames have been
+// submitted. The scheduler's per-beacon goroutines emit frames
+// asynchronously; tests synchronize on sink.done to know when to
+// start asserting.
 type mockSink struct {
-	mu     sync.Mutex
-	frames []*ax25.Frame
-	done   chan struct{}
-	want   int
+	*testtx.Recorder
+	doneOnce sync.Once
+	done     chan struct{}
+	want     int
 }
 
 func newMockSink(want int) *mockSink {
-	return &mockSink{done: make(chan struct{}), want: want}
-}
-
-func (m *mockSink) Submit(_ context.Context, _ uint32, f *ax25.Frame, _ txgovernor.SubmitSource) error {
-	m.mu.Lock()
-	m.frames = append(m.frames, f)
-	reached := len(m.frames) >= m.want
-	m.mu.Unlock()
-	if reached {
-		select {
-		case <-m.done:
-		default:
-			close(m.done)
-		}
+	s := &mockSink{
+		Recorder: testtx.NewRecorder(),
+		done:     make(chan struct{}),
+		want:     want,
 	}
-	return nil
-}
-
-func (m *mockSink) Frames() []*ax25.Frame {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]*ax25.Frame(nil), m.frames...)
+	s.OnSubmit(func(testtx.Capture) {
+		if s.Recorder.Len() >= s.want {
+			s.doneOnce.Do(func() { close(s.done) })
+		}
+	})
+	return s
 }
 
 // countingObserver records metric callbacks.

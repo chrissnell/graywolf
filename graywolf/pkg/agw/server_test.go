@@ -5,28 +5,27 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/chrissnell/graywolf/pkg/ax25"
-	"github.com/chrissnell/graywolf/pkg/txgovernor"
+	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 )
 
+// fakeSink embeds the shared testtx.Recorder and adds a per-submit
+// signal channel so tests can block until a frame has arrived
+// without polling on Len().
 type fakeSink struct {
-	mu     sync.Mutex
-	frames []*ax25.Frame
-	ch     chan struct{}
+	*testtx.Recorder
+	ch chan struct{}
 }
 
-func newFakeSink() *fakeSink { return &fakeSink{ch: make(chan struct{}, 16)} }
-
-func (s *fakeSink) Submit(_ context.Context, _ uint32, f *ax25.Frame, _ txgovernor.SubmitSource) error {
-	s.mu.Lock()
-	s.frames = append(s.frames, f)
-	s.mu.Unlock()
-	s.ch <- struct{}{}
-	return nil
+func newFakeSink() *fakeSink {
+	s := &fakeSink{
+		Recorder: testtx.NewRecorder(),
+		ch:       make(chan struct{}, 16),
+	}
+	s.OnSubmit(func(testtx.Capture) { s.ch <- struct{}{} })
+	return s
 }
 
 func TestAGWVersionAndSendUnproto(t *testing.T) {
@@ -93,9 +92,7 @@ func TestAGWVersionAndSendUnproto(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("sink did not receive frame")
 	}
-	sink.mu.Lock()
-	f := sink.frames[0]
-	sink.mu.Unlock()
+	f := sink.Frames()[0]
 	if f.Source.Call != "W1AW" || f.Dest.Call != "APRS" {
 		t.Errorf("addrs: %+v / %+v", f.Source, f.Dest)
 	}

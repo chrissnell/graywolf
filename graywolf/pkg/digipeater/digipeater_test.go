@@ -2,41 +2,12 @@ package digipeater
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
-	"github.com/chrissnell/graywolf/pkg/txgovernor"
+	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 )
-
-type fakeSink struct {
-	mu     sync.Mutex
-	frames []capture
-}
-
-type capture struct {
-	channel uint32
-	frame   *ax25.Frame
-	source  txgovernor.SubmitSource
-}
-
-func (s *fakeSink) submit(ctx context.Context, ch uint32, f *ax25.Frame, src txgovernor.SubmitSource) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.frames = append(s.frames, capture{ch, f, src})
-	return nil
-}
-
-func (s *fakeSink) last() *capture {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.frames) == 0 {
-		return nil
-	}
-	c := s.frames[len(s.frames)-1]
-	return &c
-}
 
 func mustAddr(t *testing.T, s string) ax25.Address {
 	t.Helper()
@@ -47,13 +18,13 @@ func mustAddr(t *testing.T, s string) ax25.Address {
 	return a
 }
 
-func newTestDigi(t *testing.T, rules []Rule, mycall string) (*Digipeater, *fakeSink) {
-	sink := &fakeSink{}
+func newTestDigi(t *testing.T, rules []Rule, mycall string) (*Digipeater, *testtx.Recorder) {
+	sink := testtx.NewRecorder()
 	d, err := New(Config{
 		MyCall:       mustAddr(t, mycall),
 		DedupeWindow: 500 * time.Millisecond,
 		Rules:        rules,
-		Submit:       sink.submit,
+		Submit:       sink.Submit,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -89,14 +60,14 @@ func TestWIDEnNDecrementing(t *testing.T) {
 	if !d.Handle(context.Background(), 1, rx) {
 		t.Fatalf("expected digi to repeat WIDE2-2")
 	}
-	cap := sink.last()
+	cap := sink.Last()
 	if cap == nil {
 		t.Fatalf("no tx captured")
 	}
-	if len(cap.frame.Path) != 1 {
-		t.Fatalf("path len %d", len(cap.frame.Path))
+	if len(cap.Frame.Path) != 1 {
+		t.Fatalf("path len %d", len(cap.Frame.Path))
 	}
-	slot := cap.frame.Path[0]
+	slot := cap.Frame.Path[0]
 	if slot.Call != "WIDE2" || slot.SSID != 1 || slot.Repeated {
 		t.Fatalf("expected WIDE2-1 unconsumed, got %s repeated=%v", slot.String(), slot.Repeated)
 	}
@@ -117,7 +88,7 @@ func TestWIDE1_1Consumed(t *testing.T) {
 	if !d.Handle(context.Background(), 1, rx) {
 		t.Fatalf("expected repeat")
 	}
-	slot := sink.last().frame.Path[0]
+	slot := sink.Last().Frame.Path[0]
 	if !slot.Repeated || slot.SSID != 0 {
 		t.Fatalf("WIDE1-1 should be consumed (H=1, SSID=0): %+v", slot)
 	}
@@ -147,10 +118,10 @@ func TestPreemptiveDigiOnLocalCall(t *testing.T) {
 	if !d.Handle(context.Background(), 1, rx) {
 		t.Fatalf("expected preemptive digi")
 	}
-	cap := sink.last()
+	cap := sink.Last()
 	// First slot should be marked repeated (preempted).
-	if !cap.frame.Path[0].Repeated {
-		t.Fatalf("preemptive slot not marked repeated: %+v", cap.frame.Path[0])
+	if !cap.Frame.Path[0].Repeated {
+		t.Fatalf("preemptive slot not marked repeated: %+v", cap.Frame.Path[0])
 	}
 }
 
@@ -190,9 +161,9 @@ func TestCrossChannelDigi(t *testing.T) {
 	if !d.Handle(context.Background(), 1, rx) {
 		t.Fatalf("expected cross-channel digi")
 	}
-	cap := sink.last()
-	if cap.channel != 2 {
-		t.Fatalf("TX channel = %d want 2", cap.channel)
+	cap := sink.Last()
+	if cap.Channel != 2 {
+		t.Fatalf("TX channel = %d want 2", cap.Channel)
 	}
 	// RX on channel 2 with FromChannel=1 rule should not match.
 	rx2 := buildFrame(t, "W1AW", "APRS", []string{"WIDE2-2"}, "y")
@@ -230,7 +201,7 @@ func TestDropAction(t *testing.T) {
 	if d.Handle(context.Background(), 1, rx) {
 		t.Fatalf("drop rule should not submit")
 	}
-	if sink.last() != nil {
+	if sink.Last() != nil {
 		t.Fatalf("drop rule should not produce TX")
 	}
 }
@@ -246,14 +217,14 @@ func TestTRACEInsertsMyCall(t *testing.T) {
 	if !d.Handle(context.Background(), 1, rx) {
 		t.Fatalf("trace should repeat")
 	}
-	cap := sink.last()
-	if len(cap.frame.Path) != 2 {
-		t.Fatalf("expected inserted mycall: %v", cap.frame.Path)
+	cap := sink.Last()
+	if len(cap.Frame.Path) != 2 {
+		t.Fatalf("expected inserted mycall: %v", cap.Frame.Path)
 	}
-	if cap.frame.Path[0].Call != "N0CAL" || !cap.frame.Path[0].Repeated {
-		t.Fatalf("mycall not inserted first+repeated: %+v", cap.frame.Path[0])
+	if cap.Frame.Path[0].Call != "N0CAL" || !cap.Frame.Path[0].Repeated {
+		t.Fatalf("mycall not inserted first+repeated: %+v", cap.Frame.Path[0])
 	}
-	if cap.frame.Path[1].Call != "TRACE2" || cap.frame.Path[1].SSID != 1 {
-		t.Fatalf("trace slot not decremented: %+v", cap.frame.Path[1])
+	if cap.Frame.Path[1].Call != "TRACE2" || cap.Frame.Path[1].SSID != 1 {
+		t.Fatalf("trace slot not decremented: %+v", cap.Frame.Path[1])
 	}
 }

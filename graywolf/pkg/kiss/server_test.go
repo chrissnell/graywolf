@@ -5,28 +5,28 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
-	"github.com/chrissnell/graywolf/pkg/txgovernor"
+	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 )
 
+// fakeSink embeds the shared testtx.Recorder and adds a per-submit
+// signal channel so tests can block until a frame has been handed
+// to the sink without polling on Len().
 type fakeSink struct {
-	mu     sync.Mutex
-	frames []*ax25.Frame
-	ch     chan struct{}
+	*testtx.Recorder
+	ch chan struct{}
 }
 
-func newFakeSink() *fakeSink { return &fakeSink{ch: make(chan struct{}, 16)} }
-
-func (s *fakeSink) Submit(_ context.Context, _ uint32, f *ax25.Frame, _ txgovernor.SubmitSource) error {
-	s.mu.Lock()
-	s.frames = append(s.frames, f)
-	s.mu.Unlock()
-	s.ch <- struct{}{}
-	return nil
+func newFakeSink() *fakeSink {
+	s := &fakeSink{
+		Recorder: testtx.NewRecorder(),
+		ch:       make(chan struct{}, 16),
+	}
+	s.OnSubmit(func(testtx.Capture) { s.ch <- struct{}{} })
+	return s
 }
 
 func TestServerRoundTrip(t *testing.T) {
@@ -83,12 +83,11 @@ func TestServerRoundTrip(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("sink did not receive frame")
 	}
-	sink.mu.Lock()
-	defer sink.mu.Unlock()
-	if len(sink.frames) != 1 {
-		t.Fatalf("expected 1 frame, got %d", len(sink.frames))
+	frames := sink.Frames()
+	if len(frames) != 1 {
+		t.Fatalf("expected 1 frame, got %d", len(frames))
 	}
-	got := sink.frames[0]
+	got := frames[0]
 	if got.Source.Call != "N0CALL" || got.Source.SSID != 1 {
 		t.Errorf("source: %+v", got.Source)
 	}
