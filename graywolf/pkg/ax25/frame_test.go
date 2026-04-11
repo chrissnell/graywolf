@@ -172,6 +172,34 @@ func TestDedupKey(t *testing.T) {
 	}
 }
 
+func TestPathDedupKey(t *testing.T) {
+	src, _ := ParseAddress("N0CALL-1")
+	dst, _ := ParseAddress("APRS")
+	// Same source+dest+info but different paths -> distinct keys.
+	f1, _ := NewUIFrame(src, dst, []Address{{Call: "WIDE1", SSID: 1}}, []byte("hello"))
+	f2, _ := NewUIFrame(src, dst, []Address{{Call: "WIDE2", SSID: 2}}, []byte("hello"))
+	if f1.PathDedupKey() == f2.PathDedupKey() {
+		t.Error("path dedup key should distinguish different paths")
+	}
+	// Same path should produce the same key.
+	f3, _ := NewUIFrame(src, dst, []Address{{Call: "WIDE1", SSID: 1}}, []byte("hello"))
+	if f1.PathDedupKey() != f3.PathDedupKey() {
+		t.Error("path dedup key should match for identical frames")
+	}
+	// H-bit changes do not affect the key: a fresh frame and one with
+	// its first path slot marked repeated should collapse so a
+	// digi-suppression cache sees them as the same observation.
+	f4, _ := NewUIFrame(src, dst, []Address{{Call: "WIDE1", SSID: 1, Repeated: true}}, []byte("hello"))
+	if f1.PathDedupKey() != f4.PathDedupKey() {
+		t.Error("path dedup key should ignore the H-bit")
+	}
+	// Different info -> different key.
+	f5, _ := NewUIFrame(src, dst, []Address{{Call: "WIDE1", SSID: 1}}, []byte("bye"))
+	if f1.PathDedupKey() == f5.PathDedupKey() {
+		t.Error("path dedup key should depend on info")
+	}
+}
+
 func TestEncodePathLimit(t *testing.T) {
 	src, _ := ParseAddress("N0CALL")
 	dst, _ := ParseAddress("APRS")

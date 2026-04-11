@@ -203,6 +203,47 @@ func (p *DecodedAPRSPacket) FromAX25(f *ax25.Frame) {
 	}
 }
 
+// DedupKey returns a string suitable as a map key for APRS-level
+// deduplication: the key is (source + info bytes), ignoring the
+// AX.25 path and destination. This is the key the iGate uses for
+// RF->IS duplicate suppression, where two identical payloads from
+// the same source arriving via different geographic paths should be
+// gated once (the first arrival) rather than once per path.
+//
+// Returns an empty string if the packet has no recoverable info
+// field; callers should treat an empty key as "do not dedup".
+//
+// Distinct from ax25.Frame.DedupKey (which works at the frame layer
+// with dest+source+info) and ax25.Frame.PathDedupKey (which the
+// digipeater uses with source+dest+path+info). Those two operate on
+// encoded frames; this one operates on a decoded APRS packet after
+// the packet has been parsed out of the frame.
+func (p *DecodedAPRSPacket) DedupKey() string {
+	if p == nil {
+		return ""
+	}
+	info := p.dedupInfoBytes()
+	if len(info) == 0 {
+		return ""
+	}
+	return p.Source + "\x00" + string(info)
+}
+
+// dedupInfoBytes recovers the AX.25 info field for dedup keying.
+// Prefer the original Raw frame's info (lossless and byte-accurate);
+// return nil if no Raw frame is available since an empty key
+// disables dedup rather than silently conflating packets.
+func (p *DecodedAPRSPacket) dedupInfoBytes() []byte {
+	if len(p.Raw) == 0 {
+		return nil
+	}
+	f, err := ax25.Decode(p.Raw)
+	if err != nil || len(f.Info) == 0 {
+		return nil
+	}
+	return f.Info
+}
+
 // PacketOutput is the pluggable sink for decoded packets (log, KISS
 // rebroadcast, iGate, gRPC, ...). Implementations must be safe for
 // concurrent use.

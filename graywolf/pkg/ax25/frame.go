@@ -3,6 +3,7 @@ package ax25
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // AX.25 control-field values.
@@ -177,8 +178,17 @@ func (f *Frame) String() string {
 	return s
 }
 
-// DedupKey returns a byte slice suitable as a map key for deduplication.
-// Uses (dest + source + info) per the plan's txgovernor contract.
+// DedupKey returns a string suitable as a map key for deduplication
+// at the AX.25 frame level. Uses (dest + source + info) so identical
+// content from the same source to the same destination collapses
+// regardless of how the frame was routed or which digipeaters it
+// traversed. This is the key the centralized TX governor uses to
+// prevent the same frame being queued twice in rapid succession.
+//
+// Call PathDedupKey instead when the path matters, e.g. the
+// digipeater's own duplicate-suppression map where two copies of the
+// same payload arriving over different geographic paths should be
+// treated as distinct events.
 func (f *Frame) DedupKey() string {
 	var b []byte
 	b = append(b, f.Dest.Call...)
@@ -187,4 +197,29 @@ func (f *Frame) DedupKey() string {
 	b = append(b, f.Source.SSID)
 	b = append(b, f.Info...)
 	return string(b)
+}
+
+// PathDedupKey returns a dedup key that includes the digipeater path.
+// Used by the digipeater: two copies of the same payload heard via
+// different unconsumed path slots are not the same observation for
+// the purposes of digi suppression, because digi-ing them both could
+// extend a packet's geographic reach legitimately. Only the call and
+// SSID of each path element contribute; the repeated (H) bit is
+// deliberately omitted so an unconsumed-then-consumed pair still
+// dedups (the payload is the same; only the H-bit changed as we
+// digi'd it).
+func (f *Frame) PathDedupKey() string {
+	var sb strings.Builder
+	sb.WriteString(f.Source.String())
+	sb.WriteByte('>')
+	sb.WriteString(f.Dest.String())
+	for _, p := range f.Path {
+		sb.WriteByte(',')
+		sb.WriteString(p.Call)
+		sb.WriteByte('-')
+		sb.WriteByte(byte('0' + p.SSID))
+	}
+	sb.WriteByte(':')
+	sb.Write(f.Info)
+	return sb.String()
 }

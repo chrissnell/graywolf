@@ -403,12 +403,13 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	if pathBlocksGating(pkt.Path) {
 		return
 	}
-	// Dedup on (source + info bytes).
-	info := infoBytes(pkt)
-	if len(info) == 0 {
+	// APRS-level dedup on (source + info bytes); the helper lives
+	// next to DecodedAPRSPacket so every caller uses the same key
+	// construction.
+	key := pkt.DedupKey()
+	if key == "" {
 		return
 	}
-	key := pkt.Source + "\x00" + string(info)
 	fixed := isFixedPositionBeacon(pkt)
 	if !ig.dedup.shouldGate(key, fixed) {
 		return

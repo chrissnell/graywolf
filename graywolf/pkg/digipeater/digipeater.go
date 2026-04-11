@@ -196,11 +196,12 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 	}
 	mycall := d.mycall
 	rules := d.rules
-	// Dedup key is computed from the RX frame so two identical frames
-	// heard within the window collapse to a single digipeat regardless
-	// of outgoing path mutation. Seen() records the key even on a hit
-	// so concurrent duplicates are caught even if submit fails later.
-	key := dedupKey(frame)
+	// Dedup key is computed from the RX frame including its path so
+	// two identical payloads heard via different geographic paths are
+	// kept distinct (collapsing them would eat a legitimate hop).
+	// Seen() records the key even on a hit so concurrent duplicates
+	// are caught even if submit fails later.
+	key := frame.PathDedupKey()
 	_, hit := d.dedup.Seen(key, struct{}{})
 	if hit {
 		d.stats.Deduped++
@@ -429,25 +430,5 @@ func cloneFrame(f *ax25.Frame) *ax25.Frame {
 
 func addressEqual(a, b ax25.Address) bool {
 	return strings.EqualFold(a.Call, b.Call) && a.SSID == b.SSID
-}
-
-// dedupKey keys the digi-local dedupe map. We include the path in the
-// key so the same payload heard with different digi history is not
-// collapsed (otherwise two geographically distinct paths to the same
-// packet would be conflated).
-func dedupKey(f *ax25.Frame) string {
-	var sb strings.Builder
-	sb.WriteString(f.Source.String())
-	sb.WriteByte('>')
-	sb.WriteString(f.Dest.String())
-	for _, p := range f.Path {
-		sb.WriteByte(',')
-		sb.WriteString(p.Call)
-		sb.WriteByte('-')
-		sb.WriteByte(byte('0' + p.SSID))
-	}
-	sb.WriteByte(':')
-	sb.Write(f.Info)
-	return sb.String()
 }
 
