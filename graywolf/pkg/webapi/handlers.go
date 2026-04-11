@@ -15,7 +15,7 @@ import (
 // deprecated field instead of silently dropping it.
 func decodeJSON[T any](r *http.Request) (T, error) {
 	var out T
-	dec := json.NewDecoder(r.Body)
+	dec := json.NewDecoder(r.Body) // decodeJSON: the one permitted call
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&out); err != nil {
 		return out, fmt.Errorf("decode: %w", err)

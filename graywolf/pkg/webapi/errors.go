@@ -17,3 +17,12 @@ func notFound(w http.ResponseWriter) {
 func methodNotAllowed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 }
+
+// internalError logs the real error with request context and writes a
+// generic message to the client. Use for every 5xx response so we don't
+// leak GORM/driver strings (e.g. "UNIQUE constraint failed: users.username")
+// that enable account or schema enumeration.
+func (s *Server) internalError(w http.ResponseWriter, r *http.Request, op string, err error) {
+	s.logger.ErrorContext(r.Context(), "webapi internal error", "op", op, "err", err)
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+}

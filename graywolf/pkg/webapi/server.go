@@ -20,17 +20,17 @@ import (
 // Server routes /api/* requests. It does not own the underlying
 // listener; cmd/graywolf composes it into its main mux.
 type Server struct {
-	store         *configstore.Store
-	bridge        *modembridge.Bridge
-	kissManager   *kiss.Manager
-	kissCtx       context.Context // long-lived context for KISS server goroutines
-	logger        *slog.Logger
-	startedAt     time.Time
-	igateStatusFn func() igate.Status
+	store            *configstore.Store
+	bridge           *modembridge.Bridge
+	kissManager      *kiss.Manager
+	kissCtx          context.Context // long-lived context for KISS server goroutines
+	logger           *slog.Logger
+	startedAt        time.Time
+	igateStatusFn    func() igate.Status
 	gpsReload        chan struct{}                              // signalled when GPS config changes
 	beaconReload     chan struct{}                              // signalled when beacon config changes
 	digipeaterReload chan struct{}                              // signalled when digipeater config/rules change
-	beaconSendNow    func(ctx context.Context, id uint32) error // installed by main.go to trigger immediate beacon send
+	beaconSendNow    func(ctx context.Context, id uint32) error // triggers an immediate beacon send
 }
 
 // Config bundles the dependencies for NewServer.
@@ -92,24 +92,14 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/status", s.handleStatus)
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":     "ok",
-		"time":       time.Now().UTC().Format(time.RFC3339),
-		"started_at": s.startedAt.UTC().Format(time.RFC3339),
-	})
-}
+// --- cross-component wiring setters --------------------------------------
 
 // SetGPSReload installs the channel signalled when GPS config is saved.
-func (s *Server) SetGPSReload(ch chan struct{}) {
-	s.gpsReload = ch
-}
+func (s *Server) SetGPSReload(ch chan struct{}) { s.gpsReload = ch }
 
 // SetBeaconReload installs the channel signalled when beacon config is
 // created, updated, or deleted.
-func (s *Server) SetBeaconReload(ch chan struct{}) {
-	s.beaconReload = ch
-}
+func (s *Server) SetBeaconReload(ch chan struct{}) { s.beaconReload = ch }
 
 // SetBeaconSendNow installs the callback used by POST /api/beacons/{id}/send
 // to trigger an immediate one-shot transmission of a beacon.
@@ -123,77 +113,24 @@ func (s *Server) SetBeaconSendNow(fn func(ctx context.Context, id uint32) error)
 // engine (enabled flag, mycall, dedup window, rules), so changes take
 // effect without a restart. The channel is expected to be buffered
 // (size 1) so signals coalesce under rapid edits.
-func (s *Server) SetDigipeaterReload(ch chan struct{}) {
-	s.digipeaterReload = ch
+func (s *Server) SetDigipeaterReload(ch chan struct{}) { s.digipeaterReload = ch }
+
+// SetIgateStatusFn installs the function used by /api/status to report
+// igate counters.
+func (s *Server) SetIgateStatusFn(fn func() igate.Status) { s.igateStatusFn = fn }
+
+// --- misc helpers --------------------------------------------------------
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"time":       time.Now().UTC().Format(time.RFC3339),
+		"started_at": s.startedAt.UTC().Format(time.RFC3339),
+	})
 }
 
-// SetIgateStatusFn installs the function used by /api/status to report igate counters.
-func (s *Server) SetIgateStatusFn(fn func() igate.Status) {
-	s.igateStatusFn = fn
-}
-
-// StatusDTO is the JSON shape returned by GET /api/status.
-type StatusDTO struct {
-	UptimeSeconds int64           `json:"uptime_seconds"`
-	Channels      []StatusChannel `json:"channels"`
-	Igate         *igate.Status   `json:"igate,omitempty"`
-}
-
-// StatusChannel pairs a channel config with its live stats.
-type StatusChannel struct {
-	ID        uint32  `json:"id"`
-	Name      string  `json:"name"`
-	ModemType string  `json:"modem_type"`
-	BitRate   uint32  `json:"bit_rate"`
-	RxFrames  uint64  `json:"rx_frames"`
-	TxFrames  uint64  `json:"tx_frames"`
-	DcdState  bool    `json:"dcd_state"`
-	AudioPeak float32 `json:"audio_peak"`
-}
-
-// GET /api/status — aggregated dashboard data
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	dto := StatusDTO{
-		UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
-	}
-
-	// Channels + stats
-	channels, err := s.store.ListChannels(r.Context())
-	if err == nil {
-		for _, ch := range channels {
-			sc := StatusChannel{
-				ID:        ch.ID,
-				Name:      ch.Name,
-				ModemType: ch.ModemType,
-				BitRate:   ch.BitRate,
-			}
-			if s.bridge != nil {
-				if stats, ok := s.bridge.GetChannelStats(uint32(ch.ID)); ok {
-					sc.RxFrames = stats.RxFrames
-					sc.TxFrames = stats.TxFrames
-					sc.DcdState = stats.DcdState
-					sc.AudioPeak = stats.AudioLevelPeak
-				}
-			}
-			dto.Channels = append(dto.Channels, sc)
-		}
-	}
-
-	// iGate
-	if s.igateStatusFn != nil {
-		st := s.igateStatusFn()
-		dto.Igate = &st
-	}
-
-	writeJSON(w, http.StatusOK, dto)
-}
-
-// notifyBridgeForDevice tells the modem bridge to hot-reconfigure a device.
-// Best-effort: logs on failure but does not propagate to the caller.
+// notifyBridgeForDevice tells the modem bridge to hot-reconfigure a
+// device. Best-effort: logs on failure but does not propagate.
 func (s *Server) notifyBridgeForDevice(ctx context.Context, deviceID uint32) {
 	if s.bridge == nil {
 		return
@@ -203,7 +140,8 @@ func (s *Server) notifyBridgeForDevice(ctx context.Context, deviceID uint32) {
 	}
 }
 
-// notifyBridgeForChannel looks up the channel's audio devices and reconfigures them.
+// notifyBridgeForChannel looks up the channel's audio devices and
+// reconfigures them.
 func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
 	if s.bridge == nil {
 		return
@@ -217,15 +155,6 @@ func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
 	if ch.OutputDeviceID != 0 {
 		s.notifyBridgeForDevice(ctx, ch.OutputDeviceID)
 	}
-}
-
-// internalError logs the real error with request context and writes a
-// generic message to the client. Use for every 5xx response so we don't
-// leak GORM/driver strings (e.g. "UNIQUE constraint failed: users.username")
-// that enable account or schema enumeration.
-func (s *Server) internalError(w http.ResponseWriter, r *http.Request, op string, err error) {
-	s.logger.ErrorContext(r.Context(), "webapi internal error", "op", op, "err", err)
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 }
 
 func parseID(s string) (uint32, error) {
@@ -247,8 +176,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
-// StripAPIPrefix is a tiny helper for tests and middleware that need to
-// know whether a URL belongs to this package.
+// StripAPIPrefix is a tiny helper for tests and middleware that need
+// to know whether a URL belongs to this package.
 func StripAPIPrefix(path string) (string, bool) {
 	const prefix = "/api/"
 	if !strings.HasPrefix(path, prefix) {
