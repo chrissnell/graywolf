@@ -106,6 +106,7 @@ func TestObservabilityCountersRegistered(t *testing.T) {
 	m.AgwDecodeErrors.WithLabelValues("fallback")
 	m.BeaconEncodeErrors.WithLabelValues("probe")
 	m.BeaconSubmitErrors.WithLabelValues("probe", "queue_full")
+	m.BeaconFired.WithLabelValues("probe", "skipped_busy")
 	m.GpsParseErrors.WithLabelValues("gpsd")
 	m.GpsParseErrors.WithLabelValues("nmea")
 
@@ -116,6 +117,7 @@ func TestObservabilityCountersRegistered(t *testing.T) {
 		"graywolf_kiss_decode_errors_total",
 		"graywolf_beacon_encode_errors_total",
 		"graywolf_beacon_submit_errors_total",
+		"graywolf_beacon_fired_total",
 		"graywolf_gps_parse_errors_total",
 		// Pre-existing but audited by WO-11:
 		"graywolf_digipeater_deduped_total",

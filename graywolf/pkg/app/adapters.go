@@ -39,6 +39,16 @@ func (o *beaconObserver) OnSubmitError(beaconName string, reason string) {
 	o.m.BeaconSubmitErrors.WithLabelValues(beaconName, reason).Inc()
 }
 
+// OnBeaconSkipped satisfies beacon.SkipObserver. The scheduler calls
+// this whenever its bounded fire worker pool is saturated and a fire is
+// dropped rather than queued, so we bump graywolf_beacon_fired_total
+// with the result label "skipped_<reason>" (currently always
+// "skipped_busy", but the reason is passed through to leave room for
+// future skip causes without a signature change).
+func (o *beaconObserver) OnBeaconSkipped(beaconName string, reason string) {
+	o.m.BeaconFired.WithLabelValues(beaconName, "skipped_"+reason).Inc()
+}
+
 // --- Config mapping helpers ----------------------------------------------
 
 // beaconConfigFromStore converts a configstore.Beacon row into a

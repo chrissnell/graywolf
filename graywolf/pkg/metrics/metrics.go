@@ -40,6 +40,7 @@ type Metrics struct {
 	DigipeaterDeduped   prometheus.Counter
 	PacketlogEntries    prometheus.Gauge
 	BeaconPackets       *prometheus.CounterVec // label: "type"
+	BeaconFired         *prometheus.CounterVec // labels: "beacon_name", "result" ("sent" | "skipped_busy")
 	BeaconEncodeErrors  *prometheus.CounterVec // label: "beacon_name"
 	BeaconSubmitErrors  *prometheus.CounterVec // labels: "beacon_name", "reason"
 	SmartBeaconRate     *prometheus.GaugeVec   // label: "channel"
@@ -137,6 +138,10 @@ func New() *Metrics {
 			Name: "graywolf_beacon_packets_total",
 			Help: "Beacon packets transmitted, by beacon type.",
 		}, []string{"type"}),
+		BeaconFired: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_beacon_fired_total",
+			Help: "Beacon fire attempts, labeled by result. 'sent' counts successful submissions; 'skipped_busy' counts fires dropped because the scheduler's bounded worker pool was saturated and no slot was available.",
+		}, []string{"beacon_name", "result"}),
 		BeaconEncodeErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "graywolf_beacon_encode_errors_total",
 			Help: "Beacons that failed AX.25 encoding and were not transmitted.",
@@ -176,6 +181,7 @@ func New() *Metrics {
 		m.DigipeaterDeduped,
 		m.PacketlogEntries,
 		m.BeaconPackets,
+		m.BeaconFired,
 		m.BeaconEncodeErrors,
 		m.BeaconSubmitErrors,
 		m.SmartBeaconRate,
