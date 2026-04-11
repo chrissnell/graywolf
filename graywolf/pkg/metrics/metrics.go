@@ -42,6 +42,7 @@ type Metrics struct {
 	BeaconEncodeErrors  *prometheus.CounterVec // label: "beacon_name"
 	BeaconSubmitErrors  *prometheus.CounterVec // labels: "beacon_name", "reason"
 	SmartBeaconRate     *prometheus.GaugeVec   // label: "channel"
+	GpsParseErrors      *prometheus.CounterVec // label: "source" ("gpsd" | "nmea")
 
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
@@ -143,6 +144,10 @@ func New() *Metrics {
 			Name: "graywolf_smartbeacon_rate_seconds",
 			Help: "Current SmartBeaconing interval in seconds, by channel.",
 		}, []string{"channel"}),
+		GpsParseErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_gps_parse_errors_total",
+			Help: "GPS messages that failed to parse and were dropped. Source 'gpsd' counts JSON lines from the gpsd reader; 'nmea' counts NMEA sentences from the serial/file reader.",
+		}, []string{"source"}),
 		lastDcdTransitions: make(map[uint32]uint64),
 	}
 	reg.MustRegister(
@@ -168,6 +173,7 @@ func New() *Metrics {
 		m.BeaconEncodeErrors,
 		m.BeaconSubmitErrors,
 		m.SmartBeaconRate,
+		m.GpsParseErrors,
 	)
 	return m
 }

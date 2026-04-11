@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
 // Supported NMEA sentences: $GPRMC, $GPGGA (and GN/GL/GA talker variants).
@@ -213,11 +215,22 @@ func parseNMEATimeOnly(tod string) (time.Time, error) {
 	return time.Date(now.Year(), now.Month(), now.Day(), hh, mi, int(ss), nsec, time.UTC), nil
 }
 
+// NMEAOptions configures ReadNMEAStream. OnParseError is optional and,
+// when non-nil, is invoked once per malformed sentence — wired to the
+// shared gps parse-errors counter in production. Kept as a separate
+// option struct so adding more knobs later doesn't require a breaking
+// signature change on every caller.
+type NMEAOptions struct {
+	OnParseError func(source string)
+}
+
 // ReadNMEAStream consumes NMEA sentences from r line-by-line, parses them,
 // and pushes accepted fixes into cache. It handles partial lines across
-// reads (bufio.Scanner) and logs malformed sentences at debug level. It
-// returns when ctx is cancelled or r hits EOF.
-func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logger *slog.Logger) error {
+// reads (bufio.Scanner) and logs malformed sentences at debug level, with
+// a 1-minute rate-limited warn log for parse failures so an operator sees
+// the first one of each surge without the log flooding. It returns when
+// ctx is cancelled or r hits EOF.
+func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logger *slog.Logger, opts NMEAOptions) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -226,6 +239,8 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 	// NMEA sentences are at most 82 bytes, but some receivers emit longer
 	// proprietary ones; allow up to 4 KiB per line.
 	scanner.Buffer(make([]byte, 0, 4096), 4096)
+
+	parseErrLog := metrics.NewRateLimitedLogger(time.Minute)
 
 	var (
 		lines     int
@@ -252,7 +267,17 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 		fix, active, err := ParseNMEA(line)
 		if err != nil {
 			parseErrs++
+			if opts.OnParseError != nil {
+				opts.OnParseError("nmea")
+			}
 			logger.Debug("nmea parse error", "err", err, "line", line)
+			snippet := line
+			if len(snippet) > 80 {
+				snippet = snippet[:80]
+			}
+			parseErrLog.Log(logger, slog.LevelWarn, "parse",
+				"nmea parse error",
+				"err", err, "snippet", snippet)
 		} else if !active {
 			voids++
 			logger.Debug("nmea void/no-fix sentence", "line", line)

@@ -5,15 +5,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"time"
+
+	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
 // GPSDConfig configures a gpsd (TCP JSON) reader.
 type GPSDConfig struct {
 	Host string // default "localhost"
 	Port int    // default 2947
+	// OnParseError, if non-nil, is invoked for every JSON line that
+	// fails to unmarshal into a TPV report. source is always "gpsd"
+	// for the caller's convenience so the same callback can be shared
+	// between the gpsd and NMEA readers.
+	OnParseError func(source string)
 }
 
 // gpsdTPV mirrors the relevant subset of the gpsd TPV (time-position-velocity)
@@ -36,6 +44,10 @@ func RunGPSD(ctx context.Context, cfg GPSDConfig, cache PositionCache, logger *s
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// parseErrLog rate-limits the "gpsd json parse failed" warn log
+	// so a broken upstream cannot flood the operator's log. 1m is
+	// generous; the counter still reflects every drop.
+	parseErrLog := metrics.NewRateLimitedLogger(time.Minute)
 	host := cfg.Host
 	if host == "" {
 		host = "localhost"
@@ -69,7 +81,16 @@ func RunGPSD(ctx context.Context, cfg GPSDConfig, cache PositionCache, logger *s
 	}
 
 	logger.Info("gpsd reader started", "addr", addr)
-	scanner := bufio.NewScanner(conn)
+	return readGPSDStream(ctx, conn, cache, logger, cfg.OnParseError, parseErrLog)
+}
+
+// readGPSDStream is RunGPSD's inner loop factored out for unit tests:
+// it reads newline-delimited gpsd JSON from r, decodes TPV reports,
+// and pushes accepted fixes into cache. Malformed lines invoke
+// onParseError (if non-nil) and a rate-limited warn log; everything
+// else matches the production behavior.
+func readGPSDStream(ctx context.Context, r io.Reader, cache PositionCache, logger *slog.Logger, onParseError func(string), parseErrLog *metrics.RateLimitedLogger) error {
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 16*1024), 1024*1024)
 	for scanner.Scan() {
 		select {
@@ -80,6 +101,18 @@ func RunGPSD(ctx context.Context, cfg GPSDConfig, cache PositionCache, logger *s
 		line := scanner.Bytes()
 		var tpv gpsdTPV
 		if err := json.Unmarshal(line, &tpv); err != nil {
+			if onParseError != nil {
+				onParseError("gpsd")
+			}
+			// Include only the first N bytes so a flood of bad lines
+			// does not dump the full body into the log.
+			snippet := line
+			if len(snippet) > 80 {
+				snippet = snippet[:80]
+			}
+			parseErrLog.Log(logger, slog.LevelWarn, "parse",
+				"gpsd json parse error",
+				"err", err, "snippet", string(snippet))
 			continue
 		}
 		if tpv.Class != "TPV" {

@@ -15,6 +15,9 @@ import (
 type SerialConfig struct {
 	Device   string // e.g. /dev/ttyUSB0
 	BaudRate int    // e.g. 4800, 9600, 38400
+	// OnParseError, if non-nil, is invoked for every NMEA sentence
+	// that fails to parse. source is always "nmea".
+	OnParseError func(source string)
 }
 
 // RunSerial opens the serial port and feeds NMEA sentences into cache
@@ -65,7 +68,9 @@ func RunSerial(ctx context.Context, cfg SerialConfig, cache PositionCache, logge
 	}()
 
 	logger.Info("gps serial reader started", "device", cfg.Device, "baud", baud)
-	return ReadNMEAStream(ctx, &timeoutReader{ctx: ctx, r: port, logger: logger}, cache, logger)
+	return ReadNMEAStream(ctx, &timeoutReader{ctx: ctx, r: port, logger: logger}, cache, logger, NMEAOptions{
+		OnParseError: cfg.OnParseError,
+	})
 }
 
 // timeoutReader wraps a serial port whose Read returns (0, nil) on timeout.

@@ -225,7 +225,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// --- GPS cache + manager -------------------------------------------
 	a.gpsCache = gps.NewMemCache()
 	a.gpsReload = make(chan struct{}, 1)
-	a.gpsMgr = newGPSManager(a.store, a.gpsCache, a.logger)
+	a.gpsMgr = newGPSManager(a.store, a.gpsCache, a.logger, a.metrics)
 
 	// --- Beacon scheduler ----------------------------------------------
 	beaconSched, err := beacon.New(beacon.Options{

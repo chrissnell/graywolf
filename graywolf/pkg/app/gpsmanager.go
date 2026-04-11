@@ -7,6 +7,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
 // gpsReaderShutdownGrace bounds how long the manager will wait for a
@@ -28,13 +29,17 @@ type gpsManager struct {
 	store  *configstore.Store
 	cache  *gps.MemCache
 	logger *slog.Logger
+	// m, when non-nil, receives parse-error counter bumps so the
+	// gps.RunGPSD / gps.RunSerial callers don't need to carry the
+	// metrics registry themselves.
+	m *metrics.Metrics
 
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
-func newGPSManager(store *configstore.Store, cache *gps.MemCache, logger *slog.Logger) *gpsManager {
-	return &gpsManager{store: store, cache: cache, logger: logger}
+func newGPSManager(store *configstore.Store, cache *gps.MemCache, logger *slog.Logger, m *metrics.Metrics) *gpsManager {
+	return &gpsManager{store: store, cache: cache, logger: logger, m: m}
 }
 
 // Run drives the manager until ctx is cancelled: start on boot, restart
@@ -64,15 +69,33 @@ func (m *gpsManager) start(parent context.Context) {
 		return
 	}
 
+	// onParseError routes gps parse-failure notifications to the
+	// shared metrics counter. Kept as a nil-if-no-metrics callback so
+	// the gps package stays decoupled from pkg/metrics.
+	var onParseError func(source string)
+	if m.m != nil {
+		onParseError = func(source string) {
+			m.m.GpsParseErrors.WithLabelValues(source).Inc()
+		}
+	}
+
 	var run gpsRunFunc
 	var name string
 	switch gpsCfg.SourceType {
 	case "serial":
-		scfg := gps.SerialConfig{Device: gpsCfg.Device, BaudRate: int(gpsCfg.BaudRate)}
+		scfg := gps.SerialConfig{
+			Device:       gpsCfg.Device,
+			BaudRate:     int(gpsCfg.BaudRate),
+			OnParseError: onParseError,
+		}
 		run = func(ctx context.Context) error { return gps.RunSerial(ctx, scfg, m.cache, m.logger) }
 		name = "gps serial reader"
 	case "gpsd":
-		gcfg := gps.GPSDConfig{Host: gpsCfg.GpsdHost, Port: int(gpsCfg.GpsdPort)}
+		gcfg := gps.GPSDConfig{
+			Host:         gpsCfg.GpsdHost,
+			Port:         int(gpsCfg.GpsdPort),
+			OnParseError: onParseError,
+		}
 		run = func(ctx context.Context) error { return gps.RunGPSD(ctx, gcfg, m.cache, m.logger) }
 		name = "gpsd reader"
 	default:

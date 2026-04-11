@@ -94,7 +94,7 @@ func TestReadNMEAStream_PartialAcrossReads(t *testing.T) {
 	buf := bytes.NewBufferString(line + line)
 	cache := NewMemCache()
 	logger := slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil))
-	if err := ReadNMEAStream(context.Background(), buf, cache, logger); err != nil {
+	if err := ReadNMEAStream(context.Background(), buf, cache, logger, NMEAOptions{}); err != nil {
 		t.Fatalf("stream: %v", err)
 	}
 	fix, ok := cache.Get()
@@ -103,6 +103,46 @@ func TestReadNMEAStream_PartialAcrossReads(t *testing.T) {
 	}
 	if !approxEq(fix.Latitude, 48.1173, 1e-4) {
 		t.Errorf("lat = %v", fix.Latitude)
+	}
+}
+
+// TestReadNMEAStream_OnParseError verifies that every sentence that
+// fails ParseNMEA causes OnParseError("nmea") to fire. Uses a mix of
+// bad checksum, unsupported sentence type, and a totally malformed
+// line so the counter counts every drop regardless of which specific
+// parse step failed.
+func TestReadNMEAStream_OnParseError(t *testing.T) {
+	stream := bytes.NewBufferString(
+		// bad checksum:
+		"$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*00\n" +
+			// unsupported sentence type (GSV):
+			"$GPGSV,3,1,12\n" +
+			// totally malformed:
+			"garbage\n" +
+			// valid — must not count:
+			"$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A\n",
+	)
+	cache := NewMemCache()
+	logger := slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil))
+
+	var parseErrs int
+	opts := NMEAOptions{
+		OnParseError: func(source string) {
+			if source != "nmea" {
+				t.Errorf("source = %q, want %q", source, "nmea")
+			}
+			parseErrs++
+		},
+	}
+	if err := ReadNMEAStream(context.Background(), stream, cache, logger, opts); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if parseErrs != 3 {
+		t.Errorf("OnParseError fire count = %d, want 3", parseErrs)
+	}
+	// The trailing valid line should still have landed in the cache.
+	if _, ok := cache.Get(); !ok {
+		t.Error("valid sentence did not reach the cache")
 	}
 }
 
