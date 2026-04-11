@@ -11,6 +11,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
 // mockSink captures submitted frames for assertions.
@@ -25,7 +26,7 @@ func newMockSink(want int) *mockSink {
 	return &mockSink{done: make(chan struct{}), want: want}
 }
 
-func (m *mockSink) Submit(_ context.Context, _ uint32, f *ax25.Frame, _ SubmitSource) error {
+func (m *mockSink) Submit(_ context.Context, _ uint32, f *ax25.Frame, _ txgovernor.SubmitSource) error {
 	m.mu.Lock()
 	m.frames = append(m.frames, f)
 	reached := len(m.frames) >= m.want
@@ -196,7 +197,7 @@ func TestScheduler_PositionUseGps(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
 	ctx := context.Background()
 
-	newScheduler := func(t *testing.T, sink TxSink, cache gps.PositionCache) *Scheduler {
+	newScheduler := func(t *testing.T, sink txgovernor.TxSink, cache gps.PositionCache) *Scheduler {
 		t.Helper()
 		s, err := New(Options{Sink: sink, Cache: cache, Logger: logger})
 		if err != nil {

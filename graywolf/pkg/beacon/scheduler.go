@@ -3,8 +3,8 @@
 // `beacons` table, with optional SmartBeaconing for tracker beacons and
 // safe `comment_cmd` execution for dynamic comments.
 //
-// All outgoing frames are submitted through a TxSink (satisfied by
-// *txgovernor.Governor in production) at PriorityBeacon.
+// All outgoing frames are submitted through a txgovernor.TxSink
+// (satisfied by *txgovernor.Governor in production) at PriorityBeacon.
 package beacon
 
 import (
@@ -17,24 +17,8 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
-
-// TxSink is the transmit contract the scheduler needs; matches the
-// Submit signature of txgovernor.Governor so no adapter is required in
-// production.
-type TxSink interface {
-	Submit(ctx context.Context, channel uint32, frame *ax25.Frame, src SubmitSource) error
-}
-
-// SubmitSource mirrors txgovernor.SubmitSource but is defined locally
-// so the beacon package does not import txgovernor (avoiding a cycle if
-// txgovernor ever wants to import beacon types). cmd/graywolf wraps
-// governor.Submit with a tiny shim that translates fields.
-type SubmitSource struct {
-	Kind     string // "beacon"
-	Detail   string // beacon type + id
-	Priority int
-}
 
 // Type enumerates the supported beacon kinds.
 type Type string
@@ -102,7 +86,7 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Scheduler runs one goroutine per beacon entry plus one for
 // SmartBeaconing turn detection if any tracker beacons exist.
 type Scheduler struct {
-	sink     TxSink
+	sink     txgovernor.TxSink
 	cache    gps.PositionCache
 	logger   *slog.Logger
 	observer Observer
@@ -116,7 +100,7 @@ type Scheduler struct {
 
 // Options configures a Scheduler.
 type Options struct {
-	Sink     TxSink
+	Sink     txgovernor.TxSink
 	Cache    gps.PositionCache // may be nil for fixed/igate-only deployments
 	Logger   *slog.Logger
 	Observer Observer
@@ -370,7 +354,7 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 		s.logger.Warn("beacon frame", "id", b.ID, "err", err)
 		return
 	}
-	src := SubmitSource{
+	src := txgovernor.SubmitSource{
 		Kind:     "beacon",
 		Detail:   fmt.Sprintf("%s/%d", b.Type, b.ID),
 		Priority: ax25.PriorityBeacon,

@@ -4,11 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
 // Manager tracks running KISS TCP servers and supports hot start/stop.
 type Manager struct {
-	sink   TxSink
+	sink   txgovernor.TxSink
 	logger *slog.Logger
 	mu     sync.Mutex
 	// running maps DB ID → running server state.
@@ -22,7 +24,7 @@ type managedServer struct {
 
 // ManagerConfig configures a Manager.
 type ManagerConfig struct {
-	Sink   TxSink
+	Sink   txgovernor.TxSink
 	Logger *slog.Logger
 }
 

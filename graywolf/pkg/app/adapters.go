@@ -1,53 +1,16 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/chrissnell/graywolf/pkg/agw"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
-	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/metrics"
-	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
-
-// --- Sink adapters --------------------------------------------------------
-//
-// Each of the three sink adapters bridges a source-specific TxSink
-// interface (kiss.TxSink, agw.TxSink, beacon.TxSink) to txgovernor's
-// single Submit method. They are trivial field-renaming shims that
-// exist because Go requires concrete interface satisfaction rather
-// than duck typing; inlining them into wiring.go would bury the
-// governor call behind anonymous closures and hurt readability.
-
-type kissSinkAdapter struct{ gov *txgovernor.Governor }
-
-func (a *kissSinkAdapter) Submit(ctx context.Context, channel uint32, f *ax25.Frame, s kiss.SubmitSource) error {
-	return a.gov.Submit(ctx, channel, f, txgovernor.SubmitSource{
-		Kind: s.Kind, Detail: s.Detail, Priority: s.Priority,
-	})
-}
-
-type agwSinkAdapter struct{ gov *txgovernor.Governor }
-
-func (a *agwSinkAdapter) Submit(ctx context.Context, channel uint32, f *ax25.Frame, s agw.SubmitSource) error {
-	return a.gov.Submit(ctx, channel, f, txgovernor.SubmitSource{
-		Kind: s.Kind, Detail: s.Detail, Priority: s.Priority,
-	})
-}
-
-type beaconSinkAdapter struct{ gov *txgovernor.Governor }
-
-func (a *beaconSinkAdapter) Submit(ctx context.Context, channel uint32, f *ax25.Frame, s beacon.SubmitSource) error {
-	return a.gov.Submit(ctx, channel, f, txgovernor.SubmitSource{
-		Kind: s.Kind, Detail: s.Detail, Priority: s.Priority,
-	})
-}
 
 // --- Beacon observer for metrics -----------------------------------------
 

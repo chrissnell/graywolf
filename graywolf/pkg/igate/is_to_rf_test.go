@@ -24,8 +24,8 @@ func counterValue(t *testing.T, c prometheus.Counter) float64 {
 	return m.GetCounter().GetValue()
 }
 
-// stubGovernor is a minimal GovernorSubmitter whose Submit delegates to
-// an embedded function, so each test can install its own behavior
+// stubGovernor is a minimal txgovernor.TxSink whose Submit delegates
+// to an embedded function, so each test can install its own behavior
 // (accept, block forever, return an error).
 type stubGovernor struct {
 	fn func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
@@ -40,7 +40,7 @@ func (s *stubGovernor) Submit(ctx context.Context, channel uint32, frame *ax25.F
 // installed by newTestIgate.
 const gateableLine = "W5ABC-7>APRS,WIDE1-1:!3725.00N/12158.00W>hi"
 
-func newTestIgate(t *testing.T, gov GovernorSubmitter) *Igate {
+func newTestIgate(t *testing.T, gov txgovernor.TxSink) *Igate {
 	t.Helper()
 	ig, err := New(Config{
 		Server:   "127.0.0.1:1",

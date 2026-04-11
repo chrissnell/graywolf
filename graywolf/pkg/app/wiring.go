@@ -195,7 +195,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- KISS manager --------------------------------------------------
 	a.kissMgr = kiss.NewManager(kiss.ManagerConfig{
-		Sink:   &kissSinkAdapter{gov: a.gov},
+		Sink:   a.gov,
 		Logger: a.logger,
 	})
 
@@ -229,7 +229,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- Beacon scheduler ----------------------------------------------
 	beaconSched, err := beacon.New(beacon.Options{
-		Sink:     &beaconSinkAdapter{gov: a.gov},
+		Sink:     a.gov,
 		Cache:    a.gpsCache,
 		Logger:   a.logger,
 		Observer: &beaconObserver{m: a.metrics},
@@ -422,7 +422,7 @@ func (a *App) wireAGW(ctx context.Context) error {
 		ListenAddr:    agwCfg.ListenAddr,
 		PortCallsigns: calls,
 		PortToChannel: map[uint8]uint32{0: 1},
-		Sink:          &agwSinkAdapter{gov: a.gov},
+		Sink:          a.gov,
 		Logger:        a.logger,
 		OnClientChange: func(n int) {
 			a.metrics.SetAgwClients(n)

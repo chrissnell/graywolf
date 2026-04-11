@@ -42,13 +42,6 @@ const igateSubmitTimeout = 2 * time.Second
 // submit is dropped, so a saturated governor cannot flood the logs.
 const submitDropLogInterval = 10 * time.Second
 
-// GovernorSubmitter is the narrow surface of the TX governor that the
-// iGate's IS->RF path depends on. txgovernor.Governor satisfies it.
-// Broken out as an interface so tests can inject a stub and so that the
-// iGate does not take a hard dependency on the governor's full API.
-type GovernorSubmitter interface {
-	Submit(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error
-}
 
 // Config is the iGate's runtime configuration. Fields marked "required"
 // must be set before Start. The orchestrator will eventually source
@@ -72,10 +65,10 @@ type Config struct {
 	// TxChannel is the radio channel IS->RF frames are submitted on.
 	TxChannel uint32
 	// Governor is the TX governor for IS->RF submissions. Required for
-	// downlink; leave nil for IS->RF=disabled. Declared as an
-	// interface so tests can inject a stub; *txgovernor.Governor
-	// satisfies it.
-	Governor GovernorSubmitter
+	// downlink; leave nil for IS->RF=disabled. Declared as the
+	// canonical txgovernor.TxSink interface so tests can inject a
+	// stub; *txgovernor.Governor satisfies it.
+	Governor txgovernor.TxSink
 	// SimulationMode starts with log-only APRS-IS sends when true.
 	SimulationMode bool
 	// Logger is optional; defaults to slog.Default().

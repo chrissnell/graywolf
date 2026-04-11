@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
 type fakeSink struct {
@@ -20,7 +21,7 @@ type fakeSink struct {
 
 func newFakeSink() *fakeSink { return &fakeSink{ch: make(chan struct{}, 16)} }
 
-func (s *fakeSink) Submit(_ context.Context, _ uint32, f *ax25.Frame, _ SubmitSource) error {
+func (s *fakeSink) Submit(_ context.Context, _ uint32, f *ax25.Frame, _ txgovernor.SubmitSource) error {
 	s.mu.Lock()
 	s.frames = append(s.frames, f)
 	s.mu.Unlock()

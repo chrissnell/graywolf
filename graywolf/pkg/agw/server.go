@@ -12,22 +12,8 @@ import (
 	"sync/atomic"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
-
-// TxSink is the consumer for AGW-originated transmit requests. Normally
-// the graywolf txgovernor.
-type TxSink interface {
-	Submit(ctx context.Context, channel uint32, frame *ax25.Frame, source SubmitSource) error
-}
-
-// SubmitSource mirrors the kiss package's type so txgovernor can treat
-// KISS and AGW symmetrically. Duplicated here (not re-exported) to avoid
-// an import cycle between transport packages.
-type SubmitSource struct {
-	Kind     string
-	Detail   string
-	Priority int
-}
 
 // ServerConfig configures the AGW TCP server.
 type ServerConfig struct {
@@ -38,8 +24,9 @@ type ServerConfig struct {
 	// PortToChannel maps an AGW port number to a graywolf channel. If a
 	// port isn't listed it defaults to PortToChannel[0] or channel 1.
 	PortToChannel map[uint8]uint32
-	// Sink receives parsed AX.25 frames for transmission.
-	Sink TxSink
+	// Sink receives parsed AX.25 frames for transmission. Typically
+	// *txgovernor.Governor in production.
+	Sink txgovernor.TxSink
 	// Logger is optional.
 	Logger *slog.Logger
 	// OnClientChange is invoked with the new total-client count on connect
@@ -350,7 +337,7 @@ func (s *Server) dispatch(ctx context.Context, cs *clientState, h *Header, data 
 			return nil
 		}
 		if s.cfg.Sink != nil {
-			return s.cfg.Sink.Submit(ctx, s.channelFor(h.Port), ax, SubmitSource{
+			return s.cfg.Sink.Submit(ctx, s.channelFor(h.Port), ax, txgovernor.SubmitSource{
 				Kind:     "agw",
 				Detail:   cs.conn.RemoteAddr().String(),
 				Priority: ax25.PriorityClient,
@@ -396,7 +383,7 @@ func (s *Server) submitUnproto(ctx context.Context, cs *clientState, h *Header, 
 	if s.cfg.Sink == nil {
 		return nil
 	}
-	return s.cfg.Sink.Submit(ctx, s.channelFor(h.Port), f, SubmitSource{
+	return s.cfg.Sink.Submit(ctx, s.channelFor(h.Port), f, txgovernor.SubmitSource{
 		Kind:     "agw",
 		Detail:   cs.conn.RemoteAddr().String(),
 		Priority: ax25.PriorityClient,

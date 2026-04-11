@@ -10,23 +10,8 @@ import (
 	"sync/atomic"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
-
-// TxSink is the consumer for frames received from KISS clients. The
-// txgovernor implements this.
-type TxSink interface {
-	// Submit hands an AX.25 frame (already decoded) to the transmit path.
-	// The channel argument selects the radio channel (mapped from the KISS
-	// port number via ChannelMap).
-	Submit(ctx context.Context, channel uint32, frame *ax25.Frame, source SubmitSource) error
-}
-
-// SubmitSource identifies the origin of a TX request.
-type SubmitSource struct {
-	Kind     string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
-	Detail   string // interface name / client addr
-	Priority int    // governor priority (higher = sooner)
-}
 
 // ServerConfig configures a KISS TCP server instance.
 type ServerConfig struct {
@@ -38,8 +23,9 @@ type ServerConfig struct {
 	// ChannelMap translates KISS port numbers (0..15) to graywolf radio
 	// channels. A missing entry defaults to channel 1.
 	ChannelMap map[uint8]uint32
-	// Sink receives parsed AX.25 frames for transmission.
-	Sink TxSink
+	// Sink receives parsed AX.25 frames for transmission. Typically
+	// *txgovernor.Governor in production.
+	Sink txgovernor.TxSink
 	// Logger is optional.
 	Logger *slog.Logger
 	// OnClientChange is invoked with the new active-client count whenever
@@ -200,7 +186,7 @@ func (s *Server) handleFrame(ctx context.Context, remote string, f *Frame) {
 		}
 		channel := s.channelFor(f.Port)
 		if s.cfg.Sink != nil {
-			err := s.cfg.Sink.Submit(ctx, channel, ax, SubmitSource{
+			err := s.cfg.Sink.Submit(ctx, channel, ax, txgovernor.SubmitSource{
 				Kind:     "kiss",
 				Detail:   s.cfg.Name + " " + remote,
 				Priority: ax25.PriorityClient,
