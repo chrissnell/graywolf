@@ -56,3 +56,44 @@ func TestDedupDifferentKeysIndependent(t *testing.T) {
 		t.Fatal("distinct keys must gate independently")
 	}
 }
+
+// TestDedupFixedBeaconExtendedWindow covers the [30s, 60s) suppression
+// window that applies only to pairs of fixed-station beacons. A
+// previous version of this code had the extension inverted, so a
+// 45s-old burst-repeated fixed beacon was gated instead of
+// suppressed; this test pins the correct behavior.
+func TestDedupFixedBeaconExtendedWindow(t *testing.T) {
+	d := newDedupCache()
+	base := time.Unix(1_700_000_000, 0)
+	d.now = func() time.Time { return base }
+	if !d.shouldGate("beacon", true) {
+		t.Fatal("first beacon should gate")
+	}
+	// 45s later, still within the fixed-beacon extended window.
+	d.now = func() time.Time { return base.Add(45 * time.Second) }
+	if d.shouldGate("beacon", true) {
+		t.Fatal("fixed beacon at 45s must still be suppressed")
+	}
+	// At 60s exactly, the extension lifts and the packet gates.
+	d.now = func() time.Time { return base.Add(60 * time.Second) }
+	if !d.shouldGate("beacon", true) {
+		t.Fatal("fixed beacon at 60s must gate (extension lifts at beaconRepeatAllow)")
+	}
+}
+
+// TestDedupNonBeaconNotExtended verifies that the extended window
+// applies only to fixed beacons, not to general traffic: a non-beacon
+// repeat at 45s still gates (the burst window ends at 30s for
+// anything not flagged as a stationary position report).
+func TestDedupNonBeaconNotExtended(t *testing.T) {
+	d := newDedupCache()
+	base := time.Unix(1_700_000_000, 0)
+	d.now = func() time.Time { return base }
+	if !d.shouldGate("pkt", false) {
+		t.Fatal("first packet should gate")
+	}
+	d.now = func() time.Time { return base.Add(45 * time.Second) }
+	if !d.shouldGate("pkt", false) {
+		t.Fatal("non-beacon at 45s must gate; extension is beacon-only")
+	}
+}
