@@ -2,6 +2,7 @@ package txgovernor
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -233,8 +234,8 @@ func TestQueueCapacity(t *testing.T) {
 	_ = g.Submit(context.Background(), 1, makeFrame(t, "a"), SubmitSource{Priority: PriorityClient})
 	_ = g.Submit(context.Background(), 1, makeFrame(t, "b"), SubmitSource{Priority: PriorityClient})
 	err := g.Submit(context.Background(), 1, makeFrame(t, "c"), SubmitSource{Priority: PriorityClient})
-	if err == nil {
-		t.Error("expected queue full error")
+	if !errors.Is(err, ErrQueueFull) {
+		t.Errorf("expected ErrQueueFull, got %v", err)
 	}
 	if g.Stats().QueueDropped != 1 {
 		t.Errorf("queue_dropped=%d", g.Stats().QueueDropped)

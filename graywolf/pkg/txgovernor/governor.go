@@ -38,6 +38,24 @@ const (
 	PriorityIGateMsg   = ax25.PriorityIGateMsg
 )
 
+// Sentinel errors returned by Submit. Callers can errors.Is these to
+// classify drops without substring-matching error text. Keep this list
+// closed: new error kinds get their own exported sentinel so callers
+// can always distinguish "queue full" (back-pressure, retry) from
+// "stopped" (terminal, abandon) from "nil frame" (caller bug).
+var (
+	// ErrQueueFull is returned when Submit cannot enqueue because the
+	// governor's pending queue has reached QueueCapacity. Back-pressure
+	// — retry later with a fresher context.
+	ErrQueueFull = errors.New("txgovernor: queue full")
+	// ErrStopped is returned when Submit is called after the governor's
+	// Run loop has exited (context cancelled). Terminal — do not retry.
+	ErrStopped = errors.New("txgovernor: closed")
+	// ErrNilFrame is returned when Submit is called with a nil *Frame.
+	// Caller bug; should never happen at runtime.
+	ErrNilFrame = errors.New("txgovernor: nil frame")
+)
+
 // SubmitSource describes the origin of a TX request for logging, dedup
 // scoping, and metrics.
 type SubmitSource struct {
@@ -202,7 +220,7 @@ func New(cfg Config) *Governor {
 // charged a newly enqueued frame.
 func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame, src SubmitSource) error {
 	if frame == nil {
-		return errors.New("txgovernor: nil frame")
+		return ErrNilFrame
 	}
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
@@ -214,7 +232,7 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 	g.mu.Lock()
 	if g.closed {
 		g.mu.Unlock()
-		return errors.New("txgovernor: closed")
+		return ErrStopped
 	}
 
 	// Dedup check (Has also GCs expired entries opportunistically).
@@ -233,7 +251,7 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 	if len(g.q) >= g.cfg.QueueCapacity {
 		g.stats.QueueDropped++
 		g.mu.Unlock()
-		return errors.New("txgovernor: queue full")
+		return ErrQueueFull
 	}
 
 	g.dedup.Record(key, struct{}{})
