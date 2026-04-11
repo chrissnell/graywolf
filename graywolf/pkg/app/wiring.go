@@ -427,6 +427,9 @@ func (a *App) wireAGW(ctx context.Context) error {
 		OnClientChange: func(n int) {
 			a.metrics.SetAgwClients(n)
 		},
+		OnDecodeError: func(stage string) {
+			a.metrics.AgwDecodeErrors.WithLabelValues(stage).Inc()
+		},
 	})
 	return nil
 }

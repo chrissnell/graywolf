@@ -10,8 +10,10 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
@@ -32,15 +34,25 @@ type ServerConfig struct {
 	// OnClientChange is invoked with the new total-client count on connect
 	// and disconnect. Optional.
 	OnClientChange func(active int)
+	// OnDecodeError is invoked for each raw-frame decoding attempt that
+	// fails, with stage == "initial" when the first ax25.Decode fails (and
+	// the skip-byte fallback is about to be tried) or stage == "fallback"
+	// when both attempts fail and the frame is dropped. Optional.
+	OnDecodeError func(stage string)
 }
 
 // Server is a multi-client AGWPE-compatible TCP server.
 type Server struct {
 	cfg    ServerConfig
 	logger *slog.Logger
-	mu     sync.Mutex
-	ln     net.Listener
-	wg     sync.WaitGroup
+	// decodeErrLog rate-limits the "fallback decode failed" warn log
+	// so a talkative misbehaving client cannot drown the operator's
+	// log in its own confetti. Keyed per remote address so a flood on
+	// one client does not mute a separate client hitting the same bug.
+	decodeErrLog *metrics.RateLimitedLogger
+	mu           sync.Mutex
+	ln           net.Listener
+	wg           sync.WaitGroup
 	// shutdownCh is created by ListenAndServe and closed by Shutdown so
 	// callers can tear the server down without having to cancel the
 	// parent context.
@@ -68,9 +80,10 @@ func NewServer(cfg ServerConfig) *Server {
 		cfg.Logger = slog.Default()
 	}
 	return &Server{
-		cfg:     cfg,
-		logger:  cfg.Logger.With("component", "agw"),
-		clients: make(map[*clientState]struct{}),
+		cfg:          cfg,
+		logger:       cfg.Logger.With("component", "agw"),
+		decodeErrLog: metrics.NewRateLimitedLogger(10 * time.Second),
+		clients:      make(map[*clientState]struct{}),
 	}
 }
 
@@ -328,7 +341,21 @@ func (s *Server) dispatch(ctx context.Context, cs *clientState, h *Header, data 
 		// the first byte and retry — a common direwolf idiom.
 		ax, err := ax25.Decode(data)
 		if err != nil {
+			// Initial decode failed; the skip-byte retry may still
+			// succeed, so this is a "fallback was needed" event, not
+			// (yet) a dropped frame.
+			if s.cfg.OnDecodeError != nil {
+				s.cfg.OnDecodeError("initial")
+			}
 			if ax, err = ax25.Decode(data[1:]); err != nil {
+				// Both attempts failed — the frame is dropped.
+				if s.cfg.OnDecodeError != nil {
+					s.cfg.OnDecodeError("fallback")
+				}
+				remote := cs.conn.RemoteAddr().String()
+				s.decodeErrLog.Log(s.logger, slog.LevelWarn, remote,
+					"agw raw frame failed ax25 decode",
+					"remote", remote, "len", len(data), "err", err)
 				return nil
 			}
 		}
