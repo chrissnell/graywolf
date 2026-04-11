@@ -66,44 +66,28 @@ func NewServer(cfg Config) (*Server, error) {
 	}, nil
 }
 
-// RegisterRoutes installs the /api/* handlers on mux.
+// RegisterRoutes installs the /api/* handlers on mux. Each resource
+// owns its own routes via a registerX method so this stays a short
+// dispatch list.
+//
+// Out-of-band endpoints are installed by separate helpers that
+// cmd/graywolf calls explicitly after RegisterRoutes:
+//
+//	/api/igate              — webapi.RegisterIgate (status + simulation)
+//	/api/packets            — webapi.RegisterPackets
+//	/api/position           — webapi.RegisterPosition
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerChannels(mux)
 	s.registerAudioDevices(mux)
 	s.registerBeacons(mux)
+	s.registerPtt(mux)
+	s.registerTxTiming(mux)
+	s.registerKiss(mux)
+	s.registerAgw(mux)
+	s.registerIgateConfig(mux)
+	s.registerDigipeater(mux)
+	s.registerGps(mux)
 
-	// PTT — upsert/get by channel
-	mux.HandleFunc("/api/ptt", s.handlePttCollection)
-	mux.HandleFunc("/api/ptt/", s.handlePttByChannel)
-
-	// TX timing — upsert/get by channel
-	mux.HandleFunc("/api/tx-timing", s.handleTxTimingCollection)
-	mux.HandleFunc("/api/tx-timing/", s.handleTxTimingByChannel)
-
-	// KISS interfaces — full CRUD
-	mux.HandleFunc("/api/kiss", s.handleKissCollection)
-	mux.HandleFunc("/api/kiss/", s.handleKissItem)
-
-	// AGW — singleton get/update
-	mux.HandleFunc("/api/agw", s.handleAgw)
-
-	// iGate config — singleton get/update (igate.go still has status + sim)
-	mux.HandleFunc("/api/igate/config", s.handleIgateConfig)
-	mux.HandleFunc("/api/igate/filters", s.handleIgateFilters)
-	mux.HandleFunc("/api/igate/filters/", s.handleIgateFilter)
-
-	// Digipeater — config singleton + rules CRUD
-	mux.HandleFunc("/api/digipeater", s.handleDigipeaterConfig)
-	mux.HandleFunc("/api/digipeater/rules", s.handleDigipeaterRules)
-	mux.HandleFunc("/api/digipeater/rules/", s.handleDigipeaterRule)
-
-	// GPS — singleton get/update + serial port enumeration
-	mux.HandleFunc("/api/gps", s.handleGps)
-	mux.HandleFunc("/api/gps/available", s.handleGpsAvailable)
-
-	// /api/igate — status + simulation in igate.go (RegisterIgate)
-	// /api/packets — in packets.go (RegisterPackets)
-	// /api/position — in position.go (RegisterPosition)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/status", s.handleStatus)
 }

@@ -1,7 +1,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/chrissnell/graywolf/pkg/igate"
@@ -22,32 +21,31 @@ func RegisterIgate(srv *Server, mux *http.ServeMux, toggle func(bool) error, sta
 	}
 	mux.HandleFunc("/api/igate", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			methodNotAllowed(w)
 			return
 		}
 		if status == nil {
-			http.Error(w, "igate not available", http.StatusServiceUnavailable)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "igate not available"})
 			return
 		}
 		writeJSON(w, http.StatusOK, status())
 	})
 	mux.HandleFunc("/api/igate/simulation", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			methodNotAllowed(w)
 			return
 		}
 		if toggle == nil {
-			http.Error(w, "igate not available", http.StatusServiceUnavailable)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "igate not available"})
 			return
 		}
-		var req IgateToggleRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
+		req, err := decodeJSON[IgateToggleRequest](r)
+		if err != nil {
+			badRequest(w, "invalid json")
 			return
 		}
 		if err := toggle(req.Enabled); err != nil {
-			srv.logger.Warn("igate toggle failed", "err", err)
-			http.Error(w, "toggle failed", http.StatusInternalServerError)
+			srv.internalError(w, r, "igate toggle", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"simulation_mode": req.Enabled})
