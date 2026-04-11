@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/internal/dedup"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 )
 
@@ -140,7 +141,7 @@ type Governor struct {
 	mu      sync.Mutex
 	q       pqueue
 	seq     uint64
-	dedup   map[string]time.Time
+	dedup   *dedup.Window[string, struct{}]
 	rateLog map[uint32][]time.Time // timestamps of recent sends per channel
 	dcd     map[uint32]bool        // current DCD per channel
 
@@ -176,7 +177,7 @@ func New(cfg Config) *Governor {
 	return &Governor{
 		cfg:     cfg,
 		logger:  cfg.Logger.With("component", "txgovernor"),
-		dedup:   make(map[string]time.Time),
+		dedup:   dedup.New[string, struct{}](dedup.Config{TTL: cfg.DedupWindow}),
 		rateLog: make(map[uint32][]time.Time),
 		dcd:     make(map[uint32]bool),
 		wake:    make(chan struct{}, 1),
@@ -207,10 +208,9 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 		return errors.New("txgovernor: closed")
 	}
 
-	// Dedup check (also GC expired entries opportunistically).
+	// Dedup check (Has also GCs expired entries opportunistically).
 	key := frame.DedupKey()
-	g.gcDedupLocked(now)
-	if t, ok := g.dedup[key]; ok && now.Sub(t) < g.cfg.DedupWindow {
+	if g.dedup.Has(key) {
 		g.stats.Deduped++
 		g.mu.Unlock()
 		g.logger.Debug("tx deduped", "source", src.Kind, "key-len", len(key))
@@ -219,14 +219,15 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 
 	// Capacity check before recording dedup: if we reject the frame, we
 	// must not poison the dedup map, or the caller's retry within the
-	// window would be silently suppressed with zero visibility.
+	// window would be silently suppressed with zero visibility. This is
+	// why the governor uses Has+Record rather than the atomic Seen.
 	if len(g.q) >= g.cfg.QueueCapacity {
 		g.stats.QueueDropped++
 		g.mu.Unlock()
 		return errors.New("txgovernor: queue full")
 	}
 
-	g.dedup[key] = now
+	g.dedup.Record(key, struct{}{})
 	g.seq++
 	heap.Push(&g.q, &queueItem{
 		channel:  channel,
@@ -417,17 +418,6 @@ func (g *Governor) isRateLimitedLocked(channel uint32, now time.Time) bool {
 
 func (g *Governor) recordSendLocked(channel uint32, now time.Time) {
 	g.rateLog[channel] = append(g.rateLog[channel], now)
-}
-
-func (g *Governor) gcDedupLocked(now time.Time) {
-	if len(g.dedup) < 64 {
-		return
-	}
-	for k, t := range g.dedup {
-		if now.Sub(t) >= g.cfg.DedupWindow {
-			delete(g.dedup, k)
-		}
-	}
 }
 
 // Stats returns a snapshot of the counters.
