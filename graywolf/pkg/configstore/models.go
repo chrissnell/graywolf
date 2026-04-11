@@ -23,34 +23,56 @@ type AudioDevice struct {
 }
 
 // Channel is a logical radio channel tied to an audio device.
+//
+// Foreign-key policy:
+//   - InputDeviceID is a hard FK to AudioDevice.ID with OnDelete:RESTRICT:
+//     channels must have an input device, so deleting a device that
+//     still has referencing channels fails at the SQL layer unless the
+//     caller goes through DeleteAudioDeviceChecked(cascade=true), which
+//     removes the channels first. The RESTRICT constraint is the
+//     backstop if anything tries to delete an audio device by other
+//     means.
+//   - OutputDeviceID is a *soft* FK, not enforced by SQLite. The column
+//     is a plain uint32 where 0 means "RX-only" (no output device).
+//     SQLite FK constraints treat any non-NULL value as a reference, so
+//     a stored 0 would fail the constraint, and making the column
+//     nullable would ripple through DTOs and protobuf mappings for no
+//     gain. The relation is validated at the application layer in
+//     validateChannel, and DeleteAudioDeviceChecked walks both input
+//     and output references.
 type Channel struct {
-	ID             uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name           string    `gorm:"not null" json:"name"`
-	InputDeviceID  uint32    `gorm:"not null;index" json:"input_device_id"`
-	InputChannel   uint32    `gorm:"not null;default:0" json:"input_channel"`          // 0=left/mono, 1=right
-	OutputDeviceID uint32    `gorm:"not null;default:0;index" json:"output_device_id"` // 0=RX-only
-	OutputChannel  uint32    `gorm:"not null;default:0" json:"output_channel"`
-	ModemType      string    `gorm:"not null;default:'afsk'" json:"modem_type"`
-	BitRate        uint32    `gorm:"not null;default:1200" json:"bit_rate"`
-	MarkFreq       uint32    `gorm:"not null;default:1200" json:"mark_freq"`
-	SpaceFreq      uint32    `gorm:"not null;default:2200" json:"space_freq"`
-	Profile        string    `gorm:"not null;default:'A'" json:"profile"`
-	NumSlicers     uint32    `gorm:"not null;default:1" json:"num_slicers"`
-	FixBits        string    `gorm:"not null;default:'none'" json:"fix_bits"` // none|single|double
-	FX25Encode     bool      `gorm:"not null;default:false" json:"fx25_encode"`
-	IL2PEncode     bool      `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
-	NumDecoders    uint32    `gorm:"not null;default:1" json:"num_decoders"`
-	DecoderOffset  int32     `gorm:"not null;default:0" json:"decoder_offset"`
-	TxDelayMs      uint32    `gorm:"not null;default:300" json:"tx_delay_ms"`
-	TxTailMs       uint32    `gorm:"not null;default:100" json:"tx_tail_ms"`
-	CreatedAt      time.Time `json:"-"`
-	UpdatedAt      time.Time `json:"-"`
+	ID             uint32       `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name           string       `gorm:"not null" json:"name"`
+	InputDeviceID  uint32       `gorm:"not null;index" json:"input_device_id"`
+	InputDevice    *AudioDevice `gorm:"foreignKey:InputDeviceID;references:ID;constraint:OnDelete:RESTRICT,OnUpdate:RESTRICT" json:"-"`
+	InputChannel   uint32       `gorm:"not null;default:0" json:"input_channel"`          // 0=left/mono, 1=right
+	OutputDeviceID uint32       `gorm:"not null;default:0;index" json:"output_device_id"` // 0=RX-only; soft FK, see type comment
+	OutputChannel  uint32       `gorm:"not null;default:0" json:"output_channel"`
+	ModemType      string       `gorm:"not null;default:'afsk'" json:"modem_type"`
+	BitRate        uint32       `gorm:"not null;default:1200" json:"bit_rate"`
+	MarkFreq       uint32       `gorm:"not null;default:1200" json:"mark_freq"`
+	SpaceFreq      uint32       `gorm:"not null;default:2200" json:"space_freq"`
+	Profile        string       `gorm:"not null;default:'A'" json:"profile"`
+	NumSlicers     uint32       `gorm:"not null;default:1" json:"num_slicers"`
+	FixBits        string       `gorm:"not null;default:'none'" json:"fix_bits"` // none|single|double
+	FX25Encode     bool         `gorm:"not null;default:false" json:"fx25_encode"`
+	IL2PEncode     bool         `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
+	NumDecoders    uint32       `gorm:"not null;default:1" json:"num_decoders"`
+	DecoderOffset  int32        `gorm:"not null;default:0" json:"decoder_offset"`
+	TxDelayMs      uint32       `gorm:"not null;default:300" json:"tx_delay_ms"`
+	TxTailMs       uint32       `gorm:"not null;default:100" json:"tx_tail_ms"`
+	CreatedAt      time.Time    `json:"-"`
+	UpdatedAt      time.Time    `json:"-"`
 }
 
-// PttConfig holds push-to-talk configuration for a channel.
+// PttConfig holds push-to-talk configuration for a channel. ChannelID
+// is a hard FK to Channel.ID with OnDelete:CASCADE: PTT settings have
+// no meaning without the channel they belong to, and the uniqueIndex
+// on ChannelID guarantees one row per channel.
 type PttConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	ChannelID  uint32    `gorm:"not null;uniqueIndex" json:"channel_id"`
+	Channel    *Channel  `gorm:"foreignKey:ChannelID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"-"`
 	Method     string    `gorm:"not null;default:'none'" json:"method"` // serial_rts|serial_dtr|gpio|cm108|none
 	Device     string    `json:"device_path"`
 	GpioPin    uint32    `json:"gpio_pin"`
