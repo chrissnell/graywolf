@@ -212,3 +212,72 @@ func TestEncodePathLimit(t *testing.T) {
 		t.Error("expected error for >8 path entries")
 	}
 }
+
+// FuzzDecode exercises Decode with random bytes and asserts that it
+// never panics — Go's testing framework turns any panic during the
+// fuzz function into a failure with a saved corpus entry.
+//
+// It intentionally does NOT assert the round-trip property
+// (Decode → Encode → Decode produces an equivalent frame). A quick
+// fuzz run during initial bringup found that Decode accepts frames
+// whose addresses contain only padding bytes while Encode rejects
+// the resulting zero-length Call — see "Follow-ups discovered" in
+// graywolf/scratch/fix-plan/13-testing-and-ci-hardening.md. Once
+// that Decode/Encode asymmetry is fixed, the fuzz target should be
+// tightened to assert round-trip.
+//
+// Seed corpus: a handful of known-good encodings so the mutator has
+// real frame structure to start from. Run with:
+//
+//	go test -run=^$ -fuzz=FuzzDecode ./pkg/ax25/
+func FuzzDecode(f *testing.F) {
+	for _, seed := range fuzzSeedFrames(f) {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// We discard the decoded frame — the test's only assertion is
+		// that Decode returned without panicking. An error is a valid
+		// outcome for malformed input.
+		_, _ = Decode(data)
+	})
+}
+
+// fuzzSeedFrames returns a small set of valid encoded frames covering
+// the common structural variations (path / no path, repeated flags,
+// short / long info, empty info) so the fuzzer starts with real wire
+// bytes rather than random noise.
+func fuzzSeedFrames(f *testing.F) [][]byte {
+	f.Helper()
+	seeds := [][]byte{}
+	mk := func(src, dst string, path []Address, info []byte) []byte {
+		s, err := ParseAddress(src)
+		if err != nil {
+			f.Fatalf("seed parse %q: %v", src, err)
+		}
+		d, err := ParseAddress(dst)
+		if err != nil {
+			f.Fatalf("seed parse %q: %v", dst, err)
+		}
+		fr, err := NewUIFrame(s, d, path, info)
+		if err != nil {
+			f.Fatalf("seed build: %v", err)
+		}
+		raw, err := fr.Encode()
+		if err != nil {
+			f.Fatalf("seed encode: %v", err)
+		}
+		return raw
+	}
+	seeds = append(seeds,
+		mk("N0CALL-1", "APRS", nil, []byte("hi")),
+		mk("N0CALL-1", "APRS", []Address{{Call: "WIDE1", SSID: 1}}, []byte("!4903.50N/07201.75W-Test")),
+		mk("W1AW", "CQ",
+			[]Address{{Call: "WIDE1", SSID: 1}, {Call: "WIDE2", SSID: 2}},
+			[]byte(":W1AW     :Hello, World{001")),
+		mk("KE7XYZ-9", "APZ001",
+			[]Address{{Call: "WIDE1", SSID: 1, Repeated: true}, {Call: "WIDE2", SSID: 1}},
+			[]byte("=4903.50N/07201.75W>Mobile /A=001234")),
+		mk("N0CALL", "APRS", nil, nil),
+	)
+	return seeds
+}
