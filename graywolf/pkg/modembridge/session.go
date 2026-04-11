@@ -53,7 +53,7 @@ func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 	// CONFIGURING: send audio/channel/ptt, then StartAudio.
 	// ------------------------------------------------------------------
 	b.setState(StateConfiguring)
-	hasChannels, err := b.pushConfiguration(loop.Send)
+	hasChannels, err := b.pushConfiguration(ctx, loop.Send)
 	if err != nil {
 		return fmt.Errorf("configure: %w", err)
 	}
@@ -135,15 +135,15 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 // It returns true if at least one channel was configured (and thus
 // StartAudio should follow). Only devices referenced by a channel are
 // configured.
-func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) (bool, error) {
+func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage) error) (bool, error) {
 	if b.cfg.Store == nil {
 		return false, errors.New("no configstore provided")
 	}
-	devices, err := b.cfg.Store.ListAudioDevices()
+	devices, err := b.cfg.Store.ListAudioDevices(ctx)
 	if err != nil {
 		return false, fmt.Errorf("list audio devices: %w", err)
 	}
-	channels, err := b.cfg.Store.ListChannels()
+	channels, err := b.cfg.Store.ListChannels(ctx)
 	if err != nil {
 		return false, fmt.Errorf("list channels: %w", err)
 	}
@@ -206,7 +206,7 @@ func (b *Bridge) pushConfiguration(send func(*pb.IpcMessage) error) (bool, error
 			return false, err
 		}
 
-		ptt, err := b.cfg.Store.GetPttConfigForChannel(ch.ID)
+		ptt, err := b.cfg.Store.GetPttConfigForChannel(ctx, ch.ID)
 		if err != nil {
 			// No PTT row → send a "none" configuration.
 			ptt = &configstore.PttConfig{ChannelID: ch.ID, Method: "none"}

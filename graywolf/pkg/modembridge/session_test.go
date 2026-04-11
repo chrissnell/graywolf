@@ -54,7 +54,7 @@ func seedStore(t *testing.T) *configstore.Store {
 		Channels:   1,
 		Format:     "s16le",
 	}
-	if err := s.CreateAudioDevice(dev); err != nil {
+	if err := s.CreateAudioDevice(context.Background(), dev); err != nil {
 		t.Fatal(err)
 	}
 	ch := &configstore.Channel{
@@ -68,7 +68,7 @@ func seedStore(t *testing.T) *configstore.Store {
 		NumSlicers:    1,
 		FixBits:       "none",
 	}
-	if err := s.CreateChannel(ch); err != nil {
+	if err := s.CreateChannel(context.Background(), ch); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -241,7 +241,7 @@ func TestReconfigureAudioDevice(t *testing.T) {
 		return nil
 	})
 
-	devices, _ := store.ListAudioDevices()
+	devices, _ := store.ListAudioDevices(context.Background())
 	if len(devices) == 0 {
 		t.Fatal("no devices seeded")
 	}

@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 
 func newTestServer(t *testing.T) (*Server, *modembridge.Bridge) {
 	t.Helper()
+	ctx := context.Background()
 	store, err := configstore.OpenMemory()
 	if err != nil {
 		t.Fatal(err)
@@ -25,7 +27,7 @@ func newTestServer(t *testing.T) (*Server, *modembridge.Bridge) {
 		Name: "test", Direction: "input", SourceType: "flac", SourcePath: "/tmp/x.flac",
 		SampleRate: 44100, Channels: 1, Format: "s16le",
 	}
-	if err := store.CreateAudioDevice(dev); err != nil {
+	if err := store.CreateAudioDevice(ctx, dev); err != nil {
 		t.Fatal(err)
 	}
 	ch := &configstore.Channel{
@@ -33,7 +35,7 @@ func newTestServer(t *testing.T) (*Server, *modembridge.Bridge) {
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
-	if err := store.CreateChannel(ch); err != nil {
+	if err := store.CreateChannel(ctx, ch); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,7 +142,7 @@ func TestDeleteAudioDeviceHandler(t *testing.T) {
 			Name: "unused", Direction: "input", SourceType: "flac",
 			SourcePath: "/tmp/unused.flac", SampleRate: 44100, Channels: 1, Format: "s16le",
 		}
-		if err := srv.store.CreateAudioDevice(dev); err != nil {
+		if err := srv.store.CreateAudioDevice(context.Background(), dev); err != nil {
 			t.Fatal(err)
 		}
 
@@ -186,7 +188,7 @@ func TestDeleteAudioDeviceHandler(t *testing.T) {
 			t.Errorf("expected channels=[rx0], got %+v", body.Channels)
 		}
 		// Device must still exist — 409 means nothing was deleted.
-		if _, err := srv.store.GetAudioDevice(1); err != nil {
+		if _, err := srv.store.GetAudioDevice(context.Background(), 1); err != nil {
 			t.Errorf("device should still exist after 409: %v", err)
 		}
 	})
@@ -212,7 +214,7 @@ func TestDeleteAudioDeviceHandler(t *testing.T) {
 		if len(body.Deleted) != 1 || body.Deleted[0].Name != "rx0" {
 			t.Errorf("expected deleted=[rx0], got %+v", body.Deleted)
 		}
-		if _, err := srv.store.GetAudioDevice(1); err == nil {
+		if _, err := srv.store.GetAudioDevice(context.Background(), 1); err == nil {
 			t.Error("expected device to be gone after cascade")
 		}
 	})

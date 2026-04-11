@@ -119,7 +119,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		channels, err := s.store.ListChannels()
+		channels, err := s.store.ListChannels(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list channels", err)
 			return
@@ -131,7 +131,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.CreateChannel(&c); err != nil {
+		if err := s.store.CreateChannel(r.Context(), &c); err != nil {
 			s.internalError(w, r, "create channel", err)
 			return
 		}
@@ -164,7 +164,7 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		c, err := s.store.GetChannel(id)
+		c, err := s.store.GetChannel(r.Context(), id)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -177,7 +177,7 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		c.ID = id
-		if err := s.store.UpdateChannel(&c); err != nil {
+		if err := s.store.UpdateChannel(r.Context(), &c); err != nil {
 			s.internalError(w, r, "update channel", err)
 			return
 		}
@@ -188,8 +188,8 @@ func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, c)
 	case http.MethodDelete:
 		// Look up device IDs before deleting so we can notify the bridge.
-		ch, _ := s.store.GetChannel(id)
-		if err := s.store.DeleteChannel(id); err != nil {
+		ch, _ := s.store.GetChannel(r.Context(), id)
+		if err := s.store.DeleteChannel(r.Context(), id); err != nil {
 			s.internalError(w, r, "delete channel", err)
 			return
 		}
@@ -228,7 +228,7 @@ func (s *Server) handleChannelStats(w http.ResponseWriter, _ *http.Request, idSt
 func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		devices, err := s.store.ListAudioDevices()
+		devices, err := s.store.ListAudioDevices(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list audio devices", err)
 			return
@@ -240,7 +240,7 @@ func (s *Server) handleAudioDevices(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.CreateAudioDevice(&d); err != nil {
+		if err := s.store.CreateAudioDevice(r.Context(), &d); err != nil {
 			s.internalError(w, r, "create audio device", err)
 			return
 		}
@@ -326,7 +326,7 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		d, err := s.store.GetAudioDevice(id)
+		d, err := s.store.GetAudioDevice(r.Context(), id)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -339,7 +339,7 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		d.ID = id
-		if err := s.store.UpdateAudioDevice(&d); err != nil {
+		if err := s.store.UpdateAudioDevice(r.Context(), &d); err != nil {
 			s.internalError(w, r, "update audio device", err)
 			return
 		}
@@ -347,7 +347,7 @@ func (s *Server) handleAudioDevice(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, d)
 	case http.MethodDelete:
 		cascade := r.URL.Query().Get("cascade") == "true"
-		deleted, refs, err := s.store.DeleteAudioDeviceChecked(id, cascade)
+		deleted, refs, err := s.store.DeleteAudioDeviceChecked(r.Context(), id, cascade)
 		if err != nil {
 			s.internalError(w, r, "delete audio device", err)
 			return
@@ -386,7 +386,7 @@ func (s *Server) handleTestTone(w http.ResponseWriter, r *http.Request, idStr st
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "bridge not available"})
 		return
 	}
-	dev, err := s.store.GetAudioDevice(id)
+	dev, err := s.store.GetAudioDevice(r.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "device not found"})
 		return
@@ -421,13 +421,13 @@ func (s *Server) handleSetGain(w http.ResponseWriter, r *http.Request, idStr str
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "gain_db must be between -60 and +12"})
 		return
 	}
-	dev, err := s.store.GetAudioDevice(id)
+	dev, err := s.store.GetAudioDevice(r.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "device not found"})
 		return
 	}
 	dev.GainDB = body.GainDB
-	if err := s.store.UpdateAudioDevice(dev); err != nil {
+	if err := s.store.UpdateAudioDevice(r.Context(), dev); err != nil {
 		s.internalError(w, r, "update audio device gain", err)
 		return
 	}
@@ -465,7 +465,7 @@ func validateBeacon(b *configstore.Beacon) error {
 func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		beacons, err := s.store.ListBeacons()
+		beacons, err := s.store.ListBeacons(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list beacons", err)
 			return
@@ -481,7 +481,7 @@ func (s *Server) handleBeacons(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if err := s.store.CreateBeacon(&b); err != nil {
+		if err := s.store.CreateBeacon(r.Context(), &b); err != nil {
 			s.internalError(w, r, "create beacon", err)
 			return
 		}
@@ -513,7 +513,7 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "beacon scheduler not available"})
 			return
 		}
-		if _, err := s.store.GetBeacon(id); err != nil {
+		if _, err := s.store.GetBeacon(r.Context(), id); err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
@@ -527,7 +527,7 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		b, err := s.store.GetBeacon(id)
+		b, err := s.store.GetBeacon(r.Context(), id)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -544,14 +544,14 @@ func (s *Server) handleBeacon(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		b.ID = id
-		if err := s.store.UpdateBeacon(&b); err != nil {
+		if err := s.store.UpdateBeacon(r.Context(), &b); err != nil {
 			s.internalError(w, r, "update beacon", err)
 			return
 		}
 		s.signalBeaconReload()
 		writeJSON(w, http.StatusOK, b)
 	case http.MethodDelete:
-		if err := s.store.DeleteBeacon(id); err != nil {
+		if err := s.store.DeleteBeacon(r.Context(), id); err != nil {
 			s.internalError(w, r, "delete beacon", err)
 			return
 		}
@@ -644,7 +644,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Channels + stats
-	channels, err := s.store.ListChannels()
+	channels, err := s.store.ListChannels(r.Context())
 	if err == nil {
 		for _, ch := range channels {
 			sc := StatusChannel{
@@ -690,7 +690,7 @@ func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
 	if s.bridge == nil {
 		return
 	}
-	ch, err := s.store.GetChannel(channelID)
+	ch, err := s.store.GetChannel(ctx, channelID)
 	if err != nil {
 		s.logger.Warn("bridge reconfigure: get channel", "channel_id", channelID, "err", err)
 		return

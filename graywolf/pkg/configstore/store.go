@@ -3,6 +3,7 @@
 package configstore
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -147,6 +148,7 @@ func (s *Store) migrateChannelDeviceFields() error {
 // configuration: one soundcard audio device and one AFSK 1200 channel.
 // It's a no-op if any audio devices already exist.
 func (s *Store) seedDefaults() error {
+	ctx := context.Background()
 	var count int64
 	if err := s.db.Model(&AudioDevice{}).Count(&count).Error; err != nil {
 		return err
@@ -181,7 +183,7 @@ func (s *Store) seedDefaults() error {
 		NumSlicers:     1,
 		NumDecoders:    1,
 	}
-	if err := s.CreateChannel(ch); err != nil {
+	if err := s.CreateChannel(ctx, ch); err != nil {
 		return fmt.Errorf("seed channel: %w", err)
 	}
 
@@ -192,29 +194,29 @@ func (s *Store) seedDefaults() error {
 // AudioDevice CRUD
 // ---------------------------------------------------------------------------
 
-func (s *Store) CreateAudioDevice(d *AudioDevice) error {
-	return s.db.Create(d).Error
+func (s *Store) CreateAudioDevice(ctx context.Context, d *AudioDevice) error {
+	return s.db.WithContext(ctx).Create(d).Error
 }
 
-func (s *Store) GetAudioDevice(id uint32) (*AudioDevice, error) {
+func (s *Store) GetAudioDevice(ctx context.Context, id uint32) (*AudioDevice, error) {
 	var d AudioDevice
-	if err := s.db.First(&d, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&d, id).Error; err != nil {
 		return nil, err
 	}
 	return &d, nil
 }
 
-func (s *Store) ListAudioDevices() ([]AudioDevice, error) {
+func (s *Store) ListAudioDevices(ctx context.Context) ([]AudioDevice, error) {
 	var out []AudioDevice
-	return out, s.db.Order("id").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("id").Find(&out).Error
 }
 
-func (s *Store) UpdateAudioDevice(d *AudioDevice) error {
-	return s.db.Save(d).Error
+func (s *Store) UpdateAudioDevice(ctx context.Context, d *AudioDevice) error {
+	return s.db.WithContext(ctx).Save(d).Error
 }
 
-func (s *Store) DeleteAudioDevice(id uint32) error {
-	return s.db.Delete(&AudioDevice{}, id).Error
+func (s *Store) DeleteAudioDevice(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&AudioDevice{}, id).Error
 }
 
 // DeleteAudioDeviceChecked atomically checks for channels referencing the
@@ -230,8 +232,8 @@ func (s *Store) DeleteAudioDevice(id uint32) error {
 //     was modified. Caller should surface refs to the user and ask.
 //   - refs nil, deleted: the device is gone; deleted lists the channels
 //     that went with it (possibly empty if nothing referenced the device).
-func (s *Store) DeleteAudioDeviceChecked(id uint32, cascade bool) (deleted []Channel, refs []Channel, err error) {
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+func (s *Store) DeleteAudioDeviceChecked(ctx context.Context, id uint32, cascade bool) (deleted []Channel, refs []Channel, err error) {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var found []Channel
 		if err := tx.Where("input_device_id = ? OR output_device_id = ?", id, id).
 			Order("id").Find(&found).Error; err != nil {
@@ -262,72 +264,72 @@ func (s *Store) DeleteAudioDeviceChecked(id uint32, cascade bool) (deleted []Cha
 // Channel CRUD
 // ---------------------------------------------------------------------------
 
-func (s *Store) CreateChannel(c *Channel) error {
-	if err := s.validateChannel(c, 0); err != nil {
+func (s *Store) CreateChannel(ctx context.Context, c *Channel) error {
+	if err := s.validateChannel(ctx, c, 0); err != nil {
 		return err
 	}
-	return s.db.Create(c).Error
+	return s.db.WithContext(ctx).Create(c).Error
 }
 
-func (s *Store) GetChannel(id uint32) (*Channel, error) {
+func (s *Store) GetChannel(ctx context.Context, id uint32) (*Channel, error) {
 	var c Channel
-	if err := s.db.First(&c, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&c, id).Error; err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
-func (s *Store) ListChannels() ([]Channel, error) {
+func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
 	var out []Channel
-	return out, s.db.Order("id").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("id").Find(&out).Error
 }
 
-func (s *Store) UpdateChannel(c *Channel) error {
-	if err := s.validateChannel(c, c.ID); err != nil {
+func (s *Store) UpdateChannel(ctx context.Context, c *Channel) error {
+	if err := s.validateChannel(ctx, c, c.ID); err != nil {
 		return err
 	}
-	return s.db.Save(c).Error
+	return s.db.WithContext(ctx).Save(c).Error
 }
 
-func (s *Store) DeleteChannel(id uint32) error {
-	return s.db.Delete(&Channel{}, id).Error
+func (s *Store) DeleteChannel(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&Channel{}, id).Error
 }
 
 // ---------------------------------------------------------------------------
 // PttConfig CRUD
 // ---------------------------------------------------------------------------
 
-func (s *Store) UpsertPttConfig(p *PttConfig) error {
+func (s *Store) UpsertPttConfig(ctx context.Context, p *PttConfig) error {
 	var existing PttConfig
-	err := s.db.Where("channel_id = ?", p.ChannelID).First(&existing).Error
+	err := s.db.WithContext(ctx).Where("channel_id = ?", p.ChannelID).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return s.db.Create(p).Error
+		return s.db.WithContext(ctx).Create(p).Error
 	}
 	if err != nil {
 		return err
 	}
 	p.ID = existing.ID
-	return s.db.Save(p).Error
+	return s.db.WithContext(ctx).Save(p).Error
 }
 
-func (s *Store) GetPttConfigForChannel(channelID uint32) (*PttConfig, error) {
+func (s *Store) GetPttConfigForChannel(ctx context.Context, channelID uint32) (*PttConfig, error) {
 	var p PttConfig
-	if err := s.db.Where("channel_id = ?", channelID).First(&p).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("channel_id = ?", channelID).First(&p).Error; err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-func (s *Store) ListPttConfigs() ([]PttConfig, error) {
+func (s *Store) ListPttConfigs(ctx context.Context) ([]PttConfig, error) {
 	var list []PttConfig
-	if err := s.db.Find(&list).Error; err != nil {
+	if err := s.db.WithContext(ctx).Find(&list).Error; err != nil {
 		return nil, err
 	}
 	return list, nil
 }
 
-func (s *Store) DeletePttConfig(id uint32) error {
-	return s.db.Delete(&PttConfig{}, id).Error
+func (s *Store) DeletePttConfig(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&PttConfig{}, id).Error
 }
 
 // ---------------------------------------------------------------------------
@@ -337,9 +339,9 @@ func (s *Store) DeletePttConfig(id uint32) error {
 // validateChannel checks that a channel's input/output device references are
 // valid, channels are within bounds, and the channel ID is unique.
 // excludeID is the channel's own ID (for updates) or 0 (for creates).
-func (s *Store) validateChannel(c *Channel, excludeID uint32) error {
+func (s *Store) validateChannel(ctx context.Context, c *Channel, excludeID uint32) error {
 	// Validate input device (required)
-	inDev, err := s.GetAudioDevice(c.InputDeviceID)
+	inDev, err := s.GetAudioDevice(ctx, c.InputDeviceID)
 	if err != nil {
 		return fmt.Errorf("invalid input_device_id %d: device not found", c.InputDeviceID)
 	}
@@ -353,7 +355,7 @@ func (s *Store) validateChannel(c *Channel, excludeID uint32) error {
 
 	// Validate output device (optional, 0 = RX-only)
 	if c.OutputDeviceID != 0 {
-		outDev, err := s.GetAudioDevice(c.OutputDeviceID)
+		outDev, err := s.GetAudioDevice(ctx, c.OutputDeviceID)
 		if err != nil {
 			return fmt.Errorf("invalid output_device_id %d: device not found", c.OutputDeviceID)
 		}
@@ -370,7 +372,7 @@ func (s *Store) validateChannel(c *Channel, excludeID uint32) error {
 	// on update, or when the caller pre-assigns an ID on create).
 	if c.ID != 0 {
 		var dup Channel
-		q := s.db.Where("id = ? AND id != ?", c.ID, excludeID).First(&dup)
+		q := s.db.WithContext(ctx).Where("id = ? AND id != ?", c.ID, excludeID).First(&dup)
 		if q.Error == nil {
 			return fmt.Errorf("duplicate channel_num %d", c.ID)
 		}
@@ -383,44 +385,48 @@ func (s *Store) validateChannel(c *Channel, excludeID uint32) error {
 // ---------------------------------------------------------------------------
 
 // SetChannelFX25 sets FX.25 encoding for a channel.
-func (s *Store) SetChannelFX25(id uint32, enable bool) error {
-	return s.db.Model(&Channel{}).Where("id = ?", id).Update("fx25_encode", enable).Error
+func (s *Store) SetChannelFX25(ctx context.Context, id uint32, enable bool) error {
+	return s.db.WithContext(ctx).Model(&Channel{}).Where("id = ?", id).Update("fx25_encode", enable).Error
 }
 
 // SetChannelIL2P sets IL2P encoding for a channel.
-func (s *Store) SetChannelIL2P(id uint32, enable bool) error {
-	return s.db.Model(&Channel{}).Where("id = ?", id).Update("il2p_encode", enable).Error
+func (s *Store) SetChannelIL2P(ctx context.Context, id uint32, enable bool) error {
+	return s.db.WithContext(ctx).Model(&Channel{}).Where("id = ?", id).Update("il2p_encode", enable).Error
 }
 
 // ---------------------------------------------------------------------------
 // KissInterface
 // ---------------------------------------------------------------------------
 
-func (s *Store) ListKissInterfaces() ([]KissInterface, error) {
+func (s *Store) ListKissInterfaces(ctx context.Context) ([]KissInterface, error) {
 	var out []KissInterface
-	return out, s.db.Order("id").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("id").Find(&out).Error
 }
 
-func (s *Store) GetKissInterface(id uint32) (*KissInterface, error) {
+func (s *Store) GetKissInterface(ctx context.Context, id uint32) (*KissInterface, error) {
 	var k KissInterface
-	if err := s.db.First(&k, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&k, id).Error; err != nil {
 		return nil, err
 	}
 	return &k, nil
 }
-func (s *Store) CreateKissInterface(k *KissInterface) error { return s.db.Create(k).Error }
-func (s *Store) UpdateKissInterface(k *KissInterface) error { return s.db.Save(k).Error }
-func (s *Store) DeleteKissInterface(id uint32) error {
-	return s.db.Delete(&KissInterface{}, id).Error
+func (s *Store) CreateKissInterface(ctx context.Context, k *KissInterface) error {
+	return s.db.WithContext(ctx).Create(k).Error
+}
+func (s *Store) UpdateKissInterface(ctx context.Context, k *KissInterface) error {
+	return s.db.WithContext(ctx).Save(k).Error
+}
+func (s *Store) DeleteKissInterface(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&KissInterface{}, id).Error
 }
 
 // ---------------------------------------------------------------------------
 // AgwConfig (singleton)
 // ---------------------------------------------------------------------------
 
-func (s *Store) GetAgwConfig() (*AgwConfig, error) {
+func (s *Store) GetAgwConfig(ctx context.Context) (*AgwConfig, error) {
 	var c AgwConfig
-	err := s.db.Order("id").First(&c).Error
+	err := s.db.WithContext(ctx).Order("id").First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -430,9 +436,9 @@ func (s *Store) GetAgwConfig() (*AgwConfig, error) {
 	return &c, nil
 }
 
-func (s *Store) UpsertAgwConfig(c *AgwConfig) error {
+func (s *Store) UpsertAgwConfig(ctx context.Context, c *AgwConfig) error {
 	if c.ID == 0 {
-		existing, err := s.GetAgwConfig()
+		existing, err := s.GetAgwConfig(ctx)
 		if err != nil {
 			return err
 		}
@@ -440,21 +446,21 @@ func (s *Store) UpsertAgwConfig(c *AgwConfig) error {
 			c.ID = existing.ID
 		}
 	}
-	return s.db.Save(c).Error
+	return s.db.WithContext(ctx).Save(c).Error
 }
 
 // ---------------------------------------------------------------------------
 // TxTiming
 // ---------------------------------------------------------------------------
 
-func (s *Store) ListTxTimings() ([]TxTiming, error) {
+func (s *Store) ListTxTimings(ctx context.Context) ([]TxTiming, error) {
 	var out []TxTiming
-	return out, s.db.Order("channel").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("channel").Find(&out).Error
 }
 
-func (s *Store) GetTxTiming(channel uint32) (*TxTiming, error) {
+func (s *Store) GetTxTiming(ctx context.Context, channel uint32) (*TxTiming, error) {
 	var t TxTiming
-	err := s.db.Where("channel = ?", channel).First(&t).Error
+	err := s.db.WithContext(ctx).Where("channel = ?", channel).First(&t).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -464,24 +470,24 @@ func (s *Store) GetTxTiming(channel uint32) (*TxTiming, error) {
 	return &t, nil
 }
 
-func (s *Store) UpsertTxTiming(t *TxTiming) error {
-	existing, err := s.GetTxTiming(t.Channel)
+func (s *Store) UpsertTxTiming(ctx context.Context, t *TxTiming) error {
+	existing, err := s.GetTxTiming(ctx, t.Channel)
 	if err != nil {
 		return err
 	}
 	if existing != nil {
 		t.ID = existing.ID
 	}
-	return s.db.Save(t).Error
+	return s.db.WithContext(ctx).Save(t).Error
 }
 
 // ---------------------------------------------------------------------------
 // DigipeaterConfig (singleton)
 // ---------------------------------------------------------------------------
 
-func (s *Store) GetDigipeaterConfig() (*DigipeaterConfig, error) {
+func (s *Store) GetDigipeaterConfig(ctx context.Context) (*DigipeaterConfig, error) {
 	var c DigipeaterConfig
-	err := s.db.Order("id").First(&c).Error
+	err := s.db.WithContext(ctx).Order("id").First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -491,9 +497,9 @@ func (s *Store) GetDigipeaterConfig() (*DigipeaterConfig, error) {
 	return &c, nil
 }
 
-func (s *Store) UpsertDigipeaterConfig(c *DigipeaterConfig) error {
+func (s *Store) UpsertDigipeaterConfig(ctx context.Context, c *DigipeaterConfig) error {
 	if c.ID == 0 {
-		existing, err := s.GetDigipeaterConfig()
+		existing, err := s.GetDigipeaterConfig(ctx)
 		if err != nil {
 			return err
 		}
@@ -501,37 +507,41 @@ func (s *Store) UpsertDigipeaterConfig(c *DigipeaterConfig) error {
 			c.ID = existing.ID
 		}
 	}
-	return s.db.Save(c).Error
+	return s.db.WithContext(ctx).Save(c).Error
 }
 
 // ---------------------------------------------------------------------------
 // DigipeaterRule
 // ---------------------------------------------------------------------------
 
-func (s *Store) ListDigipeaterRules() ([]DigipeaterRule, error) {
+func (s *Store) ListDigipeaterRules(ctx context.Context) ([]DigipeaterRule, error) {
 	var out []DigipeaterRule
-	return out, s.db.Order("priority, id").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("priority, id").Find(&out).Error
 }
 
-func (s *Store) ListDigipeaterRulesForChannel(channel uint32) ([]DigipeaterRule, error) {
+func (s *Store) ListDigipeaterRulesForChannel(ctx context.Context, channel uint32) ([]DigipeaterRule, error) {
 	var out []DigipeaterRule
-	return out, s.db.Where("from_channel = ? AND enabled = ?", channel, true).
+	return out, s.db.WithContext(ctx).Where("from_channel = ? AND enabled = ?", channel, true).
 		Order("priority, id").Find(&out).Error
 }
 
-func (s *Store) CreateDigipeaterRule(r *DigipeaterRule) error { return s.db.Create(r).Error }
-func (s *Store) UpdateDigipeaterRule(r *DigipeaterRule) error { return s.db.Save(r).Error }
-func (s *Store) DeleteDigipeaterRule(id uint32) error {
-	return s.db.Delete(&DigipeaterRule{}, id).Error
+func (s *Store) CreateDigipeaterRule(ctx context.Context, r *DigipeaterRule) error {
+	return s.db.WithContext(ctx).Create(r).Error
+}
+func (s *Store) UpdateDigipeaterRule(ctx context.Context, r *DigipeaterRule) error {
+	return s.db.WithContext(ctx).Save(r).Error
+}
+func (s *Store) DeleteDigipeaterRule(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&DigipeaterRule{}, id).Error
 }
 
 // ---------------------------------------------------------------------------
 // IGateConfig (singleton) + filters
 // ---------------------------------------------------------------------------
 
-func (s *Store) GetIGateConfig() (*IGateConfig, error) {
+func (s *Store) GetIGateConfig(ctx context.Context) (*IGateConfig, error) {
 	var c IGateConfig
-	err := s.db.Order("id").First(&c).Error
+	err := s.db.WithContext(ctx).Order("id").First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -541,9 +551,9 @@ func (s *Store) GetIGateConfig() (*IGateConfig, error) {
 	return &c, nil
 }
 
-func (s *Store) UpsertIGateConfig(c *IGateConfig) error {
+func (s *Store) UpsertIGateConfig(ctx context.Context, c *IGateConfig) error {
 	if c.ID == 0 {
-		existing, err := s.GetIGateConfig()
+		existing, err := s.GetIGateConfig(ctx)
 		if err != nil {
 			return err
 		}
@@ -551,54 +561,64 @@ func (s *Store) UpsertIGateConfig(c *IGateConfig) error {
 			c.ID = existing.ID
 		}
 	}
-	return s.db.Save(c).Error
+	return s.db.WithContext(ctx).Save(c).Error
 }
 
-func (s *Store) ListIGateRfFilters() ([]IGateRfFilter, error) {
+func (s *Store) ListIGateRfFilters(ctx context.Context) ([]IGateRfFilter, error) {
 	var out []IGateRfFilter
-	return out, s.db.Order("priority, id").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("priority, id").Find(&out).Error
 }
 
-func (s *Store) ListIGateRfFiltersForChannel(channel uint32) ([]IGateRfFilter, error) {
+func (s *Store) ListIGateRfFiltersForChannel(ctx context.Context, channel uint32) ([]IGateRfFilter, error) {
 	var out []IGateRfFilter
-	return out, s.db.Where("channel = ? AND enabled = ?", channel, true).
+	return out, s.db.WithContext(ctx).Where("channel = ? AND enabled = ?", channel, true).
 		Order("priority, id").Find(&out).Error
 }
 
-func (s *Store) CreateIGateRfFilter(f *IGateRfFilter) error { return s.db.Create(f).Error }
-func (s *Store) UpdateIGateRfFilter(f *IGateRfFilter) error { return s.db.Save(f).Error }
-func (s *Store) DeleteIGateRfFilter(id uint32) error {
-	return s.db.Delete(&IGateRfFilter{}, id).Error
+func (s *Store) CreateIGateRfFilter(ctx context.Context, f *IGateRfFilter) error {
+	return s.db.WithContext(ctx).Create(f).Error
+}
+func (s *Store) UpdateIGateRfFilter(ctx context.Context, f *IGateRfFilter) error {
+	return s.db.WithContext(ctx).Save(f).Error
+}
+func (s *Store) DeleteIGateRfFilter(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&IGateRfFilter{}, id).Error
 }
 
 // ---------------------------------------------------------------------------
 // Beacon
 // ---------------------------------------------------------------------------
 
-func (s *Store) ListBeacons() ([]Beacon, error) {
+func (s *Store) ListBeacons(ctx context.Context) ([]Beacon, error) {
 	var out []Beacon
-	return out, s.db.Order("id").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("id").Find(&out).Error
 }
 
-func (s *Store) GetBeacon(id uint32) (*Beacon, error) {
+func (s *Store) GetBeacon(ctx context.Context, id uint32) (*Beacon, error) {
 	var b Beacon
-	if err := s.db.First(&b, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&b, id).Error; err != nil {
 		return nil, err
 	}
 	return &b, nil
 }
 
-func (s *Store) CreateBeacon(b *Beacon) error { return s.db.Create(b).Error }
-func (s *Store) UpdateBeacon(b *Beacon) error { return s.db.Save(b).Error }
-func (s *Store) DeleteBeacon(id uint32) error { return s.db.Delete(&Beacon{}, id).Error }
+func (s *Store) CreateBeacon(ctx context.Context, b *Beacon) error {
+	return s.db.WithContext(ctx).Create(b).Error
+}
+func (s *Store) UpdateBeacon(ctx context.Context, b *Beacon) error {
+	return s.db.WithContext(ctx).Save(b).Error
+}
+func (s *Store) DeleteBeacon(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&Beacon{}, id).Error
+}
 
 // ---------------------------------------------------------------------------
 // GPSConfig (singleton)
 // ---------------------------------------------------------------------------
 
-func (s *Store) GetGPSConfig() (*GPSConfig, error) {
+func (s *Store) GetGPSConfig(ctx context.Context) (*GPSConfig, error) {
 	var c GPSConfig
-	err := s.db.Order("id").First(&c).Error
+	err := s.db.WithContext(ctx).Order("id").First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -608,9 +628,9 @@ func (s *Store) GetGPSConfig() (*GPSConfig, error) {
 	return &c, nil
 }
 
-func (s *Store) UpsertGPSConfig(c *GPSConfig) error {
+func (s *Store) UpsertGPSConfig(ctx context.Context, c *GPSConfig) error {
 	if c.ID == 0 {
-		existing, err := s.GetGPSConfig()
+		existing, err := s.GetGPSConfig(ctx)
 		if err != nil {
 			return err
 		}
@@ -618,14 +638,14 @@ func (s *Store) UpsertGPSConfig(c *GPSConfig) error {
 			c.ID = existing.ID
 		}
 	}
-	return s.db.Save(c).Error
+	return s.db.WithContext(ctx).Save(c).Error
 }
 
 // ---------------------------------------------------------------------------
 // PacketFilter (stub)
 // ---------------------------------------------------------------------------
 
-func (s *Store) ListPacketFilters() ([]PacketFilter, error) {
+func (s *Store) ListPacketFilters(ctx context.Context) ([]PacketFilter, error) {
 	var out []PacketFilter
-	return out, s.db.Order("id").Find(&out).Error
+	return out, s.db.WithContext(ctx).Order("id").Find(&out).Error
 }

@@ -36,7 +36,7 @@ func (b *Bridge) ReloadConfiguration(ctx context.Context) error {
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	configured, err := b.pushConfiguration(b.sendIPC)
+	configured, err := b.pushConfiguration(ctx, b.sendIPC)
 	if err != nil {
 		return fmt.Errorf("push configuration: %w", err)
 	}

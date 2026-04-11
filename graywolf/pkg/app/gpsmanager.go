@@ -58,7 +58,7 @@ func (m *gpsManager) Run(ctx context.Context, reload <-chan struct{}) {
 func (m *gpsManager) start(parent context.Context) {
 	m.stop()
 
-	gpsCfg, err := m.store.GetGPSConfig()
+	gpsCfg, err := m.store.GetGPSConfig(parent)
 	if err != nil || gpsCfg == nil || !gpsCfg.Enabled {
 		m.logger.Info("gps reader disabled")
 		return

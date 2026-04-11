@@ -1,76 +1,78 @@
 package configstore
 
+import "context"
+
 // ConfigStore defines the persistence contract for graywolf configuration.
 // The concrete *Store satisfies this interface; consumers should depend on
 // ConfigStore to enable testing with fakes.
 type ConfigStore interface {
 	// Audio devices
-	CreateAudioDevice(d *AudioDevice) error
-	GetAudioDevice(id uint32) (*AudioDevice, error)
-	ListAudioDevices() ([]AudioDevice, error)
-	UpdateAudioDevice(d *AudioDevice) error
-	DeleteAudioDevice(id uint32) error
+	CreateAudioDevice(ctx context.Context, d *AudioDevice) error
+	GetAudioDevice(ctx context.Context, id uint32) (*AudioDevice, error)
+	ListAudioDevices(ctx context.Context) ([]AudioDevice, error)
+	UpdateAudioDevice(ctx context.Context, d *AudioDevice) error
+	DeleteAudioDevice(ctx context.Context, id uint32) error
 
 	// Channels
-	CreateChannel(c *Channel) error
-	GetChannel(id uint32) (*Channel, error)
-	ListChannels() ([]Channel, error)
-	UpdateChannel(c *Channel) error
-	DeleteChannel(id uint32) error
-	SetChannelFX25(id uint32, enable bool) error
-	SetChannelIL2P(id uint32, enable bool) error
+	CreateChannel(ctx context.Context, c *Channel) error
+	GetChannel(ctx context.Context, id uint32) (*Channel, error)
+	ListChannels(ctx context.Context) ([]Channel, error)
+	UpdateChannel(ctx context.Context, c *Channel) error
+	DeleteChannel(ctx context.Context, id uint32) error
+	SetChannelFX25(ctx context.Context, id uint32, enable bool) error
+	SetChannelIL2P(ctx context.Context, id uint32, enable bool) error
 
 	// PTT
-	UpsertPttConfig(p *PttConfig) error
-	GetPttConfigForChannel(channelID uint32) (*PttConfig, error)
+	UpsertPttConfig(ctx context.Context, p *PttConfig) error
+	GetPttConfigForChannel(ctx context.Context, channelID uint32) (*PttConfig, error)
 
 	// TX timing
-	ListTxTimings() ([]TxTiming, error)
-	GetTxTiming(channel uint32) (*TxTiming, error)
-	UpsertTxTiming(t *TxTiming) error
+	ListTxTimings(ctx context.Context) ([]TxTiming, error)
+	GetTxTiming(ctx context.Context, channel uint32) (*TxTiming, error)
+	UpsertTxTiming(ctx context.Context, t *TxTiming) error
 
 	// KISS interfaces
-	ListKissInterfaces() ([]KissInterface, error)
-	GetKissInterface(id uint32) (*KissInterface, error)
-	CreateKissInterface(k *KissInterface) error
-	UpdateKissInterface(k *KissInterface) error
-	DeleteKissInterface(id uint32) error
+	ListKissInterfaces(ctx context.Context) ([]KissInterface, error)
+	GetKissInterface(ctx context.Context, id uint32) (*KissInterface, error)
+	CreateKissInterface(ctx context.Context, k *KissInterface) error
+	UpdateKissInterface(ctx context.Context, k *KissInterface) error
+	DeleteKissInterface(ctx context.Context, id uint32) error
 
 	// AGW
-	GetAgwConfig() (*AgwConfig, error)
-	UpsertAgwConfig(c *AgwConfig) error
+	GetAgwConfig(ctx context.Context) (*AgwConfig, error)
+	UpsertAgwConfig(ctx context.Context, c *AgwConfig) error
 
 	// Digipeater
-	GetDigipeaterConfig() (*DigipeaterConfig, error)
-	UpsertDigipeaterConfig(c *DigipeaterConfig) error
-	ListDigipeaterRules() ([]DigipeaterRule, error)
-	ListDigipeaterRulesForChannel(channel uint32) ([]DigipeaterRule, error)
-	CreateDigipeaterRule(r *DigipeaterRule) error
-	UpdateDigipeaterRule(r *DigipeaterRule) error
-	DeleteDigipeaterRule(id uint32) error
+	GetDigipeaterConfig(ctx context.Context) (*DigipeaterConfig, error)
+	UpsertDigipeaterConfig(ctx context.Context, c *DigipeaterConfig) error
+	ListDigipeaterRules(ctx context.Context) ([]DigipeaterRule, error)
+	ListDigipeaterRulesForChannel(ctx context.Context, channel uint32) ([]DigipeaterRule, error)
+	CreateDigipeaterRule(ctx context.Context, r *DigipeaterRule) error
+	UpdateDigipeaterRule(ctx context.Context, r *DigipeaterRule) error
+	DeleteDigipeaterRule(ctx context.Context, id uint32) error
 
 	// iGate
-	GetIGateConfig() (*IGateConfig, error)
-	UpsertIGateConfig(c *IGateConfig) error
-	ListIGateRfFilters() ([]IGateRfFilter, error)
-	ListIGateRfFiltersForChannel(channel uint32) ([]IGateRfFilter, error)
-	CreateIGateRfFilter(f *IGateRfFilter) error
-	UpdateIGateRfFilter(f *IGateRfFilter) error
-	DeleteIGateRfFilter(id uint32) error
+	GetIGateConfig(ctx context.Context) (*IGateConfig, error)
+	UpsertIGateConfig(ctx context.Context, c *IGateConfig) error
+	ListIGateRfFilters(ctx context.Context) ([]IGateRfFilter, error)
+	ListIGateRfFiltersForChannel(ctx context.Context, channel uint32) ([]IGateRfFilter, error)
+	CreateIGateRfFilter(ctx context.Context, f *IGateRfFilter) error
+	UpdateIGateRfFilter(ctx context.Context, f *IGateRfFilter) error
+	DeleteIGateRfFilter(ctx context.Context, id uint32) error
 
 	// Beacons
-	ListBeacons() ([]Beacon, error)
-	GetBeacon(id uint32) (*Beacon, error)
-	CreateBeacon(b *Beacon) error
-	UpdateBeacon(b *Beacon) error
-	DeleteBeacon(id uint32) error
+	ListBeacons(ctx context.Context) ([]Beacon, error)
+	GetBeacon(ctx context.Context, id uint32) (*Beacon, error)
+	CreateBeacon(ctx context.Context, b *Beacon) error
+	UpdateBeacon(ctx context.Context, b *Beacon) error
+	DeleteBeacon(ctx context.Context, id uint32) error
 
 	// GPS
-	GetGPSConfig() (*GPSConfig, error)
-	UpsertGPSConfig(c *GPSConfig) error
+	GetGPSConfig(ctx context.Context) (*GPSConfig, error)
+	UpsertGPSConfig(ctx context.Context, c *GPSConfig) error
 
 	// Packet filters
-	ListPacketFilters() ([]PacketFilter, error)
+	ListPacketFilters(ctx context.Context) ([]PacketFilter, error)
 }
 
 // Compile-time check: *Store implements ConfigStore.

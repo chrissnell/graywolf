@@ -94,7 +94,7 @@ func (a *App) wireServices(ctx context.Context) error {
 // function closes the store before returning.
 func (a *App) wireServicesInner(ctx context.Context) error {
 	// --- FLAC override (optional, mutates the store) -------------------
-	if err := a.applyFlacOverride(); err != nil {
+	if err := a.applyFlacOverride(ctx); err != nil {
 		return fmt.Errorf("apply flac override: %w", err)
 	}
 
@@ -149,7 +149,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// error is not fatal: the governor just runs with empty defaults.
 	channelTimings := make(map[uint32]txgovernor.ChannelTiming)
 	var rate1, rate5 int
-	if timings, err := a.store.ListTxTimings(); err == nil {
+	if timings, err := a.store.ListTxTimings(ctx); err == nil {
 		for _, t := range timings {
 			channelTimings[t.Channel] = txgovernor.ChannelTiming{
 				TxDelayMs: t.TxDelayMs,
@@ -242,12 +242,12 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.beaconReload = make(chan struct{}, 1)
 
 	// --- iGate (optional) ----------------------------------------------
-	if err := a.wireIGate(); err != nil {
+	if err := a.wireIGate(ctx); err != nil {
 		return err
 	}
 
 	// --- AGW server (optional) -----------------------------------------
-	if err := a.wireAGW(); err != nil {
+	if err := a.wireAGW(ctx); err != nil {
 		return err
 	}
 
@@ -290,7 +290,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 // applyFlacOverride implements the -flac flag: point the first (or a
 // newly-created) audio device at a local FLAC file and ensure at least
 // one channel uses it, so offline tests don't need a real radio.
-func (a *App) applyFlacOverride() error {
+func (a *App) applyFlacOverride(ctx context.Context) error {
 	if a.cfg.FlacFile == "" {
 		return nil
 	}
@@ -301,14 +301,14 @@ func (a *App) applyFlacOverride() error {
 	if _, err := os.Stat(absPath); err != nil {
 		return fmt.Errorf("flac file not found: %s", absPath)
 	}
-	devs, _ := a.store.ListAudioDevices()
+	devs, _ := a.store.ListAudioDevices(ctx)
 	if len(devs) == 0 {
 		dev := &configstore.AudioDevice{
 			Name: "FLAC Input", Direction: "input",
 			SourceType: "flac", SourcePath: absPath,
 			SampleRate: 44100, Channels: 1, Format: "s16le",
 		}
-		if err := a.store.CreateAudioDevice(dev); err != nil {
+		if err := a.store.CreateAudioDevice(ctx, dev); err != nil {
 			return fmt.Errorf("create flac audio device: %w", err)
 		}
 		devs = []configstore.AudioDevice{*dev}
@@ -316,20 +316,20 @@ func (a *App) applyFlacOverride() error {
 		devs[0].SourceType = "flac"
 		devs[0].SourcePath = absPath
 		devs[0].SampleRate = 44100
-		if err := a.store.UpdateAudioDevice(&devs[0]); err != nil {
+		if err := a.store.UpdateAudioDevice(ctx, &devs[0]); err != nil {
 			return fmt.Errorf("update audio device for flac: %w", err)
 		}
 	}
 	a.logger.Info("audio device overridden", "source", "flac", "path", absPath)
 
 	// Ensure at least one channel exists so the FLAC source gets used.
-	chs, _ := a.store.ListChannels()
+	chs, _ := a.store.ListChannels(ctx)
 	if len(chs) == 0 {
 		ch := &configstore.Channel{
 			Name: "FLAC Test", InputDeviceID: devs[0].ID,
 			ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		}
-		if err := a.store.CreateChannel(ch); err != nil {
+		if err := a.store.CreateChannel(ctx, ch); err != nil {
 			return fmt.Errorf("create default channel for flac: %w", err)
 		}
 		a.logger.Info("created default channel for flac input", "device_id", devs[0].ID)
@@ -340,13 +340,13 @@ func (a *App) applyFlacOverride() error {
 // wireIGate constructs a.ig from configstore. A disabled or missing
 // iGate config leaves a.ig nil, which the igateComponent stop closure
 // handles via a nil-check.
-func (a *App) wireIGate() error {
-	igCfg, err := a.store.GetIGateConfig()
+func (a *App) wireIGate(ctx context.Context) error {
+	igCfg, err := a.store.GetIGateConfig(ctx)
 	if err != nil || igCfg == nil || !igCfg.Enabled {
 		return nil
 	}
 
-	rfFilters, _ := a.store.ListIGateRfFilters()
+	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
 	rules := make([]filters.Rule, 0, len(rfFilters))
 	for _, f := range rfFilters {
 		if !f.Enabled {
@@ -408,8 +408,8 @@ func (a *App) wireIGate() error {
 
 // wireAGW constructs a.agwServer from configstore. A disabled or
 // missing AGW config leaves a.agwServer nil.
-func (a *App) wireAGW() error {
-	agwCfg, err := a.store.GetAgwConfig()
+func (a *App) wireAGW(ctx context.Context) error {
+	agwCfg, err := a.store.GetAgwConfig(ctx)
 	if err != nil || agwCfg == nil || !agwCfg.Enabled {
 		return nil
 	}
@@ -613,7 +613,7 @@ func (a *App) kissComponent() namedComponent {
 	return namedComponent{
 		name: "kiss",
 		start: func(ctx context.Context) error {
-			kissIfaces, _ := a.store.ListKissInterfaces()
+			kissIfaces, _ := a.store.ListKissInterfaces(ctx)
 			for _, ki := range kissIfaces {
 				if !ki.Enabled || ki.InterfaceType != "tcp" || ki.ListenAddr == "" {
 					continue
@@ -646,8 +646,8 @@ func (a *App) kissComponent() namedComponent {
 }
 
 func (a *App) digipeaterComponent() namedComponent {
-	reload := func() {
-		cfg, err := a.store.GetDigipeaterConfig()
+	reload := func(ctx context.Context) {
+		cfg, err := a.store.GetDigipeaterConfig(ctx)
 		if err != nil || cfg == nil {
 			a.digi.SetEnabled(false)
 			a.digi.SetRules(nil)
@@ -656,7 +656,7 @@ func (a *App) digipeaterComponent() namedComponent {
 		mycall, _ := ax25.ParseAddress(cfg.MyCall)
 		a.digi.SetMyCall(mycall)
 		a.digi.SetDedupeWindow(time.Duration(cfg.DedupeWindowSeconds) * time.Second)
-		rules, err := a.store.ListDigipeaterRules()
+		rules, err := a.store.ListDigipeaterRules(ctx)
 		if err != nil {
 			a.logger.Warn("digipeater rules load", "err", err)
 			rules = nil
@@ -668,7 +668,7 @@ func (a *App) digipeaterComponent() namedComponent {
 	return namedComponent{
 		name: "digipeater",
 		start: func(ctx context.Context) error {
-			reload()
+			reload(ctx)
 			a.digiReloadWG.Add(1)
 			go func() {
 				defer a.digiReloadWG.Done()
@@ -677,7 +677,7 @@ func (a *App) digipeaterComponent() namedComponent {
 					case <-ctx.Done():
 						return
 					case <-a.digipeaterReload:
-						reload()
+						reload(ctx)
 					}
 				}
 			}()
@@ -707,8 +707,8 @@ func (a *App) gpsComponent() namedComponent {
 }
 
 func (a *App) beaconComponent() namedComponent {
-	loadBeaconConfigs := func() []beacon.Config {
-		stored, err := a.store.ListBeacons()
+	loadBeaconConfigs := func(ctx context.Context) []beacon.Config {
+		stored, err := a.store.ListBeacons(ctx)
 		if err != nil {
 			a.logger.Warn("beacon load", "err", err)
 			return nil
@@ -728,7 +728,7 @@ func (a *App) beaconComponent() namedComponent {
 	return namedComponent{
 		name: "beacon",
 		start: func(ctx context.Context) error {
-			a.beaconSched.SetBeacons(loadBeaconConfigs())
+			a.beaconSched.SetBeacons(loadBeaconConfigs(ctx))
 			a.beaconWG.Add(1)
 			go func() {
 				defer a.beaconWG.Done()
@@ -744,7 +744,7 @@ func (a *App) beaconComponent() namedComponent {
 					case <-ctx.Done():
 						return
 					case <-a.beaconReload:
-						a.beaconSched.Reload(loadBeaconConfigs())
+						a.beaconSched.Reload(loadBeaconConfigs(ctx))
 					}
 				}
 			}()

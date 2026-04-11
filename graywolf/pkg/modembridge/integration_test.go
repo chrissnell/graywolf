@@ -87,7 +87,7 @@ func TestFlacRoundTrip(t *testing.T) {
 		Channels:   1,
 		Format:     "s16le",
 	}
-	if err := store.CreateAudioDevice(dev); err != nil {
+	if err := store.CreateAudioDevice(context.Background(), dev); err != nil {
 		t.Fatal(err)
 	}
 	ch := &configstore.Channel{
@@ -101,7 +101,7 @@ func TestFlacRoundTrip(t *testing.T) {
 		NumSlicers:    1,
 		FixBits:       "none",
 	}
-	if err := store.CreateChannel(ch); err != nil {
+	if err := store.CreateChannel(context.Background(), ch); err != nil {
 		t.Fatal(err)
 	}
 

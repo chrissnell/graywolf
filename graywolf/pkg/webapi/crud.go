@@ -19,7 +19,7 @@ import (
 func (s *Server) handlePttCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		list, err := s.store.ListPttConfigs()
+		list, err := s.store.ListPttConfigs(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list ptt configs", err)
 			return
@@ -31,7 +31,7 @@ func (s *Server) handlePttCollection(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.UpsertPttConfig(&p); err != nil {
+		if err := s.store.UpsertPttConfig(r.Context(), &p); err != nil {
 			s.internalError(w, r, "upsert ptt config", err)
 			return
 		}
@@ -59,7 +59,7 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		p, err := s.store.GetPttConfigForChannel(id)
+		p, err := s.store.GetPttConfigForChannel(r.Context(), id)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -72,14 +72,14 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.ChannelID = id
-		if err := s.store.UpsertPttConfig(&p); err != nil {
+		if err := s.store.UpsertPttConfig(r.Context(), &p); err != nil {
 			s.internalError(w, r, "upsert ptt config", err)
 			return
 		}
 		s.notifyBridgeForChannel(r.Context(), id)
 		writeJSON(w, http.StatusOK, p)
 	case http.MethodDelete:
-		if err := s.store.DeletePttConfig(id); err != nil {
+		if err := s.store.DeletePttConfig(r.Context(), id); err != nil {
 			s.internalError(w, r, "delete ptt config", err)
 			return
 		}
@@ -95,7 +95,7 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTxTimingCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		timings, err := s.store.ListTxTimings()
+		timings, err := s.store.ListTxTimings(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list tx timings", err)
 			return
@@ -107,7 +107,7 @@ func (s *Server) handleTxTimingCollection(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.UpsertTxTiming(&t); err != nil {
+		if err := s.store.UpsertTxTiming(r.Context(), &t); err != nil {
 			s.internalError(w, r, "upsert tx timing", err)
 			return
 		}
@@ -126,7 +126,7 @@ func (s *Server) handleTxTimingByChannel(w http.ResponseWriter, r *http.Request)
 	}
 	switch r.Method {
 	case http.MethodGet:
-		t, err := s.store.GetTxTiming(id)
+		t, err := s.store.GetTxTiming(r.Context(), id)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -139,7 +139,7 @@ func (s *Server) handleTxTimingByChannel(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		t.Channel = id
-		if err := s.store.UpsertTxTiming(&t); err != nil {
+		if err := s.store.UpsertTxTiming(r.Context(), &t); err != nil {
 			s.internalError(w, r, "upsert tx timing", err)
 			return
 		}
@@ -229,7 +229,7 @@ func kissModelToResponse(ki configstore.KissInterface) map[string]any {
 func (s *Server) handleKissCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		list, err := s.store.ListKissInterfaces()
+		list, err := s.store.ListKissInterfaces(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list kiss interfaces", err)
 			return
@@ -246,7 +246,7 @@ func (s *Server) handleKissCollection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		k := kissRequestToModel(req)
-		if err := s.store.CreateKissInterface(&k); err != nil {
+		if err := s.store.CreateKissInterface(r.Context(), &k); err != nil {
 			s.internalError(w, r, "create kiss interface", err)
 			return
 		}
@@ -265,7 +265,7 @@ func (s *Server) handleKissItem(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		k, err := s.store.GetKissInterface(id)
+		k, err := s.store.GetKissInterface(r.Context(), id)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -279,14 +279,14 @@ func (s *Server) handleKissItem(w http.ResponseWriter, r *http.Request) {
 		}
 		k := kissRequestToModel(req)
 		k.ID = id
-		if err := s.store.UpdateKissInterface(&k); err != nil {
+		if err := s.store.UpdateKissInterface(r.Context(), &k); err != nil {
 			s.internalError(w, r, "update kiss interface", err)
 			return
 		}
 		s.notifyKissManager(k)
 		writeJSON(w, http.StatusOK, kissModelToResponse(k))
 	case http.MethodDelete:
-		if err := s.store.DeleteKissInterface(id); err != nil {
+		if err := s.store.DeleteKissInterface(r.Context(), id); err != nil {
 			s.internalError(w, r, "delete kiss interface", err)
 			return
 		}
@@ -304,7 +304,7 @@ func (s *Server) handleKissItem(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAgw(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		c, err := s.store.GetAgwConfig()
+		c, err := s.store.GetAgwConfig(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -316,7 +316,7 @@ func (s *Server) handleAgw(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.UpsertAgwConfig(&c); err != nil {
+		if err := s.store.UpsertAgwConfig(r.Context(), &c); err != nil {
 			s.internalError(w, r, "upsert agw config", err)
 			return
 		}
@@ -331,7 +331,7 @@ func (s *Server) handleAgw(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIgateConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		c, err := s.store.GetIGateConfig()
+		c, err := s.store.GetIGateConfig(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -343,7 +343,7 @@ func (s *Server) handleIgateConfig(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.UpsertIGateConfig(&c); err != nil {
+		if err := s.store.UpsertIGateConfig(r.Context(), &c); err != nil {
 			s.internalError(w, r, "upsert igate config", err)
 			return
 		}
@@ -356,7 +356,7 @@ func (s *Server) handleIgateConfig(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIgateFilters(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		list, err := s.store.ListIGateRfFilters()
+		list, err := s.store.ListIGateRfFilters(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list igate rf filters", err)
 			return
@@ -368,7 +368,7 @@ func (s *Server) handleIgateFilters(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.CreateIGateRfFilter(&f); err != nil {
+		if err := s.store.CreateIGateRfFilter(r.Context(), &f); err != nil {
 			s.internalError(w, r, "create igate rf filter", err)
 			return
 		}
@@ -392,13 +392,13 @@ func (s *Server) handleIgateFilter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.ID = id
-		if err := s.store.UpdateIGateRfFilter(&f); err != nil {
+		if err := s.store.UpdateIGateRfFilter(r.Context(), &f); err != nil {
 			s.internalError(w, r, "update igate rf filter", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, f)
 	case http.MethodDelete:
-		if err := s.store.DeleteIGateRfFilter(id); err != nil {
+		if err := s.store.DeleteIGateRfFilter(r.Context(), id); err != nil {
 			s.internalError(w, r, "delete igate rf filter", err)
 			return
 		}
@@ -413,7 +413,7 @@ func (s *Server) handleIgateFilter(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDigipeaterConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		c, err := s.store.GetDigipeaterConfig()
+		c, err := s.store.GetDigipeaterConfig(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -425,7 +425,7 @@ func (s *Server) handleDigipeaterConfig(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.UpsertDigipeaterConfig(&c); err != nil {
+		if err := s.store.UpsertDigipeaterConfig(r.Context(), &c); err != nil {
 			s.internalError(w, r, "upsert digipeater config", err)
 			return
 		}
@@ -439,7 +439,7 @@ func (s *Server) handleDigipeaterConfig(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleDigipeaterRules(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		list, err := s.store.ListDigipeaterRules()
+		list, err := s.store.ListDigipeaterRules(r.Context())
 		if err != nil {
 			s.internalError(w, r, "list digipeater rules", err)
 			return
@@ -451,7 +451,7 @@ func (s *Server) handleDigipeaterRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
-		if err := s.store.CreateDigipeaterRule(&rule); err != nil {
+		if err := s.store.CreateDigipeaterRule(r.Context(), &rule); err != nil {
 			s.internalError(w, r, "create digipeater rule", err)
 			return
 		}
@@ -476,14 +476,14 @@ func (s *Server) handleDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rule.ID = id
-		if err := s.store.UpdateDigipeaterRule(&rule); err != nil {
+		if err := s.store.UpdateDigipeaterRule(r.Context(), &rule); err != nil {
 			s.internalError(w, r, "update digipeater rule", err)
 			return
 		}
 		s.signalDigipeaterReload()
 		writeJSON(w, http.StatusOK, rule)
 	case http.MethodDelete:
-		if err := s.store.DeleteDigipeaterRule(id); err != nil {
+		if err := s.store.DeleteDigipeaterRule(r.Context(), id); err != nil {
 			s.internalError(w, r, "delete digipeater rule", err)
 			return
 		}
@@ -536,7 +536,7 @@ func (s *Server) handleGpsAvailable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGps(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		c, err := s.store.GetGPSConfig()
+		c, err := s.store.GetGPSConfig(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -550,7 +550,7 @@ func (s *Server) handleGps(w http.ResponseWriter, r *http.Request) {
 		}
 		// Derive Enabled from SourceType so the UI doesn't need a toggle.
 		c.Enabled = c.SourceType != "" && c.SourceType != "none"
-		if err := s.store.UpsertGPSConfig(&c); err != nil {
+		if err := s.store.UpsertGPSConfig(r.Context(), &c); err != nil {
 			s.internalError(w, r, "upsert gps config", err)
 			return
 		}
