@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/internal/backoff"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
@@ -130,7 +131,10 @@ func (s *supervisor) scanModemStdout(r io.Reader, done chan struct{}) {
 // session through RunSession, back off on error, repeat until ctx is
 // cancelled. It returns when ctx is cancelled.
 func (s *supervisor) Run(ctx context.Context) {
-	backoff := time.Second
+	bo := backoff.New(backoff.Config{
+		Initial: time.Second,
+		Max:     s.cfg.MaxBackoff,
+	})
 
 	for {
 		if ctx.Err() != nil {
@@ -157,11 +161,7 @@ func (s *supervisor) Run(ctx context.Context) {
 		case <-ctx.Done():
 			s.setState(StateStopped)
 			return
-		case <-time.After(backoff):
-		}
-		backoff *= 2
-		if backoff > s.cfg.MaxBackoff {
-			backoff = s.cfg.MaxBackoff
+		case <-time.After(bo.Next()):
 		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
+	"github.com/chrissnell/graywolf/pkg/internal/backoff"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -260,7 +262,12 @@ func (ig *Igate) Stop() {
 // supervise dials, runs one session, applies backoff, loops.
 func (ig *Igate) supervise(ctx context.Context) {
 	defer close(ig.done)
-	bo := newBackoff(time.Now().UnixNano())
+	bo := backoff.New(backoff.Config{
+		Initial:    time.Second,
+		Max:        5 * time.Minute,
+		JitterFrac: 0.25,
+		Rand:       rand.New(rand.NewSource(time.Now().UnixNano())),
+	})
 	ig.client = newClient(
 		ig.cfg,
 		ig.logger,
