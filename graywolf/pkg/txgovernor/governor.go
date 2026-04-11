@@ -23,6 +23,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/internal/dedup"
+	"github.com/chrissnell/graywolf/pkg/internal/ratelimit"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 )
 
@@ -133,22 +134,30 @@ type Stats struct {
 	QueueDropped uint64
 }
 
+// channelRate holds the pair of sliding-window counters used to enforce
+// the 1-minute and 5-minute rate caps on a single channel. Both Windows
+// are created lazily per channel on first send.
+type channelRate struct {
+	oneMin  *ratelimit.Window
+	fiveMin *ratelimit.Window
+}
+
 // Governor is the centralized TX scheduler.
 type Governor struct {
 	cfg    Config
 	logger *slog.Logger
 
-	mu      sync.Mutex
-	q       pqueue
-	seq     uint64
-	dedup   *dedup.Window[string, struct{}]
-	rateLog map[uint32][]time.Time // timestamps of recent sends per channel
-	dcd     map[uint32]bool        // current DCD per channel
+	mu     sync.Mutex
+	q      pqueue
+	seq    uint64
+	dedup  *dedup.Window[string, struct{}]
+	rates  map[uint32]*channelRate // per-channel send rate trackers
+	dcd    map[uint32]bool         // current DCD per channel
 
-	wake    chan struct{}
-	stats   Stats
-	closed  bool
-	txHook  TxHook
+	wake   chan struct{}
+	stats  Stats
+	closed bool
+	txHook TxHook
 }
 
 // SetTxHook installs (or clears) the post-send hook. Safe to call at
@@ -175,12 +184,12 @@ func (g *Governor) SetChannelTiming(channel uint32, t ChannelTiming) {
 func New(cfg Config) *Governor {
 	cfg.applyDefaults()
 	return &Governor{
-		cfg:     cfg,
-		logger:  cfg.Logger.With("component", "txgovernor"),
-		dedup:   dedup.New[string, struct{}](dedup.Config{TTL: cfg.DedupWindow}),
-		rateLog: make(map[uint32][]time.Time),
-		dcd:     make(map[uint32]bool),
-		wake:    make(chan struct{}, 1),
+		cfg:    cfg,
+		logger: cfg.Logger.With("component", "txgovernor"),
+		dedup:  dedup.New[string, struct{}](dedup.Config{TTL: cfg.DedupWindow}),
+		rates:  make(map[uint32]*channelRate),
+		dcd:    make(map[uint32]bool),
+		wake:   make(chan struct{}, 1),
 	}
 }
 
@@ -383,41 +392,38 @@ func (g *Governor) processOne(ctx context.Context) {
 	_ = ctx
 }
 
-func (g *Governor) isRateLimitedLocked(channel uint32, now time.Time) bool {
+// rateFor returns the per-channel rate tracker, creating it on first
+// use. Must be called with g.mu held.
+func (g *Governor) rateFor(channel uint32) *channelRate {
+	r, ok := g.rates[channel]
+	if !ok {
+		r = &channelRate{
+			oneMin:  ratelimit.New(1 * time.Minute),
+			fiveMin: ratelimit.New(5 * time.Minute),
+		}
+		g.rates[channel] = r
+	}
+	return r
+}
+
+func (g *Governor) isRateLimitedLocked(channel uint32, _ time.Time) bool {
 	if g.cfg.Rate1MinLimit == 0 && g.cfg.Rate5MinLimit == 0 {
 		return false
 	}
-	log := g.rateLog[channel]
-	cutoff5 := now.Add(-5 * time.Minute)
-	i := 0
-	for i < len(log) && log[i].Before(cutoff5) {
-		i++
-	}
-	if i > 0 {
-		log = log[i:]
-		g.rateLog[channel] = log
-	}
-	if g.cfg.Rate5MinLimit > 0 && len(log) >= g.cfg.Rate5MinLimit {
+	r := g.rateFor(channel)
+	if g.cfg.Rate5MinLimit > 0 && r.fiveMin.Count() >= g.cfg.Rate5MinLimit {
 		return true
 	}
-	if g.cfg.Rate1MinLimit > 0 {
-		cutoff1 := now.Add(-1 * time.Minute)
-		n := 0
-		for j := len(log) - 1; j >= 0; j-- {
-			if log[j].Before(cutoff1) {
-				break
-			}
-			n++
-		}
-		if n >= g.cfg.Rate1MinLimit {
-			return true
-		}
+	if g.cfg.Rate1MinLimit > 0 && r.oneMin.Count() >= g.cfg.Rate1MinLimit {
+		return true
 	}
 	return false
 }
 
-func (g *Governor) recordSendLocked(channel uint32, now time.Time) {
-	g.rateLog[channel] = append(g.rateLog[channel], now)
+func (g *Governor) recordSendLocked(channel uint32, _ time.Time) {
+	r := g.rateFor(channel)
+	r.oneMin.Record()
+	r.fiveMin.Record()
 }
 
 // Stats returns a snapshot of the counters.
