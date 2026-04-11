@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    name: Go test (-race) and vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ALSA dev headers
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: graywolf/go.mod
+          cache-dependency-path: graywolf/go.sum
+
+      - name: go vet
+        working-directory: graywolf
+        run: go vet ./...
+
+      - name: go test -race
+        working-directory: graywolf
+        run: go test -race ./...

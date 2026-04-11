@@ -1,0 +1,43 @@
+name: Fuzz
+
+on:
+  schedule:
+    # Nightly at 08:00 UTC.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Go fuzz targets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ALSA dev headers
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: graywolf/go.mod
+          cache-dependency-path: graywolf/go.sum
+
+      - name: Fuzz ax25.Decode
+        working-directory: graywolf
+        run: go test -run=^$ -fuzz=FuzzDecode -fuzztime=60s ./pkg/ax25/
+
+      - name: Fuzz aprs.ParseInfo
+        working-directory: graywolf
+        run: go test -run=^$ -fuzz=FuzzParseInfo -fuzztime=60s ./pkg/aprs/
+
+      - name: Upload failing corpus (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures
+          path: graywolf/pkg/**/testdata/fuzz/
+          if-no-files-found: ignore

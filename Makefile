@@ -23,7 +23,7 @@ MANIFEST := --manifest-path $(MODEM_DIR)/Cargo.toml
 # Rust picks up these env vars in build.rs.
 CARGO_ENV := GRAYWOLF_VERSION="$(VERSION)" GRAYWOLF_GIT_COMMIT="$(FULL_COMMIT)"
 
-.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test web graywolf version bump-minor bump-point
+.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point
 
 all: release web
 	mkdir -p bin
@@ -73,7 +73,13 @@ go-build:
 	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" ./...
 
 go-test:
-	cd $(APP_DIR) && go test ./...
+	cd $(APP_DIR) && go test -race ./...
+
+# Run Go fuzz targets for a bounded duration. Override FUZZTIME to change it.
+FUZZTIME ?= 60s
+go-fuzz:
+	cd $(APP_DIR) && go test -run=^$$ -fuzz=FuzzDecode -fuzztime=$(FUZZTIME) ./pkg/ax25/
+	cd $(APP_DIR) && go test -run=^$$ -fuzz=FuzzParseInfo -fuzztime=$(FUZZTIME) ./pkg/aprs/
 
 # Build everything: Rust release, Svelte UI, Go binary.
 # Also stages graywolf-modem into bin/ so ./bin/graywolf can find it via
