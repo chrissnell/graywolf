@@ -146,6 +146,19 @@ func (w *Window[K, V]) Reset() {
 	w.seen = make(map[K]entry[V])
 }
 
+// SetTTL replaces the suppression window. Existing entries are kept and
+// will be re-evaluated against the new TTL on the next touch. A
+// non-positive duration is ignored so callers driving this from a
+// config reload cannot accidentally disable suppression.
+func (w *Window[K, V]) SetTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.ttl = ttl
+}
+
 // gcLocked drops expired entries when the map exceeds the threshold.
 // Callers must hold w.mu.
 func (w *Window[K, V]) gcLocked(now time.Time) {

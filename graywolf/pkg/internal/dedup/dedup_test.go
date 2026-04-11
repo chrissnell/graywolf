@@ -132,6 +132,30 @@ func TestGCDoesNotRunBelowThreshold(t *testing.T) {
 	}
 }
 
+func TestSetTTL(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	clock := &fakeClock{t: now}
+	w := New[string, struct{}](Config{TTL: 30 * time.Second, Now: clock.Now})
+	w.Record("k", struct{}{})
+	clock.Advance(20 * time.Second)
+	// Within original window.
+	if !w.Has("k") {
+		t.Fatalf("entry should still be within 30s TTL")
+	}
+	// Shrink the window. The existing entry is 20s old; with a 10s
+	// TTL it should now be considered expired.
+	w.SetTTL(10 * time.Second)
+	if w.Has("k") {
+		t.Fatalf("entry should be expired under shrunk TTL")
+	}
+	// Non-positive is ignored.
+	w.SetTTL(-1)
+	w.Record("k", struct{}{})
+	if !w.Has("k") {
+		t.Fatalf("fresh entry should be present under preserved 10s TTL")
+	}
+}
+
 func TestReset(t *testing.T) {
 	w := New[string, struct{}](Config{TTL: 30 * time.Second})
 	w.Record("a", struct{}{})
