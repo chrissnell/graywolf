@@ -77,7 +77,18 @@ func (s *Store) Close() error {
 }
 
 // Migrate brings the schema up to date. Safe to call repeatedly.
+//
+// Ordering matters: the pre-AutoMigrate pass runs first to fix up
+// legacy columns that AutoMigrate would otherwise stumble over (a
+// column rename, for example, looks like an add+drop to the migrator),
+// then AutoMigrate reconciles the Go model shape with SQLite, then the
+// post-AutoMigrate pass runs data migrations that need the new schema
+// in place. See migrate.go for the migration list and the
+// user_version contract.
 func (s *Store) Migrate() error {
+	if err := s.runMigrations(preAutoMigrate); err != nil {
+		return err
+	}
 	if err := s.db.AutoMigrate(
 		&AudioDevice{},
 		&Channel{},
@@ -95,53 +106,7 @@ func (s *Store) Migrate() error {
 	); err != nil {
 		return err
 	}
-	if err := s.migrateChannelDeviceFields(); err != nil {
-		return err
-	}
-	return s.migrateBeaconCompressDefault()
-}
-
-// migrateBeaconCompressDefault flips every existing beacon row to
-// compress=1 exactly once. Earlier versions defaulted the column to
-// false but never wired it to the encoder, so any stored 0 is a legacy
-// artifact, not an operator choice. Gated by PRAGMA user_version so we
-// don't stomp a deliberate post-migration change.
-func (s *Store) migrateBeaconCompressDefault() error {
-	var version int
-	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
-		return fmt.Errorf("read user_version: %w", err)
-	}
-	if version >= 1 {
-		return nil
-	}
-	if err := s.db.Exec("UPDATE beacons SET compress = 1 WHERE compress = 0").Error; err != nil {
-		return fmt.Errorf("migrate beacon compress default: %w", err)
-	}
-	if err := s.db.Exec("PRAGMA user_version = 1").Error; err != nil {
-		return fmt.Errorf("set user_version: %w", err)
-	}
-	return nil
-}
-
-// migrateChannelDeviceFields migrates the old single audio_device_id/audio_channel
-// columns to the new input_device_id/input_channel/output_device_id/output_channel
-// split. No-op if the old columns no longer exist.
-func (s *Store) migrateChannelDeviceFields() error {
-	var count int
-	s.db.Raw("SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name='audio_device_id'").Scan(&count)
-	if count == 0 {
-		return nil // already migrated or fresh DB
-	}
-	if err := s.db.Exec("UPDATE channels SET input_device_id = audio_device_id, input_channel = audio_channel, output_device_id = 0, output_channel = 0 WHERE input_device_id = 0").Error; err != nil {
-		return fmt.Errorf("migrate channel device fields: %w", err)
-	}
-	if err := s.db.Exec("ALTER TABLE channels DROP COLUMN audio_device_id").Error; err != nil {
-		return fmt.Errorf("drop audio_device_id: %w", err)
-	}
-	if err := s.db.Exec("ALTER TABLE channels DROP COLUMN audio_channel").Error; err != nil {
-		return fmt.Errorf("drop audio_channel: %w", err)
-	}
-	return nil
+	return s.runMigrations(postAutoMigrate)
 }
 
 // seedDefaults populates a first-run database with a sensible starting
