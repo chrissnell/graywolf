@@ -18,6 +18,7 @@ type Metrics struct {
 
 	RxFrames        *prometheus.CounterVec
 	DcdTransitions  *prometheus.CounterVec
+	DcdDropped      prometheus.Counter
 	ChildRestarts   prometheus.Counter
 	AudioLevel      *prometheus.GaugeVec
 	DcdActive       *prometheus.GaugeVec
@@ -59,6 +60,10 @@ func New() *Metrics {
 			Name: "graywolf_dcd_transitions_total",
 			Help: "Data-carrier-detect state transitions, by channel.",
 		}, []string{"channel"}),
+		DcdDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_modembridge_dcd_dropped_total",
+			Help: "DCD state-change events dropped because a subscriber's buffered channel was full.",
+		}),
 		ChildRestarts: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "graywolf_child_restarts_total",
 			Help: "Number of times the Rust modem child process was restarted.",
@@ -128,6 +133,7 @@ func New() *Metrics {
 	reg.MustRegister(
 		m.RxFrames,
 		m.DcdTransitions,
+		m.DcdDropped,
 		m.ChildRestarts,
 		m.AudioLevel,
 		m.DcdActive,

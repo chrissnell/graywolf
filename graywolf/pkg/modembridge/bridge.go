@@ -98,7 +98,14 @@ var errBridgeStopped = errors.New("modembridge: bridge stopped")
 // New builds a bridge. Call Start to run it.
 func New(cfg Config) *Bridge {
 	cfg.applyDefaults()
-	pub := newDcdPublisher(cfg.Logger, nil)
+	// Route the DCD publisher's drop count into the shared metrics
+	// registry when one is configured. A nil Metrics (tests) leaves the
+	// hook nil and drops still happen, just uncounted.
+	var dcdDropHook func()
+	if cfg.Metrics != nil {
+		dcdDropHook = cfg.Metrics.DcdDropped.Inc
+	}
+	pub := newDcdPublisher(cfg.Logger, dcdDropHook)
 	b := &Bridge{
 		cfg:            cfg,
 		logger:         cfg.Logger,

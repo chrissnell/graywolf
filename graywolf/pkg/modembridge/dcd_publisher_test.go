@@ -8,10 +8,25 @@ import (
 	"time"
 
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
+	"github.com/chrissnell/graywolf/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// counterValue reads a Prometheus counter's current value without
+// pulling in the testutil subpackage (which would promote several
+// indirect deps to direct).
+func counterValue(t *testing.T, c prometheus.Counter) float64 {
+	t.Helper()
+	m := &dto.Metric{}
+	if err := c.Write(m); err != nil {
+		t.Fatalf("counter write: %v", err)
+	}
+	return m.GetCounter().GetValue()
 }
 
 // TestDcdPublisherPublishesToAllSubscribers verifies that every Publish
@@ -183,6 +198,35 @@ func TestDcdPublisherCloseUnblocksRangeConsumers(t *testing.T) {
 	case <-done:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("range consumer did not exit after Close")
+	}
+}
+
+// TestDcdPublisherWiresMetricsCounter verifies that a drop hook sourced
+// from *metrics.Metrics.DcdDropped increments the shared
+// graywolf_modembridge_dcd_dropped_total counter on slow-subscriber
+// drops. This is the wiring contract Bridge.New relies on: if the
+// counter type changes or the hook installation drifts, this test
+// catches it without needing to spin up the full bridge supervisor.
+func TestDcdPublisherWiresMetricsCounter(t *testing.T) {
+	m := metrics.New()
+	p := newDcdPublisher(testLogger(), m.DcdDropped.Inc)
+	defer p.Close()
+
+	// Fill the buffer of the only subscriber so every further publish drops.
+	slow := p.Subscribe()
+	_ = slow
+	for i := 0; i < dcdPublisherBufferSize; i++ {
+		p.Publish(&pb.DcdChange{Channel: uint32(i)})
+	}
+	if got := counterValue(t, m.DcdDropped); got != 0 {
+		t.Fatalf("pre-drop counter = %v, want 0 (buffer should have absorbed)", got)
+	}
+	const extra = 5
+	for i := 0; i < extra; i++ {
+		p.Publish(&pb.DcdChange{Channel: uint32(dcdPublisherBufferSize + i)})
+	}
+	if got := counterValue(t, m.DcdDropped); got != float64(extra) {
+		t.Errorf("DcdDropped counter = %v, want %d", got, extra)
 	}
 }
 
