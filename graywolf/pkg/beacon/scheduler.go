@@ -1,13 +1,18 @@
 // Package beacon implements the graywolf beacon scheduler: position,
 // object, tracker, custom, and igate beacons driven by the configstore
 // `beacons` table, with optional SmartBeaconing for tracker beacons and
-// safe `comment_cmd` execution for dynamic comments.
+// safe `comment_cmd` execution for dynamic comments. All outgoing frames
+// are submitted through a txgovernor.TxSink at PriorityBeacon.
 //
-// All outgoing frames are submitted through a txgovernor.TxSink
-// (satisfied by *txgovernor.Governor in production) at PriorityBeacon.
+// Runtime model: a single scheduler goroutine maintains a min-heap of
+// *beaconPlan keyed by nextFire. Each tick pops the earliest plan,
+// dispatches it onto a bounded worker pool, then pushes the rescheduled
+// plan back onto the heap. Reloads are serviced on the same goroutine,
+// so there is no interleaving between the old and new schedules.
 package beacon
 
 import (
+	"container/heap"
 	"context"
 	"errors"
 	"fmt"
@@ -15,96 +20,26 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
-// Type enumerates the supported beacon kinds.
-type Type string
+// DefaultMaxConcurrentFires is the default size of the fire worker pool
+// when Options.MaxConcurrentFires is zero. Four workers is enough for
+// realistic home-station configurations; operators with dozens of
+// beacons can raise the limit explicitly.
+const DefaultMaxConcurrentFires = 4
 
-const (
-	TypePosition Type = "position"
-	TypeObject   Type = "object"
-	TypeTracker  Type = "tracker"
-	TypeCustom   Type = "custom"
-	TypeIGate    Type = "igate"
-)
+// smartPollInterval is the maximum gap between wakeups for a
+// SmartBeacon-enabled tracker. GPS-driven turn detection needs to be
+// responsive, so we peek at the cache this often even when the
+// fixed-rate interval is longer.
+const smartPollInterval = 1 * time.Second
 
-// Config describes one beacon entry from the beacons table. Fields match
-// the SQL schema in .context/graywolf-implementation-plan.md §beacons.
-type Config struct {
-	ID          uint32
-	Type        Type
-	Channel     uint32 // send_to parsed as channel number (IG/APP handled by caller)
-	Source      ax25.Address
-	Dest        ax25.Address
-	Path        []ax25.Address
-	Delay       time.Duration // initial delay
-	Every       time.Duration // periodic interval
-	Slot        int           // seconds past the hour; -1 means unset
-	UseGps      bool          // if true, source lat/lon/alt from the GPS cache instead of Lat/Lon/AltFt
-	Lat, Lon    float64       // fixed position
-	AltFt       float64
-	SymbolTable byte
-	SymbolCode  byte
-	Comment     string
-	CommentCmd  []string // already-split argv; empty = static comment
-	Compress    bool     // use 13-byte base-91 compressed position format
-	Messaging   bool
-	ObjectName  string             // for TypeObject
-	CustomInfo  string             // for TypeCustom (raw info field override)
-	SmartBeacon *SmartBeaconConfig // non-nil + .Enabled → use for tracker
-	// PHG radio-capability extension (APRS101 ch 7) for fixed-station
-	// position, igate, and object beacons. Emitted only when PHGPower
-	// > 0. Not valid for trackers (CSE/SPD occupies the same slot).
-	PHGPower       int // watts
-	PHGHeightFt    int // feet above average terrain
-	PHGGainDB      int // dBi
-	PHGDirectivity int // 0 = omni, 1..8 = 45° × d compass direction
-	Enabled        bool
-}
-
-// Observer is an optional hook for metrics. Scheduler calls these on
-// beacon send; nil methods are skipped.
-type Observer interface {
-	OnBeaconSent(beaconType Type)
-	OnSmartBeaconRate(channel uint32, interval time.Duration)
-}
-
-// ErrorObserver is an optional interface the Observer may implement to
-// receive beacon failure notifications. The scheduler performs a type
-// assertion at call time, so existing Observer implementations (which
-// do not know about encode/submit errors) keep working unmodified.
-//
-// OnEncodeError fires once per beacon whose AX.25 encoding step
-// returned a non-nil error — typically a misconfigured source or
-// destination address. The beacon is dropped on the floor; the
-// scheduler will retry at the next tick but nothing changes in the
-// configuration, so a sustained non-zero count is an operator signal.
-//
-// OnSubmitError fires once per Submit call that returned an error.
-// reason is one of "queue_full", "timeout", or "other" — see
-// classifySubmitError.
-type ErrorObserver interface {
-	OnEncodeError(beaconName string)
-	OnSubmitError(beaconName string, reason string)
-}
-
-// Clock abstracts time for deterministic tests.
-type Clock interface {
-	Now() time.Time
-	After(time.Duration) <-chan time.Time
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time                         { return time.Now() }
-func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
-
-// Scheduler runs one goroutine per beacon entry plus one for
-// SmartBeaconing turn detection if any tracker beacons exist.
+// Scheduler owns the run-loop goroutine and the bounded worker pool
+// that dispatches beacon fires. Configure via New, drive with Run;
+// SetBeacons / Reload / SendNow are safe to call from any goroutine.
 type Scheduler struct {
 	sink     txgovernor.TxSink
 	cache    gps.PositionCache
@@ -112,6 +47,8 @@ type Scheduler struct {
 	observer Observer
 	clock    Clock
 	version  string
+	maxFires int
+	workers  chan struct{} // counting semaphore sized to maxFires
 
 	mu       sync.Mutex
 	beacons  []Config
@@ -126,6 +63,11 @@ type Options struct {
 	Observer Observer
 	Clock    Clock  // defaults to wall clock
 	Version  string // running graywolf version, used to expand {{version}} in comments
+	// MaxConcurrentFires bounds how many beacon fires can be in flight
+	// at once. Zero selects DefaultMaxConcurrentFires. The scheduler
+	// never blocks on submit — if all workers are busy when a beacon is
+	// due, the fire is dropped and a skipped_busy event is recorded.
+	MaxConcurrentFires int
 }
 
 // New constructs a Scheduler.
@@ -141,6 +83,10 @@ func New(opts Options) (*Scheduler, error) {
 	if clock == nil {
 		clock = realClock{}
 	}
+	maxFires := opts.MaxConcurrentFires
+	if maxFires <= 0 {
+		maxFires = DefaultMaxConcurrentFires
+	}
 	return &Scheduler{
 		sink:     opts.Sink,
 		cache:    opts.Cache,
@@ -148,22 +94,28 @@ func New(opts Options) (*Scheduler, error) {
 		observer: opts.Observer,
 		clock:    clock,
 		version:  opts.Version,
+		maxFires: maxFires,
+		workers:  make(chan struct{}, maxFires),
 		reloadCh: make(chan struct{}, 1),
 	}, nil
 }
 
 // SetBeacons replaces the beacon list. If Run is active, call Reload
-// instead to also restart per-beacon goroutines with the new config.
+// instead to also tell the scheduler to pick up the new config.
 func (s *Scheduler) SetBeacons(b []Config) {
 	s.mu.Lock()
 	s.beacons = append([]Config(nil), b...)
 	s.mu.Unlock()
 }
 
-// Reload atomically swaps in a new beacon list and signals Run to cancel
-// the currently-running per-beacon goroutines and re-spawn them from the
-// new config. Safe to call from any goroutine; non-blocking — coalesces
-// rapid successive calls into one re-spawn cycle.
+// Reload atomically swaps in a new beacon list and signals Run to
+// rebuild its heap from the new config. Safe to call from any goroutine;
+// non-blocking — rapid successive calls coalesce into one rebuild.
+//
+// The rebuild happens on the scheduler's single run-loop goroutine, so
+// there is no interleaving between the old and new schedules: a beacon
+// either fires from the pre-reload heap or from the post-reload heap,
+// never both.
 func (s *Scheduler) Reload(b []Config) {
 	s.SetBeacons(b)
 	select {
@@ -195,171 +147,180 @@ func (s *Scheduler) SendNow(ctx context.Context, id uint32) error {
 	return nil
 }
 
-// Run launches one goroutine per enabled beacon and blocks until ctx is
-// cancelled. On Reload, the current goroutines are cancelled and a fresh
-// generation is spawned from the latest beacons slice.
+// Run drives the scheduler's single heap-based run loop until ctx is
+// cancelled. It returns nil on clean shutdown. In-flight worker
+// goroutines detach from Run and complete (or cancel via ctx) on their
+// own; Run returning does not wait for them.
 func (s *Scheduler) Run(ctx context.Context) error {
+	h := s.buildHeap(s.clock.Now())
 	for {
-		genCtx, cancel := context.WithCancel(ctx)
-		done := s.runGeneration(genCtx)
-
+		// Drain any pending reload first so we always act on the freshest
+		// config before deciding whether to sleep or fire.
 		select {
-		case <-ctx.Done():
-			cancel()
-			<-done
-			return nil
 		case <-s.reloadCh:
-			s.logger.Info("beacon scheduler reloading")
-			cancel()
-			<-done
-			// Drain any extra reload signals that arrived during shutdown
-			// so we don't immediately re-cycle on the next iteration.
+			h = s.buildHeap(s.clock.Now())
+		default:
+		}
+
+		if h.Len() == 0 {
+			// Nothing scheduled — wait for a reload or cancellation.
 			select {
 			case <-s.reloadCh:
-			default:
-			}
-		case <-done:
-			// All beacons exited on their own (none enabled, or all errored
-			// out). Wait for ctx or a reload before deciding what to do.
-			cancel()
-			select {
+				h = s.buildHeap(s.clock.Now())
 			case <-ctx.Done():
 				return nil
-			case <-s.reloadCh:
-				s.logger.Info("beacon scheduler reloading")
 			}
-		}
-	}
-}
-
-// runGeneration spawns one goroutine per enabled beacon and returns a
-// channel closed when all of them have exited. The caller is responsible
-// for cancelling genCtx to make them exit.
-func (s *Scheduler) runGeneration(genCtx context.Context) <-chan struct{} {
-	s.mu.Lock()
-	beacons := append([]Config(nil), s.beacons...)
-	s.mu.Unlock()
-
-	var wg sync.WaitGroup
-	for i := range beacons {
-		b := beacons[i]
-		if !b.Enabled {
 			continue
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.runBeacon(genCtx, b)
-		}()
-	}
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	return done
-}
-
-// runBeacon drives one beacon entry's schedule and send loop.
-func (s *Scheduler) runBeacon(ctx context.Context, b Config) {
-	// Initial delay (optionally overridden by slot alignment).
-	initial := b.Delay
-	if b.Slot >= 0 && b.Slot < 3600 {
-		initial = timeToNextSlot(s.clock.Now(), b.Slot)
-	}
-	if initial < 0 {
-		initial = 0
-	}
-	select {
-	case <-ctx.Done():
-		return
-	case <-s.clock.After(initial):
-	}
-
-	// Tracker beacons with SmartBeaconing enabled use a dynamic interval
-	// and corner-pegging driven by GPS updates. Other beacons use the
-	// fixed `every` interval.
-	smart := b.Type == TypeTracker && b.SmartBeacon != nil && b.SmartBeacon.Enabled && s.cache != nil
-	if smart {
-		s.runTrackerSmart(ctx, b)
-		return
-	}
-
-	// Fixed-interval loop.
-	s.sendBeacon(ctx, b)
-	interval := b.Every
-	if interval <= 0 {
-		interval = 10 * time.Minute
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.clock.After(interval):
-		}
-		s.sendBeacon(ctx, b)
-	}
-}
-
-// runTrackerSmart implements SmartBeaconing: the beacon interval is
-// recomputed on every GPS update; corner pegging fires early when the
-// heading delta exceeds the speed-dependent threshold.
-func (s *Scheduler) runTrackerSmart(ctx context.Context, b Config) {
-	cfg := *b.SmartBeacon
-	var (
-		lastHeading float64
-		lastSend    = s.clock.Now()
-	)
-	s.sendBeacon(ctx, b)
-	fix, ok := s.cache.Get()
-	if ok {
-		lastHeading = fix.Heading
-	}
-
-	for {
-		fix, _ := s.cache.Get()
-		interval := cfg.Interval(fix.Speed)
-		if s.observer != nil {
-			s.observer.OnSmartBeaconRate(b.Channel, interval)
-		}
-
-		// Sleep in small slices so turn detection remains responsive.
-		slice := 1 * time.Second
-		if interval < slice {
-			slice = interval
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.clock.After(slice):
 		}
 
 		now := s.clock.Now()
-		fix, _ = s.cache.Get()
-		elapsed := now.Sub(lastSend)
-
-		// Corner pegging: heading change exceeds threshold and turn_time
-		// has elapsed since last beacon.
-		if fix.HasCourse && elapsed >= cfg.TurnTime {
-			delta := HeadingDelta(lastHeading, fix.Heading)
-			if delta >= cfg.TurnThreshold(fix.Speed) {
-				s.sendBeacon(ctx, b)
-				lastSend = now
-				lastHeading = fix.Heading
-				continue
+		next := h.Peek()
+		wait := next.nextFire.Sub(now)
+		if wait <= 0 {
+			heap.Pop(h)
+			if s.shouldFire(next, now) {
+				s.fireAsync(ctx, next)
+				next.lastSent = now
+				if s.isSmart(next.cfg) {
+					fix, ok := s.cache.Get()
+					if ok && fix.HasCourse {
+						next.lastHeading = fix.Heading
+						next.hasHeading = true
+					}
+				}
 			}
+			next.nextFire = s.nextWake(next, now)
+			heap.Push(h, next)
+			continue
 		}
 
-		// Fixed-rate trigger: elapsed ≥ current interval.
-		if elapsed >= interval {
-			s.sendBeacon(ctx, b)
-			lastSend = now
-			if fix.HasCourse {
-				lastHeading = fix.Heading
-			}
+		select {
+		case <-s.clock.After(wait):
+			// Loop back and re-peek; the earliest plan may have changed
+			// if the clock fake advanced several plans past due at once.
+		case <-s.reloadCh:
+			h = s.buildHeap(s.clock.Now())
+		case <-ctx.Done():
+			return nil
 		}
 	}
+}
+
+// buildHeap snapshots the current beacon list and returns a fresh heap
+// with one *beaconPlan per enabled beacon. Called from Run only.
+func (s *Scheduler) buildHeap(now time.Time) *beaconHeap {
+	s.mu.Lock()
+	configs := append([]Config(nil), s.beacons...)
+	s.mu.Unlock()
+
+	h := make(beaconHeap, 0, len(configs))
+	for _, cfg := range configs {
+		if !cfg.Enabled {
+			continue
+		}
+		h = append(h, &beaconPlan{
+			cfg:      cfg,
+			nextFire: s.initialFire(cfg, now),
+		})
+	}
+	heap.Init(&h)
+	s.logger.Info("beacon scheduler heap built", "count", len(h))
+	return &h
+}
+
+// initialFire returns the wall-clock time a newly-scheduled plan should
+// first consider firing. Slot alignment wins over Delay when set.
+func (s *Scheduler) initialFire(cfg Config, now time.Time) time.Time {
+	delay := cfg.Delay
+	if cfg.Slot >= 0 && cfg.Slot < 3600 {
+		delay = timeToNextSlot(now, cfg.Slot)
+	}
+	if delay < 0 {
+		delay = 0
+	}
+	return now.Add(delay)
+}
+
+// isSmart reports whether a Config should be driven by SmartBeaconing.
+// A nil cache disables smart behavior even when configured, matching the
+// pre-refactor semantics.
+func (s *Scheduler) isSmart(c Config) bool {
+	return c.Type == TypeTracker && c.SmartBeacon != nil && c.SmartBeacon.Enabled && s.cache != nil
+}
+
+// shouldFire decides, at wake time, whether to actually transmit a
+// plan's beacon. Non-smart plans always fire at their scheduled time.
+// Smart plans fire on three conditions: their first scheduled fire,
+// expiry of the speed-dependent fixed-rate interval, or a
+// heading-delta exceeding the corner-peg threshold after TurnTime has
+// elapsed since the last transmit.
+func (s *Scheduler) shouldFire(p *beaconPlan, now time.Time) bool {
+	if !s.isSmart(p.cfg) {
+		return true
+	}
+	if p.lastSent.IsZero() {
+		return true
+	}
+	fix, _ := s.cache.Get()
+	cfg := p.cfg.SmartBeacon
+	elapsed := now.Sub(p.lastSent)
+	// Corner pegging: only consider once TurnTime has elapsed and we
+	// have a previous heading to diff against.
+	if p.hasHeading && fix.HasCourse && elapsed >= cfg.TurnTime {
+		delta := HeadingDelta(p.lastHeading, fix.Heading)
+		if delta >= cfg.TurnThreshold(fix.Speed) {
+			return true
+		}
+	}
+	// Fixed-rate trigger.
+	return elapsed >= cfg.Interval(fix.Speed)
+}
+
+// nextWake computes the time at which the scheduler should next pop p
+// from the heap. Non-smart plans wake once per Every interval; smart
+// plans wake at min(now+smartPollInterval, now+Interval(speed)) so they
+// can re-evaluate turn detection frequently without paying for a
+// per-beacon goroutine.
+func (s *Scheduler) nextWake(p *beaconPlan, now time.Time) time.Time {
+	if !s.isSmart(p.cfg) {
+		every := p.cfg.Every
+		if every <= 0 {
+			every = 10 * time.Minute
+		}
+		return now.Add(every)
+	}
+	fix, _ := s.cache.Get()
+	interval := p.cfg.SmartBeacon.Interval(fix.Speed)
+	if s.observer != nil {
+		s.observer.OnSmartBeaconRate(p.cfg.Channel, interval)
+	}
+	poll := smartPollInterval
+	if interval < poll {
+		poll = interval
+	}
+	return now.Add(poll)
+}
+
+// fireAsync dispatches sendBeacon onto a worker pool goroutine without
+// blocking the run loop. If the pool is saturated the fire is dropped
+// and a skipped_busy event is emitted; the plan's next scheduled wake
+// is unaffected, so the next tick will come around normally.
+func (s *Scheduler) fireAsync(ctx context.Context, p *beaconPlan) {
+	cfg := p.cfg
+	name := beaconName(cfg)
+	select {
+	case s.workers <- struct{}{}:
+	default:
+		s.logger.Warn("beacon fire skipped", "name", name, "reason", "busy")
+		if so, ok := s.observer.(SkipObserver); ok && so != nil {
+			so.OnBeaconSkipped(name, "busy")
+		}
+		return
+	}
+	go func() {
+		defer func() { <-s.workers }()
+		s.sendBeacon(ctx, cfg)
+	}()
 }
 
 // sendBeacon builds and submits one beacon frame.
@@ -417,138 +378,22 @@ func beaconName(b Config) string {
 	return fmt.Sprintf("%s/%d", b.Type, b.ID)
 }
 
-// classifySubmitError maps a Submit error to one of the three buckets
-// used by the beacon_submit_errors counter. The classification is
-// centralized here so ErrorObserver implementations don't need to
-// know the txgovernor sentinel set.
+// classifySubmitError maps a Submit error into one of the beacon_submit_errors
+// counter buckets. Centralized here so ErrorObserver implementations don't
+// need to know the txgovernor sentinel set; extend when governor grows a new
+// sentinel so the counter classification stays closed.
 //
-//   - context.DeadlineExceeded or context.Canceled => "timeout"
-//   - txgovernor.ErrQueueFull                      => "queue_full"
-//   - anything else                                => "other"
-//
-// Keep this list closed: if the governor grows a new sentinel, route
-// it here so the counter classification stays accurate.
+//	context.DeadlineExceeded | Canceled => "timeout"
+//	txgovernor.ErrQueueFull             => "queue_full"
+//	otherwise                           => "other"
 func classifySubmitError(err error) string {
-	if err == nil {
+	switch {
+	case err == nil:
 		return "other"
-	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return "timeout"
-	}
-	if errors.Is(err, txgovernor.ErrQueueFull) {
+	case errors.Is(err, txgovernor.ErrQueueFull):
 		return "queue_full"
 	}
 	return "other"
-}
-
-// buildInfo constructs the APRS info field for b, including optional
-// comment_cmd stdout appended to the static comment.
-func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
-	comment := ExpandComment(b.Comment, s.version)
-	if len(b.CommentCmd) > 0 {
-		out, err := RunCommentCmd(ctx, b.CommentCmd, 5*time.Second)
-		if err != nil {
-			s.logger.Warn("comment_cmd failed", "id", b.ID, "err", err)
-			// Fall through with static comment.
-		} else if out != "" {
-			if comment != "" {
-				comment = comment + " " + out
-			} else {
-				comment = out
-			}
-		}
-	}
-
-	// Pre-encode PHG once. Empty string means "no PHG extension".
-	phg := ""
-	if b.PHGPower > 0 {
-		if encoded, err := aprs.EncodePHG(b.PHGPower, b.PHGHeightFt, b.PHGGainDB, b.PHGDirectivity); err == nil {
-			phg = encoded
-		} else {
-			s.logger.Warn("invalid PHG config", "id", b.ID, "err", err)
-		}
-	}
-
-	switch b.Type {
-	case TypePosition, TypeIGate:
-		lat, lon, altM := b.Lat, b.Lon, b.AltFt/3.28084
-		if b.UseGps {
-			if s.cache == nil {
-				return "", fmt.Errorf("%s beacon: use_gps set but no GPS cache configured", b.Type)
-			}
-			fix, ok := s.cache.Get()
-			if !ok {
-				return "", fmt.Errorf("%s beacon: use_gps set but no GPS fix available", b.Type)
-			}
-			lat, lon = fix.Latitude, fix.Longitude
-			if fix.HasAlt {
-				altM = fix.Altitude
-			} else {
-				// Never mix GPS lat/lon with a stale fixed AltFt.
-				altM = 0
-			}
-		} else if lat == 0 && lon == 0 {
-			return "", fmt.Errorf("%s beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)", b.Type)
-		}
-		if b.Compress {
-			return CompressedPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment), nil
-		}
-		return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment), nil
-
-	case TypeTracker:
-		if s.cache == nil {
-			return "", fmt.Errorf("tracker beacon without GPS cache")
-		}
-		fix, ok := s.cache.Get()
-		if !ok {
-			return "", fmt.Errorf("tracker beacon: no GPS fix available")
-		}
-		course := 0
-		if fix.HasCourse {
-			course = int(fix.Heading)
-			if course == 0 {
-				course = 360 // APRS encodes 0 as 360 per spec
-			}
-		}
-		altM := 0.0
-		if fix.HasAlt {
-			altM = fix.Altitude
-		}
-		// Trackers never emit PHG — CSE/SPD occupies the same slot.
-		if b.Compress {
-			return CompressedPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment), nil
-		}
-		return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment), nil
-
-	case TypeObject:
-		if b.ObjectName == "" {
-			return "", fmt.Errorf("object beacon missing object_name")
-		}
-		return ObjectInfo(b.ObjectName, true, "", b.Lat, b.Lon, b.SymbolTable, b.SymbolCode, phg, comment), nil
-
-	case TypeCustom:
-		if b.CustomInfo == "" {
-			return "", fmt.Errorf("custom beacon missing info field")
-		}
-		if comment != "" {
-			return b.CustomInfo + comment, nil
-		}
-		return b.CustomInfo, nil
-	}
-	return "", fmt.Errorf("unknown beacon type %q", b.Type)
-}
-
-// timeToNextSlot returns the duration until the next occurrence of the
-// given "seconds past the hour" boundary.
-func timeToNextSlot(now time.Time, slot int) time.Duration {
-	if slot < 0 {
-		return 0
-	}
-	slot = slot % 3600
-	sec := now.Minute()*60 + now.Second()
-	diff := slot - sec
-	if diff <= 0 {
-		diff += 3600
-	}
-	return time.Duration(diff)*time.Second - time.Duration(now.Nanosecond())
 }
