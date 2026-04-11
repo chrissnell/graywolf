@@ -87,3 +87,43 @@ func TestUpdateFromStatusHandlesRestart(t *testing.T) {
 		t.Errorf("unexpected transitions counter after restart:\n%s", body)
 	}
 }
+
+// TestObservabilityCountersRegistered pins the WO-11 contract: every
+// new drop counter added by the observability pass is registered
+// with the shared Prometheus registry and surfaces in /metrics.
+//
+// Prometheus does not emit a HELP line for a labeled CounterVec
+// until at least one label combination has been observed, so the
+// test first touches each labeled counter with representative
+// labels — a zero-valued observation is sufficient for registration
+// to become visible in the scrape output. The unlabeled counters
+// are emitted as soon as they are registered.
+func TestObservabilityCountersRegistered(t *testing.T) {
+	m := New()
+
+	// Touch labeled counters so the registry surfaces them.
+	m.AgwDecodeErrors.WithLabelValues("initial")
+	m.AgwDecodeErrors.WithLabelValues("fallback")
+	m.BeaconEncodeErrors.WithLabelValues("probe")
+	m.BeaconSubmitErrors.WithLabelValues("probe", "queue_full")
+	m.GpsParseErrors.WithLabelValues("gpsd")
+	m.GpsParseErrors.WithLabelValues("nmea")
+
+	body := scrape(t, m)
+	wantHelp := []string{
+		"graywolf_modembridge_dcd_dropped_total",
+		"graywolf_agw_decode_errors_total",
+		"graywolf_kiss_decode_errors_total",
+		"graywolf_beacon_encode_errors_total",
+		"graywolf_beacon_submit_errors_total",
+		"graywolf_gps_parse_errors_total",
+		// Pre-existing but audited by WO-11:
+		"graywolf_digipeater_deduped_total",
+		"graywolf_aprs_out_dropped_total",
+	}
+	for _, name := range wantHelp {
+		if !strings.Contains(body, "# HELP "+name+" ") {
+			t.Errorf("counter %q is not registered (no HELP line in /metrics output)", name)
+		}
+	}
+}
