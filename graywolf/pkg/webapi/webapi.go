@@ -68,9 +68,7 @@ func NewServer(cfg Config) (*Server, error) {
 
 // RegisterRoutes installs the /api/* handlers on mux.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
-	// Channels — full CRUD + stats subpath
-	mux.HandleFunc("/api/channels", s.handleChannels)
-	mux.HandleFunc("/api/channels/", s.handleChannelsSubpath)
+	s.registerChannels(mux)
 
 	// Audio devices — full CRUD + available enumeration
 	mux.HandleFunc("/api/audio-devices", s.handleAudioDevices)
@@ -114,114 +112,6 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// /api/position — in position.go (RegisterPosition)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/status", s.handleStatus)
-}
-
-func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		channels, err := s.store.ListChannels(r.Context())
-		if err != nil {
-			s.internalError(w, r, "list channels", err)
-			return
-		}
-		writeJSON(w, http.StatusOK, channels)
-	case http.MethodPost:
-		var c configstore.Channel
-		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-			return
-		}
-		if err := s.store.CreateChannel(r.Context(), &c); err != nil {
-			s.internalError(w, r, "create channel", err)
-			return
-		}
-		writeJSON(w, http.StatusCreated, c)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleChannelsSubpath routes /api/channels/{id} and /api/channels/{id}/stats
-func (s *Server) handleChannelsSubpath(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/channels/")
-	parts := strings.SplitN(path, "/", 2)
-
-	// /api/channels/{id}/stats
-	if len(parts) == 2 && parts[1] == "stats" {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.handleChannelStats(w, r, parts[0])
-		return
-	}
-
-	// /api/channels/{id} — GET, PUT, DELETE
-	id, err := parseID(parts[0])
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		c, err := s.store.GetChannel(r.Context(), id)
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-			return
-		}
-		writeJSON(w, http.StatusOK, c)
-	case http.MethodPut:
-		var c configstore.Channel
-		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-			return
-		}
-		c.ID = id
-		if err := s.store.UpdateChannel(r.Context(), &c); err != nil {
-			s.internalError(w, r, "update channel", err)
-			return
-		}
-		s.notifyBridgeForDevice(r.Context(), c.InputDeviceID)
-		if c.OutputDeviceID != 0 {
-			s.notifyBridgeForDevice(r.Context(), c.OutputDeviceID)
-		}
-		writeJSON(w, http.StatusOK, c)
-	case http.MethodDelete:
-		// Look up device IDs before deleting so we can notify the bridge.
-		ch, _ := s.store.GetChannel(r.Context(), id)
-		if err := s.store.DeleteChannel(r.Context(), id); err != nil {
-			s.internalError(w, r, "delete channel", err)
-			return
-		}
-		if ch != nil {
-			s.notifyBridgeForDevice(r.Context(), ch.InputDeviceID)
-			if ch.OutputDeviceID != 0 {
-				s.notifyBridgeForDevice(r.Context(), ch.OutputDeviceID)
-			}
-		}
-		w.WriteHeader(http.StatusNoContent)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// GET /api/channels/{id}/stats
-func (s *Server) handleChannelStats(w http.ResponseWriter, _ *http.Request, idStr string) {
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		http.Error(w, "invalid channel id", http.StatusBadRequest)
-		return
-	}
-	if s.bridge == nil {
-		http.Error(w, "bridge not available", http.StatusServiceUnavailable)
-		return
-	}
-	stats, ok := s.bridge.GetChannelStats(uint32(id))
-	if !ok {
-		http.Error(w, "no stats for channel", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, stats)
 }
 
 // /api/audio-devices — list + create
