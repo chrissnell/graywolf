@@ -26,6 +26,7 @@ type Metrics struct {
 
 	// Phase 2: protocol + tx governor metrics.
 	KissClientsActive *prometheus.GaugeVec // per interface name
+	KissDecodeErrors  prometheus.Counter
 	AgwClientsActive  prometheus.Gauge
 	AgwDecodeErrors   *prometheus.CounterVec // label: stage ("initial" | "fallback")
 	TxFrames          *prometheus.CounterVec // per channel
@@ -88,6 +89,10 @@ func New() *Metrics {
 			Name: "graywolf_kiss_clients_active",
 			Help: "Connected KISS clients, by interface name.",
 		}, []string{"interface"}),
+		KissDecodeErrors: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_kiss_decode_errors_total",
+			Help: "KISS data frames that failed AX.25 decoding and were dropped.",
+		}),
 		AgwClientsActive: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "graywolf_agw_clients_active",
 			Help: "Connected AGWPE clients.",
@@ -159,6 +164,7 @@ func New() *Metrics {
 		m.DcdActive,
 		m.ChildUp,
 		m.KissClientsActive,
+		m.KissDecodeErrors,
 		m.AgwClientsActive,
 		m.AgwDecodeErrors,
 		m.TxFrames,

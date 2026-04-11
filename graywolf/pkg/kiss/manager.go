@@ -10,9 +10,10 @@ import (
 
 // Manager tracks running KISS TCP servers and supports hot start/stop.
 type Manager struct {
-	sink   txgovernor.TxSink
-	logger *slog.Logger
-	mu     sync.Mutex
+	sink          txgovernor.TxSink
+	logger        *slog.Logger
+	onDecodeError func()
+	mu            sync.Mutex
 	// running maps DB ID → running server state.
 	running map[uint32]*managedServer
 }
@@ -26,6 +27,11 @@ type managedServer struct {
 type ManagerConfig struct {
 	Sink   txgovernor.TxSink
 	Logger *slog.Logger
+	// OnDecodeError, if non-nil, is installed on every Server the
+	// Manager starts. A shared counter across all KISS interfaces is
+	// intentional: the metric is about "kiss frames that failed
+	// ax25 decoding" at the system level, not per-interface.
+	OnDecodeError func()
 }
 
 // NewManager creates a Manager. Call Start to launch individual servers.
@@ -35,9 +41,10 @@ func NewManager(cfg ManagerConfig) *Manager {
 		lg = slog.Default()
 	}
 	return &Manager{
-		sink:    cfg.Sink,
-		logger:  lg,
-		running: make(map[uint32]*managedServer),
+		sink:          cfg.Sink,
+		logger:        lg,
+		onDecodeError: cfg.OnDecodeError,
+		running:       make(map[uint32]*managedServer),
 	}
 }
 
@@ -56,6 +63,9 @@ func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 	cfg.Sink = m.sink
 	if cfg.Logger == nil {
 		cfg.Logger = m.logger
+	}
+	if cfg.OnDecodeError == nil {
+		cfg.OnDecodeError = m.onDecodeError
 	}
 
 	ctx, cancel := context.WithCancel(parent)

@@ -31,6 +31,11 @@ type ServerConfig struct {
 	// OnClientChange is invoked with the new active-client count whenever
 	// a client connects or disconnects. Optional.
 	OnClientChange func(active int)
+	// OnDecodeError is invoked for every KISS data frame whose payload
+	// failed AX.25 decoding. Optional; nil is a no-op. A single counter
+	// with no labels is used on purpose: per-client address would
+	// explode cardinality on a server with churning clients.
+	OnDecodeError func()
 	// Broadcast, when false, disables BroadcastFromChannel fan-out (the
 	// interface is TX-only from the KISS client's perspective). Default
 	// true — kiss_interfaces.broadcast in the configstore drives this.
@@ -177,7 +182,11 @@ func (s *Server) handleFrame(ctx context.Context, remote string, f *Frame) {
 	case CmdDataFrame:
 		ax, err := ax25.Decode(f.Data)
 		if err != nil {
-			s.logger.Warn("kiss frame is not valid ax.25", "remote", remote, "err", err)
+			if s.cfg.OnDecodeError != nil {
+				s.cfg.OnDecodeError()
+			}
+			s.logger.Warn("kiss frame is not valid ax.25",
+				"remote", remote, "len", len(f.Data), "err", err)
 			return
 		}
 		if !ax.IsUI() {

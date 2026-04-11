@@ -195,8 +195,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- KISS manager --------------------------------------------------
 	a.kissMgr = kiss.NewManager(kiss.ManagerConfig{
-		Sink:   a.gov,
-		Logger: a.logger,
+		Sink:          a.gov,
+		Logger:        a.logger,
+		OnDecodeError: a.metrics.KissDecodeErrors.Inc,
 	})
 
 	// --- Digipeater ----------------------------------------------------
