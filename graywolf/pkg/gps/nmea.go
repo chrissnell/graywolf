@@ -14,8 +14,8 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
-// Supported NMEA sentences: $GPRMC, $GPGGA (and GN/GL/GA talker variants).
-// Other sentences are silently ignored.
+// Supported NMEA sentences: $GPRMC, $GPGGA, $GPVTG (and GN/GL/GA talker
+// variants). Other sentences are silently ignored.
 
 // ParseNMEA parses a single NMEA sentence into a Fix. The input may
 // optionally include the leading '$' and trailing "*HH" checksum; both
@@ -60,6 +60,8 @@ func ParseNMEA(line string) (Fix, bool, error) {
 		return parseRMC(fields)
 	case "GGA":
 		return parseGGA(fields)
+	case "VTG":
+		return parseVTG(fields)
 	default:
 		return Fix{}, false, fmt.Errorf("gps: unsupported sentence %q", tag)
 	}
@@ -134,6 +136,32 @@ func parseGGA(f []string) (Fix, bool, error) {
 		}
 	}
 	return fix, active, nil
+}
+
+// $xxVTG,cogt,T,cogm,M,sog_kn,N,sog_kmh,K,mode*hh
+//   1=course true 3=course mag 5=speed knots 7=speed km/h 9=mode
+func parseVTG(f []string) (Fix, bool, error) {
+	if len(f) < 9 {
+		return Fix{}, false, fmt.Errorf("gps: VTG too short (%d fields)", len(f))
+	}
+	// Mode 'N' = not valid.
+	if len(f) > 9 && f[9] == "N" {
+		return Fix{}, false, nil
+	}
+	var fix Fix
+	if f[1] != "" {
+		if h, err := strconv.ParseFloat(f[1], 64); err == nil {
+			fix.Heading = h
+			fix.HasCourse = true
+		}
+	}
+	if f[5] != "" {
+		if s, err := strconv.ParseFloat(f[5], 64); err == nil {
+			fix.Speed = s
+			fix.HasCourse = true
+		}
+	}
+	return fix, fix.HasCourse, nil
 }
 
 // parseLat handles "DDMM.mmmm" with hemisphere letter.
@@ -281,6 +309,14 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 		} else if !active {
 			voids++
 			logger.Debug("nmea void/no-fix sentence", "line", line)
+		} else if fix.Latitude == 0 && fix.Longitude == 0 && fix.HasCourse {
+			// Course-only sentence (VTG): merge speed/heading into last fix.
+			if prev, ok := cache.Get(); ok {
+				prev.Speed = fix.Speed
+				prev.Heading = fix.Heading
+				prev.HasCourse = true
+				cache.Update(prev)
+			}
 		} else {
 			fixes++
 			cache.Update(fix)

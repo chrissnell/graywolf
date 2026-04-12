@@ -146,6 +146,89 @@ func TestReadNMEAStream_OnParseError(t *testing.T) {
 	}
 }
 
+func TestParseVTG_Valid(t *testing.T) {
+	line := "$GPVTG,84.4,T,80.1,M,0.124,N,0.230,K,A*25"
+	// Recompute checksum for our test sentence.
+	body := "GPVTG,84.4,T,80.1,M,0.124,N,0.230,K,A"
+	var xor byte
+	for i := 0; i < len(body); i++ {
+		xor ^= body[i]
+	}
+	line = "$" + body + "*" + upperHex(xor)
+
+	fix, active, err := ParseNMEA(line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !active {
+		t.Fatalf("expected active VTG")
+	}
+	if !approxEq(fix.Heading, 84.4, 1e-3) {
+		t.Errorf("heading = %v, want 84.4", fix.Heading)
+	}
+	if !approxEq(fix.Speed, 0.124, 1e-4) {
+		t.Errorf("speed = %v, want 0.124", fix.Speed)
+	}
+	if !fix.HasCourse {
+		t.Errorf("HasCourse = false")
+	}
+}
+
+func TestParseVTG_ModeN(t *testing.T) {
+	body := "GPVTG,,T,,M,,N,,K,N"
+	var xor byte
+	for i := 0; i < len(body); i++ {
+		xor ^= body[i]
+	}
+	line := "$" + body + "*" + upperHex(xor)
+	_, active, err := ParseNMEA(line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if active {
+		t.Errorf("mode=N should be inactive")
+	}
+}
+
+func TestReadNMEAStream_VTGMergesIntoCachedFix(t *testing.T) {
+	// A position fix followed by a VTG sentence should merge speed/heading
+	// into the cached position without clobbering lat/lon.
+	rmcBody := "GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W"
+	var rmcXor byte
+	for i := 0; i < len(rmcBody); i++ {
+		rmcXor ^= rmcBody[i]
+	}
+	vtgBody := "GPVTG,90.0,T,85.0,M,5.5,N,10.2,K,A"
+	var vtgXor byte
+	for i := 0; i < len(vtgBody); i++ {
+		vtgXor ^= vtgBody[i]
+	}
+	stream := bytes.NewBufferString(
+		"$" + rmcBody + "*" + upperHex(rmcXor) + "\n" +
+			"$" + vtgBody + "*" + upperHex(vtgXor) + "\n",
+	)
+	cache := NewMemCache()
+	logger := slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil))
+	if err := ReadNMEAStream(context.Background(), stream, cache, logger, NMEAOptions{}); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	fix, ok := cache.Get()
+	if !ok {
+		t.Fatal("cache empty")
+	}
+	// Position should come from RMC.
+	if !approxEq(fix.Latitude, 48.1173, 1e-4) {
+		t.Errorf("lat = %v, want ~48.1173", fix.Latitude)
+	}
+	// Speed/heading should come from VTG (overriding the RMC values).
+	if !approxEq(fix.Speed, 5.5, 1e-3) {
+		t.Errorf("speed = %v, want 5.5", fix.Speed)
+	}
+	if !approxEq(fix.Heading, 90.0, 1e-3) {
+		t.Errorf("heading = %v, want 90.0", fix.Heading)
+	}
+}
+
 func upperHex(b byte) string {
 	const hex = "0123456789ABCDEF"
 	return string([]byte{hex[b>>4], hex[b&0x0f]})
