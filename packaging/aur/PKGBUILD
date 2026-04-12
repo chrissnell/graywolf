@@ -7,7 +7,7 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/chrissnell/graywolf'
 license=('MIT')
 depends=('glibc')
-makedepends=('go' 'rust' 'cargo')
+makedepends=('go' 'rust' 'cargo' 'nodejs' 'npm')
 backup=()
 install=graywolf.install
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
@@ -20,6 +20,12 @@ prepare() {
 
 build() {
   cd "${pkgname}-${pkgver}"
+
+  # Svelte frontend (populates web/dist for Go embed)
+  cd graywolf/web
+  npm ci
+  npm run build
+  cd ../..
 
   # Go binary
   cd graywolf
