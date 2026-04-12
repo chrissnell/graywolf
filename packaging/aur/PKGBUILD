@@ -50,7 +50,7 @@ package() {
 
   install -Dm755 "${srcdir}/graywolf"       "${pkgdir}/usr/bin/graywolf"
   install -Dm755 "${srcdir}/graywolf-modem" "${pkgdir}/usr/bin/graywolf-modem"
-  install -Dm644 packaging/systemd/graywolf.service \
+  install -Dm644 "${startdir}/graywolf.service" \
     "${pkgdir}/usr/lib/systemd/system/graywolf.service"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 "${startdir}/graywolf.sysusers" \
