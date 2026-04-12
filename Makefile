@@ -102,8 +102,12 @@ bump-minor:
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.0", $$1, $$2+1}'))
 	@echo "$(NEW)" > VERSION
 	@sed -i '' 's/^version = ".*"/version = "$(NEW)"/' $(MODEM_DIR)/Cargo.toml
+	@sed -i '' 's/^pkgver=.*/pkgver=$(NEW)/' packaging/aur/PKGBUILD
+	@sed -i '' 's/pkgver = .*/pkgver = $(NEW)/' packaging/aur/.SRCINFO
+	@sed -i '' 's|source = graywolf-.*\.tar\.gz::.*|source = graywolf-$(NEW).tar.gz::https://github.com/chrissnell/graywolf/archive/v$(NEW).tar.gz|' packaging/aur/.SRCINFO
+	@sed -i '' 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml
+	git add VERSION $(MODEM_DIR)/Cargo.toml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
@@ -113,8 +117,12 @@ bump-point:
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'))
 	@echo "$(NEW)" > VERSION
 	@sed -i '' 's/^version = ".*"/version = "$(NEW)"/' $(MODEM_DIR)/Cargo.toml
+	@sed -i '' 's/^pkgver=.*/pkgver=$(NEW)/' packaging/aur/PKGBUILD
+	@sed -i '' 's/pkgver = .*/pkgver = $(NEW)/' packaging/aur/.SRCINFO
+	@sed -i '' 's|source = graywolf-.*\.tar\.gz::.*|source = graywolf-$(NEW).tar.gz::https://github.com/chrissnell/graywolf/archive/v$(NEW).tar.gz|' packaging/aur/.SRCINFO
+	@sed -i '' 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml
+	git add VERSION $(MODEM_DIR)/Cargo.toml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
