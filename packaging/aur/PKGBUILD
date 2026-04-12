@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc='APRS radio transceiver, digipeater, and Internet gateway'
 arch=('x86_64' 'aarch64')
 url='https://github.com/chrissnell/graywolf'
-license=('MIT')
+license=('GPL-2.0-only')
 depends=('glibc')
 makedepends=('go' 'rust' 'cargo' 'nodejs' 'npm')
 backup=()
@@ -23,7 +23,7 @@ build() {
 
   # Svelte frontend (populates web/dist for Go embed)
   cd graywolf/web
-  npm ci
+  npm install
   npm run build
   cd ../..
 
@@ -41,6 +41,7 @@ build() {
   export GRAYWOLF_VERSION="${pkgver}"
   export GRAYWOLF_GIT_COMMIT="${pkgver}"
   cargo build --release
+  cd ..
   cp target/release/graywolf-modem "${srcdir}/graywolf-modem"
 }
 
