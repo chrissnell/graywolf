@@ -76,13 +76,14 @@ dockers:
   - image_templates:
       - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-amd64"
     dockerfile: Dockerfile.goreleaser
-    use: docker
+    use: buildx
     goos: linux
     goarch: amd64
     extra_files:
       - graywolf-modem-amd64
     build_flag_templates:
       - "--pull"
+      - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.created={{.Date}}"
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
@@ -91,13 +92,14 @@ dockers:
   - image_templates:
       - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
     dockerfile: Dockerfile.goreleaser.arm64
-    use: docker
+    use: buildx
     goos: linux
     goarch: arm64
     extra_files:
       - graywolf-modem-arm64
     build_flag_templates:
       - "--pull"
+      - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.created={{.Date}}"
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
