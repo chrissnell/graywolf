@@ -481,6 +481,23 @@ func isFixedPositionBeacon(pkt *aprs.DecodedAPRSPacket) bool {
 	return true
 }
 
+// SendLine writes a pre-formatted TNC-2 line to APRS-IS. Used by the
+// beacon scheduler to duplicate a beacon to APRS-IS when the operator
+// has opted in. Returns an error if the igate is not connected.
+func (ig *Igate) SendLine(line string) error {
+	ig.mu.Lock()
+	connected := ig.connected
+	ig.mu.Unlock()
+	if !connected {
+		return errors.New("igate: not connected")
+	}
+	if ig.simulation.Load() {
+		ig.logger.Info("igate simulation beacon send", "line", line)
+		return nil
+	}
+	return ig.client.WriteLine(line)
+}
+
 // SetSimulationMode toggles simulation-mode at runtime.
 func (ig *Igate) SetSimulationMode(on bool) error {
 	ig.simulation.Store(on)

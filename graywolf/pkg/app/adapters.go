@@ -133,6 +133,7 @@ func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
 		PHGHeightFt:    int(b.Height),
 		PHGGainDB:      int(b.Gain),
 		PHGDirectivity: int(b.Dir),
+		SendToAPRSIS:   b.SendToAPRSIS,
 		Enabled:        b.Enabled,
 	}
 

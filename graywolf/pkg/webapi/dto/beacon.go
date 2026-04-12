@@ -46,6 +46,7 @@ type BeaconRequest struct {
 	SbTurnAngle   uint32  `json:"sb_turn_angle"`
 	SbTurnSlope   uint32  `json:"sb_turn_slope"`
 	SbMinTurnTime uint32  `json:"sb_min_turn_time"`
+	SendToAPRSIS  bool    `json:"send_to_aprs_is"`
 	Enabled       bool    `json:"enabled"`
 }
 
@@ -105,6 +106,7 @@ func (r BeaconRequest) ToModel() configstore.Beacon {
 		SbTurnAngle:   r.SbTurnAngle,
 		SbTurnSlope:   r.SbTurnSlope,
 		SbMinTurnTime: r.SbMinTurnTime,
+		SendToAPRSIS:  r.SendToAPRSIS,
 		Enabled:       r.Enabled,
 	}
 }
@@ -162,6 +164,7 @@ func BeaconFromModel(m configstore.Beacon) BeaconResponse {
 			SbTurnAngle:   m.SbTurnAngle,
 			SbTurnSlope:   m.SbTurnSlope,
 			SbMinTurnTime: m.SbMinTurnTime,
+			SendToAPRSIS:  m.SendToAPRSIS,
 			Enabled:       m.Enabled,
 		},
 	}

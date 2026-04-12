@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,7 @@ const smartPollInterval = 1 * time.Second
 // SetBeacons / Reload / SendNow are safe to call from any goroutine.
 type Scheduler struct {
 	sink     txgovernor.TxSink
+	isSink   ISSink // optional APRS-IS destination; guarded by mu
 	cache    gps.PositionCache
 	logger   *slog.Logger
 	observer Observer
@@ -63,6 +65,7 @@ type Options struct {
 	Observer Observer
 	Clock    Clock  // defaults to wall clock
 	Version  string // running graywolf version, used to expand {{version}} in comments
+	ISSink   ISSink // optional APRS-IS line sender for beacons with SendToAPRSIS
 	// MaxConcurrentFires bounds how many beacon fires can be in flight
 	// at once. Zero selects DefaultMaxConcurrentFires. The scheduler
 	// never blocks on submit — if all workers are busy when a beacon is
@@ -89,6 +92,7 @@ func New(opts Options) (*Scheduler, error) {
 	}
 	return &Scheduler{
 		sink:     opts.Sink,
+		isSink:   opts.ISSink,
 		cache:    opts.Cache,
 		logger:   logger.With("component", "beacon"),
 		observer: opts.Observer,
@@ -98,6 +102,13 @@ func New(opts Options) (*Scheduler, error) {
 		workers:  make(chan struct{}, maxFires),
 		reloadCh: make(chan struct{}, 1),
 	}, nil
+}
+
+// SetISSink sets the optional APRS-IS sink. Safe to call before Run.
+func (s *Scheduler) SetISSink(sink ISSink) {
+	s.mu.Lock()
+	s.isSink = sink
+	s.mu.Unlock()
 }
 
 // SetBeacons replaces the beacon list. If Run is active, call Reload
@@ -364,6 +375,44 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 	if s.observer != nil {
 		s.observer.OnBeaconSent(b.Type)
 	}
+
+	// Optionally duplicate the beacon to APRS-IS.
+	if b.SendToAPRSIS && s.isSink != nil {
+		line := formatTNC2(b.Source, b.Dest, b.Path, info)
+		if err := s.isSink.SendLine(line); err != nil {
+			s.logger.Warn("beacon aprs-is send", "id", b.ID, "name", name, "err", err)
+		} else {
+			s.logger.Info("beacon sent to aprs-is", "id", b.ID, "line", line)
+		}
+	}
+}
+
+// formatTNC2 renders a beacon as a TNC-2 monitor line for APRS-IS.
+// The APRS-IS server adds the q-construct; we send the bare packet.
+func formatTNC2(src, dest ax25.Address, path []ax25.Address, info string) string {
+	var b strings.Builder
+	b.WriteString(src.Call)
+	if src.SSID != 0 {
+		fmt.Fprintf(&b, "-%d", src.SSID)
+	}
+	b.WriteByte('>')
+	b.WriteString(dest.Call)
+	if dest.SSID != 0 {
+		fmt.Fprintf(&b, "-%d", dest.SSID)
+	}
+	for _, p := range path {
+		b.WriteByte(',')
+		b.WriteString(p.Call)
+		if p.SSID != 0 {
+			fmt.Fprintf(&b, "-%d", p.SSID)
+		}
+		if p.Repeated {
+			b.WriteByte('*')
+		}
+	}
+	b.WriteByte(':')
+	b.WriteString(info)
+	return b.String()
 }
 
 // beaconName returns a stable, human-readable label for a beacon,

@@ -257,6 +257,7 @@ type Beacon struct {
 	SbTurnAngle   uint32    `gorm:"default:30" json:"sb_turn_angle"`
 	SbTurnSlope   uint32    `gorm:"default:255" json:"sb_turn_slope"`
 	SbMinTurnTime uint32    `gorm:"default:5" json:"sb_min_turn_time"`
+	SendToAPRSIS  bool      `gorm:"column:send_to_aprs_is;not null;default:false" json:"send_to_aprs_is"`
 	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt     time.Time `json:"-"`
 	UpdatedAt     time.Time `json:"-"`

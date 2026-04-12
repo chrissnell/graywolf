@@ -48,7 +48,15 @@ type Config struct {
 	PHGHeightFt    int // feet above average terrain
 	PHGGainDB      int // dBi
 	PHGDirectivity int // 0 = omni, 1..8 = 45° × d compass direction
-	Enabled        bool
+	Enabled      bool
+	SendToAPRSIS bool // also send this beacon to APRS-IS (default off)
+}
+
+// ISSink is an optional destination for sending beacons to APRS-IS.
+// When non-nil and Config.SendToAPRSIS is true, the scheduler sends
+// a TNC-2 formatted copy of the beacon to APRS-IS after RF submission.
+type ISSink interface {
+	SendLine(line string) error
 }
 
 // Observer is an optional hook for metrics. Scheduler calls these on

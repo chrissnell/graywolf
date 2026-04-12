@@ -246,6 +246,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	if err := a.wireIGate(ctx); err != nil {
 		return err
 	}
+	if a.ig != nil {
+		a.beaconSched.SetISSink(a.ig)
+	}
 
 	// --- AGW server (optional) -----------------------------------------
 	if err := a.wireAGW(ctx); err != nil {

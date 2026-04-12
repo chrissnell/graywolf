@@ -30,7 +30,7 @@
     channel: '', callsign: '', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
-    comment: '', interval: '600', enabled: true,
+    comment: '', interval: '600', send_to_aprs_is: false, enabled: true,
   });
 
   // Channels rendered as Select options. Label shows name + id so an
@@ -101,6 +101,7 @@
     form.alt_ft = '';
     form.comment = defaultComment;
     form.interval = '600';
+    form.send_to_aprs_is = false;
     form.enabled = true;
     modalOpen = true;
   }
@@ -247,6 +248,9 @@
           </div>
           <div class="beacon-badges">
             <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
+            {#if b.send_to_aprs_is}
+              <Badge variant="info">APRS-IS</Badge>
+            {/if}
           </div>
         </div>
 
@@ -356,6 +360,7 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'} class="beacon-modal">
   <div class="beacon-form-grid">
     <div class="beacon-form-col">
+      <Toggle bind:checked={form.enabled} label="Enabled" />
       <FormField label="Channel" id="bcn-channel"
         hint="Radio channel this beacon transmits on. Defined on the Channels page.">
         <Select id="bcn-channel" bind:value={form.channel} options={channelOptions} />
@@ -421,7 +426,7 @@
       <FormField label="Interval (seconds)" id="bcn-interval">
         <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
       </FormField>
-      <Toggle bind:checked={form.enabled} label="Enabled" />
+      <Toggle bind:checked={form.send_to_aprs_is} label="Also send to APRS-IS" />
     </div>
   </div>
   <div class="modal-actions">
