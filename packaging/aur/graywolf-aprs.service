@@ -6,16 +6,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/graywolf -config /var/lib/graywolf/graywolf.db -modem /usr/bin/graywolf-modem -http 0.0.0.0:8080
+ExecStart=/usr/bin/graywolf -config /var/lib/graywolf-aprs/graywolf.db -modem /usr/bin/graywolf-modem -http 0.0.0.0:8080
 Restart=on-failure
 RestartSec=5
 
-User=graywolf
-Group=graywolf
+User=graywolf-aprs
+Group=graywolf-aprs
 SupplementaryGroups=audio uucp
 
 # Writable state for SQLite database
-StateDirectory=graywolf
+StateDirectory=graywolf-aprs
 
 # Allow binding to privileged ports
 AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -25,7 +25,7 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/var/lib/graywolf
+ReadWritePaths=/var/lib/graywolf-aprs
 
 # Network
 PrivateNetwork=no
