@@ -486,7 +486,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 
 	apiMux := http.NewServeMux()
 	apiSrv.RegisterRoutes(apiMux)
-	webapi.RegisterPackets(apiSrv, a.plog)(apiMux)
+	webapi.RegisterPackets(apiSrv, a.plog, a.gpsCache)(apiMux)
 	webapi.RegisterPosition(apiSrv, a.gpsCache, apiMux)
 	if a.ig != nil {
 		webapi.RegisterIgate(apiSrv, apiMux, a.ig.SetSimulationMode, a.ig.Status)

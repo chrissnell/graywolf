@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Box, LogViewer } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Box, Dot } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import PageHeader from '../components/PageHeader.svelte';
 
@@ -59,6 +59,30 @@
     return { src, dst };
   }
 
+  function deviceLabel(pkt) {
+    const dev = pkt.device;
+    if (!dev) return '';
+    if (dev.vendor && dev.model) return `${dev.vendor} ${dev.model}`;
+    return dev.model || dev.vendor || '';
+  }
+
+  function distanceLabel(pkt) {
+    if (pkt.distance_mi == null) return '';
+    const d = pkt.distance_mi;
+    const label = d < 1 ? `${(d * 5280).toFixed(0)} ft` : `${d.toFixed(1)} mi`;
+    return pkt.via ? `${label} via ${pkt.via}` : label;
+  }
+
+  function formatTime(ts) {
+    const d = new Date(ts);
+    const mo = d.getMonth() + 1;
+    const day = d.getDate();
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    const s = d.getSeconds().toString().padStart(2, '0');
+    return `${mo}/${day} ${h}:${m}:${s}`;
+  }
+
   let filtered = $derived.by(() => {
     let list = packets;
     if (dirFilter !== 'all') {
@@ -77,20 +101,6 @@
     return list;
   });
 
-  let logEntries = $derived(filtered.map(pkt => {
-    const calls = parseDisplay(pkt);
-    return {
-      time: new Date(pkt.timestamp).toLocaleString(),
-      direction: pkt.direction || '',
-      origin: originTag(pkt),
-      channel: pkt.channel || '—',
-      source: calls.src,
-      dest: calls.dst,
-      type: pkt.type || '—',
-      info: pkt.display || '',
-    };
-  }));
-
   function exportCsv() {
     const rows = filtered.map((p) => {
       const { src, dst } = parseDisplay(p);
@@ -105,31 +115,32 @@
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  // Autoscroll logic
+  let bodyEl = $state();
+  let isAtBottom = $state(true);
+
+  function checkAtBottom() {
+    if (!bodyEl) return;
+    isAtBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 2;
+  }
+
+  function scrollToBottom() {
+    if (bodyEl) {
+      bodyEl.scrollTop = bodyEl.scrollHeight;
+      isAtBottom = true;
+    }
+  }
+
+  $effect(() => {
+    void filtered;
+    if (isAtBottom && bodyEl) {
+      requestAnimationFrame(() => {
+        if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+      });
+    }
+  });
 </script>
-
-{#snippet dirBadge(value)}
-  <span class="dir-badge" class:rx={value === 'RX'} class:tx={value === 'TX'} class:is={value === 'IS'}>{value}</span>
-{/snippet}
-
-{#snippet originBadge(value)}
-  {#if value}
-    <span class="origin-badge origin-{value.cls}">{value.label}</span>
-  {:else}
-    <span class="origin-empty">—</span>
-  {/if}
-{/snippet}
-
-{#snippet chBadge(value)}
-  <span class="ch-badge">{value}</span>
-{/snippet}
-
-{#snippet srcCall(value)}
-  <span class="col-src">{value}</span>
-{/snippet}
-
-{#snippet dstCall(value)}
-  <span class="col-dst">{value}</span>
-{/snippet}
 
 <PageHeader title="Packet Logs" subtitle="Packet log viewer with filter/search">
   <Button onclick={loadPackets} disabled={loading}>Refresh</Button>
@@ -155,30 +166,63 @@
   </div>
 </Box>
 
-<div style="margin-top: 12px;">
+<div class="log-wrapper" style="margin-top: 12px;">
   {#if loading}
     <Box><div class="empty">Loading...</div></Box>
   {:else if filtered.length === 0}
     <Box><div class="empty">No packets match filter</div></Box>
   {:else}
-    <LogViewer
-      entries={logEntries}
-      columns={[
-        { key: 'time', label: 'Time', width: '140px' },
-        { key: 'direction', label: 'Dir', width: '50px', render: dirBadge },
-        { key: 'origin', label: 'Origin', width: '70px', render: originBadge },
-        { key: 'channel', label: 'Ch', width: '50px', render: chBadge },
-        { key: 'source', label: 'Source', width: '100px', render: srcCall },
-        { key: 'dest', label: 'Dest', width: '100px', render: dstCall },
-        { key: 'type', label: 'Type', width: '70px' },
-        { key: 'info', label: 'Info', width: '1fr' },
-      ]}
-      live={true}
-      autoscroll={true}
-      height="600px"
-      showHeader={true}
-      class="logs-viewer"
-    />
+    <div class="log-viewer">
+      <div class="log-toolbar">
+        <Dot on={true} />
+        <span class="toolbar-label">live</span>
+        <span class="toolbar-count">{filtered.length} entries</span>
+      </div>
+      <div
+        class="log-body"
+        bind:this={bodyEl}
+        onscroll={checkAtBottom}
+      >
+        {#key filtered}
+          {#each filtered as pkt, i}
+            {@const calls = parseDisplay(pkt)}
+            {@const origin = originTag(pkt)}
+            {@const device = deviceLabel(pkt)}
+            {@const dist = distanceLabel(pkt)}
+            <div class="log-entry" class:odd={i % 2 === 1}>
+              <div class="entry-line1">
+                <span class="time">{formatTime(pkt.timestamp)}</span>
+                <span class="dir-badge" class:rx={pkt.direction === 'RX'} class:tx={pkt.direction === 'TX'} class:is={pkt.direction === 'IS'}>{pkt.direction || ''}</span>
+                {#if origin}
+                  <span class="origin-badge origin-{origin.cls}">{origin.label}</span>
+                {/if}
+                <span class="ch-badge">{pkt.channel || '—'}</span>
+                <span class="callsigns">
+                  <span class="col-src">{calls.src}</span>
+                  <span class="arrow">→</span>
+                  <span class="col-dst">{calls.dst}</span>
+                </span>
+                {#if pkt.type}
+                  <span class="type-badge">{pkt.type}</span>
+                {/if}
+                {#if device}
+                  <span class="device">{device}</span>
+                {/if}
+                {#if dist}
+                  <span class="distance">{dist}</span>
+                {/if}
+              </div>
+              <div class="entry-line2">{pkt.display || ''}</div>
+            </div>
+          {/each}
+        {/key}
+      </div>
+      {#if !isAtBottom}
+        <button class="log-jump-bottom" onclick={scrollToBottom}>
+          ↓ Jump to bottom
+        </button>
+      {/if}
+    </div>
     <div class="log-footer">
       Showing {filtered.length} of {packets.length} packets
     </div>
@@ -201,53 +245,155 @@
     text-align: right;
     border-top: 1px solid var(--border-light);
   }
-  :global(.logs-viewer .log-grid-cell) {
-    padding-top: 5px;
-    padding-bottom: 5px;
-    font-size: 13px;
+
+  /* Log viewer container */
+  .log-viewer {
+    position: relative;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    overflow: hidden;
   }
-  :global(.logs-viewer .log-grid-header) {
+
+  .log-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-light);
+    background: var(--bg-secondary);
+  }
+  .toolbar-label { font-size: 11px; }
+  .toolbar-count { margin-left: auto; font-size: 11px; }
+
+  .log-body {
+    height: 600px;
+    overflow-y: auto;
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  }
+
+  .log-jump-bottom {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 12px;
     font-size: 11px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    z-index: 2;
   }
-  :global(.logs-viewer .dir-badge),
-  :global(.logs-viewer .ch-badge) {
+  .log-jump-bottom:hover {
+    background: var(--bg-tertiary);
+  }
+
+  /* Entry block (two lines) */
+  .log-entry {
+    padding: 5px 10px 4px;
+    border-bottom: 1px solid var(--border-light, rgba(255,255,255,0.06));
+  }
+  .log-entry.odd {
+    background: var(--bg-secondary, rgba(255,255,255,0.02));
+  }
+
+  /* Line 1: metadata */
+  .entry-line1 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+
+  .time {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    min-width: 100px;
+  }
+
+  .dir-badge, .ch-badge {
     font-weight: 700;
     font-size: 10px;
-    padding: 2px 5px;
+    padding: 1px 5px;
     border-radius: 3px;
     display: inline-block;
-    min-width: 24px;
+    min-width: 22px;
     text-align: center;
   }
-  :global(.logs-viewer .dir-badge.rx) { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-  :global(.logs-viewer .dir-badge.tx) { background: #ffd968; color: #000; }
-  :global(.logs-viewer .dir-badge.is) { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
-  :global(.logs-viewer .ch-badge) {
+  .dir-badge.rx { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+  .dir-badge.tx { background: #ffd968; color: #000; }
+  .dir-badge.is { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
+  .ch-badge {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
   }
-  :global(.logs-viewer .origin-badge) {
+
+  .origin-badge {
     font-weight: 700;
     font-size: 10px;
-    padding: 2px 5px;
+    padding: 1px 5px;
     border-radius: 3px;
     display: inline-block;
     text-align: center;
   }
-  :global(.logs-viewer .origin-empty) {
+  .origin-digi        { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
+  .origin-bcn         { background: rgba(63, 185, 80, 0.25);  color: #7ee787; }
+  .origin-igate       { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
+  .origin-igate-is2rf { background: rgba(255, 170, 0, 0.25);  color: #ffc863; }
+  .origin-igate-rf2is { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
+
+  .callsigns {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .col-src {
+    color: #d4a040;
+    font-weight: 600;
+  }
+  .arrow {
     color: var(--text-muted);
     font-size: 11px;
   }
-  :global(.logs-viewer .origin-digi)        { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
-  :global(.logs-viewer .origin-bcn)         { background: rgba(63, 185, 80, 0.25);  color: #7ee787; }
-  :global(.logs-viewer .origin-igate)       { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
-  :global(.logs-viewer .origin-igate-is2rf) { background: rgba(255, 170, 0, 0.25);  color: #ffc863; }
-  :global(.logs-viewer .origin-igate-rf2is) { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
-  :global(.logs-viewer .col-src) {
-    color: #d4a040;
+  .col-dst {
+    color: #58a6ff;
     font-weight: 500;
   }
-  :global(.logs-viewer .col-dst) {
-    color: #58a6ff;
+
+  .type-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+  }
+
+  .device {
+    font-size: 10px;
+    color: #8b949e;
+    font-style: italic;
+  }
+
+  .distance {
+    font-size: 10px;
+    color: #7ee787;
+    white-space: nowrap;
+  }
+
+  /* Line 2: raw packet */
+  .entry-line2 {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    padding-left: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
