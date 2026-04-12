@@ -25,6 +25,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
+	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/pkg/webauth"
@@ -128,6 +129,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// --- Packet log ----------------------------------------------------
 	a.plog = packetlog.New(packetlog.Config{Capacity: 5000, MaxAge: 120 * time.Minute})
 
+	// --- Station cache (map's last-known-state store) ------------------
+	a.stationCache = stationcache.NewMemCache(2 * time.Hour)
+
 	// --- Modem bridge (construction; Start happens later) --------------
 	a.bridge = modembridge.New(modembridge.Config{
 		BinaryPath: resolvedModem,
@@ -177,8 +181,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		Logger:        a.logger,
 	})
 
-	// TX hook: record transmitted frames into the packet log.
+	// TX hook: record transmitted frames into the packet log and
+	// update the station cache for beacon transmissions.
 	plog := a.plog
+	sc := a.stationCache
 	a.gov.SetTxHook(func(channel uint32, frame *ax25.Frame, source txgovernor.SubmitSource) {
 		e := packetlog.Entry{
 			Channel:   channel,
@@ -191,6 +197,16 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			e.Raw = raw
 		}
 		plog.Record(e)
+
+		// Feed our own beacon position into the station cache.
+		if source.Kind == "beacon" && frame.IsUI() {
+			if pkt, err := aprs.Parse(frame); err == nil && pkt != nil {
+				pkt.Channel = int(channel)
+				if entries := stationcache.ExtractEntry(pkt, "beacon", "TX", channel); len(entries) > 0 {
+					sc.Update(entries)
+				}
+			}
+		}
 	})
 
 	// --- KISS manager --------------------------------------------------
@@ -214,6 +230,15 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 				Display:   f.String(),
 				Notes:     note,
 			})
+			// Update station cache with digipeated station positions.
+			if f.IsUI() {
+				if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
+					pkt.Channel = int(toChan)
+					if entries := stationcache.ExtractEntry(pkt, "digipeater", "TX", toChan); len(entries) > 0 {
+						a.stationCache.Update(entries)
+					}
+				}
+			}
 		},
 		OnDedup: func() { a.metrics.DigipeaterDeduped.Inc() },
 	})
@@ -277,6 +302,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.startOrder = []namedComponent{
 		a.configstoreComponent(),
 		a.metricsComponent(),
+		a.stationCacheComponent(),
 		a.governorComponent(),
 		a.backgroundStatsComponent(),
 		a.kissComponent(),
@@ -398,6 +424,10 @@ func (a *App) wireIGate(ctx context.Context) error {
 				Decoded:   pkt,
 				Notes:     "rf2is",
 			})
+			// RF-heard station uploaded to IS — cache as via=rf.
+			if entries := stationcache.ExtractEntry(pkt, "igate", "IS", uint32(pkt.Channel)); len(entries) > 0 {
+				a.stationCache.Update(entries)
+			}
 		},
 		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
 			if pkt == nil {
@@ -413,6 +443,10 @@ func (a *App) wireIGate(ctx context.Context) error {
 				Decoded:   pkt,
 				Notes:     "is-rx",
 			})
+			// Station received from APRS-IS — cache as via=is.
+			if entries := stationcache.ExtractEntry(pkt, "igate-is", "RX", uint32(pkt.Channel)); len(entries) > 0 {
+				a.stationCache.Update(entries)
+			}
 		},
 	})
 	if err != nil {
@@ -546,6 +580,21 @@ func (a *App) metricsComponent() namedComponent {
 		name:  "metrics",
 		start: func(ctx context.Context) error { return nil },
 		stop:  func(ctx context.Context) error { return nil },
+	}
+}
+
+func (a *App) stationCacheComponent() namedComponent {
+	// The pruning goroutine starts at construction time; this
+	// component only needs to stop it on shutdown.
+	return namedComponent{
+		name:  "station cache",
+		start: func(ctx context.Context) error { return nil },
+		stop: func(ctx context.Context) error {
+			if a.stationCache != nil {
+				a.stationCache.Close()
+			}
+			return nil
+		},
 	}
 }
 
@@ -860,6 +909,10 @@ func (a *App) bridgeComponent() namedComponent {
 							e.Type = string(pkt.Type)
 							e.Decoded = pkt
 							aprsSubmit.submit(pkt)
+							// RF-received station — cache for live map.
+							if entries := stationcache.ExtractEntry(pkt, "modem", "RX", rf.Channel); len(entries) > 0 {
+								a.stationCache.Update(entries)
+							}
 						}
 					}
 					a.plog.Record(e)

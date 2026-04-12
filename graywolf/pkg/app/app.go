@@ -18,6 +18,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
+	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/pkg/webauth"
@@ -50,8 +51,9 @@ type App struct {
 	store       *configstore.Store
 	authStore   *webauth.AuthStore
 	metrics     *metrics.Metrics
-	plog        *packetlog.Log
-	bridge      *modembridge.Bridge
+	plog         *packetlog.Log
+	stationCache *stationcache.MemCache
+	bridge       *modembridge.Bridge
 	gov         *txgovernor.Governor
 	kissMgr     *kiss.Manager
 	agwServer   *agw.Server // nil if AGW is disabled in config
