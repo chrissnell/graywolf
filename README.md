@@ -27,6 +27,10 @@ Building Graywolf (demod_bench)...
 
 ## Features
 
+<p align="center">
+  <img src="docs/handbook/img/dashboard.png" alt="Graywolf dashboard" width="800">
+</p>
+
 - **Modern Web UI** - Configure and monitor your station from your browser, with live packet logs and preset-driven setup for digipeater and iGate
 
 - **Software Modem** - Native Rust DSP, no external sound card tooling required
