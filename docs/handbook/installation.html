@@ -62,16 +62,14 @@
 
         <h2>Install the Package</h2>
 
-<pre><code># Download the .deb for your architecture
-curl -LO https://github.com/chrissnell/graywolf/releases/latest/download/graywolf_amd64.deb
-
-# Install
-sudo apt install ./graywolf_amd64.deb</code></pre>
-
         <p>
-          For Raspberry Pi and other ARM boards, use the
-          <code>graywolf_arm64.deb</code> package instead.
+          Download the <code>.deb</code> package for your architecture
+          (amd64 or arm64) from the
+          <a href="https://github.com/chrissnell/graywolf/releases">GitHub Releases</a>
+          page, then install it:
         </p>
+
+<pre><code>sudo apt install ./graywolf_*.deb</code></pre>
 
         <p>
           The package installs both binaries (<code>/usr/bin/graywolf</code>
@@ -98,11 +96,14 @@ sudo apt install ./graywolf_amd64.deb</code></pre>
 
         <h2>Install the Package</h2>
 
-<pre><code># Download the .rpm for your architecture
-curl -LO https://github.com/chrissnell/graywolf/releases/latest/download/graywolf_amd64.rpm
+        <p>
+          Download the <code>.rpm</code> package for your architecture
+          from the
+          <a href="https://github.com/chrissnell/graywolf/releases">GitHub Releases</a>
+          page, then install it:
+        </p>
 
-# Install
-sudo dnf install ./graywolf_amd64.rpm</code></pre>
+<pre><code>sudo dnf install ./graywolf_*.rpm</code></pre>
 
         <p>
           The package installs both binaries, creates the
@@ -121,14 +122,14 @@ sudo dnf install ./graywolf_amd64.rpm</code></pre>
         <h2>Install from AUR</h2>
 
 <pre><code># With an AUR helper (e.g., yay or paru)
-yay -S graywolf</code></pre>
+yay -S graywolf-aprs</code></pre>
 
         <p>
           Or build manually:
         </p>
 
-<pre><code>git clone https://aur.archlinux.org/graywolf.git
-cd graywolf
+<pre><code>git clone https://aur.archlinux.org/graywolf-aprs.git
+cd graywolf-aprs
 makepkg -si</code></pre>
 
         <p>
@@ -138,7 +139,7 @@ makepkg -si</code></pre>
 
         <h2>Start the Service</h2>
 
-<pre><code>sudo systemctl enable --now graywolf</code></pre>
+<pre><code>sudo systemctl enable --now graywolf-aprs</code></pre>
 
       </div>
 
