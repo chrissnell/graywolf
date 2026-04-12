@@ -1,0 +1,49 @@
+# Maintainer: Chris Snell
+pkgname=graywolf
+pkgver=0.7.17
+pkgrel=1
+pkgdesc='APRS radio transceiver, digipeater, and Internet gateway'
+arch=('x86_64' 'aarch64')
+url='https://github.com/chrissnell/graywolf'
+license=('MIT')
+depends=('glibc')
+makedepends=('go' 'rust' 'cargo')
+backup=()
+install=graywolf.install
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "${pkgname}-${pkgver}"
+  cd graywolf && go mod download
+}
+
+build() {
+  cd "${pkgname}-${pkgver}"
+
+  # Go binary
+  cd graywolf
+  export CGO_ENABLED=0
+  go build -trimpath \
+    -ldflags "-w -s -X main.Version=${pkgver} -X main.GitCommit=${pkgver}" \
+    -o "${srcdir}/graywolf" \
+    ./cmd/graywolf/
+  cd ..
+
+  # Rust modem binary
+  cd graywolf-modem
+  export GRAYWOLF_VERSION="${pkgver}"
+  export GRAYWOLF_GIT_COMMIT="${pkgver}"
+  cargo build --release
+  cp target/release/graywolf-modem "${srcdir}/graywolf-modem"
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+
+  install -Dm755 "${srcdir}/graywolf"       "${pkgdir}/usr/bin/graywolf"
+  install -Dm755 "${srcdir}/graywolf-modem" "${pkgdir}/usr/bin/graywolf-modem"
+  install -Dm644 packaging/systemd/graywolf.service \
+    "${pkgdir}/usr/lib/systemd/system/graywolf.service"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
