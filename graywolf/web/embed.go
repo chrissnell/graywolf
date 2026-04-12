@@ -12,10 +12,10 @@ import (
 	"net/http"
 )
 
-// The explicit dist/.keep pattern guarantees the embed compiles even
-// if dist/ is otherwise empty (e.g. after `rm -rf web/dist/*`).
+// The all: prefix includes dotfiles like .keep, so the embed compiles
+// even when dist/ contains only the placeholder .keep file.
 //
-//go:embed dist/.keep dist
+//go:embed all:dist
 var distFS embed.FS
 
 // FS returns an fs.FS rooted at dist/ so callers can serve files
