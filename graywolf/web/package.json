@@ -17,6 +17,7 @@
     "@chrissnell/chonky-ui": "^0.1.17",
     "@internationalized/date": "^3.8.0",
     "bits-ui": "^2.0.0",
+    "leaflet": "^1.9.4",
     "svelte-spa-router": "^4.0.0"
   }
 }
