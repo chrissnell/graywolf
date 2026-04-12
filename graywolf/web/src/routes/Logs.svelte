@@ -21,12 +21,12 @@
     const src = pkt.source || '';
     const notes = pkt.notes || '';
     switch (src) {
-      case 'digipeater': return { label: 'DIGI', cls: 'digi' };
-      case 'beacon':     return { label: 'BCN',  cls: 'bcn' };
+      case 'digipeater': return { label: 'Digipeater', cls: 'digi' };
+      case 'beacon':     return { label: 'Beacon',     cls: 'bcn' };
       case 'igate':
-        if (notes === 'is2rf') return { label: 'IS→RF', cls: 'igate-is2rf' };
-        if (notes === 'rf2is') return { label: 'RF→IS', cls: 'igate-rf2is' };
-        return { label: 'IGATE', cls: 'igate' };
+        if (notes === 'is2rf') return { label: 'iGate IS\u2192RF', cls: 'igate-is2rf' };
+        if (notes === 'rf2is') return { label: 'iGate RF\u2192IS', cls: 'igate-rf2is' };
+        return { label: 'iGate', cls: 'igate' };
       default: return null;
     }
   }
@@ -116,7 +116,6 @@
     URL.revokeObjectURL(url);
   }
 
-  // Autoscroll logic
   let bodyEl = $state();
   let isAtBottom = $state(true);
 
@@ -166,92 +165,96 @@
   </div>
 </Box>
 
-<div class="log-wrapper" style="margin-top: 12px;">
+<div style="margin-top: 12px;">
   {#if loading}
     <Box><div class="empty">Loading...</div></Box>
   {:else if filtered.length === 0}
     <Box><div class="empty">No packets match filter</div></Box>
   {:else}
-    <div class="log-viewer">
+    <div class="log-panel">
+      <!-- Toolbar -->
       <div class="log-toolbar">
         <Dot on={true} />
-        <span class="toolbar-label">live</span>
-        <span class="toolbar-count">{filtered.length} entries</span>
+        <span class="tb-label">live</span>
+        <span class="tb-count">{filtered.length} entries</span>
       </div>
-      <div
-        class="log-body"
-        bind:this={bodyEl}
-        onscroll={checkAtBottom}
-      >
+
+      <!-- Scrollable body -->
+      <div class="log-scroll" bind:this={bodyEl} onscroll={checkAtBottom}>
+        <!-- Sticky column header -->
+        <div class="pkt-hdr">
+          <span class="c-time">Time</span>
+          <span class="c-dir">Direction</span>
+          <span class="c-origin">Origin</span>
+          <span class="c-ch">Ch</span>
+          <span class="c-src">Source</span>
+          <span class="c-dst">Dest</span>
+          <span class="c-type">Type</span>
+          <span class="c-device">Device</span>
+          <span class="c-dist">Distance</span>
+        </div>
+
         {#key filtered}
           {#each filtered as pkt, i}
             {@const calls = parseDisplay(pkt)}
             {@const origin = originTag(pkt)}
             {@const device = deviceLabel(pkt)}
             {@const dist = distanceLabel(pkt)}
-            <div class="log-entry" class:odd={i % 2 === 1}>
-              <div class="entry-line1">
-                <span class="time">{formatTime(pkt.timestamp)}</span>
-                <span class="dir-badge" class:rx={pkt.direction === 'RX'} class:tx={pkt.direction === 'TX'} class:is={pkt.direction === 'IS'}>{pkt.direction || ''}</span>
-                {#if origin}
-                  <span class="origin-badge origin-{origin.cls}">{origin.label}</span>
-                {/if}
-                <span class="ch-badge">{pkt.channel || '—'}</span>
-                <span class="callsigns">
-                  <span class="col-src">{calls.src}</span>
-                  <span class="arrow">→</span>
-                  <span class="col-dst">{calls.dst}</span>
+            {@const dir = (pkt.direction || '').toUpperCase()}
+            <div class="pkt-entry" class:pkt-alt={i % 2 === 1}>
+              <!-- Row 1: structured fields -->
+              <div class="pkt-row">
+                <span class="c-time">{formatTime(pkt.timestamp)}</span>
+                <span class="c-dir">
+                  <span class="badge" class:b-rx={dir === 'RX'} class:b-tx={dir === 'TX'} class:b-is={dir === 'IS'}>
+                    {dir === 'RX' ? 'Received' : dir === 'TX' ? 'Transmitted' : dir === 'IS' ? 'APRS-IS' : dir}
+                  </span>
                 </span>
-                {#if pkt.type}
-                  <span class="type-badge">{pkt.type}</span>
-                {/if}
-                {#if device}
-                  <span class="device">{device}</span>
-                {/if}
-                {#if dist}
-                  <span class="distance">{dist}</span>
-                {/if}
+                <span class="c-origin">
+                  {#if origin}
+                    <span class="badge o-{origin.cls}">{origin.label}</span>
+                  {:else}
+                    <span class="dim">&mdash;</span>
+                  {/if}
+                </span>
+                <span class="c-ch">{pkt.channel ?? '\u2014'}</span>
+                <span class="c-src val-src">{calls.src}</span>
+                <span class="c-dst val-dst">{calls.dst}</span>
+                <span class="c-type">
+                  {#if pkt.type}<span class="badge b-type">{pkt.type}</span>{:else}<span class="dim">&mdash;</span>{/if}
+                </span>
+                <span class="c-device dim">{device || '\u2014'}</span>
+                <span class="c-dist">
+                  {#if dist}<span class="val-dist">{dist}</span>{:else}<span class="dim">&mdash;</span>{/if}
+                </span>
               </div>
-              <div class="entry-line2">{pkt.display || ''}</div>
+              <!-- Row 2: raw packet -->
+              <div class="pkt-raw">{pkt.display || ''}</div>
             </div>
           {/each}
         {/key}
       </div>
+
       {#if !isAtBottom}
-        <button class="log-jump-bottom" onclick={scrollToBottom}>
-          ↓ Jump to bottom
-        </button>
+        <button class="jump-btn" onclick={scrollToBottom}>↓ Jump to bottom</button>
       {/if}
     </div>
-    <div class="log-footer">
-      Showing {filtered.length} of {packets.length} packets
-    </div>
+    <div class="log-foot">Showing {filtered.length} of {packets.length} packets</div>
   {/if}
 </div>
 
 <style>
-  .filter-bar {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
+  /* ── layout ─────────────────────────────────────── */
+  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; }
   .filter-input { flex: 1; min-width: 200px; }
   .filter-select { width: 140px; }
-  .empty { color: var(--text-muted); text-align: center; padding: 24px; }
-  .log-footer {
-    padding: 8px;
-    font-size: 11px;
-    color: var(--text-muted);
-    text-align: right;
-    border-top: 1px solid var(--border-light);
-  }
+  .empty { color: var(--color-text-dim); text-align: center; padding: 24px; }
 
-  /* Log viewer container */
-  .log-viewer {
+  .log-panel {
     position: relative;
-    border: 1px solid var(--border-light);
-    border-radius: 8px;
-    background: var(--bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
     overflow: hidden;
   }
 
@@ -259,141 +262,152 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    border-bottom: 1px solid var(--border-light);
-    background: var(--bg-secondary);
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
   }
-  .toolbar-label { font-size: 11px; }
-  .toolbar-count { margin-left: auto; font-size: 11px; }
+  .tb-label {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .tb-count {
+    margin-left: auto;
+    font-size: var(--text-xs);
+    color: var(--color-text-dim);
+  }
 
-  .log-body {
+  .log-scroll {
     height: 600px;
     overflow-y: auto;
-    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+    overflow-x: auto;
   }
 
-  .log-jump-bottom {
+  .log-foot {
+    padding: 7px 14px;
+    font-size: var(--text-xs);
+    color: var(--color-text-dim);
+    text-align: right;
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .jump-btn {
     position: absolute;
-    bottom: 8px;
+    bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
-    padding: 4px 12px;
-    font-size: 11px;
-    border: 1px solid var(--border-light);
-    border-radius: 4px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
+    padding: 5px 14px;
+    font-size: var(--text-xs);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface-raised);
+    color: var(--color-text-muted);
     cursor: pointer;
     z-index: 2;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   }
-  .log-jump-bottom:hover {
-    background: var(--bg-tertiary);
-  }
+  .jump-btn:hover { background: var(--color-btn-bg-hover); }
 
-  /* Entry block (two lines) */
-  .log-entry {
-    padding: 5px 10px 4px;
-    border-bottom: 1px solid var(--border-light, rgba(255,255,255,0.06));
-  }
-  .log-entry.odd {
-    background: var(--bg-secondary, rgba(255,255,255,0.02));
-  }
+  /* ── column widths (shared between header + rows) ── */
+  .c-time   { width: 100px; flex-shrink: 0; }
+  .c-dir    { width: 100px; flex-shrink: 0; }
+  .c-origin { width: 115px; flex-shrink: 0; }
+  .c-ch     { width: 30px;  flex-shrink: 0; text-align: center; }
+  .c-src    { width: 100px; flex-shrink: 0; }
+  .c-dst    { width: 80px;  flex-shrink: 0; }
+  .c-type   { width: 85px;  flex-shrink: 0; }
+  .c-device { flex: 1 1 0;  min-width: 80px; }
+  .c-dist   { width: 175px; flex-shrink: 0; text-align: right; }
 
-  /* Line 1: metadata */
-  .entry-line1 {
+  /* ── sticky header ──────────────────────────────── */
+  .pkt-hdr {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    flex-wrap: wrap;
-  }
-
-  .time {
-    color: var(--text-muted);
-    font-size: 11px;
-    white-space: nowrap;
-    min-width: 100px;
-  }
-
-  .dir-badge, .ch-badge {
-    font-weight: 700;
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    display: inline-block;
-    min-width: 22px;
-    text-align: center;
-  }
-  .dir-badge.rx { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-  .dir-badge.tx { background: #ffd968; color: #000; }
-  .dir-badge.is { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
-  .ch-badge {
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-  }
-
-  .origin-badge {
-    font-weight: 700;
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    display: inline-block;
-    text-align: center;
-  }
-  .origin-digi        { background: rgba(137, 87, 229, 0.25); color: #c39bff; }
-  .origin-bcn         { background: rgba(63, 185, 80, 0.25);  color: #7ee787; }
-  .origin-igate       { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
-  .origin-igate-is2rf { background: rgba(255, 170, 0, 0.25);  color: #ffc863; }
-  .origin-igate-rf2is { background: rgba(88, 166, 255, 0.25); color: #79c0ff; }
-
-  .callsigns {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .col-src {
-    color: #d4a040;
-    font-weight: 600;
-  }
-  .arrow {
-    color: var(--text-muted);
-    font-size: 11px;
-  }
-  .col-dst {
-    color: #58a6ff;
+    gap: 8px;
+    padding: 6px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--text-xs);
     font-weight: 500;
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
-  .type-badge {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text-secondary);
+  /* ── entry block ────────────────────────────────── */
+  .pkt-entry {
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  .pkt-alt {
+    background: var(--color-surface);
   }
 
-  .device {
-    font-size: 10px;
-    color: #8b949e;
-    font-style: italic;
+  .pkt-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 2px;
+    font-size: var(--text-sm);
   }
 
-  .distance {
-    font-size: 10px;
-    color: #7ee787;
-    white-space: nowrap;
-  }
-
-  /* Line 2: raw packet */
-  .entry-line2 {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 2px;
-    padding-left: 2px;
+  .pkt-raw {
+    padding: 0 12px 5px 12px;
+    font-size: 0.65rem;
+    color: var(--color-text-dim);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.5;
+  }
+
+  /* ── badges ─────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  /* Direction badges */
+  .b-rx { background: var(--color-success-muted); color: var(--color-success); }
+  .b-tx { background: var(--color-warning-muted); color: var(--color-warning); }
+  .b-is { background: var(--color-info-muted);    color: var(--color-info); }
+
+  /* Origin badges */
+  .o-digi        { background: var(--color-info-muted);    color: var(--color-info); }
+  .o-bcn         { background: var(--color-success-muted); color: var(--color-success); }
+  .o-igate       { background: var(--color-info-muted);    color: var(--color-info); }
+  .o-igate-is2rf { background: var(--color-warning-muted); color: var(--color-warning); }
+  .o-igate-rf2is { background: var(--color-info-muted);    color: var(--color-info); }
+
+  /* Type badge */
+  .b-type {
+    background: var(--color-surface-raised);
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+
+  /* ── value colors ───────────────────────────────── */
+  .val-src {
+    color: var(--color-warning);
+    font-weight: 600;
+  }
+  .val-dst {
+    color: var(--color-info);
+  }
+  .val-dist {
+    font-size: var(--text-xs);
+    color: var(--color-success);
+  }
+  .dim {
+    color: var(--color-text-dim);
   }
 </style>
