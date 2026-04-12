@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radio Channels &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Radio Channels</h1>
+    <p class="subtitle">Configure modem type, frequencies, and demodulator settings</p>
+
+    <p>
+      A radio channel ties an <a href="audio.html">audio device</a> to a
+      modem configuration. Each channel represents one RF path &mdash;
+      typically one radio on one frequency. Graywolf supports multiple
+      simultaneous channels, allowing you to monitor and transmit on
+      several frequencies or modulation modes at once.
+    </p>
+
+    <h2>Channel Settings</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code></td>
+              <td>&mdash;</td>
+              <td>Display name (e.g., &ldquo;VHF 144.39&rdquo;)</td>
+            </tr>
+            <tr>
+              <td><code>input_device_id</code></td>
+              <td>&mdash;</td>
+              <td>Audio input device (required)</td>
+            </tr>
+            <tr>
+              <td><code>input_channel</code></td>
+              <td><code>0</code></td>
+              <td>Audio channel: 0 = left/mono, 1 = right</td>
+            </tr>
+            <tr>
+              <td><code>output_device_id</code></td>
+              <td><code>0</code></td>
+              <td>Audio output device (0 = receive only)</td>
+            </tr>
+            <tr>
+              <td><code>output_channel</code></td>
+              <td><code>0</code></td>
+              <td>Output audio channel: 0 = left/mono, 1 = right</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Modem Types</h2>
+
+    <div data-tabs>
+      <div class="tabs">
+        <button class="tab active" data-target="tab-afsk">AFSK 1200</button>
+        <button class="tab" data-target="tab-9600">9600 G3RUH</button>
+        <button class="tab" data-target="tab-psk">PSK</button>
+      </div>
+
+      <div class="tab-panel active" id="tab-afsk">
+        <p>
+          AFSK 1200 baud (Bell 202) is the standard APRS modulation used on
+          VHF. This is what you want for 144.39 MHz (North America) or
+          144.80 MHz (Europe).
+        </p>
+
+        <div class="box">
+          <div class="box-body">
+            <table>
+              <thead>
+                <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>modem_type</code></td>
+                  <td><code>afsk</code></td>
+                  <td>AFSK modulation</td>
+                </tr>
+                <tr>
+                  <td><code>bit_rate</code></td>
+                  <td><code>1200</code></td>
+                  <td>Baud rate</td>
+                </tr>
+                <tr>
+                  <td><code>mark_freq</code></td>
+                  <td><code>1200</code></td>
+                  <td>Mark frequency in Hz</td>
+                </tr>
+                <tr>
+                  <td><code>space_freq</code></td>
+                  <td><code>2200</code></td>
+                  <td>Space frequency in Hz</td>
+                </tr>
+                <tr>
+                  <td><code>profile</code></td>
+                  <td><code>A</code></td>
+                  <td>Demodulator profile (see below)</td>
+                </tr>
+                <tr>
+                  <td><code>num_slicers</code></td>
+                  <td><code>1</code></td>
+                  <td>Parallel decision thresholds (1, 2, 4, or 8)</td>
+                </tr>
+                <tr>
+                  <td><code>fix_bits</code></td>
+                  <td><code>none</code></td>
+                  <td>Bit-flip retry: <code>none</code>, <code>single</code>, or <code>double</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <h3>Demodulator Profiles</h3>
+
+        <p>
+          Graywolf offers two demodulator profiles, matching Dire Wolf&rsquo;s
+          decoders:
+        </p>
+
+        <div class="box">
+          <div class="box-body">
+            <table>
+              <tr>
+                <td><strong>Profile A</strong> <span class="badge primary">default</span></td>
+                <td>
+                  Dual local-oscillator mixing with root-raised-cosine filtering
+                  and AGC. Best general-purpose decoder for most radio setups.
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Profile B</strong></td>
+                <td>
+                  FM discriminator with phase-rate measurement. Better for
+                  receivers with flat audio output (no de-emphasis).
+                </td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <h3>Multi-Slicer</h3>
+
+        <p>
+          Increasing <code>num_slicers</code> runs multiple parallel decision
+          thresholds on the same audio stream. This can recover packets that
+          a single threshold would miss due to noise or signal variation.
+          Higher values use more CPU.
+        </p>
+
+        <div class="callout tip">
+          <span class="callout-icon">&#10003;</span>
+          <div class="callout-body">
+            <p>
+              A good starting point for a busy channel is
+              <code>num_slicers: 4</code>. On a Raspberry Pi, keep this at
+              1 or 2 to stay within CPU budget.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-9600">
+        <p>
+          9600 baud G3RUH direct FSK is used for high-speed packet radio.
+          Requires a radio with a discriminator output (flat audio, no
+          de-emphasis).
+        </p>
+
+        <div class="box">
+          <div class="box-body">
+            <table>
+              <tr><td><code>modem_type</code></td><td><code>9600</code></td></tr>
+              <tr><td><code>bit_rate</code></td><td><code>9600</code></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-psk">
+        <p>
+          PSK (Phase Shift Keying) support is available for experimental
+          packet radio modes.
+        </p>
+
+        <div class="box">
+          <div class="box-body">
+            <table>
+              <tr><td><code>modem_type</code></td><td><code>psk</code></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Forward Error Correction</h2>
+
+    <p>
+      Graywolf can encode transmitted packets with forward error correction.
+      FEC-encoded packets are always decoded on receive regardless of these
+      settings &mdash; these flags only affect transmission.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><code>fx25_encode</code></td>
+            <td>Enable FX.25 (interleaved convolutional code, MIL-STD-188-165) on transmit</td>
+          </tr>
+          <tr>
+            <td><code>il2p_encode</code></td>
+            <td>Enable IL2P (Improved Layer 2 Protocol) on transmit</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          FX.25 and IL2P add redundancy that can recover packets with bit
+          errors, improving reliability on noisy channels. The receiver
+          automatically detects and decodes FEC-encoded frames regardless
+          of these transmit settings.
+        </p>
+      </div>
+    </div>
+
+    <h2>TX Timing</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>tx_delay_ms</code></td>
+              <td><code>300</code></td>
+              <td>Milliseconds of preamble flags before data</td>
+            </tr>
+            <tr>
+              <td><code>tx_tail_ms</code></td>
+              <td><code>100</code></td>
+              <td>Milliseconds of trailing flags after data</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      <code>tx_delay_ms</code> gives the radio time to key up and stabilize
+      before data is sent. Most radios need 200&ndash;500 ms. Too short and
+      the beginning of your packet will be lost; too long wastes airtime.
+    </p>
+
+    <h2>API Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/channels</code></td><td>List all channels</td></tr>
+            <tr><td>GET</td><td><code>/api/channels/{id}</code></td><td>Get a single channel</td></tr>
+            <tr><td>POST</td><td><code>/api/channels</code></td><td>Create a new channel</td></tr>
+            <tr><td>PUT</td><td><code>/api/channels/{id}</code></td><td>Update a channel</td></tr>
+            <tr><td>DELETE</td><td><code>/api/channels/{id}</code></td><td>Delete a channel</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="audio.html">
+        <span class="label">Previous</span>
+        Audio Devices
+      </a>
+      <a href="ptt.html" class="next">
+        <span class="label">Next</span>
+        Push-to-Talk
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

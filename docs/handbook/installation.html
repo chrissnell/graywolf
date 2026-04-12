@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Installation &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Installation</h1>
+    <p class="subtitle">Get graywolf running on your system</p>
+
+    <div data-tabs>
+      <div class="tabs">
+        <button class="tab active" data-target="tab-deb">Debian / Ubuntu</button>
+        <button class="tab" data-target="tab-rpm">RHEL / Fedora</button>
+        <button class="tab" data-target="tab-arch">Arch Linux</button>
+        <button class="tab" data-target="tab-docker">Docker</button>
+        <button class="tab" data-target="tab-source">Build from Source</button>
+      </div>
+
+      <!-- ── Debian / Ubuntu ── -->
+      <div class="tab-panel active" id="tab-deb">
+
+        <h2>Install the Package</h2>
+
+<pre><code># Download the .deb for your architecture
+curl -LO https://github.com/chrissnell/graywolf/releases/latest/download/graywolf_amd64.deb
+
+# Install
+sudo apt install ./graywolf_amd64.deb</code></pre>
+
+        <p>
+          For Raspberry Pi and other ARM boards, use the
+          <code>graywolf_arm64.deb</code> package instead.
+        </p>
+
+        <p>
+          The package installs both binaries (<code>/usr/bin/graywolf</code>
+          and <code>/usr/bin/graywolf-modem</code>), creates a
+          <code>graywolf</code> system user with <code>audio</code> and
+          <code>dialout</code> group membership, installs a hardened systemd
+          unit, and enables the service.
+        </p>
+
+        <h2>Start the Service</h2>
+
+<pre><code>sudo systemctl start graywolf</code></pre>
+
+        <p>
+          The service is already enabled at boot. Check that it&rsquo;s running:
+        </p>
+
+<pre><code>sudo systemctl status graywolf</code></pre>
+
+      </div>
+
+      <!-- ── RHEL / Fedora ── -->
+      <div class="tab-panel" id="tab-rpm">
+
+        <h2>Install the Package</h2>
+
+<pre><code># Download the .rpm for your architecture
+curl -LO https://github.com/chrissnell/graywolf/releases/latest/download/graywolf_amd64.rpm
+
+# Install
+sudo dnf install ./graywolf_amd64.rpm</code></pre>
+
+        <p>
+          The package installs both binaries, creates the
+          <code>graywolf</code> system user, and installs the systemd unit.
+        </p>
+
+        <h2>Start the Service</h2>
+
+<pre><code>sudo systemctl enable --now graywolf</code></pre>
+
+      </div>
+
+      <!-- ── Arch Linux ── -->
+      <div class="tab-panel" id="tab-arch">
+
+        <h2>Install from AUR</h2>
+
+<pre><code># With an AUR helper (e.g., yay or paru)
+yay -S graywolf</code></pre>
+
+        <p>
+          Or build manually:
+        </p>
+
+<pre><code>git clone https://aur.archlinux.org/graywolf.git
+cd graywolf
+makepkg -si</code></pre>
+
+        <p>
+          The PKGBUILD builds both the Rust modem and Go binary from source,
+          installs them to <code>/usr/bin</code>, and installs the systemd unit.
+        </p>
+
+        <h2>Start the Service</h2>
+
+<pre><code>sudo systemctl enable --now graywolf</code></pre>
+
+      </div>
+
+      <!-- ── Docker ── -->
+      <div class="tab-panel" id="tab-docker">
+
+        <h2>Container Image</h2>
+
+<pre><code>ghcr.io/chrissnell/graywolf:latest</code></pre>
+
+        <h2>Docker Run</h2>
+
+<pre><code>docker run -d \
+  --name graywolf \
+  --restart unless-stopped \
+  --device /dev/snd \
+  -p 8080:8080/tcp \
+  -v graywolf-data:/data \
+  ghcr.io/chrissnell/graywolf:latest \
+  -config /data/graywolf.db -http 0.0.0.0:8080</code></pre>
+
+        <div class="callout warn">
+          <span class="callout-icon">&#9888;</span>
+          <div class="callout-body">
+            <p>
+              Audio device passthrough (<code>--device /dev/snd</code>) is
+              required for the software modem to access your sound card.
+              For serial PTT or GPS, pass the serial device as well
+              (e.g., <code>--device /dev/ttyUSB0</code>).
+            </p>
+          </div>
+        </div>
+
+        <h2>Docker Compose</h2>
+
+        <div class="code-file">docker-compose.yml</div>
+<pre><code>services:
+  graywolf:
+    image: ghcr.io/chrissnell/graywolf:latest
+    container_name: graywolf
+    restart: unless-stopped
+    devices:
+      - /dev/snd:/dev/snd
+    ports:
+      - "8080:8080/tcp"
+    volumes:
+      - graywolf-data:/data
+    command: ["-config", "/data/graywolf.db", "-http", "0.0.0.0:8080"]
+
+volumes:
+  graywolf-data:</code></pre>
+
+<pre><code>docker compose up -d</code></pre>
+
+        <h2>Exposing Additional Ports</h2>
+
+        <p>
+          If you plan to use KISS TCP or AGWPE, expose those ports as well:
+        </p>
+
+<pre><code>ports:
+  - "8080:8080/tcp"   # Web UI
+  - "6700:6700/tcp"   # KISS TCP
+  - "8000:8000/tcp"   # AGWPE</code></pre>
+      </div>
+
+      <!-- ── Build from Source ── -->
+      <div class="tab-panel" id="tab-source">
+
+        <h2>Requirements</h2>
+
+        <ul>
+          <li>Rust toolchain (stable, via <a href="https://rustup.rs">rustup</a>)</li>
+          <li>Go 1.22+</li>
+          <li>Node.js 22+ and npm (for the web UI)</li>
+          <li>GNU Make</li>
+          <li>ALSA development headers (<code>libasound2-dev</code> on Debian/Ubuntu)</li>
+        </ul>
+
+        <h2>Build</h2>
+
+<pre><code>git clone https://github.com/chrissnell/graywolf.git
+cd graywolf
+
+# Build everything (Rust modem + Svelte UI + Go binary)
+make graywolf</code></pre>
+
+        <p>
+          The binaries are written to <code>bin/graywolf</code> and
+          <code>bin/graywolf-modem</code>.
+        </p>
+
+        <h2>Cross-Compiling for ARM</h2>
+
+        <p>
+          To build for Raspberry Pi (aarch64), use
+          <a href="https://github.com/cross-rs/cross">cross</a>:
+        </p>
+
+<pre><code>cargo install cross
+
+cross build --release --target aarch64-unknown-linux-gnu \
+  -p graywolf-modem</code></pre>
+
+        <h2>Install System-Wide</h2>
+
+        <p>
+          The repository includes a systemd unit, postinstall script, and
+          preremove script under <code>packaging/</code>. To install manually
+          from a source build:
+        </p>
+
+<pre><code># Install binaries
+sudo install -m 755 bin/graywolf /usr/bin/graywolf
+sudo install -m 755 bin/graywolf-modem /usr/bin/graywolf-modem
+
+# Install the systemd unit
+sudo install -m 644 packaging/systemd/graywolf.service \
+  /etc/systemd/system/graywolf.service
+
+# Run the postinstall script (creates user, enables service)
+sudo packaging/scripts/postinstall.sh</code></pre>
+
+        <p>Then start the service:</p>
+
+<pre><code>sudo systemctl start graywolf</code></pre>
+
+        <h2>Makefile Targets</h2>
+
+        <table>
+          <thead>
+            <tr><th>Target</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>make all</code></td><td>Full release build (Rust + Svelte + Go)</td></tr>
+            <tr><td><code>make release</code></td><td>Build Rust modem with native CPU optimizations</td></tr>
+            <tr><td><code>make web</code></td><td>Build the Svelte web UI</td></tr>
+            <tr><td><code>make graywolf</code></td><td>Build Go binary (triggers modem + web builds)</td></tr>
+            <tr><td><code>make test</code></td><td>Run Rust tests (<code>cargo test</code>)</td></tr>
+            <tr><td><code>make go-test</code></td><td>Run Go tests with race detector</td></tr>
+            <tr><td><code>make go-fuzz</code></td><td>Run fuzz tests (AX.25, APRS parsers)</td></tr>
+            <tr><td><code>make clean</code></td><td>Clean all build artifacts</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Connect to the Web UI</h2>
+
+    <p>
+      Once the service is running, open a browser and navigate to:
+    </p>
+
+<pre><code>http://&lt;your-ip&gt;:8080</code></pre>
+
+    <p>
+      If you&rsquo;re on the same machine, use
+      <code>http://localhost:8080</code>. The web UI is where you&rsquo;ll
+      configure audio devices, radio channels, beacons, digipeater rules,
+      and everything else.
+    </p>
+
+    <h2>Set a Password</h2>
+
+    <p>
+      Before exposing the web UI on your network, set an admin password:
+    </p>
+
+<pre><code>sudo graywolf auth set-password --user admin</code></pre>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          If you installed from a package and the service is running, you
+          need to specify the database path explicitly:<br />
+          <code>sudo graywolf auth set-password --user admin -config /var/lib/graywolf/graywolf.db</code>
+        </p>
+      </div>
+    </div>
+
+    <h2>What the Packages Install</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>File</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/usr/bin/graywolf</code></td>
+              <td>Go application server</td>
+            </tr>
+            <tr>
+              <td><code>/usr/bin/graywolf-modem</code></td>
+              <td>Rust DSP modem</td>
+            </tr>
+            <tr>
+              <td><code>graywolf.service</code></td>
+              <td>Hardened systemd unit (filesystem, kernel, and network lockdown)</td>
+            </tr>
+            <tr>
+              <td><code>/var/lib/graywolf/graywolf.db</code></td>
+              <td>SQLite configuration database (created on first start)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      The postinstall script creates a <code>graywolf</code> system user
+      with membership in the <code>audio</code> group (sound card access)
+      and <code>dialout</code> group (serial port access for PTT and GPS).
+    </p>
+
+    <h2>Command-Line Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>-config PATH</code></td>
+              <td><code>./graywolf.db</code></td>
+              <td>Path to the SQLite configuration database</td>
+            </tr>
+            <tr>
+              <td><code>-modem PATH</code></td>
+              <td><em>auto-discover</em></td>
+              <td>Path to the <code>graywolf-modem</code> binary</td>
+            </tr>
+            <tr>
+              <td><code>-http ADDR:PORT</code></td>
+              <td><code>127.0.0.1:8080</code></td>
+              <td>HTTP listen address for the web UI and API</td>
+            </tr>
+            <tr>
+              <td><code>-shutdown-timeout</code></td>
+              <td><code>10s</code></td>
+              <td>Maximum graceful shutdown duration</td>
+            </tr>
+            <tr>
+              <td><code>-flac FILE</code></td>
+              <td>&mdash;</td>
+              <td>Override audio input with a FLAC file (for testing)</td>
+            </tr>
+            <tr>
+              <td><code>-debug</code></td>
+              <td><code>false</code></td>
+              <td>Enable debug-level logging</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Subcommands</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><code>version</code></td>
+            <td>Print the version string (<code>v0.7.17-abc1234</code>)</td>
+          </tr>
+          <tr>
+            <td><code>auth set-password --user NAME</code></td>
+            <td>Set or change the web UI password for a user</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>Verify It&rsquo;s Working</h2>
+
+    <p>
+      Check the service logs to confirm graywolf started successfully:
+    </p>
+
+<pre><code>journalctl -u graywolf -f</code></pre>
+
+    <p>
+      You should see the modem start, audio devices initialize, and the
+      HTTP server bind. If you see errors about missing audio devices,
+      that&rsquo;s expected &mdash; you haven&rsquo;t configured any yet.
+      Head to <a href="audio.html">Audio Devices</a> to set up your first
+      radio channel.
+    </p>
+
+    <nav class="page-nav">
+      <a href="index.html">
+        <span class="label">Previous</span>
+        Introduction
+      </a>
+      <a href="audio.html" class="next">
+        <span class="label">Next</span>
+        Audio Devices
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

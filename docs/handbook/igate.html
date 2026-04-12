@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iGate &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>iGate</h1>
+    <p class="subtitle">Bridge RF packets to and from the APRS Internet System</p>
+
+    <p>
+      An iGate (Internet Gateway) connects your local RF APRS network to
+      the worldwide APRS-IS (APRS Internet System). Graywolf supports
+      bidirectional gating &mdash; forwarding packets from RF to the internet
+      and from the internet back to RF.
+    </p>
+
+    <h2>Connection Settings</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>enabled</code></td>
+              <td><code>false</code></td>
+              <td>Master switch for the iGate</td>
+            </tr>
+            <tr>
+              <td><code>server</code></td>
+              <td><code>rotate.aprs2.net</code></td>
+              <td>APRS-IS server hostname</td>
+            </tr>
+            <tr>
+              <td><code>port</code></td>
+              <td><code>14580</code></td>
+              <td>APRS-IS server port</td>
+            </tr>
+            <tr>
+              <td><code>callsign</code></td>
+              <td>&mdash;</td>
+              <td>Login callsign (e.g., <code>N0CALL-5</code>)</td>
+            </tr>
+            <tr>
+              <td><code>passcode</code></td>
+              <td><code>-1</code></td>
+              <td>APRS-IS passcode. <code>-1</code> = receive-only (no TX to IS).</td>
+            </tr>
+            <tr>
+              <td><code>server_filter</code></td>
+              <td>&mdash;</td>
+              <td>Server-side filter string (e.g., <code>m/100</code> for 100 km radius)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          The APRS-IS passcode authenticates your station for sending data
+          to the network. Use <code>-1</code> for a receive-only iGate that
+          monitors APRS-IS without contributing. To generate a valid passcode,
+          use an APRS passcode calculator with your callsign (without SSID).
+        </p>
+      </div>
+    </div>
+
+    <h2>Gating Directions</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>gate_rf_to_is</code></td>
+              <td><code>true</code></td>
+              <td>Forward RF-received packets to APRS-IS</td>
+            </tr>
+            <tr>
+              <td><code>gate_is_to_rf</code></td>
+              <td><code>false</code></td>
+              <td>Forward APRS-IS packets to RF</td>
+            </tr>
+            <tr>
+              <td><code>rf_channel</code></td>
+              <td>&mdash;</td>
+              <td>Radio channel for IS&rarr;RF gating</td>
+            </tr>
+            <tr>
+              <td><code>tx_channel</code></td>
+              <td>&mdash;</td>
+              <td>Radio channel for transmitted packets</td>
+            </tr>
+            <tr>
+              <td><code>max_msg_hops</code></td>
+              <td><code>2</code></td>
+              <td>WIDE hops added to IS&rarr;RF messages</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout danger">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>IS&rarr;RF gating transmits on the air.</strong> Only enable
+          this if you have a valid amateur radio license, proper PTT and
+          channel configuration, and understand the impact on your local
+          APRS channel. A misconfigured IS&rarr;RF gate can flood a busy
+          frequency.
+        </p>
+      </div>
+    </div>
+
+    <h2>RF Filters</h2>
+
+    <p>
+      RF filters control which packets are gated from RF to APRS-IS. Rules
+      are evaluated in <code>priority</code> order. A packet must match an
+      <code>allow</code> rule (and not match a higher-priority
+      <code>deny</code> rule) to be gated.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>channel</code></td>
+              <td>Radio channel this filter applies to</td>
+            </tr>
+            <tr>
+              <td><code>type</code></td>
+              <td>Match type: <code>callsign</code>, <code>prefix</code>, <code>message_dest</code>, or <code>object</code></td>
+            </tr>
+            <tr>
+              <td><code>pattern</code></td>
+              <td>Regex or glob pattern to match against</td>
+            </tr>
+            <tr>
+              <td><code>action</code></td>
+              <td><code>allow</code> or <code>deny</code></td>
+            </tr>
+            <tr>
+              <td><code>priority</code></td>
+              <td>Evaluation order (lower = evaluated first)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>Filter Examples</h3>
+
+    <p>Allow all RF packets to APRS-IS (typical for most iGates):</p>
+
+<pre><code>type: callsign
+pattern: .*
+action: allow
+priority: 100</code></pre>
+
+    <p>Block a specific noisy station:</p>
+
+<pre><code>type: callsign
+pattern: NOISY-1
+action: deny
+priority: 10</code></pre>
+
+    <h2>Simulation Mode</h2>
+
+    <p>
+      Simulation mode lets you test your iGate configuration without actually
+      connecting to APRS-IS or transmitting. Packets that would be gated are
+      logged instead. Toggle it via <code>POST /api/igate/simulation</code>
+      or the web UI.
+    </p>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Use simulation mode when first setting up your iGate to verify
+          that filters are working as expected before going live.
+        </p>
+      </div>
+    </div>
+
+    <h2>Automatic Behaviors</h2>
+
+    <p>The iGate automatically handles several edge cases:</p>
+
+    <ul>
+      <li><strong>Deduplication</strong> &mdash; packets already seen on RF are not gated again</li>
+      <li><strong>Third-party suppression</strong> &mdash; packets that originated from APRS-IS (third-party format) are not re-gated</li>
+      <li><strong>Beacon exemption</strong> &mdash; your own beacons are not gated to APRS-IS via the iGate path</li>
+      <li><strong>Reconnection</strong> &mdash; the APRS-IS connection is automatically re-established if it drops</li>
+    </ul>
+
+    <h2>API Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/igate/config</code></td><td>Get iGate settings</td></tr>
+            <tr><td>POST</td><td><code>/api/igate/config</code></td><td>Update iGate settings</td></tr>
+            <tr><td>GET</td><td><code>/api/igate/status</code></td><td>Real-time connection status and counters</td></tr>
+            <tr><td>POST</td><td><code>/api/igate/simulation</code></td><td>Toggle simulation mode</td></tr>
+            <tr><td>GET</td><td><code>/api/igate/filters</code></td><td>List RF filter rules</td></tr>
+            <tr><td>POST</td><td><code>/api/igate/filters</code></td><td>Create a filter rule</td></tr>
+            <tr><td>PUT</td><td><code>/api/igate/filters/{id}</code></td><td>Update a filter rule</td></tr>
+            <tr><td>DELETE</td><td><code>/api/igate/filters/{id}</code></td><td>Delete a filter rule</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="digipeater.html">
+        <span class="label">Previous</span>
+        Digipeater
+      </a>
+      <a href="kiss.html" class="next">
+        <span class="label">Next</span>
+        KISS TNC
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

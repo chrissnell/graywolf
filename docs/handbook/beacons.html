@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Beacons &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Beacons</h1>
+    <p class="subtitle">Position reports, objects, trackers, and custom beacons</p>
+
+    <p>
+      Beacons are periodic APRS transmissions that announce your station&rsquo;s
+      position, capabilities, or other information. Graywolf supports multiple
+      beacon types, each with independent scheduling and channel assignment.
+    </p>
+
+    <h2>Beacon Types</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>position</code></td>
+              <td>Standard position report with symbol and optional comment. The most common beacon type for fixed stations.</td>
+            </tr>
+            <tr>
+              <td><code>object</code></td>
+              <td>Named APRS object (repeater, event, landmark). Appears on maps with its own callsign-like identifier.</td>
+            </tr>
+            <tr>
+              <td><code>tracker</code></td>
+              <td>GPS-driven position beacon with SmartBeacon rate adaptation. For mobile stations.</td>
+            </tr>
+            <tr>
+              <td><code>custom</code></td>
+              <td>Raw APRS info field. Full control over the transmitted packet content.</td>
+            </tr>
+            <tr>
+              <td><code>igate</code></td>
+              <td>iGate status beacon. Automatically includes iGate statistics in the comment.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Common Settings</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>channel</code></td>
+              <td>&mdash;</td>
+              <td>Radio channel to transmit on</td>
+            </tr>
+            <tr>
+              <td><code>callsign</code></td>
+              <td>&mdash;</td>
+              <td>Source callsign (e.g., <code>N0CALL-5</code>)</td>
+            </tr>
+            <tr>
+              <td><code>destination</code></td>
+              <td><code>APGRWF</code></td>
+              <td>Destination address (identifies software)</td>
+            </tr>
+            <tr>
+              <td><code>path</code></td>
+              <td><code>WIDE1-1</code></td>
+              <td>Digipeater path</td>
+            </tr>
+            <tr>
+              <td><code>every_seconds</code></td>
+              <td><code>1800</code></td>
+              <td>Beacon interval (30 minutes)</td>
+            </tr>
+            <tr>
+              <td><code>delay_seconds</code></td>
+              <td><code>0</code></td>
+              <td>Initial delay before first beacon</td>
+            </tr>
+            <tr>
+              <td><code>slot_seconds</code></td>
+              <td><code>-1</code></td>
+              <td>Fixed slot (seconds past the hour, &minus;1 = unset)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Position</h2>
+
+    <p>
+      Position beacons can use a fixed latitude/longitude or pull live
+      coordinates from a <a href="gps.html">GPS receiver</a>:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>use_gps</code></td>
+              <td><code>false</code></td>
+              <td>Use live GPS position instead of fixed coordinates</td>
+            </tr>
+            <tr>
+              <td><code>latitude</code></td>
+              <td>&mdash;</td>
+              <td>Fixed latitude (decimal degrees, north positive)</td>
+            </tr>
+            <tr>
+              <td><code>longitude</code></td>
+              <td>&mdash;</td>
+              <td>Fixed longitude (decimal degrees, east positive)</td>
+            </tr>
+            <tr>
+              <td><code>alt_ft</code></td>
+              <td><code>0</code></td>
+              <td>Altitude in feet</td>
+            </tr>
+            <tr>
+              <td><code>ambiguity</code></td>
+              <td><code>0</code></td>
+              <td>Position ambiguity (0&ndash;3, per APRS101 ch. 6)</td>
+            </tr>
+            <tr>
+              <td><code>compress</code></td>
+              <td><code>true</code></td>
+              <td>Use 13-byte base-91 compressed position format</td>
+            </tr>
+            <tr>
+              <td><code>messaging</code></td>
+              <td><code>false</code></td>
+              <td>Indicate message capability (<code>=</code> vs <code>!</code> prefix)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Symbols</h2>
+
+    <p>
+      APRS symbols are selected with a table and symbol code character:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>symbol_table</code></td>
+              <td><code>/</code></td>
+              <td>Symbol table: <code>/</code> (primary) or <code>\</code> (alternate)</td>
+            </tr>
+            <tr>
+              <td><code>symbol</code></td>
+              <td>&mdash;</td>
+              <td>Symbol code (single character, e.g., <code>-</code> for house)</td>
+            </tr>
+            <tr>
+              <td><code>overlay</code></td>
+              <td>&mdash;</td>
+              <td>Overlay character for alternate table symbols</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Comments</h2>
+
+    <p>
+      Beacons can include a static comment or dynamically generate one by
+      running a shell command:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><code>comment</code></td>
+            <td>Static comment text appended to the position report</td>
+          </tr>
+          <tr>
+            <td><code>comment_cmd</code></td>
+            <td>Shell command whose stdout becomes the comment (e.g., weather data)</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>PHG and Repeater Info</h2>
+
+    <p>
+      Power-Height-Gain-Directivity (PHG) fields describe your station&rsquo;s
+      RF capabilities per APRS101 chapter 7:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr><td><code>power</code></td><td>Transmitter power in watts</td></tr>
+          <tr><td><code>height</code></td><td>Antenna height above average terrain (feet)</td></tr>
+          <tr><td><code>gain</code></td><td>Antenna gain in dB</td></tr>
+          <tr><td><code>dir</code></td><td>Antenna directivity (0 = omni)</td></tr>
+          <tr><td><code>freq</code></td><td>Operating frequency (MHz)</td></tr>
+          <tr><td><code>tone</code></td><td>CTCSS tone (Hz)</td></tr>
+          <tr><td><code>freq_offset</code></td><td>Repeater offset (MHz)</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>SmartBeacon</h2>
+
+    <p>
+      SmartBeacon adapts the beacon rate based on speed &mdash; faster
+      movement means more frequent beacons, standing still means fewer.
+      Enable it on <code>tracker</code> type beacons:
+    </p>
+
+    <div class="box">
+      <div class="box-header">SmartBeacon Parameters</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>smart_beacon</code></td>
+              <td><code>false</code></td>
+              <td>Enable SmartBeacon rate adaptation</td>
+            </tr>
+            <tr>
+              <td><code>sb_fast_speed</code></td>
+              <td><code>60</code></td>
+              <td>Speed (km/h) at which fast rate applies</td>
+            </tr>
+            <tr>
+              <td><code>sb_fast_rate</code></td>
+              <td><code>60</code></td>
+              <td>Beacon interval (seconds) at fast speed</td>
+            </tr>
+            <tr>
+              <td><code>sb_slow_speed</code></td>
+              <td><code>5</code></td>
+              <td>Speed (km/h) at which slow rate applies</td>
+            </tr>
+            <tr>
+              <td><code>sb_slow_rate</code></td>
+              <td><code>1800</code></td>
+              <td>Beacon interval (seconds) when slow/stopped</td>
+            </tr>
+            <tr>
+              <td><code>sb_turn_angle</code></td>
+              <td><code>30</code></td>
+              <td>Turn angle threshold (degrees) for corner pegging</td>
+            </tr>
+            <tr>
+              <td><code>sb_turn_slope</code></td>
+              <td><code>255</code></td>
+              <td>Sensitivity factor for turn detection</td>
+            </tr>
+            <tr>
+              <td><code>sb_min_turn_time</code></td>
+              <td><code>5</code></td>
+              <td>Minimum seconds between turn-triggered beacons</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          SmartBeacon requires a GPS source. Configure one on the
+          <a href="gps.html">GPS</a> page and set <code>use_gps: true</code>
+          on the beacon.
+        </p>
+      </div>
+    </div>
+
+    <h2>Immediate Send</h2>
+
+    <p>
+      Any beacon can be triggered immediately via the API, bypassing the
+      normal schedule. Use <code>POST /api/beacons/{id}/send</code> or the
+      <strong>Send Now</strong> button in the web UI.
+    </p>
+
+    <h2>API Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/beacons</code></td><td>List all beacons</td></tr>
+            <tr><td>GET</td><td><code>/api/beacons/{id}</code></td><td>Get a single beacon</td></tr>
+            <tr><td>POST</td><td><code>/api/beacons</code></td><td>Create a new beacon</td></tr>
+            <tr><td>PUT</td><td><code>/api/beacons/{id}</code></td><td>Update a beacon</td></tr>
+            <tr><td>DELETE</td><td><code>/api/beacons/{id}</code></td><td>Delete a beacon</td></tr>
+            <tr><td>POST</td><td><code>/api/beacons/{id}/send</code></td><td>Trigger immediate transmission</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="ptt.html">
+        <span class="label">Previous</span>
+        Push-to-Talk
+      </a>
+      <a href="digipeater.html" class="next">
+        <span class="label">Next</span>
+        Digipeater
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

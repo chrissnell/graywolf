@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AGWPE &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>AGWPE</h1>
+    <p class="subtitle">AGW Packet Engine protocol interface for legacy software</p>
+
+    <p>
+      The AGWPE (AGW Packet Engine) interface provides compatibility with
+      Windows packet radio software that speaks the AGW protocol. This is
+      a single-instance TCP server that supports multiple simultaneous
+      clients and up to four radio ports.
+    </p>
+
+    <h2>Settings</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>enabled</code></td>
+              <td><code>false</code></td>
+              <td>Enable the AGWPE listener</td>
+            </tr>
+            <tr>
+              <td><code>listen_addr</code></td>
+              <td><code>0.0.0.0:8000</code></td>
+              <td>TCP listen address</td>
+            </tr>
+            <tr>
+              <td><code>callsigns</code></td>
+              <td>&mdash;</td>
+              <td>Comma-separated callsigns, one per AGW port (max 4)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Port Mapping</h2>
+
+    <p>
+      AGWPE supports up to four radio ports (numbered 0&ndash;3). Each port
+      is mapped to a callsign specified in the <code>callsigns</code> field.
+      The order determines the port number:
+    </p>
+
+<pre><code>callsigns: "N0CALL,N0CALL-5,N0CALL-10"
+# Port 0 → N0CALL
+# Port 1 → N0CALL-5
+# Port 2 → N0CALL-10</code></pre>
+
+    <h2>Supported Frame Types</h2>
+
+    <p>
+      Graywolf implements the AGWPE protocol subset needed for packet radio
+      operations:
+    </p>
+
+    <ul>
+      <li><strong>Monitor frames</strong> &mdash; receive decoded AX.25 packets</li>
+      <li><strong>Unproto frames</strong> &mdash; transmit UI (unnumbered information) packets</li>
+      <li><strong>Raw frames</strong> &mdash; send and receive raw AX.25 data</li>
+    </ul>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Port 8000 is the conventional AGWPE port. Most AGWPE-compatible
+          software will default to this port.
+        </p>
+      </div>
+    </div>
+
+    <h2>API Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/agw</code></td><td>Get AGWPE configuration</td></tr>
+            <tr><td>POST</td><td><code>/api/agw</code></td><td>Update AGWPE settings</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="kiss.html">
+        <span class="label">Previous</span>
+        KISS TNC
+      </a>
+      <a href="gps.html" class="next">
+        <span class="label">Next</span>
+        GPS
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KISS TNC &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>KISS TNC</h1>
+    <p class="subtitle">Expose graywolf as a KISS terminal node controller</p>
+
+    <p>
+      The KISS (Keep It Simple, Stupid) interface lets third-party packet
+      software &mdash; such as Xastir, YAAC, pinpoint, or aprx &mdash; use
+      graywolf as their TNC. Graywolf supports multiple simultaneous KISS
+      interfaces over TCP, serial, or Bluetooth.
+    </p>
+
+    <h2>Interface Types</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Description</th><th>Use Case</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>tcp</code></td>
+              <td>TCP socket server accepting multiple clients</td>
+              <td>Most APRS software (Xastir, YAAC, etc.)</td>
+            </tr>
+            <tr>
+              <td><code>serial</code></td>
+              <td>Virtual serial port</td>
+              <td>Legacy software expecting a serial TNC</td>
+            </tr>
+            <tr>
+              <td><code>bluetooth</code></td>
+              <td>Bluetooth serial profile</td>
+              <td>Mobile APRS apps (APRSdroid, etc.)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Interface Settings</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code></td>
+              <td>&mdash;</td>
+              <td>Display name for this interface</td>
+            </tr>
+            <tr>
+              <td><code>type</code></td>
+              <td>&mdash;</td>
+              <td><code>tcp</code>, <code>serial</code>, or <code>bluetooth</code></td>
+            </tr>
+            <tr>
+              <td><code>listen_addr</code></td>
+              <td>&mdash;</td>
+              <td>Listen address for TCP (e.g., <code>0.0.0.0:6700</code>)</td>
+            </tr>
+            <tr>
+              <td><code>device</code></td>
+              <td>&mdash;</td>
+              <td>Device path for serial/Bluetooth</td>
+            </tr>
+            <tr>
+              <td><code>baud_rate</code></td>
+              <td><code>9600</code></td>
+              <td>Baud rate for serial interfaces</td>
+            </tr>
+            <tr>
+              <td><code>channel</code></td>
+              <td><code>1</code></td>
+              <td>Default radio channel for this interface</td>
+            </tr>
+            <tr>
+              <td><code>broadcast</code></td>
+              <td><code>true</code></td>
+              <td>Fan out received packets to all connected clients</td>
+            </tr>
+            <tr>
+              <td><code>enabled</code></td>
+              <td><code>true</code></td>
+              <td>Interface active/inactive</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>TCP Setup</h2>
+
+    <p>
+      A TCP KISS interface is the most common setup. Configure it to listen
+      on a port and point your APRS software at <code>host:port</code>
+      with KISS protocol selected.
+    </p>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Port 6700 is the conventional KISS-over-TCP port used by most
+          APRS software. If your APRS application asks for a &ldquo;KISS TNC
+          host&rdquo;, point it at graywolf&rsquo;s IP and this port.
+        </p>
+      </div>
+    </div>
+
+    <h2>Multi-Port KISS</h2>
+
+    <p>
+      The KISS protocol supports multiple &ldquo;ports&rdquo; (0&ndash;15) within
+      a single connection. Each KISS port maps to a graywolf radio channel.
+      Clients can send and receive on different channels through one TCP
+      connection.
+    </p>
+
+    <h2>RX Broadcast</h2>
+
+    <p>
+      When <code>broadcast</code> is enabled, all packets received on the
+      interface&rsquo;s channel are forwarded to every connected KISS client.
+      Disable this if you want a write-only interface where clients can
+      transmit but don&rsquo;t receive.
+    </p>
+
+    <h2>API Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/kiss</code></td><td>List all KISS interfaces</td></tr>
+            <tr><td>GET</td><td><code>/api/kiss/{id}</code></td><td>Get a single interface</td></tr>
+            <tr><td>POST</td><td><code>/api/kiss</code></td><td>Create a new interface</td></tr>
+            <tr><td>PUT</td><td><code>/api/kiss/{id}</code></td><td>Update an interface</td></tr>
+            <tr><td>DELETE</td><td><code>/api/kiss/{id}</code></td><td>Delete an interface</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="igate.html">
+        <span class="label">Previous</span>
+        iGate
+      </a>
+      <a href="agwpe.html" class="next">
+        <span class="label">Next</span>
+        AGWPE
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

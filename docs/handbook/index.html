@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Graywolf</h1>
+    <p class="subtitle">Modern APRS station &mdash; software modem, digipeater, iGate, and web UI</p>
+
+    <p>
+      Graywolf is a complete APRS station that replaces a hardware TNC with
+      a software modem. Plug a radio into a USB sound card, install
+      graywolf, and configure everything from your browser. No external
+      sound card software, no config files to hand-edit &mdash; just a single
+      binary and a web UI.
+    </p>
+
+    <h2>What You Can Do</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><strong>Run a digipeater</strong></td>
+            <td>
+              Set up a fill-in or wide-area digipeater with WIDEn-N path
+              handling, duplicate suppression, and cross-channel routing.
+              Configurable rules let you control exactly what gets repeated.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Run an iGate</strong></td>
+            <td>
+              Bridge your local RF network to APRS-IS. Receive-only or
+              bidirectional &mdash; gate RF packets to the internet and
+              deliver APRS messages from the internet back to RF.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Beacon your position</strong></td>
+            <td>
+              Fixed station beacons, GPS-driven mobile trackers with
+              SmartBeacon rate adaptation, APRS objects for repeaters or
+              events, and custom status beacons.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Serve as a TNC</strong></td>
+            <td>
+              Expose KISS and AGWPE interfaces so other packet software
+              (Xastir, YAAC, pinpoint, aprx, APRSdroid) can use graywolf
+              as their modem over TCP, serial, or Bluetooth.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Combine everything</strong></td>
+            <td>
+              Run a digipeater, iGate, position beacon, and KISS server
+              all at once on the same radio channel &mdash; or spread them
+              across multiple channels and radios.
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>Typical Setups</h2>
+
+    <h3>Home fill-in digipeater + iGate</h3>
+    <p>
+      The most common setup. A VHF radio on 144.39 MHz connected to a
+      Raspberry Pi or small Linux box. Graywolf digipeats WIDE1-1 packets
+      to fill coverage gaps in your area and gates everything it hears to
+      APRS-IS. Add a position beacon so your station appears on the map.
+    </p>
+    <ul>
+      <li>One radio channel (AFSK 1200)</li>
+      <li>Digipeater with a WIDE1-1 fill-in rule</li>
+      <li>iGate with RF&rarr;IS gating enabled</li>
+      <li>Position beacon every 30 minutes</li>
+    </ul>
+
+    <h3>Wide-area mountain-top digipeater</h3>
+    <p>
+      A high-site digipeater that handles both WIDE1-1 and WIDE2-2. No
+      internet connection needed &mdash; just digipeating and a position
+      beacon. Runs headless with systemd.
+    </p>
+    <ul>
+      <li>One radio channel (AFSK 1200)</li>
+      <li>Digipeater with WIDE rules (max 2 hops)</li>
+      <li>Position beacon with PHG data</li>
+    </ul>
+
+    <h3>Mobile tracker</h3>
+    <p>
+      A GPS-equipped vehicle station that beacons its position as it moves.
+      SmartBeacon adjusts the rate automatically &mdash; frequent beacons on
+      the highway, infrequent when parked. Optionally serves as a KISS
+      TNC for an in-cab APRS app.
+    </p>
+    <ul>
+      <li>One radio channel (AFSK 1200)</li>
+      <li>GPS receiver (serial or gpsd)</li>
+      <li>Tracker beacon with SmartBeacon enabled</li>
+      <li>Optional: KISS TCP or Bluetooth for APRSdroid</li>
+    </ul>
+
+    <h3>Multi-radio gateway</h3>
+    <p>
+      A station with separate VHF and UHF radios. Graywolf can monitor
+      both frequencies simultaneously, cross-band digipeat, and gate
+      packets from both channels to APRS-IS.
+    </p>
+    <ul>
+      <li>Two radio channels on separate audio devices</li>
+      <li>Cross-channel digipeater rules</li>
+      <li>iGate receiving from both channels</li>
+    </ul>
+
+    <h2>Key Features</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><strong>Software modem</strong></td>
+            <td>AFSK 1200, 9600 G3RUH, and PSK with FX.25 and IL2P forward error correction. No external modem hardware needed.</td>
+          </tr>
+          <tr>
+            <td><strong>Web UI</strong></td>
+            <td>Configure and monitor your station from any browser. Live packet log, channel stats, and full configuration management.</td>
+          </tr>
+          <tr>
+            <td><strong>Single binary</strong></td>
+            <td>One download, one SQLite database. No YAML to edit, no dependencies to install.</td>
+          </tr>
+          <tr>
+            <td><strong>Runs anywhere</strong></td>
+            <td>Linux x86-64 and ARM (Raspberry Pi). Packaged for Debian/Ubuntu, RHEL/Fedora, and Arch.</td>
+          </tr>
+          <tr>
+            <td><strong>Monitoring</strong></td>
+            <td>Prometheus metrics endpoint, live WebSocket packet stream, and structured logging.</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>What You Need</h2>
+
+    <ul>
+      <li>A VHF/UHF radio tuned to your local APRS frequency</li>
+      <li>A USB sound card interface (Digirig, SignaLink, or similar) connecting the radio to your computer</li>
+      <li>A Linux computer &mdash; Raspberry Pi, old laptop, server, VM, or container</li>
+      <li>Optional: GPS receiver for mobile tracking</li>
+      <li>Optional: PTT circuit if you want to transmit (serial RTS, GPIO, or CM108)</li>
+    </ul>
+
+    <h2>Getting Started</h2>
+
+    <ol class="steps">
+      <li>
+        <a href="installation.html">Install graywolf</a> and start the
+        service. Open the web UI in your browser.
+      </li>
+      <li>
+        Set up your <a href="audio.html">audio device</a> and create a
+        <a href="channels.html">radio channel</a> for your APRS frequency.
+      </li>
+      <li>
+        If transmitting, configure <a href="ptt.html">push-to-talk</a>
+        for your radio interface.
+      </li>
+      <li>
+        Enable the features you need:
+        <a href="beacons.html">beacons</a>,
+        <a href="digipeater.html">digipeater</a>,
+        <a href="igate.html">iGate</a>, or
+        <a href="kiss.html">KISS TNC</a>.
+      </li>
+      <li>
+        Check the <a href="monitoring.html">monitoring</a> page to verify
+        packets are being received and your station is operating correctly.
+      </li>
+    </ol>
+
+    <nav class="page-nav">
+      <span></span>
+      <a href="installation.html" class="next">
+        <span class="label">Next</span>
+        Installation
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Push-to-Talk &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Push-to-Talk</h1>
+    <p class="subtitle">Control radio keying and channel access</p>
+
+    <p>
+      Push-to-talk (PTT) configuration tells graywolf how to key your radio
+      for transmission. Each <a href="channels.html">radio channel</a> has
+      its own PTT configuration. If a channel has no output device or PTT
+      method set to <code>none</code>, it operates in receive-only mode.
+    </p>
+
+    <h2>PTT Methods</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Description</th><th>Typical Hardware</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>none</code></td>
+              <td>No PTT control (receive only)</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td><code>serial_rts</code></td>
+              <td>Assert RTS pin on a serial port</td>
+              <td>USB-to-serial adapter, Digirig</td>
+            </tr>
+            <tr>
+              <td><code>serial_dtr</code></td>
+              <td>Assert DTR pin on a serial port</td>
+              <td>USB-to-serial adapter</td>
+            </tr>
+            <tr>
+              <td><code>gpio</code></td>
+              <td>Linux GPIO pin (sysfs or libgpiod)</td>
+              <td>Raspberry Pi GPIO header</td>
+            </tr>
+            <tr>
+              <td><code>cm108</code></td>
+              <td>USB HID GPIO on CM108/CM119 audio codec</td>
+              <td>USB sound cards with built-in PTT</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>PTT Settings</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>method</code></td>
+              <td><code>none</code></td>
+              <td>PTT control method (see table above)</td>
+            </tr>
+            <tr>
+              <td><code>device</code></td>
+              <td>&mdash;</td>
+              <td>Serial device path (e.g., <code>/dev/ttyUSB0</code>) or GPIO device</td>
+            </tr>
+            <tr>
+              <td><code>gpio_pin</code></td>
+              <td>&mdash;</td>
+              <td>GPIO pin number (for <code>gpio</code> method)</td>
+            </tr>
+            <tr>
+              <td><code>invert</code></td>
+              <td><code>false</code></td>
+              <td>Reverse PTT polarity (for backwards-wired rigs)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Serial PTT</h2>
+
+    <p>
+      Serial RTS or DTR is the most common PTT method. The modem asserts
+      the chosen pin when transmitting and de-asserts it when done. Most
+      USB sound card interfaces (Digirig, SignaLink USB) use this approach.
+    </p>
+
+<pre><code># Find your serial device
+ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          The graywolf user must have permission to access the serial device.
+          Adding the user to the <code>dialout</code> group (Linux) handles
+          this. The systemd service file includes this group by default.
+        </p>
+      </div>
+    </div>
+
+    <h2>GPIO PTT (Raspberry Pi)</h2>
+
+    <p>
+      For Raspberry Pi setups, you can key the radio directly from a GPIO
+      pin. Specify the <code>gpio</code> method with the pin number. The
+      modem uses Linux&rsquo;s GPIO character device interface.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          GPIO pins output 3.3V. If your radio requires a different voltage
+          or current, use a transistor or optocoupler circuit to interface
+          the GPIO pin with your radio&rsquo;s PTT line.
+        </p>
+      </div>
+    </div>
+
+    <h2>CSMA Channel Access</h2>
+
+    <p>
+      CSMA (Carrier Sense Multiple Access) prevents graywolf from
+      transmitting while another station is on the air. The TX governor
+      checks the DCD (Data Carrier Detect) state before keying.
+    </p>
+
+    <div class="box">
+      <div class="box-header">CSMA Parameters</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>slot_time_ms</code></td>
+              <td><code>10</code></td>
+              <td>Time slot duration for p-persistence algorithm</td>
+            </tr>
+            <tr>
+              <td><code>persist</code></td>
+              <td><code>63</code></td>
+              <td>Persistence value (0&ndash;255). Higher = more aggressive</td>
+            </tr>
+            <tr>
+              <td><code>dwait_ms</code></td>
+              <td><code>0</code></td>
+              <td>Dwell/backoff time after DCD clears</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      The p-persistence algorithm works as follows: when the channel is
+      clear (DCD inactive), graywolf generates a random number 0&ndash;255.
+      If it&rsquo;s less than <code>persist</code>, it transmits immediately.
+      Otherwise, it waits one <code>slot_time_ms</code> and tries again.
+    </p>
+
+    <h2>TX Rate Limiting</h2>
+
+    <p>
+      The TX governor enforces per-channel rate limits to prevent excessive
+      transmissions. Configure these through the TX timing API:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><code>rate_1min</code></td>
+            <td>Maximum packets per minute (0 = unlimited)</td>
+          </tr>
+          <tr>
+            <td><code>rate_5min</code></td>
+            <td>Maximum packets per 5 minutes (0 = unlimited)</td>
+          </tr>
+          <tr>
+            <td><code>full_dup</code></td>
+            <td>Skip CSMA entirely (for full-duplex setups)</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>API Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/ptt/{channel_id}</code></td><td>Get PTT config for a channel</td></tr>
+            <tr><td>POST</td><td><code>/api/ptt/{channel_id}</code></td><td>Create or update PTT config</td></tr>
+            <tr><td>DELETE</td><td><code>/api/ptt/{channel_id}</code></td><td>Delete PTT config (receive only)</td></tr>
+            <tr><td>GET</td><td><code>/api/tx-timing/{channel_id}</code></td><td>Get CSMA parameters</td></tr>
+            <tr><td>POST</td><td><code>/api/tx-timing/{channel_id}</code></td><td>Create or update CSMA parameters</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="channels.html">
+        <span class="label">Previous</span>
+        Radio Channels
+      </a>
+      <a href="beacons.html" class="next">
+        <span class="label">Next</span>
+        Beacons
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

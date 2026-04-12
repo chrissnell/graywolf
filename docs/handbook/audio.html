@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audio Devices &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Audio Devices</h1>
+    <p class="subtitle">Configure audio input and output sources for the modem</p>
+
+    <p>
+      Audio devices are the physical (or virtual) sound interfaces that
+      graywolf&rsquo;s Rust modem uses to receive and transmit audio.
+      Each <a href="channels.html">radio channel</a> is bound to an audio
+      device for input and optionally one for output.
+    </p>
+
+    <h2>Source Types</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Description</th><th>Use Case</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>soundcard</code></td>
+              <td>System audio device via CPAL (ALSA on Linux, CoreAudio on macOS)</td>
+              <td>Normal operation with a radio</td>
+            </tr>
+            <tr>
+              <td><code>flac</code></td>
+              <td>FLAC audio file playback</td>
+              <td>Offline testing and benchmarking</td>
+            </tr>
+            <tr>
+              <td><code>stdin</code></td>
+              <td>Raw signed 16-bit little-endian PCM from standard input</td>
+              <td>Piping audio from another process</td>
+            </tr>
+            <tr>
+              <td><code>sdr_udp</code></td>
+              <td>UDP listener for SDR audio streams</td>
+              <td>Software-defined radio input</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Device Settings</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code></td>
+              <td>&mdash;</td>
+              <td>Human-readable label shown in the UI</td>
+            </tr>
+            <tr>
+              <td><code>direction</code></td>
+              <td>&mdash;</td>
+              <td><code>input</code> or <code>output</code></td>
+            </tr>
+            <tr>
+              <td><code>source_type</code></td>
+              <td>&mdash;</td>
+              <td>One of: <code>soundcard</code>, <code>flac</code>, <code>stdin</code>, <code>sdr_udp</code></td>
+            </tr>
+            <tr>
+              <td><code>source_path</code></td>
+              <td>&mdash;</td>
+              <td>Device name (for soundcard) or file path (for flac)</td>
+            </tr>
+            <tr>
+              <td><code>sample_rate</code></td>
+              <td><code>48000</code></td>
+              <td>Sample rate in Hz</td>
+            </tr>
+            <tr>
+              <td><code>channels</code></td>
+              <td><code>1</code></td>
+              <td>Number of audio channels (1 = mono, 2 = stereo)</td>
+            </tr>
+            <tr>
+              <td><code>format</code></td>
+              <td><code>s16le</code></td>
+              <td>Sample format (signed 16-bit little-endian)</td>
+            </tr>
+            <tr>
+              <td><code>gain_db</code></td>
+              <td><code>0</code></td>
+              <td>Software gain in dB (&minus;60 to +12, 0 = unity)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Soundcard Setup</h2>
+
+    <p>
+      For a typical setup with a USB sound card connected to a radio, create
+      an input device and (if transmitting) an output device. The
+      <code>source_path</code> should match the ALSA device name as shown by
+      <code>arecord -l</code> or <code>aplay -l</code>.
+    </p>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Use a dedicated USB sound card rather than your computer&rsquo;s
+          built-in audio. Devices like the Digirig, SignaLink, or a simple
+          USB dongle provide clean audio isolation between your radio and
+          computer.
+        </p>
+      </div>
+    </div>
+
+    <h2>Stereo Input</h2>
+
+    <p>
+      If your sound card captures stereo, you can create two radio channels
+      on the same device &mdash; one on the left channel
+      (<code>input_channel: 0</code>) and one on the right
+      (<code>input_channel: 1</code>). This lets you monitor two radios
+      with a single sound card.
+    </p>
+
+    <h2>Software Gain</h2>
+
+    <p>
+      The <code>gain_db</code> setting applies digital gain to the audio
+      stream before it reaches the demodulator. Use this to compensate for
+      sound cards with very low or very high output levels. Positive values
+      amplify the signal; negative values attenuate it.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          Excessive gain can cause clipping, which degrades decode
+          performance. Adjust levels so the audio peaks shown in the
+          dashboard are comfortably below 1.0.
+        </p>
+      </div>
+    </div>
+
+    <h2>Hot Reconfiguration</h2>
+
+    <p>
+      Audio devices can be reconfigured without restarting graywolf. After
+      changing device settings in the web UI, use the
+      <strong>Reconfigure</strong> button (or <code>POST
+      /api/audio-devices/{id}/reconfigure</code>) to apply changes
+      immediately. The modem will briefly pause audio processing during
+      reconfiguration.
+    </p>
+
+    <h2>API Reference</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/audio-devices</code></td><td>List all audio devices</td></tr>
+            <tr><td>GET</td><td><code>/api/audio-devices/{id}</code></td><td>Get a single device</td></tr>
+            <tr><td>POST</td><td><code>/api/audio-devices</code></td><td>Create a new device</td></tr>
+            <tr><td>PUT</td><td><code>/api/audio-devices/{id}</code></td><td>Update a device</td></tr>
+            <tr><td>DELETE</td><td><code>/api/audio-devices/{id}</code></td><td>Delete a device</td></tr>
+            <tr><td>POST</td><td><code>/api/audio-devices/{id}/reconfigure</code></td><td>Hot-reconfigure the modem</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="installation.html">
+        <span class="label">Previous</span>
+        Installation
+      </a>
+      <a href="channels.html" class="next">
+        <span class="label">Next</span>
+        Radio Channels
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

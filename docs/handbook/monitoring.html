@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monitoring &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Monitoring</h1>
+    <p class="subtitle">Prometheus metrics, packet logs, and live packet stream</p>
+
+    <p>
+      Graywolf provides several monitoring interfaces for observing station
+      activity and diagnosing issues.
+    </p>
+
+    <h2>Web UI Dashboard</h2>
+
+    <p>
+      The web UI dashboard shows real-time station status including uptime,
+      per-channel statistics (RX/TX frame counts, DCD state, audio peak
+      levels), and iGate connection status. The <strong>Logs</strong> page
+      provides a live packet stream with filtering by direction and channel.
+    </p>
+
+    <h2>Prometheus Metrics</h2>
+
+    <p>
+      Graywolf exposes a Prometheus-compatible <code>/metrics</code> endpoint
+      on the HTTP port. Point your Prometheus scrape config at it to collect
+      station telemetry.
+    </p>
+
+    <div class="code-file">prometheus.yml (excerpt)</div>
+<pre><code>scrape_configs:
+  - job_name: graywolf
+    static_configs:
+      - targets: ['graywolf-host:8080']</code></pre>
+
+    <h3>Available Metrics</h3>
+
+    <div class="box">
+      <div class="box-header">Radio &amp; Modem</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Type</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>graywolf_rx_frames_total</code></td>
+              <td>counter</td>
+              <td>Received packets (label: <code>channel</code>)</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_tx_frames_total</code></td>
+              <td>counter</td>
+              <td>Transmitted packets (label: <code>channel</code>)</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_dcd_active</code></td>
+              <td>gauge</td>
+              <td>Data carrier detect state (label: <code>channel</code>)</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_audio_level</code></td>
+              <td>gauge</td>
+              <td>Peak audio level 0&ndash;1 (label: <code>channel</code>)</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_child_up</code></td>
+              <td>gauge</td>
+              <td>Rust modem process alive (1) or dead (0)</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_child_restarts_total</code></td>
+              <td>counter</td>
+              <td>Modem crash/restart count</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="box-header">TX Governor</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Type</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>graywolf_tx_deduped_total</code></td>
+              <td>counter</td>
+              <td>Duplicate TX packets suppressed</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_tx_rate_limited_total</code></td>
+              <td>counter</td>
+              <td>Packets dropped by rate limiter</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="box-header">APRS Features</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Type</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>graywolf_digipeater_packets_total</code></td>
+              <td>counter</td>
+              <td>Packets digipeated</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_beacon_packets_total</code></td>
+              <td>counter</td>
+              <td>Beacon transmissions (label: <code>type</code>)</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_igate_rf_to_is_gated_total</code></td>
+              <td>counter</td>
+              <td>Packets gated from RF to APRS-IS</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_igate_is_to_rf_gated_total</code></td>
+              <td>counter</td>
+              <td>Packets gated from APRS-IS to RF</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="box-header">Interfaces</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Type</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>graywolf_kiss_clients_active</code></td>
+              <td>gauge</td>
+              <td>Connected KISS clients (label: <code>interface</code>)</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_agw_clients_active</code></td>
+              <td>gauge</td>
+              <td>Connected AGWPE clients</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_gps_parse_errors_total</code></td>
+              <td>counter</td>
+              <td>GPS parse errors (label: <code>source</code>)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Packet Log API</h2>
+
+    <p>
+      The packet log maintains a ring buffer of the most recent packets
+      (up to 1000 entries, 30-minute age limit). Query it via the REST API
+      or view it in real time through the web UI.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>GET</td>
+              <td><code>/api/packets</code></td>
+              <td>Query packet history (filterable by time, direction, channel)</td>
+            </tr>
+            <tr>
+              <td>WebSocket</td>
+              <td><code>/ws/packets</code></td>
+              <td>Live packet stream</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>Packet Entry Fields</h3>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>timestamp</code></td><td>ISO 8601 timestamp</td></tr>
+            <tr><td><code>channel</code></td><td>Radio channel number</td></tr>
+            <tr><td><code>direction</code></td><td><code>RX</code>, <code>TX</code>, or <code>IS</code></td></tr>
+            <tr><td><code>source</code></td><td>Origin: <code>modem</code>, <code>kiss</code>, <code>agw</code>, <code>beacon</code>, <code>digi</code>, <code>igate-tx</code>, <code>igate-is</code></td></tr>
+            <tr><td><code>display</code></td><td>Human-readable packet string</td></tr>
+            <tr><td><code>type</code></td><td>APRS type: <code>position</code>, <code>message</code>, <code>weather</code>, etc.</td></tr>
+            <tr><td><code>decoded</code></td><td>Parsed APRS data (position, message, telemetry objects)</td></tr>
+            <tr><td><code>raw</code></td><td>Base64-encoded raw AX.25 frame</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Health Check</h2>
+
+    <p>
+      A lightweight health endpoint is available for load balancers and
+      monitoring systems:
+    </p>
+
+<pre><code>GET /api/health
+
+{
+  "status": "ok",
+  "time": "2026-04-11T10:00:00Z",
+  "started_at": "2026-04-11T08:30:00Z"
+}</code></pre>
+
+    <h2>Status Endpoint</h2>
+
+    <p>
+      The status endpoint returns aggregated dashboard data in a single
+      request &mdash; uptime, per-channel stats (RX/TX counts, DCD state,
+      audio peak), and iGate connection status:
+    </p>
+
+<pre><code>GET /api/status</code></pre>
+
+    <h2>Logging</h2>
+
+    <p>
+      Graywolf outputs structured logs to stderr. By default, logs are at
+      <code>INFO</code> level. Enable verbose logging with the
+      <code>-debug</code> flag.
+    </p>
+
+    <p>
+      When running under systemd, logs are captured by the journal and
+      queryable with:
+    </p>
+
+<pre><code>journalctl -u graywolf -f</code></pre>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Debug logging includes per-packet decode details, IPC message
+          traces, and CSMA timing decisions. Enable it when troubleshooting
+          decode or transmission issues.
+        </p>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="gps.html">
+        <span class="label">Previous</span>
+        GPS
+      </a>
+      <a href="architecture.html" class="next">
+        <span class="label">Next</span>
+        Architecture
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

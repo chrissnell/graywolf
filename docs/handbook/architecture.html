@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Architecture</h1>
+    <p class="subtitle">How graywolf is built and how packets flow through the system</p>
+
+    <p>
+      This page covers graywolf&rsquo;s internal design. You don&rsquo;t need
+      any of this to operate a station &mdash; it&rsquo;s here for anyone
+      curious about how things work under the hood, or for developers who
+      want to contribute.
+    </p>
+
+    <h2>Components</h2>
+
+    <p>
+      Graywolf is two cooperating processes that communicate over a Unix
+      socket using length-prefixed protobuf messages:
+    </p>
+
+    <div class="box">
+      <div class="box-header">Component Overview</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Component</th><th>Language</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>graywolf-modem</code></td>
+              <td>Rust</td>
+              <td>Audio I/O, AFSK/9600/PSK demodulation, HDLC framing, FEC encoding/decoding, PTT control, TX modulation</td>
+            </tr>
+            <tr>
+              <td><code>graywolf</code></td>
+              <td>Go</td>
+              <td>AX.25/APRS protocol handling, digipeater, iGate, beacon scheduler, KISS/AGWPE servers, TX governor, REST API, web UI</td>
+            </tr>
+            <tr>
+              <td>Web UI</td>
+              <td>Svelte</td>
+              <td>Dashboard, configuration forms, live packet logs. Built at compile time and embedded in the Go binary.</td>
+            </tr>
+            <tr>
+              <td>Config DB</td>
+              <td>SQLite</td>
+              <td>All configuration state (audio devices, channels, beacons, digi rules, iGate settings). Managed through the web UI&rsquo;s REST API.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Startup Sequence</h2>
+
+    <ol class="steps">
+      <li>
+        The Go process starts and opens the SQLite configuration database.
+      </li>
+      <li>
+        It launches <code>graywolf-modem</code> as a child process. The
+        modem creates a Unix socket and signals readiness by writing to
+        stdout.
+      </li>
+      <li>
+        The Go process connects to the socket and sends configuration
+        messages: audio devices, radio channels, and PTT settings.
+      </li>
+      <li>
+        A <code>StartAudio</code> message begins audio processing. The
+        modem starts reading from the sound card and demodulating.
+      </li>
+      <li>
+        The HTTP server starts, serving the web UI and REST API. The
+        station is now operational.
+      </li>
+    </ol>
+
+    <h2>Packet Receive Path</h2>
+
+    <p>
+      When a packet arrives over the air:
+    </p>
+
+    <ol class="steps">
+      <li>
+        The Rust modem captures audio from the sound card, runs it through
+        the AFSK demodulator (or 9600/PSK decoder), and extracts HDLC frames.
+      </li>
+      <li>
+        Valid AX.25 frames are sent over the Unix socket to the Go process
+        as protobuf messages.
+      </li>
+      <li>
+        The Go process decodes the AX.25 frame and parses the APRS info
+        field (position, message, weather, telemetry, etc.).
+      </li>
+      <li>
+        The decoded packet is fanned out to all consumers simultaneously:
+        <ul>
+          <li><strong>Packet log</strong> &mdash; recorded in the ring buffer for the web UI and API</li>
+          <li><strong>Digipeater</strong> &mdash; evaluated against rules for possible retransmission</li>
+          <li><strong>iGate</strong> &mdash; checked against RF filters for gating to APRS-IS</li>
+          <li><strong>KISS/AGWPE clients</strong> &mdash; broadcast to connected TNC clients</li>
+        </ul>
+      </li>
+    </ol>
+
+    <h2>Packet Transmit Path</h2>
+
+    <p>
+      Outbound packets can originate from several sources &mdash; the beacon
+      scheduler, the digipeater, KISS/AGWPE clients, or the iGate (IS&rarr;RF).
+      All transmissions flow through the TX governor:
+    </p>
+
+    <ol class="steps">
+      <li>
+        A packet is submitted to the TX governor&rsquo;s priority queue.
+        Priority order: beacon &lt; digipeated &lt; client (KISS/AGWPE) &lt;
+        iGate message.
+      </li>
+      <li>
+        The governor checks for duplicates (same source + destination + info
+        within 30 seconds) and per-channel rate limits.
+      </li>
+      <li>
+        CSMA: the governor waits for DCD to clear (channel is quiet), then
+        applies p-persistence to randomize access timing.
+      </li>
+      <li>
+        The AX.25 frame is sent to the Rust modem over the Unix socket.
+        The modem asserts PTT, generates the AFSK audio (with TX delay
+        preamble), and transmits.
+      </li>
+      <li>
+        After the frame and TX tail are sent, PTT is released.
+      </li>
+    </ol>
+
+    <h2>Performance</h2>
+
+    <p>
+      The Rust modem is a port of the AFSK demodulator from
+      <a href="https://github.com/wb2osz/direwolf">Dire Wolf</a> by WB2OSZ.
+      It achieves identical decode counts on the WA8LMF test CD while
+      running significantly faster:
+    </p>
+
+<pre><code>=== Direwolf (atest) ===
+982 packets decoded in 45.614 seconds.  34.0 x realtime
+
+=== Graywolf (demod_bench) ===
+982 packets decoded in 6.792s.  228.2 x realtime</code></pre>
+
+    <p>
+      The IPC overhead between the Rust modem and Go process is minimal
+      &mdash; typically 10&ndash;50 &mu;s per message round-trip. If the
+      modem process crashes, the Go process restarts it automatically with
+      exponential backoff.
+    </p>
+
+    <h2>Deployment Options</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><strong>OS packages</strong> <span class="badge primary">recommended</span></td>
+            <td>
+              Native packages for Debian/Ubuntu, RHEL/Fedora, and Arch Linux.
+              Includes a hardened systemd service. Ideal for Raspberry Pi and
+              dedicated station computers.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Standalone binary</strong></td>
+            <td>Download a release binary for Linux (amd64, arm64) or build from source.</td>
+          </tr>
+          <tr>
+            <td><strong>Docker</strong></td>
+            <td>Container image with audio device passthrough for containerized deployments.</td>
+          </tr>
+          <tr>
+            <td><strong>Build from source</strong></td>
+            <td>Clone, build, and run &mdash; requires Rust toolchain, Go 1.22+, and Node.js 22+.</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>Supported Protocols</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Protocol</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>AX.25</td><td>Amateur Radio Link Access Protocol (UI frames, unconnected mode)</td></tr>
+            <tr><td>APRS</td><td>Automatic Packet Reporting System (APRS101 specification)</td></tr>
+            <tr><td>KISS</td><td>Keep It Simple, Stupid TNC protocol (TCP, serial, Bluetooth)</td></tr>
+            <tr><td>AGWPE</td><td>AGW Packet Engine protocol (TCP)</td></tr>
+            <tr><td>APRS-IS</td><td>APRS Internet System gateway protocol (TCP, passcode auth)</td></tr>
+            <tr><td>HDLC</td><td>High-Level Data Link Control with NRZI encoding</td></tr>
+            <tr><td>FX.25</td><td>Forward error correction (interleaved convolutional code)</td></tr>
+            <tr><td>IL2P</td><td>Improved Layer 2 Protocol (second generation FEC)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="monitoring.html">
+        <span class="label">Previous</span>
+        Monitoring
+      </a>
+      <span></span>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
