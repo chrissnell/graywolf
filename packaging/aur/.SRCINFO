@@ -1,17 +1,19 @@
 pkgbase = graywolf
 	pkgdesc = APRS radio transceiver, digipeater, and Internet gateway
-	pkgver = 0.7.17
+	pkgver = 0.7.18
 	pkgrel = 1
 	url = https://github.com/chrissnell/graywolf
 	arch = x86_64
 	arch = aarch64
-	license = MIT
+	license = GPL-2.0-only
 	makedepends = go
 	makedepends = rust
 	makedepends = cargo
+	makedepends = nodejs
+	makedepends = npm
 	depends = glibc
 	install = graywolf.install
-	source = graywolf-0.7.17.tar.gz::https://github.com/chrissnell/graywolf/archive/v0.7.17.tar.gz
+	source = graywolf-0.7.18.tar.gz::https://github.com/chrissnell/graywolf/archive/v0.7.18.tar.gz
 	sha256sums = SKIP
 
 pkgname = graywolf
