@@ -155,6 +155,7 @@
       alt_ft: altFt,
     };
     delete data.pos_source;
+    delete data.id;
     try {
       if (editing) {
         await api.put(`/beacons/${editing.id}`, data);
