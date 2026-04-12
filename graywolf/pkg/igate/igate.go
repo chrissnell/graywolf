@@ -84,6 +84,11 @@ type Config struct {
 	// packetlog entry for the upload so it can be distinguished from
 	// the raw RX entry.
 	RfToIsHook func(pkt *aprs.DecodedAPRSPacket, line string)
+	// IsToRfHook is called for every packet received from APRS-IS that
+	// passes the filter engine, regardless of whether IS->RF gating is
+	// enabled. Used to record IS-heard stations in the packet log for
+	// map display. Optional.
+	IsToRfHook func(pkt *aprs.DecodedAPRSPacket, line string)
 	// now is an optional clock for tests.
 	now func() time.Time
 }
@@ -331,6 +336,9 @@ func (ig *Igate) handleISLine(line string) {
 		atomic.AddUint64(&ig.statFiltered, 1)
 		ig.mFilteredTotal.Inc()
 		return
+	}
+	if ig.cfg.IsToRfHook != nil {
+		ig.cfg.IsToRfHook(pkt, line)
 	}
 	if ig.cfg.Governor == nil {
 		ig.logger.Debug("IS->RF drop: no governor configured")

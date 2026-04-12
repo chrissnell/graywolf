@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
@@ -229,4 +230,92 @@ func TestHandleISLineFanoutDropCounted(t *testing.T) {
 // does not merge successive calls in TestHandleISLineFanoutDropCounted.
 func makeGateableLine(a, b byte) string {
 	return "W5" + string([]byte{a, b}) + ">APRS,WIDE1-1:!3725.00N/12158.00W>hi"
+}
+
+// TestIsToRfHookCalledOnFilterAllow verifies that IsToRfHook fires for
+// packets that pass the filter, and receives the decoded packet and
+// original line.
+func TestIsToRfHookCalledOnFilterAllow(t *testing.T) {
+	var hookCalls int32
+	var gotLine string
+	ig, err := New(Config{
+		Server:   "127.0.0.1:1",
+		Callsign: "N0CALL",
+		Rules: []filters.Rule{
+			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
+		},
+		Governor: &stubGovernor{
+			fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+				return nil
+			},
+		},
+		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+			atomic.AddInt32(&hookCalls, 1)
+			gotLine = line
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ig.handleISLine(gateableLine)
+
+	if got := atomic.LoadInt32(&hookCalls); got != 1 {
+		t.Fatalf("IsToRfHook calls = %d, want 1", got)
+	}
+	if gotLine != gateableLine {
+		t.Fatalf("IsToRfHook line = %q, want %q", gotLine, gateableLine)
+	}
+}
+
+// TestIsToRfHookNotCalledOnFilterReject verifies that IsToRfHook does
+// not fire when the filter rejects the packet.
+func TestIsToRfHookNotCalledOnFilterReject(t *testing.T) {
+	var hookCalls int32
+	ig, err := New(Config{
+		Server:   "127.0.0.1:1",
+		Callsign: "N0CALL",
+		Rules: []filters.Rule{
+			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
+		},
+		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+			atomic.AddInt32(&hookCalls, 1)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Send a line whose source does not match the W5 prefix rule.
+	ig.handleISLine("K0ABC>APRS,WIDE1-1:!3725.00N/12158.00W>hi")
+
+	if got := atomic.LoadInt32(&hookCalls); got != 0 {
+		t.Fatalf("IsToRfHook calls = %d, want 0 (filter rejected)", got)
+	}
+}
+
+// TestIsToRfHookFiresWithoutGovernor verifies that IsToRfHook fires
+// even when Governor is nil (IS->RF gating disabled).
+func TestIsToRfHookFiresWithoutGovernor(t *testing.T) {
+	var hookCalls int32
+	ig, err := New(Config{
+		Server:   "127.0.0.1:1",
+		Callsign: "N0CALL",
+		Rules: []filters.Rule{
+			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
+		},
+		Governor: nil, // IS->RF gating disabled
+		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+			atomic.AddInt32(&hookCalls, 1)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ig.handleISLine(gateableLine)
+
+	if got := atomic.LoadInt32(&hookCalls); got != 1 {
+		t.Fatalf("IsToRfHook calls = %d, want 1 (must fire even without Governor)", got)
+	}
 }

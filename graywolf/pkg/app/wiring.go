@@ -126,7 +126,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	}
 
 	// --- Packet log ----------------------------------------------------
-	a.plog = packetlog.New(packetlog.Config{Capacity: 2000, MaxAge: 30 * time.Minute})
+	a.plog = packetlog.New(packetlog.Config{Capacity: 5000, MaxAge: 120 * time.Minute})
 
 	// --- Modem bridge (construction; Start happens later) --------------
 	a.bridge = modembridge.New(modembridge.Config{
@@ -397,6 +397,21 @@ func (a *App) wireIGate(ctx context.Context) error {
 				Type:      string(pkt.Type),
 				Decoded:   pkt,
 				Notes:     "rf2is",
+			})
+		},
+		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+			if pkt == nil {
+				return
+			}
+			a.plog.Record(packetlog.Entry{
+				Channel:   uint32(pkt.Channel),
+				Direction: packetlog.DirRX,
+				Source:    "igate-is",
+				Raw:       pkt.Raw,
+				Display:   line,
+				Type:      string(pkt.Type),
+				Decoded:   pkt,
+				Notes:     "is-rx",
 			})
 		},
 	})
