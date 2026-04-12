@@ -360,7 +360,9 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'} class="beacon-modal">
   <div class="beacon-form-grid">
     <div class="beacon-form-col">
-      <Toggle bind:checked={form.enabled} label="Enabled" />
+      <div style="margin-bottom: 12px;">
+        <Toggle bind:checked={form.enabled} label="Enabled" />
+      </div>
       <FormField label="Channel" id="bcn-channel"
         hint="Radio channel this beacon transmits on. Defined on the Channels page.">
         <Select id="bcn-channel" bind:value={form.channel} options={channelOptions} />
