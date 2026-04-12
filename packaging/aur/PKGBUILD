@@ -10,8 +10,10 @@ depends=('glibc')
 makedepends=('go' 'rust' 'cargo' 'nodejs' 'npm')
 backup=()
 install=graywolf.install
-source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz"
+        'graywolf.service'
+        'graywolf.sysusers')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 prepare() {
   cd "${pkgname}-${pkgver}"
@@ -50,9 +52,9 @@ package() {
 
   install -Dm755 "${srcdir}/graywolf"       "${pkgdir}/usr/bin/graywolf"
   install -Dm755 "${srcdir}/graywolf-modem" "${pkgdir}/usr/bin/graywolf-modem"
-  install -Dm644 "${startdir}/graywolf.service" \
+  install -Dm644 "${srcdir}/graywolf.service" \
     "${pkgdir}/usr/lib/systemd/system/graywolf.service"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
-  install -Dm644 "${startdir}/graywolf.sysusers" \
+  install -Dm644 "${srcdir}/graywolf.sysusers" \
     "${pkgdir}/usr/lib/sysusers.d/graywolf.conf"
 }
