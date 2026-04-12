@@ -1,12 +1,7 @@
 post_install() {
-  if ! id graywolf >/dev/null 2>&1; then
-    useradd --system --home-dir /var/lib/graywolf --shell /usr/sbin/nologin \
-      --groups audio,dialout graywolf
-  fi
   systemctl daemon-reload
-  systemctl enable graywolf.service
-  echo "Graywolf installed. Start with:"
-  echo "  systemctl start graywolf"
+  echo "Graywolf installed. Enable and start with:"
+  echo "  systemctl enable --now graywolf.service"
   echo ""
   echo "Web UI: http://localhost:8080"
 }
