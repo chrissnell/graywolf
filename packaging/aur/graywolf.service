@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/graywolf -config /var/lib/graywolf/graywolf.db -modem /usr/bin/graywolf-modem
+ExecStart=/usr/bin/graywolf -config /var/lib/graywolf/graywolf.db -modem /usr/bin/graywolf-modem -http 0.0.0.0:8080
 Restart=on-failure
 RestartSec=5
 
