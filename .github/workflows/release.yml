@@ -224,4 +224,4 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          gh release upload "${{ github.ref_name }}" "graywolf_${VERSION}_Windows_x86_64.msi"
+          gh release upload "${{ github.ref_name }}" "graywolf_${VERSION}_Windows_x86_64.msi" --clobber
