@@ -61,6 +61,12 @@ export class TrailLayer {
             maxWidth: 280,
             minWidth: 180,
           })
+          .bindTooltip(s.callsign, {
+            permanent: false,
+            direction: 'right',
+            offset: [8, 0],
+            className: 'callsign-label',
+          })
           .addTo(this.layerGroup);
       }
     }
