@@ -11,11 +11,29 @@
 import L from 'leaflet';
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText } from './popup-helpers.js';
 
-const TRAIL_COLOR = '#2b6cb0';
-const DOT_FILL = '#ffaa00';
-const DOT_RADIUS = 5;
+// Per-callsign trail palette — dark saturated colors that pop on OSM tiles
+const TRAIL_COLORS = [
+  '#2b6cb0', // dark blue
+  '#6b21a8', // dark purple
+  '#4a9e3f', // lime green
+  '#b5247a', // hot pink
+  '#1a8a9a', // teal
+  '#b45309', // dark amber
+  '#be123c', // crimson
+];
+
+const DOT_FILL = '#ffffff';
+const DOT_RADIUS = 3;
 const DOT_WEIGHT = 2;
 const HIT_TOLERANCE = 15; // px — generous click/hover zone
+
+function _trailColor(callsign) {
+  let h = 0;
+  for (let i = 0; i < callsign.length; i++) {
+    h = (h * 31 + callsign.charCodeAt(i)) | 0;
+  }
+  return TRAIL_COLORS[((h % TRAIL_COLORS.length) + TRAIL_COLORS.length) % TRAIL_COLORS.length];
+}
 
 export class TrailLayer {
   constructor(map, stationLayer) {
@@ -34,6 +52,7 @@ export class TrailLayer {
       if (!s.positions || s.positions.length < 2) continue;
 
       const coords = s.positions.map((p) => [p.lat, p.lon]);
+      const color = _trailColor(s.callsign);
 
       // Fading opacity: full opacity for newest segment, reduced for older
       const segCount = coords.length - 1;
@@ -42,7 +61,7 @@ export class TrailLayer {
 
         // Visible trail line
         L.polyline([coords[i], coords[i + 1]], {
-          color: TRAIL_COLOR,
+          color,
           weight: 4,
           opacity: Math.max(opacity, 0.3),
         }).addTo(this.layerGroup);
@@ -117,7 +136,7 @@ export class TrailLayer {
         // Visible dot on top — also carries popup so direct clicks work
         bindDotEvents(L.circleMarker([p.lat, p.lon], {
           radius: DOT_RADIUS,
-          color: TRAIL_COLOR,
+          color,
           fillColor: DOT_FILL,
           fillOpacity: Math.max(opacity, 0.4),
           opacity: Math.max(opacity, 0.4),
