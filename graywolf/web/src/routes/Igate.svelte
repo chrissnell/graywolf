@@ -10,12 +10,15 @@
 
   let activeTab = $state('config');
 
-  // Config state
+  // Config state — round-trip all API fields so saves don't clobber unshown ones
   let form = $state({
     enabled: true, server: 'rotate.aprs2.net', port: '14580',
-    callsign: '', passcode: '', server_filter: '',
+    callsign: '', passcode: '', server_filter: '', tx_channel: 0,
+    simulation_mode: false, gate_rf_to_is: true, gate_is_to_rf: false,
+    rf_channel: 1, max_msg_hops: 2, software_name: 'graywolf', software_version: '0.1',
   });
   let loading = $state(false);
+  let channels = $state([]);
 
   // Filters state
   let filters = $state([]);
@@ -45,8 +48,13 @@
   ];
 
   onMount(async () => {
-    const data = await api.get('/igate/config');
+    const [data, chList] = await Promise.all([
+      api.get('/igate/config'),
+      api.get('/channels'),
+    ]);
+    channels = chList || [];
     if (data) {
+      const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
       form = {
         enabled: data.enabled ?? false,
         server: data.server ?? 'rotate.aprs2.net',
@@ -54,6 +62,14 @@
         callsign: data.callsign ?? '',
         passcode: data.passcode ?? '',
         server_filter: data.server_filter ?? '',
+        tx_channel: data.tx_channel || defaultCh,
+        simulation_mode: data.simulation_mode ?? false,
+        gate_rf_to_is: data.gate_rf_to_is ?? true,
+        gate_is_to_rf: data.gate_is_to_rf ?? false,
+        rf_channel: data.rf_channel ?? 1,
+        max_msg_hops: data.max_msg_hops ?? 2,
+        software_name: data.software_name ?? 'graywolf',
+        software_version: data.software_version ?? '0.1',
       };
     }
     filters = await api.get('/igate/filters') || [];
@@ -73,7 +89,7 @@
     }
     loading = true;
     try {
-      await api.put('/igate/config', { ...form, port: parseInt(form.port) });
+      await api.put('/igate/config', { ...form, port: parseInt(form.port), tx_channel: parseInt(form.tx_channel) });
       toasts.success('iGate config saved');
     } catch (err) {
       toasts.error(err.message);
@@ -179,6 +195,9 @@
     <form onsubmit={handleSave}>
       <FormField label="APRS-IS Server Filter" id="ig-filter" hint="Filter string sent to APRS-IS at login (e.g. r/35.0/-106.0/100). If empty, no packets are received from APRS-IS.">
         <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" />
+      </FormField>
+      <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
+        <Select id="ig-txch" bind:value={form.tx_channel} options={channels.map(c => ({ value: c.id, label: `${c.id} — ${c.name}` }))} />
       </FormField>
       <div class="form-actions">
         <Button variant="primary" type="submit" disabled={loading}>

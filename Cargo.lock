@@ -448,7 +448,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "graywolf-demod"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "bytes",
  "claxon",

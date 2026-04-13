@@ -397,6 +397,13 @@ func (a *App) wireIGate(ctx context.Context) error {
 		igGov = a.gov
 	}
 
+	txCh := igCfg.TxChannel
+	if txCh == 0 {
+		if chs, err := a.store.ListChannels(ctx); err == nil && len(chs) > 0 {
+			txCh = chs[0].ID // lowest channel ID
+		}
+	}
+
 	ig, err := igate.New(igate.Config{
 		Server:          serverAddr,
 		Callsign:        igCfg.Callsign,
@@ -405,7 +412,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 		SoftwareName:    igCfg.SoftwareName,
 		SoftwareVersion: igCfg.SoftwareVersion,
 		Rules:           rules,
-		TxChannel:       igCfg.TxChannel,
+		TxChannel:       txCh,
 		Governor:        igGov,
 		SimulationMode:  igCfg.SimulationMode,
 		Logger:          a.logger,
