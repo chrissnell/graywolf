@@ -74,6 +74,8 @@ func ParseNMEA(line string) (Fix, bool, error) {
 		return parseVTG(fields)
 	case "GSA":
 		return parseGSA(fields)
+	case "GLL":
+		return Fix{}, false, nil // subset of RMC; silently ignore
 	default:
 		return Fix{}, false, fmt.Errorf("gps: unsupported sentence %q", tag)
 	}
