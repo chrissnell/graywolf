@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -17,6 +18,11 @@ type AvailableDevice struct {
 	Description string `json:"description"` // human-friendly label (USB product, GPIO chip)
 	USBVendor   string `json:"usb_vendor,omitempty"`
 	USBProduct  string `json:"usb_product,omitempty"`
+	// Recommended is true for the device path users should prefer. On macOS
+	// we recommend /dev/cu.* over /dev/tty.* (which blocks until DCD).
+	Recommended bool `json:"recommended"`
+	// Warning is set when there's a known gotcha with this path.
+	Warning string `json:"warning,omitempty"`
 }
 
 // Enumerate returns all detected PTT-capable devices on the host.
@@ -25,7 +31,7 @@ func Enumerate() []AvailableDevice {
 	devs = append(devs, enumerateSerial()...)
 	devs = append(devs, enumerateGPIO()...)
 	devs = append(devs, enumerateCM108()...)
-	return devs
+	return annotateAndSort(devs)
 }
 
 func enumerateSerial() []AvailableDevice {
@@ -42,10 +48,10 @@ func enumerateSerial() []AvailableDevice {
 		}
 	case "darwin":
 		patterns = []string{
-			"/dev/tty.usbserial-*",
-			"/dev/tty.usbmodem*",
 			"/dev/cu.usbserial-*",
 			"/dev/cu.usbmodem*",
+			"/dev/tty.usbserial-*",
+			"/dev/tty.usbmodem*",
 		}
 	}
 
@@ -71,6 +77,7 @@ func enumerateSerial() []AvailableDevice {
 				Description: desc,
 				USBVendor:   vendor,
 				USBProduct:  product,
+				Recommended: true,
 			})
 		}
 	}
@@ -112,6 +119,24 @@ func enumerateCM108() []AvailableDevice {
 			USBProduct:  product,
 		})
 	}
+	return devs
+}
+
+// annotateAndSort marks macOS tty.* serial devices as not recommended and
+// sorts the list so recommended devices appear first.
+func annotateAndSort(devs []AvailableDevice) []AvailableDevice {
+	for i := range devs {
+		if runtime.GOOS == "darwin" && devs[i].Type == "serial" && strings.HasPrefix(devs[i].Path, "/dev/tty.") {
+			devs[i].Recommended = false
+			devs[i].Warning = "macOS tty.* device blocks until DCD is asserted; use the matching cu.* device instead"
+		}
+	}
+	sort.SliceStable(devs, func(i, j int) bool {
+		if devs[i].Recommended != devs[j].Recommended {
+			return devs[i].Recommended
+		}
+		return devs[i].Path < devs[j].Path
+	})
 	return devs
 }
 

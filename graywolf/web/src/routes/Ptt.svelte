@@ -248,16 +248,24 @@
   <p class="section-hint">Click a device to create a PTT configuration for it.</p>
   <div class="avail-grid">
     {#each available as dev}
-      <button class="avail-card" onclick={() => openCreateFromAvail(dev)}>
+      <button class="avail-card" class:warning={dev.warning} onclick={() => openCreateFromAvail(dev)}>
         <div class="avail-header">
           <strong class="avail-name">{dev.description || dev.name}</strong>
-          <Badge variant={typeBadgeVariant(dev.type)}>
-            {dev.type}
-          </Badge>
+          <div class="avail-badges">
+            <Badge variant={typeBadgeVariant(dev.type)}>
+              {dev.type}
+            </Badge>
+            {#if dev.recommended && !dev.warning}
+              <Badge variant="success">Recommended</Badge>
+            {/if}
+          </div>
         </div>
         <span class="avail-path" title={dev.path}>{dev.path}</span>
         {#if dev.usb_vendor && dev.usb_product}
           <span class="avail-usb">USB {dev.usb_vendor}:{dev.usb_product}</span>
+        {/if}
+        {#if dev.warning}
+          <span class="avail-warning">⚠ {dev.warning}</span>
         {/if}
       </button>
     {/each}
@@ -494,10 +502,18 @@
     border-color: var(--accent);
     background: var(--bg-secondary);
   }
+  .avail-card.warning {
+    border-left: 3px solid var(--color-warning, #d29922);
+  }
   .avail-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+  .avail-badges {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
   }
   .avail-name {
     font-size: 14px;
@@ -518,6 +534,11 @@
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--text-muted);
+  }
+  .avail-warning {
+    font-size: 11px;
+    color: var(--color-warning, #d29922);
+    margin-top: 4px;
   }
 
   .modal-actions {
