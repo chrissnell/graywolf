@@ -14,13 +14,13 @@ const MAX_TRAIL_LEN = 200;
 
 // Path styles for hover digi path rendering
 const PATH_STYLE = {
-  color: '#e05050',
+  color: '#3fb950',
   weight: 3,
   opacity: 0.9,
 };
 
 const PATH_GLOW_STYLE = {
-  color: '#e05050',
+  color: '#3fb950',
   weight: 9,
   opacity: 0.2,
 };
@@ -331,7 +331,7 @@ export class StationLayer {
         if (!pp || (pp[0] === 0 && pp[1] === 0)) continue;
         L.circleMarker([pp[0], pp[1]], {
           radius: 5,
-          color: '#e05050',
+          color: '#3fb950',
           fillColor: '#1a1e24',
           fillOpacity: 1,
           weight: 2,
