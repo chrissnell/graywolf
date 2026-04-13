@@ -221,6 +221,7 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			SlottimeMs: ptt.SlotTimeMs,
 			Persist:    ptt.Persist,
 			DwaitMs:    ptt.DwaitMs,
+			GpioPin:    ptt.GpioPin,
 		}}}
 		if err := send(pmsg); err != nil {
 			return false, err

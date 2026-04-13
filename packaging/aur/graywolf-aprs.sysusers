@@ -1,3 +1,5 @@
 u graywolf-aprs - "Graywolf APRS daemon" /var/lib/graywolf-aprs /usr/sbin/nologin
+g plugdev -
 m graywolf-aprs audio
 m graywolf-aprs uucp
+m graywolf-aprs plugdev

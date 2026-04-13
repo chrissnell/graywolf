@@ -1,0 +1,7 @@
+# CM108-family USB audio adapters — grant access to plugdev group for PTT control.
+# C-Media CM108/CM108B/CM108AH/CM109/CM119
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d8c", MODE="0660", GROUP="plugdev"
+# AIOC (All-In-One-Cable)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", MODE="0660", GROUP="plugdev"
+# SSS
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c76", MODE="0660", GROUP="plugdev"

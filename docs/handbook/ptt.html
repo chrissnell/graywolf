@@ -123,7 +123,7 @@
             <tr>
               <td><code>gpio_pin</code></td>
               <td>&mdash;</td>
-              <td>GPIO pin number (for <code>gpio</code> method)</td>
+              <td>GPIO pin number (for <code>gpio</code> and <code>cm108</code> methods)</td>
             </tr>
             <tr>
               <td><code>invert</code></td>
@@ -172,6 +172,79 @@ ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
           GPIO pins output 3.3V. If your radio requires a different voltage
           or current, use a transistor or optocoupler circuit to interface
           the GPIO pin with your radio&rsquo;s PTT line.
+        </p>
+      </div>
+    </div>
+
+    <h2>CM108 PTT (USB HID GPIO)</h2>
+
+    <p>
+      CM108-family USB audio codecs (C-Media CM108, CM108AH, CM108B, CM109,
+      CM119) expose a HID interface alongside audio that can toggle GPIO pins
+      for PTT. This is the method used by Digirig, AIOC, and many homebrew
+      adapters that combine a USB sound card with PTT on a single device.
+    </p>
+
+    <p>
+      Select the <code>cm108</code> method and choose the detected hidraw
+      device. The default GPIO pin is 3, which is correct for nearly all
+      commercial and homebrew designs.
+    </p>
+
+    <div class="box">
+      <div class="box-header">Supported Devices</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Device</th><th>VID:PID</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>CM108 / CM108AH / CM108B</td><td><code>0d8c:*</code></td><td>Generic C-Media, Digirig</td></tr>
+            <tr><td>CM109 / CM119 / CM119A</td><td><code>0d8c:*</code></td><td>Extended GPIO (1&ndash;8)</td></tr>
+            <tr><td>AIOC (All-In-One-Cable)</td><td><code>1209:7388</code></td><td>STM32-based CM108 emulation</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Linux permissions:</strong> The <code>/dev/hidraw*</code>
+          devices are typically root-only. Graywolf ships a udev rule
+          (<code>99-graywolf-cm108.rules</code>) that grants access to the
+          <code>plugdev</code> group for CM108-compatible devices. The systemd
+          service includes this group by default. If you installed manually,
+          add your user to the <code>plugdev</code> group and reload udev
+          rules:
+        </p>
+<pre><code>sudo usermod -aG plugdev $USER
+sudo udevadm control --reload-rules
+sudo udevadm trigger</code></pre>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>USB audio latency:</strong> USB sound cards add audio latency
+          (typically 5&ndash;20&thinsp;ms). If the beginning of your transmissions
+          is clipped, increase TX Delay to compensate.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>macOS:</strong> CM108 HID GPIO PTT is supported on macOS
+          via the IOKit HID interface. Device enumeration and GPIO control
+          work the same as on Linux and Windows. Unlike Linux, there is no
+          automatic audio&ndash;HID correlation&thinsp;&mdash;&thinsp;select
+          the correct device from the list manually.
         </p>
       </div>
     </div>

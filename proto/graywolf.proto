@@ -172,6 +172,7 @@ message ConfigurePtt {
   uint32 persist = 7;           // p-persistence 0..255
   uint32 dwait_ms = 8;
   bool invert = 9;              // reverse polarity for rigs wired backwards
+  uint32 gpio_pin = 10;         // CM108 GPIO pin number (1-indexed, default: 3)
 }
 
 // Begin audio processing on all configured devices.
