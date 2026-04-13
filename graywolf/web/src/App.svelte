@@ -17,10 +17,12 @@
   import Gps from './routes/Gps.svelte';
   import Simulation from './routes/Simulation.svelte';
   import Logs from './routes/Logs.svelte';
+  import LiveMap from './routes/LiveMap.svelte';
 
   const routes = {
     '/login': Login,
     '/': Dashboard,
+    '/map': LiveMap,
     '/channels': Channels,
     '/audio-devices': AudioDevices,
     '/ptt': Ptt,
@@ -75,7 +77,7 @@
 {:else if authChecked}
   <div class="app-layout">
     <Sidebar />
-    <main class="main-content">
+    <main class="main-content" class:full-bleed={currentPath === '/map'}>
       <Router {routes} />
       <footer class="app-footer">
         <a href="https://github.com/chrissnell/graywolf" target="_blank" rel="noopener">
@@ -114,11 +116,24 @@
     text-decoration: underline;
   }
 
+  .main-content.full-bleed {
+    max-width: none;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .main-content.full-bleed .app-footer {
+    display: none;
+  }
+
   @media (max-width: 768px) {
     .main-content {
       margin-left: 0;
       margin-bottom: 60px;
       padding: 16px;
+    }
+    .main-content.full-bleed {
+      height: calc(100vh - 60px);
     }
   }
 </style>

@@ -3,7 +3,10 @@
   import { location } from 'svelte-spa-router';
   import logoUrl from '../assets/graywolf.svg';
 
-  const dashboardItem = { path: '/', label: 'Dashboard' };
+  const topItems = [
+    { path: '/', label: 'Dashboard' },
+    { path: '/map', label: 'Live Map' },
+  ];
 
   const navGroups = [
     {
@@ -50,17 +53,19 @@
   </div>
   <div class="nav-scroll">
     <ul class="nav-list dashboard-list">
-      <li>
-        <a
-          href={dashboardItem.path}
-          use:link
-          class="nav-link dashboard-link"
-          class:active={currentPath === dashboardItem.path}
-          aria-current={currentPath === dashboardItem.path ? 'page' : undefined}
-        >
-          <span class="nav-label">{dashboardItem.label}</span>
-        </a>
-      </li>
+      {#each topItems as item}
+        <li>
+          <a
+            href={item.path}
+            use:link
+            class="nav-link dashboard-link"
+            class:active={currentPath === item.path}
+            aria-current={currentPath === item.path ? 'page' : undefined}
+          >
+            <span class="nav-label">{item.label}</span>
+          </a>
+        </li>
+      {/each}
     </ul>
     {#each navGroups as group}
       <div class="nav-group">
