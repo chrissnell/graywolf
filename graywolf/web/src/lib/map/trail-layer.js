@@ -66,14 +66,11 @@ export class TrailLayer {
         const p = s.positions[i];
         const opacity = 0.9 - ((i - 1) / segCount) * 0.5;
 
-        const dot = L.circleMarker([p.lat, p.lon], {
-          radius: DOT_RADIUS,
-          color: TRAIL_COLOR,
-          fillColor: DOT_FILL,
-          fillOpacity: Math.max(opacity, 0.4),
-          opacity: Math.max(opacity, 0.4),
-          weight: DOT_WEIGHT,
-        });
+        const popupContent = _dotPopup(s.callsign, p);
+        const popupOpts = { className: 'station-popup', maxWidth: 280, minWidth: 180 };
+        const tooltipOpts = {
+          permanent: false, direction: 'right', offset: [8, 0], className: 'callsign-label',
+        };
 
         // Invisible larger hit area behind the dot for easier clicking
         L.circleMarker([p.lat, p.lon], {
@@ -82,20 +79,22 @@ export class TrailLayer {
           fillOpacity: 0,
           interactive: true,
         })
-          .bindPopup(_dotPopup(s.callsign, p), {
-            className: 'station-popup',
-            maxWidth: 280,
-            minWidth: 180,
-          })
-          .bindTooltip(s.callsign, {
-            permanent: false,
-            direction: 'right',
-            offset: [8, 0],
-            className: 'callsign-label',
-          })
+          .bindPopup(popupContent, popupOpts)
+          .bindTooltip(s.callsign, tooltipOpts)
           .addTo(this.layerGroup);
 
-        dot.addTo(this.layerGroup);
+        // Visible dot on top — also carries popup so direct clicks work
+        L.circleMarker([p.lat, p.lon], {
+          radius: DOT_RADIUS,
+          color: TRAIL_COLOR,
+          fillColor: DOT_FILL,
+          fillOpacity: Math.max(opacity, 0.4),
+          opacity: Math.max(opacity, 0.4),
+          weight: DOT_WEIGHT,
+        })
+          .bindPopup(popupContent, popupOpts)
+          .bindTooltip(s.callsign, tooltipOpts)
+          .addTo(this.layerGroup);
       }
     }
   }
