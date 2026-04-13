@@ -14,8 +14,8 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
-// Supported NMEA sentences: $GPRMC, $GPGGA, $GPVTG (and GN/GL/GA talker
-// variants). Other sentences are silently ignored.
+// Supported NMEA sentences: $GPRMC, $GPGGA, $GPVTG, $GPGSA (and GN/GL/GA
+// talker variants). Other sentences are silently ignored.
 
 // ParseNMEA parses a single NMEA sentence into a Fix. The input may
 // optionally include the leading '$' and trailing "*HH" checksum; both
@@ -62,6 +62,8 @@ func ParseNMEA(line string) (Fix, bool, error) {
 		return parseGGA(fields)
 	case "VTG":
 		return parseVTG(fields)
+	case "GSA":
+		return parseGSA(fields)
 	default:
 		return Fix{}, false, fmt.Errorf("gps: unsupported sentence %q", tag)
 	}
@@ -162,6 +164,40 @@ func parseVTG(f []string) (Fix, bool, error) {
 		}
 	}
 	return fix, fix.HasCourse, nil
+}
+
+// $xxGSA,mode,fix,prn1,...,prn12,pdop,hdop,vdop*hh
+//   1=selection mode (A=auto,M=manual) 2=fix type (1=none,2=2D,3=3D)
+//   3-14=satellite PRNs 15=PDOP 16=HDOP 17=VDOP
+func parseGSA(f []string) (Fix, bool, error) {
+	if len(f) < 18 {
+		return Fix{}, false, fmt.Errorf("gps: GSA too short (%d fields)", len(f))
+	}
+	fixMode, _ := strconv.Atoi(f[2])
+	if fixMode == 1 {
+		return Fix{}, false, nil // no fix
+	}
+	var fix Fix
+	fix.FixMode = fixMode
+	if f[15] != "" {
+		if v, err := strconv.ParseFloat(f[15], 64); err == nil {
+			fix.PDOP = v
+			fix.HasDOP = true
+		}
+	}
+	if f[16] != "" {
+		if v, err := strconv.ParseFloat(f[16], 64); err == nil {
+			fix.HDOP = v
+			fix.HasDOP = true
+		}
+	}
+	if f[17] != "" {
+		if v, err := strconv.ParseFloat(f[17], 64); err == nil {
+			fix.VDOP = v
+			fix.HasDOP = true
+		}
+	}
+	return fix, fix.HasDOP, nil
 }
 
 // parseLat handles "DDMM.mmmm" with hemisphere letter.
@@ -309,6 +345,16 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 		} else if !active {
 			voids++
 			logger.Debug("nmea void/no-fix sentence", "line", line)
+		} else if fix.Latitude == 0 && fix.Longitude == 0 && fix.HasDOP {
+			// DOP-only sentence (GSA): merge DOP/fix mode into last fix.
+			if prev, ok := cache.Get(); ok {
+				prev.FixMode = fix.FixMode
+				prev.PDOP = fix.PDOP
+				prev.HDOP = fix.HDOP
+				prev.VDOP = fix.VDOP
+				prev.HasDOP = true
+				cache.Update(prev)
+			}
 		} else if fix.Latitude == 0 && fix.Longitude == 0 && fix.HasCourse {
 			// Course-only sentence (VTG): merge speed/heading into last fix.
 			if prev, ok := cache.Get(); ok {

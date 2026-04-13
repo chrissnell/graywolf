@@ -229,6 +229,94 @@ func TestReadNMEAStream_VTGMergesIntoCachedFix(t *testing.T) {
 	}
 }
 
+func TestParseGSA_Valid3D(t *testing.T) {
+	line := "$GPGSA,A,3,10,02,18,23,24,27,32,08,,,,,2.35,1.01,2.12*06"
+	fix, active, err := ParseNMEA(line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !active {
+		t.Fatalf("expected active GSA")
+	}
+	if fix.FixMode != 3 {
+		t.Errorf("FixMode = %d, want 3", fix.FixMode)
+	}
+	if !approxEq(fix.PDOP, 2.35, 1e-3) {
+		t.Errorf("PDOP = %v, want 2.35", fix.PDOP)
+	}
+	if !approxEq(fix.HDOP, 1.01, 1e-3) {
+		t.Errorf("HDOP = %v, want 1.01", fix.HDOP)
+	}
+	if !approxEq(fix.VDOP, 2.12, 1e-3) {
+		t.Errorf("VDOP = %v, want 2.12", fix.VDOP)
+	}
+	if !fix.HasDOP {
+		t.Errorf("HasDOP = false")
+	}
+}
+
+func TestParseGSA_NoFix(t *testing.T) {
+	body := "GPGSA,A,1,,,,,,,,,,,,,,,,"
+	var xor byte
+	for i := 0; i < len(body); i++ {
+		xor ^= body[i]
+	}
+	line := "$" + body + "*" + upperHex(xor)
+	_, active, err := ParseNMEA(line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if active {
+		t.Errorf("fix=1 should be inactive")
+	}
+}
+
+func TestReadNMEAStream_GSAMergesIntoCachedFix(t *testing.T) {
+	rmcBody := "GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W"
+	var rmcXor byte
+	for i := 0; i < len(rmcBody); i++ {
+		rmcXor ^= rmcBody[i]
+	}
+	gsaBody := "GPGSA,A,3,10,02,18,23,24,27,32,08,,,,,2.35,1.01,2.12"
+	var gsaXor byte
+	for i := 0; i < len(gsaBody); i++ {
+		gsaXor ^= gsaBody[i]
+	}
+	stream := bytes.NewBufferString(
+		"$" + rmcBody + "*" + upperHex(rmcXor) + "\n" +
+			"$" + gsaBody + "*" + upperHex(gsaXor) + "\n",
+	)
+	cache := NewMemCache()
+	logger := slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil))
+	if err := ReadNMEAStream(context.Background(), stream, cache, logger, NMEAOptions{}); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	fix, ok := cache.Get()
+	if !ok {
+		t.Fatal("cache empty")
+	}
+	// Position from RMC.
+	if !approxEq(fix.Latitude, 48.1173, 1e-4) {
+		t.Errorf("lat = %v, want ~48.1173", fix.Latitude)
+	}
+	// DOP from GSA.
+	if fix.FixMode != 3 {
+		t.Errorf("FixMode = %d, want 3", fix.FixMode)
+	}
+	if !approxEq(fix.PDOP, 2.35, 1e-3) {
+		t.Errorf("PDOP = %v, want 2.35", fix.PDOP)
+	}
+	if !approxEq(fix.HDOP, 1.01, 1e-3) {
+		t.Errorf("HDOP = %v, want 1.01", fix.HDOP)
+	}
+	if !approxEq(fix.VDOP, 2.12, 1e-3) {
+		t.Errorf("VDOP = %v, want 2.12", fix.VDOP)
+	}
+	if !fix.HasDOP {
+		t.Errorf("HasDOP = false")
+	}
+}
+
 func upperHex(b byte) string {
 	const hex = "0123456789ABCDEF"
 	return string([]byte{hex[b>>4], hex[b&0x0f]})

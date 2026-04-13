@@ -19,6 +19,11 @@ type Fix struct {
 	Heading   float64   // degrees true, 0..360
 	HasCourse bool      // true if Speed/Heading are valid for this fix
 	Timestamp time.Time // UTC
+	FixMode   int       // 0=unknown, 1=no fix, 2=2D, 3=3D (from GSA)
+	PDOP      float64   // position dilution of precision
+	HDOP      float64   // horizontal dilution of precision
+	VDOP      float64   // vertical dilution of precision
+	HasDOP    bool      // true if DOP values are valid
 }
 
 // PositionCache is the read/write contract shared by readers and consumers.
