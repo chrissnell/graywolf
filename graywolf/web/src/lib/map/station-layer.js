@@ -186,9 +186,25 @@ export class StationLayer {
         this._clearPath();
       }
     });
-    marker.on('popupopen', () => {
+    marker.on('popupopen', (e) => {
       this._popupKey = key;
       this._showPath(key, station);
+      // Wire up path callsign links
+      const container = e.popup.getElement();
+      if (container) {
+        container.addEventListener('click', (ev) => {
+          const link = ev.target.closest('.path-link');
+          if (!link) return;
+          ev.preventDefault();
+          const callsign = link.dataset.callsign;
+          const entry = this.markers.get(`stn:${callsign}`);
+          if (entry) {
+            const p = entry.station.positions[0];
+            this.map.setView([p.lat, p.lon], this.map.getZoom());
+            entry.marker.openPopup();
+          }
+        });
+      }
     });
     marker.on('popupclose', () => {
       this._popupKey = null;
@@ -342,8 +358,9 @@ export class StationLayer {
     // Header: callsign + direction badge
     html += `<div class="stn-hdr">`;
     html += `<span class="stn-call">${_esc(s.callsign)}</span>`;
-    const dirLabel = s.direction === 'IS' ? 'iGate' : s.direction;
-    html += `<span class="badge ${dirCls}" ${s.direction === 'IS' ? 'title="Your station uploaded this to APRS-IS"' : ''}>${_esc(dirLabel)}</span>`;
+    if (s.direction !== 'IS') {
+      html += `<span class="badge ${dirCls}">${_esc(s.direction)}</span>`;
+    }
     html += `</div>`;
     // Subheader: time ago + channel
     html += `<div class="stn-sub">${ago} &middot; Ch ${s.channel}</div>`;
@@ -355,13 +372,22 @@ export class StationLayer {
     const meta = [];
     if (pos.speed_kt > 0) meta.push(`${Math.round(pos.speed_kt * 1.15078)}mph`);
     if (pos.course != null) meta.push(`${pos.course}\u00B0`);
-    if (pos.has_alt) meta.push(`${Math.round(pos.alt_m)}m`);
+    if (pos.has_alt) meta.push(`alt ${Math.round(pos.alt_m * 3.28084)} ft`);
     if (meta.length) html += `<div class="stn-meta">${meta.join(' \u00B7 ')}</div>`;
     // Via
     html += `<div class="stn-via ${_viaCls(s)}">${_viaText(s)}</div>`;
     // Path (only when hops > 0)
     if (s.hops > 0 && s.path && s.path.length) {
-      html += `<div class="stn-path">${s.path.map(_esc).join(',')}</div>`;
+      const pathHtml = s.path.map(call => {
+        const clean = call.replace('*', '');
+        const suffix = call.endsWith('*') ? '*' : '';
+        const key = `stn:${clean}`;
+        if (this.markers.has(key)) {
+          return `<a class="path-link" href="#" data-callsign="${_esc(clean)}">${_esc(clean)}${suffix}</a>`;
+        }
+        return _esc(call);
+      }).join(',');
+      html += `<div class="stn-path">${pathHtml}</div>`;
     }
     // Comment
     if (s.comment) {

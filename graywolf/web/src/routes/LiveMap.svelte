@@ -791,6 +791,8 @@
   :global(.via-rf-hops) { color: var(--color-warning); }
   :global(.via-is) { color: #c39bff; }
   :global(.stn-path) { color: var(--color-text-dim); font-size: 11px; }
+  :global(.stn-path .path-link) { color: #6eb5ff; text-decoration: none; cursor: pointer; }
+  :global(.stn-path .path-link:hover) { text-decoration: underline; }
   :global(.stn-comment) { color: var(--color-text-dim); font-style: italic; font-size: 12px; }
 
   :global(.stn-popup .badge) {
