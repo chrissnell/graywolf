@@ -93,7 +93,7 @@ const mockDigipeaterRules = [
 ];
 
 const mockBeacons = [
-  { id: 1, callsign: 'N0CALL-9', destination: 'APGW00', path: 'WIDE1-1,WIDE2-1', comment: 'graywolf', interval: 600, enabled: true },
+  { id: 1, callsign: 'N0CALL-9', destination: 'APGRW', path: 'WIDE1-1,WIDE2-1', comment: 'graywolf', interval: 600, enabled: true },
 ];
 
 const mockSmartBeacon = {
@@ -105,7 +105,7 @@ const mockGps = { source: 'serial', serial_port: '/dev/ttyACM0', baud_rate: 9600
 
 const mockPackets = [
   { id: 1, timestamp: new Date().toISOString(), source: 'N0CALL-9', destination: 'APRS', path: 'WIDE1-1', type: 'position', raw: 'N0CALL-9>APRS,WIDE1-1:!3500.00N/10600.00W-PHG2360', direction: 'rx', channel: 'VHF APRS' },
-  { id: 2, timestamp: new Date(Date.now() - 5000).toISOString(), source: 'W5ABC-7', destination: 'APGW00', path: 'WIDE2-1', type: 'position', raw: 'W5ABC-7>APGW00,WIDE2-1:@092345z3501.00N/10601.00W_090/005', direction: 'rx', channel: 'VHF APRS' },
+  { id: 2, timestamp: new Date(Date.now() - 5000).toISOString(), source: 'W5ABC-7', destination: 'APGRW', path: 'WIDE2-1', type: 'position', raw: 'W5ABC-7>APGRW,WIDE2-1:@092345z3501.00N/10601.00W_090/005', direction: 'rx', channel: 'VHF APRS' },
 ];
 
 const mockPosition = { valid: true, lat: 35.0, lon: -106.0, alt_m: 1500, has_alt: true, speed_kt: 0, heading_deg: 0, has_course: false };

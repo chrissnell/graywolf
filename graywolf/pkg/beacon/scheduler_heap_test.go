@@ -144,7 +144,7 @@ func mkPosBeacon(t *testing.T, id uint32, every time.Duration, comment string) C
 		Type:        TypePosition,
 		Channel:     0,
 		Source:      mustAddr(t, "N0CALL-9"),
-		Dest:        mustAddr(t, "APGW00"),
+		Dest:        mustAddr(t, "APGRW"),
 		Path:        []ax25.Address{mustAddr(t, "WIDE1-1")},
 		Delay:       0,
 		Every:       every,
@@ -401,7 +401,7 @@ func TestHeapScheduler_SmartBeaconSpeed(t *testing.T) {
 		ID:          99,
 		Type:        TypeTracker,
 		Source:      mustAddr(t, "N0CALL-7"),
-		Dest:        mustAddr(t, "APGW00"),
+		Dest:        mustAddr(t, "APGRW"),
 		SmartBeacon: sb,
 		Enabled:     true,
 	}}
