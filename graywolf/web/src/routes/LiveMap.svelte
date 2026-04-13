@@ -165,6 +165,17 @@
         }
 
         stationCount = stationLayer.markers.size;
+
+        // Hide own-position dot when beacon icon is present
+        if (ownMarker) {
+          const hasBeacon = stationLayer.hasOwnStation();
+          const onMap = mapInstance.hasLayer(ownMarker);
+          if (hasBeacon && onMap) {
+            ownMarker.remove();
+          } else if (!hasBeacon && !onMap) {
+            ownMarker.addTo(mapInstance);
+          }
+        }
       } catch (e) {
         console.error('Station poll error:', e);
         backoff = Math.min(backoff * 2, MAX_BACKOFF);
@@ -230,7 +241,7 @@
           iconSize: [14, 14],
           iconAnchor: [7, 7],
         }),
-        zIndexOffset: 1000,
+        zIndexOffset: -1000,
       }).addTo(mapInstance);
       ownMarker.bindTooltip('My Position', {
         permanent: false,
@@ -238,6 +249,16 @@
         offset: [10, 0],
         className: 'callsign-label',
       });
+      // Show beacon path on hover (issue 6)
+      ownMarker.on('mouseover', () => {
+        if (stationLayer) stationLayer.showOwnPath();
+      });
+      ownMarker.on('mouseout', () => {
+        if (stationLayer) stationLayer.clearPath();
+      });
+      if (stationLayer) {
+        stationLayer.setOwnPosition(pos.lat, pos.lon);
+      }
     } catch (_) {}
   }
 
@@ -662,8 +683,8 @@
 
   /* Tooltip (callsign labels) */
   :global(.leaflet-tooltip.callsign-label) {
-    background: rgba(22, 27, 34, 0.9);
-    color: #d4a040;
+    background: rgba(22, 27, 34, 0.6);
+    color: #ffffff;
     font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 700;
@@ -721,6 +742,7 @@
     height: 24px;
     margin: 10px;
     background-size: 384px 144px;
+    position: relative;
   }
   :global(.aprs-icon-fallback) {
     width: 10px;
@@ -736,6 +758,8 @@
     top: 0;
     left: 0;
     background-size: 384px 144px;
+    transform: scale(0.7);
+    transform-origin: center;
   }
 
   /* ── Popup content ─────────────────────────────── */

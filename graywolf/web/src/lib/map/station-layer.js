@@ -12,11 +12,17 @@ const LABEL_ZOOM_THRESHOLD = 10;
 const POS_EPSILON = 0.00001;
 const MAX_TRAIL_LEN = 200;
 
-// Path style for hover digi path rendering
+// Path styles for hover digi path rendering
 const PATH_STYLE = {
-  color: 'rgba(212, 160, 64, 0.6)',
-  weight: 2,
-  dashArray: '6,4',
+  color: '#e05050',
+  weight: 3,
+  opacity: 0.9,
+};
+
+const PATH_GLOW_STYLE = {
+  color: '#e05050',
+  weight: 9,
+  opacity: 0.2,
 };
 
 export class StationLayer {
@@ -28,6 +34,7 @@ export class StationLayer {
     this._labelsVisible = map.getZoom() >= LABEL_ZOOM_THRESHOLD;
     this._hoverKey = null;   // key of station whose path is being shown
     this._popupKey = null;   // key of station whose popup is open
+    this._ownPos = null;     // {lat, lon} of own station
 
     map.on('zoomend', () => this._updateLabelVisibility());
   }
@@ -108,6 +115,40 @@ export class StationLayer {
     this.layerGroup.clearLayers();
     this.hoverPathGroup.clearLayers();
     this.markers.clear();
+  }
+
+  setOwnPosition(lat, lon) {
+    this._ownPos = { lat, lon };
+  }
+
+  // Show path for own beacon station (called on ownMarker hover)
+  showOwnPath() {
+    if (!this._ownPos) return;
+    for (const [key, entry] of this.markers) {
+      const pos = entry.station.positions[0];
+      if (Math.abs(pos.lat - this._ownPos.lat) < POS_EPSILON &&
+          Math.abs(pos.lon - this._ownPos.lon) < POS_EPSILON) {
+        this._showPath(key, entry.station);
+        return;
+      }
+    }
+  }
+
+  // Returns true if a station marker exists at the own position.
+  hasOwnStation() {
+    if (!this._ownPos) return false;
+    for (const [, entry] of this.markers) {
+      const pos = entry.station.positions[0];
+      if (Math.abs(pos.lat - this._ownPos.lat) < POS_EPSILON &&
+          Math.abs(pos.lon - this._ownPos.lon) < POS_EPSILON) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  clearPath() {
+    this._clearPath();
   }
 
   // --- internal ---
@@ -237,27 +278,53 @@ export class StationLayer {
     this._hoverKey = key;
 
     const { path, path_positions } = station;
-    if (!path || !path_positions || path.length === 0) return;
-
     const stationPos = station.positions[0];
-    // Build chain of known positions: start from source → digis → station
-    // We only draw segments between consecutive known positions.
-    const points = [];
-    for (let i = 0; i < path.length; i++) {
-      if (!path[i].endsWith('*')) continue; // only H-bit digis
-      const pp = path_positions[i];
-      if (!pp || (pp[0] === 0 && pp[1] === 0)) continue; // unknown digi
-      points.push([pp[0], pp[1]]);
+
+    // Build chain: station → digis (H-bit, known positions) → own position
+    const points = [[stationPos.lat, stationPos.lon]];
+
+    if (path && path_positions) {
+      for (let i = 0; i < path.length; i++) {
+        if (!path[i].endsWith('*')) continue;
+        const pp = path_positions[i];
+        if (!pp || (pp[0] === 0 && pp[1] === 0)) continue;
+        points.push([pp[0], pp[1]]);
+      }
     }
-    // End at the station itself
-    points.push([stationPos.lat, stationPos.lon]);
+
+    // End at own position for RF stations (skip if station IS at own position)
+    if (station.via === 'rf' && this._ownPos) {
+      const atOwn = Math.abs(stationPos.lat - this._ownPos.lat) < POS_EPSILON &&
+                    Math.abs(stationPos.lon - this._ownPos.lon) < POS_EPSILON;
+      if (!atOwn) {
+        points.push([this._ownPos.lat, this._ownPos.lon]);
+      }
+    }
 
     if (points.length < 2) return;
 
-    // Draw segments between consecutive known points
-    for (let i = 0; i < points.length - 1; i++) {
-      L.polyline([points[i], points[i + 1]], PATH_STYLE)
-        .addTo(this.hoverPathGroup);
+    // Glow layer, then crisp line on top
+    L.polyline(points, PATH_GLOW_STYLE).addTo(this.hoverPathGroup);
+    L.polyline(points, PATH_STYLE).addTo(this.hoverPathGroup);
+
+    // Mark digi positions with labeled dots
+    if (path && path_positions) {
+      for (let i = 0; i < path.length; i++) {
+        if (!path[i].endsWith('*')) continue;
+        const pp = path_positions[i];
+        if (!pp || (pp[0] === 0 && pp[1] === 0)) continue;
+        L.circleMarker([pp[0], pp[1]], {
+          radius: 5,
+          color: '#e05050',
+          fillColor: '#1a1e24',
+          fillOpacity: 1,
+          weight: 2,
+        }).bindTooltip(path[i].replace('*', ''), {
+          permanent: false,
+          direction: 'right',
+          className: 'callsign-label',
+        }).addTo(this.hoverPathGroup);
+      }
     }
   }
 
@@ -275,7 +342,8 @@ export class StationLayer {
     // Header: callsign + direction badge
     html += `<div class="stn-hdr">`;
     html += `<span class="stn-call">${_esc(s.callsign)}</span>`;
-    html += `<span class="badge ${dirCls}">${_esc(s.direction)}</span>`;
+    const dirLabel = s.direction === 'IS' ? 'iGate' : s.direction;
+    html += `<span class="badge ${dirCls}" ${s.direction === 'IS' ? 'title="Your station uploaded this to APRS-IS"' : ''}>${_esc(dirLabel)}</span>`;
     html += `</div>`;
     // Subheader: time ago + channel
     html += `<div class="stn-sub">${ago} &middot; Ch ${s.channel}</div>`;
@@ -285,7 +353,7 @@ export class StationLayer {
     html += `<div class="stn-coords">${_fmtLat(pos.lat)} ${_fmtLon(pos.lon)}</div>`;
     // Speed/course/alt
     const meta = [];
-    if (pos.speed_kt > 0) meta.push(`${Math.round(pos.speed_kt)}kt`);
+    if (pos.speed_kt > 0) meta.push(`${Math.round(pos.speed_kt * 1.15078)}mph`);
     if (pos.course != null) meta.push(`${pos.course}\u00B0`);
     if (pos.has_alt) meta.push(`${Math.round(pos.alt_m)}m`);
     if (meta.length) html += `<div class="stn-meta">${meta.join(' \u00B7 ')}</div>`;
