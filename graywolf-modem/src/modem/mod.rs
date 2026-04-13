@@ -151,6 +151,7 @@ pub struct Modem {
 
     // Metrics
     rx_frames: u64,
+    tx_frames: u64,
     rx_bad_fcs: u64,
     dcd_transitions: u64,
     last_status_tx: Instant,
@@ -171,6 +172,7 @@ impl Modem {
             active_devices: HashMap::new(),
             tx_worker,
             rx_frames: 0,
+            tx_frames: 0,
             rx_bad_fcs: 0,
             dcd_transitions: 0,
             last_status_tx: Instant::now(),
@@ -616,7 +618,7 @@ impl Modem {
             channel,
             rx_frames: self.rx_frames,
             rx_bad_fcs: self.rx_bad_fcs,
-            tx_frames: 0,
+            tx_frames: self.tx_frames,
             dcd_transitions: self.dcd_transitions,
             audio_level_mark: mark,
             audio_level_space: space,
@@ -725,7 +727,9 @@ impl Modem {
 
         if let Err(e) = self.tx_worker.transmit(job) {
             eprintln!("graywolf-modem: TransmitFrame: {}", e);
+            return;
         }
+        self.tx_frames += 1;
     }
 }
 
