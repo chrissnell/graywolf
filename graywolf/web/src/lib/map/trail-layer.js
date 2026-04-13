@@ -9,6 +9,7 @@
 // The current position (positions[0]) is NOT dotted — it uses the station icon.
 
 import L from 'leaflet';
+import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText } from './popup-helpers.js';
 
 const TRAIL_COLOR = '#2b6cb0';
 const DOT_FILL = '#ffaa00';
@@ -17,8 +18,9 @@ const DOT_WEIGHT = 2;
 const HIT_TOLERANCE = 15; // px — generous click/hover zone
 
 export class TrailLayer {
-  constructor(map) {
+  constructor(map, stationLayer) {
     this.map = map;
+    this.stationLayer = stationLayer;
     this.layerGroup = L.layerGroup();
     this._visible = false;
   }
@@ -66,35 +68,61 @@ export class TrailLayer {
         const p = s.positions[i];
         const opacity = 0.9 - ((i - 1) / segCount) * 0.5;
 
-        const popupContent = _dotPopup(s.callsign, p);
-        const popupOpts = { className: 'station-popup', maxWidth: 280, minWidth: 180 };
+        const popupContent = _dotPopup(s.callsign, p, this.stationLayer);
+        const popupOpts = { className: 'station-popup', maxWidth: 280, minWidth: 200 };
         const tooltipOpts = {
           permanent: false, direction: 'right', offset: [8, 0], className: 'callsign-label',
         };
+        const trailKey = `trail:${s.callsign}:${i}`;
+        const sl = this.stationLayer;
+        // Synthetic station-like object with this position's metadata for path rendering
+        const posCtx = { ...s, via: p.via, path: p.path, path_positions: p.path_positions };
+
+        const bindDotEvents = (marker) => {
+          marker
+            .bindPopup(popupContent, popupOpts)
+            .bindTooltip(s.callsign, tooltipOpts);
+          marker.on('mouseover', () => sl.showPath(trailKey, posCtx, p));
+          marker.on('mouseout', () => {
+            if (sl.popupKey !== trailKey) sl.clearPath();
+          });
+          marker.on('popupopen', (e) => {
+            sl.popupKey = trailKey;
+            sl.showPath(trailKey, posCtx, p);
+            const container = e.popup.getElement();
+            if (container) {
+              container.addEventListener('click', (ev) => {
+                const link = ev.target.closest('.path-link');
+                if (!link) return;
+                ev.preventDefault();
+                sl.focusStation(link.dataset.callsign);
+              });
+            }
+          });
+          marker.on('popupclose', () => {
+            sl.popupKey = null;
+            sl.clearPath();
+          });
+          return marker;
+        };
 
         // Invisible larger hit area behind the dot for easier clicking
-        L.circleMarker([p.lat, p.lon], {
+        bindDotEvents(L.circleMarker([p.lat, p.lon], {
           radius: HIT_TOLERANCE,
           opacity: 0,
           fillOpacity: 0,
           interactive: true,
-        })
-          .bindPopup(popupContent, popupOpts)
-          .bindTooltip(s.callsign, tooltipOpts)
-          .addTo(this.layerGroup);
+        })).addTo(this.layerGroup);
 
         // Visible dot on top — also carries popup so direct clicks work
-        L.circleMarker([p.lat, p.lon], {
+        bindDotEvents(L.circleMarker([p.lat, p.lon], {
           radius: DOT_RADIUS,
           color: TRAIL_COLOR,
           fillColor: DOT_FILL,
           fillOpacity: Math.max(opacity, 0.4),
           opacity: Math.max(opacity, 0.4),
           weight: DOT_WEIGHT,
-        })
-          .bindPopup(popupContent, popupOpts)
-          .bindTooltip(s.callsign, tooltipOpts)
-          .addTo(this.layerGroup);
+        })).addTo(this.layerGroup);
       }
     }
   }
@@ -121,18 +149,25 @@ export class TrailLayer {
 
 // --- popup helpers ---
 
-function _dotPopup(callsign, pos) {
-  const ago = _timeAgo(pos.timestamp);
-  const latDir = pos.lat >= 0 ? 'N' : 'S';
-  const lonDir = pos.lon >= 0 ? 'E' : 'W';
-  const lat = `${Math.abs(pos.lat).toFixed(4)}\u00B0${latDir}`;
-  const lon = `${Math.abs(pos.lon).toFixed(4)}\u00B0${lonDir}`;
+// Trail dot popup uses per-position metadata (via, path, direction, etc.)
+// so it reflects the packet state at the time this position was reported.
+function _dotPopup(callsign, pos, stationLayer) {
+  const ago = timeAgo(pos.timestamp);
+  const dir = pos.direction || 'RX';
+  const dirCls = dir === 'RX' ? 'b-rx' : dir === 'TX' ? 'b-tx' : 'b-is';
 
   let html = `<div class="stn-popup">`;
-  html += `<div class="stn-hdr"><span class="stn-call">${_esc(callsign)}</span></div>`;
-  html += `<div class="stn-sub">${ago}</div>`;
+  html += `<div class="stn-hdr">`;
+  html += `<span class="stn-call">${esc(callsign)}</span>`;
+  if (dir !== 'IS') {
+    html += `<span class="badge ${dirCls}">${esc(dir)}</span>`;
+  }
+  html += `</div>`;
+  html += `<div class="stn-sub">${ago}`;
+  if (pos.channel) html += ` &middot; Ch ${pos.channel}`;
+  html += `</div>`;
   html += `<div class="stn-sep"></div>`;
-  html += `<div class="stn-coords">${lat} ${lon}</div>`;
+  html += `<div class="stn-coords">${fmtLat(pos.lat)} ${fmtLon(pos.lon)}</div>`;
 
   const meta = [];
   if (pos.speed_kt > 0) meta.push(`${Math.round(pos.speed_kt * 1.15078)}mph`);
@@ -140,21 +175,25 @@ function _dotPopup(callsign, pos) {
   if (pos.has_alt) meta.push(`alt ${Math.round(pos.alt_m * 3.28084)} ft`);
   if (meta.length) html += `<div class="stn-meta">${meta.join(' \u00B7 ')}</div>`;
 
+  html += `<div class="stn-via ${viaCls(pos)}">${viaText(pos)}</div>`;
+
+  if (pos.hops > 0 && pos.path && pos.path.length) {
+    const pathHtml = pos.path.map(call => {
+      const clean = call.replace('*', '');
+      const suffix = call.endsWith('*') ? '*' : '';
+      if (stationLayer.hasStation(clean)) {
+        return `<a class="path-link" href="#" data-callsign="${esc(clean)}">${esc(clean)}${suffix}</a>`;
+      }
+      return esc(call);
+    }).join(',');
+    html += `<div class="stn-path">${pathHtml}</div>`;
+  }
+
+  if (pos.comment) {
+    html += `<div class="stn-sep"></div>`;
+    html += `<div class="stn-comment">${esc(pos.comment)}</div>`;
+  }
+
   html += `</div>`;
   return html;
-}
-
-function _esc(str) {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function _timeAgo(isoStr) {
-  const ms = Date.now() - new Date(isoStr).getTime();
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ${min % 60}m ago`;
 }

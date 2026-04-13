@@ -37,14 +37,23 @@ type StationDTO struct {
 }
 
 // StationPosDTO is a single position fix in the station wire format.
+// Per-position metadata captures the packet context at the time this
+// position was reported (path, via, direction, etc.).
 type StationPosDTO struct {
-	Lat       float64   `json:"lat"`
-	Lon       float64   `json:"lon"`
-	Alt       float64   `json:"alt_m,omitempty"`
-	HasAlt    bool      `json:"has_alt,omitempty"`
-	Speed     float64   `json:"speed_kt,omitempty"`
-	Course    *int      `json:"course,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	Lat           float64      `json:"lat"`
+	Lon           float64      `json:"lon"`
+	Alt           float64      `json:"alt_m,omitempty"`
+	HasAlt        bool         `json:"has_alt,omitempty"`
+	Speed         float64      `json:"speed_kt,omitempty"`
+	Course        *int         `json:"course,omitempty"`
+	Via           string       `json:"via,omitempty"`
+	Path          []string     `json:"path,omitempty"`
+	PathPositions [][2]float64 `json:"path_positions,omitempty"`
+	Hops          int          `json:"hops,omitempty"`
+	Direction     string       `json:"direction,omitempty"`
+	Channel       uint32       `json:"channel,omitempty"`
+	Comment       string       `json:"comment,omitempty"`
+	Timestamp     time.Time    `json:"timestamp"`
 }
 
 // WeatherDTO carries optional weather fields as pointers (nil = not reported).
@@ -186,13 +195,20 @@ func parseBBox(s string) (stationcache.BBox, error) {
 }
 
 // collectDigiCallsigns extracts unique callsigns from H-bit path entries
-// across all stations. These are looked up via StationStore.Lookup.
+// across all stations and their position histories.
 func collectDigiCallsigns(stations []stationcache.Station) []string {
 	seen := make(map[string]struct{})
 	for _, s := range stations {
 		for _, hop := range s.Path {
 			if strings.HasSuffix(hop, "*") {
 				seen[strings.TrimSuffix(hop, "*")] = struct{}{}
+			}
+		}
+		for _, p := range s.Positions {
+			for _, hop := range p.Path {
+				if strings.HasSuffix(hop, "*") {
+					seen[strings.TrimSuffix(hop, "*")] = struct{}{}
+				}
 			}
 		}
 	}
@@ -208,43 +224,28 @@ func collectDigiCallsigns(stations []stationcache.Station) []string {
 
 func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos map[string]stationcache.LatLon) StationDTO {
 	dto := StationDTO{
-		Callsign:    s.Callsign,
-		IsObject:    s.IsObject,
-		SymbolTable: string(rune(s.Symbol[0])),
-		SymbolCode:  string(rune(s.Symbol[1])),
-		LastHeard:   s.LastHeard,
-		Direction:   s.Direction,
-		Via:         s.Via,
-		Path:        s.Path,
-		Hops:        s.Hops,
-		Channel:     s.Channel,
-		Comment:     s.Comment,
+		Callsign:      s.Callsign,
+		IsObject:      s.IsObject,
+		SymbolTable:   string(rune(s.Symbol[0])),
+		SymbolCode:    string(rune(s.Symbol[1])),
+		LastHeard:     s.LastHeard,
+		Direction:     s.Direction,
+		Via:           s.Via,
+		Path:          s.Path,
+		PathPositions: resolvePathPositions(s.Path, digiPos),
+		Hops:          s.Hops,
+		Channel:       s.Channel,
+		Comment:       s.Comment,
 	}
 
 	// Positions — delta mode returns only positions[0]
 	if isDelta && len(s.Positions) > 0 {
-		dto.Positions = []StationPosDTO{positionToDTO(s.Positions[0])}
+		dto.Positions = []StationPosDTO{positionToDTO(s.Positions[0], digiPos)}
 	} else {
 		dto.Positions = make([]StationPosDTO, len(s.Positions))
 		for i, p := range s.Positions {
-			dto.Positions[i] = positionToDTO(p)
+			dto.Positions[i] = positionToDTO(p, digiPos)
 		}
-	}
-
-	// PathPositions — parallel to Path, [0,0] for unknown digis
-	if len(s.Path) > 0 {
-		pp := make([][2]float64, len(s.Path))
-		for i, hop := range s.Path {
-			if strings.HasSuffix(hop, "*") {
-				call := strings.TrimSuffix(hop, "*")
-				if digiPos != nil {
-					if ll, ok := digiPos[call]; ok {
-						pp[i] = [2]float64{ll.Lat, ll.Lon}
-					}
-				}
-			}
-		}
-		dto.PathPositions = pp
 	}
 
 	if includeWeather && s.Weather != nil {
@@ -254,20 +255,47 @@ func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos 
 	return dto
 }
 
-func positionToDTO(p stationcache.Position) StationPosDTO {
+func positionToDTO(p stationcache.Position, digiPos map[string]stationcache.LatLon) StationPosDTO {
 	dto := StationPosDTO{
-		Lat:       p.Lat,
-		Lon:       p.Lon,
-		Alt:       p.Alt,
-		HasAlt:    p.HasAlt,
-		Speed:     p.Speed,
-		Timestamp: p.Timestamp,
+		Lat:           p.Lat,
+		Lon:           p.Lon,
+		Alt:           p.Alt,
+		HasAlt:        p.HasAlt,
+		Speed:         p.Speed,
+		Via:           p.Via,
+		Path:          p.Path,
+		PathPositions: resolvePathPositions(p.Path, digiPos),
+		Hops:          p.Hops,
+		Direction:     p.Direction,
+		Channel:       p.Channel,
+		Comment:       p.Comment,
+		Timestamp:     p.Timestamp,
 	}
 	if p.HasCourse {
 		c := p.Course
 		dto.Course = &c
 	}
 	return dto
+}
+
+// resolvePathPositions maps H-bit digi path entries to their known
+// lat/lon positions. Returns nil when path is empty.
+func resolvePathPositions(path []string, digiPos map[string]stationcache.LatLon) [][2]float64 {
+	if len(path) == 0 {
+		return nil
+	}
+	pp := make([][2]float64, len(path))
+	for i, hop := range path {
+		if strings.HasSuffix(hop, "*") {
+			call := strings.TrimSuffix(hop, "*")
+			if digiPos != nil {
+				if ll, ok := digiPos[call]; ok {
+					pp[i] = [2]float64{ll.Lat, ll.Lon}
+				}
+			}
+		}
+	}
+	return pp
 }
 
 func weatherToDTO(w *stationcache.Weather) *WeatherDTO {

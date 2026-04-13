@@ -119,19 +119,23 @@ func insertPositionIfMoved(tx *gorm.DB, e *stationcache.CacheEntry) error {
 		}
 	}
 
+	pathJSON, _ := json.Marshal(e.Path)
+
 	if found && math.Abs(lastLat-e.Lat) <= posEpsilon && math.Abs(lastLon-e.Lon) <= posEpsilon {
-		// Static re-beacon — update timestamp on latest position.
+		// Static re-beacon — update timestamp and metadata on latest position.
 		return tx.Exec(
-			`UPDATE positions SET timestamp = ? WHERE station_key = ? AND id = (
+			`UPDATE positions SET timestamp = ?, via = ?, path = ?, hops = ?, direction = ?, channel = ?, comment = ?
+			 WHERE station_key = ? AND id = (
 				SELECT id FROM positions WHERE station_key = ? ORDER BY timestamp DESC LIMIT 1
-			)`, e.Timestamp, e.Key, e.Key,
+			)`, e.Timestamp, e.Via, string(pathJSON), e.Hops, e.Direction, e.Channel, e.Comment, e.Key, e.Key,
 		).Error
 	}
 
 	return tx.Exec(
-		`INSERT INTO positions (station_key, lat, lon, alt, has_alt, speed, course, has_course, timestamp)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.Key, e.Lat, e.Lon, e.Alt, e.HasAlt, e.Speed, e.Course, e.HasCourse, e.Timestamp,
+		`INSERT INTO positions (station_key, lat, lon, alt, has_alt, speed, course, has_course, via, path, hops, direction, channel, comment, timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Key, e.Lat, e.Lon, e.Alt, e.HasAlt, e.Speed, e.Course, e.HasCourse,
+		e.Via, string(pathJSON), e.Hops, e.Direction, e.Channel, e.Comment, e.Timestamp,
 	).Error
 }
 
@@ -216,11 +220,17 @@ func (d *DB) LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*stati
 			Speed     float64
 			Course    int
 			HasCourse bool
+			Via       string
+			Path      string
+			Hops      int
+			Direction string
+			Channel   uint32
+			Comment   string
 			Timestamp time.Time
 		}
 		var posRows []posRow
 		if err := d.db.Raw(
-			"SELECT lat, lon, alt, has_alt, speed, course, has_course, timestamp FROM positions WHERE station_key = ? ORDER BY timestamp DESC LIMIT ?",
+			"SELECT lat, lon, alt, has_alt, speed, course, has_course, via, path, hops, direction, channel, comment, timestamp FROM positions WHERE station_key = ? ORDER BY timestamp DESC LIMIT ?",
 			r.Key, trailLimit,
 		).Scan(&posRows).Error; err != nil {
 			return nil, fmt.Errorf("load positions for %s: %w", r.Key, err)
@@ -231,8 +241,11 @@ func (d *DB) LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*stati
 				Lat: p.Lat, Lon: p.Lon,
 				Alt: p.Alt, HasAlt: p.HasAlt,
 				Speed: p.Speed, Course: p.Course, HasCourse: p.HasCourse,
+				Via: p.Via, Hops: p.Hops,
+				Direction: p.Direction, Channel: p.Channel, Comment: p.Comment,
 				Timestamp: p.Timestamp,
 			}
+			_ = json.Unmarshal([]byte(p.Path), &s.Positions[i].Path)
 		}
 
 		// Load weather
@@ -344,5 +357,19 @@ func bootstrap(db *gorm.DB) error {
 			return err
 		}
 	}
+
+	// Migrate: add per-position metadata columns to existing databases.
+	// Errors are ignored (column already exists).
+	for _, m := range []string{
+		`ALTER TABLE positions ADD COLUMN via TEXT NOT NULL DEFAULT 'rf'`,
+		`ALTER TABLE positions ADD COLUMN path TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE positions ADD COLUMN hops INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE positions ADD COLUMN direction TEXT NOT NULL DEFAULT 'RX'`,
+		`ALTER TABLE positions ADD COLUMN channel INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE positions ADD COLUMN comment TEXT NOT NULL DEFAULT ''`,
+	} {
+		_ = db.Exec(m).Error
+	}
+
 	return nil
 }

@@ -7,6 +7,7 @@
 
 import L from 'leaflet';
 import { aprsIcon } from './aprs-icons.js';
+import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText } from './popup-helpers.js';
 
 const LABEL_ZOOM_THRESHOLD = 10;
 const POS_EPSILON = 0.00001;
@@ -151,6 +152,32 @@ export class StationLayer {
     this._clearPath();
   }
 
+  // Show a digi path overlay for the given key. origin overrides the start
+  // position (used by trail dots whose position differs from positions[0]).
+  showPath(key, station, origin) {
+    this._showPath(key, station, origin);
+  }
+
+  // Set/get the key whose popup is currently open, so hover-out doesn't
+  // clear the path while a popup is pinned.
+  get popupKey() { return this._popupKey; }
+  set popupKey(v) { this._popupKey = v; }
+
+  // Check whether a station marker exists for the given callsign.
+  hasStation(callsign) {
+    return this.markers.has(`stn:${callsign}`);
+  }
+
+  // Pan to a station and open its popup. Returns false if not found.
+  focusStation(callsign) {
+    const entry = this.markers.get(`stn:${callsign}`);
+    if (!entry) return false;
+    const p = entry.station.positions[0];
+    this.map.setView([p.lat, p.lon], this.map.getZoom());
+    entry.marker.openPopup();
+    return true;
+  }
+
   // --- internal ---
 
   _addMarker(key, station) {
@@ -288,16 +315,16 @@ export class StationLayer {
     }
   }
 
-  _showPath(key, station) {
+  _showPath(key, station, origin) {
     if (this._hoverKey === key) return; // already showing
     this.hoverPathGroup.clearLayers();
     this._hoverKey = key;
 
     const { path, path_positions } = station;
-    const stationPos = station.positions[0];
+    const startPos = origin || station.positions[0];
 
     // Build chain: station → digis (H-bit, known positions) → own position
-    const points = [[stationPos.lat, stationPos.lon]];
+    const points = [[startPos.lat, startPos.lon]];
 
     if (path && path_positions) {
       for (let i = 0; i < path.length; i++) {
@@ -310,8 +337,8 @@ export class StationLayer {
 
     // End at own position for RF stations (skip if station IS at own position)
     if (station.via === 'rf' && this._ownPos) {
-      const atOwn = Math.abs(stationPos.lat - this._ownPos.lat) < POS_EPSILON &&
-                    Math.abs(stationPos.lon - this._ownPos.lon) < POS_EPSILON;
+      const atOwn = Math.abs(startPos.lat - this._ownPos.lat) < POS_EPSILON &&
+                    Math.abs(startPos.lon - this._ownPos.lon) < POS_EPSILON;
       if (!atOwn) {
         points.push([this._ownPos.lat, this._ownPos.lon]);
       }
@@ -351,89 +378,42 @@ export class StationLayer {
 
   _popupContent(s) {
     const pos = s.positions[0];
-    const ago = _timeAgo(s.last_heard);
+    const ago = timeAgo(s.last_heard);
     const dirCls = s.direction === 'RX' ? 'b-rx' : s.direction === 'TX' ? 'b-tx' : 'b-is';
 
     let html = `<div class="stn-popup">`;
-    // Header: callsign + direction badge
     html += `<div class="stn-hdr">`;
-    html += `<span class="stn-call">${_esc(s.callsign)}</span>`;
+    html += `<span class="stn-call">${esc(s.callsign)}</span>`;
     if (s.direction !== 'IS') {
-      html += `<span class="badge ${dirCls}">${_esc(s.direction)}</span>`;
+      html += `<span class="badge ${dirCls}">${esc(s.direction)}</span>`;
     }
     html += `</div>`;
-    // Subheader: time ago + channel
     html += `<div class="stn-sub">${ago} &middot; Ch ${s.channel}</div>`;
-    // Separator
     html += `<div class="stn-sep"></div>`;
-    // Coordinates
-    html += `<div class="stn-coords">${_fmtLat(pos.lat)} ${_fmtLon(pos.lon)}</div>`;
-    // Speed/course/alt
+    html += `<div class="stn-coords">${fmtLat(pos.lat)} ${fmtLon(pos.lon)}</div>`;
     const meta = [];
     if (pos.speed_kt > 0) meta.push(`${Math.round(pos.speed_kt * 1.15078)}mph`);
     if (pos.course != null) meta.push(`${pos.course}\u00B0`);
     if (pos.has_alt) meta.push(`alt ${Math.round(pos.alt_m * 3.28084)} ft`);
     if (meta.length) html += `<div class="stn-meta">${meta.join(' \u00B7 ')}</div>`;
-    // Via
-    html += `<div class="stn-via ${_viaCls(s)}">${_viaText(s)}</div>`;
-    // Path (only when hops > 0)
+    html += `<div class="stn-via ${viaCls(s)}">${viaText(s)}</div>`;
     if (s.hops > 0 && s.path && s.path.length) {
       const pathHtml = s.path.map(call => {
         const clean = call.replace('*', '');
         const suffix = call.endsWith('*') ? '*' : '';
         const key = `stn:${clean}`;
         if (this.markers.has(key)) {
-          return `<a class="path-link" href="#" data-callsign="${_esc(clean)}">${_esc(clean)}${suffix}</a>`;
+          return `<a class="path-link" href="#" data-callsign="${esc(clean)}">${esc(clean)}${suffix}</a>`;
         }
-        return _esc(call);
+        return esc(call);
       }).join(',');
       html += `<div class="stn-path">${pathHtml}</div>`;
     }
-    // Comment
     if (s.comment) {
       html += `<div class="stn-sep"></div>`;
-      html += `<div class="stn-comment">${_esc(s.comment)}</div>`;
+      html += `<div class="stn-comment">${esc(s.comment)}</div>`;
     }
     html += `</div>`;
     return html;
   }
-}
-
-// --- helpers ---
-
-function _esc(str) {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function _timeAgo(isoStr) {
-  const ms = Date.now() - new Date(isoStr).getTime();
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ${min % 60}m ago`;
-}
-
-function _fmtLat(lat) {
-  const dir = lat >= 0 ? 'N' : 'S';
-  return `${Math.abs(lat).toFixed(4)}\u00B0${dir}`;
-}
-
-function _fmtLon(lon) {
-  const dir = lon >= 0 ? 'E' : 'W';
-  return `${Math.abs(lon).toFixed(4)}\u00B0${dir}`;
-}
-
-function _viaCls(s) {
-  if (s.via === 'is') return 'via-is';
-  if (s.hops > 0) return 'via-rf-hops';
-  return 'via-rf';
-}
-
-function _viaText(s) {
-  if (s.via === 'is') return 'APRS-IS';
-  if (s.hops > 0) return `RF via ${s.hops} hop${s.hops > 1 ? 's' : ''}`;
-  return 'RF direct';
 }

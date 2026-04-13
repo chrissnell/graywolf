@@ -54,6 +54,9 @@ type Station struct {
 }
 
 // Position is a single position fix with metadata.
+// Per-position metadata (Via, Path, etc.) captures the packet context
+// at the time this position was reported, enabling accurate historical
+// trail display.
 type Position struct {
 	Lat       float64
 	Lon       float64
@@ -62,6 +65,12 @@ type Position struct {
 	Speed     float64 // knots
 	Course    int
 	HasCourse bool
+	Via       string
+	Path      []string
+	Hops      int
+	Direction string
+	Channel   uint32
+	Comment   string
 	Timestamp time.Time
 }
 

@@ -79,6 +79,12 @@ func (c *MemCache) Update(entries []CacheEntry) {
 			Speed:     e.Speed,
 			Course:    e.Course,
 			HasCourse: e.HasCourse,
+			Via:       e.Via,
+			Path:      e.Path,
+			Hops:      e.Hops,
+			Direction: e.Direction,
+			Channel:   e.Channel,
+			Comment:   e.Comment,
 			Timestamp: e.Timestamp,
 		}
 
@@ -93,8 +99,14 @@ func (c *MemCache) Update(entries []CacheEntry) {
 				s.Positions = s.Positions[:MaxTrailLen]
 			}
 		} else {
-			// Static re-beacon — update timestamp only.
+			// Static re-beacon — update timestamp and metadata.
 			s.Positions[0].Timestamp = e.Timestamp
+			s.Positions[0].Via = e.Via
+			s.Positions[0].Path = e.Path
+			s.Positions[0].Hops = e.Hops
+			s.Positions[0].Direction = e.Direction
+			s.Positions[0].Channel = e.Channel
+			s.Positions[0].Comment = e.Comment
 		}
 	}
 }
@@ -207,12 +219,18 @@ func positionMoved(old, new Position) bool {
 		math.Abs(old.Lon-new.Lon) > posEpsilon
 }
 
-// snapshotStation returns a shallow copy of Station with its own
-// Positions slice so the caller can't mutate cache state.
+// snapshotStation returns a deep-enough copy of Station so the caller
+// can't mutate cache state. Slice-typed fields (Path on both Station
+// and each Position) are duplicated.
 func snapshotStation(s *Station) Station {
 	cp := *s
 	cp.Positions = make([]Position, len(s.Positions))
 	copy(cp.Positions, s.Positions)
+	for i := range cp.Positions {
+		if cp.Positions[i].Path != nil {
+			cp.Positions[i].Path = append([]string(nil), cp.Positions[i].Path...)
+		}
+	}
 	if s.Path != nil {
 		cp.Path = make([]string, len(s.Path))
 		copy(cp.Path, s.Path)

@@ -306,7 +306,7 @@
 
     // Create layers
     stationLayer = new StationLayer(m);
-    trailLayer = new TrailLayer(m);
+    trailLayer = new TrailLayer(m, stationLayer);
     weatherLayer = new WeatherLayer(m);
 
     if (mapState.layerToggles.trails) trailLayer.show();
