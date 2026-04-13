@@ -82,7 +82,7 @@ func TestParseNMEA_ChecksumFail(t *testing.T) {
 }
 
 func TestParseNMEA_Unsupported(t *testing.T) {
-	if _, _, err := ParseNMEA("$GPGSV,3,1,12"); err == nil {
+	if _, _, err := ParseNMEA("$GPHDT,123.4,T"); err == nil {
 		t.Fatalf("expected unsupported error")
 	}
 }
@@ -115,8 +115,8 @@ func TestReadNMEAStream_OnParseError(t *testing.T) {
 	stream := bytes.NewBufferString(
 		// bad checksum:
 		"$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*00\n" +
-			// unsupported sentence type (GSV):
-			"$GPGSV,3,1,12\n" +
+			// unsupported sentence type (HDT):
+			"$GPHDT,123.4,T\n" +
 			// totally malformed:
 			"garbage\n" +
 			// valid — must not count:
@@ -314,6 +314,94 @@ func TestReadNMEAStream_GSAMergesIntoCachedFix(t *testing.T) {
 	}
 	if !fix.HasDOP {
 		t.Errorf("HasDOP = false")
+	}
+}
+
+func TestParseGSV_SingleMessage(t *testing.T) {
+	body := "GPGSV,1,1,03,01,28,068,23,02,12,038,30,06,08,172,23"
+	var xor byte
+	for i := 0; i < len(body); i++ {
+		xor ^= body[i]
+	}
+	line := "$" + body + "*" + upperHex(xor)
+	talker, totalMsgs, msgNum, sats, err := parseGSVLine(line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if talker != "GP" {
+		t.Errorf("talker = %q, want GP", talker)
+	}
+	if totalMsgs != 1 || msgNum != 1 {
+		t.Errorf("totalMsgs=%d msgNum=%d, want 1,1", totalMsgs, msgNum)
+	}
+	if len(sats) != 3 {
+		t.Fatalf("got %d sats, want 3", len(sats))
+	}
+	if sats[0].PRN != 1 || sats[0].Elevation != 28 || sats[0].Azimuth != 68 || sats[0].SNR != 23 {
+		t.Errorf("sat[0] = %+v", sats[0])
+	}
+	if sats[1].PRN != 2 || sats[1].SNR != 30 {
+		t.Errorf("sat[1] = %+v", sats[1])
+	}
+}
+
+func TestParseGSV_EmptySNR(t *testing.T) {
+	body := "GPGSV,1,1,01,01,28,068,"
+	var xor byte
+	for i := 0; i < len(body); i++ {
+		xor ^= body[i]
+	}
+	line := "$" + body + "*" + upperHex(xor)
+	_, _, _, sats, err := parseGSVLine(line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(sats) != 1 {
+		t.Fatalf("got %d sats, want 1", len(sats))
+	}
+	if sats[0].SNR != -1 {
+		t.Errorf("SNR = %d, want -1 (not tracking)", sats[0].SNR)
+	}
+}
+
+func TestReadNMEAStream_GSVStoresSatellites(t *testing.T) {
+	rmcBody := "GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W"
+	var rmcXor byte
+	for i := 0; i < len(rmcBody); i++ {
+		rmcXor ^= rmcBody[i]
+	}
+	gsv1Body := "GPGSV,2,1,05,01,28,068,23,02,12,038,30,06,08,172,23,07,15,139,24"
+	var gsv1Xor byte
+	for i := 0; i < len(gsv1Body); i++ {
+		gsv1Xor ^= gsv1Body[i]
+	}
+	gsv2Body := "GPGSV,2,2,05,09,42,310,35"
+	var gsv2Xor byte
+	for i := 0; i < len(gsv2Body); i++ {
+		gsv2Xor ^= gsv2Body[i]
+	}
+	stream := bytes.NewBufferString(
+		"$" + rmcBody + "*" + upperHex(rmcXor) + "\n" +
+			"$" + gsv1Body + "*" + upperHex(gsv1Xor) + "\n" +
+			"$" + gsv2Body + "*" + upperHex(gsv2Xor) + "\n",
+	)
+	cache := NewMemCache()
+	logger := slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil))
+	if err := ReadNMEAStream(context.Background(), stream, cache, logger, NMEAOptions{}); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if _, ok := cache.Get(); !ok {
+		t.Fatal("position cache empty")
+	}
+	view, ok := cache.GetSatellites()
+	if !ok {
+		t.Fatal("satellite cache empty")
+	}
+	if len(view.Satellites) != 5 {
+		t.Errorf("got %d satellites, want 5", len(view.Satellites))
+	}
+	if view.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt is zero")
 	}
 }
 

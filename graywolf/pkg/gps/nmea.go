@@ -14,19 +14,15 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
-// Supported NMEA sentences: $GPRMC, $GPGGA, $GPVTG, $GPGSA (and GN/GL/GA
-// talker variants). Other sentences are silently ignored.
+// Supported NMEA sentences: $GPRMC, $GPGGA, $GPVTG, $GPGSA, $GPGSV (and
+// GN/GL/GA talker variants). Other sentences are silently ignored.
 
-// ParseNMEA parses a single NMEA sentence into a Fix. The input may
-// optionally include the leading '$' and trailing "*HH" checksum; both
-// styles are accepted. Returns an error if the checksum is invalid or the
-// sentence type is unsupported/malformed. The returned bool reports
-// whether the sentence contained an active fix (some RMC sentences are
-// status='V' for "void").
-func ParseNMEA(line string) (Fix, bool, error) {
+// validateAndSplit handles NMEA prefix, checksum verification, and field
+// splitting common to all sentence parsers.
+func validateAndSplit(line string) (tag string, fields []string, err error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return Fix{}, false, errors.New("gps: empty nmea line")
+		return "", nil, errors.New("gps: empty nmea line")
 	}
 	if line[0] == '$' {
 		line = line[1:]
@@ -37,23 +33,37 @@ func ParseNMEA(line string) (Fix, bool, error) {
 		sum := line[i+1:]
 		want, err := strconv.ParseUint(sum, 16, 8)
 		if err != nil {
-			return Fix{}, false, fmt.Errorf("gps: bad checksum %q: %w", sum, err)
+			return "", nil, fmt.Errorf("gps: bad checksum %q: %w", sum, err)
 		}
 		var got byte
 		for j := 0; j < len(body); j++ {
 			got ^= body[j]
 		}
 		if byte(want) != got {
-			return Fix{}, false, fmt.Errorf("gps: checksum mismatch want %02X got %02X", want, got)
+			return "", nil, fmt.Errorf("gps: checksum mismatch want %02X got %02X", want, got)
 		}
 	}
-	fields := strings.Split(body, ",")
+	fields = strings.Split(body, ",")
 	if len(fields) == 0 {
-		return Fix{}, false, errors.New("gps: no fields")
+		return "", nil, errors.New("gps: no fields")
 	}
-	tag := fields[0]
+	tag = fields[0]
 	if len(tag) < 5 {
-		return Fix{}, false, fmt.Errorf("gps: short sentence tag %q", tag)
+		return "", nil, fmt.Errorf("gps: short sentence tag %q", tag)
+	}
+	return tag, fields, nil
+}
+
+// ParseNMEA parses a single NMEA sentence into a Fix. The input may
+// optionally include the leading '$' and trailing "*HH" checksum; both
+// styles are accepted. Returns an error if the checksum is invalid or the
+// sentence type is unsupported/malformed. The returned bool reports
+// whether the sentence contained an active fix (some RMC sentences are
+// status='V' for "void").
+func ParseNMEA(line string) (Fix, bool, error) {
+	tag, fields, err := validateAndSplit(line)
+	if err != nil {
+		return Fix{}, false, err
 	}
 	switch tag[2:] {
 	case "RMC":
@@ -200,6 +210,71 @@ func parseGSA(f []string) (Fix, bool, error) {
 	return fix, fix.HasDOP, nil
 }
 
+// isGSVSentence quickly checks whether a raw NMEA line is a GSV sentence
+// without performing full validation.
+func isGSVSentence(line string) bool {
+	s := strings.TrimSpace(line)
+	if len(s) > 0 && s[0] == '$' {
+		s = s[1:]
+	}
+	return len(s) >= 6 && s[2:5] == "GSV" && s[5] == ','
+}
+
+// parseGSVLine validates and parses a single GSV sentence, returning the
+// talker ID (e.g. "GP"), message framing, and satellite entries.
+func parseGSVLine(line string) (talker string, totalMsgs, msgNum int, sats []SatelliteInfo, err error) {
+	tag, fields, err := validateAndSplit(line)
+	if err != nil {
+		return "", 0, 0, nil, err
+	}
+	if tag[2:] != "GSV" {
+		return "", 0, 0, nil, fmt.Errorf("gps: not a GSV sentence: %q", tag)
+	}
+	totalMsgs, msgNum, sats, err = parseGSV(fields)
+	return tag[:2], totalMsgs, msgNum, sats, err
+}
+
+// $xxGSV,totalMsgs,msgNum,totalSats,{prn,elev,azim,snr}*checksum
+// Each message carries up to 4 satellites; a complete view spans
+// totalMsgs consecutive messages.
+func parseGSV(f []string) (totalMsgs, msgNum int, sats []SatelliteInfo, err error) {
+	if len(f) < 4 {
+		return 0, 0, nil, fmt.Errorf("gps: GSV too short (%d fields)", len(f))
+	}
+	totalMsgs, err = strconv.Atoi(f[1])
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("gps: GSV bad total messages: %w", err)
+	}
+	msgNum, err = strconv.Atoi(f[2])
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("gps: GSV bad message number: %w", err)
+	}
+	// f[3] = total satellites in view (informational, not stored)
+	for i := 4; i+3 < len(f); i += 4 {
+		if f[i] == "" {
+			continue
+		}
+		prn, err := strconv.Atoi(f[i])
+		if err != nil {
+			continue
+		}
+		sat := SatelliteInfo{PRN: prn, SNR: -1}
+		if f[i+1] != "" {
+			sat.Elevation, _ = strconv.Atoi(f[i+1])
+		}
+		if f[i+2] != "" {
+			sat.Azimuth, _ = strconv.Atoi(f[i+2])
+		}
+		if f[i+3] != "" {
+			if snr, err := strconv.Atoi(f[i+3]); err == nil {
+				sat.SNR = snr
+			}
+		}
+		sats = append(sats, sat)
+	}
+	return totalMsgs, msgNum, sats, nil
+}
+
 // parseLat handles "DDMM.mmmm" with hemisphere letter.
 func parseLat(val, hemi string) (float64, error) {
 	if val == "" {
@@ -316,6 +391,12 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 	)
 	statsInterval := 10 * time.Second
 
+	// GSV accumulation: each talker (GP, GL, GA, GB) sends its own
+	// numbered message cycle; we collect per-talker and merge into a
+	// single SatelliteView when any cycle completes.
+	gsvPartial := make(map[string][]SatelliteInfo)
+	gsvComplete := make(map[string][]SatelliteInfo)
+
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -327,6 +408,45 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 		if firstLine {
 			logger.Info("gps: first line received from device", "line", line)
 			firstLine = false
+		}
+		// GSV sentences carry satellite visibility, not position fixes.
+		if isGSVSentence(line) {
+			talker, totalMsgs, msgNum, sats, err := parseGSVLine(line)
+			if err != nil {
+				parseErrs++
+				if opts.OnParseError != nil {
+					opts.OnParseError("nmea")
+				}
+				logger.Debug("nmea GSV parse error", "err", err, "line", line)
+				snippet := line
+				if len(snippet) > 80 {
+					snippet = snippet[:80]
+				}
+				parseErrLog.Log(logger, slog.LevelWarn, "parse",
+					"nmea parse error",
+					"err", err, "snippet", snippet)
+				continue
+			}
+			if msgNum == 1 {
+				gsvPartial[talker] = sats
+			} else {
+				gsvPartial[talker] = append(gsvPartial[talker], sats...)
+			}
+			if msgNum == totalMsgs {
+				gsvComplete[talker] = gsvPartial[talker]
+				delete(gsvPartial, talker)
+				if sc, ok := cache.(SatelliteCache); ok {
+					var all []SatelliteInfo
+					for _, s := range gsvComplete {
+						all = append(all, s...)
+					}
+					sc.UpdateSatellites(SatelliteView{
+						Satellites: all,
+						UpdatedAt:  time.Now().UTC(),
+					})
+				}
+			}
+			continue
 		}
 		fix, active, err := ParseNMEA(line)
 		if err != nil {

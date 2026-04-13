@@ -26,6 +26,28 @@ type Fix struct {
 	HasDOP    bool      // true if DOP values are valid
 }
 
+// SatelliteInfo describes a single satellite visible to the receiver.
+type SatelliteInfo struct {
+	PRN       int // satellite PRN/ID number
+	Elevation int // degrees above horizon (0-90)
+	Azimuth   int // degrees from true north (0-359)
+	SNR       int // signal-to-noise dB-Hz (0-99), -1 if not tracking
+}
+
+// SatelliteView is a snapshot of all satellites visible to the receiver,
+// assembled from one or more complete GSV sentence cycles.
+type SatelliteView struct {
+	Satellites []SatelliteInfo
+	UpdatedAt  time.Time
+}
+
+// SatelliteCache provides read/write access to satellite visibility data.
+// Implementations MUST be safe for concurrent use.
+type SatelliteCache interface {
+	GetSatellites() (SatelliteView, bool)
+	UpdateSatellites(SatelliteView)
+}
+
 // PositionCache is the read/write contract shared by readers and consumers.
 // Implementations MUST be safe for concurrent use.
 type PositionCache interface {
@@ -41,6 +63,10 @@ type MemCache struct {
 	mu    sync.RWMutex
 	fix   Fix
 	valid bool
+
+	satMu    sync.RWMutex
+	satView  SatelliteView
+	satValid bool
 }
 
 // NewMemCache returns an empty MemCache.
@@ -63,4 +89,22 @@ func (c *MemCache) Update(f Fix) {
 	c.fix = f
 	c.valid = true
 	c.mu.Unlock()
+}
+
+// GetSatellites returns the latest satellite view.
+func (c *MemCache) GetSatellites() (SatelliteView, bool) {
+	c.satMu.RLock()
+	defer c.satMu.RUnlock()
+	return c.satView, c.satValid
+}
+
+// UpdateSatellites replaces the stored satellite view.
+func (c *MemCache) UpdateSatellites(v SatelliteView) {
+	if v.UpdatedAt.IsZero() {
+		v.UpdatedAt = time.Now().UTC()
+	}
+	c.satMu.Lock()
+	c.satView = v
+	c.satValid = true
+	c.satMu.Unlock()
 }
