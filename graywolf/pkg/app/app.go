@@ -74,6 +74,7 @@ type App struct {
 	gpsReload        chan struct{}
 	beaconReload     chan struct{}
 	digipeaterReload chan struct{}
+	igateReload      chan struct{}
 
 	// --- APRS fan-out plumbing ------------------------------------------
 	aprsQueue       chan *aprs.DecodedAPRSPacket
@@ -91,6 +92,7 @@ type App struct {
 	kissWG           sync.WaitGroup
 	agwWG            sync.WaitGroup
 	digiReloadWG     sync.WaitGroup
+	igateReloadWG    sync.WaitGroup
 	gpsWG            sync.WaitGroup
 	beaconWG         sync.WaitGroup
 	beaconReloadWG   sync.WaitGroup

@@ -62,6 +62,16 @@ func newClient(cfg Config, logger *slog.Logger, onLine func(string), onConnected
 	}
 }
 
+// closeConn closes the current APRS-IS connection, causing the read
+// loop to exit and the supervisor to reconnect with current config.
+func (c *client) closeConn() {
+	c.mu.Lock()
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+	c.mu.Unlock()
+}
+
 // run executes one dial+login+read cycle. Returns when the session ends
 // (error, disconnect, or ctx cancel). The caller re-dials with backoff.
 func (c *client) run(ctx context.Context) error {

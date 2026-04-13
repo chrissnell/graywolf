@@ -77,27 +77,27 @@
           </thead>
           <tbody>
             <tr>
-              <td><code>enabled</code></td>
-              <td><code>false</code></td>
+              <td>Enable iGate</td>
+              <td>Off</td>
               <td>Master switch for the iGate</td>
             </tr>
             <tr>
-              <td><code>server</code></td>
+              <td>APRS-IS Server</td>
               <td><code>rotate.aprs2.net</code></td>
               <td>APRS-IS server hostname</td>
             </tr>
             <tr>
-              <td><code>port</code></td>
+              <td>Port</td>
               <td><code>14580</code></td>
               <td>APRS-IS server port</td>
             </tr>
             <tr>
-              <td><code>callsign</code></td>
+              <td>Callsign</td>
               <td>&mdash;</td>
               <td>Login callsign (e.g., <code>N0CALL-5</code>)</td>
             </tr>
             <tr>
-              <td><code>passcode</code></td>
+              <td>Passcode</td>
               <td><code>-1</code></td>
               <td>APRS-IS passcode. <code>-1</code> = receive-only (no TX to IS).</td>
             </tr>
@@ -148,32 +148,20 @@
       everything the gating rules can. For example, there is no server-side
       filter for &ldquo;messages addressed to a specific callsign&rdquo; &mdash;
       you would need to pull all messages (<code>t/m</code>) and filter locally
-      with a <code>message_dest</code> rule.
+      with a Message Dest rule.
     </p>
 
-    <h3>Server Filter</h3>
+    <h3>APRS-IS Server Filter</h3>
 
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>server_filter</code></td>
-              <td>&mdash;</td>
-              <td>APRS-IS filter string sent at login. If empty, no packets are received.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <p>
+      The <strong>APRS-IS Server Filter</strong> field is the filter string sent
+      to the APRS-IS server at login. If left empty, no packets are received.
+    </p>
 
     <h3>IS &rarr; RF Gating Rules</h3>
 
     <p>
-      Rules are evaluated in <code>priority</code> order (lower = first).
+      Rules are evaluated in Priority order (lower = first).
       The first matching rule decides whether the packet is allowed or denied.
       If no rule matches, the packet is denied.
     </p>
@@ -186,19 +174,19 @@
           </thead>
           <tbody>
             <tr>
-              <td><code>type</code></td>
-              <td>Match type: <code>callsign</code>, <code>prefix</code>, <code>message_dest</code>, or <code>object</code></td>
+              <td>Type</td>
+              <td>Match type: Callsign, Prefix, Message Dest, or Object</td>
             </tr>
             <tr>
-              <td><code>pattern</code></td>
+              <td>Pattern</td>
               <td>Value to match against (e.g., <code>NW5W-12</code>, <code>W5</code>)</td>
             </tr>
             <tr>
-              <td><code>action</code></td>
-              <td><code>allow</code> or <code>deny</code></td>
+              <td>Action</td>
+              <td>Allow or Deny</td>
             </tr>
             <tr>
-              <td><code>priority</code></td>
+              <td>Priority</td>
               <td>Evaluation order (lower = evaluated first)</td>
             </tr>
           </tbody>
@@ -222,17 +210,18 @@
     <h3>Example: Gate a Single Station</h3>
 
     <p>
-      To gate only packets from <code>NW5W-12</code> to RF, set the server
-      filter to <code>b/NW5W-12</code> (so APRS-IS only sends you that
-      station&rsquo;s packets) and add a gating rule to allow them through:
+      To gate only packets from <code>NW5W-12</code> to RF, set the
+      APRS-IS Server Filter to <code>b/NW5W-12</code> (so APRS-IS only
+      sends you that station&rsquo;s packets) and add a gating rule to
+      allow them through:
     </p>
 
-<pre><code>server_filter: b/NW5W-12
+<pre><code>APRS-IS Server Filter: b/NW5W-12
 
-type: callsign
-pattern: NW5W-12
-action: allow
-priority: 100</code></pre>
+Type:     Callsign
+Pattern:  NW5W-12
+Action:   Allow
+Priority: 100</code></pre>
 
     <h2>Simulation Mode</h2>
 

@@ -392,7 +392,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 	}
 
 	serverAddr := fmt.Sprintf("%s:%d", igCfg.Server, igCfg.Port)
-	var igGov *txgovernor.Governor
+	var igGov txgovernor.TxSink
 	if igCfg.GateIsToRf {
 		igGov = a.gov
 	}
@@ -456,6 +456,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 		return nil
 	}
 	a.ig = ig
+	a.igateReload = make(chan struct{}, 1)
 	return nil
 }
 
@@ -516,6 +517,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 
 	if a.ig != nil {
 		apiSrv.SetIgateStatusFn(a.ig.Status)
+		apiSrv.SetIgateReload(a.igateReload)
 	}
 	apiSrv.SetGPSReload(a.gpsReload)
 	apiSrv.SetBeaconReload(a.beaconReload)
@@ -991,6 +993,20 @@ func (a *App) igateComponent() namedComponent {
 				// Match old main.go behavior: don't abort startup on
 				// an iGate connection error, just log it.
 			}
+			if a.igateReload != nil {
+				a.igateReloadWG.Add(1)
+				go func() {
+					defer a.igateReloadWG.Done()
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-a.igateReload:
+							a.reloadIgate(ctx)
+						}
+					}
+				}()
+			}
 			return nil
 		},
 		stop: func(shutdownCtx context.Context) error {
@@ -998,9 +1014,36 @@ func (a *App) igateComponent() namedComponent {
 				return nil
 			}
 			a.ig.Stop()
-			return nil
+			return waitGroup(shutdownCtx, &a.igateReloadWG, "igate reload")
 		},
 	}
+}
+
+// reloadIgate re-reads igate config and filters from the database and
+// pushes them into the running igate via Reconfigure.
+func (a *App) reloadIgate(ctx context.Context) {
+	igCfg, err := a.store.GetIGateConfig(ctx)
+	if err != nil || igCfg == nil {
+		a.logger.Warn("igate reload: failed to read config", "err", err)
+		return
+	}
+
+	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
+	rules := make([]filters.Rule, 0, len(rfFilters))
+	for _, f := range rfFilters {
+		if !f.Enabled {
+			continue
+		}
+		rules = append(rules, filters.Rule{
+			ID:       f.ID,
+			Priority: int(f.Priority),
+			Type:     filters.RuleType(f.Type),
+			Pattern:  f.Pattern,
+			Action:   filters.Action(f.Action),
+		})
+	}
+
+	a.ig.Reconfigure(igCfg.ServerFilter, rules)
 }
 
 func (a *App) httpComponent() namedComponent {

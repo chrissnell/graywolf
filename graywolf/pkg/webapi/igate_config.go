@@ -40,9 +40,22 @@ func (s *Server) handleIgateConfig(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, r, "upsert igate config", err)
 			return
 		}
+		s.signalIgateReload()
 		writeJSON(w, http.StatusOK, dto.IGateConfigFromModel(m))
 	default:
 		methodNotAllowed(w)
+	}
+}
+
+// signalIgateReload performs a non-blocking send on the igate reload
+// channel; coalesces if a previous signal is still buffered.
+func (s *Server) signalIgateReload() {
+	if s.igateReload == nil {
+		return
+	}
+	select {
+	case s.igateReload <- struct{}{}:
+	default:
 	}
 }
 
@@ -56,7 +69,11 @@ func (s *Server) handleIgateFilters(w http.ResponseWriter, r *http.Request) {
 		handleCreate[dto.IGateRfFilterRequest](s, w, r, "create igate rf filter",
 			func(ctx context.Context, req dto.IGateRfFilterRequest) (configstore.IGateRfFilter, error) {
 				m := req.ToModel()
-				return m, s.store.CreateIGateRfFilter(ctx, &m)
+				if err := s.store.CreateIGateRfFilter(ctx, &m); err != nil {
+					return configstore.IGateRfFilter{}, err
+				}
+				s.signalIgateReload()
+				return m, nil
 			},
 			dto.IGateRfFilterFromModel)
 	default:
@@ -76,11 +93,21 @@ func (s *Server) handleIgateFilterItem(w http.ResponseWriter, r *http.Request) {
 		handleUpdate[dto.IGateRfFilterRequest](s, w, r, "update igate rf filter", id,
 			func(ctx context.Context, id uint32, req dto.IGateRfFilterRequest) (configstore.IGateRfFilter, error) {
 				m := req.ToUpdate(id)
-				return m, s.store.UpdateIGateRfFilter(ctx, &m)
+				if err := s.store.UpdateIGateRfFilter(ctx, &m); err != nil {
+					return configstore.IGateRfFilter{}, err
+				}
+				s.signalIgateReload()
+				return m, nil
 			},
 			dto.IGateRfFilterFromModel)
 	case http.MethodDelete:
-		handleDelete(s, w, r, "delete igate rf filter", id, s.store.DeleteIGateRfFilter)
+		handleDelete(s, w, r, "delete igate rf filter", id, func(ctx context.Context, id uint32) error {
+			if err := s.store.DeleteIGateRfFilter(ctx, id); err != nil {
+				return err
+			}
+			s.signalIgateReload()
+			return nil
+		})
 	default:
 		methodNotAllowed(w)
 	}

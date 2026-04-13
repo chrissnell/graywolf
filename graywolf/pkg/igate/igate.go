@@ -113,7 +113,7 @@ type Igate struct {
 	cfg    Config
 	logger *slog.Logger
 
-	filter *filters.Engine
+	filter atomic.Pointer[filters.Engine]
 	dedup  *dedupCache
 
 	mu            sync.Mutex
@@ -180,11 +180,11 @@ func New(cfg Config) (*Igate, error) {
 	ig := &Igate{
 		cfg:     cfg,
 		logger:  logger,
-		filter:  filters.New(cfg.Rules),
 		dedup:   newDedupCache(),
 		inputCh: make(chan *aprs.InboundPacket, 64),
 		done:    make(chan struct{}),
 	}
+	ig.filter.Store(filters.New(cfg.Rules))
 	ig.sessCtx.Store(&sessCtxHolder{ctx: context.Background()})
 	ig.simulation.Store(cfg.SimulationMode)
 	if err := ig.initMetrics(); err != nil {
@@ -332,7 +332,7 @@ func (ig *Igate) handleISLine(line string) {
 		// the frame header, so construct a minimal decoded packet.
 		pkt = &aprs.DecodedAPRSPacket{Source: frame.Source.String(), Dest: frame.Dest.String()}
 	}
-	if !ig.filter.Allow(pkt) {
+	if !ig.filter.Load().Allow(pkt) {
 		atomic.AddUint64(&ig.statFiltered, 1)
 		ig.mFilteredTotal.Inc()
 		return
@@ -504,6 +504,33 @@ func (ig *Igate) SendLine(line string) error {
 		return nil
 	}
 	return ig.client.WriteLine(line)
+}
+
+// Reconfigure updates the server filter and IS→RF gating rules at
+// runtime. If the server filter changed, the APRS-IS connection is
+// closed so the supervisor reconnects with the new filter (which is
+// sent at login time).
+func (ig *Igate) Reconfigure(serverFilter string, rules []filters.Rule) {
+	ig.filter.Store(filters.New(rules))
+
+	ig.mu.Lock()
+	filterChanged := ig.cfg.ServerFilter != serverFilter
+	ig.cfg.ServerFilter = serverFilter
+	ig.cfg.Rules = rules
+	ig.mu.Unlock()
+
+	if ig.client != nil {
+		ig.client.mu.Lock()
+		ig.client.cfg.ServerFilter = serverFilter
+		ig.client.cfg.Rules = rules
+		ig.client.mu.Unlock()
+
+		if filterChanged {
+			ig.logger.Info("server filter changed, reconnecting", "filter", serverFilter)
+			ig.client.closeConn()
+		}
+	}
+	ig.logger.Info("igate reconfigured", "server_filter", serverFilter, "rules", len(rules))
 }
 
 // SetSimulationMode toggles simulation-mode at runtime.

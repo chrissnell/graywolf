@@ -30,6 +30,7 @@ type Server struct {
 	gpsReload        chan struct{}                              // signalled when GPS config changes
 	beaconReload     chan struct{}                              // signalled when beacon config changes
 	digipeaterReload chan struct{}                              // signalled when digipeater config/rules change
+	igateReload      chan struct{}                              // signalled when igate config/filters change
 	beaconSendNow    func(ctx context.Context, id uint32) error // triggers an immediate beacon send
 }
 
@@ -114,6 +115,11 @@ func (s *Server) SetBeaconSendNow(fn func(ctx context.Context, id uint32) error)
 // effect without a restart. The channel is expected to be buffered
 // (size 1) so signals coalesce under rapid edits.
 func (s *Server) SetDigipeaterReload(ch chan struct{}) { s.digipeaterReload = ch }
+
+// SetIgateReload installs the channel signalled after successful
+// igate config or filter writes, so the running igate can pick up
+// changes without a restart.
+func (s *Server) SetIgateReload(ch chan struct{}) { s.igateReload = ch }
 
 // SetIgateStatusFn installs the function used by /api/status to report
 // igate counters.
