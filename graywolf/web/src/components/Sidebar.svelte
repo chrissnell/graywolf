@@ -88,6 +88,17 @@
       </div>
     {/each}
   </div>
+  <div class="sidebar-footer">
+    <a
+      href="/about"
+      use:link
+      class="nav-link"
+      class:active={currentPath === '/about'}
+      aria-current={currentPath === '/about' ? 'page' : undefined}
+    >
+      <span class="nav-label">About</span>
+    </a>
+  </div>
 </nav>
 
 <style>
@@ -195,6 +206,11 @@
 
   .dashboard-link.active {
     padding-left: 13px;
+  }
+
+  .sidebar-footer {
+    border-top: 1px solid var(--border-color);
+    padding: 6px 0;
   }
 
 @media (max-width: 768px) {

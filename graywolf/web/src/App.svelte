@@ -18,6 +18,7 @@
   import Simulation from './routes/Simulation.svelte';
   import Logs from './routes/Logs.svelte';
   import LiveMap from './routes/LiveMap.svelte';
+  import About from './routes/About.svelte';
 
   const routes = {
     '/login': Login,
@@ -34,6 +35,7 @@
     '/gps': Gps,
     '/simulation': Simulation,
     '/logs': Logs,
+    '/about': About,
   };
 
   let currentPath = $state('');
