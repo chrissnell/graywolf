@@ -26,7 +26,7 @@ export const mapState = (() => {
   let layerToggles = $state({
     stations: true,
     aprsIs: true,
-    trails: false,
+    trails: true,
     weather: false,
     myPosition: false,
   });

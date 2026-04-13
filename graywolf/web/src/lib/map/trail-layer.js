@@ -7,7 +7,7 @@
 
 import L from 'leaflet';
 
-const TRAIL_COLOR = '#e05050';
+const TRAIL_COLOR = '#58a6ff';
 
 export class TrailLayer {
   constructor(map) {
