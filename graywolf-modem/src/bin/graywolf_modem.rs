@@ -8,6 +8,14 @@
 //!
 //!     graywolf-modem
 //!
+//! Subcommands:
+//!
+//!     graywolf-modem --version       Print version and exit.
+//!     graywolf-modem --list-cm108    Enumerate CM108-compatible USB HID
+//!                                    devices as a JSON array and exit.
+//!                                    Used by the Go parent on macOS and
+//!                                    Windows where sysfs is unavailable.
+//!
 //! On Unix the IPC listener is a Unix domain socket at the given path. On
 //! Windows it is a TCP socket on 127.0.0.1 with an OS-assigned port; the
 //! port is printed to stdout as the readiness signal.
@@ -30,6 +38,19 @@ fn main() -> ExitCode {
         // build version; keep the format stable.
         println!("{}", graywolf_demod::full_version());
         return ExitCode::SUCCESS;
+    }
+
+    if args.len() == 2 && args[1] == "--list-cm108" {
+        match graywolf_demod::cm108::enumerate_cm108() {
+            Ok(json) => {
+                println!("{}", json);
+                return ExitCode::SUCCESS;
+            }
+            Err(e) => {
+                eprintln!("graywolf-modem: cm108 enumerate: {}", e);
+                return ExitCode::from(1);
+            }
+        }
     }
 
     let server = bind_server(&args);

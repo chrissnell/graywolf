@@ -1479,6 +1479,7 @@ mod tests {
                 persist: 63,
                 dwait_ms: 0,
                 invert: false,
+                gpio_pin: 3,
             })),
         };
         assert!(!modem.handle_ipc(msg));
@@ -1518,6 +1519,7 @@ mod tests {
                 persist: 63,
                 dwait_ms: 0,
                 invert: false,
+                gpio_pin: 3,
             })),
         };
         assert!(!modem.handle_ipc(msg));
@@ -1551,6 +1553,7 @@ mod tests {
                 persist: 63,
                 dwait_ms: 0,
                 invert: false,
+                gpio_pin: 3,
             })),
         };
         assert!(!modem.handle_ipc(msg));

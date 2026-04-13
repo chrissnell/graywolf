@@ -80,6 +80,10 @@ mod ptt_unix;
 mod ptt_win;
 
 #[cfg(unix)]
+#[path = "ptt_cm108_unix.rs"]
+mod ptt_cm108_unix;
+
+#[cfg(unix)]
 use ptt_unix::UnixSerialLines as PlatformSerialLines;
 #[cfg(windows)]
 use ptt_win::WinSerialLines as PlatformSerialLines;
@@ -160,6 +164,17 @@ pub(crate) trait ModemControlLines: Send {
 /// Two channels that point at the same device receive clones of the
 /// same `Arc`, which is the whole point of the registry.
 type SharedLines = Arc<Mutex<Box<dyn ModemControlLines>>>;
+
+/// Minimal hardware-facing interface for CM108 HID GPIO output reports.
+/// Analogous to [`ModemControlLines`] for serial ports. Platform adapters
+/// implement this behind `#[cfg]` — `UnixCm108Gpio` on Linux (via
+/// `nix::unistd::write` to `/dev/hidrawN`); macOS and Windows adapters
+/// follow in later steps.
+pub(crate) trait Cm108GpioControl: Send {
+    /// Write a CM108 HID output report to set or clear a GPIO pin.
+    /// `pin` is 1-indexed (GPIO3 = pin 3 → mask 0x04).
+    fn write_gpio(&mut self, pin: u8, level: bool) -> Result<(), String>;
+}
 
 /// Serial-port PTT driver. Holds a shared reference to an already-open
 /// serial port and toggles either RTS or DTR. `invert` is honoured for
@@ -339,6 +354,7 @@ pub(crate) mod tests {
             persist: 0,
             dwait_ms: 0,
             invert: false,
+            gpio_pin: 3,
         }
     }
 
