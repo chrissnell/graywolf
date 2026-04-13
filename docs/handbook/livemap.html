@@ -165,23 +165,6 @@
       (mobile).
     </p>
 
-    <h2>How It Works</h2>
-
-    <p>
-      The map fetches station data from the
-      <code>GET /api/stations</code> endpoint, which returns stations
-      within the visible bounding box. The polling loop uses several
-      optimizations to keep traffic low:
-    </p>
-
-    <ul>
-      <li><strong>Delta updates</strong> &mdash; after the initial load, only stations updated since the last fetch are requested (via a <code>since</code> cursor)</li>
-      <li><strong>ETag / 304</strong> &mdash; if nothing has changed, the server returns a <code>304 Not Modified</code> with no body</li>
-      <li><strong>Expanded bounds</strong> &mdash; the fetch area is 50% larger than the viewport, so small pans don&rsquo;t trigger new requests</li>
-      <li><strong>Visibility pause</strong> &mdash; polling pauses when the browser tab is hidden and resumes immediately when you switch back</li>
-      <li><strong>Exponential backoff</strong> &mdash; on errors, the poll interval backs off up to 60 seconds</li>
-    </ul>
-
     <nav class="page-nav">
       <a href="igate.html">
         <span class="label">Previous</span>
