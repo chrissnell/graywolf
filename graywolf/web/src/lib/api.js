@@ -76,11 +76,11 @@ const mockAgw = { tcp_port: 8000, monitor_port: 8002, enabled: true };
 
 const mockIgate = {
   enabled: true, server: 'rotate.aprs2.net', port: 14580,
-  callsign: 'N0CALL-10', passcode: '12345', filter: 'r/35.0/-106.0/100',
+  callsign: 'N0CALL-10', passcode: '12345', server_filter: 'r/35.0/-106.0/100',
 };
 
 const mockIgateFilters = [
-  { id: 1, name: 'Local area', type: 'range', pattern: 'r/35.0/-106.0/50', enabled: true },
+  { id: 1, type: 'prefix', pattern: 'W5', action: 'allow', priority: 100, enabled: true },
 ];
 
 const mockDigipeater = {
@@ -93,7 +93,7 @@ const mockDigipeaterRules = [
 ];
 
 const mockBeacons = [
-  { id: 1, callsign: 'N0CALL-9', destination: 'APGRW', path: 'WIDE1-1,WIDE2-1', comment: 'graywolf', interval: 600, enabled: true },
+  { id: 1, channel: 1, callsign: 'N0CALL-9', destination: 'APGRW', path: 'WIDE1-1,WIDE2-1', comment: 'graywolf', interval: 600, enabled: true },
 ];
 
 const mockSmartBeacon = {
@@ -115,8 +115,8 @@ const mockSimulation = { enabled: false, packets: mockPackets };
 const mockStatus = {
   uptime_seconds: 3600,
   channels: [
-    { id: 1, name: 'VHF APRS', modem_type: 'afsk', bit_rate: 1200, rx_frames: 142, tx_frames: 23, dcd_state: false, audio_peak: -12.0 },
-    { id: 2, name: '9600 Data', modem_type: 'gfsk', bit_rate: 9600, rx_frames: 0, tx_frames: 0, dcd_state: false, audio_peak: 0 },
+    { id: 1, name: 'VHF APRS', modem_type: 'afsk', bit_rate: 1200, rx_frames: 142, tx_frames: 23, dcd_state: false, audio_peak: -12.0, input_device_id: 1, device_peak_dbfs: -18.0, device_rms_dbfs: -24.0, device_clipping: false },
+    { id: 2, name: '9600 Data', modem_type: 'gfsk', bit_rate: 9600, rx_frames: 0, tx_frames: 0, dcd_state: false, audio_peak: 0, input_device_id: 1, device_peak_dbfs: 0, device_rms_dbfs: 0, device_clipping: false },
   ],
   igate: { connected: true, server: 'rotate.aprs2.net', callsign: 'N0CALL-10', rf_to_is_gated: 89, is_to_rf_gated: 0, packets_filtered: 12, rf_to_is_dropped: 0 },
 };
@@ -168,8 +168,8 @@ function getMockData(method, path, body) {
   if (path === '/agw' && method === 'PUT') return delay(body);
 
   // iGate
-  if (path === '/igate' && method === 'GET') return delay(mockIgate);
-  if (path === '/igate' && method === 'PUT') return delay(body);
+  if (path === '/igate/config' && method === 'GET') return delay(mockIgate);
+  if (path === '/igate/config' && method === 'PUT') return delay(body);
   if (path === '/igate/filters' && method === 'GET') return delay(mockIgateFilters);
   if (path === '/igate/filters' && method === 'POST') return delay({ id: 2, ...body });
   if (path.match(/^\/igate\/filters\/\d+$/) && method === 'PUT') return delay(body);
