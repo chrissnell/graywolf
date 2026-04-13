@@ -26,6 +26,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
+	"github.com/chrissnell/graywolf/pkg/pttdevice"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/webapi"
@@ -109,6 +110,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		return fmt.Errorf("locate graywolf-modem: %w", err)
 	}
 	a.resolvedModem = resolvedModem
+	pttdevice.SetModemPath(resolvedModem)
 	modemVersion, verr := QueryModemVersion(resolvedModem)
 	if verr != nil {
 		// Not fatal: log and move on. If the binary is actually broken,

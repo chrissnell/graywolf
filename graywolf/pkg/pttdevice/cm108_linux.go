@@ -1,11 +1,18 @@
+//go:build linux
+
 package pttdevice
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// SetModemPath is a no-op on Linux where CM108 enumeration uses sysfs
+// directly. Non-linux platforms store this for modem shell-out enumeration.
+func SetModemPath(_ string) {}
 
 // cm108Entry represents a correlated CM108-compatible device found via sysfs,
 // linking its ALSA sound card identity to its HID (hidraw) control path.
@@ -129,6 +136,24 @@ func buildCM108Inventory() []cm108Entry {
 		}
 	}
 	return result
+}
+
+// enumerateCM108 returns CM108-compatible HID devices correlated with their
+// ALSA sound cards via the sysfs tree. Linux-only; non-linux platforms use
+// the modem shell-out in cm108_modem.go.
+func enumerateCM108() []AvailableDevice {
+	var devs []AvailableDevice
+	for _, entry := range buildCM108Inventory() {
+		devs = append(devs, AvailableDevice{
+			Path:        entry.HidrawPath,
+			Type:        "cm108",
+			Name:        filepath.Base(entry.HidrawPath),
+			Description: fmt.Sprintf("%s (ALSA card %s)", entry.Description, entry.CardNumber),
+			USBVendor:   entry.Vendor,
+			USBProduct:  entry.Product,
+		})
+	}
+	return devs
 }
 
 // isCompositeUSBDevice returns true if the USB device at the given sysfs

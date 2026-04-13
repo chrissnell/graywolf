@@ -3,7 +3,6 @@
 package pttdevice
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -97,24 +96,6 @@ func enumerateGPIO() []AvailableDevice {
 			Type:        "gpio",
 			Name:        filepath.Base(m),
 			Description: gpioChipDescription(m),
-		})
-	}
-	return devs
-}
-
-func enumerateCM108() []AvailableDevice {
-	if runtime.GOOS != "linux" {
-		return nil
-	}
-	var devs []AvailableDevice
-	for _, entry := range buildCM108Inventory() {
-		devs = append(devs, AvailableDevice{
-			Path:        entry.HidrawPath,
-			Type:        "cm108",
-			Name:        filepath.Base(entry.HidrawPath),
-			Description: fmt.Sprintf("%s (ALSA card %s)", entry.Description, entry.CardNumber),
-			USBVendor:   entry.Vendor,
-			USBProduct:  entry.Product,
 		})
 	}
 	return devs

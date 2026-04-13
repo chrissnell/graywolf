@@ -9,6 +9,10 @@ import (
 // Known USB vendor:product → friendly name mappings for common ham radio devices.
 // CM108-compatible entries must also be registered in cm108VendorSet or
 // cm108VIDPIDSet (cm108_linux.go) for enumeration filtering.
+//
+// NOTE: this table is shared by both serial (usbInfoFromSysfs) and CM108
+// (buildCM108Inventory) codepaths. Descriptions should make sense in both
+// contexts; avoid adding non-CM108 devices under CM108 vendor IDs here.
 var knownUSBDevices = map[string]string{
 	"0d8c:000c": "CM108 USB Audio (GPIO PTT capable)",
 	"0d8c:000e": "CM108 USB Audio (GPIO PTT capable)",
