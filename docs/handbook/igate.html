@@ -56,12 +56,18 @@
       and from the internet back to RF.
     </p>
 
+    <h2>RF &rarr; APRS-IS (Connection)</h2>
+
     <div class="screenshot">
-      <img src="img/igate.png" alt="iGate page showing APRS-IS server, port, callsign, passcode, and server filter settings" />
-      <div class="caption">iGate configuration with RF&rarr;APRS-IS connection settings and server-side filter</div>
+      <img src="img/igate-rf-to-is.png" alt="iGate RF to APRS-IS tab showing server, port, callsign, and passcode settings" />
+      <div class="caption">Connection settings for the APRS-IS network</div>
     </div>
 
-    <h2>Connection Settings</h2>
+    <p>
+      The first tab configures the APRS-IS connection used for both directions.
+      When enabled, graywolf connects to an APRS-IS server and gates eligible
+      RF-heard traffic up to the internet.
+    </p>
 
     <div class="box">
       <div class="box-body">
@@ -95,11 +101,6 @@
               <td><code>-1</code></td>
               <td>APRS-IS passcode. <code>-1</code> = receive-only (no TX to IS).</td>
             </tr>
-            <tr>
-              <td><code>server_filter</code></td>
-              <td>&mdash;</td>
-              <td>Server-side filter string (e.g., <code>m/100</code> for 100 km radius)</td>
-            </tr>
           </tbody>
         </table>
       </div>
@@ -117,7 +118,40 @@
       </div>
     </div>
 
-    <h2>Gating Directions</h2>
+    <h2>APRS-IS &rarr; RF</h2>
+
+    <div class="screenshot">
+      <img src="img/igate-is-to-rf.png" alt="iGate APRS-IS to RF tab showing server filter and gating rules" />
+      <div class="caption">Server filter and IS&rarr;RF gating rules configured for a single station</div>
+    </div>
+
+    <p>
+      The second tab controls what you receive from APRS-IS and what gets
+      gated to RF. There are two layers of filtering:
+    </p>
+
+    <ul>
+      <li><strong>Server filter</strong> &mdash; a coarse, network-level filter
+        sent to the APRS-IS server at login. It controls what traffic the server
+        forwards to you, reducing bandwidth. Uses
+        <a href="http://www.aprs-is.net/javAPRSFilter.aspx">APRS-IS filter syntax</a>
+        (e.g., <code>r/35.0/-106.0/100</code> for a 100&nbsp;km radius,
+        <code>b/NW5W-12</code> for a single station). If left empty, no packets
+        are received from APRS-IS.</li>
+      <li><strong>IS&rarr;RF gating rules</strong> &mdash; fine-grained, local rules
+        that decide which received packets are actually transmitted on RF.
+        If no rules are defined, nothing is gated.</li>
+    </ul>
+
+    <p>
+      Both layers are needed because APRS-IS filter syntax cannot express
+      everything the gating rules can. For example, there is no server-side
+      filter for &ldquo;messages addressed to a specific callsign&rdquo; &mdash;
+      you would need to pull all messages (<code>t/m</code>) and filter locally
+      with a <code>message_dest</code> rule.
+    </p>
+
+    <h3>Server Filter</h3>
 
     <div class="box">
       <div class="box-body">
@@ -127,29 +161,45 @@
           </thead>
           <tbody>
             <tr>
-              <td><code>gate_rf_to_is</code></td>
-              <td><code>true</code></td>
-              <td>Forward RF-received packets to APRS-IS</td>
-            </tr>
-            <tr>
-              <td><code>gate_is_to_rf</code></td>
-              <td><code>false</code></td>
-              <td>Forward APRS-IS packets to RF</td>
-            </tr>
-            <tr>
-              <td><code>rf_channel</code></td>
+              <td><code>server_filter</code></td>
               <td>&mdash;</td>
-              <td>Radio channel for IS&rarr;RF gating</td>
+              <td>APRS-IS filter string sent at login. If empty, no packets are received.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>IS &rarr; RF Gating Rules</h3>
+
+    <p>
+      Rules are evaluated in <code>priority</code> order (lower = first).
+      The first matching rule decides whether the packet is allowed or denied.
+      If no rule matches, the packet is denied.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>type</code></td>
+              <td>Match type: <code>callsign</code>, <code>prefix</code>, <code>message_dest</code>, or <code>object</code></td>
             </tr>
             <tr>
-              <td><code>tx_channel</code></td>
-              <td>&mdash;</td>
-              <td>Radio channel for transmitted packets</td>
+              <td><code>pattern</code></td>
+              <td>Value to match against (e.g., <code>NW5W-12</code>, <code>W5</code>)</td>
             </tr>
             <tr>
-              <td><code>max_msg_hops</code></td>
-              <td><code>2</code></td>
-              <td>WIDE hops added to IS&rarr;RF messages</td>
+              <td><code>action</code></td>
+              <td><code>allow</code> or <code>deny</code></td>
+            </tr>
+            <tr>
+              <td><code>priority</code></td>
+              <td>Evaluation order (lower = evaluated first)</td>
             </tr>
           </tbody>
         </table>
@@ -169,62 +219,20 @@
       </div>
     </div>
 
-    <h2>RF Filters</h2>
+    <h3>Example: Gate a Single Station</h3>
 
     <p>
-      RF filters control which packets are gated from RF to APRS-IS. Rules
-      are evaluated in <code>priority</code> order. A packet must match an
-      <code>allow</code> rule (and not match a higher-priority
-      <code>deny</code> rule) to be gated.
+      To gate only packets from <code>NW5W-12</code> to RF, set the server
+      filter to <code>b/NW5W-12</code> (so APRS-IS only sends you that
+      station&rsquo;s packets) and add a gating rule to allow them through:
     </p>
 
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Field</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>channel</code></td>
-              <td>Radio channel this filter applies to</td>
-            </tr>
-            <tr>
-              <td><code>type</code></td>
-              <td>Match type: <code>callsign</code>, <code>prefix</code>, <code>message_dest</code>, or <code>object</code></td>
-            </tr>
-            <tr>
-              <td><code>pattern</code></td>
-              <td>Regex or glob pattern to match against</td>
-            </tr>
-            <tr>
-              <td><code>action</code></td>
-              <td><code>allow</code> or <code>deny</code></td>
-            </tr>
-            <tr>
-              <td><code>priority</code></td>
-              <td>Evaluation order (lower = evaluated first)</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+<pre><code>server_filter: b/NW5W-12
 
-    <h3>Filter Examples</h3>
-
-    <p>Allow all RF packets to APRS-IS (typical for most iGates):</p>
-
-<pre><code>type: callsign
-pattern: .*
+type: callsign
+pattern: NW5W-12
 action: allow
 priority: 100</code></pre>
-
-    <p>Block a specific noisy station:</p>
-
-<pre><code>type: callsign
-pattern: NOISY-1
-action: deny
-priority: 10</code></pre>
 
     <h2>Simulation Mode</h2>
 
