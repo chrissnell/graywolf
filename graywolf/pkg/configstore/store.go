@@ -293,8 +293,8 @@ func (s *Store) ListPttConfigs(ctx context.Context) ([]PttConfig, error) {
 	return list, nil
 }
 
-func (s *Store) DeletePttConfig(ctx context.Context, id uint32) error {
-	return s.db.WithContext(ctx).Delete(&PttConfig{}, id).Error
+func (s *Store) DeletePttConfig(ctx context.Context, channelID uint32) error {
+	return s.db.WithContext(ctx).Where("channel_id = ?", channelID).Delete(&PttConfig{}).Error
 }
 
 // ---------------------------------------------------------------------------

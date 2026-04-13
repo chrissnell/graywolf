@@ -128,7 +128,7 @@
     const data = { ...form, channel_id: parseInt(form.channel_id), gpio_pin: parseInt(form.gpio_pin), invert: !!form.invert };
     try {
       if (editing) {
-        await api.put(`/ptt/${editing.id}`, data);
+        await api.put(`/ptt/${editing.channel_id}`, data);
         toasts.success('PTT config updated');
       } else {
         await api.post('/ptt', data);
@@ -149,7 +149,7 @@
   async function executeDelete() {
     if (!deleteTarget) return;
     try {
-      await api.delete(`/ptt/${deleteTarget.id}`);
+      await api.delete(`/ptt/${deleteTarget.channel_id}`);
       toasts.success('PTT config deleted');
       await loadItems();
     } catch (err) {
