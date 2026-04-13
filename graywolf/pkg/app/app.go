@@ -52,7 +52,7 @@ type App struct {
 	authStore   *webauth.AuthStore
 	metrics     *metrics.Metrics
 	plog         *packetlog.Log
-	stationCache *stationcache.MemCache
+	stationCache *stationcache.PersistentCache
 	bridge       *modembridge.Bridge
 	gov         *txgovernor.Governor
 	kissMgr     *kiss.Manager
@@ -71,10 +71,11 @@ type App struct {
 	resolvedModem string
 
 	// --- Reload channels (webapi signals, drained by reload goroutines) -
-	gpsReload        chan struct{}
-	beaconReload     chan struct{}
-	digipeaterReload chan struct{}
-	igateReload      chan struct{}
+	gpsReload         chan struct{}
+	beaconReload      chan struct{}
+	digipeaterReload  chan struct{}
+	igateReload       chan struct{}
+	positionLogReload chan struct{}
 
 	// --- APRS fan-out plumbing ------------------------------------------
 	aprsQueue       chan *aprs.DecodedAPRSPacket
@@ -95,8 +96,9 @@ type App struct {
 	igateReloadWG    sync.WaitGroup
 	gpsWG            sync.WaitGroup
 	beaconWG         sync.WaitGroup
-	beaconReloadWG   sync.WaitGroup
-	httpWG           sync.WaitGroup
+	beaconReloadWG      sync.WaitGroup
+	positionLogReloadWG sync.WaitGroup
+	httpWG              sync.WaitGroup
 
 	// --- Lifecycle ------------------------------------------------------
 	// startOrder is the full list of components wireServices produced.

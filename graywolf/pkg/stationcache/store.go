@@ -23,6 +23,16 @@ type LatLon struct {
 	Lat, Lon float64
 }
 
+// HistoryStore is the persistence interface consumed by PersistentCache.
+// historydb.DB implements it; the interface lives here to avoid an
+// import cycle.
+type HistoryStore interface {
+	WriteEntries(entries []CacheEntry) error
+	LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*Station, error)
+	Prune(maxAge time.Duration) error
+	Close() error
+}
+
 // Station is the last-known state of a single station or object.
 // One entry per composite key. Position history is kept for moving
 // stations only — static stations that beacon the same coordinates

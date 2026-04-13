@@ -16,6 +16,7 @@
   import Beacons from './routes/Beacons.svelte';
   import Gps from './routes/Gps.svelte';
   import Simulation from './routes/Simulation.svelte';
+  import PositionLog from './routes/PositionLog.svelte';
   import Logs from './routes/Logs.svelte';
   import LiveMap from './routes/LiveMap.svelte';
   import About from './routes/About.svelte';
@@ -34,6 +35,7 @@
     '/beacons': Beacons,
     '/gps': Gps,
     '/simulation': Simulation,
+    '/position-log': PositionLog,
     '/logs': Logs,
     '/about': About,
   };

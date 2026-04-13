@@ -263,6 +263,14 @@ type Beacon struct {
 	UpdatedAt     time.Time `json:"-"`
 }
 
+// PositionLogConfig controls the optional persistent position history
+// database. Disabled by default to protect SD-card-based systems.
+type PositionLogConfig struct {
+	ID      uint32 `gorm:"primaryKey" json:"id"`
+	Enabled bool   `gorm:"not null;default:false" json:"enabled"`
+	DBPath  string `gorm:"not null;default:'./graywolf-history.db'" json:"db_path"`
+}
+
 // PacketFilter is a reserved stub table for future per-channel packet
 // filters (Phase 5/6).
 type PacketFilter struct {

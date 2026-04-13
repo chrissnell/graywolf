@@ -31,6 +31,7 @@ type Server struct {
 	beaconReload     chan struct{}                              // signalled when beacon config changes
 	digipeaterReload chan struct{}                              // signalled when digipeater config/rules change
 	igateReload      chan struct{}                              // signalled when igate config/filters change
+	positionLogReload chan struct{}                             // signalled when position log config changes
 	beaconSendNow    func(ctx context.Context, id uint32) error // triggers an immediate beacon send
 }
 
@@ -88,6 +89,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerIgateConfig(mux)
 	s.registerDigipeater(mux)
 	s.registerGps(mux)
+	s.registerPositionLog(mux)
 
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/status", s.handleStatus)
@@ -120,6 +122,10 @@ func (s *Server) SetDigipeaterReload(ch chan struct{}) { s.digipeaterReload = ch
 // igate config or filter writes, so the running igate can pick up
 // changes without a restart.
 func (s *Server) SetIgateReload(ch chan struct{}) { s.igateReload = ch }
+
+// SetPositionLogReload installs the channel signalled after successful
+// position log config writes.
+func (s *Server) SetPositionLogReload(ch chan struct{}) { s.positionLogReload = ch }
 
 // SetIgateStatusFn installs the function used by /api/status to report
 // igate counters.

@@ -144,6 +144,19 @@ func (c *MemCache) Gen() uint64 {
 	return c.gen
 }
 
+// Hydrate bulk-loads stations into the cache, typically from a
+// persistent store on startup. Existing entries are not overwritten.
+func (c *MemCache) Hydrate(stations map[string]*Station) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, s := range stations {
+		if _, exists := c.stations[key]; !exists {
+			c.stations[key] = s
+		}
+	}
+	c.gen++
+}
+
 // Close signals the pruning goroutine to exit.
 func (c *MemCache) Close() {
 	close(c.done)

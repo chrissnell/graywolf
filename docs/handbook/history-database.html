@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Position Log &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Position Log</h1>
+    <p class="subtitle">Persistent station position history across restarts</p>
+
+    <p>
+      By default, graywolf keeps station positions in memory only &mdash;
+      a restart clears the live map. The position log feature writes station
+      data to a separate SQLite database so the map is populated immediately
+      after a restart. Positions are retained for 30&nbsp;days and
+      automatically pruned.
+    </p>
+
+    <h2>Enabling the Position Log</h2>
+
+    <p>
+      Open <strong>Settings &rarr; Position Log</strong> in the web UI,
+      toggle <em>Enable persistent position log</em>, and optionally change
+      the database path. Click <strong>Save</strong>. The change takes effect
+      immediately &mdash; no restart required.
+    </p>
+
+    <p>
+      The database file is created automatically if it does not exist.
+      This is important for RAM&nbsp;disk setups where the file disappears
+      on every reboot.
+    </p>
+
+    <div class="callout warning">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>The position log is disabled by default.</strong> If your
+          system runs from an SD card (common on Raspberry&nbsp;Pi), do not
+          enable it with the default path. See the section below for safe
+          setup instructions.
+        </p>
+      </div>
+    </div>
+
+    <h2>Raspberry Pi &amp; SD Card Considerations</h2>
+
+    <p>
+      SD cards have a limited number of write cycles. The position log
+      writes to SQLite every time a new station packet is decoded &mdash;
+      typically a few times per minute on a 1200&nbsp;baud channel, but
+      potentially more on busy frequencies or when connected to APRS-IS.
+      Over weeks and months, this can shorten the life of an SD card.
+    </p>
+
+    <h3>Use a RAM disk</h3>
+
+    <p>
+      The simplest solution is to store the history database on a
+      <strong>tmpfs</strong> (RAM&nbsp;disk). Raspberry Pi&nbsp;OS mounts
+      <code>/tmp</code> as tmpfs by default. You can verify this:
+    </p>
+
+    <pre><code>df -h /tmp
+# Look for "tmpfs" in the Filesystem column
+
+# Or:
+mount | grep /tmp</code></pre>
+
+    <p>
+      If <code>/tmp</code> is not a tmpfs, you can add one to
+      <code>/etc/fstab</code>:
+    </p>
+
+    <pre><code>tmpfs /tmp tmpfs defaults,noatime,size=64M 0 0</code></pre>
+
+    <p>Then reboot or run <code>sudo mount -a</code>.</p>
+
+    <h3>Configure the database path</h3>
+
+    <p>
+      In the web UI under <strong>Settings &rarr; Position Log</strong>,
+      set the database path to:
+    </p>
+
+    <pre><code>/tmp/graywolf-history.db</code></pre>
+
+    <p>
+      Alternatively, if graywolf runs as a systemd service, you can set the
+      path via a unit override so it takes effect before the web UI is
+      available:
+    </p>
+
+    <pre><code>sudo systemctl edit graywolf</code></pre>
+
+    <p>This opens an override file. Add:</p>
+
+    <pre><code>[Service]
+Environment="GRAYWOLF_HISTORY_DB=/tmp/graywolf-history.db"</code></pre>
+
+    <p>Then restart: <code>sudo systemctl restart graywolf</code>.</p>
+
+    <h3>What happens on reboot?</h3>
+
+    <p>
+      With a RAM&nbsp;disk, the history database is lost on every reboot.
+      This is expected and harmless &mdash; graywolf recreates the database
+      automatically on startup. The map simply starts empty and fills in
+      as stations are heard. On an active frequency the map is typically
+      well-populated within a few minutes.
+    </p>
+
+    <nav class="page-nav">
+      <a href="livemap.html">
+        <span class="label">Previous</span>
+        Live Map
+      </a>
+      <a href="monitoring.html" class="next">
+        <span class="label">Next</span>
+        Monitoring
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

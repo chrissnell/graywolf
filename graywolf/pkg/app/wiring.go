@@ -16,6 +16,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/historydb"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/igate"
@@ -130,7 +131,16 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.plog = packetlog.New(packetlog.Config{Capacity: 5000, MaxAge: 120 * time.Minute})
 
 	// --- Station cache (map's last-known-state store) ------------------
-	a.stationCache = stationcache.NewMemCache(2 * time.Hour)
+	a.stationCache = stationcache.NewPersistentCache(a.logger)
+	plCfg, _ := a.store.GetPositionLogConfig(ctx)
+	if plCfg != nil && plCfg.Enabled && plCfg.DBPath != "" {
+		hdb, err := historydb.Open(plCfg.DBPath)
+		if err != nil {
+			a.logger.Warn("failed to open history db, starting without persistence", "path", plCfg.DBPath, "err", err)
+		} else if err := a.stationCache.Reconfigure(hdb); err != nil {
+			a.logger.Warn("failed to hydrate from history db", "err", err)
+		}
+	}
 
 	// --- Modem bridge (construction; Start happens later) --------------
 	a.bridge = modembridge.New(modembridge.Config{
@@ -530,6 +540,8 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	apiSrv.SetBeaconReload(a.beaconReload)
 	apiSrv.SetBeaconSendNow(a.beaconSched.SendNow)
 	apiSrv.SetDigipeaterReload(a.digipeaterReload)
+	a.positionLogReload = make(chan struct{}, 1)
+	apiSrv.SetPositionLogReload(a.positionLogReload)
 
 	version := a.cfg.Version
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -594,17 +606,57 @@ func (a *App) metricsComponent() namedComponent {
 }
 
 func (a *App) stationCacheComponent() namedComponent {
-	// The pruning goroutine starts at construction time; this
-	// component only needs to stop it on shutdown.
 	return namedComponent{
-		name:  "station cache",
-		start: func(ctx context.Context) error { return nil },
-		stop: func(ctx context.Context) error {
+		name: "station cache",
+		start: func(ctx context.Context) error {
+			if a.positionLogReload == nil {
+				return nil
+			}
+			a.positionLogReloadWG.Add(1)
+			go func() {
+				defer a.positionLogReloadWG.Done()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-a.positionLogReload:
+						a.reconfigurePositionLog(ctx)
+					}
+				}
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			if err := waitGroup(shutdownCtx, &a.positionLogReloadWG, "position log reload"); err != nil {
+				return err
+			}
 			if a.stationCache != nil {
 				a.stationCache.Close()
 			}
 			return nil
 		},
+	}
+}
+
+func (a *App) reconfigurePositionLog(ctx context.Context) {
+	cfg, err := a.store.GetPositionLogConfig(ctx)
+	if err != nil {
+		a.logger.Warn("read position log config", "err", err)
+		return
+	}
+	if cfg == nil || !cfg.Enabled || cfg.DBPath == "" {
+		if err := a.stationCache.Reconfigure(nil); err != nil {
+			a.logger.Warn("disable position log", "err", err)
+		}
+		return
+	}
+	hdb, err := historydb.Open(cfg.DBPath)
+	if err != nil {
+		a.logger.Warn("open history db", "path", cfg.DBPath, "err", err)
+		return
+	}
+	if err := a.stationCache.Reconfigure(hdb); err != nil {
+		a.logger.Warn("reconfigure position log", "err", err)
 	}
 }
 

@@ -103,6 +103,7 @@ func (s *Store) Migrate() error {
 		&Beacon{},
 		&PacketFilter{},
 		&GPSConfig{},
+		&PositionLogConfig{},
 	); err != nil {
 		return err
 	}
@@ -613,4 +614,33 @@ func (s *Store) UpsertGPSConfig(ctx context.Context, c *GPSConfig) error {
 func (s *Store) ListPacketFilters(ctx context.Context) ([]PacketFilter, error) {
 	var out []PacketFilter
 	return out, s.db.WithContext(ctx).Order("id").Find(&out).Error
+}
+
+// ---------------------------------------------------------------------------
+// PositionLogConfig (singleton)
+// ---------------------------------------------------------------------------
+
+func (s *Store) GetPositionLogConfig(ctx context.Context) (*PositionLogConfig, error) {
+	var c PositionLogConfig
+	err := s.db.WithContext(ctx).Order("id").First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (s *Store) UpsertPositionLogConfig(ctx context.Context, c *PositionLogConfig) error {
+	if c.ID == 0 {
+		existing, err := s.GetPositionLogConfig(ctx)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			c.ID = existing.ID
+		}
+	}
+	return s.db.WithContext(ctx).Save(c).Error
 }
