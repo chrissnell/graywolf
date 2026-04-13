@@ -226,7 +226,8 @@ func (c *client) writeLineLocked(s string) error {
 }
 
 // buildLogin constructs the "user CALL pass NNN vers NAME VER filter F"
-// login string per the APRS-IS spec. Empty filter is omitted.
+// login string per the APRS-IS spec. If no filter is configured, a
+// no-match filter is sent so that the server does not forward any packets.
 func buildLogin(call, pass, name, vers, filter string) string {
 	if name == "" {
 		name = "graywolf"
@@ -237,10 +238,10 @@ func buildLogin(call, pass, name, vers, filter string) string {
 	if pass == "" {
 		pass = "-1"
 	}
-	s := fmt.Sprintf("user %s pass %s vers %s %s", call, pass, name, vers)
-	if filter != "" {
-		s += " filter " + filter
+	if filter == "" {
+		filter = "r/-48.87/-27.14/0" // 0 km range in the south Atlantic — matches nothing
 	}
+	s := fmt.Sprintf("user %s pass %s vers %s %s filter %s", call, pass, name, vers, filter)
 	return s
 }
 

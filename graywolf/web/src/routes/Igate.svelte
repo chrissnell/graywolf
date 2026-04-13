@@ -13,7 +13,7 @@
   // Config state
   let form = $state({
     enabled: true, server: 'rotate.aprs2.net', port: '14580',
-    callsign: '', passcode: '', filter: '',
+    callsign: '', passcode: '', server_filter: '',
   });
   let loading = $state(false);
 
@@ -21,24 +21,27 @@
   let filters = $state([]);
   let modalOpen = $state(false);
   let editing = $state(null);
-  let filterForm = $state({ name: '', type: 'range', pattern: '', enabled: true });
+  let filterForm = $state({ type: 'prefix', pattern: '', action: 'allow', priority: 100, enabled: true });
   let errors = $state({});
 
   const columns = [
-    { key: 'name', label: 'Name' },
     { key: 'type', label: 'Type' },
     { key: 'pattern', label: 'Pattern' },
+    { key: 'action', label: 'Action' },
+    { key: 'priority', label: 'Priority' },
     { key: 'enabled', label: 'Enabled' },
   ];
 
   const typeOptions = [
-    { value: 'range', label: 'Range' },
+    { value: 'callsign', label: 'Callsign' },
     { value: 'prefix', label: 'Prefix' },
-    { value: 'budlist', label: 'Budlist' },
-    { value: 'type', label: 'Type' },
-    { value: 'symbol', label: 'Symbol' },
-    { value: 'digipeater', label: 'Digipeater' },
+    { value: 'message_dest', label: 'Message Dest' },
     { value: 'object', label: 'Object' },
+  ];
+
+  const actionOptions = [
+    { value: 'allow', label: 'Allow' },
+    { value: 'deny', label: 'Deny' },
   ];
 
   onMount(async () => {
@@ -50,7 +53,7 @@
         port: String(data.port ?? 14580),
         callsign: data.callsign ?? '',
         passcode: data.passcode ?? '',
-        filter: data.filter ?? '',
+        server_filter: data.server_filter ?? '',
       };
     }
     filters = await api.get('/igate/filters') || [];
@@ -82,7 +85,7 @@
   // Filter handlers
   function openCreate() {
     editing = null;
-    filterForm = { name: '', type: 'range', pattern: '', enabled: true };
+    filterForm = { type: 'prefix', pattern: '', action: 'allow', priority: 100, enabled: true };
     errors = {};
     modalOpen = true;
   }
@@ -96,7 +99,6 @@
 
   function validateFilter() {
     const e = {};
-    if (!filterForm.name.trim()) e.name = 'Required';
     if (!filterForm.pattern.trim()) e.pattern = 'Required';
     errors = e;
     return Object.keys(e).length === 0;
@@ -137,8 +139,8 @@
 <div class="tab-panel" class:hidden={activeTab !== 'config'}>
   <p class="tab-doc">
     Connection settings for the APRS-IS network. When enabled, graywolf logs in to an
-    APRS-IS server with your callsign and passcode, receives packets matching your
-    server-side filter, and gates eligible RF-heard traffic up to the internet.
+    APRS-IS server with your callsign and passcode and gates eligible RF-heard traffic
+    up to the internet.
   </p>
   <Box>
     <form onsubmit={handleSave}>
@@ -156,9 +158,6 @@
         <FormField label="Passcode" id="ig-pass">
           <Input id="ig-pass" bind:value={form.passcode} type="password" placeholder="12345" />
         </FormField>
-        <FormField label="APRS-IS Server Filter" id="ig-filter" hint="Filter string sent to APRS-IS at login to control what the server forwards to you (server-side, IS → you).">
-          <Input id="ig-filter" bind:value={form.filter} placeholder="r/35.0/-106.0/100" />
-        </FormField>
       </div>
       <div class="form-actions">
         <Button variant="primary" type="submit" disabled={loading}>
@@ -171,26 +170,42 @@
 
 <div class="tab-panel" class:hidden={activeTab !== 'filters'}>
   <p class="tab-doc">
-    Rules that decide which packets received from APRS-IS are allowed to be transmitted
-    on RF. Each incoming IS packet is checked against these rules; only matching packets
-    are gated to RF (subject to the usual third-party, recent-heard, and beacon checks).
-    If no rules are defined, nothing is gated from IS to RF.
+    Controls which APRS-IS packets reach graywolf and which are gated to RF.
+    The server filter limits what the APRS-IS server forwards to you (if empty,
+    no packets are received). The rules below decide which of those packets are
+    transmitted on RF — if no rules are defined, nothing is gated.
   </p>
+  <Box>
+    <form onsubmit={handleSave}>
+      <FormField label="APRS-IS Server Filter" id="ig-filter" hint="Filter string sent to APRS-IS at login (e.g. r/35.0/-106.0/100). If empty, no packets are received from APRS-IS.">
+        <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" />
+      </FormField>
+      <div class="form-actions">
+        <Button variant="primary" type="submit" disabled={loading}>
+          {loading ? 'Saving...' : 'Save'}
+        </Button>
+      </div>
+    </form>
+  </Box>
+  <h3 class="section-heading">IS → RF Gating Rules</h3>
   <div class="filters-header">
-    <Button variant="primary" onclick={openCreate}>+ Add Filter</Button>
+    <Button variant="primary" onclick={openCreate}>+ Add Rule</Button>
   </div>
   <DataTable {columns} rows={filters} onEdit={openEdit} onDelete={handleDelete} />
 </div>
 
-<Modal bind:open={modalOpen} title={editing ? 'Edit Filter' : 'New Filter'}>
-    <FormField label="Name" error={errors.name} id="flt-name">
-      <Input id="flt-name" bind:value={filterForm.name} placeholder="Local area" />
-    </FormField>
+<Modal bind:open={modalOpen} title={editing ? 'Edit Rule' : 'New Rule'}>
     <FormField label="Type" id="flt-type">
       <Select id="flt-type" bind:value={filterForm.type} options={typeOptions} />
     </FormField>
     <FormField label="Pattern" error={errors.pattern} id="flt-pattern">
-      <Input id="flt-pattern" bind:value={filterForm.pattern} placeholder="r/35.0/-106.0/50" />
+      <Input id="flt-pattern" bind:value={filterForm.pattern} placeholder="W5" />
+    </FormField>
+    <FormField label="Action" id="flt-action">
+      <Select id="flt-action" bind:value={filterForm.action} options={actionOptions} />
+    </FormField>
+    <FormField label="Priority" id="flt-priority">
+      <Input id="flt-priority" bind:value={filterForm.priority} type="number" placeholder="100" />
     </FormField>
     <Toggle bind:checked={filterForm.enabled} label="Enabled" />
     <div class="modal-actions">
@@ -223,6 +238,12 @@
   .tab.active {
     color: var(--accent);
     border-bottom-color: var(--accent);
+  }
+  .section-heading {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 20px 0 8px;
   }
   .filters-header {
     display: flex;
