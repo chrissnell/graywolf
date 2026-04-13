@@ -166,14 +166,13 @@
 
         stationCount = stationLayer.markers.size;
 
-        // Hide own-position dot when beacon icon is present
+        // Sync own-position marker with toggle
         if (ownMarker) {
-          const hasBeacon = stationLayer.hasOwnStation();
           const onMap = mapInstance.hasLayer(ownMarker);
-          if (hasBeacon && onMap) {
-            ownMarker.remove();
-          } else if (!hasBeacon && !onMap) {
+          if (mapState.layerToggles.myPosition && !onMap) {
             ownMarker.addTo(mapInstance);
+          } else if (!mapState.layerToggles.myPosition && onMap) {
+            ownMarker.remove();
           }
         }
       } catch (e) {
@@ -242,7 +241,10 @@
           iconAnchor: [7, 7],
         }),
         zIndexOffset: -1000,
-      }).addTo(mapInstance);
+      });
+      if (mapState.layerToggles.myPosition) {
+        ownMarker.addTo(mapInstance);
+      }
       ownMarker.bindTooltip('My Position', {
         permanent: false,
         direction: 'right',
@@ -364,6 +366,15 @@
     } else {
       weatherLayer.hide();
     }
+
+    if (ownMarker) {
+      const onMap = map.hasLayer(ownMarker);
+      if (toggles.myPosition && !onMap) {
+        ownMarker.addTo(map);
+      } else if (!toggles.myPosition && onMap) {
+        ownMarker.remove();
+      }
+    }
   });
 
   // --- Derived ---
@@ -430,6 +441,10 @@
           <label>
             <input type="checkbox" checked={mapState.layerToggles.weather} onchange={() => toggleLayer('weather')} />
             Weather
+          </label>
+          <label>
+            <input type="checkbox" checked={mapState.layerToggles.myPosition} onchange={() => toggleLayer('myPosition')} />
+            My Position
           </label>
         </div>
       {/if}

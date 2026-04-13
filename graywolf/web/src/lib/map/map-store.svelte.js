@@ -28,6 +28,7 @@ export const mapState = (() => {
     aprsIs: true,
     trails: false,
     weather: false,
+    myPosition: false,
   });
 
   let timerange = $state(loadInt('map-timerange', 3600));
