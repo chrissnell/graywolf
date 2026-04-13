@@ -1,6 +1,6 @@
 [package]
 name = "graywolf-demod"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2021"
 description = "Rust port of the Dire Wolf AFSK demodulator"
 
