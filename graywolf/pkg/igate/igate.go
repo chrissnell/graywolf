@@ -506,17 +506,19 @@ func (ig *Igate) SendLine(line string) error {
 	return ig.client.WriteLine(line)
 }
 
-// Reconfigure updates the server filter and IS→RF gating rules at
-// runtime. If the server filter changed, the APRS-IS connection is
-// closed so the supervisor reconnects with the new filter (which is
-// sent at login time).
-func (ig *Igate) Reconfigure(serverFilter string, rules []filters.Rule) {
+// Reconfigure updates the server filter, IS→RF gating rules, and
+// governor at runtime. If the server filter changed, the APRS-IS
+// connection is closed so the supervisor reconnects with the new
+// filter (which is sent at login time). Pass a non-nil governor to
+// enable IS→RF gating, or nil to disable it.
+func (ig *Igate) Reconfigure(serverFilter string, rules []filters.Rule, gov txgovernor.TxSink) {
 	ig.filter.Store(filters.New(rules))
 
 	ig.mu.Lock()
 	filterChanged := ig.cfg.ServerFilter != serverFilter
 	ig.cfg.ServerFilter = serverFilter
 	ig.cfg.Rules = rules
+	ig.cfg.Governor = gov
 	ig.mu.Unlock()
 
 	if ig.client != nil {

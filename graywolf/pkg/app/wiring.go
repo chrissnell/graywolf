@@ -393,7 +393,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 
 	serverAddr := fmt.Sprintf("%s:%d", igCfg.Server, igCfg.Port)
 	var igGov txgovernor.TxSink
-	if igCfg.GateIsToRf {
+	if len(rules) > 0 {
 		igGov = a.gov
 	}
 
@@ -1043,7 +1043,11 @@ func (a *App) reloadIgate(ctx context.Context) {
 		})
 	}
 
-	a.ig.Reconfigure(igCfg.ServerFilter, rules)
+	var gov txgovernor.TxSink
+	if len(rules) > 0 {
+		gov = a.gov
+	}
+	a.ig.Reconfigure(igCfg.ServerFilter, rules, gov)
 }
 
 func (a *App) httpComponent() namedComponent {
