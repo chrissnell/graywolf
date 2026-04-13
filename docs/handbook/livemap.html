@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Map &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="architecture.html">Architecture</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Live Map</h1>
+    <p class="subtitle">Real-time APRS station map with trails, weather, and APRS-IS overlay</p>
+
+    <p>
+      The live map plots APRS stations on an interactive OpenStreetMap view
+      as they&rsquo;re heard on RF or received from APRS-IS. It polls the
+      station cache with delta updates, so the map stays current without
+      heavy page reloads. Stations are displayed with their standard APRS
+      symbols and callsign labels.
+    </p>
+
+    <div class="screenshot">
+      <img src="img/livemap.png" alt="Live Map showing APRS stations with callsign labels, trails, and weather overlays on an OpenStreetMap base" />
+      <div class="caption">The live map with stations, trails, and weather layers enabled</div>
+    </div>
+
+    <h2>Layer Controls</h2>
+
+    <p>
+      The layer panel (top-left, below the zoom controls) lets you toggle
+      what&rsquo;s displayed on the map:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Layer</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Stations</strong></td>
+              <td>APRS station markers with standard symbol icons and callsign labels. Click a marker to see position, path, comment, and heard-via details.</td>
+            </tr>
+            <tr>
+              <td><strong>APRS-IS</strong></td>
+              <td>Stations received from the APRS-IS network (not heard directly on RF). Toggle off to see only locally-heard stations.</td>
+            </tr>
+            <tr>
+              <td><strong>Trails</strong></td>
+              <td>Polyline trails showing the recent movement path of mobile stations.</td>
+            </tr>
+            <tr>
+              <td><strong>Weather</strong></td>
+              <td>Weather data labels (temperature, wind) for stations reporting weather telemetry.</td>
+            </tr>
+            <tr>
+              <td><strong>My Position</strong></td>
+              <td>Your station&rsquo;s position marker, sourced from the GPS cache or your last beacon.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          On mobile devices, the layer panel collapses to a button to save
+          screen space. Tap the layers icon to expand it.
+        </p>
+      </div>
+    </div>
+
+    <h2>Time Range</h2>
+
+    <p>
+      The dropdown in the top-right corner controls how far back the map
+      looks for station data. Stations not heard within the selected window
+      are automatically pruned from the map.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr><td><strong>1 hour</strong></td><td>Default. Shows recently-active stations only.</td></tr>
+          <tr><td><strong>2 hours</strong></td><td>Wider window for less-active areas.</td></tr>
+          <tr><td><strong>4&ndash;24 hours</strong></td><td>Extended ranges (requires persistent station storage).</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <h2>Station Popups</h2>
+
+    <p>
+      Click any station marker to see a popup with detailed information:
+    </p>
+
+    <ul>
+      <li><strong>Callsign and APRS symbol</strong></li>
+      <li><strong>Position</strong> &mdash; latitude, longitude, altitude, and Maidenhead grid square</li>
+      <li><strong>Heard via</strong> &mdash; RF direct, RF via digipeaters (with hop count), or APRS-IS</li>
+      <li><strong>Digipeater path</strong> &mdash; the full path the packet traversed</li>
+      <li><strong>Comment</strong> &mdash; the station&rsquo;s comment field</li>
+      <li><strong>Last heard</strong> &mdash; how recently the station was heard</li>
+    </ul>
+
+    <h2>Status Bar</h2>
+
+    <p>
+      The status bar at the bottom center of the map shows:
+    </p>
+
+    <ul>
+      <li><strong>Connection status</strong> &mdash; green dot for live polling, yellow for backoff/retry, red for error</li>
+      <li><strong>Station count</strong> &mdash; number of stations currently on the map</li>
+      <li><strong>Time range</strong> &mdash; the active time window</li>
+      <li><strong>Last fetch</strong> &mdash; seconds since the last successful data poll</li>
+    </ul>
+
+    <h2>Coordinate Display</h2>
+
+    <p>
+      The bottom-right corner shows coordinates and the Maidenhead grid
+      locator for the current cursor position (desktop) or map center
+      (mobile).
+    </p>
+
+    <h2>How It Works</h2>
+
+    <p>
+      The map fetches station data from the
+      <code>GET /api/stations</code> endpoint, which returns stations
+      within the visible bounding box. The polling loop uses several
+      optimizations to keep traffic low:
+    </p>
+
+    <ul>
+      <li><strong>Delta updates</strong> &mdash; after the initial load, only stations updated since the last fetch are requested (via a <code>since</code> cursor)</li>
+      <li><strong>ETag / 304</strong> &mdash; if nothing has changed, the server returns a <code>304 Not Modified</code> with no body</li>
+      <li><strong>Expanded bounds</strong> &mdash; the fetch area is 50% larger than the viewport, so small pans don&rsquo;t trigger new requests</li>
+      <li><strong>Visibility pause</strong> &mdash; polling pauses when the browser tab is hidden and resumes immediately when you switch back</li>
+      <li><strong>Exponential backoff</strong> &mdash; on errors, the poll interval backs off up to 60 seconds</li>
+    </ul>
+
+    <nav class="page-nav">
+      <a href="igate.html">
+        <span class="label">Previous</span>
+        iGate
+      </a>
+      <a href="kiss.html" class="next">
+        <span class="label">Next</span>
+        KISS TNC
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
