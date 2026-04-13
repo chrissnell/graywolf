@@ -136,7 +136,8 @@
       mark_freq: parseInt(form.mark_freq, 10),
       space_freq: parseInt(form.space_freq, 10),
     };
-    // Strip TX timing fields before sending channel data
+    // Strip fields not in ChannelRequest DTO
+    delete data.id;
     delete data.tx_delay_ms;
     delete data.tx_tail_ms;
     delete data.slot_ms;

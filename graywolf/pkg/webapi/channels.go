@@ -74,26 +74,17 @@ func (s *Server) handleChannelsItem(w http.ResponseWriter, r *http.Request) {
 				if err := s.store.UpdateChannel(ctx, &m); err != nil {
 					return configstore.Channel{}, err
 				}
-				s.notifyBridgeForDevice(ctx, m.InputDeviceID)
-				if m.OutputDeviceID != 0 {
-					s.notifyBridgeForDevice(ctx, m.OutputDeviceID)
-				}
+				s.notifyBridgeReload(ctx)
 				return m, nil
 			},
 			dto.ChannelFromModel)
 	case http.MethodDelete:
 		// Look up device IDs before deleting so we can notify the bridge.
-		ch, _ := s.store.GetChannel(r.Context(), id)
 		handleDelete(s, w, r, "delete channel", id, func(ctx context.Context, id uint32) error {
 			if err := s.store.DeleteChannel(ctx, id); err != nil {
 				return err
 			}
-			if ch != nil {
-				s.notifyBridgeForDevice(ctx, ch.InputDeviceID)
-				if ch.OutputDeviceID != 0 {
-					s.notifyBridgeForDevice(ctx, ch.OutputDeviceID)
-				}
-			}
+			s.notifyBridgeReload(ctx)
 			return nil
 		})
 	default:

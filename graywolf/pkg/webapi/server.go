@@ -129,31 +129,20 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// notifyBridgeForDevice tells the modem bridge to hot-reconfigure a
-// device. Best-effort: logs on failure but does not propagate.
-func (s *Server) notifyBridgeForDevice(ctx context.Context, deviceID uint32) {
-	if s.bridge == nil {
-		return
-	}
-	if err := s.bridge.ReconfigureAudioDevice(ctx, deviceID); err != nil {
-		s.logger.Warn("bridge reconfigure", "device_id", deviceID, "err", err)
-	}
+// notifyBridgeForChannel triggers a single bridge reload for the given
+// channel. ReconfigureAudioDevice does a full reload, so we only need
+// to call it once regardless of how many devices are involved.
+func (s *Server) notifyBridgeForChannel(ctx context.Context, _ uint32) {
+	s.notifyBridgeReload(ctx)
 }
 
-// notifyBridgeForChannel looks up the channel's audio devices and
-// reconfigures them.
-func (s *Server) notifyBridgeForChannel(ctx context.Context, channelID uint32) {
+// notifyBridgeReload triggers a single full bridge reload.
+func (s *Server) notifyBridgeReload(ctx context.Context) {
 	if s.bridge == nil {
 		return
 	}
-	ch, err := s.store.GetChannel(ctx, channelID)
-	if err != nil {
-		s.logger.Warn("bridge reconfigure: get channel", "channel_id", channelID, "err", err)
-		return
-	}
-	s.notifyBridgeForDevice(ctx, ch.InputDeviceID)
-	if ch.OutputDeviceID != 0 {
-		s.notifyBridgeForDevice(ctx, ch.OutputDeviceID)
+	if err := s.bridge.ReconfigureAudioDevice(ctx, 0); err != nil {
+		s.logger.Warn("bridge reconfigure", "err", err)
 	}
 }
 

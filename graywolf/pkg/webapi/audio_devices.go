@@ -88,7 +88,7 @@ func (s *Server) handleAudioDevicesItem(w http.ResponseWriter, r *http.Request) 
 				if err := s.store.UpdateAudioDevice(ctx, &m); err != nil {
 					return configstore.AudioDevice{}, err
 				}
-				s.notifyBridgeForDevice(ctx, id)
+				s.notifyBridgeReload(ctx)
 				return m, nil
 			},
 			dto.AudioDeviceFromModel)
@@ -115,7 +115,7 @@ func (s *Server) handleAudioDeviceDelete(w http.ResponseWriter, r *http.Request,
 		})
 		return
 	}
-	s.notifyBridgeForDevice(r.Context(), id)
+	s.notifyBridgeReload(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
