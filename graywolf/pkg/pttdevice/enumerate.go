@@ -3,6 +3,7 @@
 package pttdevice
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -106,17 +107,14 @@ func enumerateCM108() []AvailableDevice {
 		return nil
 	}
 	var devs []AvailableDevice
-	// CM108-compatible USB audio adapters expose HID interfaces under /dev/hidraw*
-	matches, _ := filepath.Glob("/dev/hidraw*")
-	for _, m := range matches {
-		vendor, product, desc := usbInfoFromSysfs(m)
+	for _, entry := range buildCM108Inventory() {
 		devs = append(devs, AvailableDevice{
-			Path:        m,
+			Path:        entry.HidrawPath,
 			Type:        "cm108",
-			Name:        filepath.Base(m),
-			Description: desc,
-			USBVendor:   vendor,
-			USBProduct:  product,
+			Name:        filepath.Base(entry.HidrawPath),
+			Description: fmt.Sprintf("%s (ALSA card %s)", entry.Description, entry.CardNumber),
+			USBVendor:   entry.Vendor,
+			USBProduct:  entry.Product,
 		})
 	}
 	return devs

@@ -7,6 +7,8 @@ import (
 )
 
 // Known USB vendor:product → friendly name mappings for common ham radio devices.
+// CM108-compatible entries must also be registered in cm108VendorSet or
+// cm108VIDPIDSet (cm108_linux.go) for enumeration filtering.
 var knownUSBDevices = map[string]string{
 	"0d8c:000c": "CM108 USB Audio (GPIO PTT capable)",
 	"0d8c:000e": "CM108 USB Audio (GPIO PTT capable)",
@@ -37,12 +39,11 @@ var knownUSBDevices = map[string]string{
 func usbInfoFromSysfs(devPath string) (vendor, product, description string) {
 	base := filepath.Base(devPath)
 
-	// Walk sysfs to find the device's USB ancestor.
-	// /sys/class/tty/ttyUSB0/device -> ../../ -> USB interface dir
-	// /sys/class/hidraw/hidraw0/device -> USB interface dir
+	// Locate the sysfs class entry for this device.
+	// /sys/class/tty/ttyUSB0 or /sys/class/hidraw/hidraw0
 	var sysPath string
 	for _, class := range []string{"tty", "hidraw"} {
-		p := filepath.Join("/sys/class", class, base, "device")
+		p := filepath.Join("/sys/class", class, base)
 		if _, err := os.Stat(p); err == nil {
 			sysPath = p
 			break
@@ -52,30 +53,27 @@ func usbInfoFromSysfs(devPath string) (vendor, product, description string) {
 		return
 	}
 
-	// Walk up to find the USB device directory (has idVendor file).
-	dir, _ := filepath.EvalSymlinks(sysPath)
-	for i := 0; i < 6 && dir != "/"; i++ {
-		if _, err := os.Stat(filepath.Join(dir, "idVendor")); err == nil {
-			vendor = readSysfsFile(filepath.Join(dir, "idVendor"))
-			product = readSysfsFile(filepath.Join(dir, "idProduct"))
+	dir := usbParentDir(sysPath)
+	if dir == "" {
+		return
+	}
 
-			// Try the USB product string first (most descriptive).
-			description = readSysfsFile(filepath.Join(dir, "product"))
+	vendor = readSysfsFile(filepath.Join(dir, "idVendor"))
+	product = readSysfsFile(filepath.Join(dir, "idProduct"))
 
-			// Check known device table for even better descriptions.
-			key := vendor + ":" + product
-			if known, ok := knownUSBDevices[key]; ok {
-				description = known
-			} else if description == "" {
-				// Fallback to manufacturer + product ID.
-				mfg := readSysfsFile(filepath.Join(dir, "manufacturer"))
-				if mfg != "" {
-					description = mfg
-				}
-			}
-			return
+	// Try the USB product string first (most descriptive).
+	description = readSysfsFile(filepath.Join(dir, "product"))
+
+	// Check known device table for even better descriptions.
+	key := vendor + ":" + product
+	if known, ok := knownUSBDevices[key]; ok {
+		description = known
+	} else if description == "" {
+		// Fallback to manufacturer + product ID.
+		mfg := readSysfsFile(filepath.Join(dir, "manufacturer"))
+		if mfg != "" {
+			description = mfg
 		}
-		dir = filepath.Dir(dir)
 	}
 	return
 }
@@ -94,6 +92,23 @@ func gpioChipDescription(devPath string) string {
 	}
 	if strings.Contains(compat, "omap") || strings.Contains(compat, "ti,") {
 		return "BeagleBone GPIO"
+	}
+	return ""
+}
+
+// usbParentDir resolves a sysfs path and walks up to find the USB device
+// ancestor (the directory containing idVendor). Returns the realpath of
+// that directory, or "" if no USB ancestor is found.
+func usbParentDir(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return ""
+	}
+	for i := 0; i < 10 && resolved != "/"; i++ {
+		if _, err := os.Stat(filepath.Join(resolved, "idVendor")); err == nil {
+			return resolved
+		}
+		resolved = filepath.Dir(resolved)
 	}
 	return ""
 }
