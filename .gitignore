@@ -11,6 +11,9 @@ node_modules/
 graywolf.db
 graywolf.db-shm
 graywolf.db-wal
+graywolf-history.db
+graywolf-history.db-shm
+graywolf-history.db-wal
 graywolf/web/dist/
 dist/
 rust-bin/
