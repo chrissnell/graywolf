@@ -14,6 +14,7 @@ const TRAIL_COLOR = '#2b6cb0';
 const DOT_FILL = '#ffaa00';
 const DOT_RADIUS = 5;
 const DOT_WEIGHT = 2;
+const HIT_TOLERANCE = 15; // px — generous click/hover zone
 
 export class TrailLayer {
   constructor(map) {
@@ -36,11 +37,28 @@ export class TrailLayer {
       const segCount = coords.length - 1;
       for (let i = 0; i < segCount; i++) {
         const opacity = 0.9 - (i / segCount) * 0.6; // 0.9 → 0.3
+
+        // Visible trail line
         L.polyline([coords[i], coords[i + 1]], {
           color: TRAIL_COLOR,
           weight: 4,
           opacity: Math.max(opacity, 0.3),
         }).addTo(this.layerGroup);
+
+        // Invisible fat hit zone for hover tooltip on the line
+        L.polyline([coords[i], coords[i + 1]], {
+          weight: HIT_TOLERANCE,
+          opacity: 0,
+          interactive: true,
+        })
+          .bindTooltip(s.callsign, {
+            permanent: false,
+            direction: 'right',
+            offset: [8, 0],
+            className: 'callsign-label',
+            sticky: true,
+          })
+          .addTo(this.layerGroup);
       }
 
       // Dots at previous positions (skip positions[0] — that's the station icon)
@@ -48,13 +66,21 @@ export class TrailLayer {
         const p = s.positions[i];
         const opacity = 0.9 - ((i - 1) / segCount) * 0.5;
 
-        L.circleMarker([p.lat, p.lon], {
+        const dot = L.circleMarker([p.lat, p.lon], {
           radius: DOT_RADIUS,
           color: TRAIL_COLOR,
           fillColor: DOT_FILL,
           fillOpacity: Math.max(opacity, 0.4),
           opacity: Math.max(opacity, 0.4),
           weight: DOT_WEIGHT,
+        });
+
+        // Invisible larger hit area behind the dot for easier clicking
+        L.circleMarker([p.lat, p.lon], {
+          radius: HIT_TOLERANCE,
+          opacity: 0,
+          fillOpacity: 0,
+          interactive: true,
         })
           .bindPopup(_dotPopup(s.callsign, p), {
             className: 'station-popup',
@@ -68,6 +94,8 @@ export class TrailLayer {
             className: 'callsign-label',
           })
           .addTo(this.layerGroup);
+
+        dot.addTo(this.layerGroup);
       }
     }
   }
