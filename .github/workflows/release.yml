@@ -58,6 +58,7 @@ jobs:
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
+          version: '28.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install ALSA + udev dev (Linux)
