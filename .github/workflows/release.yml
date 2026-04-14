@@ -232,11 +232,13 @@ jobs:
       - name: Build MSI
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $fullVersion = "${{ github.ref_name }}" -replace '^v', ''
+          # MSI versions must be numeric x.y.z — strip any pre-release suffix
+          $msiVersion = ($fullVersion -split '-')[0]
           $binaryPath = (Resolve-Path "bin/graywolf.exe").Path
           $modemPath = (Resolve-Path "modem-bin/graywolf-modem.exe").Path
-          $outFile = "graywolf_${version}_Windows_x86_64.msi"
-          wix build -acceptEula wix7 -d Version=$version -d BinaryPath=$binaryPath -d ModemPath=$modemPath -o $outFile packaging/wix/graywolf.wxs
+          $outFile = "graywolf_${fullVersion}_Windows_x86_64.msi"
+          wix build -acceptEula wix7 -d Version=$msiVersion -d BinaryPath=$binaryPath -d ModemPath=$modemPath -o $outFile packaging/wix/graywolf.wxs
 
       - name: Upload MSI to release
         shell: bash

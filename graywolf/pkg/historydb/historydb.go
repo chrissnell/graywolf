@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/stationcache"
@@ -26,6 +28,11 @@ type DB struct {
 // Open opens (or creates) the history database at path, applies pragmas,
 // and ensures the schema exists. Safe to call on an empty file.
 func Open(path string) (*DB, error) {
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create history db directory %q: %w", dir, err)
+		}
+	}
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})

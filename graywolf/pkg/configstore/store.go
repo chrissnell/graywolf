@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -20,6 +22,11 @@ type Store struct {
 // Open opens (or creates) the SQLite database at path and seeds first-run
 // defaults. Use OpenMemory for tests (no seeding).
 func Open(path string) (*Store, error) {
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create config db directory %q: %w", dir, err)
+		}
+	}
 	s, err := openDSN(path)
 	if err != nil {
 		return nil, err
