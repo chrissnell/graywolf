@@ -179,6 +179,12 @@ enum Fx25State {
     CollectingBlock,
 }
 
+impl Default for Fx25Receiver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Fx25Receiver {
     pub fn new() -> Self {
         Self {

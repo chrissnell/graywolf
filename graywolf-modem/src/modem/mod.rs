@@ -106,7 +106,7 @@ struct DevicePipeline {
 
 /// Per-channel demodulator (within a device pipeline).
 enum ChannelDemod {
-    Afsk(AfskDemodulator),
+    Afsk(Box<AfskDemodulator>),
     Psk(PskDemodulator),
     Baseband9600(Demod9600),
 }
@@ -367,7 +367,7 @@ impl Modem {
             // Build channel pipelines
             let mut chan_pipelines = Vec::new();
             for ccfg in channel_cfgs {
-                let demod = create_demod(&ccfg, sample_rate);
+                let demod = create_demod(ccfg, sample_rate);
                 let mut extra_demods = Vec::new();
 
                 // Multi-modem parallel processing
@@ -787,7 +787,7 @@ fn create_demod(ccfg: &ChannelConfig, sample_rate: u32) -> ChannelDemod {
             if ccfg.fix_bits != RetryType::None {
                 demod.set_fix_bits(ccfg.fix_bits);
             }
-            ChannelDemod::Afsk(demod)
+            ChannelDemod::Afsk(Box::new(demod))
         }
     }
 }
@@ -871,7 +871,7 @@ fn alsa_card_description(cpal_name: &str) -> String {
     let card_id = cpal_name
         .split("CARD=")
         .nth(1)
-        .and_then(|s| s.split(|c: char| c == ',' || c == ':').next())
+        .and_then(|s| s.split([',', ':']).next())
         .unwrap_or("");
     if card_id.is_empty() {
         return String::new();
@@ -883,7 +883,7 @@ fn alsa_card_description(cpal_name: &str) -> String {
     if let Ok(contents) = std::fs::read_to_string("/proc/asound/cards") {
         for line in contents.lines() {
             let trimmed = line.trim();
-            if !trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            if !trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 continue;
             }
             let bracket_start = match trimmed.find('[') { Some(i) => i, None => continue };

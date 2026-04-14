@@ -40,8 +40,7 @@ pub fn spawn(
 
     // Decode fully — test tracks are <100 MB; keeps the realtime loop simple.
     let mut all: Vec<i16> = Vec::with_capacity(info.samples.unwrap_or(0) as usize);
-    let mut idx = 0usize;
-    for s in reader.samples() {
+    for (idx, s) in reader.samples().enumerate() {
         let s = s.map_err(|e| format!("flac decode: {}", e))?;
         let sample = if bits > 16 {
             (s >> (bits - 16)) as i16
@@ -53,7 +52,6 @@ pub fn spawn(
         if channels == 1 || (idx % channels) == want_channel {
             all.push(sample);
         }
-        idx += 1;
     }
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -116,8 +114,7 @@ pub fn spawn_fast(
     let want_channel = audio_channel as usize;
 
     let mut all: Vec<i16> = Vec::with_capacity(info.samples.unwrap_or(0) as usize);
-    let mut idx = 0usize;
-    for s in reader.samples() {
+    for (idx, s) in reader.samples().enumerate() {
         let s = s.map_err(|e| format!("flac decode: {}", e))?;
         let sample = if bits > 16 {
             (s >> (bits - 16)) as i16
@@ -129,7 +126,6 @@ pub fn spawn_fast(
         if channels == 1 || (idx % channels) == want_channel {
             all.push(sample);
         }
-        idx += 1;
     }
 
     let stop = Arc::new(AtomicBool::new(false));

@@ -36,7 +36,7 @@ pub fn rs_encode_payload(data: &[u8], ncheck: usize) -> Vec<u8> {
 }
 
 /// Decode IL2P payload block in-place. Returns true on success.
-pub fn rs_decode_payload(block: &mut Vec<u8>, _ndata: usize, ncheck: usize) -> bool {
+pub fn rs_decode_payload(block: &mut [u8], _ndata: usize, ncheck: usize) -> bool {
     let rs = RsCodec::with_fcr(ncheck, IL2P_FCR);
     matches!(rs.decode(block), Some(true))
 }

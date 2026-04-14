@@ -16,6 +16,12 @@ pub struct GfTables {
     pub log: [u8; 256],
 }
 
+impl Default for GfTables {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GfTables {
     pub fn new() -> Self {
         let mut exp = [0u8; 512];
@@ -121,7 +127,7 @@ impl RsCodec {
 
     /// Decode using the Phil Karn / libfec algorithm.
     /// The block is in descending power order (matching our codeword convention).
-    pub fn decode(&self, block: &mut Vec<u8>) -> Option<bool> {
+    pub fn decode(&self, block: &mut [u8]) -> Option<bool> {
         let block_len = block.len();
         let pad = NN - block_len;
 

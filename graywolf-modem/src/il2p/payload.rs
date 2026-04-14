@@ -16,7 +16,7 @@ pub fn payload_block_count(payload_len: usize) -> usize {
     if payload_len == 0 {
         return 0;
     }
-    (payload_len + MAX_BLOCK_DATA - 1) / MAX_BLOCK_DATA
+    payload_len.div_ceil(MAX_BLOCK_DATA)
 }
 
 /// Calculate data and parity sizes for each block.

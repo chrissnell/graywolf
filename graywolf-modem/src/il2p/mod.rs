@@ -160,6 +160,12 @@ enum Il2pState {
     CollectingPayload,
 }
 
+impl Default for Il2pReceiver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Il2pReceiver {
     pub fn new() -> Self {
         Self {

@@ -17,7 +17,7 @@ pub const MAX_FRAME_SIZE: usize = 64 * 1024;
 pub fn write_frame<W: Write>(w: &mut W, msg: &IpcMessage) -> io::Result<()> {
     let mut buf = Vec::with_capacity(msg.encoded_len());
     msg.encode(&mut buf)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        .map_err(io::Error::other)?;
     if buf.len() > MAX_FRAME_SIZE {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
