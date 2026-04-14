@@ -47,8 +47,8 @@ impl WinCm108Gpio {
 
 impl super::Cm108GpioControl for WinCm108Gpio {
     fn write_gpio(&mut self, pin: u8, level: bool) -> Result<(), String> {
-        if pin < 1 || pin > 4 {
-            return Err(format!("cm108 gpio pin {} out of range (1-4)", pin));
+        if pin < 1 || pin > 8 {
+            return Err(format!("cm108 gpio pin {} out of range (1-8)", pin));
         }
         let mask: u8 = 1 << (pin - 1);
         let value: u8 = if level { mask } else { 0 };

@@ -94,6 +94,13 @@ use ptt_unix::UnixSerialLines as PlatformSerialLines;
 #[cfg(windows)]
 use ptt_win::WinSerialLines as PlatformSerialLines;
 
+#[cfg(target_os = "linux")]
+use ptt_cm108_unix::UnixCm108Gpio as PlatformCm108Gpio;
+#[cfg(target_os = "macos")]
+use ptt_cm108_macos::MacCm108Gpio as PlatformCm108Gpio;
+#[cfg(windows)]
+use ptt_cm108_win::WinCm108Gpio as PlatformCm108Gpio;
+
 use crate::ipc::proto::ConfigurePtt;
 
 /// PTT hardware method, parsed from `ConfigurePtt.method`.
@@ -171,6 +178,11 @@ pub(crate) trait ModemControlLines: Send {
 /// same `Arc`, which is the whole point of the registry.
 type SharedLines = Arc<Mutex<Box<dyn ModemControlLines>>>;
 
+/// Shared handle type for CM108 HID devices. Same pattern as
+/// [`SharedLines`] — two channels can share one CM108 adapter
+/// (e.g. different GPIO pins on a multi-output board).
+type SharedCm108 = Arc<Mutex<Box<dyn Cm108GpioControl>>>;
+
 /// Minimal hardware-facing interface for CM108 HID GPIO output reports.
 /// Analogous to [`ModemControlLines`] for serial ports. Platform adapters
 /// implement this behind `#[cfg]` — `UnixCm108Gpio` on Linux (via
@@ -216,6 +228,47 @@ impl PttDriver for SerialLinePtt {
     }
 }
 
+/// CM108 HID GPIO PTT driver. Holds a shared reference to an
+/// already-open HID device and toggles a single GPIO pin via
+/// output reports. `invert` is honoured the same way as serial.
+pub(crate) struct Cm108Ptt {
+    port: SharedCm108,
+    gpio_pin: u8,
+    invert: bool,
+}
+
+impl Cm108Ptt {
+    fn set(&mut self, assert: bool) -> Result<(), String> {
+        let level = assert ^ self.invert;
+        let mut port = self
+            .port
+            .lock()
+            .map_err(|e| format!("cm108 mutex poisoned: {}", e))?;
+        port.write_gpio(self.gpio_pin, level)
+    }
+}
+
+impl PttDriver for Cm108Ptt {
+    fn key(&mut self) -> Result<(), String> {
+        self.set(true)
+    }
+
+    fn unkey(&mut self) -> Result<(), String> {
+        self.set(false)
+    }
+}
+
+impl Drop for Cm108Ptt {
+    fn drop(&mut self) {
+        // Unlike serial ports, closing a hidraw fd does NOT reset GPIO
+        // state. A stuck PTT means continuous transmission — interference,
+        // repeater lockout, potential FCC violation. Best-effort unkey on
+        // drop; if the USB device is already disconnected, the write fails
+        // silently and that's fine.
+        let _ = self.unkey();
+    }
+}
+
 /// Cache of open serial ports keyed by device path. A single port
 /// handle is reused by every channel that points at the same device,
 /// regardless of which modem-control line that channel drives. This
@@ -229,6 +282,7 @@ impl PttDriver for SerialLinePtt {
 /// two fds, this is cheaper than adding ref counting.
 pub(crate) struct PortRegistry {
     ports: HashMap<String, SharedLines>,
+    cm108_ports: HashMap<String, SharedCm108>,
 }
 
 impl PortRegistry {
@@ -237,14 +291,15 @@ impl PortRegistry {
     pub(crate) fn new() -> Self {
         Self {
             ports: HashMap::new(),
+            cm108_ports: HashMap::new(),
         }
     }
 
     /// Build a [`PttDriver`] for the given channel configuration. May
     /// open a new serial port as a side effect (and cache it for reuse
     /// on subsequent calls with the same `device`). Returns an error
-    /// for unknown method strings and for `cm108` / `gpio` until those
-    /// drivers are implemented — the caller logs the error and leaves
+    /// for unknown method strings and for `gpio` until that driver is
+    /// implemented — the caller logs the error and leaves
     /// the channel driverless so a later TX attempt fails loudly rather
     /// than silently keying nothing.
     pub(crate) fn build_driver(
@@ -265,7 +320,17 @@ impl PortRegistry {
                 SerialLine::Dtr,
                 cfg.invert,
             )?)),
-            PttMethod::Cm108 => Err("cm108 ptt not yet implemented".into()),
+            PttMethod::Cm108 => {
+                let raw = cfg.gpio_pin;
+                let gpio_pin = if raw == 0 {
+                    3u8
+                } else if raw > 8 {
+                    return Err(format!("cm108 gpio_pin {} out of range (1-8)", raw));
+                } else {
+                    raw as u8
+                };
+                Ok(Box::new(self.cm108_driver(&cfg.device, gpio_pin, cfg.invert)?))
+            }
             PttMethod::Gpio => Err("gpio ptt not yet implemented".into()),
         }
     }
@@ -303,11 +368,46 @@ impl PortRegistry {
         Ok(shared)
     }
 
-    /// Test hook: pre-install a fake port so tests can verify fd-sharing
-    /// semantics without touching real hardware.
+    fn cm108_driver(
+        &mut self,
+        device: &str,
+        gpio_pin: u8,
+        invert: bool,
+    ) -> Result<Cm108Ptt, String> {
+        if device.is_empty() {
+            return Err("cm108 ptt: device path is empty".into());
+        }
+        let port = self.open_or_reuse_cm108(device)?;
+        let mut driver = Cm108Ptt {
+            port,
+            gpio_pin,
+            invert,
+        };
+        driver.unkey()?;
+        Ok(driver)
+    }
+
+    fn open_or_reuse_cm108(&mut self, device: &str) -> Result<SharedCm108, String> {
+        if let Some(port) = self.cm108_ports.get(device) {
+            return Ok(port.clone());
+        }
+        let gpio: Box<dyn Cm108GpioControl> = Box::new(PlatformCm108Gpio::open(device)?);
+        let shared: SharedCm108 = Arc::new(Mutex::new(gpio));
+        self.cm108_ports.insert(device.to_string(), shared.clone());
+        Ok(shared)
+    }
+
+    /// Test hook: pre-install a fake serial port so tests can verify
+    /// fd-sharing semantics without touching real hardware.
     #[cfg(test)]
     fn install_for_test(&mut self, device: &str, port: SharedLines) {
         self.ports.insert(device.to_string(), port);
+    }
+
+    /// Test hook: pre-install a fake CM108 port.
+    #[cfg(test)]
+    fn install_cm108_for_test(&mut self, device: &str, port: SharedCm108) {
+        self.cm108_ports.insert(device.to_string(), port);
     }
 }
 
@@ -425,14 +525,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn build_driver_returns_unimplemented_errors_for_cm108_and_gpio() {
+    fn build_driver_returns_unimplemented_error_for_gpio() {
         let mut registry = PortRegistry::new();
-        let mut cm = base_cfg();
-        cm.method = "cm108".into();
-        cm.device = "/dev/null".into();
-        let err = expect_err(registry.build_driver(&cm));
-        assert!(err.contains("cm108"), "unexpected error: {}", err);
-
         let mut gpio = base_cfg();
         gpio.method = "gpio".into();
         gpio.device = "/dev/null".into();
@@ -602,6 +696,195 @@ pub(crate) mod tests {
             err.contains("unknown ptt method") && err.contains("serial-rts"),
             "unexpected error: {}",
             err
+        );
+    }
+
+    // --- CM108 fakes and tests ---
+
+    /// Recorded CM108 GPIO operations: (pin, level).
+    type Cm108OpLog = Arc<Mutex<Vec<(u8, bool)>>>;
+
+    struct FakeCm108 {
+        ops: Cm108OpLog,
+    }
+
+    impl Cm108GpioControl for FakeCm108 {
+        fn write_gpio(&mut self, pin: u8, level: bool) -> Result<(), String> {
+            self.ops.lock().unwrap().push((pin, level));
+            Ok(())
+        }
+    }
+
+    fn shared_fake_cm108() -> (SharedCm108, Cm108OpLog) {
+        let ops: Cm108OpLog = Arc::new(Mutex::new(Vec::new()));
+        let fake = FakeCm108 { ops: ops.clone() };
+        let shared: SharedCm108 = Arc::new(Mutex::new(Box::new(fake)));
+        (shared, ops)
+    }
+
+    #[test]
+    fn cm108_ptt_writes_gpio_high_on_key_and_low_on_unkey() {
+        let (port, ops) = shared_fake_cm108();
+        let mut driver = Cm108Ptt {
+            port,
+            gpio_pin: 3,
+            invert: false,
+        };
+        driver.key().unwrap();
+        driver.unkey().unwrap();
+        assert_eq!(*ops.lock().unwrap(), vec![(3, true), (3, false)]);
+    }
+
+    #[test]
+    fn cm108_ptt_invert_reverses_polarity() {
+        let (port, ops) = shared_fake_cm108();
+        let mut driver = Cm108Ptt {
+            port,
+            gpio_pin: 3,
+            invert: true,
+        };
+        driver.key().unwrap();
+        driver.unkey().unwrap();
+        assert_eq!(*ops.lock().unwrap(), vec![(3, false), (3, true)]);
+    }
+
+    #[test]
+    fn cm108_driver_unkeys_on_construction() {
+        let mut registry = PortRegistry::new();
+        let (port, ops) = shared_fake_cm108();
+        registry.install_cm108_for_test("/dev/fake-cm108", port);
+
+        let cfg = ConfigurePtt {
+            method: "cm108".into(),
+            device: "/dev/fake-cm108".into(),
+            gpio_pin: 3,
+            ..base_cfg()
+        };
+        let _driver = registry.build_driver(&cfg).unwrap();
+
+        assert_eq!(
+            *ops.lock().unwrap(),
+            vec![(3, false)],
+            "cm108_driver must unkey() before returning"
+        );
+    }
+
+    #[test]
+    fn cm108_driver_defaults_zero_gpio_pin_to_3() {
+        let mut registry = PortRegistry::new();
+        let (port, ops) = shared_fake_cm108();
+        registry.install_cm108_for_test("/dev/fake-cm108", port);
+
+        let cfg = ConfigurePtt {
+            method: "cm108".into(),
+            device: "/dev/fake-cm108".into(),
+            gpio_pin: 0, // should default to 3
+            ..base_cfg()
+        };
+        let _driver = registry.build_driver(&cfg).unwrap();
+
+        // unkey-on-construction writes pin 3 (the default)
+        assert_eq!(*ops.lock().unwrap(), vec![(3, false)]);
+    }
+
+    #[test]
+    fn cm108_driver_rejects_pin_out_of_range() {
+        let mut registry = PortRegistry::new();
+        let cfg = ConfigurePtt {
+            method: "cm108".into(),
+            device: "/dev/fake-cm108".into(),
+            gpio_pin: 9,
+            ..base_cfg()
+        };
+        let err = expect_err(registry.build_driver(&cfg));
+        assert!(
+            err.contains("out of range"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn cm108_driver_rejects_empty_device_path() {
+        let mut registry = PortRegistry::new();
+        let cfg = ConfigurePtt {
+            method: "cm108".into(),
+            device: String::new(),
+            gpio_pin: 3,
+            ..base_cfg()
+        };
+        let err = expect_err(registry.build_driver(&cfg));
+        assert!(
+            err.contains("device path is empty"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn cm108_registry_reuses_port_for_two_channels() {
+        let mut registry = PortRegistry::new();
+        let (shared, ops) = shared_fake_cm108();
+        registry.install_cm108_for_test("/dev/fake-cm108", shared.clone());
+
+        assert_eq!(Arc::strong_count(&shared), 2);
+
+        let cfg_a = ConfigurePtt {
+            method: "cm108".into(),
+            device: "/dev/fake-cm108".into(),
+            channel: 0,
+            gpio_pin: 3,
+            ..base_cfg()
+        };
+        let cfg_b = ConfigurePtt {
+            method: "cm108".into(),
+            device: "/dev/fake-cm108".into(),
+            channel: 1,
+            gpio_pin: 2,
+            ..base_cfg()
+        };
+
+        let mut drv_a = registry.build_driver(&cfg_a).unwrap();
+        let mut drv_b = registry.build_driver(&cfg_b).unwrap();
+
+        // registry + test handle + 2 drivers
+        assert_eq!(Arc::strong_count(&shared), 4);
+
+        drv_a.key().unwrap();
+        drv_b.key().unwrap();
+        drv_a.unkey().unwrap();
+        drv_b.unkey().unwrap();
+
+        assert_eq!(
+            *ops.lock().unwrap(),
+            vec![
+                // Construction unkeys
+                (3, false),
+                (2, false),
+                // Explicit key/unkey
+                (3, true),
+                (2, true),
+                (3, false),
+                (2, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn cm108_ptt_drop_calls_unkey() {
+        let (port, ops) = shared_fake_cm108();
+        {
+            let _driver = Cm108Ptt {
+                port,
+                gpio_pin: 3,
+                invert: false,
+            };
+            // driver drops here
+        }
+        assert_eq!(
+            *ops.lock().unwrap(),
+            vec![(3, false)],
+            "Drop must call unkey()"
         );
     }
 
