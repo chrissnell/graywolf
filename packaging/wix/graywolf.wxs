@@ -30,13 +30,12 @@
                         Name="graywolf"
                         DisplayName="Graywolf APRS"
                         Description="APRS radio transceiver and gateway"
-                        Start="auto"
+                        Start="demand"
                         Type="ownProcess"
                         ErrorControl="normal"
-                        Arguments="-config &quot;[INSTALLFOLDER]graywolf.db&quot; -modem &quot;[INSTALLFOLDER]graywolf-modem.exe&quot; -http 0.0.0.0:8080" />
+                        Arguments="-config &quot;[INSTALLFOLDER]graywolf.db&quot; -modem &quot;[INSTALLFOLDER]graywolf-modem.exe&quot; -http 127.0.0.1:8080" />
         <ServiceControl Id="GraywolfServiceControl"
                         Name="graywolf"
-                        Start="install"
                         Stop="both"
                         Remove="uninstall"
                         Wait="yes" />
