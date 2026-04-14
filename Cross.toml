@@ -1,2 +1,2 @@
 [target.aarch64-unknown-linux-gnu]
-pre-build = ["dpkg --add-architecture arm64 && apt-get update && apt-get install -y protobuf-compiler libasound2-dev:arm64"]
+pre-build = ["dpkg --add-architecture arm64 && apt-get update && apt-get install -y protobuf-compiler libasound2-dev:arm64 libudev-dev:arm64"]
