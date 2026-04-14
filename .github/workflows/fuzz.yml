@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   fuzz:
-    name: Go fuzz targets
+    name: Go Fuzz (ax25 + aprs)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

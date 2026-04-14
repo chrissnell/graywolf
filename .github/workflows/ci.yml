@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 jobs:
-  go-test:
-    name: Go test (-race) and vet
+  go-ci:
+    name: Go Vet + Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,3 +35,27 @@ jobs:
       - name: go test -race
         working-directory: graywolf
         run: go test -race ./...
+
+  rust-ci:
+    name: Rust Check + Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libudev-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo check
+        run: cargo check --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --workspace -- -D warnings
