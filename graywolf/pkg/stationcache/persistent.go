@@ -20,7 +20,7 @@ type PersistentCache struct {
 var _ StationStore = (*PersistentCache)(nil)
 
 const (
-	memMaxAge     = 2 * time.Hour
+	memMaxAge     = 24 * time.Hour
 	pruneInterval = 1 * time.Hour
 	pruneMaxAge   = 30 * 24 * time.Hour // 30 days
 )

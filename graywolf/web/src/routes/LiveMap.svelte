@@ -29,10 +29,10 @@
   const TIMERANGE_OPTIONS = [
     { value: 3600, label: '1 hour' },
     { value: 7200, label: '2 hours' },
-    { value: 14400, label: '4 hours', disabled: true },
-    { value: 28800, label: '8 hours', disabled: true },
-    { value: 43200, label: '12 hours', disabled: true },
-    { value: 86400, label: '1 day', disabled: true },
+    { value: 14400, label: '4 hours' },
+    { value: 28800, label: '8 hours' },
+    { value: 43200, label: '12 hours' },
+    { value: 86400, label: '1 day' },
   ];
 
   // --- Helpers ---
@@ -454,11 +454,7 @@
     <div class="map-timerange">
       <select value={mapState.timerange} onchange={handleTimerangeChange}>
         {#each TIMERANGE_OPTIONS as opt}
-          <option
-            value={opt.value}
-            disabled={opt.disabled}
-            title={opt.disabled ? 'Requires persistent storage (not configured)' : ''}
-          >{opt.label}</option>
+          <option value={opt.value}>{opt.label}</option>
         {/each}
       </select>
     </div>
