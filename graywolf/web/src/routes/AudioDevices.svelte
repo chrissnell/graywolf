@@ -155,8 +155,8 @@
     form = {
       name: dev.description || dev.name,
       device_path: dev.path,
-      sample_rate: String(dev.sample_rates[dev.sample_rates.length - 1]),
-      channels: String(dev.channels[0]),
+      sample_rate: String((dev.sample_rates || [48000]).at(-1)),
+      channels: String((dev.channels || [1])[0]),
       source_type: 'soundcard',
       direction: dev.is_input ? 'input' : 'output',
     };
@@ -384,8 +384,8 @@
         {/if}
         <span class="avail-path" title={dev.path}>{dev.name}</span>
         <div class="avail-caps">
-          <span>Rates: {dev.sample_rates.join(', ')} Hz</span>
-          <span>Channels: {dev.channels.join(', ')}</span>
+          <span>Rates: {(dev.sample_rates || []).join(', ')} Hz</span>
+          <span>Channels: {(dev.channels || []).join(', ')}</span>
         </div>
         {#if dev.is_default}
           <Badge variant="success">System Default</Badge>

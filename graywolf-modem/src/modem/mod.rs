@@ -1014,6 +1014,10 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     if let Ok(inputs) = host.input_devices() {
         for dev in inputs {
             if let Ok(name) = dev.name() {
+                // Skip the ALSA null sink — it accepts anything but produces nothing useful.
+                if name == "null" {
+                    continue;
+                }
                 let mut sample_rates = Vec::new();
                 let mut channel_counts = Vec::new();
 
@@ -1033,6 +1037,10 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
                             channel_counts.push(ch);
                         }
                     }
+                }
+
+                if sample_rates.is_empty() || channel_counts.is_empty() {
+                    continue;
                 }
 
                 let is_default = default_input_name.as_deref() == Some(&name);
@@ -1057,6 +1065,9 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
         if let Ok(outputs) = host.output_devices() {
             for dev in outputs {
                 if let Ok(name) = dev.name() {
+                    if name == "null" {
+                        continue;
+                    }
                     let mut sample_rates = Vec::new();
                     let mut channel_counts = Vec::new();
 
@@ -1076,6 +1087,13 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
                                 channel_counts.push(ch);
                             }
                         }
+                    }
+
+                    // Skip devices with no supported configurations (e.g. HDMI
+                    // outputs on headless Pi) — they are unusable and cause
+                    // null-array issues downstream.
+                    if sample_rates.is_empty() || channel_counts.is_empty() {
+                        continue;
                     }
 
                     let is_default = default_output_name.as_deref() == Some(&name);
