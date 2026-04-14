@@ -3,13 +3,12 @@
 // Manages a Map<string, {marker, station}> of Leaflet markers, reconciling
 // against incoming StationDTO arrays from the server. Handles full loads
 // (evict absent stations) and delta updates (merge, client-side age check).
-// Popup rendering, hover path visualization, and zoom-gated callsign labels.
+// Popup rendering, hover path visualization, and callsign labels.
 
 import L from 'leaflet';
 import { aprsIcon } from './aprs-icons.js';
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText } from './popup-helpers.js';
 
-const LABEL_ZOOM_THRESHOLD = 10;
 const POS_EPSILON = 0.00001;
 const MAX_TRAIL_LEN = 200;
 
@@ -32,12 +31,9 @@ export class StationLayer {
     this.layerGroup = L.layerGroup().addTo(map);
     this.hoverPathGroup = L.layerGroup().addTo(map);
     this.markers = new Map(); // key → { marker, station }
-    this._labelsVisible = map.getZoom() >= LABEL_ZOOM_THRESHOLD;
     this._hoverKey = null;   // key of station whose path is being shown
     this._popupKey = null;   // key of station whose popup is open
     this._ownPos = null;     // {lat, lon} of own station
-
-    map.on('zoomend', () => this._updateLabelVisibility());
   }
 
   // Reconcile markers against incoming station data.
@@ -241,12 +237,7 @@ export class StationLayer {
     this.layerGroup.addLayer(marker);
     this.markers.set(key, { marker, station });
 
-    // Manage tooltip visibility based on current zoom
-    if (this._labelsVisible) {
-      marker.openTooltip();
-    } else {
-      marker.closeTooltip();
-    }
+    marker.openTooltip();
   }
 
   _updateMarker(entry, station, isDelta) {
@@ -299,20 +290,6 @@ export class StationLayer {
     });
 
     entry.station = station;
-  }
-
-  _updateLabelVisibility() {
-    const shouldShow = this.map.getZoom() >= LABEL_ZOOM_THRESHOLD;
-    if (shouldShow === this._labelsVisible) return;
-    this._labelsVisible = shouldShow;
-
-    for (const [, entry] of this.markers) {
-      if (shouldShow) {
-        entry.marker.openTooltip();
-      } else {
-        entry.marker.closeTooltip();
-      }
-    }
   }
 
   _showPath(key, station, origin) {
