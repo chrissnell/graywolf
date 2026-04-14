@@ -37,6 +37,15 @@
     return c ? c.name : null;
   }
 
+  const cm108GpioPins = ['1', '2', '3', '4', '5', '6', '7', '8'];
+
+  // Default gpio_pin to 3 when switching to cm108 with an out-of-range value
+  $effect(() => {
+    if (form.method === 'cm108' && !cm108GpioPins.includes(form.gpio_pin)) {
+      form.gpio_pin = '3';
+    }
+  });
+
   function emptyForm() {
     return { channel_id: '', method: 'none', device_path: '', gpio_pin: '0', invert: false };
   }
@@ -103,7 +112,7 @@
       channel_id: String(channels[0].id),
       method,
       device_path: dev.path,
-      gpio_pin: '0',
+      gpio_pin: method === 'cm108' ? '3' : '0',
       invert: false,
     };
     errors = {};
@@ -220,10 +229,10 @@
               <span class="detail-value" title={item.device_path}>{truncatePath(item.device_path)}</span>
             </div>
           {/if}
-          {#if item.method === 'gpio'}
+          {#if item.method === 'gpio' || item.method === 'cm108'}
             <div class="detail-row">
               <span class="detail-label">GPIO Pin</span>
-              <span class="detail-value">{item.gpio_pin}</span>
+              <span class="detail-value">{item.method === 'cm108' ? `GPIO ${item.gpio_pin} (pin ${item.gpio_pin + 10})` : item.gpio_pin}</span>
             </div>
           {/if}
           {#if item.method === 'none'}
@@ -292,6 +301,21 @@
     {#if form.method === 'gpio'}
       <FormField label="GPIO Pin" id="ptt-gpio">
         <Input id="ptt-gpio" bind:value={form.gpio_pin} type="number" />
+      </FormField>
+    {/if}
+    {#if form.method === 'cm108'}
+      <FormField label="GPIO Pin" id="ptt-cm108-gpio"
+        hint="GPIO 3 is used by nearly all homebrew designs and commercial products (Digirig, AIOC). Only change this if you know your adapter uses a different pin.">
+        <Select id="ptt-cm108-gpio" bind:value={form.gpio_pin} options={[
+          { value: '1', label: 'GPIO 1 (pin 11)' },
+          { value: '2', label: 'GPIO 2 (pin 12) — not on CM108AH/B' },
+          { value: '3', label: 'GPIO 3 (pin 13) — most common' },
+          { value: '4', label: 'GPIO 4 (pin 14)' },
+          { value: '5', label: 'GPIO 5 — CM109/CM119 only' },
+          { value: '6', label: 'GPIO 6 — CM109/CM119 only' },
+          { value: '7', label: 'GPIO 7 — CM109/CM119 only' },
+          { value: '8', label: 'GPIO 8 — CM109/CM119 only' },
+        ]} />
       </FormField>
     {/if}
     {#if form.method !== 'none'}
