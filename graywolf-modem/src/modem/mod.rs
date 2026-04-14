@@ -266,8 +266,24 @@ impl Modem {
                 self.apply_ptt_config(p);
             }
             Some(Payload::StartAudio(_)) => {
-                if let Err(e) = self.start_audio() {
-                    eprintln!("graywolf-modem: start_audio failed: {}", e);
+                // Retry start_audio a few times — on service restart the
+                // previous process may still hold the ALSA device briefly.
+                let mut last_err = String::new();
+                for attempt in 0..3u32 {
+                    if attempt > 0 {
+                        eprintln!(
+                            "graywolf-modem: start_audio retry {}/2 after 500ms",
+                            attempt
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    match self.start_audio() {
+                        Ok(()) => { last_err.clear(); break; }
+                        Err(e) => last_err = e,
+                    }
+                }
+                if !last_err.is_empty() {
+                    eprintln!("graywolf-modem: start_audio failed: {}", last_err);
                 }
             }
             Some(Payload::StopAudio(_)) => {
