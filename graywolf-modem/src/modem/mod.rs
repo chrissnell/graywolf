@@ -141,6 +141,13 @@ pub struct Modem {
     // Live gain atomics, keyed by device_id (shared with DevicePipeline)
     gain_atoms: HashMap<u32, Arc<AtomicU32>>,
 
+    // Pre-resolved cpal output device handles, keyed by device_id.
+    // Populated in start_audio() before input streams open and reused
+    // by both the TX worker and test-tone playback. On Linux/ALSA,
+    // cpal's device enumeration fails once a capture stream holds the
+    // hardware, so these must be resolved while the device is idle.
+    output_devices: HashMap<u32, cpal::Device>,
+
     // Active audio pipelines, keyed by device_id
     active_devices: HashMap<u32, DevicePipeline>,
 
@@ -169,6 +176,7 @@ impl Modem {
             ptt_cfgs: HashMap::new(),
             ptt_registry: PortRegistry::new(),
             gain_atoms: HashMap::new(),
+            output_devices: HashMap::new(),
             active_devices: HashMap::new(),
             tx_worker,
             rx_frames: 0,
@@ -329,7 +337,9 @@ impl Modem {
         // On Linux/ALSA, cpal's output device enumeration can fail once
         // a capture stream holds the hardware device exclusively. By
         // resolving here we grab the cpal Device handle while the
-        // hardware is still idle, then hand it to the TX worker.
+        // hardware is still idle, then hand a clone to the TX worker
+        // and keep one on the Modem for test-tone playback.
+        self.output_devices.clear();
         let mut seen_outputs = std::collections::HashSet::new();
         for ccfg in self.channel_configs.values() {
             let dev_id = ccfg.output_device_id;
@@ -339,7 +349,8 @@ impl Modem {
             if let Some(acfg) = self.audio_configs.get(&dev_id) {
                 match audio::soundcard::resolve_output_device(&acfg.device_name) {
                     Ok(device) => {
-                        self.tx_worker.prepare_output(dev_id, device);
+                        self.tx_worker.prepare_output(dev_id, device.clone());
+                        self.output_devices.insert(dev_id, device);
                         eprintln!(
                             "graywolf-modem: pre-resolved output device_id={} ({})",
                             dev_id, acfg.device_name
@@ -619,10 +630,11 @@ impl Modem {
             .cloned()
             .unwrap_or_else(|| Arc::new(AtomicU32::new(0f32.to_bits())));
         let handle = self.handle.clone();
+        let cached_device = self.output_devices.get(&device_id).cloned();
         std::thread::Builder::new()
             .name("test-tone".into())
             .spawn(move || {
-                let result = play_test_tone_blocking(&req, &handle, device_id, &gain_atom);
+                let result = play_test_tone_blocking(&req, &handle, device_id, &gain_atom, cached_device);
                 let msg = IpcMessage::test_tone_result(result);
                 let _ = handle.send(&msg);
             })
@@ -1297,29 +1309,38 @@ fn play_test_tone_blocking(
     handle: &IpcHandle,
     device_id: u32,
     gain_atom: &Arc<AtomicU32>,
+    cached_device: Option<cpal::Device>,
 ) -> TestToneResult {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::atomic::{AtomicBool, AtomicU64};
 
-    let host = cpal::default_host();
-    let device = match host.output_devices() {
-        Ok(mut devs) => devs.find(|d| d.name().map(|n| n == req.device_name).unwrap_or(false)),
-        Err(e) => {
-            return TestToneResult {
-                request_id: req.request_id,
-                success: false,
-                error: format!("enumerate output devices: {}", e),
-            };
-        }
-    };
-    let device = match device {
+    // Use a pre-resolved device if available (resolved before input
+    // streams opened). Falls back to runtime enumeration which may fail
+    // on Linux/ALSA when a capture stream holds the hardware device.
+    let device = match cached_device {
         Some(d) => d,
         None => {
-            return TestToneResult {
-                request_id: req.request_id,
-                success: false,
-                error: format!("output device not found: {}", req.device_name),
+            let host = cpal::default_host();
+            let found = match host.output_devices() {
+                Ok(mut devs) => devs.find(|d| d.name().map(|n| n == req.device_name).unwrap_or(false)),
+                Err(e) => {
+                    return TestToneResult {
+                        request_id: req.request_id,
+                        success: false,
+                        error: format!("enumerate output devices: {}", e),
+                    };
+                }
             };
+            match found {
+                Some(d) => d,
+                None => {
+                    return TestToneResult {
+                        request_id: req.request_id,
+                        success: false,
+                        error: format!("output device not found: {}", req.device_name),
+                    };
+                }
+            }
         }
     };
 
