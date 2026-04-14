@@ -346,12 +346,9 @@ impl Modem {
             channels_by_device.entry(0).or_default().push(default_ccfg);
         }
 
-        // Resolve output devices BEFORE opening any input streams.
-        // On Linux/ALSA, cpal's output device enumeration can fail once
-        // a capture stream holds the hardware device exclusively. By
-        // resolving here we grab the cpal Device handle while the
-        // hardware is still idle, then hand a clone to the TX worker
-        // and keep one on the Modem for test-tone playback.
+        // Pre-resolve output devices before opening input streams.
+        // This lets the TX worker and test-tone path use cached Device
+        // handles without enumerating at transmit time.
         self.output_devices.clear();
         let mut seen_outputs = std::collections::HashSet::new();
         for ccfg in self.channel_configs.values() {
@@ -364,14 +361,10 @@ impl Modem {
                     Ok(device) => {
                         self.tx_worker.prepare_output(dev_id, device.clone());
                         self.output_devices.insert(dev_id, device);
-                        eprintln!(
-                            "graywolf-modem: pre-resolved output device_id={} ({})",
-                            dev_id, acfg.device_name
-                        );
                     }
                     Err(e) => {
                         eprintln!(
-                            "graywolf-modem: failed to pre-resolve output device_id={} ({}): {}",
+                            "graywolf-modem: failed to resolve output device_id={} ({}): {}",
                             dev_id, acfg.device_name, e
                         );
                     }
@@ -1026,8 +1019,8 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
 
                 if let Ok(configs) = dev.supported_input_configs() {
                     for cfg in configs {
-                        let min_rate = cfg.min_sample_rate().0;
-                        let max_rate = cfg.max_sample_rate().0;
+                        let min_rate = cfg.min_sample_rate();
+                        let max_rate = cfg.max_sample_rate();
                         for &rate in &[8000, 11025, 16000, 22050, 44100, 48000, 96000] {
                             if rate >= min_rate && rate <= max_rate
                                 && !sample_rates.contains(&rate)
@@ -1069,8 +1062,8 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
 
                     if let Ok(configs) = dev.supported_output_configs() {
                         for cfg in configs {
-                            let min_rate = cfg.min_sample_rate().0;
-                            let max_rate = cfg.max_sample_rate().0;
+                            let min_rate = cfg.min_sample_rate();
+                            let max_rate = cfg.max_sample_rate();
                             for &rate in &[8000, 11025, 16000, 22050, 44100, 48000, 96000] {
                                 if rate >= min_rate && rate <= max_rate
                                     && !sample_rates.contains(&rate)
@@ -1361,7 +1354,7 @@ fn play_test_tone_blocking(
     let channels = req.channels.max(1) as u16;
     let config = cpal::StreamConfig {
         channels,
-        sample_rate: cpal::SampleRate(sample_rate),
+        sample_rate: sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 

@@ -34,7 +34,7 @@ pub fn spawn(
             .ok_or_else(|| "no default input device".to_string())?
     } else {
         host.input_devices()
-            .map_err(|e| format!("enumerate devices: {}", e))?
+            .map_err(|e| format!("enumerate input devices: {}", e))?
             .find(|d| d.name().map(|n| n == cfg.device_name).unwrap_or(false))
             .ok_or_else(|| format!("input device not found: {}", cfg.device_name))?
     };
@@ -46,7 +46,7 @@ pub fn spawn(
     let channels = cfg.channels.max(1) as u16;
     let stream_config = StreamConfig {
         channels,
-        sample_rate: cpal::SampleRate(cfg.sample_rate),
+        sample_rate: cfg.sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -186,11 +186,7 @@ pub struct SoundcardOutputConfig {
     pub audio_channel: u32,
 }
 
-/// Resolve a cpal output [`Device`] by name. Call this while no input
-/// streams are active — on Linux/ALSA, cpal's device enumeration can
-/// fail to probe a hardware device that is already held by a capture
-/// stream, causing the device to silently disappear from the output
-/// list.
+/// Resolve a cpal output [`Device`] by name.
 pub fn resolve_output_device(name: &str) -> Result<Device, String> {
     let host = cpal::default_host();
     if name.is_empty() || name == "default" {
@@ -261,10 +257,8 @@ impl Drop for AudioSink {
 /// on the thread that built it — same pattern as [`spawn`] for input.
 ///
 /// If `device` is `Some`, it is used directly — no enumeration happens.
-/// Pass a handle obtained from [`resolve_output_device`] before any input
-/// streams are active. If `None`, falls back to enumerating output
-/// devices by name (which may fail on Linux/ALSA when a capture stream
-/// already holds the hardware device).
+/// Pass a handle obtained from [`resolve_output_device`] to skip
+/// enumeration at transmit time.
 pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Result<AudioSink, String> {
     let channels_requested = cfg.channels.max(1);
     if cfg.audio_channel >= channels_requested {
@@ -286,7 +280,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     let channels = cfg.channels.max(1) as u16;
     let stream_config = StreamConfig {
         channels,
-        sample_rate: cpal::SampleRate(cfg.sample_rate),
+        sample_rate: cfg.sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
