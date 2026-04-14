@@ -266,24 +266,21 @@ impl Modem {
                 self.apply_ptt_config(p);
             }
             Some(Payload::StartAudio(_)) => {
-                // Retry start_audio a few times — on service restart the
-                // previous process may still hold the ALSA device briefly.
-                let mut last_err = String::new();
-                for attempt in 0..3u32 {
-                    if attempt > 0 {
+                // start_audio synchronously joins audio threads, so the
+                // device should be free immediately. Retry once with a
+                // delay as a safety net for external races (e.g. systemd
+                // restart where the previous process hasn't fully exited).
+                match self.start_audio() {
+                    Ok(()) => {}
+                    Err(e) => {
                         eprintln!(
-                            "graywolf-modem: start_audio retry {}/2 after 500ms",
-                            attempt
+                            "graywolf-modem: start_audio failed ({}), retrying in 500ms", e
                         );
                         std::thread::sleep(std::time::Duration::from_millis(500));
+                        if let Err(e) = self.start_audio() {
+                            eprintln!("graywolf-modem: start_audio failed: {}", e);
+                        }
                     }
-                    match self.start_audio() {
-                        Ok(()) => { last_err.clear(); break; }
-                        Err(e) => last_err = e,
-                    }
-                }
-                if !last_err.is_empty() {
-                    eprintln!("graywolf-modem: start_audio failed: {}", last_err);
                 }
             }
             Some(Payload::StopAudio(_)) => {
@@ -468,8 +465,8 @@ impl Modem {
     }
 
     fn stop_all_audio(&mut self) {
-        for (_, pipe) in self.active_devices.drain() {
-            pipe.source.stop();
+        for (_, mut pipe) in self.active_devices.drain() {
+            pipe.source.stop_and_join();
         }
         // Symmetry with the input side: stop means stop. Tell the TX
         // worker to drop its cached sinks so a subsequent ConfigureAudio

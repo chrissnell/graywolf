@@ -35,6 +35,18 @@ impl AudioSource {
         self.stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
+
+    /// Signal the source thread to stop and block until it exits. This
+    /// ensures the underlying cpal stream is fully dropped and the ALSA
+    /// device is released before returning — without this, a subsequent
+    /// device enumeration can fail because the hardware is still held.
+    pub fn stop_and_join(&mut self) {
+        self.stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(handle) = self._join.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 /// Shared channel buffer capacity. Large enough to tolerate ~1 second of
