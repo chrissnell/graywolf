@@ -55,17 +55,14 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install protoc + ALSA dev (Linux)
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install ALSA + udev dev (Linux)
         if: matrix.platform == 'linux' && matrix.use_cross == false
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libudev-dev
-
-      - name: Install protoc (macOS)
-        if: matrix.platform == 'darwin'
-        run: brew install protobuf
-
-      - name: Install protoc (Windows)
-        if: matrix.platform == 'windows'
-        run: choco install protoc -y
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
 
       - name: Install cross (Linux arm64)
         if: matrix.use_cross

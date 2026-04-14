@@ -43,8 +43,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libudev-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
