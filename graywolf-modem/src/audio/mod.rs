@@ -26,7 +26,7 @@ pub type AudioChunk = Vec<i16>;
 /// A live audio source running on its own thread.
 pub struct AudioSource {
     pub sample_rate: u32,
-    pub _join: Option<JoinHandle<()>>,
+    pub thread: Option<JoinHandle<()>>,
     pub stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -43,7 +43,7 @@ impl AudioSource {
     pub fn stop_and_join(&mut self) {
         self.stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(handle) = self._join.take() {
+        if let Some(handle) = self.thread.take() {
             let _ = handle.join();
         }
     }

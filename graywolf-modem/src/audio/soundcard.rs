@@ -131,7 +131,7 @@ pub fn spawn(
 
     Ok(AudioSource {
         sample_rate: cfg.sample_rate,
-        _join: Some(join),
+        thread: Some(join),
         stop,
     })
 }
