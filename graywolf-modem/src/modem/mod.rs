@@ -325,6 +325,36 @@ impl Modem {
             channels_by_device.entry(0).or_default().push(default_ccfg);
         }
 
+        // Resolve output devices BEFORE opening any input streams.
+        // On Linux/ALSA, cpal's output device enumeration can fail once
+        // a capture stream holds the hardware device exclusively. By
+        // resolving here we grab the cpal Device handle while the
+        // hardware is still idle, then hand it to the TX worker.
+        let mut seen_outputs = std::collections::HashSet::new();
+        for ccfg in self.channel_configs.values() {
+            let dev_id = ccfg.output_device_id;
+            if dev_id == 0 || !seen_outputs.insert(dev_id) {
+                continue;
+            }
+            if let Some(acfg) = self.audio_configs.get(&dev_id) {
+                match audio::soundcard::resolve_output_device(&acfg.device_name) {
+                    Ok(device) => {
+                        self.tx_worker.prepare_output(dev_id, device);
+                        eprintln!(
+                            "graywolf-modem: pre-resolved output device_id={} ({})",
+                            dev_id, acfg.device_name
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "graywolf-modem: failed to pre-resolve output device_id={} ({}): {}",
+                            dev_id, acfg.device_name, e
+                        );
+                    }
+                }
+            }
+        }
+
         // Start one pipeline per audio device
         for (device_id, channel_cfgs) in &channels_by_device {
             let acfg = self.audio_configs.get(device_id)

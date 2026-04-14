@@ -26,6 +26,8 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use cpal::Device;
+
 use crate::audio::soundcard::{self, AudioSink, SoundcardOutputConfig};
 use crate::tx::ptt::PttDriver;
 
@@ -52,6 +54,14 @@ enum TxMessage {
     /// Remove the driver for a channel, dropping any cached fd.
     ReleaseDriver {
         channel: u32,
+    },
+    /// Cache a pre-resolved cpal output device. Sent from `start_audio`
+    /// before any input streams are opened, so the enumeration succeeds.
+    /// The worker stores it until the first TX on that device_id, then
+    /// consumes it to build the [`AudioSink`].
+    PrepareOutput {
+        device_id: u32,
+        device: Device,
     },
     /// Drop every cached output sink. Sent from `stop_all_audio` so a
     /// subsequent reconfigure gets a fresh `spawn_output` on the new
@@ -151,6 +161,13 @@ impl TxWorker {
         let _ = self.sender.send(TxMessage::ReleaseDriver { channel });
     }
 
+    /// Send a pre-resolved cpal output device to the worker. Call this
+    /// from `start_audio` before opening any input streams so the device
+    /// enumeration runs while the hardware is still available.
+    pub fn prepare_output(&self, device_id: u32, device: Device) {
+        let _ = self.sender.send(TxMessage::PrepareOutput { device_id, device });
+    }
+
     /// Ask the worker to drop all cached output sinks. Fire-and-forget;
     /// runs after any in-flight transmission completes.
     pub fn release_sinks(&self) {
@@ -184,16 +201,27 @@ impl Drop for TxWorker {
 fn worker_loop(rx: std::sync::mpsc::Receiver<TxMessage>, stop: Arc<AtomicBool>) {
     let mut sinks: HashMap<u32, AudioSink> = HashMap::new();
     let mut drivers: HashMap<u32, Box<dyn PttDriver>> = HashMap::new();
+    // Pre-resolved cpal output devices, keyed by device_id. Populated by
+    // PrepareOutput before any input streams open; consumed on first TX.
+    let mut pending_devices: HashMap<u32, Device> = HashMap::new();
     while !stop.load(Ordering::Relaxed) {
         match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(TxMessage::Transmit(job)) => process_job(&mut sinks, &mut drivers, job),
+            Ok(TxMessage::Transmit(job)) => {
+                process_job(&mut sinks, &mut drivers, &mut pending_devices, job);
+            }
             Ok(TxMessage::RegisterDriver { channel, driver }) => {
                 drivers.insert(channel, driver);
             }
             Ok(TxMessage::ReleaseDriver { channel }) => {
                 drivers.remove(&channel);
             }
-            Ok(TxMessage::ReleaseSinks) => sinks.clear(),
+            Ok(TxMessage::PrepareOutput { device_id, device }) => {
+                pending_devices.insert(device_id, device);
+            }
+            Ok(TxMessage::ReleaseSinks) => {
+                sinks.clear();
+                pending_devices.clear();
+            }
             #[cfg(test)]
             Ok(TxMessage::QueryDriverCount(reply)) => {
                 let _ = reply.send(drivers.len());
@@ -207,6 +235,7 @@ fn worker_loop(rx: std::sync::mpsc::Receiver<TxMessage>, stop: Arc<AtomicBool>) 
 fn process_job(
     sinks: &mut HashMap<u32, AudioSink>,
     drivers: &mut HashMap<u32, Box<dyn PttDriver>>,
+    pending_devices: &mut HashMap<u32, Device>,
     job: TxJob,
 ) {
     let TxJob {
@@ -235,24 +264,31 @@ fn process_job(
 
     // Lazy-create the sink, holding the &mut returned by the Entry API
     // so the rest of this function never has to look the sink up again.
+    //
+    // Use a pre-resolved cpal Device if one was sent by PrepareOutput
+    // (resolved before input streams opened). Falls back to runtime
+    // enumeration if none is cached (error recovery path).
     let sink = match sinks.entry(output_device_id) {
         Entry::Occupied(e) => e.into_mut(),
-        Entry::Vacant(e) => match soundcard::spawn_output(sink_config) {
-            Ok(s) => {
-                eprintln!(
-                    "graywolf-modem: TX sink opened for device_id={} at {} Hz",
-                    output_device_id, sample_rate
-                );
-                e.insert(s)
+        Entry::Vacant(e) => {
+            let device = pending_devices.remove(&output_device_id);
+            match soundcard::spawn_output(sink_config, device) {
+                Ok(s) => {
+                    eprintln!(
+                        "graywolf-modem: TX sink opened for device_id={} at {} Hz",
+                        output_device_id, sample_rate
+                    );
+                    e.insert(s)
+                }
+                Err(err) => {
+                    eprintln!(
+                        "graywolf-modem: TransmitFrame: open output device_id={}: {}",
+                        output_device_id, err
+                    );
+                    return;
+                }
             }
-            Err(err) => {
-                eprintln!(
-                    "graywolf-modem: TransmitFrame: open output device_id={}: {}",
-                    output_device_id, err
-                );
-                return;
-            }
-        },
+        }
     };
 
     // Explicit reborrow so the &mut AudioSink becomes a &AudioSink

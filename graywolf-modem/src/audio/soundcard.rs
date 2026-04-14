@@ -12,7 +12,7 @@ use std::thread;
 use std::thread::JoinHandle;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, StreamConfig};
+use cpal::{Device, SampleFormat, StreamConfig};
 
 use super::AudioSource;
 
@@ -186,6 +186,24 @@ pub struct SoundcardOutputConfig {
     pub audio_channel: u32,
 }
 
+/// Resolve a cpal output [`Device`] by name. Call this while no input
+/// streams are active — on Linux/ALSA, cpal's device enumeration can
+/// fail to probe a hardware device that is already held by a capture
+/// stream, causing the device to silently disappear from the output
+/// list.
+pub fn resolve_output_device(name: &str) -> Result<Device, String> {
+    let host = cpal::default_host();
+    if name.is_empty() || name == "default" {
+        host.default_output_device()
+            .ok_or_else(|| "no default output device".to_string())
+    } else {
+        host.output_devices()
+            .map_err(|e| format!("enumerate output devices: {}", e))?
+            .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+            .ok_or_else(|| format!("output device not found: {}", name))
+    }
+}
+
 /// Owns a live cpal output stream and a queue of pending i16 sample
 /// submissions. The stream stays open for the sink's lifetime — direwolf
 /// keeps its output device continuously open for the same reason: avoiding
@@ -241,7 +259,13 @@ impl Drop for AudioSink {
 /// Open an output device and spawn the cpal stream on its own thread.
 /// The cpal stream is not `Send` on all platforms, so ownership must stay
 /// on the thread that built it — same pattern as [`spawn`] for input.
-pub fn spawn_output(cfg: SoundcardOutputConfig) -> Result<AudioSink, String> {
+///
+/// If `device` is `Some`, it is used directly — no enumeration happens.
+/// Pass a handle obtained from [`resolve_output_device`] before any input
+/// streams are active. If `None`, falls back to enumerating output
+/// devices by name (which may fail on Linux/ALSA when a capture stream
+/// already holds the hardware device).
+pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Result<AudioSink, String> {
     let channels_requested = cfg.channels.max(1);
     if cfg.audio_channel >= channels_requested {
         return Err(format!(
@@ -250,16 +274,9 @@ pub fn spawn_output(cfg: SoundcardOutputConfig) -> Result<AudioSink, String> {
         ));
     }
 
-    let host = cpal::default_host();
-
-    let device = if cfg.device_name.is_empty() || cfg.device_name == "default" {
-        host.default_output_device()
-            .ok_or_else(|| "no default output device".to_string())?
-    } else {
-        host.output_devices()
-            .map_err(|e| format!("enumerate devices: {}", e))?
-            .find(|d| d.name().map(|n| n == cfg.device_name).unwrap_or(false))
-            .ok_or_else(|| format!("output device not found: {}", cfg.device_name))?
+    let device = match device {
+        Some(d) => d,
+        None => resolve_output_device(&cfg.device_name)?,
     };
 
     let supported = device
@@ -595,7 +612,7 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             audio_channel: 2,
-        });
+        }, None);
         match result {
             Err(e) => assert!(e.contains("out of range"), "unexpected error: {}", e),
             Ok(_) => panic!("expected out-of-range rejection"),
