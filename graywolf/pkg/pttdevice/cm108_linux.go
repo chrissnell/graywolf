@@ -52,11 +52,17 @@ var cm108VIDPIDSet = map[string]bool{
 // ancestor's realpath is used as the join key (Direwolf uses the same
 // approach via libudev).
 func buildCM108Inventory() []cm108Entry {
+	return buildCM108InventoryFrom("/sys")
+}
+
+// buildCM108InventoryFrom is the testable core of buildCM108Inventory.
+// sysRoot is the sysfs mount point ("/sys" in production, a temp dir in tests).
+func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 	cardsByParent := map[string]*cm108Entry{}
 
 	// Pass 1: /sys/class/sound/card* → USB parent → card info.
 	// Only records cards whose USB ancestor is a CM108-compatible vendor.
-	soundCards, _ := filepath.Glob("/sys/class/sound/card[0-9]*")
+	soundCards, _ := filepath.Glob(filepath.Join(sysRoot, "class/sound/card[0-9]*"))
 	for _, cardPath := range soundCards {
 		usbParent := usbParentDir(cardPath)
 		if usbParent == "" {
@@ -92,7 +98,7 @@ func buildCM108Inventory() []cm108Entry {
 	}
 
 	// Pass 2: /sys/class/hidraw/hidraw* → find USB parent → join with Pass 1.
-	hidrawPaths, _ := filepath.Glob("/sys/class/hidraw/hidraw[0-9]*")
+	hidrawPaths, _ := filepath.Glob(filepath.Join(sysRoot, "class/hidraw/hidraw[0-9]*"))
 	for _, hidrawSys := range hidrawPaths {
 		usbParent := usbParentDir(hidrawSys)
 		if usbParent == "" {
