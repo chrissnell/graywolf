@@ -37,7 +37,7 @@ impl WinCm108Gpio {
                 None,
                 OPEN_EXISTING,
                 FILE_FLAGS_AND_ATTRIBUTES(0),
-                HANDLE::default(),
+                None,
             )
         }
         .map_err(|e| format!("CreateFileW {}: {}", path, e))?;
