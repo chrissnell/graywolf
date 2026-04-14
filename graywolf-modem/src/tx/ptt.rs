@@ -79,9 +79,15 @@ mod ptt_unix;
 #[path = "ptt_win.rs"]
 mod ptt_win;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[path = "ptt_cm108_unix.rs"]
 mod ptt_cm108_unix;
+#[cfg(target_os = "macos")]
+#[path = "ptt_cm108_macos.rs"]
+mod ptt_cm108_macos;
+#[cfg(windows)]
+#[path = "ptt_cm108_win.rs"]
+mod ptt_cm108_win;
 
 #[cfg(unix)]
 use ptt_unix::UnixSerialLines as PlatformSerialLines;
@@ -663,6 +669,49 @@ pub(crate) mod tests {
     fn win_serial_lines_open_rejects_nonexistent_path() {
         use super::ptt_win::WinSerialLines;
         let err = match WinSerialLines::open("\\\\.\\COM_graywolf_ptt_bogus") {
+            Err(e) => e,
+            Ok(_) => panic!("must fail on missing device"),
+        };
+        assert!(err.contains("CreateFileW"), "unexpected error: {}", err);
+    }
+
+    // CM108 platform smoke tests: same pattern as serial — verify open()
+    // returns a descriptive Err for a nonexistent path, not a panic.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unix_cm108_open_rejects_nonexistent_path() {
+        use super::ptt_cm108_unix::UnixCm108Gpio;
+        let err = match UnixCm108Gpio::open("/dev/graywolf-cm108-definitely-not-real-xyz") {
+            Err(e) => e,
+            Ok(_) => panic!("must fail on missing device"),
+        };
+        assert!(
+            err.contains("open") && err.to_lowercase().contains("no such"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_cm108_open_rejects_nonexistent_path() {
+        use super::ptt_cm108_macos::MacCm108Gpio;
+        let err = match MacCm108Gpio::open("IOService:/nonexistent/graywolf-cm108-bogus") {
+            Err(e) => e,
+            Ok(_) => panic!("must fail on missing device"),
+        };
+        assert!(
+            err.contains("hidapi"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn win_cm108_open_rejects_nonexistent_path() {
+        use super::ptt_cm108_win::WinCm108Gpio;
+        let err = match WinCm108Gpio::open("\\\\.\\HID#graywolf_cm108_bogus") {
             Err(e) => e,
             Ok(_) => panic!("must fail on missing device"),
         };
