@@ -66,6 +66,9 @@ nfpms:
     contents:
       - src: packaging/systemd/graywolf.service
         dst: /usr/lib/systemd/system/graywolf.service
+      - src: packaging/udev/99-graywolf-cm108.rules
+        dst: /etc/udev/rules.d/99-graywolf-cm108.rules
+        type: config
       - src: "rust-bin/linux_{{ .Arch }}/graywolf-modem"
         dst: /usr/bin/graywolf-modem
     scripts:
