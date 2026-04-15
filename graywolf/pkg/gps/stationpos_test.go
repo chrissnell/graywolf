@@ -39,6 +39,31 @@ func TestStationPos_NoFallbackNoGPS(t *testing.T) {
 	}
 }
 
+func TestStationPos_GetWithSource(t *testing.T) {
+	cache := NewMemCache()
+	sp := NewStationPos(cache)
+
+	// No data → SourceNone.
+	_, src := sp.GetWithSource()
+	if src != SourceNone {
+		t.Fatalf("got source %v, want SourceNone", src)
+	}
+
+	// Fallback only → SourceFixed.
+	sp.SetFallback(&Fix{Latitude: 35.0, Longitude: -106.0})
+	_, src = sp.GetWithSource()
+	if src != SourceFixed {
+		t.Fatalf("got source %v, want SourceFixed", src)
+	}
+
+	// GPS overrides → SourceGPS.
+	cache.Update(Fix{Latitude: 47.6, Longitude: -122.3})
+	_, src = sp.GetWithSource()
+	if src != SourceGPS {
+		t.Fatalf("got source %v, want SourceGPS", src)
+	}
+}
+
 func TestStationPos_ClearFallback(t *testing.T) {
 	sp := NewStationPos(NewMemCache())
 	sp.SetFallback(&Fix{Latitude: 35.0, Longitude: -106.0})

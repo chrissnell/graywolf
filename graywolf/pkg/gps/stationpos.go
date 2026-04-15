@@ -25,6 +25,15 @@ func NewStationPos(gps *MemCache) *StationPos {
 	return &StationPos{gps: gps}
 }
 
+// PositionSource indicates where a position came from.
+type PositionSource int
+
+const (
+	SourceNone  PositionSource = iota // no position available
+	SourceGPS                         // live GPS receiver
+	SourceFixed                       // static beacon coordinates
+)
+
 // Get returns the latest GPS fix if available, otherwise the fallback.
 func (s *StationPos) Get() (Fix, bool) {
 	if fix, ok := s.gps.Get(); ok {
@@ -33,6 +42,19 @@ func (s *StationPos) Get() (Fix, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.fallback, s.hasFB
+}
+
+// GetWithSource is like Get but also reports the position source.
+func (s *StationPos) GetWithSource() (Fix, PositionSource) {
+	if fix, ok := s.gps.Get(); ok {
+		return fix, SourceGPS
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.hasFB {
+		return s.fallback, SourceFixed
+	}
+	return Fix{}, SourceNone
 }
 
 // Update delegates to the underlying GPS cache.

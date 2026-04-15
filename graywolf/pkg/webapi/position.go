@@ -9,6 +9,7 @@ import (
 // PositionDTO is the JSON shape returned by GET /api/position.
 type PositionDTO struct {
 	Valid     bool    `json:"valid"`
+	Source    string  `json:"source"` // "gps", "fixed", or "none"
 	Latitude  float64 `json:"lat,omitempty"`
 	Longitude float64 `json:"lon,omitempty"`
 	Altitude  float64 `json:"alt_m,omitempty"`
@@ -20,23 +21,30 @@ type PositionDTO struct {
 }
 
 // RegisterPosition installs GET /api/position on the Server's mux.
-func RegisterPosition(srv *Server, cache gps.PositionCache, mux *http.ServeMux) {
+func RegisterPosition(srv *Server, pos *gps.StationPos, mux *http.ServeMux) {
+	sourceLabel := [...]string{
+		gps.SourceNone:  "none",
+		gps.SourceGPS:   "gps",
+		gps.SourceFixed: "fixed",
+	}
+
 	mux.HandleFunc("/api/position", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if cache == nil {
-			writeJSON(w, http.StatusOK, PositionDTO{Valid: false})
+		if pos == nil {
+			writeJSON(w, http.StatusOK, PositionDTO{Source: sourceLabel[gps.SourceNone]})
 			return
 		}
-		fix, ok := cache.Get()
-		if !ok {
-			writeJSON(w, http.StatusOK, PositionDTO{Valid: false})
+		fix, src := pos.GetWithSource()
+		if src == gps.SourceNone {
+			writeJSON(w, http.StatusOK, PositionDTO{Source: sourceLabel[gps.SourceNone]})
 			return
 		}
 		writeJSON(w, http.StatusOK, PositionDTO{
 			Valid:     true,
+			Source:    sourceLabel[src],
 			Latitude:  fix.Latitude,
 			Longitude: fix.Longitude,
 			Altitude:  fix.Altitude,

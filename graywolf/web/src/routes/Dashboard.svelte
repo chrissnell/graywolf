@@ -301,7 +301,7 @@
     {#if position?.valid}
       <span class="stat-value gps-value">{formatCoord(position.lat, 'N', 'S')}, {formatCoord(position.lon, 'E', 'W')}</span>
       <span class="stat-label">
-        GPS
+        {position.source === 'gps' ? 'GPS' : 'Fixed Position'}
         {#if position.has_alt} &middot; {position.alt_m?.toFixed(0)}m{/if}
         {#if position.has_course} &middot; {position.heading_deg?.toFixed(0)}&deg; &middot; {position.speed_kt?.toFixed(1)}kt{/if}
       </span>
