@@ -1222,8 +1222,56 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
         if !is_useful_alsa_device(&pcm_id) {
             continue;
         }
-        let supported = match dev.default_input_config() {
-            Ok(c) => c,
+        // Pick the best supported config by querying the device's actual
+        // capabilities.  default_input_config() can return parameters the
+        // hardware rejects (especially on raw hw: ALSA devices), causing
+        // snd_pcm_hw_params to fail with EINVAL.
+        let (sample_format, stream_cfg) = match dev.supported_input_configs() {
+            Ok(configs) => {
+                // Prefer 48 kHz > 44.1 kHz > anything, mono > stereo, I16 > F32 > U16.
+                let mut best: Option<cpal::SupportedStreamConfigRange> = None;
+                for cfg in configs {
+                    let dominated = best.as_ref().map_or(false, |b| {
+                        // Prefer fewer channels (mono) for a quick level scan.
+                        if cfg.channels() > b.channels() { return true; }
+                        if cfg.channels() < b.channels() { return false; }
+                        // Prefer I16 — it's the native format for most USB audio.
+                        let rank = |f: SampleFormat| match f {
+                            SampleFormat::I16 => 0,
+                            SampleFormat::F32 => 1,
+                            _ => 2,
+                        };
+                        rank(cfg.sample_format()) > rank(b.sample_format())
+                    });
+                    if !dominated { best = Some(cfg); }
+                }
+                match best {
+                    Some(range) => {
+                        // Pick sample rate: prefer 48 k, then 44.1 k, else max.
+                        let rate = [48000u32, 44100]
+                            .iter()
+                            .copied()
+                            .find(|&r| r >= range.min_sample_rate() && r <= range.max_sample_rate())
+                            .unwrap_or(range.max_sample_rate());
+                        let fmt = range.sample_format();
+                        let cfg = cpal::StreamConfig {
+                            channels: range.channels(),
+                            sample_rate: rate,
+                            buffer_size: cpal::BufferSize::Default,
+                        };
+                        (fmt, cfg)
+                    }
+                    None => {
+                        results.push(InputDeviceLevel {
+                            name: pcm_id,
+                            peak_dbfs: -96.0,
+                            has_signal: false,
+                            error: "no supported input configurations".into(),
+                        });
+                        continue;
+                    }
+                }
+            }
             Err(e) => {
                 results.push(InputDeviceLevel {
                     name: pcm_id,
@@ -1236,13 +1284,6 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
         };
 
         let peak = Arc::new(AtomicU32::new(0f32.to_bits()));
-        let sample_format = supported.sample_format();
-
-        let stream_cfg = cpal::StreamConfig {
-            channels: supported.channels(),
-            sample_rate: supported.sample_rate(),
-            buffer_size: cpal::BufferSize::Default,
-        };
 
         // Build stream using the device's native sample format.
         let stream = match sample_format {
