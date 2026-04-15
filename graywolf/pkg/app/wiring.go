@@ -135,10 +135,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// --- Station cache (map's last-known-state store) ------------------
 	a.stationCache = stationcache.NewPersistentCache(a.logger)
 	plCfg, _ := a.store.GetPositionLogConfig(ctx)
-	if plCfg != nil && plCfg.Enabled && plCfg.DBPath != "" {
-		hdb, err := historydb.Open(plCfg.DBPath)
+	if plCfg != nil && plCfg.Enabled && a.cfg.HistoryDBPath != "" {
+		hdb, err := historydb.Open(a.cfg.HistoryDBPath)
 		if err != nil {
-			a.logger.Warn("failed to open history db, starting without persistence", "path", plCfg.DBPath, "err", err)
+			a.logger.Warn("failed to open history db, starting without persistence", "path", a.cfg.HistoryDBPath, "err", err)
 		} else {
 			a.logger.Info("opened history db", "path", hdb.Path)
 			if err := a.stationCache.Reconfigure(hdb); err != nil {
@@ -525,11 +525,12 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	mux.Handle("/metrics", a.metrics.Handler())
 
 	apiSrv, err := webapi.NewServer(webapi.Config{
-		Store:       a.store,
-		Bridge:      a.bridge,
-		KissManager: a.kissMgr,
-		KissCtx:     ctx,
-		Logger:      a.logger,
+		Store:         a.store,
+		Bridge:        a.bridge,
+		KissManager:   a.kissMgr,
+		KissCtx:       ctx,
+		Logger:        a.logger,
+		HistoryDBPath: a.cfg.HistoryDBPath,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)
@@ -648,15 +649,15 @@ func (a *App) reconfigurePositionLog(ctx context.Context) {
 		a.logger.Warn("read position log config", "err", err)
 		return
 	}
-	if cfg == nil || !cfg.Enabled || cfg.DBPath == "" {
+	if cfg == nil || !cfg.Enabled || a.cfg.HistoryDBPath == "" {
 		if err := a.stationCache.Reconfigure(nil); err != nil {
 			a.logger.Warn("disable position log", "err", err)
 		}
 		return
 	}
-	hdb, err := historydb.Open(cfg.DBPath)
+	hdb, err := historydb.Open(a.cfg.HistoryDBPath)
 	if err != nil {
-		a.logger.Warn("open history db", "path", cfg.DBPath, "err", err)
+		a.logger.Warn("open history db", "path", a.cfg.HistoryDBPath, "err", err)
 		return
 	}
 	a.logger.Info("opened history db", "path", hdb.Path)

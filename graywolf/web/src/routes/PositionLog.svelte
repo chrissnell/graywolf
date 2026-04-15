@@ -1,27 +1,28 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Toggle, Box } from '@chrissnell/chonky-ui';
+  import { Button, Toggle, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import FormField from '../components/FormField.svelte';
 
-  let form = $state({
-    enabled: false,
-    db_path: './graywolf-history.db',
-  });
+  let enabled = $state(false);
+  let dbPath = $state('');
   let loading = $state(false);
 
   onMount(async () => {
     const data = await api.get('/position-log');
-    if (data) form = { enabled: data.enabled, db_path: data.db_path };
+    if (data) {
+      enabled = data.enabled;
+      dbPath = data.db_path;
+    }
   });
 
   async function handleSave(e) {
     e.preventDefault();
     loading = true;
     try {
-      await api.put('/position-log', form);
+      const data = await api.put('/position-log', { enabled });
+      if (data) dbPath = data.db_path;
       toasts.success('Position log config saved');
     } catch (err) {
       toasts.error(err.message);
@@ -35,11 +36,11 @@
 
 <Box>
   <form onsubmit={handleSave}>
-    <Toggle bind:checked={form.enabled} label="Enable persistent position log" />
-    {#if form.enabled}
-      <FormField label="Database Path" id="pl-path">
-        <Input id="pl-path" bind:value={form.db_path} placeholder="./graywolf-history.db" />
-      </FormField>
+    <Toggle bind:checked={enabled} label="Enable persistent position log" />
+    {#if dbPath}
+      <div class="db-path">
+        Database location: <code>{dbPath}</code>
+      </div>
     {/if}
     <div class="form-actions">
       <Button variant="primary" type="submit" disabled={loading}>
@@ -57,13 +58,33 @@
     Positions are retained for 30 days and automatically pruned.
     The database file is created automatically if it doesn&rsquo;t exist.
   </p>
+  <h3>Changing the Database Location</h3>
+  <p>
+    The database path is set by the <code>-history-db</code> command-line
+    flag. To change it:
+  </p>
+  <ul>
+    <li>
+      <strong>systemd:</strong> edit the <code>ExecStart</code> line in
+      <code>/etc/systemd/system/graywolf.service</code> (or an override),
+      then <code>systemctl daemon-reload &amp;&amp; systemctl restart graywolf</code>.
+    </li>
+    <li>
+      <strong>Windows service:</strong> update the service arguments in
+      the registry or reinstall with the new path.
+    </li>
+    <li>
+      <strong>Manual/CLI:</strong> pass <code>-history-db /path/to/history.db</code>
+      when starting graywolf.
+    </li>
+  </ul>
   <h3>Raspberry Pi &amp; SD Card Users</h3>
   <p>
     <strong>Do not enable this feature with the default path if your system
     runs from an SD card.</strong> Frequent SQLite writes will wear out the
-    card over time. Instead, point the database path at a RAM disk such as
-    <code>/tmp/graywolf-history.db</code> &mdash; Raspberry Pi OS typically
-    mounts <code>/tmp</code> as a tmpfs by default.
+    card over time. Instead, point <code>-history-db</code> at a RAM disk
+    such as <code>/tmp/graywolf-history.db</code> &mdash; Raspberry Pi OS
+    typically mounts <code>/tmp</code> as a tmpfs by default.
   </p>
   <p>
     On a RAM disk the database is lost on reboot, which is fine &mdash;
@@ -79,6 +100,18 @@
 
 <style>
   .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+  .db-path {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .db-path code {
+    font-size: 12px;
+    padding: 1px 5px;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+  }
 
   .info-box {
     margin-top: 24px;
@@ -99,8 +132,14 @@
   .info-box h3:not(:first-child) {
     margin-top: 16px;
   }
-  .info-box p {
+  .info-box p, .info-box ul {
     margin: 0 0 8px;
+  }
+  .info-box ul {
+    padding-left: 20px;
+  }
+  .info-box li {
+    margin-bottom: 4px;
   }
   .info-box code {
     font-size: 12px;

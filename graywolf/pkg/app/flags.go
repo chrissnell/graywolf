@@ -39,6 +39,8 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 	fs.StringVar(&cfg.DBPath, "config", cfg.DBPath, "path to SQLite config database")
 	fs.StringVar(&cfg.ModemPath, "modem", "",
 		"path to graywolf-modem binary (default: $GRAYWOLF_MODEM, then next to graywolf, then ./target/release/graywolf-modem, then $PATH)")
+	fs.StringVar(&cfg.HistoryDBPath, "history-db", cfg.HistoryDBPath,
+		"path to position-history database (used when enabled in the web UI)")
 	fs.StringVar(&cfg.HTTPAddr, "http", cfg.HTTPAddr, "HTTP listen address")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", cfg.ShutdownTimeout,
 		"max time to wait for clean shutdown")

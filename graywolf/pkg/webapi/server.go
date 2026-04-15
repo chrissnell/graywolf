@@ -26,6 +26,7 @@ type Server struct {
 	kissCtx          context.Context // long-lived context for KISS server goroutines
 	logger           *slog.Logger
 	startedAt        time.Time
+	historyDBPath    string // read-only; set by -history-db flag
 	igateStatusFn    func() igate.Status
 	gpsReload        chan struct{}                              // signalled when GPS config changes
 	beaconReload     chan struct{}                              // signalled when beacon config changes
@@ -37,11 +38,12 @@ type Server struct {
 
 // Config bundles the dependencies for NewServer.
 type Config struct {
-	Store       *configstore.Store
-	Bridge      *modembridge.Bridge
-	KissManager *kiss.Manager
-	KissCtx     context.Context // parent context for dynamically started KISS servers
-	Logger      *slog.Logger
+	Store         *configstore.Store
+	Bridge        *modembridge.Bridge
+	KissManager   *kiss.Manager
+	KissCtx       context.Context // parent context for dynamically started KISS servers
+	Logger        *slog.Logger
+	HistoryDBPath string // path to history database, from -history-db flag
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -59,12 +61,13 @@ func NewServer(cfg Config) (*Server, error) {
 		kissCtx = context.Background()
 	}
 	return &Server{
-		store:       cfg.Store,
-		bridge:      cfg.Bridge,
-		kissManager: cfg.KissManager,
-		kissCtx:     kissCtx,
-		logger:      logger.With("component", "webapi"),
-		startedAt:   time.Now(),
+		store:         cfg.Store,
+		bridge:        cfg.Bridge,
+		kissManager:   cfg.KissManager,
+		kissCtx:       kissCtx,
+		logger:        logger.With("component", "webapi"),
+		startedAt:     time.Now(),
+		historyDBPath: cfg.HistoryDBPath,
 	}, nil
 }
 

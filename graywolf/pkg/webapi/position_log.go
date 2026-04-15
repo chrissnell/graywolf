@@ -20,30 +20,30 @@ func (s *Server) handlePositionLog(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, r, "get position log config", err)
 			return
 		}
-		if c == nil {
-			// Return defaults when no row exists yet.
-			c = &configstore.PositionLogConfig{
-				DBPath: "./graywolf-history.db",
-			}
-		}
-		writeJSON(w, http.StatusOK, dto.PositionLogFromModel(*c))
+		enabled := c != nil && c.Enabled
+		writeJSON(w, http.StatusOK, dto.PositionLogResponse{
+			Enabled: enabled,
+			DBPath:  s.historyDBPath,
+		})
 	case http.MethodPut:
 		req, err := decodeJSON[dto.PositionLogRequest](r)
 		if err != nil {
 			badRequest(w, err.Error())
 			return
 		}
-		if err := req.Validate(); err != nil {
-			badRequest(w, err.Error())
-			return
+		m := configstore.PositionLogConfig{
+			Enabled: req.Enabled,
+			DBPath:  s.historyDBPath,
 		}
-		m := req.ToModel()
 		if err := s.store.UpsertPositionLogConfig(r.Context(), &m); err != nil {
 			s.internalError(w, r, "upsert position log config", err)
 			return
 		}
 		s.signalPositionLogReload()
-		writeJSON(w, http.StatusOK, dto.PositionLogFromModel(m))
+		writeJSON(w, http.StatusOK, dto.PositionLogResponse{
+			Enabled: m.Enabled,
+			DBPath:  s.historyDBPath,
+		})
 	default:
 		methodNotAllowed(w)
 	}

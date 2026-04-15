@@ -33,6 +33,12 @@ type Config struct {
 	// exit cleanly (-shutdown-timeout).
 	ShutdownTimeout time.Duration
 
+	// HistoryDBPath is the path to the optional position-history SQLite
+	// database (-history-db). The web UI toggles enabled/disabled but
+	// the path is set here so service managers (systemd, Windows SCM)
+	// can point it at a writable location.
+	HistoryDBPath string
+
 	// FlacFile, when non-empty, overrides the first audio device with a
 	// FLAC file for offline testing (-flac).
 	FlacFile string
@@ -53,6 +59,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		DBPath:          defaultDBPath(),
+		HistoryDBPath:   "./graywolf-history.db",
 		HTTPAddr:        "127.0.0.1:8080",
 		ShutdownTimeout: 10 * time.Second,
 	}
