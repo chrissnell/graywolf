@@ -340,15 +340,10 @@ fn drive_tx_cycle(
         (n_samples as u64).saturating_mul(1_000_000_000) / sample_rate.max(1) as u64,
     );
 
-    let key_start = Instant::now();
     if let Err(e) = driver.key() {
         // Key failed: line was never asserted, nothing to release.
         return TxCycleOutcome::KeyFailed(e);
     }
-    eprintln!(
-        "graywolf-modem: TX cycle: key() took {} µs, submitting {} samples ({} ms expected)",
-        key_start.elapsed().as_micros(), n_samples, expected.as_millis(),
-    );
 
     let submit_start = Instant::now();
     let watermark = match sink.submit(samples) {
@@ -402,10 +397,6 @@ fn drive_tx_cycle(
     if let Err(e) = driver.unkey() {
         return TxCycleOutcome::UnkeyFailed(e);
     }
-    eprintln!(
-        "graywolf-modem: TX cycle: PTT held for {} ms (expected {} ms audio)",
-        key_start.elapsed().as_millis(), expected.as_millis(),
-    );
     TxCycleOutcome::Done
 }
 

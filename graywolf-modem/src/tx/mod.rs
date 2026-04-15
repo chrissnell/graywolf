@@ -32,21 +32,8 @@ pub fn build_samples(
 ) -> Result<Vec<i16>, TxError> {
     let preamble = flags_for_ms(txdelay_ms);
     let postamble = flags_for_ms(txtail_ms);
-    let preamble_bits = preamble * 8;
-    let postamble_bits = postamble * 8;
     let bits = hdlc_encode::encode(frame_bytes, preamble, postamble);
-    let samples = afsk_mod::modulate(&bits, sample_rate)?;
-    let samples_per_bit = sample_rate as usize / 1200;
-    eprintln!(
-        "graywolf-modem: build_samples: preamble={} flags ({} bits, ~{} samples) \
-         frame={} bytes postamble={} flags ({} bits, ~{} samples) total={} samples ({} ms)",
-        preamble, preamble_bits, preamble_bits * samples_per_bit,
-        frame_bytes.len(),
-        postamble, postamble_bits, postamble_bits * samples_per_bit,
-        samples.len(),
-        samples.len() as u64 * 1000 / sample_rate as u64,
-    );
-    Ok(samples)
+    afsk_mod::modulate(&bits, sample_rate)
 }
 
 /// Number of `0x7e` flag bytes needed to cover `ms` milliseconds of airtime

@@ -751,13 +751,6 @@ impl Modem {
         let txdelay_ms = effective_ms(tf.txdelay_override_ms, ptt_cfg.map(|p| p.txdelay_ms), 300);
         let txtail_ms = effective_ms(tf.txtail_override_ms, ptt_cfg.map(|p| p.txtail_ms), 100);
 
-        eprintln!(
-            "graywolf-modem: TX ch={} txdelay={}ms txtail={}ms (override={}/{} cfg={:?}/{:?})",
-            tf.channel, txdelay_ms, txtail_ms,
-            tf.txdelay_override_ms, tf.txtail_override_ms,
-            ptt_cfg.map(|p| p.txdelay_ms), ptt_cfg.map(|p| p.txtail_ms),
-        );
-
         let mut samples =
             match crate::tx::build_samples(&tf.data, txdelay_ms, txtail_ms, acfg.sample_rate) {
                 Ok(s) => s,
@@ -771,10 +764,6 @@ impl Modem {
         let mut clipping = false;
         if let Some(gain_atom) = self.gain_atoms.get(&ccfg.output_device_id) {
             let gain_db = f32::from_bits(gain_atom.load(std::sync::atomic::Ordering::Relaxed));
-            eprintln!(
-                "graywolf-modem: TX gain: device_id={} gain_db={:.1} samples={}",
-                ccfg.output_device_id, gain_db, samples.len()
-            );
             if gain_db.abs() > f32::EPSILON {
                 let gain_linear = 10f32.powf(gain_db / 20.0);
                 for s in samples.iter_mut() {
@@ -785,11 +774,6 @@ impl Modem {
                     *s = amplified.clamp(-32767.0, 32767.0) as i16;
                 }
             }
-        } else {
-            eprintln!(
-                "graywolf-modem: TX gain: no gain atom for output_device_id={}",
-                ccfg.output_device_id
-            );
         }
 
         // Emit DeviceLevelUpdate for the output device
