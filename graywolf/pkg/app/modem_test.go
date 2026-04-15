@@ -32,7 +32,7 @@ func TestResolveModemPathEnv(t *testing.T) {
 
 func TestResolveModemPathSibling(t *testing.T) {
 	dir := t.TempDir()
-	sibling := filepath.Join(dir, "graywolf-modem")
+	sibling := filepath.Join(dir, modemBinaryName)
 	if err := os.WriteFile(sibling, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

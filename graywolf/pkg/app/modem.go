@@ -44,12 +44,12 @@ func resolveModemPathFrom(explicit, exe, envPath string) (string, error) {
 		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
 			exe = resolved
 		}
-		cand := filepath.Join(filepath.Dir(exe), "graywolf-modem")
+		cand := filepath.Join(filepath.Dir(exe), modemBinaryName)
 		if _, err := os.Stat(cand); err == nil {
 			return cand, nil
 		}
 	}
-	devPath := filepath.FromSlash("./target/release/graywolf-modem")
+	devPath := filepath.FromSlash("./target/release/" + modemBinaryName)
 	if _, err := os.Stat(devPath); err == nil {
 		return devPath, nil
 	}

@@ -52,7 +52,7 @@ type Config struct {
 // minimal-but-valid Config should start from this.
 func DefaultConfig() Config {
 	return Config{
-		DBPath:          "./graywolf.db",
+		DBPath:          defaultDBPath(),
 		HTTPAddr:        "127.0.0.1:8080",
 		ShutdownTimeout: 10 * time.Second,
 	}
