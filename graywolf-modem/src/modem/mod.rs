@@ -764,6 +764,10 @@ impl Modem {
         let mut clipping = false;
         if let Some(gain_atom) = self.gain_atoms.get(&ccfg.output_device_id) {
             let gain_db = f32::from_bits(gain_atom.load(std::sync::atomic::Ordering::Relaxed));
+            eprintln!(
+                "graywolf-modem: TX gain: device_id={} gain_db={:.1} samples={}",
+                ccfg.output_device_id, gain_db, samples.len()
+            );
             if gain_db.abs() > f32::EPSILON {
                 let gain_linear = 10f32.powf(gain_db / 20.0);
                 for s in samples.iter_mut() {
@@ -774,6 +778,11 @@ impl Modem {
                     *s = amplified.clamp(-32767.0, 32767.0) as i16;
                 }
             }
+        } else {
+            eprintln!(
+                "graywolf-modem: TX gain: no gain atom for output_device_id={}",
+                ccfg.output_device_id
+            );
         }
 
         // Emit DeviceLevelUpdate for the output device
@@ -1056,14 +1065,14 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     let host_name = format!("{:?}", host.id());
 
     let default_input_name = host.default_input_device()
-        .and_then(|d| d.name().ok());
+        .and_then(|d| d.description().ok().map(|desc| desc.name().to_string()));
     let default_output_name = host.default_output_device()
-        .and_then(|d| d.name().ok());
+        .and_then(|d| d.description().ok().map(|desc| desc.name().to_string()));
 
     // Input devices
     if let Ok(inputs) = host.input_devices() {
         for dev in inputs {
-            if let Ok(name) = dev.name() {
+            if let Ok(name) = dev.description().map(|d| d.name().to_string()) {
                 // Skip the ALSA null sink — it accepts anything but produces nothing useful.
                 if name == "null" {
                     continue;
@@ -1114,7 +1123,7 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     if include_output {
         if let Ok(outputs) = host.output_devices() {
             for dev in outputs {
-                if let Ok(name) = dev.name() {
+                if let Ok(name) = dev.description().map(|d| d.name().to_string()) {
                     if name == "null" {
                         continue;
                     }
@@ -1184,7 +1193,7 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
     let mut results = Vec::new();
 
     for dev in inputs {
-        let name = match dev.name() {
+        let name = match dev.description().map(|d| d.name().to_string()) {
             Ok(n) => n,
             Err(_) => continue,
         };
@@ -1396,7 +1405,7 @@ fn play_test_tone_blocking(
         None => {
             let host = cpal::default_host();
             let found = match host.output_devices() {
-                Ok(mut devs) => devs.find(|d| d.name().map(|n| n == req.device_name).unwrap_or(false)),
+                Ok(mut devs) => devs.find(|d| d.description().map(|desc| desc.name() == req.device_name).unwrap_or(false)),
                 Err(e) => {
                     return TestToneResult {
                         request_id: req.request_id,

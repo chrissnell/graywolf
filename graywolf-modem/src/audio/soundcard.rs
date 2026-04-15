@@ -73,7 +73,7 @@ pub fn spawn(
     } else {
         host.input_devices()
             .map_err(|e| format!("enumerate input devices: {}", e))?
-            .find(|d| d.name().map(|n| n == cfg.device_name).unwrap_or(false))
+            .find(|d| d.description().map(|desc| desc.name() == cfg.device_name).unwrap_or(false))
             .ok_or_else(|| format!("input device not found: {}", cfg.device_name))?
     };
 
@@ -246,7 +246,7 @@ pub fn resolve_output_device(name: &str) -> Result<Device, String> {
     } else {
         host.output_devices()
             .map_err(|e| format!("enumerate output devices: {}", e))?
-            .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+            .find(|d| d.description().map(|desc| desc.name() == name).unwrap_or(false))
             .ok_or_else(|| format!("output device not found: {}", name))
     }
 }
