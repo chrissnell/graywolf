@@ -26,12 +26,13 @@ type DeviceLevel struct {
 type AvailableDevice struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"` // human-friendly name (e.g. USB product string)
-	Path        string   `json:"path"`        // cpal device name (used as device_path)
+	Path        string   `json:"path"`        // pcm_id (used as device_path in config)
 	SampleRates []uint32 `json:"sample_rates"`
 	Channels    []uint32 `json:"channels"`
 	HostAPI     string   `json:"host_api"`
 	IsDefault   bool     `json:"is_default"`
 	IsInput     bool     `json:"is_input"`
+	Recommended bool     `json:"recommended"` // true for plughw: devices (ALSA software conversion)
 }
 
 // InputLevel holds the level scan result for a single input device.

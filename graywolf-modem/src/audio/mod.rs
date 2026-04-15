@@ -16,6 +16,15 @@ pub mod flac;
 pub mod soundcard;
 pub mod stdin_raw;
 
+/// Sample rates we advertise when enumerating device capabilities. Covers
+/// common amateur-radio rates (8–48 kHz) plus the 96 kHz hi-fi rate that
+/// some USB devices support.
+pub const STANDARD_SAMPLE_RATES: &[u32] = &[8000, 11025, 16000, 22050, 44100, 48000, 96000];
+
+/// Preferred sample rates for quick level scans, in priority order.
+/// 48 kHz is native for most USB audio; 44.1 kHz is the CD-standard fallback.
+pub const PREFERRED_SCAN_RATES: &[u32] = &[48000, 44100];
+
 use std::sync::mpsc::SyncSender;
 use std::thread::JoinHandle;
 

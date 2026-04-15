@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
@@ -135,19 +134,6 @@ func (b *Bridge) dispatchToneResponse(r *pb.TestToneResult) {
 	b.toneDispatcher.Deliver(r.RequestId, r)
 }
 
-// isUsableAudioDevice filters out ALSA virtual devices that aren't useful
-// for APRS (surround, HDMI, S/PDIF, dmix, etc.). The Rust modem already
-// filters to hw:/plughw:/default, but this is a safety net for the Go side.
-func isUsableAudioDevice(path string) bool {
-	prefix, _, _ := strings.Cut(path, ":")
-	switch prefix {
-	case "surround21", "surround40", "surround41", "surround50", "surround51", "surround71",
-		"hdmi", "iec958", "dmix", "dsnoop", "null", "front", "sysdefault":
-		return false
-	}
-	return true
-}
-
 func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 	out := make([]AvailableDevice, 0, len(list.Devices))
 	for _, d := range list.Devices {
@@ -156,9 +142,6 @@ func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 		path := d.StableId
 		if path == "" {
 			path = d.Name
-		}
-		if !isUsableAudioDevice(path) {
-			continue
 		}
 		out = append(out, AvailableDevice{
 			Name:        d.Name,
@@ -169,6 +152,7 @@ func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 			HostAPI:     d.HostApi,
 			IsDefault:   d.IsDefault,
 			IsInput:     d.Kind == pb.AudioDeviceKind_AUDIO_DEVICE_KIND_INPUT,
+			Recommended: d.Recommended,
 		})
 	}
 	return out

@@ -356,14 +356,14 @@
   <p class="section-hint">Click a device to add it to your configuration.</p>
   <div class="avail-grid">
     {#each available as dev}
-      <button class="avail-card" class:added={configuredPaths.has(dev.path)} class:recommended={dev.path.startsWith('plughw:')} onclick={() => openCreateFromAvail(dev)}>
+      <button class="avail-card" class:added={configuredPaths.has(dev.path)} class:recommended={dev.recommended} onclick={() => openCreateFromAvail(dev)}>
         <div class="avail-header">
           <strong class="avail-name">{dev.description || dev.name}</strong>
           <div class="avail-badges">
             {#if configuredPaths.has(dev.path)}
               <Badge variant="success">Added</Badge>
             {/if}
-            {#if dev.path.startsWith('plughw:')}
+            {#if dev.recommended}
               <Badge variant="warning">Recommended</Badge>
             {/if}
             <Badge variant={dev.is_input ? 'info' : 'success'}>

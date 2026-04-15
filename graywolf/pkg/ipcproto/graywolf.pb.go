@@ -869,7 +869,8 @@ type AudioDeviceInfo struct {
 	ChannelCounts []uint32               `protobuf:"varint,5,rep,packed,name=channel_counts,json=channelCounts,proto3" json:"channel_counts,omitempty"`
 	HostApi       string                 `protobuf:"bytes,6,opt,name=host_api,json=hostApi,proto3" json:"host_api,omitempty"` // "CoreAudio", "ALSA", "WASAPI"
 	IsDefault     bool                   `protobuf:"varint,7,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
-	Description   string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"` // human-friendly name (e.g. USB product string)
+	Description   string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`  // human-friendly name (e.g. USB product string)
+	Recommended   bool                   `protobuf:"varint,9,opt,name=recommended,proto3" json:"recommended,omitempty"` // true for plughw: devices (ALSA software conversion)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -958,6 +959,13 @@ func (x *AudioDeviceInfo) GetDescription() string {
 		return x.Description
 	}
 	return ""
+}
+
+func (x *AudioDeviceInfo) GetRecommended() bool {
+	if x != nil {
+		return x.Recommended
+	}
+	return false
 }
 
 // Request transmission of a raw AX.25 frame on a specific channel.
@@ -2109,7 +2117,7 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x0fAudioDeviceList\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\rR\trequestId\x123\n" +
-	"\adevices\x18\x02 \x03(\v2\x19.graywolf.AudioDeviceInfoR\adevices\"\x97\x02\n" +
+	"\adevices\x18\x02 \x03(\v2\x19.graywolf.AudioDeviceInfoR\adevices\"\xb9\x02\n" +
 	"\x0fAudioDeviceInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tstable_id\x18\x02 \x01(\tR\bstableId\x12-\n" +
@@ -2119,7 +2127,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"\bhost_api\x18\x06 \x01(\tR\ahostApi\x12\x1d\n" +
 	"\n" +
 	"is_default\x18\a \x01(\bR\tisDefault\x12 \n" +
-	"\vdescription\x18\b \x01(\tR\vdescription\"\xb7\x01\n" +
+	"\vdescription\x18\b \x01(\tR\vdescription\x12 \n" +
+	"\vrecommended\x18\t \x01(\bR\vrecommended\"\xb7\x01\n" +
 	"\rTransmitFrame\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12.\n" +

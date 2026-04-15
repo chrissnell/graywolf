@@ -118,6 +118,7 @@ mod tests {
                 host_api: "CoreAudio".into(),
                 is_default: true,
                 description: "Built-in Microphone".into(),
+                recommended: false,
             }],
         });
         let mut buf = Vec::new();

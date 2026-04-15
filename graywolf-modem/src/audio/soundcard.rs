@@ -36,7 +36,7 @@ pub(crate) fn validate_stream_config(
         if sample_rate >= min && sample_rate <= max && c.channels() == channels {
             return Ok(());
         }
-        for &r in &[8000, 11025, 16000, 22050, 44100, 48000, 96000] {
+        for &r in super::STANDARD_SAMPLE_RATES {
             if r >= min && r <= max && !rates.contains(&r) {
                 rates.push(r);
             }
@@ -120,7 +120,7 @@ pub fn spawn(
         host.default_input_device()
             .ok_or_else(|| "no default input device".to_string())?
     } else {
-        find_device_by_name(
+        find_device_by_id(
             host.input_devices().map_err(|e| format!("enumerate input devices: {}", e))?,
             &cfg.device_name,
         ).ok_or_else(|| format!("input device not found: {}", cfg.device_name))?
@@ -285,41 +285,34 @@ pub struct SoundcardOutputConfig {
     pub audio_channel: u32,
 }
 
-/// Resolve a cpal output [`Device`] by name.
-pub fn resolve_output_device(name: &str) -> Result<Device, String> {
+/// Resolve a cpal output [`Device`] by its pcm_id (e.g. `plughw:CARD=Foo,DEV=0`).
+pub fn resolve_output_device(pcm_id: &str) -> Result<Device, String> {
     let host = cpal::default_host();
-    if name.is_empty() || name == "default" {
+    if pcm_id.is_empty() || pcm_id == "default" {
         host.default_output_device()
             .ok_or_else(|| "no default output device".to_string())
     } else {
-        find_device_by_name(
+        find_device_by_id(
             host.output_devices().map_err(|e| format!("enumerate output devices: {}", e))?,
-            name,
-        ).ok_or_else(|| format!("output device not found: {}", name))
+            pcm_id,
+        ).ok_or_else(|| format!("output device not found: {}", pcm_id))
     }
 }
 
-/// Find a cpal device by name, trying the unique pcm_id first (used by
-/// new configs) then falling back to the human-friendly description name
-/// (for configs saved before the pcm_id switch).
-#[allow(deprecated)] // DeviceTrait::name() returns the raw pcm_id we need
-pub fn find_device_by_name(devices: impl Iterator<Item = Device>, name: &str) -> Option<Device> {
-    let mut fallback = None;
+/// Find a cpal device whose pcm_id (the driver-level identifier returned by
+/// `DeviceTrait::name()`) matches `id`. This is the unique ALSA device
+/// string like `hw:CARD=AllInOneCable,DEV=0` — not the human-friendly
+/// description.
+#[allow(deprecated)] // DeviceTrait::name() gives the raw pcm_id we need
+pub fn find_device_by_id(devices: impl Iterator<Item = Device>, id: &str) -> Option<Device> {
     for d in devices {
         if let Ok(pcm_id) = d.name() {
-            if pcm_id == name {
+            if pcm_id == id {
                 return Some(d);
             }
         }
-        if fallback.is_none() {
-            if let Ok(desc) = d.description() {
-                if desc.name() == name {
-                    fallback = Some(d);
-                }
-            }
-        }
     }
-    fallback
+    None
 }
 
 /// Owns a live cpal output stream and a queue of pending i16 sample
