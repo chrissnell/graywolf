@@ -16,6 +16,44 @@ use cpal::{Device, SampleFormat, StreamConfig};
 
 use super::AudioSource;
 
+/// Check that (`sample_rate`, `channels`) falls within at least one of the
+/// given stream config ranges. Returns `Ok(())` on match, or an error
+/// listing what the device actually supports.
+///
+/// On Linux/ALSA the default PCM device does software resampling so this
+/// rarely rejects; on Windows/WASAPI the config must be natively supported.
+pub(crate) fn validate_stream_config(
+    configs: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+    sample_rate: u32,
+    channels: u16,
+    direction: &str,
+) -> Result<(), String> {
+    let mut rates: Vec<u32> = Vec::new();
+    let mut ch_counts: Vec<u16> = Vec::new();
+    for c in configs {
+        let min = c.min_sample_rate();
+        let max = c.max_sample_rate();
+        if sample_rate >= min && sample_rate <= max && c.channels() == channels {
+            return Ok(());
+        }
+        for &r in &[8000, 11025, 16000, 22050, 44100, 48000, 96000] {
+            if r >= min && r <= max && !rates.contains(&r) {
+                rates.push(r);
+            }
+        }
+        let ch = c.channels();
+        if !ch_counts.contains(&ch) {
+            ch_counts.push(ch);
+        }
+    }
+    rates.sort_unstable();
+    ch_counts.sort_unstable();
+    Err(format!(
+        "device does not support {} Hz / {}ch {} (supported rates: {:?}, channels: {:?})",
+        sample_rate, channels, direction, rates, ch_counts
+    ))
+}
+
 pub struct SoundcardConfig {
     pub device_name: String, // "" or "default" selects the default device
     pub sample_rate: u32,
@@ -44,6 +82,11 @@ pub fn spawn(
         .map_err(|e| format!("device default config: {}", e))?;
 
     let channels = cfg.channels.max(1) as u16;
+
+    let input_configs = device.supported_input_configs()
+        .map_err(|e| format!("query supported input configs: {}", e))?;
+    validate_stream_config(input_configs, cfg.sample_rate, channels, "input")?;
+
     let stream_config = StreamConfig {
         channels,
         sample_rate: cfg.sample_rate,
@@ -58,6 +101,7 @@ pub fn spawn(
     // own thread that also runs a small park loop to keep it alive.
     let stop_for_thread = stop.clone();
     let sample_format = supported.sample_format();
+    let (ready_tx, ready_rx) = channel::<Result<(), String>>();
 
     let join = thread::Builder::new()
         .name("audio-soundcard".into())
@@ -105,7 +149,9 @@ pub fn spawn(
                     )
                 }
                 other => {
-                    eprintln!("unsupported cpal sample format: {:?}", other);
+                    let _ = ready_tx.send(Err(format!(
+                        "unsupported input sample format: {:?}", other
+                    )));
                     return;
                 }
             };
@@ -113,14 +159,15 @@ pub fn spawn(
             let stream = match build_result {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("cpal build_input_stream failed: {}", e);
+                    let _ = ready_tx.send(Err(format!("build_input_stream: {}", e)));
                     return;
                 }
             };
             if let Err(e) = stream.play() {
-                eprintln!("cpal stream play failed: {}", e);
+                let _ = ready_tx.send(Err(format!("input stream play: {}", e)));
                 return;
             }
+            let _ = ready_tx.send(Ok(()));
 
             while !stop_for_thread.load(Ordering::Relaxed) {
                 thread::park_timeout(std::time::Duration::from_millis(100));
@@ -128,6 +175,10 @@ pub fn spawn(
             drop(stream);
         })
         .map_err(|e| format!("spawn soundcard thread: {}", e))?;
+
+    ready_rx.recv()
+        .map_err(|_| "audio input thread exited unexpectedly".to_string())?
+        .map_err(|e| format!("cpal {}", e))?;
 
     Ok(AudioSource {
         sample_rate: cfg.sample_rate,
@@ -278,6 +329,11 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
         .map_err(|e| format!("device default config: {}", e))?;
 
     let channels = cfg.channels.max(1) as u16;
+
+    let output_configs = device.supported_output_configs()
+        .map_err(|e| format!("query supported output configs: {}", e))?;
+    validate_stream_config(output_configs, cfg.sample_rate, channels, "output")?;
+
     let stream_config = StreamConfig {
         channels,
         sample_rate: cfg.sample_rate,
@@ -296,6 +352,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     let submitted_for_thread = submitted.clone();
     let stop_for_err = stop.clone();
     let stop_for_thread = stop.clone();
+    let (ready_tx, ready_rx) = channel::<Result<(), String>>();
 
     let join = thread::Builder::new()
         .name("audio-soundcard-out".into())
@@ -337,7 +394,9 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
                     None,
                 ),
                 other => {
-                    eprintln!("unsupported cpal output sample format: {:?}", other);
+                    let _ = ready_tx.send(Err(format!(
+                        "unsupported output sample format: {:?}", other
+                    )));
                     return;
                 }
             };
@@ -345,14 +404,15 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
             let stream = match build_result {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("cpal build_output_stream failed: {}", e);
+                    let _ = ready_tx.send(Err(format!("build_output_stream: {}", e)));
                     return;
                 }
             };
             if let Err(e) = stream.play() {
-                eprintln!("cpal output stream play failed: {}", e);
+                let _ = ready_tx.send(Err(format!("output stream play: {}", e)));
                 return;
             }
+            let _ = ready_tx.send(Ok(()));
 
             while !stop_for_thread.load(Ordering::Relaxed) {
                 thread::park_timeout(std::time::Duration::from_millis(100));
@@ -360,6 +420,10 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
             drop(stream);
         })
         .map_err(|e| format!("spawn soundcard output thread: {}", e))?;
+
+    ready_rx.recv()
+        .map_err(|_| "audio output thread exited unexpectedly".to_string())?
+        .map_err(|e| format!("cpal {}", e))?;
 
     Ok(AudioSink {
         submit_tx,

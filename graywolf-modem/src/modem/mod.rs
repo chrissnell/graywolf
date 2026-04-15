@@ -1370,6 +1370,17 @@ fn play_test_tone_blocking(
 
     let sample_rate = if req.sample_rate > 0 { req.sample_rate } else { 48000 };
     let channels = req.channels.max(1) as u16;
+
+    if let Ok(configs) = device.supported_output_configs() {
+        if let Err(e) = audio::soundcard::validate_stream_config(configs, sample_rate, channels, "output") {
+            return TestToneResult {
+                request_id: req.request_id,
+                success: false,
+                error: e,
+            };
+        }
+    }
+
     let config = cpal::StreamConfig {
         channels,
         sample_rate: sample_rate,
