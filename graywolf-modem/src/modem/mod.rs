@@ -761,14 +761,53 @@ impl Modem {
             };
 
         // Apply output device gain to TX audio
+        let mut clipping = false;
         if let Some(gain_atom) = self.gain_atoms.get(&ccfg.output_device_id) {
             let gain_db = f32::from_bits(gain_atom.load(std::sync::atomic::Ordering::Relaxed));
             if gain_db.abs() > f32::EPSILON {
                 let gain_linear = 10f32.powf(gain_db / 20.0);
                 for s in samples.iter_mut() {
-                    *s = ((*s as f32) * gain_linear).clamp(-32767.0, 32767.0) as i16;
+                    let amplified = (*s as f32) * gain_linear;
+                    if amplified.abs() > 32000.0 {
+                        clipping = true;
+                    }
+                    *s = amplified.clamp(-32767.0, 32767.0) as i16;
                 }
             }
+        }
+
+        // Emit DeviceLevelUpdate for the output device
+        {
+            let mut peak_abs: f32 = 0.0;
+            let mut sum_sq: f64 = 0.0;
+            for &s in &samples {
+                let a = (s as f32).abs();
+                if a > peak_abs { peak_abs = a; }
+                sum_sq += (s as f64) * (s as f64);
+            }
+            let peak_linear = peak_abs / 32768.0;
+            let rms_linear = if !samples.is_empty() {
+                ((sum_sq / samples.len() as f64).sqrt() / 32768.0) as f32
+            } else {
+                0.0
+            };
+            let peak_dbfs = if peak_linear > 0.0 {
+                (20.0 * peak_linear.log10()).max(-60.0)
+            } else {
+                -60.0
+            };
+            let rms_dbfs = if rms_linear > 0.0 {
+                (20.0 * rms_linear.log10()).max(-60.0)
+            } else {
+                -60.0
+            };
+            let msg = IpcMessage::device_level_update(DeviceLevelUpdate {
+                device_id: ccfg.output_device_id,
+                peak_dbfs,
+                rms_dbfs,
+                clipping,
+            });
+            let _ = self.handle.send(&msg);
         }
 
         let job = tx_worker::TxJob {
