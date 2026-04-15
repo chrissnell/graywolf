@@ -25,7 +25,7 @@
   let gainTimers = {};
 
   function emptyForm() {
-    return { name: '', device_path: '', sample_rate: '48000', channels: '1', source_type: 'soundcard', direction: 'input' };
+    return { name: '', device_path: '', sample_rate: '48000', source_type: 'soundcard', direction: 'input' };
   }
 
   onMount(() => {
@@ -145,7 +145,7 @@
 
   function openEdit(row) {
     editing = row;
-    form = { ...row, sample_rate: String(row.sample_rate), channels: String(row.channels) };
+    form = { ...row, sample_rate: String(row.sample_rate) };
     errors = {};
     modalOpen = true;
   }
@@ -156,7 +156,6 @@
       name: dev.description || dev.name,
       device_path: dev.path,
       sample_rate: String((dev.sample_rates || [48000]).at(-1)),
-      channels: String((dev.channels || [1])[0]),
       source_type: 'soundcard',
       direction: dev.is_input ? 'input' : 'output',
     };
@@ -180,7 +179,7 @@
 
   async function handleSave() {
     if (!validate()) return;
-    const data = { ...form, sample_rate: parseInt(form.sample_rate), channels: parseInt(form.channels) };
+    const data = { ...form, sample_rate: parseInt(form.sample_rate), channels: 1 };
     try {
       if (editing) {
         await api.put(`/audio-devices/${editing.id}`, data);
@@ -311,7 +310,7 @@
           </div>
           <div class="detail-row">
             <span class="detail-label">Channels</span>
-            <span class="detail-value">{dev.channels === 1 ? 'Mono' : 'Stereo'}</span>
+            <span class="detail-value">Mono</span>
           </div>
         </div>
         <!-- Audio level meter -->
@@ -437,12 +436,6 @@
       { value: '44100', label: '44100 Hz' },
       { value: '48000', label: '48000 Hz' },
       { value: '96000', label: '96000 Hz' },
-    ]} />
-  </FormField>
-  <FormField label="Channels" id="ad-ch">
-    <Select id="ad-ch" bind:value={form.channels} options={[
-      { value: '1', label: 'Mono' },
-      { value: '2', label: 'Stereo' },
     ]} />
   </FormField>
   <div class="modal-actions">

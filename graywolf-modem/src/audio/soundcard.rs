@@ -54,6 +54,55 @@ pub(crate) fn validate_stream_config(
     ))
 }
 
+/// Try the requested channel count first; if the device doesn't support it,
+/// pick the smallest supported channel count that works at the given sample
+/// rate. This lets callers always request mono while gracefully handling
+/// stereo-only devices (common with USB sound cards like SignaLink).
+fn negotiate_channels<F, I>(
+    device: &Device,
+    sample_rate: u32,
+    preferred: u16,
+    direction: &str,
+    get_configs: F,
+) -> Result<u16, String>
+where
+    F: Fn(&Device) -> Result<I, cpal::SupportedStreamConfigsError>,
+    I: Iterator<Item = cpal::SupportedStreamConfigRange>,
+{
+    let configs = get_configs(device)
+        .map_err(|e| format!("query supported {} configs: {}", direction, e))?;
+    if validate_stream_config(configs, sample_rate, preferred, direction).is_ok() {
+        return Ok(preferred);
+    }
+
+    // Preferred channel count not supported — find the smallest that works.
+    let configs = get_configs(device)
+        .map_err(|e| format!("query supported {} configs: {}", direction, e))?;
+    let mut fallbacks: Vec<u16> = Vec::new();
+    for c in configs {
+        let ch = c.channels();
+        let min = c.min_sample_rate();
+        let max = c.max_sample_rate();
+        if sample_rate >= min && sample_rate <= max && !fallbacks.contains(&ch) {
+            fallbacks.push(ch);
+        }
+    }
+    fallbacks.sort_unstable();
+
+    if let Some(&ch) = fallbacks.first() {
+        eprintln!(
+            "audio {}: device does not support {}ch, using {}ch (will extract single channel)",
+            direction, preferred, ch
+        );
+        Ok(ch)
+    } else {
+        Err(format!(
+            "device does not support {} Hz {} in any channel configuration",
+            sample_rate, direction
+        ))
+    }
+}
+
 pub struct SoundcardConfig {
     pub device_name: String, // "" or "default" selects the default device
     pub sample_rate: u32,
@@ -81,11 +130,10 @@ pub fn spawn(
         .default_input_config()
         .map_err(|e| format!("device default config: {}", e))?;
 
-    let channels = cfg.channels.max(1) as u16;
-
-    let input_configs = device.supported_input_configs()
-        .map_err(|e| format!("query supported input configs: {}", e))?;
-    validate_stream_config(input_configs, cfg.sample_rate, channels, "input")?;
+    let channels = negotiate_channels(
+        &device, cfg.sample_rate, cfg.channels.max(1) as u16, "input",
+        |d| d.supported_input_configs(),
+    )?;
 
     let stream_config = StreamConfig {
         channels,
@@ -311,14 +359,6 @@ impl Drop for AudioSink {
 /// Pass a handle obtained from [`resolve_output_device`] to skip
 /// enumeration at transmit time.
 pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Result<AudioSink, String> {
-    let channels_requested = cfg.channels.max(1);
-    if cfg.audio_channel >= channels_requested {
-        return Err(format!(
-            "output audio_channel {} out of range for {}-channel device",
-            cfg.audio_channel, channels_requested
-        ));
-    }
-
     let device = match device {
         Some(d) => d,
         None => resolve_output_device(&cfg.device_name)?,
@@ -328,11 +368,17 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
         .default_output_config()
         .map_err(|e| format!("device default config: {}", e))?;
 
-    let channels = cfg.channels.max(1) as u16;
+    let channels = negotiate_channels(
+        &device, cfg.sample_rate, cfg.channels.max(1) as u16, "output",
+        |d| d.supported_output_configs(),
+    )?;
 
-    let output_configs = device.supported_output_configs()
-        .map_err(|e| format!("query supported output configs: {}", e))?;
-    validate_stream_config(output_configs, cfg.sample_rate, channels, "output")?;
+    if cfg.audio_channel >= channels as u32 {
+        return Err(format!(
+            "output audio_channel {} out of range for {}-channel device",
+            cfg.audio_channel, channels
+        ));
+    }
 
     let stream_config = StreamConfig {
         channels,

@@ -135,7 +135,9 @@
             <tr>
               <td><code>channels</code></td>
               <td><code>1</code></td>
-              <td>Number of audio channels (1 = mono, 2 = stereo)</td>
+              <td>Always mono. If the device only supports stereo,
+                  Graywolf opens it in stereo and extracts a single channel
+                  automatically.</td>
             </tr>
             <tr>
               <td><code>format</code></td>
@@ -173,14 +175,16 @@
       </div>
     </div>
 
-    <h2>Stereo Input</h2>
+    <h2>Channel Selection</h2>
 
     <p>
-      If your sound card captures stereo, you can create two radio channels
-      on the same device &mdash; one on the left channel
-      (<code>input_channel: 0</code>) and one on the right
-      (<code>input_channel: 1</code>). This lets you monitor two radios
-      with a single sound card.
+      Audio devices are always configured as mono. If your sound card only
+      supports stereo, Graywolf automatically opens it in stereo and
+      extracts a single channel. You can select which channel to use via
+      the <code>input_channel</code> setting on the radio channel
+      (<code>0</code> = left, <code>1</code> = right). This lets you
+      monitor two radios on a single stereo sound card by assigning each
+      radio channel to a different stereo channel.
     </p>
 
     <h2>Software Gain</h2>

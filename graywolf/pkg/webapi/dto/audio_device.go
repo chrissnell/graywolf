@@ -43,7 +43,7 @@ func (r AudioDeviceRequest) ToModel() configstore.AudioDevice {
 		SourceType: r.SourceType,
 		SourcePath: r.DevicePath,
 		SampleRate: r.SampleRate,
-		Channels:   r.Channels,
+		Channels:   1, // always mono; Rust auto-negotiates if device requires stereo
 		Format:     r.Format,
 		GainDB:     r.GainDB,
 	}
