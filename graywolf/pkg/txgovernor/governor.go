@@ -70,13 +70,12 @@ type SubmitSource struct {
 type Sender func(*pb.TransmitFrame) error
 
 // ChannelTiming holds the CSMA parameters for one radio channel. Values
-// mirror the tx_timing SQLite row (ms units).
+// mirror the tx_timing SQLite row (ms units). TX delay and tail live in
+// ConfigurePtt (hot-reloaded by the bridge) and are not duplicated here.
 type ChannelTiming struct {
-	TxDelayMs uint32
-	TxTailMs  uint32
-	SlotTime  time.Duration // defaults to 100 ms
-	Persist   uint8         // 0..255, default 63
-	FullDup   bool          // skip CSMA entirely
+	SlotTime time.Duration // defaults to 100 ms
+	Persist  uint8         // 0..255, default 63
+	FullDup  bool          // skip CSMA entirely
 }
 
 // Config is the Governor's static configuration.
@@ -126,7 +125,7 @@ func (c *Config) applyDefaults() {
 func (c *Config) timingFor(channel uint32) ChannelTiming {
 	t, ok := c.Channels[channel]
 	if !ok {
-		return ChannelTiming{TxDelayMs: 300, TxTailMs: 100, SlotTime: 100 * time.Millisecond, Persist: 63}
+		return ChannelTiming{SlotTime: 100 * time.Millisecond, Persist: 63}
 	}
 	if t.SlotTime == 0 {
 		t.SlotTime = 100 * time.Millisecond
@@ -391,11 +390,13 @@ func (g *Governor) processOne(ctx context.Context) {
 		return
 	}
 	tf := &pb.TransmitFrame{
-		Channel:           top.channel,
-		Data:              raw,
-		TxdelayOverrideMs: timing.TxDelayMs,
-		TxtailOverrideMs:  timing.TxTailMs,
-		Priority:          uint32(top.priority),
+		Channel:  top.channel,
+		Data:     raw,
+		Priority: uint32(top.priority),
+		// TxdelayOverrideMs/TxtailOverrideMs left at 0: the Rust
+		// modem uses the ConfigurePtt values (hot-reloaded by the
+		// bridge) as channel defaults. Per-frame overrides are
+		// reserved for callers that need frame-specific timing.
 	}
 	if err := g.cfg.Sender(tf); err != nil {
 		g.logger.Warn("send transmit frame", "err", err, "channel", top.channel)

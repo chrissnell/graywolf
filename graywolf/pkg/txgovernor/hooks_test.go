@@ -26,7 +26,7 @@ func TestSetChannelTimingUnderConcurrentSubmits(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 500; i++ {
-			g.SetChannelTiming(uint32(i%4), ChannelTiming{TxDelayMs: uint32(i), Persist: 63, SlotTime: 10 * time.Millisecond})
+			g.SetChannelTiming(uint32(i%4), ChannelTiming{Persist: 63, SlotTime: 10 * time.Millisecond})
 		}
 	}()
 	// Submitters.

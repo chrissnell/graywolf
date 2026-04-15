@@ -168,11 +168,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	if timings, err := a.store.ListTxTimings(ctx); err == nil {
 		for _, t := range timings {
 			channelTimings[t.Channel] = txgovernor.ChannelTiming{
-				TxDelayMs: t.TxDelayMs,
-				TxTailMs:  t.TxTailMs,
-				SlotTime:  time.Duration(t.SlotMs) * time.Millisecond,
-				Persist:   uint8(t.Persist),
-				FullDup:   t.FullDup,
+				SlotTime: time.Duration(t.SlotMs) * time.Millisecond,
+				Persist:  uint8(t.Persist),
+				FullDup:  t.FullDup,
 			}
 			if t.Rate1Min > 0 && rate1 == 0 {
 				rate1 = int(t.Rate1Min)
