@@ -751,6 +751,13 @@ impl Modem {
         let txdelay_ms = effective_ms(tf.txdelay_override_ms, ptt_cfg.map(|p| p.txdelay_ms), 300);
         let txtail_ms = effective_ms(tf.txtail_override_ms, ptt_cfg.map(|p| p.txtail_ms), 100);
 
+        eprintln!(
+            "graywolf-modem: TX ch={} txdelay={}ms txtail={}ms (override={}/{} cfg={:?}/{:?})",
+            tf.channel, txdelay_ms, txtail_ms,
+            tf.txdelay_override_ms, tf.txtail_override_ms,
+            ptt_cfg.map(|p| p.txdelay_ms), ptt_cfg.map(|p| p.txtail_ms),
+        );
+
         let mut samples =
             match crate::tx::build_samples(&tf.data, txdelay_ms, txtail_ms, acfg.sample_rate) {
                 Ok(s) => s,
