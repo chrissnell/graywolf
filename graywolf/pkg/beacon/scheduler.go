@@ -154,7 +154,7 @@ func (s *Scheduler) SendNow(ctx context.Context, id uint32) error {
 	if found == nil {
 		return fmt.Errorf("beacon: id %d not found", id)
 	}
-	s.sendBeacon(ctx, *found)
+	s.sendBeaconImmediate(ctx, *found)
 	return nil
 }
 
@@ -334,8 +334,21 @@ func (s *Scheduler) fireAsync(ctx context.Context, p *beaconPlan) {
 	}()
 }
 
+// sendBeaconImmediate builds and submits one beacon frame, bypassing
+// the txgovernor's dedup window. Used by SendNow where the operator
+// explicitly requests transmission regardless of recent duplicates.
+func (s *Scheduler) sendBeaconImmediate(ctx context.Context, b Config) {
+	s.sendBeaconWith(ctx, b, true)
+}
+
 // sendBeacon builds and submits one beacon frame.
 func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
+	s.sendBeaconWith(ctx, b, false)
+}
+
+// sendBeaconWith is the shared implementation for sendBeacon and
+// sendBeaconImmediate.
+func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool) {
 	name := beaconName(b)
 	info, err := s.buildInfo(ctx, b)
 	if err != nil {
@@ -359,9 +372,10 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 		return
 	}
 	src := txgovernor.SubmitSource{
-		Kind:     "beacon",
-		Detail:   fmt.Sprintf("%s/%d", b.Type, b.ID),
-		Priority: ax25.PriorityBeacon,
+		Kind:      "beacon",
+		Detail:    fmt.Sprintf("%s/%d", b.Type, b.ID),
+		Priority:  ax25.PriorityBeacon,
+		SkipDedup: skipDedup,
 	}
 	if err := s.sink.Submit(ctx, b.Channel, frame, src); err != nil {
 		reason := classifySubmitError(err)

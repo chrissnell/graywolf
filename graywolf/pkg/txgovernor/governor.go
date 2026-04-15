@@ -59,9 +59,10 @@ var (
 // SubmitSource describes the origin of a TX request for logging, dedup
 // scoping, and metrics.
 type SubmitSource struct {
-	Kind     string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
-	Detail   string
-	Priority int
+	Kind       string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
+	Detail     string
+	Priority   int
+	SkipDedup  bool // bypass dedup window (e.g. operator-triggered send-now)
 }
 
 // Sender transmits one frame to the Rust modem. In production this is
@@ -237,7 +238,7 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 
 	// Dedup check (Has also GCs expired entries opportunistically).
 	key := frame.DedupKey()
-	if g.dedup.Has(key) {
+	if !src.SkipDedup && g.dedup.Has(key) {
 		g.stats.Deduped++
 		g.mu.Unlock()
 		g.logger.Debug("tx deduped", "source", src.Kind, "key-len", len(key))
