@@ -59,7 +59,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		DBPath:          defaultDBPath(),
-		HistoryDBPath:   "./graywolf-history.db",
+		HistoryDBPath:   defaultHistoryDBPath(),
 		HTTPAddr:        "127.0.0.1:8080",
 		ShutdownTimeout: 10 * time.Second,
 	}
