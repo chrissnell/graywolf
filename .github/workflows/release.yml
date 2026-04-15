@@ -43,7 +43,7 @@ jobs:
             use_cross: false
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload Rust binary (Unix)
         if: matrix.platform != 'windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rust-${{ matrix.platform }}-${{ matrix.arch }}
           path: target/${{ matrix.target }}/release/graywolf-modem
@@ -105,7 +105,7 @@ jobs:
 
       - name: Upload Rust binary (Windows)
         if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rust-${{ matrix.platform }}-${{ matrix.arch }}
           path: target/${{ matrix.target }}/release/graywolf-modem.exe
@@ -116,10 +116,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -131,7 +131,7 @@ jobs:
           npx vite build
 
       - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: frontend-dist
           path: graywolf/web/dist/
@@ -143,12 +143,12 @@ jobs:
     needs: [rust-build, frontend-build]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Download frontend dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: frontend-dist
           path: graywolf/web/dist/
@@ -173,7 +173,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download all Rust binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: rust-artifacts/
           pattern: rust-*
@@ -200,7 +200,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows binary for MSI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-amd64-binary
           path: dist/graywolf_windows_amd64_v1/graywolf.exe
@@ -212,16 +212,16 @@ jobs:
     needs: release
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download Windows Go binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: windows-amd64-binary
           path: bin
 
       - name: Download Windows Rust binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: rust-windows-amd64
           path: modem-bin
