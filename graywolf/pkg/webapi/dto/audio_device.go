@@ -37,6 +37,11 @@ func (r AudioDeviceRequest) Validate() error {
 }
 
 func (r AudioDeviceRequest) ToModel() configstore.AudioDevice {
+	gain := r.GainDB
+	// Default output devices to -12 dB so they don't overdrive the radio
+	if r.Direction == "output" && gain == 0 {
+		gain = -12
+	}
 	return configstore.AudioDevice{
 		Name:       r.Name,
 		Direction:  r.Direction,
@@ -45,7 +50,7 @@ func (r AudioDeviceRequest) ToModel() configstore.AudioDevice {
 		SampleRate: r.SampleRate,
 		Channels:   1, // always mono; Rust auto-negotiates if device requires stereo
 		Format:     r.Format,
-		GainDB:     r.GainDB,
+		GainDB:     gain,
 	}
 }
 

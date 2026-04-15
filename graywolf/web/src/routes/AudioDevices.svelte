@@ -55,22 +55,12 @@
     }
   }
 
-  // Slider uses linear amplitude (0–225%), converted to/from dB for the API.
-  // Max ~+7 dB so clipping of typical -6 dBFS content occurs near 90% of travel.
-  const GAIN_SLIDER_MAX = 225;
-
-  function dbToSlider(db) {
-    if (db <= -60) return 0;
-    return Math.min(GAIN_SLIDER_MAX, Math.round(Math.pow(10, db / 20) * 100));
-  }
-
-  function sliderToDb(slider) {
-    if (slider <= 0) return -60;
-    return 20 * Math.log10(slider / 100);
-  }
+  // Slider operates directly in dB: -60 to +12
+  const GAIN_DB_MIN = -60;
+  const GAIN_DB_MAX = 12;
 
   function handleGainChange(dev, sliderValue) {
-    const gainDB = sliderToDb(parseFloat(sliderValue));
+    const gainDB = parseFloat(sliderValue);
     dev.gain_db = gainDB;
     // Debounce API call
     if (gainTimers[dev.id]) clearTimeout(gainTimers[dev.id]);
@@ -330,14 +320,14 @@
             <input
               type="range"
               class="gain-slider"
-              min="0"
-              max={GAIN_SLIDER_MAX}
-              step="1"
-              value={dbToSlider(dev.gain_db ?? 0)}
+              min={GAIN_DB_MIN}
+              max={GAIN_DB_MAX}
+              step="0.5"
+              value={dev.gain_db ?? 0}
               oninput={(e) => handleGainChange(dev, e.target.value)}
-              title="Software gain. For significant amplification, use your OS mixer (alsamixer / Audio MIDI Setup)."
+              title="Software gain (-60 to +12 dB)"
             />
-            <button class="gain-value" onclick={() => handleGainChange(dev, 100)} title="Reset to 0 dB">
+            <button class="gain-value" onclick={() => handleGainChange(dev, 0)} title="Reset to 0 dB">
               {(dev.gain_db ?? 0).toFixed(1)} dB
             </button>
           </div>

@@ -297,10 +297,6 @@ impl Modem {
             }
             Some(Payload::SetDeviceGain(g)) => {
                 let gain_db = g.gain_db.clamp(-60.0, 12.0);
-                eprintln!(
-                    "graywolf-modem: SetDeviceGain: device_id={} gain_db={:.1}",
-                    g.device_id, gain_db
-                );
                 if let Some(acfg) = self.audio_configs.get_mut(&g.device_id) {
                     acfg.gain_db = gain_db;
                 }
