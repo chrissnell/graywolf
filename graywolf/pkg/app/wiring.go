@@ -139,8 +139,11 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		hdb, err := historydb.Open(plCfg.DBPath)
 		if err != nil {
 			a.logger.Warn("failed to open history db, starting without persistence", "path", plCfg.DBPath, "err", err)
-		} else if err := a.stationCache.Reconfigure(hdb); err != nil {
-			a.logger.Warn("failed to hydrate from history db", "err", err)
+		} else {
+			a.logger.Info("opened history db", "path", hdb.Path)
+			if err := a.stationCache.Reconfigure(hdb); err != nil {
+				a.logger.Warn("failed to hydrate from history db", "err", err)
+			}
 		}
 	}
 
@@ -655,6 +658,7 @@ func (a *App) reconfigurePositionLog(ctx context.Context) {
 		a.logger.Warn("open history db", "path", cfg.DBPath, "err", err)
 		return
 	}
+	a.logger.Info("opened history db", "path", hdb.Path)
 	if err := a.stationCache.Reconfigure(hdb); err != nil {
 		a.logger.Warn("reconfigure position log", "err", err)
 	}

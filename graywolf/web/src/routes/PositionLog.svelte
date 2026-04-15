@@ -57,7 +57,6 @@
     Positions are retained for 30 days and automatically pruned.
     The database file is created automatically if it doesn&rsquo;t exist.
   </p>
-
   <h3>Raspberry Pi &amp; SD Card Users</h3>
   <p>
     <strong>Do not enable this feature with the default path if your system

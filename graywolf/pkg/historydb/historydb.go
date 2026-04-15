@@ -22,22 +22,36 @@ const posEpsilon = 0.00001
 
 // DB wraps a gorm.DB handle to the history database.
 type DB struct {
-	db *gorm.DB
+	db   *gorm.DB
+	Path string // resolved absolute path of the database file
 }
 
 // Open opens (or creates) the history database at path, applies pragmas,
 // and ensures the schema exists. Safe to call on an empty file.
+// The returned DB.Path contains the resolved absolute path.
 func Open(path string) (*DB, error) {
-	if dir := filepath.Dir(path); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("create history db directory %q: %w", dir, err)
-		}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve history db path %q: %w", path, err)
 	}
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+
+	dir := filepath.Dir(absPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create history db directory %q: %w", dir, err)
+	}
+
+	// Pre-flight: verify the target directory is writable and has space.
+	// SQLite produces opaque errors (e.g. "out of memory") when the
+	// filesystem is full or read-only.
+	if err := checkWritable(dir); err != nil {
+		return nil, fmt.Errorf("history db directory %q is not writable (filesystem full?): %w", dir, err)
+	}
+
+	db, err := gorm.Open(sqlite.Open(absPath), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("open history db %q: %w", path, err)
+		return nil, fmt.Errorf("open history db %q: %w", absPath, err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -52,7 +66,19 @@ func Open(path string) (*DB, error) {
 	if err := bootstrap(db); err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}
-	return &DB{db: db}, nil
+	return &DB{db: db, Path: absPath}, nil
+}
+
+// checkWritable verifies a directory is writable by creating and
+// immediately removing a temporary file.
+func checkWritable(dir string) error {
+	f, err := os.CreateTemp(dir, ".graywolf-probe-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	f.Close()
+	return os.Remove(name)
 }
 
 // Close releases the database handle.
