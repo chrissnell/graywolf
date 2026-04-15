@@ -1048,6 +1048,23 @@ fn alsa_card_description(_cpal_name: &str) -> String {
     String::new()
 }
 
+/// On Linux/ALSA, only expose hw:, plughw:, and the system default.
+/// This filters out the many virtual/plugin ALSA devices (sysdefault,
+/// front, dmix, dsnoop, etc.) that clutter the device list and can
+/// cause matching ambiguity.
+#[cfg(target_os = "linux")]
+fn is_useful_alsa_device(pcm_id: &str) -> bool {
+    pcm_id == "default"
+        || pcm_id.starts_with("hw:")
+        || pcm_id.starts_with("plughw:")
+}
+
+#[cfg(not(target_os = "linux"))]
+fn is_useful_alsa_device(_pcm_id: &str) -> bool {
+    true
+}
+
+#[allow(deprecated)] // DeviceTrait::name() returns the raw pcm_id we need
 fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
@@ -1063,15 +1080,77 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     // Input devices
     if let Ok(inputs) = host.input_devices() {
         for dev in inputs {
-            if let Ok(name) = dev.description().map(|d| d.name().to_string()) {
-                // Skip the ALSA null sink — it accepts anything but produces nothing useful.
-                if name == "null" {
+            let pcm_id = match dev.name() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            if pcm_id == "null" || !is_useful_alsa_device(&pcm_id) {
+                continue;
+            }
+            let display_name = dev.description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| pcm_id.clone());
+
+            let mut sample_rates = Vec::new();
+            let mut channel_counts = Vec::new();
+
+            if let Ok(configs) = dev.supported_input_configs() {
+                for cfg in configs {
+                    let min_rate = cfg.min_sample_rate();
+                    let max_rate = cfg.max_sample_rate();
+                    for &rate in &[8000, 11025, 16000, 22050, 44100, 48000, 96000] {
+                        if rate >= min_rate && rate <= max_rate
+                            && !sample_rates.contains(&rate)
+                        {
+                            sample_rates.push(rate);
+                        }
+                    }
+                    let ch = cfg.channels() as u32;
+                    if !channel_counts.contains(&ch) {
+                        channel_counts.push(ch);
+                    }
+                }
+            }
+
+            if sample_rates.is_empty() || channel_counts.is_empty() {
+                continue;
+            }
+
+            let is_default = default_input_name.as_deref() == Some(&display_name);
+            let description = alsa_card_description(&pcm_id);
+
+            devices.push(AudioDeviceInfo {
+                name: display_name,
+                stable_id: pcm_id,
+                kind: AudioDeviceKind::Input.into(),
+                sample_rates,
+                channel_counts,
+                host_api: host_name.clone(),
+                is_default,
+                description,
+            });
+        }
+    }
+
+    // Output devices
+    if include_output {
+        if let Ok(outputs) = host.output_devices() {
+            for dev in outputs {
+                let pcm_id = match dev.name() {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                };
+                if pcm_id == "null" || !is_useful_alsa_device(&pcm_id) {
                     continue;
                 }
+                let display_name = dev.description()
+                    .map(|d| d.name().to_string())
+                    .unwrap_or_else(|_| pcm_id.clone());
+
                 let mut sample_rates = Vec::new();
                 let mut channel_counts = Vec::new();
 
-                if let Ok(configs) = dev.supported_input_configs() {
+                if let Ok(configs) = dev.supported_output_configs() {
                     for cfg in configs {
                         let min_rate = cfg.min_sample_rate();
                         let max_rate = cfg.max_sample_rate();
@@ -1089,17 +1168,20 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
                     }
                 }
 
+                // Skip devices with no supported configurations (e.g. HDMI
+                // outputs on headless Pi) — they are unusable and cause
+                // null-array issues downstream.
                 if sample_rates.is_empty() || channel_counts.is_empty() {
                     continue;
                 }
 
-                let is_default = default_input_name.as_deref() == Some(&name);
-                let description = alsa_card_description(&name);
+                let is_default = default_output_name.as_deref() == Some(&display_name);
+                let description = alsa_card_description(&pcm_id);
 
                 devices.push(AudioDeviceInfo {
-                    name: name.clone(),
-                    stable_id: name.clone(),
-                    kind: AudioDeviceKind::Input.into(),
+                    name: display_name,
+                    stable_id: pcm_id,
+                    kind: AudioDeviceKind::Output.into(),
                     sample_rates,
                     channel_counts,
                     host_api: host_name.clone(),
@@ -1110,64 +1192,11 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
         }
     }
 
-    // Output devices
-    if include_output {
-        if let Ok(outputs) = host.output_devices() {
-            for dev in outputs {
-                if let Ok(name) = dev.description().map(|d| d.name().to_string()) {
-                    if name == "null" {
-                        continue;
-                    }
-                    let mut sample_rates = Vec::new();
-                    let mut channel_counts = Vec::new();
-
-                    if let Ok(configs) = dev.supported_output_configs() {
-                        for cfg in configs {
-                            let min_rate = cfg.min_sample_rate();
-                            let max_rate = cfg.max_sample_rate();
-                            for &rate in &[8000, 11025, 16000, 22050, 44100, 48000, 96000] {
-                                if rate >= min_rate && rate <= max_rate
-                                    && !sample_rates.contains(&rate)
-                                {
-                                    sample_rates.push(rate);
-                                }
-                            }
-                            let ch = cfg.channels() as u32;
-                            if !channel_counts.contains(&ch) {
-                                channel_counts.push(ch);
-                            }
-                        }
-                    }
-
-                    // Skip devices with no supported configurations (e.g. HDMI
-                    // outputs on headless Pi) — they are unusable and cause
-                    // null-array issues downstream.
-                    if sample_rates.is_empty() || channel_counts.is_empty() {
-                        continue;
-                    }
-
-                    let is_default = default_output_name.as_deref() == Some(&name);
-                    let description = alsa_card_description(&name);
-
-                    devices.push(AudioDeviceInfo {
-                        name: name.clone(),
-                        stable_id: name.clone(),
-                        kind: AudioDeviceKind::Output.into(),
-                        sample_rates,
-                        channel_counts,
-                        host_api: host_name.clone(),
-                        is_default,
-                        description,
-                    });
-                }
-            }
-        }
-    }
-
     devices
 }
 
 /// Briefly open each available input device and measure peak level.
+#[allow(deprecated)] // DeviceTrait::name() returns the raw pcm_id we need
 fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use cpal::SampleFormat;
@@ -1184,15 +1213,20 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
     let mut results = Vec::new();
 
     for dev in inputs {
-        let name = match dev.description().map(|d| d.name().to_string()) {
-            Ok(n) => n,
+        let pcm_id = match dev.name() {
+            Ok(id) => id,
             Err(_) => continue,
         };
+        // Skip virtual/plugin ALSA devices that can poison the ALSA
+        // backend when their PCM open fails.
+        if !is_useful_alsa_device(&pcm_id) {
+            continue;
+        }
         let supported = match dev.default_input_config() {
             Ok(c) => c,
             Err(e) => {
                 results.push(InputDeviceLevel {
-                    name,
+                    name: pcm_id,
                     peak_dbfs: -96.0,
                     has_signal: false,
                     error: format!("{}", e),
@@ -1232,7 +1266,7 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
             }
             _ => {
                 results.push(InputDeviceLevel {
-                    name,
+                    name: pcm_id,
                     peak_dbfs: -96.0,
                     has_signal: false,
                     error: format!("unsupported format: {:?}", sample_format),
@@ -1256,7 +1290,7 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
                 };
 
                 results.push(InputDeviceLevel {
-                    name,
+                    name: pcm_id,
                     peak_dbfs: peak_db,
                     has_signal: peak_db > -40.0,
                     error: String::new(),
@@ -1264,7 +1298,7 @@ fn scan_input_levels(duration_ms: u32) -> Vec<InputDeviceLevel> {
             }
             Err(e) => {
                 results.push(InputDeviceLevel {
-                    name,
+                    name: pcm_id,
                     peak_dbfs: -96.0,
                     has_signal: false,
                     error: format!("{}", e),
@@ -1396,7 +1430,7 @@ fn play_test_tone_blocking(
         None => {
             let host = cpal::default_host();
             let found = match host.output_devices() {
-                Ok(mut devs) => devs.find(|d| d.description().map(|desc| desc.name() == req.device_name).unwrap_or(false)),
+                Ok(devs) => audio::soundcard::find_device_by_name(devs, &req.device_name),
                 Err(e) => {
                     return TestToneResult {
                         request_id: req.request_id,

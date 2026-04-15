@@ -120,10 +120,10 @@ pub fn spawn(
         host.default_input_device()
             .ok_or_else(|| "no default input device".to_string())?
     } else {
-        host.input_devices()
-            .map_err(|e| format!("enumerate input devices: {}", e))?
-            .find(|d| d.description().map(|desc| desc.name() == cfg.device_name).unwrap_or(false))
-            .ok_or_else(|| format!("input device not found: {}", cfg.device_name))?
+        find_device_by_name(
+            host.input_devices().map_err(|e| format!("enumerate input devices: {}", e))?,
+            &cfg.device_name,
+        ).ok_or_else(|| format!("input device not found: {}", cfg.device_name))?
     };
 
     let supported = device
@@ -292,11 +292,34 @@ pub fn resolve_output_device(name: &str) -> Result<Device, String> {
         host.default_output_device()
             .ok_or_else(|| "no default output device".to_string())
     } else {
-        host.output_devices()
-            .map_err(|e| format!("enumerate output devices: {}", e))?
-            .find(|d| d.description().map(|desc| desc.name() == name).unwrap_or(false))
-            .ok_or_else(|| format!("output device not found: {}", name))
+        find_device_by_name(
+            host.output_devices().map_err(|e| format!("enumerate output devices: {}", e))?,
+            name,
+        ).ok_or_else(|| format!("output device not found: {}", name))
     }
+}
+
+/// Find a cpal device by name, trying the unique pcm_id first (used by
+/// new configs) then falling back to the human-friendly description name
+/// (for configs saved before the pcm_id switch).
+#[allow(deprecated)] // DeviceTrait::name() returns the raw pcm_id we need
+pub fn find_device_by_name(devices: impl Iterator<Item = Device>, name: &str) -> Option<Device> {
+    let mut fallback = None;
+    for d in devices {
+        if let Ok(pcm_id) = d.name() {
+            if pcm_id == name {
+                return Some(d);
+            }
+        }
+        if fallback.is_none() {
+            if let Ok(desc) = d.description() {
+                if desc.name() == name {
+                    fallback = Some(d);
+                }
+            }
+        }
+    }
+    fallback
 }
 
 /// Owns a live cpal output stream and a queue of pending i16 sample

@@ -356,12 +356,15 @@
   <p class="section-hint">Click a device to add it to your configuration.</p>
   <div class="avail-grid">
     {#each available as dev}
-      <button class="avail-card" class:added={configuredPaths.has(dev.path)} onclick={() => openCreateFromAvail(dev)}>
+      <button class="avail-card" class:added={configuredPaths.has(dev.path)} class:recommended={dev.path.startsWith('plughw:')} onclick={() => openCreateFromAvail(dev)}>
         <div class="avail-header">
           <strong class="avail-name">{dev.description || dev.name}</strong>
           <div class="avail-badges">
             {#if configuredPaths.has(dev.path)}
               <Badge variant="success">Added</Badge>
+            {/if}
+            {#if dev.path.startsWith('plughw:')}
+              <Badge variant="warning">Recommended</Badge>
             {/if}
             <Badge variant={dev.is_input ? 'info' : 'success'}>
               {dev.is_input ? 'Input' : 'Output'}
@@ -371,7 +374,7 @@
         {#if dev.host_api}
           <span class="avail-api">{dev.host_api}</span>
         {/if}
-        <span class="avail-path" title={dev.path}>{dev.name}</span>
+        <span class="avail-path" title={dev.path}>{dev.path}</span>
         <div class="avail-caps">
           <span>Rates: {(dev.sample_rates || []).join(', ')} Hz</span>
           <span>Channels: {(dev.channels || []).join(', ')}</span>
@@ -379,8 +382,8 @@
         {#if dev.is_default}
           <Badge variant="success">System Default</Badge>
         {/if}
-        {#if dev.is_input && scanLevels[dev.name]}
-          {@const lev = scanLevels[dev.name]}
+        {#if dev.is_input && scanLevels[dev.path]}
+          {@const lev = scanLevels[dev.path]}
           {#if lev.error}
             <span class="scan-error">Error: {lev.error}</span>
           {:else}
@@ -734,6 +737,13 @@
   .avail-card.added {
     border-color: var(--success, #3fb950);
     opacity: 0.7;
+  }
+  .avail-card.recommended {
+    border-color: var(--color-warning, #d29922);
+    background: color-mix(in srgb, var(--color-warning, #d29922) 8%, var(--bg-tertiary));
+  }
+  .avail-card.recommended:hover {
+    background: color-mix(in srgb, var(--color-warning, #d29922) 12%, var(--bg-secondary));
   }
   .avail-header {
     display: flex;

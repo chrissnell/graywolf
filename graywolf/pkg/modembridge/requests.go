@@ -136,12 +136,13 @@ func (b *Bridge) dispatchToneResponse(r *pb.TestToneResult) {
 }
 
 // isUsableAudioDevice filters out ALSA virtual devices that aren't useful
-// for APRS (surround, HDMI, S/PDIF, dmix, etc.).
-func isUsableAudioDevice(name string) bool {
-	prefix, _, _ := strings.Cut(name, ":")
+// for APRS (surround, HDMI, S/PDIF, dmix, etc.). The Rust modem already
+// filters to hw:/plughw:/default, but this is a safety net for the Go side.
+func isUsableAudioDevice(path string) bool {
+	prefix, _, _ := strings.Cut(path, ":")
 	switch prefix {
 	case "surround21", "surround40", "surround41", "surround50", "surround51", "surround71",
-		"hdmi", "iec958", "dmix", "dsnoop", "null":
+		"hdmi", "iec958", "dmix", "dsnoop", "null", "front", "sysdefault":
 		return false
 	}
 	return true
@@ -150,13 +151,19 @@ func isUsableAudioDevice(name string) bool {
 func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 	out := make([]AvailableDevice, 0, len(list.Devices))
 	for _, d := range list.Devices {
-		if !isUsableAudioDevice(d.Name) {
+		// stable_id is the unique pcm_id (e.g. "hw:CARD=0,DEV=0");
+		// fall back to name for non-ALSA platforms.
+		path := d.StableId
+		if path == "" {
+			path = d.Name
+		}
+		if !isUsableAudioDevice(path) {
 			continue
 		}
 		out = append(out, AvailableDevice{
 			Name:        d.Name,
 			Description: d.Description,
-			Path:        d.Name, // cpal device name is the path
+			Path:        path,
 			SampleRates: d.SampleRates,
 			Channels:    d.ChannelCounts,
 			HostAPI:     d.HostApi,
