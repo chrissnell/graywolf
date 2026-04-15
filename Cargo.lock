@@ -398,7 +398,7 @@ dependencies = [
 
 [[package]]
 name = "graywolf-demod"
-version = "0.9.5"
+version = "0.9.6"
 dependencies = [
  "bytes",
  "claxon",
