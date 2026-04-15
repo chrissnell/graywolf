@@ -271,7 +271,7 @@
 <!-- Add/Edit modal -->
 <div class="wide-modal">
 <Modal bind:open={modalOpen} title={editing ? 'Edit Channel' : 'New Channel'}>
-  <div class="form-grid">
+  <div class="form-grid-2">
     <FormField label="Name" error={errors.name} id="ch-name">
       <Input id="ch-name" bind:value={form.name} placeholder="VHF APRS" />
     </FormField>
@@ -279,15 +279,13 @@
       <Select id="ch-modem" bind:value={form.modem_type} options={modemOptions} />
     </FormField>
   </div>
-  <div class="form-grid">
+  <div class="form-grid-4">
     <FormField label="Input Device" error={errors.input_device_id} id="ch-indev">
       <Select id="ch-indev" bind:value={form.input_device_id} options={inputDeviceOptions} />
     </FormField>
     <FormField label="Input Channel" id="ch-inch">
       <Select id="ch-inch" bind:value={form.input_channel} options={channelOptions} />
     </FormField>
-  </div>
-  <div class="form-grid">
     <FormField label="Output Device" id="ch-outdev">
       <Select id="ch-outdev" bind:value={form.output_device_id} options={outputDeviceOptions} />
     </FormField>
@@ -297,7 +295,7 @@
       </FormField>
     {/if}
   </div>
-  <div class="form-grid">
+  <div class="form-grid-3">
     <FormField label="Bit Rate" id="ch-baud">
       <Input id="ch-baud" bind:value={form.bit_rate} type="number" placeholder="1200" />
     </FormField>
@@ -312,50 +310,25 @@
   {#if isTxEnabled}
     <div class="tx-timing-section">
       <h4 class="section-label">Transmit Timing</h4>
-      <p class="section-intro">
-        When your station transmits, it needs to coordinate with other stations sharing the frequency.
-        These settings control how your transmitter keys up and how it avoids collisions with other
-        stations' transmissions.
-      </p>
-
-      <h5 class="section-sublabel">Keying Timing</h5>
-      <p class="section-desc">
-        Before sending data, the radio keys up the transmitter and waits briefly for it to reach
-        full power. After the last byte, it holds the transmitter on so the final data isn't clipped.
-      </p>
-      <div class="tx-grid">
+      <div class="form-grid-4">
         <FormField label="TX Delay (ms)" id="ch-txd"
-          hint="How long to hold the transmitter key before sending data. This gives your radio time to fully power up. 300ms is standard for most radios; some need more.">
+          hint="Key-up time before sending. 300ms typical.">
           <Input id="ch-txd" bind:value={form.tx_delay_ms} type="number" placeholder="300" />
         </FormField>
         <FormField label="TX Tail (ms)" id="ch-txt"
-          hint="How long to keep transmitting after the last byte of data. Prevents the end of your packet from being clipped. 100ms is typical.">
+          hint="Hold time after last byte. 100ms typical.">
           <Input id="ch-txt" bind:value={form.tx_tail_ms} type="number" placeholder="100" />
         </FormField>
-      </div>
-
-      <h5 class="section-sublabel">Channel Access (CSMA)</h5>
-      <p class="section-desc">
-        Before transmitting, the radio listens to check if the channel is busy.
-        If the channel is clear, it decides whether to transmit based on the persistence
-        value — like flipping a weighted coin each time slot.
-        This prevents multiple stations from transmitting at the same time.
-      </p>
-      <div class="tx-grid">
         <FormField label="Slot Time (ms)" id="ch-slot"
-          hint="How often to check if the channel is clear. 100ms matches the standard KISS TNC slot time.">
+          hint="CSMA listen interval. 100ms is standard.">
           <Input id="ch-slot" bind:value={form.slot_ms} type="number" placeholder="100" />
         </FormField>
         <FormField label="Persistence (0-255)" id="ch-persist" error={errors.persist}
-          hint="The probability of transmitting when the channel is clear: probability = (value + 1) / 256. Lower values are more polite but slower. 63 (~25% chance) is the standard default.">
+          hint="TX probability = (val+1)/256. 63 ≈ 25%.">
           <Input id="ch-persist" bind:value={form.persist} type="number" placeholder="63" />
         </FormField>
       </div>
       <Toggle bind:checked={form.full_dup} label="Full Duplex" />
-      <p class="section-hint">
-        Skip the listen-before-talk check entirely. Only enable this if your station uses separate
-        transmit and receive frequencies so it can't hear its own transmissions.
-      </p>
     </div>
   {/if}
 
@@ -510,55 +483,37 @@
 
   /* Wider modal for channel editor */
   .wide-modal :global(.modal) {
-    width: min(680px, 92vw);
+    width: min(860px, 94vw);
   }
   .wide-modal :global(.modal-body) {
     overflow-y: auto;
   }
-  .form-grid {
+  .form-grid-2 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0 16px;
+  }
+  .form-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0 16px;
+  }
+  .form-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 0 16px;
   }
 
   /* TX Timing section in modal */
   .tx-timing-section {
-    margin-top: 20px;
-    padding-top: 16px;
+    margin-top: 12px;
+    padding-top: 12px;
     border-top: 1px solid var(--border-color);
   }
   .section-label {
     margin: 0 0 6px 0;
     font-size: 15px;
     font-weight: 600;
-  }
-  .section-intro {
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--color-text-muted, #888);
-    margin: 0 0 16px 0;
-  }
-  .section-sublabel {
-    margin: 16px 0 4px 0;
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .section-desc {
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--color-text-muted, #888);
-    margin: 0 0 8px 0;
-  }
-  .section-hint {
-    font-size: 12px;
-    line-height: 1.4;
-    color: var(--color-text-muted, #888);
-    margin: 4px 0 0 0;
-  }
-  .tx-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 0 16px;
   }
 
   .modal-actions {
