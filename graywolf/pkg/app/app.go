@@ -59,6 +59,7 @@ type App struct {
 	agwServer   *agw.Server // nil if AGW is disabled in config
 	digi        *digipeater.Digipeater
 	gpsCache    *gps.MemCache
+	stationPos  *gps.StationPos
 	gpsMgr      *gpsManager
 	beaconSched *beacon.Scheduler
 	ig          *igate.Igate // nil if iGate is disabled in config

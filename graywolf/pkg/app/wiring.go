@@ -263,6 +263,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- GPS cache + manager -------------------------------------------
 	a.gpsCache = gps.NewMemCache()
+	a.stationPos = gps.NewStationPos(a.gpsCache)
 	a.gpsReload = make(chan struct{}, 1)
 	a.gpsMgr = newGPSManager(a.store, a.gpsCache, a.logger, a.metrics)
 
@@ -559,9 +560,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 
 	apiMux := http.NewServeMux()
 	apiSrv.RegisterRoutes(apiMux)
-	webapi.RegisterPackets(apiSrv, a.plog, a.gpsCache)(apiMux)
+	webapi.RegisterPackets(apiSrv, a.plog, a.stationPos)(apiMux)
 	webapi.RegisterStations(a.stationCache)(apiMux)
-	webapi.RegisterPosition(apiSrv, a.gpsCache, apiMux)
+	webapi.RegisterPosition(apiSrv, a.stationPos, apiMux)
 	if a.ig != nil {
 		webapi.RegisterIgate(apiSrv, apiMux, a.ig.SetSimulationMode, a.ig.Status)
 	}
@@ -859,6 +860,21 @@ func (a *App) beaconComponent() namedComponent {
 			}
 			configs = append(configs, bc)
 		}
+		// Seed station-position fallback from the first enabled
+		// fixed-position beacon so distance works without GPS.
+		var fb *gps.Fix
+		for _, c := range configs {
+			if c.Enabled && !c.UseGps && c.Lat != 0 && c.Lon != 0 {
+				f := gps.Fix{Latitude: c.Lat, Longitude: c.Lon}
+				if c.AltFt != 0 {
+					f.Altitude = c.AltFt / 3.28084
+					f.HasAlt = true
+				}
+				fb = &f
+				break
+			}
+		}
+		a.stationPos.SetFallback(fb)
 		return configs
 	}
 

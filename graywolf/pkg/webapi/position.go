@@ -20,8 +20,6 @@ type PositionDTO struct {
 }
 
 // RegisterPosition installs GET /api/position on the Server's mux.
-// cmd/graywolf calls this after webapi.NewServer/RegisterRoutes. Kept
-// in its own file so agents 4A/4B/4C do not conflict in webapi.go.
 func RegisterPosition(srv *Server, cache gps.PositionCache, mux *http.ServeMux) {
 	mux.HandleFunc("/api/position", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
