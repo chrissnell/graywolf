@@ -751,7 +751,7 @@ impl Modem {
         let txdelay_ms = effective_ms(tf.txdelay_override_ms, ptt_cfg.map(|p| p.txdelay_ms), 300);
         let txtail_ms = effective_ms(tf.txtail_override_ms, ptt_cfg.map(|p| p.txtail_ms), 100);
 
-        let samples =
+        let mut samples =
             match crate::tx::build_samples(&tf.data, txdelay_ms, txtail_ms, acfg.sample_rate) {
                 Ok(s) => s,
                 Err(e) => {
@@ -759,6 +759,17 @@ impl Modem {
                     return;
                 }
             };
+
+        // Apply output device gain to TX audio
+        if let Some(gain_atom) = self.gain_atoms.get(&ccfg.output_device_id) {
+            let gain_db = f32::from_bits(gain_atom.load(std::sync::atomic::Ordering::Relaxed));
+            if gain_db.abs() > f32::EPSILON {
+                let gain_linear = 10f32.powf(gain_db / 20.0);
+                for s in samples.iter_mut() {
+                    *s = ((*s as f32) * gain_linear).clamp(-32767.0, 32767.0) as i16;
+                }
+            }
+        }
 
         let job = tx_worker::TxJob {
             channel: tf.channel,
