@@ -343,6 +343,44 @@ a:hover {
   padding: 1rem;
 }
 
+/* ── Config card (known-working configurations) ── */
+.config-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: var(--space-4);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.config-card-header {
+  padding: 0.75rem 1rem;
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.config-card-body {
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 0.25rem 0;
+}
+
+.config-card .config-section {
+  padding: 0.75rem 1.5rem;
+}
+
+.config-card .config-section + .config-section {
+  border-top: 1px dotted var(--color-border);
+}
+
+.config-card .config-section-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
 /* ── Callout boxes ── */
 .callout {
   border: 1px solid var(--color-border);

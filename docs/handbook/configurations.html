@@ -74,79 +74,65 @@
 
     <!-- ============================================================ -->
 
-    <h2 id="digirig-mobile">Digirig Mobile</h2>
+    <div class="config-card" id="digirig-mobile">
+      <div class="config-card-header">Digirig Mobile + Raspberry Pi 5 &mdash; Raspbian</div>
+      <div class="config-card-body">
+        <div class="config-section">
+          <div class="config-section-label">System</div>
+          <table>
+            <tbody>
+              <tr><td><strong>OS</strong></td><td>Raspbian (Debian)</td></tr>
+              <tr><td><strong>Hardware</strong></td><td>Raspberry Pi 5</td></tr>
+              <tr><td><strong>Audio Device</strong></td><td>Digirig Mobile</td></tr>
+              <tr><td><strong>GPS</strong></td><td>u-blox USB</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <h3>Raspberry Pi 5 &mdash; Raspbian (Debian)</h3>
+        <div class="config-section">
+          <div class="config-section-label">Audio Devices</div>
+          <table>
+            <thead>
+              <tr><th>Direction</th><th>Path</th><th>Channels</th><th>Sample Rate</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Input</td>
+                <td><code>hw:CARD=Device,DEV=0</code></td>
+                <td>Mono</td>
+                <td>48000 Hz</td>
+              </tr>
+              <tr>
+                <td>Output</td>
+                <td><code>hw:CARD=Device,DEV=0</code></td>
+                <td>Mono</td>
+                <td>48000 Hz</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th colspan="2">System</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><strong>OS</strong></td><td>Raspbian (Debian)</td></tr>
-            <tr><td><strong>Hardware</strong></td><td>Raspberry Pi 5</td></tr>
-            <tr><td><strong>GPS</strong></td><td>u-blox USB</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+        <div class="config-section">
+          <div class="config-section-label">Push-to-Talk</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Method</strong></td><td>Serial RTS</td></tr>
+              <tr><td><strong>Device Path</strong></td><td><code>/dev/ttyUSB0</code></td></tr>
+              <tr><td><strong>Invert Polarity</strong></td><td>Disabled</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <h4>Audio Devices</h4>
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Direction</th><th>Path</th><th>Channels</th><th>Sample Rate</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Input</td>
-              <td><code>hw:CARD=Device,DEV=0</code></td>
-              <td>Mono</td>
-              <td>48000 Hz</td>
-            </tr>
-            <tr>
-              <td>Output</td>
-              <td><code>hw:CARD=Device,DEV=0</code></td>
-              <td>Mono</td>
-              <td>48000 Hz</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <h4>Push-to-Talk</h4>
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Setting</th><th>Value</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><strong>Method</strong></td><td>Serial RTS</td></tr>
-            <tr><td><strong>Device Path</strong></td><td><code>/dev/ttyUSB0</code></td></tr>
-            <tr><td><strong>Invert Polarity</strong></td><td>Disabled</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <h4>GPS</h4>
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Setting</th><th>Value</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><strong>Source</strong></td><td>Serial Port</td></tr>
-            <tr><td><strong>Serial Port</strong></td><td><code>/dev/ttyACM0</code></td></tr>
-            <tr><td><strong>Baud Rate</strong></td><td>9600</td></tr>
-          </tbody>
-        </table>
+        <div class="config-section">
+          <div class="config-section-label">GPS</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Source</strong></td><td>Serial Port</td></tr>
+              <tr><td><strong>Serial Port</strong></td><td><code>/dev/ttyACM0</code></td></tr>
+              <tr><td><strong>Baud Rate</strong></td><td>9600</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
