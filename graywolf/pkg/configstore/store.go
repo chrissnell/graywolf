@@ -19,22 +19,15 @@ type Store struct {
 	db *gorm.DB
 }
 
-// Open opens (or creates) the SQLite database at path and seeds first-run
-// defaults. Use OpenMemory for tests (no seeding).
+// Open opens (or creates) the SQLite database at path.
+// Use OpenMemory for tests.
 func Open(path string) (*Store, error) {
 	if dir := filepath.Dir(path); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("create config db directory %q: %w", dir, err)
 		}
 	}
-	s, err := openDSN(path)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.seedDefaults(); err != nil {
-		return nil, fmt.Errorf("seed defaults: %w", err)
-	}
-	return s, nil
+	return openDSN(path)
 }
 
 // OpenMemory opens an isolated in-memory database (one per call).
@@ -117,51 +110,6 @@ func (s *Store) Migrate() error {
 	return s.runMigrations(postAutoMigrate)
 }
 
-// seedDefaults populates a first-run database with a sensible starting
-// configuration: one soundcard audio device and one AFSK 1200 channel.
-// It's a no-op if any audio devices already exist.
-func (s *Store) seedDefaults() error {
-	ctx := context.Background()
-	var count int64
-	if err := s.db.Model(&AudioDevice{}).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
-	dev := &AudioDevice{
-		Name:       "Default Input",
-		Direction:  "input",
-		SourceType: "soundcard",
-		SourcePath: "default",
-		SampleRate: 48000,
-		Channels:   1,
-		Format:     "s16le",
-	}
-	if err := s.db.Create(dev).Error; err != nil {
-		return fmt.Errorf("seed audio device: %w", err)
-	}
-
-	ch := &Channel{
-		Name:           "Channel 1",
-		InputDeviceID:  dev.ID,
-		InputChannel:   0,
-		OutputDeviceID: 0,
-		ModemType:      "afsk",
-		BitRate:        1200,
-		MarkFreq:       1200,
-		SpaceFreq:      2200,
-		Profile:        "A",
-		NumSlicers:     1,
-		NumDecoders:    1,
-	}
-	if err := s.CreateChannel(ctx, ch); err != nil {
-		return fmt.Errorf("seed channel: %w", err)
-	}
-
-	return nil
-}
 
 // ---------------------------------------------------------------------------
 // AudioDevice CRUD
