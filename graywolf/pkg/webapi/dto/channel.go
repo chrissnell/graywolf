@@ -25,8 +25,6 @@ type ChannelRequest struct {
 	IL2PEncode     bool   `json:"il2p_encode"`
 	NumDecoders    uint32 `json:"num_decoders"`
 	DecoderOffset  int32  `json:"decoder_offset"`
-	TxDelayMs      uint32 `json:"tx_delay_ms"`
-	TxTailMs       uint32 `json:"tx_tail_ms"`
 }
 
 // Validate ensures required fields are set. Deep validation (device
@@ -63,8 +61,6 @@ func (r ChannelRequest) ToModel() configstore.Channel {
 		IL2PEncode:     r.IL2PEncode,
 		NumDecoders:    r.NumDecoders,
 		DecoderOffset:  r.DecoderOffset,
-		TxDelayMs:      r.TxDelayMs,
-		TxTailMs:       r.TxTailMs,
 	}
 }
 
@@ -102,8 +98,6 @@ func ChannelFromModel(m configstore.Channel) ChannelResponse {
 			IL2PEncode:     m.IL2PEncode,
 			NumDecoders:    m.NumDecoders,
 			DecoderOffset:  m.DecoderOffset,
-			TxDelayMs:      m.TxDelayMs,
-			TxTailMs:       m.TxTailMs,
 		},
 	}
 }

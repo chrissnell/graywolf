@@ -59,8 +59,6 @@ type Channel struct {
 	IL2PEncode     bool         `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
 	NumDecoders    uint32       `gorm:"not null;default:1" json:"num_decoders"`
 	DecoderOffset  int32        `gorm:"not null;default:0" json:"decoder_offset"`
-	TxDelayMs      uint32       `gorm:"not null;default:300" json:"tx_delay_ms"`
-	TxTailMs       uint32       `gorm:"not null;default:100" json:"tx_tail_ms"`
 	CreatedAt      time.Time    `json:"-"`
 	UpdatedAt      time.Time    `json:"-"`
 }

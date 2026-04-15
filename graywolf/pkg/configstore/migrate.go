@@ -45,9 +45,13 @@ type migration struct {
 //	    Runs in the pre-AutoMigrate phase so AutoMigrate sees the new
 //	    column names on a schema that matches the Go model instead of
 //	    trying to add them on top of the old ones.
+//	3 — drop_channel_tx_timing: remove vestigial tx_delay_ms and
+//	    tx_tail_ms columns from channels table; these values now live
+//	    exclusively in the tx_timings table.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
+	{version: 3, name: "drop_channel_tx_timing", phase: preAutoMigrate, run: migrateDropChannelTxTiming},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -137,6 +141,27 @@ func migrateChannelDeviceFields(tx *gorm.DB) error {
 	for _, stmt := range stmts {
 		if err := tx.Exec(stmt).Error; err != nil {
 			return fmt.Errorf("%s: %w", stmt, err)
+		}
+	}
+	return nil
+}
+
+// migrateDropChannelTxTiming removes the vestigial tx_delay_ms and
+// tx_tail_ms columns from the channels table. These values now live
+// exclusively in the tx_timings table; the Channel model no longer
+// carries them. Runs pre-AutoMigrate so the table shape matches the
+// Go struct before GORM inspects it.
+func migrateDropChannelTxTiming(tx *gorm.DB) error {
+	for _, col := range []string{"tx_delay_ms", "tx_tail_ms"} {
+		var count int
+		if err := tx.Raw("SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name=?", col).Scan(&count).Error; err != nil {
+			return fmt.Errorf("probe %s: %w", col, err)
+		}
+		if count == 0 {
+			continue
+		}
+		if err := tx.Exec("ALTER TABLE channels DROP COLUMN " + col).Error; err != nil {
+			return fmt.Errorf("drop %s: %w", col, err)
 		}
 	}
 	return nil

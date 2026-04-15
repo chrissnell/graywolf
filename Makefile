@@ -66,7 +66,11 @@ proto:
 		--go_out=. --go_opt=module=github.com/chrissnell/graywolf \
 		../proto/graywolf.proto
 
-web:
+$(WEB_DIR)/node_modules/.stamp: $(WEB_DIR)/package.json
+	cd $(WEB_DIR) && npm install
+	@touch $@
+
+web: $(WEB_DIR)/node_modules/.stamp
 	cd $(WEB_DIR) && npm run build
 
 go-build:

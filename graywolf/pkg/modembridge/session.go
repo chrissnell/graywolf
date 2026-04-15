@@ -211,13 +211,22 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			// No PTT row → send a "none" configuration.
 			ptt = &configstore.PttConfig{ChannelID: ch.ID, Method: "none"}
 		}
+
+		// TX timing lives in the TxTiming table; fall back to
+		// protocol defaults if no row exists for this channel.
+		var txDelayMs, txTailMs uint32 = 300, 100
+		if tt, err := b.cfg.Store.GetTxTiming(ctx, ch.ID); err == nil && tt != nil {
+			txDelayMs = tt.TxDelayMs
+			txTailMs = tt.TxTailMs
+		}
+
 		pmsg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigurePtt{ConfigurePtt: &pb.ConfigurePtt{
 			Channel:    ch.ID,
 			Method:     ptt.Method,
 			Device:     ptt.Device,
 			Invert:     ptt.Invert,
-			TxdelayMs:  ch.TxDelayMs,
-			TxtailMs:   ch.TxTailMs,
+			TxdelayMs:  txDelayMs,
+			TxtailMs:   txTailMs,
 			SlottimeMs: ptt.SlotTimeMs,
 			Persist:    ptt.Persist,
 			DwaitMs:    ptt.DwaitMs,
