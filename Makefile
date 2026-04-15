@@ -23,7 +23,7 @@ MANIFEST := --manifest-path $(MODEM_DIR)/Cargo.toml
 # Rust picks up these env vars in build.rs.
 CARGO_ENV := GRAYWOLF_VERSION="$(VERSION)" GRAYWOLF_GIT_COMMIT="$(FULL_COMMIT)"
 
-.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point
+.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta
 
 all: release web
 	mkdir -p bin
@@ -135,3 +135,18 @@ bump-point:
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
+
+bump-beta:
+	@echo "Current version: $(VERSION)"
+	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'))
+	$(eval BETA_N := $(shell git tag -l "v$(NEW)-beta.*" | sed 's/.*beta\.//' | sort -n | tail -1))
+	$(eval BETA_NEXT := $(shell echo $$(( $(if $(BETA_N),$(BETA_N),0) + 1 ))))
+	$(eval BETA_TAG := v$(NEW)-beta.$(BETA_NEXT))
+	@echo "$(NEW)" > VERSION
+	@sed -i '' 's/^version = ".*"/version = "$(NEW)"/' $(MODEM_DIR)/Cargo.toml
+	$(CARGO) update $(MANIFEST)
+	@echo "Beta release: $(BETA_TAG)"
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock
+	git commit -m "Beta $(BETA_TAG)"
+	git tag "$(BETA_TAG)"
+	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "$(BETA_TAG)"
