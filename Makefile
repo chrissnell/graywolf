@@ -66,11 +66,14 @@ proto:
 		--go_out=. --go_opt=module=github.com/chrissnell/graywolf \
 		../proto/graywolf.proto
 
-$(WEB_DIR)/node_modules/.stamp: $(WEB_DIR)/package.json
-	cd $(WEB_DIR) && npm install
+NODE_STAMP := $(WEB_DIR)/node_modules/.stamp-$(shell uname -s)-$(shell uname -m)
+
+$(NODE_STAMP): $(WEB_DIR)/package.json $(WEB_DIR)/package-lock.json
+	rm -rf $(WEB_DIR)/node_modules
+	cd $(WEB_DIR) && npm ci
 	@touch $@
 
-web: $(WEB_DIR)/node_modules/.stamp
+web: $(NODE_STAMP)
 	cd $(WEB_DIR) && npm run build
 
 go-build:
