@@ -138,7 +138,8 @@ bump-point:
 
 bump-beta:
 	@echo "Current version: $(VERSION)"
-	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'))
+	$(eval EXISTING_BETA := $(shell git tag -l "v$(VERSION)-beta.*" | sed 's/.*beta\.//' | sort -n | tail -1))
+	$(eval NEW := $(if $(EXISTING_BETA),$(VERSION),$(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}')))
 	$(eval BETA_N := $(shell git tag -l "v$(NEW)-beta.*" | sed 's/.*beta\.//' | sort -n | tail -1))
 	$(eval BETA_NEXT := $(shell echo $$(( $(if $(BETA_N),$(BETA_N),0) + 1 ))))
 	$(eval BETA_TAG := v$(NEW)-beta.$(BETA_NEXT))
@@ -147,6 +148,6 @@ bump-beta:
 	$(CARGO) update $(MANIFEST)
 	@echo "Beta release: $(BETA_TAG)"
 	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock
-	git commit -m "Beta $(BETA_TAG)"
+	git diff --cached --quiet || git commit -m "Beta $(BETA_TAG)"
 	git tag "$(BETA_TAG)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "$(BETA_TAG)"
