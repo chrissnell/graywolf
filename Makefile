@@ -106,7 +106,6 @@ version:
 
 bump-minor:
 	@echo "Current version: $(VERSION)"
-	$(eval BETA_TAGS := $(shell git tag -l "v$(VERSION)-beta.*"))
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.0", $$1, $$2+1}'))
 	@echo "$(NEW)" > VERSION
 	@sed -i '' 's/^version = ".*"/version = "$(NEW)"/' $(MODEM_DIR)/Cargo.toml
@@ -120,12 +119,10 @@ bump-minor:
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
-	$(if $(BETA_TAGS),@echo "Cleaning up beta tags: $(BETA_TAGS)" && git tag -d $(BETA_TAGS) && git push $(GIT_REMOTE) $(patsubst %,:refs/tags/%,$(BETA_TAGS)))
 
 bump-point:
 	@echo "Current version: $(VERSION)"
-	$(eval BETA_TAGS := $(shell git tag -l "v$(VERSION)-beta.*"))
-	$(eval NEW := $(if $(BETA_TAGS),$(VERSION),$(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}')))
+	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'))
 	@echo "$(NEW)" > VERSION
 	@sed -i '' 's/^version = ".*"/version = "$(NEW)"/' $(MODEM_DIR)/Cargo.toml
 	@sed -i '' 's/^pkgver=.*/pkgver=$(NEW)/' packaging/aur/PKGBUILD
@@ -135,10 +132,9 @@ bump-point:
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
 	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html
-	git diff --cached --quiet || git commit -m "Release v$(NEW)"
+	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
-	$(if $(BETA_TAGS),@echo "Cleaning up beta tags: $(BETA_TAGS)" && git tag -d $(BETA_TAGS) && git push $(GIT_REMOTE) $(patsubst %,:refs/tags/%,$(BETA_TAGS)))
 
 bump-beta:
 	@echo "Current version: $(VERSION)"
