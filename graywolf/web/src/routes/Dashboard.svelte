@@ -170,9 +170,9 @@
   function distanceLabel(pkt) {
     if (pkt.distance_mi == null) return '';
     const d = pkt.distance_mi;
-    const label = d < 1 ? `${(d * 5280).toFixed(0)} ft` : `${d.toFixed(1)} mi`;
-    return pkt.via ? `${label} via ${pkt.via}` : label;
+    return d < 1 ? `${(d * 5280).toFixed(0)} ft` : `${d.toFixed(1)} mi`;
   }
+
 
   function formatTime(ts) {
     const d = new Date(ts);
@@ -630,7 +630,7 @@
   .c-dst    { width: 80px;  flex-shrink: 0; }
   .c-type   { width: 85px;  flex-shrink: 0; }
   .c-device { flex: 1 1 0;  min-width: 80px; }
-  .c-dist   { width: 175px; flex-shrink: 0; text-align: right; }
+  .c-dist   { width: 100px; flex-shrink: 0; text-align: right; }
 
   /* ── sticky header ────────────────────────────── */
   .pkt-hdr {
