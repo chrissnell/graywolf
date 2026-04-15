@@ -1433,7 +1433,7 @@ fn play_test_tone_blocking(
 
     let config = cpal::StreamConfig {
         channels,
-        sample_rate: sample_rate,
+        sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
