@@ -38,6 +38,8 @@ Building Graywolf (demod_bench)...
 
 - **Modern Web UI** - Configure and monitor your station from your browser, with live packet logs and preset-driven setup for digipeater and iGate
 
+  - Imperial/Metric unit toggle for altitude, distance, and speed
+
 - **Live Map** - Real-time APRS station map with trails, weather overlays, APRS-IS layer, and station popups with path and heard-via details
 
 - **Software Modem** - Native Rust DSP, no external sound card tooling required
