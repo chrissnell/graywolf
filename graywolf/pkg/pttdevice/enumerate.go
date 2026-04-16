@@ -3,15 +3,11 @@
 package pttdevice
 
 import (
-	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
-
-	"go.bug.st/serial/enumerator"
 )
 
 // AvailableDevice describes a detected PTT-capable device.
@@ -86,50 +82,6 @@ func enumerateSerial() []AvailableDevice {
 				Recommended: true,
 			})
 		}
-	}
-	return devs
-}
-
-// enumerateSerialWindows lists COM ports via go.bug.st/serial's enumerator,
-// which exposes USB VID/PID and product strings on Windows. CM108 composite
-// devices (Digirig, AIOC, generic C-Media) get their Description annotated so
-// users can distinguish the RTS/DTR serial PTT interface from the CM108 HID
-// interface that's enumerated separately by enumerateCM108().
-func enumerateSerialWindows() []AvailableDevice {
-	ports, err := enumerator.GetDetailedPortsList()
-	if err != nil {
-		slog.Warn("pttdevice: COM port enumeration failed", "err", err)
-		return []AvailableDevice{{
-			Type:    "serial",
-			Path:    "",
-			Warning: fmt.Sprintf("COM port enumeration failed: %v", err),
-		}}
-	}
-	devs := make([]AvailableDevice, 0, len(ports))
-	for _, port := range ports {
-		if port == nil {
-			continue
-		}
-		desc := port.Product
-		if desc == "" {
-			if port.IsUSB {
-				desc = fmt.Sprintf("%s (USB %s:%s)", port.Name, port.VID, port.PID)
-			} else {
-				desc = port.Name
-			}
-		}
-		dev := AvailableDevice{
-			Path:        port.Name,
-			Type:        "serial",
-			Name:        port.Name,
-			Description: desc,
-			Recommended: true,
-		}
-		if port.IsUSB {
-			dev.USBVendor = port.VID
-			dev.USBProduct = port.PID
-		}
-		devs = append(devs, dev)
 	}
 	return devs
 }
