@@ -61,6 +61,7 @@
     } else if (lastMethod === 'rigctld') {
       form.rigctld_host = 'localhost';
       form.rigctld_port = 4532;
+      form.device_path = '';
     }
     lastMethod = m;
   });
