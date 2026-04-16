@@ -27,25 +27,6 @@ type cm108Entry struct {
 	Description  string
 }
 
-// cm108VendorSet lists USB vendor IDs whose devices have CM108-compatible
-// HID GPIO. Matched by vendor alone (any product ID).
-//
-// When adding a new CM108-compatible device: if its vendor ID covers only
-// CM108 parts, add the vendor here. Otherwise add the specific VID:PID to
-// cm108VIDPIDSet below. Also add a description to knownUSBDevices in
-// sysfs_linux.go.
-var cm108VendorSet = map[string]bool{
-	"0d8c": true, // C-Media (CM108, CM108B, CM108AH, CM109, CM119, CM119A)
-	"0c76": true, // SSS
-}
-
-// cm108VIDPIDSet lists specific VID:PID pairs for CM108-compatible devices
-// whose vendor ID alone is not sufficient (e.g. AIOC uses pid.codes VID).
-// See cm108VendorSet comment for maintenance instructions.
-var cm108VIDPIDSet = map[string]bool{
-	"1209:7388": true, // AIOC All-In-One-Cable
-}
-
 // buildCM108Inventory correlates ALSA sound cards with their HID (hidraw)
 // control interfaces via the sysfs tree. Both the sound and hidraw nodes
 // for a physical USB device share a common USB device ancestor; this
@@ -74,7 +55,7 @@ func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 		product := readSysfsFile(filepath.Join(usbParent, "idProduct"))
 		vidpid := vendor + ":" + product
 
-		if !cm108VendorSet[vendor] && !cm108VIDPIDSet[vidpid] {
+		if !IsCM108Compatible(vendor, product) {
 			slog.Debug("cm108: skipping sound card (not CM108-compatible)", "path", cardPath, "vidpid", vidpid)
 			continue
 		}
@@ -83,8 +64,8 @@ func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 		cardName := readSysfsFile(filepath.Join(cardPath, "id"))
 
 		desc := readSysfsFile(filepath.Join(usbParent, "product"))
-		if known, ok := knownUSBDevices[vidpid]; ok {
-			desc = known
+		if name := USBDeviceName(vendor, product); name != "" {
+			desc = name
 		}
 
 		cardsByParent[usbParent] = &cm108Entry{

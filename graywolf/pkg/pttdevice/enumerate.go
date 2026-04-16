@@ -14,29 +14,6 @@ import (
 	"go.bug.st/serial/enumerator"
 )
 
-// cm108CompositeUSB maps known USB VID:PID pairs (lowercase hex, no "0x") for
-// CM108-based composite adapters that expose both a HID interface and a
-// CDC-ACM virtual COM port. When a Windows serial port matches, its
-// Description is annotated with "(RTS/DTR PTT)" so the user can distinguish
-// the serial-PTT interface from the CM108 HID entry (which toggles an HID
-// GPIO pin, not RTS/DTR). Extend this map as new adapters appear.
-var cm108CompositeUSB = map[string]string{
-	// Generic C-Media CM108/CM119 family. The 0d8c VID covers most cheap
-	// "USB sound card" PTT adapters that also expose a virtual COM port.
-	"0d8c:013c": "C-Media CM108",
-	"0d8c:0012": "C-Media CM109",
-	"0d8c:013a": "C-Media CM119",
-	// Digirig Mobile — CM108 audio + CH340 serial in one enclosure. The
-	// serial side enumerates under the CH340 VID:PID, so we include both
-	// the C-Media VIDs above and the CH340 so either interface is flagged
-	// as part of a CM108 composite stack.
-	"1a86:7523": "CH340 (Digirig serial)",
-	// All-In-One-Cable (AIOC) — CM108-compatible composite device.
-	// AIOC uses its own VID:PID; add the known pair used by current
-	// firmware builds. Extend if the project ships new IDs.
-	"1209:7388": "AIOC",
-}
-
 // AvailableDevice describes a detected PTT-capable device.
 type AvailableDevice struct {
 	Path        string `json:"path"`
@@ -151,8 +128,7 @@ func enumerateSerialWindows() []AvailableDevice {
 		if port.IsUSB {
 			dev.USBVendor = port.VID
 			dev.USBProduct = port.PID
-			key := strings.ToLower(port.VID) + ":" + strings.ToLower(port.PID)
-			if _, ok := cm108CompositeUSB[key]; ok {
+			if IsCM108Composite(port.VID, port.PID) {
 				dev.Description += " (RTS/DTR PTT)"
 			}
 		}

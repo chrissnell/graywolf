@@ -106,7 +106,7 @@ func TestBuildCM108Inventory(t *testing.T) {
 		if e.InterfaceNum != "03" {
 			t.Errorf("InterfaceNum = %q, want 03", e.InterfaceNum)
 		}
-		// knownUSBDevices maps 0d8c:000c to a specific description
+		// knownUSBDevices (usb_devices.go) maps 0d8c:000c to a specific description
 		if e.Description != "CM108 USB Audio (GPIO PTT capable)" {
 			t.Errorf("Description = %q, want known-device description", e.Description)
 		}
@@ -114,7 +114,7 @@ func TestBuildCM108Inventory(t *testing.T) {
 
 	t.Run("non-CM108 vendor excluded", func(t *testing.T) {
 		s := newSysfsTree(t)
-		// FTDI device — not in cm108VendorSet or cm108VIDPIDSet
+		// FTDI device — HasCM108=false in knownUSBDevices
 		s.addUSBDevice("usb1/1-3", "0403", "6001", "FTDI Serial")
 		s.addSoundCard("usb1/1-3", "1-3:1.0", "1", "FTDIAudio")
 		s.addHidraw("usb1/1-3", "1-3:1.2", "1", "03")
@@ -140,7 +140,7 @@ func TestBuildCM108Inventory(t *testing.T) {
 
 	t.Run("AIOC matched by VID:PID", func(t *testing.T) {
 		s := newSysfsTree(t)
-		// AIOC uses pid.codes VID 1209, not in cm108VendorSet — matched by cm108VIDPIDSet
+		// AIOC uses pid.codes VID 1209 — matched by specific 1209:7388 entry in knownUSBDevices
 		s.addUSBDevice("usb1/1-5", "1209", "7388", "AIOC")
 		s.addSoundCard("usb1/1-5", "1-5:1.0", "3", "AIOC")
 		s.addHidraw("usb1/1-5", "1-5:1.3", "3", "03")
