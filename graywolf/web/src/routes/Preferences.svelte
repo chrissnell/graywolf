@@ -3,17 +3,19 @@
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import PageHeader from '../components/PageHeader.svelte';
 
-  function toggleUnits(e) {
-    unitsState.system = e.target.checked ? 'metric' : 'imperial';
-  }
+  let metric = $state(unitsState.isMetric);
+
+  $effect(() => {
+    unitsState.system = metric ? 'metric' : 'imperial';
+  });
 </script>
 
 <PageHeader title="Preferences" subtitle="Display and formatting options" />
 
 <Box title="Units">
-  <Toggle checked={unitsState.isMetric} onchange={toggleUnits} label="Use metric units" />
+  <Toggle bind:checked={metric} label="Use metric units" />
   <p class="unit-hint">
-    {#if unitsState.isMetric}
+    {#if metric}
       Altitude in meters, distance in m/km, speed in km/h.
     {:else}
       Altitude in feet, distance in ft/mi, speed in mph.
