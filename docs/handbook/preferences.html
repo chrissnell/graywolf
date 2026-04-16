@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Preferences &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Preferences</h1>
+    <p class="subtitle">Display units and formatting options</p>
+
+    <p>
+      The Preferences page lets you choose between Imperial and Metric
+      units for all measurements displayed in the web UI. The setting
+      is saved in your browser and takes effect immediately &mdash; no
+      page reload required.
+    </p>
+
+    <h2>Unit System Toggle</h2>
+
+    <p>
+      Open <strong>Settings &rarr; Preferences</strong> in the sidebar
+      and flip the <strong>Use metric units</strong> toggle. Every page
+      that shows altitude, distance, or speed updates instantly.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Measurement</th><th>Imperial</th><th>Metric</th><th>API Unit</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Altitude</td>
+              <td>feet (ft)</td>
+              <td>meters (m)</td>
+              <td>meters</td>
+            </tr>
+            <tr>
+              <td>Distance</td>
+              <td>feet / miles (ft, mi)</td>
+              <td>meters / kilometers (m, km)</td>
+              <td>statute miles</td>
+            </tr>
+            <tr>
+              <td>Speed</td>
+              <td>miles per hour (mph)</td>
+              <td>kilometers per hour (km/h)</td>
+              <td>knots</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Short distances are shown in smaller units for readability:
+      under 0.1&nbsp;mi shows feet in Imperial mode, under 1&nbsp;km
+      shows meters in Metric mode.
+    </p>
+
+    <h2>Where Units Appear</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Page</th><th>What Changes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Dashboard</strong></td>
+              <td>GPS altitude, station speed, and packet distance in the live feed</td>
+            </tr>
+            <tr>
+              <td><strong>Logs</strong></td>
+              <td>Packet distance column</td>
+            </tr>
+            <tr>
+              <td><strong>Beacons</strong></td>
+              <td>Altitude input supports feet or meters with an inline unit selector</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Beacon Altitude Input</h2>
+
+    <p>
+      When editing a beacon with a fixed position, the altitude field
+      has a small <strong>ft / m</strong> selector next to the input.
+      This defaults to your global unit preference but can be changed
+      per-entry. The value is always stored and sent to the API in feet,
+      so switching units only affects what you see in the form &mdash;
+      the transmitted APRS packet is unaffected.
+    </p>
+
+    <ul>
+      <li>Leave the field blank to omit altitude from the beacon</li>
+      <li>Negative values are accepted (e.g. &minus;86&nbsp;m for Death Valley)</li>
+      <li>Switching the unit selector converts the current value in-place</li>
+    </ul>
+
+    <h2>Persistence</h2>
+
+    <p>
+      The unit preference is stored in your browser&rsquo;s localStorage
+      under the key <code>units-system</code>. It persists across page
+      reloads and browser restarts but is per-browser &mdash; if you use
+      a different browser or device you&rsquo;ll need to set it again.
+      The default is Imperial.
+    </p>
+
+    <nav class="page-nav">
+      <a href="monitoring.html">
+        <span class="label">Previous</span>
+        Monitoring
+      </a>
+      <a href="architecture.html" class="next">
+        <span class="label">Next</span>
+        Architecture
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
