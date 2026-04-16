@@ -182,6 +182,13 @@
     if (type === 'cm108') return 'success';
     return 'default';
   }
+
+  function typeBadgeTitle(type) {
+    if (type === 'serial') return 'Serial RTS/DTR PTT — keys the radio via a COM port control line. Use this for USB-serial cables (FTDI, CH340, Prolific) and the serial side of composite adapters like Digirig.';
+    if (type === 'gpio') return 'GPIO PTT — keys the radio via a Linux gpiochip pin. Use this on Raspberry Pi and similar SBCs wired directly to the radio.';
+    if (type === 'cm108') return 'CM108 HID GPIO PTT — keys the radio via the HID output pin on a CM108-family USB audio chip. Use this for Digirig, AIOC, and other C-Media-based adapters.';
+    return '';
+  }
 </script>
 
 <PageHeader title="PTT Configuration" subtitle="Push-to-talk settings per channel">
@@ -261,7 +268,7 @@
         <div class="avail-header">
           <strong class="avail-name">{dev.description || dev.name}</strong>
           <div class="avail-badges">
-            <Badge variant={typeBadgeVariant(dev.type)}>
+            <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
               {dev.type}
             </Badge>
             {#if dev.recommended && !dev.warning}

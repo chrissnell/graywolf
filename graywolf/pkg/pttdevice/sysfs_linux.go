@@ -37,7 +37,7 @@ func usbInfoFromSysfs(devPath string) (vendor, product, description string) {
 	description = readSysfsFile(filepath.Join(dir, "product"))
 
 	// Check known device table for even better descriptions.
-	if name := USBDeviceName(vendor, product); name != "" {
+	if name := usbDeviceName(vendor, product); name != "" {
 		description = name
 	} else if description == "" {
 		// Fallback to manufacturer + product ID.

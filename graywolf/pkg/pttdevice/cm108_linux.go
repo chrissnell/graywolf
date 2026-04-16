@@ -55,7 +55,7 @@ func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 		product := readSysfsFile(filepath.Join(usbParent, "idProduct"))
 		vidpid := vendor + ":" + product
 
-		if !IsCM108Compatible(vendor, product) {
+		if !isCM108Compatible(vendor, product) {
 			slog.Debug("cm108: skipping sound card (not CM108-compatible)", "path", cardPath, "vidpid", vidpid)
 			continue
 		}
@@ -64,7 +64,7 @@ func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 		cardName := readSysfsFile(filepath.Join(cardPath, "id"))
 
 		desc := readSysfsFile(filepath.Join(usbParent, "product"))
-		if name := USBDeviceName(vendor, product); name != "" {
+		if name := usbDeviceName(vendor, product); name != "" {
 			desc = name
 		}
 

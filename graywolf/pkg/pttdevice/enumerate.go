@@ -128,9 +128,6 @@ func enumerateSerialWindows() []AvailableDevice {
 		if port.IsUSB {
 			dev.USBVendor = port.VID
 			dev.USBProduct = port.PID
-			if IsCM108Composite(port.VID, port.PID) {
-				dev.Description += " (RTS/DTR PTT)"
-			}
 		}
 		devs = append(devs, dev)
 	}
