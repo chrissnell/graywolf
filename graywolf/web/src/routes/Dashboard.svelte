@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { Button, Box, Dot } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
+  import { formatDistance, formatAltitude, formatSpeed } from '../lib/settings/units.js';
   import PageHeader from '../components/PageHeader.svelte';
 
   let packets = $state([]);
@@ -167,13 +168,6 @@
     return dev.model || dev.vendor || '';
   }
 
-  function distanceLabel(pkt) {
-    if (pkt.distance_mi == null) return '';
-    const d = pkt.distance_mi;
-    return d < 1 ? `${(d * 5280).toFixed(0)} ft` : `${d.toFixed(1)} mi`;
-  }
-
-
   function formatTime(ts) {
     const d = new Date(ts);
     const mo = d.getMonth() + 1;
@@ -302,8 +296,8 @@
       <span class="stat-value gps-value">{formatCoord(position.lat, 'N', 'S')}, {formatCoord(position.lon, 'E', 'W')}</span>
       <span class="stat-label">
         {position.source === 'gps' ? 'GPS' : 'Fixed Position'}
-        {#if position.has_alt} &middot; {position.alt_m?.toFixed(0)}m{/if}
-        {#if position.has_course} &middot; {position.heading_deg?.toFixed(0)}&deg; &middot; {position.speed_kt?.toFixed(1)}kt{/if}
+        {#if position.has_alt} &middot; {formatAltitude(position.alt_m)}{/if}
+        {#if position.has_course} &middot; {position.heading_deg?.toFixed(0)}&deg; &middot; {formatSpeed(position.speed_kt)}{/if}
       </span>
     {:else}
       <span class="stat-value" style="color: var(--color-text-dim);">&mdash;</span>
@@ -341,7 +335,7 @@
           {@const calls = parseDisplay(pkt)}
           {@const origin = originTag(pkt)}
           {@const device = deviceLabel(pkt)}
-          {@const dist = distanceLabel(pkt)}
+          {@const dist = pkt.distance_mi != null ? formatDistance(pkt.distance_mi) : ''}
           {@const dir = (pkt.direction || '').toUpperCase()}
           <div class="pkt-entry" class:pkt-alt={i % 2 === 1}>
             <div class="pkt-row">

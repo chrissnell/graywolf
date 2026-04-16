@@ -27,6 +27,7 @@
         { path: '/gps', label: 'GPS' },
         { path: '/position-log', label: 'Position Log' },
         { path: '/simulation', label: 'Simulation' },
+        { path: '/preferences', label: 'Preferences' },
       ],
     },
     {

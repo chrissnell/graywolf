@@ -20,6 +20,7 @@
   import Logs from './routes/Logs.svelte';
   import LiveMap from './routes/LiveMap.svelte';
   import About from './routes/About.svelte';
+  import Preferences from './routes/Preferences.svelte';
 
   const routes = {
     '/login': Login,
@@ -37,6 +38,7 @@
     '/simulation': Simulation,
     '/position-log': PositionLog,
     '/logs': Logs,
+    '/preferences': Preferences,
     '/about': About,
   };
 

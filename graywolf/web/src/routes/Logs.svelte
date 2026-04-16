@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { Button, Input, Select, Box, Dot } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
+  import { formatDistance } from '../lib/settings/units.js';
   import PageHeader from '../components/PageHeader.svelte';
 
   let packets = $state([]);
@@ -65,13 +66,6 @@
     if (dev.vendor && dev.model) return `${dev.vendor} ${dev.model}`;
     return dev.model || dev.vendor || '';
   }
-
-  function distanceLabel(pkt) {
-    if (pkt.distance_mi == null) return '';
-    const d = pkt.distance_mi;
-    return d < 1 ? `${(d * 5280).toFixed(0)} ft` : `${d.toFixed(1)} mi`;
-  }
-
 
   function formatTime(ts) {
     const d = new Date(ts);
@@ -199,7 +193,7 @@
             {@const calls = parseDisplay(pkt)}
             {@const origin = originTag(pkt)}
             {@const device = deviceLabel(pkt)}
-            {@const dist = distanceLabel(pkt)}
+            {@const dist = pkt.distance_mi != null ? formatDistance(pkt.distance_mi) : ''}
             {@const dir = (pkt.direction || '').toUpperCase()}
             <div class="pkt-entry" class:pkt-alt={i % 2 === 1}>
               <!-- Row 1: structured fields -->

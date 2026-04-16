@@ -3,6 +3,8 @@
   import { Button, Input, Select, Toggle, Box, Radio, RadioGroup, Badge, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
+  import { unitsState } from '../lib/settings/units-store.svelte.js';
+  import { FT_PER_M } from '../lib/settings/units.js';
   import PageHeader from '../components/PageHeader.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
@@ -11,6 +13,35 @@
     PRIMARY_TABLE, ALTERNATE_TABLE, SPRITE_URLS, CELL_PX,
     backgroundPosition, loadSymbols, describe,
   } from '../lib/aprsSymbols.js';
+
+  // Altitude input: local unit selector + text value, converting to/from form.alt_ft
+  let altUnit = $state(unitsState.isMetric ? 'meters' : 'feet');
+  let altInput = $state('');
+  let altError = $state('');
+
+  function altInputFromFeet(ft) {
+    if (ft == null || ft === '') return '';
+    const n = parseFloat(ft);
+    if (Number.isNaN(n)) return '';
+    if (altUnit === 'meters') return String(Math.round(n / FT_PER_M * 100) / 100);
+    return String(n);
+  }
+
+  function toggleAltUnit(unit) {
+    if (unit === altUnit) return;
+    // Convert current input value to the new unit
+    const raw = altInput.replace(',', '.').trim();
+    if (raw !== '' && !Number.isNaN(parseFloat(raw))) {
+      const v = parseFloat(raw);
+      if (altUnit === 'feet' && unit === 'meters') {
+        altInput = String(Math.round(v / FT_PER_M * 100) / 100);
+      } else {
+        altInput = String(Math.round(v * FT_PER_M * 100) / 100);
+      }
+    }
+    altUnit = unit;
+    altError = '';
+  }
 
   let beacons = $state([]);
   let channels = $state([]);
@@ -99,6 +130,8 @@
     form.latitude = '';
     form.longitude = '';
     form.alt_ft = '';
+    altInput = '';
+    altError = '';
     form.comment = defaultComment;
     form.interval = '600';
     form.send_to_aprs_is = false;
@@ -121,6 +154,8 @@
       alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
       interval: String(row.interval),
     });
+    altInput = altInputFromFeet(form.alt_ft);
+    altError = '';
     modalOpen = true;
   }
 
@@ -134,12 +169,22 @@
     const useGps = form.pos_source === 'gps';
     const latStr = form.latitude.trim();
     const lonStr = form.longitude.trim();
-    const altStr = form.alt_ft.trim();
     const lat = latStr === '' ? 0 : parseFloat(latStr);
     const lon = lonStr === '' ? 0 : parseFloat(lonStr);
-    const altFt = altStr === '' ? 0 : parseFloat(altStr);
-    if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(altFt)) {
-      toasts.error('Latitude, longitude, and altitude must be numeric');
+    // Convert altitude input to feet for the API
+    const altNorm = altInput.replace(',', '.').trim();
+    let altFt = null;
+    if (altNorm !== '') {
+      const altVal = parseFloat(altNorm);
+      if (Number.isNaN(altVal)) {
+        altError = 'Altitude must be a number';
+        toasts.error('Altitude must be numeric');
+        return;
+      }
+      altFt = altUnit === 'meters' ? altVal * FT_PER_M : altVal;
+    }
+    if (Number.isNaN(lat) || Number.isNaN(lon)) {
+      toasts.error('Latitude and longitude must be numeric');
       return;
     }
     if (!useGps && lat === 0 && lon === 0) {
@@ -420,9 +465,18 @@
           hint="Decimal degrees, east positive (e.g. -122.4 for San Francisco; 151.2 for Sydney).">
           <Input id="bcn-lon" bind:value={form.longitude} placeholder="-122.4" />
         </FormField>
-        <FormField label="Altitude (feet)" id="bcn-alt"
-          hint="Antenna height above sea level. Optional; leave blank or 0 to omit.">
-          <Input id="bcn-alt" bind:value={form.alt_ft} placeholder="0" />
+        <FormField label="Altitude" id="bcn-alt"
+          hint="Antenna height above sea level in {altUnit}. Optional; leave blank or 0 to omit.">
+          <div class="alt-row">
+            <Input id="bcn-alt" bind:value={altInput} placeholder={altUnit === 'feet' ? '0 ft' : '0 m'}
+              type="text" inputmode="decimal" error={altError} oninput={() => altError = ''} />
+            <div class="unit-toggle" role="group" aria-label="Altitude unit">
+              <button type="button" class="unit-btn" class:unit-active={altUnit === 'feet'}
+                onclick={() => toggleAltUnit('feet')}>ft</button>
+              <button type="button" class="unit-btn" class:unit-active={altUnit === 'meters'}
+                onclick={() => toggleAltUnit('meters')}>m</button>
+            </div>
+          </div>
         </FormField>
       {/if}
       <FormField label="Interval (seconds)" id="bcn-interval">
@@ -673,5 +727,40 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .alt-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .alt-row :global(.input-wrapper) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .unit-toggle {
+    display: flex;
+    flex-shrink: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .unit-btn {
+    padding: 6px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    border: none;
+    cursor: pointer;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    transition: background 0.15s, color 0.15s;
+  }
+  .unit-btn:not(:last-child) {
+    border-right: 1px solid var(--border-color);
+  }
+  .unit-active {
+    background: var(--color-primary, #3b82f6);
+    color: #fff;
   }
 </style>
