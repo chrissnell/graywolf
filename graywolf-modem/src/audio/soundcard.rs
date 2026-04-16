@@ -7,14 +7,56 @@
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, StreamConfig};
 
 use super::AudioSource;
+
+/// Backoff schedule for stream rebuild attempts after a cpal error.
+/// The holding thread walks this slice; once it exhausts the list it
+/// stays at the final value until a rebuild succeeds and the stream
+/// runs uninterrupted for [`BACKOFF_RESET_AFTER`], at which point the
+/// index resets to zero.
+const REBUILD_BACKOFF: &[Duration] = &[
+    Duration::from_millis(100),
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(5),
+];
+
+/// After a rebuild succeeds and the stream runs this long without
+/// another error, clear the backoff counter. Shorter than one radio
+/// PTT cycle so a single transient ALSA blip doesn't stick us on long
+/// backoffs for the rest of the session.
+const BACKOFF_RESET_AFTER: Duration = Duration::from_secs(60);
+
+/// Sleep the current thread for the backoff duration at `*idx`, then
+/// advance `*idx` up to the last slot. Wakes early if `stop` is set so
+/// shutdown isn't delayed by a pending retry wait. Walks the schedule
+/// in short ticks for the same reason.
+fn backoff_wait(idx: &mut usize, stop: &Arc<AtomicBool>) {
+    let d = REBUILD_BACKOFF[*idx];
+    let tick = Duration::from_millis(100);
+    let mut remaining = d;
+    while !remaining.is_zero() {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        let step = if remaining < tick { remaining } else { tick };
+        thread::sleep(step);
+        remaining = remaining.saturating_sub(step);
+    }
+    if *idx + 1 < REBUILD_BACKOFF.len() {
+        *idx += 1;
+    }
+}
 
 /// Check that (`sample_rate`, `channels`) falls within at least one of the
 /// given stream config ranges. Returns `Ok(())` on match, or an error
@@ -143,84 +185,138 @@ pub fn spawn(
 
     let want_ch = cfg.audio_channel as usize;
     let stop = Arc::new(AtomicBool::new(false));
-    let stop_for_err = stop.clone();
+    // `stream_failed` is set by the cpal error callback and watched by
+    // the holding thread, which rebuilds the stream on transient ALSA
+    // errors (POLLERR, underruns, device re-enumeration). Kept separate
+    // from `stop` so external shutdown and internal recovery can't be
+    // confused.
+    let stream_failed = Arc::new(AtomicBool::new(false));
 
     // The cpal stream is not Send on all platforms, so it must live on its
     // own thread that also runs a small park loop to keep it alive.
     let stop_for_thread = stop.clone();
+    let stream_failed_for_thread = stream_failed.clone();
     let sample_format = supported.sample_format();
     let (ready_tx, ready_rx) = channel::<Result<(), String>>();
 
     let join = thread::Builder::new()
         .name("audio-soundcard".into())
         .spawn(move || {
-            let err_fn = move |e| {
-                eprintln!("cpal stream error: {}", e);
-                stop_for_err.store(true, Ordering::Relaxed);
-            };
-
-            let build_result: Result<cpal::Stream, cpal::BuildStreamError> = match sample_format {
-                SampleFormat::F32 => {
-                    let sink = sink.clone();
-                    device.build_input_stream(
-                        &stream_config,
-                        move |data: &[f32], _| {
-                            let chunk = extract_channel_f32(data, channels as usize, want_ch);
-                            let _ = sink.try_send(chunk);
-                        },
-                        err_fn,
-                        None,
-                    )
-                }
-                SampleFormat::I16 => {
-                    let sink = sink.clone();
-                    device.build_input_stream(
-                        &stream_config,
-                        move |data: &[i16], _| {
-                            let chunk = extract_channel_i16(data, channels as usize, want_ch);
-                            let _ = sink.try_send(chunk);
-                        },
-                        err_fn,
-                        None,
-                    )
-                }
-                SampleFormat::U16 => {
-                    let sink = sink.clone();
-                    device.build_input_stream(
-                        &stream_config,
-                        move |data: &[u16], _| {
-                            let chunk = extract_channel_u16(data, channels as usize, want_ch);
-                            let _ = sink.try_send(chunk);
-                        },
-                        err_fn,
-                        None,
-                    )
-                }
-                other => {
-                    let _ = ready_tx.send(Err(format!(
-                        "unsupported input sample format: {:?}", other
-                    )));
-                    return;
-                }
-            };
-
-            let stream = match build_result {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = ready_tx.send(Err(format!("build_input_stream: {}", e)));
-                    return;
-                }
-            };
-            if let Err(e) = stream.play() {
-                let _ = ready_tx.send(Err(format!("input stream play: {}", e)));
-                return;
-            }
-            let _ = ready_tx.send(Ok(()));
+            let mut ready_tx = Some(ready_tx);
+            let mut backoff_idx: usize = 0;
+            let mut last_failure: Option<Instant> = None;
 
             while !stop_for_thread.load(Ordering::Relaxed) {
-                thread::park_timeout(std::time::Duration::from_millis(100));
+                let stream_failed_for_err = stream_failed_for_thread.clone();
+                let err_fn = move |e| {
+                    eprintln!("cpal input stream error: {}", e);
+                    stream_failed_for_err.store(true, Ordering::Relaxed);
+                };
+
+                let build_result: Result<cpal::Stream, cpal::BuildStreamError> = match sample_format {
+                    SampleFormat::F32 => {
+                        let sink = sink.clone();
+                        device.build_input_stream(
+                            &stream_config,
+                            move |data: &[f32], _| {
+                                let chunk = extract_channel_f32(data, channels as usize, want_ch);
+                                let _ = sink.try_send(chunk);
+                            },
+                            err_fn,
+                            None,
+                        )
+                    }
+                    SampleFormat::I16 => {
+                        let sink = sink.clone();
+                        device.build_input_stream(
+                            &stream_config,
+                            move |data: &[i16], _| {
+                                let chunk = extract_channel_i16(data, channels as usize, want_ch);
+                                let _ = sink.try_send(chunk);
+                            },
+                            err_fn,
+                            None,
+                        )
+                    }
+                    SampleFormat::U16 => {
+                        let sink = sink.clone();
+                        device.build_input_stream(
+                            &stream_config,
+                            move |data: &[u16], _| {
+                                let chunk = extract_channel_u16(data, channels as usize, want_ch);
+                                let _ = sink.try_send(chunk);
+                            },
+                            err_fn,
+                            None,
+                        )
+                    }
+                    other => {
+                        if let Some(tx) = ready_tx.take() {
+                            let _ = tx.send(Err(format!(
+                                "unsupported input sample format: {:?}", other
+                            )));
+                        }
+                        return;
+                    }
+                };
+
+                let stream = match build_result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        if let Some(tx) = ready_tx.take() {
+                            // First attempt failed — surface to caller so
+                            // spawn() can return an error instead of
+                            // silently retrying an undiagnosable device.
+                            let _ = tx.send(Err(format!("build_input_stream: {}", e)));
+                            return;
+                        }
+                        eprintln!("cpal rebuild input stream failed: {}", e);
+                        backoff_wait(&mut backoff_idx, &stop_for_thread);
+                        last_failure = Some(Instant::now());
+                        continue;
+                    }
+                };
+                if let Err(e) = stream.play() {
+                    if let Some(tx) = ready_tx.take() {
+                        let _ = tx.send(Err(format!("input stream play: {}", e)));
+                        return;
+                    }
+                    eprintln!("cpal rebuild input stream play failed: {}", e);
+                    drop(stream);
+                    backoff_wait(&mut backoff_idx, &stop_for_thread);
+                    last_failure = Some(Instant::now());
+                    continue;
+                }
+                if let Some(tx) = ready_tx.take() {
+                    let _ = tx.send(Ok(()));
+                }
+
+                let started = Instant::now();
+                stream_failed_for_thread.store(false, Ordering::Relaxed);
+                while !stop_for_thread.load(Ordering::Relaxed)
+                    && !stream_failed_for_thread.load(Ordering::Relaxed)
+                {
+                    thread::park_timeout(Duration::from_millis(100));
+                }
+                drop(stream);
+
+                if stop_for_thread.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                // Stream hit an error. Decide whether to reset the
+                // backoff based on how long we ran since the last
+                // failure; a single transient blip shouldn't pin us at
+                // max backoff for the session.
+                if last_failure.is_none_or(|t| t.elapsed() >= BACKOFF_RESET_AFTER)
+                    && started.elapsed() >= BACKOFF_RESET_AFTER
+                {
+                    backoff_idx = 0;
+                }
+                eprintln!("cpal input stream failed, rebuilding");
+                backoff_wait(&mut backoff_idx, &stop_for_thread);
+                last_failure = Some(Instant::now());
             }
-            drop(stream);
         })
         .map_err(|e| format!("spawn soundcard thread: {}", e))?;
 
@@ -403,83 +499,143 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     };
 
     let (submit_tx, submit_rx) = channel::<Vec<i16>>();
+    let shared_rx = Arc::new(Mutex::new(submit_rx));
     let submitted = Arc::new(AtomicUsize::new(0));
     let drained = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
+    let stream_failed = Arc::new(AtomicBool::new(false));
 
     let want_ch = cfg.audio_channel as usize;
     let sample_format = supported.sample_format();
 
     let drained_for_thread = drained.clone();
     let submitted_for_thread = submitted.clone();
-    let stop_for_err = stop.clone();
+    let shared_rx_for_thread = shared_rx.clone();
     let stop_for_thread = stop.clone();
+    let stream_failed_for_thread = stream_failed.clone();
     let (ready_tx, ready_rx) = channel::<Result<(), String>>();
 
     let join = thread::Builder::new()
         .name("audio-soundcard-out".into())
         .spawn(move || {
-            let err_fn = move |e| {
-                eprintln!("cpal output stream error: {}", e);
-                stop_for_err.store(true, Ordering::Relaxed);
-            };
-
-            let mut state = OutputState::new(submit_rx, drained_for_thread, submitted_for_thread);
+            let mut ready_tx = Some(ready_tx);
+            let mut backoff_idx: usize = 0;
+            let mut last_failure: Option<Instant> = None;
             let ch_usize = channels as usize;
 
-            let build_result: Result<cpal::Stream, cpal::BuildStreamError> = match sample_format {
-                SampleFormat::F32 => device.build_output_stream(
-                    &stream_config,
-                    move |data: &mut [f32], _| {
-                        let mut next = || state.next_sample();
-                        fill_output_f32(data, ch_usize, want_ch, &mut next);
-                    },
-                    err_fn,
-                    None,
-                ),
-                SampleFormat::I16 => device.build_output_stream(
-                    &stream_config,
-                    move |data: &mut [i16], _| {
-                        let mut next = || state.next_sample();
-                        fill_output_i16(data, ch_usize, want_ch, &mut next);
-                    },
-                    err_fn,
-                    None,
-                ),
-                SampleFormat::U16 => device.build_output_stream(
-                    &stream_config,
-                    move |data: &mut [u16], _| {
-                        let mut next = || state.next_sample();
-                        fill_output_u16(data, ch_usize, want_ch, &mut next);
-                    },
-                    err_fn,
-                    None,
-                ),
-                other => {
-                    let _ = ready_tx.send(Err(format!(
-                        "unsupported output sample format: {:?}", other
-                    )));
-                    return;
-                }
-            };
-
-            let stream = match build_result {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = ready_tx.send(Err(format!("build_output_stream: {}", e)));
-                    return;
-                }
-            };
-            if let Err(e) = stream.play() {
-                let _ = ready_tx.send(Err(format!("output stream play: {}", e)));
-                return;
-            }
-            let _ = ready_tx.send(Ok(()));
-
             while !stop_for_thread.load(Ordering::Relaxed) {
-                thread::park_timeout(std::time::Duration::from_millis(100));
+                let stream_failed_for_err = stream_failed_for_thread.clone();
+                let err_fn = move |e| {
+                    eprintln!("cpal output stream error: {}", e);
+                    stream_failed_for_err.store(true, Ordering::Relaxed);
+                };
+
+                let mut state = OutputState::new(
+                    shared_rx_for_thread.clone(),
+                    drained_for_thread.clone(),
+                    submitted_for_thread.clone(),
+                );
+
+                let build_result: Result<cpal::Stream, cpal::BuildStreamError> = match sample_format {
+                    SampleFormat::F32 => device.build_output_stream(
+                        &stream_config,
+                        move |data: &mut [f32], _| {
+                            let mut next = || state.next_sample();
+                            fill_output_f32(data, ch_usize, want_ch, &mut next);
+                        },
+                        err_fn,
+                        None,
+                    ),
+                    SampleFormat::I16 => device.build_output_stream(
+                        &stream_config,
+                        move |data: &mut [i16], _| {
+                            let mut next = || state.next_sample();
+                            fill_output_i16(data, ch_usize, want_ch, &mut next);
+                        },
+                        err_fn,
+                        None,
+                    ),
+                    SampleFormat::U16 => device.build_output_stream(
+                        &stream_config,
+                        move |data: &mut [u16], _| {
+                            let mut next = || state.next_sample();
+                            fill_output_u16(data, ch_usize, want_ch, &mut next);
+                        },
+                        err_fn,
+                        None,
+                    ),
+                    other => {
+                        if let Some(tx) = ready_tx.take() {
+                            let _ = tx.send(Err(format!(
+                                "unsupported output sample format: {:?}", other
+                            )));
+                        }
+                        return;
+                    }
+                };
+
+                let stream = match build_result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        if let Some(tx) = ready_tx.take() {
+                            let _ = tx.send(Err(format!("build_output_stream: {}", e)));
+                            return;
+                        }
+                        eprintln!("cpal rebuild output stream failed: {}", e);
+                        backoff_wait(&mut backoff_idx, &stop_for_thread);
+                        last_failure = Some(Instant::now());
+                        continue;
+                    }
+                };
+                if let Err(e) = stream.play() {
+                    if let Some(tx) = ready_tx.take() {
+                        let _ = tx.send(Err(format!("output stream play: {}", e)));
+                        return;
+                    }
+                    eprintln!("cpal rebuild output stream play failed: {}", e);
+                    drop(stream);
+                    backoff_wait(&mut backoff_idx, &stop_for_thread);
+                    last_failure = Some(Instant::now());
+                    continue;
+                }
+                if let Some(tx) = ready_tx.take() {
+                    let _ = tx.send(Ok(()));
+                }
+
+                let started = Instant::now();
+                stream_failed_for_thread.store(false, Ordering::Relaxed);
+                while !stop_for_thread.load(Ordering::Relaxed)
+                    && !stream_failed_for_thread.load(Ordering::Relaxed)
+                {
+                    thread::park_timeout(Duration::from_millis(100));
+                }
+                drop(stream);
+
+                if stop_for_thread.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                // Unblock any TX worker waiting on drained by treating
+                // the in-flight transmission as "drained" — its audio
+                // was truncated by the stream error anyway, so there's
+                // no point holding the worker waiting for samples that
+                // will never be played. Drain the queue too so stale
+                // chunks don't play on the rebuilt stream.
+                if let Ok(rx) = shared_rx_for_thread.lock() {
+                    while rx.try_recv().is_ok() {}
+                }
+                let submitted_now = submitted_for_thread.load(Ordering::Relaxed);
+                drained_for_thread.store(submitted_now, Ordering::Relaxed);
+
+                if last_failure.is_none_or(|t| t.elapsed() >= BACKOFF_RESET_AFTER)
+                    && started.elapsed() >= BACKOFF_RESET_AFTER
+                {
+                    backoff_idx = 0;
+                }
+                eprintln!("cpal output stream failed, rebuilding");
+                backoff_wait(&mut backoff_idx, &stop_for_thread);
+                last_failure = Some(Instant::now());
             }
-            drop(stream);
         })
         .map_err(|e| format!("spawn soundcard output thread: {}", e))?;
 
@@ -496,11 +652,17 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     })
 }
 
-/// Per-callback cursor over the submission queue. Not `Send` across
-/// callback invocations by necessity — the cpal callback is `FnMut` and
-/// keeps this state by move.
+/// Per-callback cursor over the submission queue. The `Receiver` lives
+/// behind an `Arc<Mutex<..>>` so it survives across stream rebuilds:
+/// the cpal callback is `FnMut` and takes state by move, so every
+/// rebuild constructs a fresh `OutputState` that points at the same
+/// persistent queue.
+///
+/// The mutex is never contended under normal operation — only the
+/// cpal audio callback locks it. The holding thread accesses the
+/// queue only during error recovery, when no callback is running.
 struct OutputState {
-    rx: Receiver<Vec<i16>>,
+    rx: Arc<Mutex<Receiver<Vec<i16>>>>,
     current: Vec<i16>,
     pos: usize,
     drained: Arc<AtomicUsize>,
@@ -509,7 +671,7 @@ struct OutputState {
 
 impl OutputState {
     fn new(
-        rx: Receiver<Vec<i16>>,
+        rx: Arc<Mutex<Receiver<Vec<i16>>>>,
         drained: Arc<AtomicUsize>,
         submitted: Arc<AtomicUsize>,
     ) -> Self {
@@ -540,7 +702,17 @@ impl OutputState {
                 self.drained.fetch_add(1, Ordering::Relaxed);
                 return Some(s);
             }
-            match self.rx.try_recv() {
+            let recv = {
+                let rx = match self.rx.lock() {
+                    Ok(g) => g,
+                    // A poisoned mutex means another holder panicked,
+                    // which shouldn't happen here — we never panic
+                    // while holding it. Treat as "no samples".
+                    Err(_) => return None,
+                };
+                rx.try_recv()
+            };
+            match recv {
                 Ok(next) => {
                     self.current = next;
                     self.pos = 0;
@@ -706,7 +878,8 @@ mod tests {
         let (tx, rx) = channel::<Vec<i16>>();
         let drained = Arc::new(AtomicUsize::new(0));
         let submitted = Arc::new(AtomicUsize::new(0));
-        let mut state = OutputState::new(rx, drained.clone(), submitted.clone());
+        let shared_rx = Arc::new(Mutex::new(rx));
+        let mut state = OutputState::new(shared_rx, drained.clone(), submitted.clone());
 
         // Match the AudioSink::submit invariant: bump `submitted` before
         // sending so the `next_sample` debug_assert sees a consistent
@@ -721,6 +894,48 @@ mod tests {
         assert_eq!(state.next_sample(), Some(3));
         assert_eq!(state.next_sample(), None);
         assert_eq!(drained.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn output_state_survives_rebuild_sharing_receiver() {
+        // Simulates the full rebuild-after-error path that the holding
+        // thread performs: (1) first OutputState drops mid-chunk, its
+        // partial `current` buffer is lost; (2) holding thread drains
+        // the queue and bumps `drained` up to `submitted` so the TX
+        // worker unblocks; (3) a fresh OutputState plays new audio
+        // submitted after recovery.
+        let (tx, rx) = channel::<Vec<i16>>();
+        let drained = Arc::new(AtomicUsize::new(0));
+        let submitted = Arc::new(AtomicUsize::new(0));
+        let shared_rx = Arc::new(Mutex::new(rx));
+
+        submitted.fetch_add(2, Ordering::Relaxed);
+        tx.send(vec![10, 20]).unwrap();
+        submitted.fetch_add(2, Ordering::Relaxed);
+        tx.send(vec![40, 50]).unwrap();
+
+        let mut first = OutputState::new(
+            shared_rx.clone(), drained.clone(), submitted.clone(),
+        );
+        assert_eq!(first.next_sample(), Some(10));
+        drop(first);
+
+        // Holding thread's post-failure cleanup.
+        {
+            let rx = shared_rx.lock().unwrap();
+            while rx.try_recv().is_ok() {}
+        }
+        drained.store(submitted.load(Ordering::Relaxed), Ordering::Relaxed);
+
+        // New audio submitted after rebuild plays cleanly; old partial
+        // chunks and queued chunks were discarded during recovery.
+        submitted.fetch_add(1, Ordering::Relaxed);
+        tx.send(vec![99]).unwrap();
+        let mut second = OutputState::new(
+            shared_rx, drained.clone(), submitted.clone(),
+        );
+        assert_eq!(second.next_sample(), Some(99));
+        assert_eq!(second.next_sample(), None);
     }
 
     #[test]
