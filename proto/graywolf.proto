@@ -165,7 +165,15 @@ message ConfigureAudio {
 // Configure PTT (push-to-talk) control for a channel.
 message ConfigurePtt {
   uint32 channel = 1;
-  string method = 2;            // "serial_rts" | "serial_dtr" | "gpio" | "cm108" | "none"
+  string method = 2;            // "serial_rts" | "serial_dtr" | "gpio" | "cm108" | "rigctld" | "none"
+  // device is interpreted by the selected method:
+  //   - serial_rts/serial_dtr → filesystem device path, e.g. "/dev/ttyUSB0"
+  //   - cm108                 → HID device path, e.g. "/dev/hidraw0"
+  //   - rigctld               → "host:port", e.g. "localhost:4532" (IPv4/hostname only; no IPv6 bracketing)
+  //   - gpio/none             → ignored
+  //
+  // If a fourth PTT method needs to overload this field, migrate to a
+  // structured `endpoint` oneof instead of piling on more string schemas.
   string device = 3;
   uint32 txdelay_ms = 4;
   uint32 txtail_ms = 5;

@@ -39,6 +39,7 @@ func (s *Server) handlePttCollection(w http.ResponseWriter, r *http.Request) {
 
 // /api/ptt/{channel} — GET, PUT, DELETE
 // /api/ptt/available — GET device enumeration
+// /api/ptt/test-rigctld — POST probe a rigctld endpoint (see ptt_test_rigctld.go)
 func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/ptt/")
 	if rest == "available" {
@@ -47,6 +48,14 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, pttdevice.Enumerate())
+		return
+	}
+	if rest == "test-rigctld" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		s.handleTestRigctld(w, r)
 		return
 	}
 	id, err := parseID(rest)

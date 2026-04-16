@@ -24,6 +24,7 @@
     { value: 'serial_dtr', label: 'Serial DTR' },
     { value: 'gpio', label: 'GPIO' },
     { value: 'cm108', label: 'CM108' },
+    { value: 'rigctld', label: 'Hamlib rigctld (CAT)' },
   ];
 
   const methodLabels = Object.fromEntries(methodOptions.map(o => [o.value, o.label]));
@@ -46,8 +47,50 @@
     }
   });
 
+  // Scrub fields that don't apply when entering/leaving rigctld. Prevents stale
+  // device_path/gpio/invert from smuggling into a rigctld save, and prevents
+  // stale rigctld_host/port from leaking back in if the user flips away and back.
+  let lastMethod = $state(null);
+  $effect(() => {
+    const m = form.method;
+    if (m === lastMethod) return;
+    if (m === 'rigctld') {
+      form.gpio_pin = '0';
+      form.invert = false;
+      form.device_path = '';
+    } else if (lastMethod === 'rigctld') {
+      form.rigctld_host = 'localhost';
+      form.rigctld_port = 4532;
+    }
+    lastMethod = m;
+  });
+
+  // Test Connection FSM for rigctld. Kinds: 'idle' | 'testing' | 'success' | 'error'.
+  let testState = $state({ kind: 'idle' });
+
+  // Reset test result to idle whenever the target or modal context changes.
+  // Symmetric for success/error so stale badges never linger across edits.
+  $effect(() => {
+    // Touch dependencies so $effect re-runs on any change.
+    void form.method;
+    void form.rigctld_host;
+    void form.rigctld_port;
+    void modalOpen;
+    if (testState.kind !== 'idle' && testState.kind !== 'testing') {
+      testState = { kind: 'idle' };
+    }
+  });
+
   function emptyForm() {
-    return { channel_id: '', method: 'none', device_path: '', gpio_pin: '0', invert: false };
+    return {
+      channel_id: '',
+      method: 'none',
+      device_path: '',
+      gpio_pin: '0',
+      invert: false,
+      rigctld_host: 'localhost',
+      rigctld_port: 4532,
+    };
   }
 
   onMount(async () => {
@@ -82,19 +125,38 @@
     editing = null;
     form = emptyForm();
     form.channel_id = String(channels[0].id);
+    lastMethod = form.method;
     errors = {};
     modalOpen = true;
   }
 
   function openEdit(item) {
     editing = item;
+    let rigctldHost = 'localhost';
+    let rigctldPort = 4532;
+    if (item.method === 'rigctld' && item.device_path && !item.device_path.includes('[')) {
+      // Split on the LAST ':' so hostnames that (shouldn't but might) contain
+      // a colon don't derail parsing. IPv6 literals rejected via '[' guard.
+      const idx = item.device_path.lastIndexOf(':');
+      if (idx > 0) {
+        const h = item.device_path.slice(0, idx);
+        const p = parseInt(item.device_path.slice(idx + 1), 10);
+        if (h) rigctldHost = h;
+        if (Number.isInteger(p) && p >= 1 && p <= 65535) rigctldPort = p;
+      }
+    }
     form = {
       channel_id: String(item.channel_id),
       method: item.method,
       device_path: item.device_path || '',
       gpio_pin: String(item.gpio_pin || 0),
       invert: !!item.invert,
+      rigctld_host: rigctldHost,
+      rigctld_port: rigctldPort,
     };
+    // Prevent the method-change $effect from clobbering freshly loaded rigctld
+    // values on open — lastMethod is already this method, so no transition fires.
+    lastMethod = item.method;
     errors = {};
     modalOpen = true;
   }
@@ -114,7 +176,10 @@
       device_path: dev.path,
       gpio_pin: method === 'cm108' ? '3' : '0',
       invert: false,
+      rigctld_host: 'localhost',
+      rigctld_port: 4532,
     };
+    lastMethod = method;
     errors = {};
     modalOpen = true;
   }
@@ -122,12 +187,26 @@
   function handleModalClose() {
     editing = null;
     form = emptyForm();
+    lastMethod = form.method;
     errors = {};
   }
 
   function validate() {
     const e = {};
-    if (form.method !== 'none' && !form.device_path.trim()) e.device_path = 'Device path required';
+    if (form.method === 'rigctld') {
+      const host = (form.rigctld_host || '').trim();
+      if (!host) {
+        e.rigctld_host = 'Hostname or IPv4 address required';
+      } else if (host.includes(':')) {
+        e.rigctld_host = 'IPv6 not supported, use hostname or IPv4';
+      }
+      const port = Number(form.rigctld_port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        e.rigctld_port = 'Port must be an integer between 1 and 65535';
+      }
+    } else if (form.method !== 'none') {
+      if (!form.device_path.trim()) e.device_path = 'Device path required';
+    }
     errors = e;
     return Object.keys(e).length === 0;
   }
@@ -135,6 +214,17 @@
   async function handleSave() {
     if (!validate()) return;
     const data = { ...form, channel_id: parseInt(form.channel_id), gpio_pin: parseInt(form.gpio_pin), invert: !!form.invert };
+    // For rigctld, unconditionally pack host:port into device_path and zero
+    // out unused fields. Don't trust that the method-change $effect already
+    // ran — belt + suspenders, per plan.
+    if (form.method === 'rigctld') {
+      data.device_path = `${form.rigctld_host}:${form.rigctld_port}`;
+      data.gpio_pin = 0;
+      data.invert = false;
+    }
+    // Strip UI-only keys that shouldn't hit the API.
+    delete data.rigctld_host;
+    delete data.rigctld_port;
     try {
       if (editing) {
         await api.put(`/ptt/${editing.channel_id}`, data);
@@ -143,10 +233,84 @@
         await api.post('/ptt', data);
         toasts.success('PTT config created');
       }
+      // Reset test result on successful save.
+      testState = { kind: 'idle' };
       modalOpen = false;
       await loadItems();
     } catch (err) {
       toasts.error(err.message);
+    }
+  }
+
+  // Test Connection: calls POST /api/ptt/test-rigctld. We use raw fetch (not
+  // the api helper) because the helper silently falls back to mock data on
+  // network errors — the wrong behavior for a diagnostic test button.
+  async function testConnection() {
+    if (testState.kind === 'testing') return;
+    if (!canTest) return;
+    testState = { kind: 'testing' };
+    try {
+      const res = await fetch('/api/ptt/test-rigctld', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: form.rigctld_host.trim(),
+          port: Number(form.rigctld_port),
+        }),
+      });
+      if (!res.ok) {
+        // Try to parse body for a message, else fall back to statusText.
+        let msg = res.statusText || `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body && typeof body.message === 'string' && body.message) msg = body.message;
+          else if (body && typeof body.error === 'string' && body.error) msg = body.error;
+        } catch { /* non-JSON body */ }
+        testState = { kind: 'error', message: msg };
+        return;
+      }
+      const body = await res.json();
+      if (body && body.ok) {
+        const latency = Number.isFinite(body.latency_ms) ? body.latency_ms : 0;
+        testState = { kind: 'success', latencyMs: latency };
+      } else {
+        const msg = (body && body.message) || 'rigctld reported failure';
+        testState = { kind: 'error', message: msg };
+      }
+    } catch (err) {
+      testState = { kind: 'error', message: err?.message || 'Network error' };
+    }
+  }
+
+  let portValid = $derived.by(() => {
+    const p = Number(form.rigctld_port);
+    return Number.isInteger(p) && p >= 1 && p <= 65535;
+  });
+  let hostValid = $derived.by(() => {
+    const h = (form.rigctld_host || '').trim();
+    return h.length > 0 && !h.includes(':');
+  });
+  let canTest = $derived(hostValid && portValid);
+  let testDisabledReason = $derived.by(() => {
+    if (testState.kind === 'testing') return 'Test in progress';
+    if (!hostValid) {
+      if (!(form.rigctld_host || '').trim()) return 'Enter a hostname to test';
+      return 'Remove the colon from the hostname (IPv6 not supported)';
+    }
+    if (!portValid) return 'Enter a valid port (1–65535)';
+    return '';
+  });
+
+  function handleRigctldPortBlur() {
+    // Restore default if user cleared the field or typed a non-number.
+    if (form.rigctld_port === '' || form.rigctld_port === null || form.rigctld_port === undefined) {
+      form.rigctld_port = 4532;
+      return;
+    }
+    const n = Number(form.rigctld_port);
+    if (!Number.isFinite(n)) {
+      form.rigctld_port = 4532;
     }
   }
 
@@ -297,7 +461,7 @@
     <FormField label="Method" id="ptt-method">
       <Select id="ptt-method" bind:value={form.method} options={methodOptions} />
     </FormField>
-    {#if form.method !== 'none'}
+    {#if form.method !== 'none' && form.method !== 'rigctld'}
       <FormField label="Device Path" error={errors.device_path} id="ptt-dev">
         <Input id="ptt-dev" bind:value={form.device_path} placeholder="Select a detected device or enter path" />
       </FormField>
@@ -325,7 +489,53 @@
         ]} />
       </FormField>
     {/if}
-    {#if form.method !== 'none'}
+    {#if form.method === 'rigctld'}
+      <FormField label="Hostname" error={errors.rigctld_host} id="ptt-rigctld-host">
+        <Input id="ptt-rigctld-host" bind:value={form.rigctld_host} placeholder="localhost" />
+      </FormField>
+      <FormField label="Port" error={errors.rigctld_port} id="ptt-rigctld-port">
+        <Input id="ptt-rigctld-port"
+               type="number"
+               min={1}
+               max={65535}
+               bind:value={form.rigctld_port}
+               onblur={handleRigctldPortBlur} />
+      </FormField>
+      <div class="rigctld-test-row">
+        <Button
+          onclick={testConnection}
+          disabled={!canTest || testState.kind === 'testing'}
+          aria-disabled={(!canTest || testState.kind === 'testing') ? 'true' : 'false'}
+          aria-busy={testState.kind === 'testing' ? 'true' : 'false'}
+          title={testDisabledReason || 'Probe the rigctld daemon without keying the radio'}
+        >
+          {#if testState.kind === 'testing'}
+            <span class="rigctld-spinner" aria-hidden="true"></span>
+            Testing…
+          {:else}
+            Test Connection
+          {/if}
+        </Button>
+      </div>
+      <div
+        class="rigctld-result"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {#if testState.kind === 'testing'}
+          <span class="rigctld-badge testing">Testing connection…</span>
+        {:else if testState.kind === 'success'}
+          <span class="rigctld-badge ok">Success: Connected ({testState.latencyMs} ms)</span>
+        {:else if testState.kind === 'error'}
+          <span class="rigctld-badge err">Failed: {testState.message}</span>
+        {/if}
+      </div>
+      <p class="field-hint">
+        Commands your radio's PTT over CAT via a running <code>rigctld</code>. Polarity inversion does not apply. IPv4 / hostnames only.
+      </p>
+    {/if}
+    {#if form.method !== 'none' && form.method !== 'rigctld'}
       <FormField label="Invert Polarity" id="ptt-invert">
         <Toggle bind:checked={form.invert} label="Key radio on LOW instead of HIGH" />
       </FormField>
@@ -587,5 +797,57 @@
   :global(.danger-action) {
     background: var(--color-danger) !important;
     color: white !important;
+  }
+
+  /* rigctld Test Connection UI */
+  .rigctld-test-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .rigctld-result {
+    min-height: 22px;
+    margin-bottom: 4px;
+  }
+  .rigctld-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid transparent;
+  }
+  .rigctld-badge.testing {
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+  }
+  .rigctld-badge.ok {
+    --badge-c: var(--success, #3fb950);
+    color: var(--badge-c);
+    background: color-mix(in srgb, var(--badge-c) 12%, transparent);
+    border-color: color-mix(in srgb, var(--badge-c) 40%, transparent);
+  }
+  .rigctld-badge.err {
+    --badge-c: var(--color-danger, #f85149);
+    color: var(--badge-c);
+    background: color-mix(in srgb, var(--badge-c) 12%, transparent);
+    border-color: color-mix(in srgb, var(--badge-c) 40%, transparent);
+  }
+  .rigctld-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    display: inline-block;
+    animation: rigctld-spin 0.7s linear infinite;
+    vertical-align: -2px;
+    margin-right: 6px;
+  }
+  @keyframes rigctld-spin {
+    to { transform: rotate(360deg); }
   }
 </style>

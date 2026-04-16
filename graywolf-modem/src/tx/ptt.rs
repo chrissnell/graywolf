@@ -89,6 +89,9 @@ mod ptt_cm108_macos;
 #[path = "ptt_cm108_win.rs"]
 mod ptt_cm108_win;
 
+#[path = "ptt_rigctld.rs"]
+mod ptt_rigctld;
+
 #[cfg(unix)]
 use ptt_unix::UnixSerialLines as PlatformSerialLines;
 #[cfg(windows)]
@@ -112,6 +115,8 @@ pub(crate) enum PttMethod {
     SerialDtr,
     Cm108,
     Gpio,
+    /// Hamlib rigctld over TCP. `device` is `"host:port"`.
+    Rigctld,
 }
 
 impl PttMethod {
@@ -127,6 +132,7 @@ impl PttMethod {
             "serial_dtr" => Some(Self::SerialDtr),
             "cm108" => Some(Self::Cm108),
             "gpio" => Some(Self::Gpio),
+            "rigctld" => Some(Self::Rigctld),
             _ => None,
         }
     }
@@ -332,6 +338,12 @@ impl PortRegistry {
                 Ok(Box::new(self.cm108_driver(&cfg.device, gpio_pin, cfg.invert)?))
             }
             PttMethod::Gpio => Err("gpio ptt not yet implemented".into()),
+            PttMethod::Rigctld => {
+                if cfg.device.is_empty() {
+                    return Err("rigctld ptt: device (host:port) is empty".into());
+                }
+                Ok(Box::new(ptt_rigctld::RigctldPtt::connect(&cfg.device)?))
+            }
         }
     }
 
@@ -479,6 +491,7 @@ pub(crate) mod tests {
         assert_eq!(PttMethod::parse("serial_dtr"), Some(PttMethod::SerialDtr));
         assert_eq!(PttMethod::parse("cm108"), Some(PttMethod::Cm108));
         assert_eq!(PttMethod::parse("gpio"), Some(PttMethod::Gpio));
+        assert_eq!(PttMethod::parse("rigctld"), Some(PttMethod::Rigctld));
         // Typos must surface as errors at build_driver time rather
         // than silently folding into a no-op — "radio never keys"
         // with no log output is the worst possible debug experience.

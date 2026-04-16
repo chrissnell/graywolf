@@ -77,3 +77,21 @@ func PttsFromModels(ms []configstore.PttConfig) []PttResponse {
 	}
 	return out
 }
+
+// TestRigctldRequest is the body accepted by POST /api/ptt/test-rigctld.
+// The handler opens a short-lived TCP connection to the given rigctld
+// endpoint and sends a non-disruptive `t` (get_ptt) probe.
+type TestRigctldRequest struct {
+	Host string `json:"host"`
+	Port uint16 `json:"port"`
+}
+
+// TestRigctldResponse reports the outcome of a rigctld probe. OK is the
+// single source of truth — clients must not infer success from HTTP
+// status. Message is a human-readable diagnostic; LatencyMs is populated
+// only on success and measures wall-clock from dial start to RPRT 0.
+type TestRigctldResponse struct {
+	OK        bool   `json:"ok"`
+	Message   string `json:"message"`
+	LatencyMs int64  `json:"latency_ms"`
+}
