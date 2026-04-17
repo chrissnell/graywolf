@@ -22,7 +22,7 @@
 //! Each driver owns two TCP connections:
 //! 1. The primary connection used by the TX worker for `key`/`unkey`.
 //! 2. A separate keepalive connection owned by a dedicated idle-probe
-//!    thread that fires `t\n` every 30s to detect silent daemon death
+//!    thread that fires `t\n` every 30 s (5 s when down) to detect silent daemon death
 //!    between TX cycles. Using a second connection avoids mutex
 //!    contention on the TX hot path — one TCP per driver is cheap, and
 //!    a keepalive failure never poisons the TX path.
@@ -36,7 +36,9 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -62,8 +64,11 @@ const UNKEY_RETRY_SPACING: Duration = Duration::from_millis(150);
 /// is materially worse than a failed TX.
 const UNKEY_SAFETY_RETRIES: u32 = 3;
 
-/// Idle interval between keepalive probes.
+/// Idle interval between keepalive probes when the daemon is up.
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Faster retry interval when the daemon is known to be down.
+const KEEPALIVE_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Handle to the keepalive thread: a shutdown sender plus the join
 /// handle. `Drop` on [`RigctldPtt`] fires a non-blocking `try_send` on
@@ -85,6 +90,10 @@ pub(crate) struct RigctldPtt {
     probe_timeout: Duration,
     io_timeout: Duration,
     keepalive: Option<KeepaliveHandle>,
+    /// Set by the keepalive thread when it detects the daemon went down.
+    /// Checked by `ensure_connected` to preemptively drop a stale primary
+    /// stream so the next TX gets a clean reconnect.
+    daemon_down: Arc<AtomicBool>,
 }
 
 impl RigctldPtt {
@@ -104,6 +113,7 @@ impl RigctldPtt {
             probe_timeout: PROBE_TIMEOUT,
             io_timeout: IO_TIMEOUT,
             keepalive: None,
+            daemon_down: Arc::new(AtomicBool::new(false)),
         };
 
         // Initial connect at probe-timeout so the validation handshake
@@ -197,8 +207,13 @@ impl RigctldPtt {
     }
 
     /// Ensure the primary stream is open, opening it at `io_timeout`
-    /// if not. Called at the top of every hot-path command.
+    /// if not. Called at the top of every hot-path command. If the
+    /// keepalive thread has signalled that the daemon went down, drop
+    /// the stale stream first so we get a clean reconnect.
     fn ensure_connected(&mut self) -> Result<(), String> {
+        if self.daemon_down.swap(false, Ordering::Relaxed) {
+            self.drop_stream();
+        }
         if self.stream.is_some() && self.reader.is_some() {
             return Ok(());
         }
@@ -367,10 +382,11 @@ impl RigctldPtt {
         let addr = self.addr.clone();
         let connect_timeout = self.connect_timeout;
         let probe_timeout = self.probe_timeout;
+        let daemon_down = self.daemon_down.clone();
 
         let join = thread::Builder::new()
             .name("graywolf-rigctld-keepalive".into())
-            .spawn(move || keepalive_loop(addr, connect_timeout, probe_timeout, rx))
+            .spawn(move || keepalive_loop(addr, connect_timeout, probe_timeout, rx, daemon_down))
             .ok();
 
         self.keepalive = Some(KeepaliveHandle {
@@ -418,14 +434,21 @@ fn keepalive_loop(
     connect_timeout: Duration,
     probe_timeout: Duration,
     shutdown: mpsc::Receiver<()>,
+    daemon_down: Arc<AtomicBool>,
 ) {
     let mut conn: Option<(TcpStream, BufReader<TcpStream>)> = None;
     let mut up = true; // Primary connect succeeded, so we start "up".
 
     loop {
-        // Wait up to KEEPALIVE_INTERVAL, exit early on shutdown signal
-        // or channel disconnect (Drop dropped the sender).
-        match shutdown.recv_timeout(KEEPALIVE_INTERVAL) {
+        // Poll faster when the daemon is known to be down so recovery
+        // is detected in ~5s instead of ~30s.
+        let interval = if up {
+            KEEPALIVE_INTERVAL
+        } else {
+            KEEPALIVE_RETRY_INTERVAL
+        };
+
+        match shutdown.recv_timeout(interval) {
             Ok(()) => break,
             Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => {}
@@ -438,16 +461,16 @@ fn keepalive_loop(
             }
             (true, Err(e)) => {
                 up = false;
+                daemon_down.store(true, Ordering::Relaxed);
                 eprintln!(
                     "graywolf-modem: rigctld keepalive: up → down for '{}': {}",
                     addr, e
                 );
-                // Drop the stream so the next probe forces a fresh
-                // connect against whatever state the daemon is in.
                 conn = None;
             }
             (false, Ok(())) => {
                 up = true;
+                daemon_down.store(false, Ordering::Relaxed);
                 eprintln!(
                     "graywolf-modem: rigctld keepalive: down → up for '{}'",
                     addr
