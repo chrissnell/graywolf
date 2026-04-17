@@ -116,6 +116,9 @@
     }))
   );
 
+  let hasEnabledRule = $derived(rules.some(r => r.enabled));
+  let showNoRulesWarning = $derived(config.enabled && !hasEnabledRule);
+
   const columns = [
     { key: 'channel_label', label: 'Channel' },
     { key: 'preset_label', label: 'Rule' },
@@ -278,6 +281,14 @@
   <PageHeader title="Digipeater Rules">
     <Button variant="primary" onclick={openCreate}>+ Add Rule</Button>
   </PageHeader>
+  {#if showNoRulesWarning}
+    <div class="no-rules-warning" role="status">
+      <strong>No rules configured.</strong>
+      The digipeater is enabled but will not repeat any packets until at least one
+      enabled rule is added below. Use the <em>Fill-in digi</em> preset for a home
+      station, or <em>Wide-area digi</em> for a true mountaintop site.
+    </div>
+  {/if}
   <DataTable {columns} rows={displayRules} onEdit={openEdit} onDelete={handleDelete} />
 </div>
 
@@ -315,4 +326,15 @@
 <style>
   .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .no-rules-warning {
+    margin: 12px 0;
+    padding: 12px 16px;
+    border: 1px solid var(--color-warning, #d4a72c);
+    border-left-width: 4px;
+    border-radius: 4px;
+    background: var(--color-warning-bg, rgba(212, 167, 44, 0.12));
+    color: var(--text-primary, inherit);
+    line-height: 1.45;
+  }
+  .no-rules-warning strong { margin-right: 6px; }
 </style>
