@@ -1,5 +1,4 @@
 [target.aarch64-unknown-linux-gnu]
 pre-build = [
-    "dpkg --add-architecture arm64 && apt-get update && apt-get install -y libasound2-dev:arm64 libudev-dev:arm64 unzip",
-    "curl -Lo /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v28.3/protoc-28.3-linux-x86_64.zip && unzip -o /tmp/protoc.zip -d /usr/local bin/protoc && chmod +x /usr/local/bin/protoc && rm /tmp/protoc.zip",
+    "dpkg --add-architecture arm64 && apt-get update && apt-get install -y libasound2-dev:arm64 libudev-dev:arm64 unzip && curl -Lo /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v28.3/protoc-28.3-linux-x86_64.zip && unzip -o /tmp/protoc.zip -d /usr/local bin/protoc && chmod +x /usr/local/bin/protoc && rm /tmp/protoc.zip",
 ]
