@@ -170,7 +170,8 @@ message ConfigurePtt {
   //   - serial_rts/serial_dtr → filesystem device path, e.g. "/dev/ttyUSB0"
   //   - cm108                 → HID device path, e.g. "/dev/hidraw0"
   //   - rigctld               → "host:port", e.g. "localhost:4532" (IPv4/hostname only; no IPv6 bracketing)
-  //   - gpio/none             → ignored
+  //   - gpio                  → gpiochip device path, e.g. "/dev/gpiochip0"
+  //   - none                  → ignored
   //
   // If a fourth PTT method needs to overload this field, migrate to a
   // structured `endpoint` oneof instead of piling on more string schemas.
@@ -181,7 +182,12 @@ message ConfigurePtt {
   uint32 persist = 7;           // p-persistence 0..255
   uint32 dwait_ms = 8;
   bool invert = 9;              // reverse polarity for rigs wired backwards
-  uint32 gpio_pin = 10;         // CM108 GPIO pin number (1-indexed, default: 3)
+  // CM108 GPIO pin number (1-indexed, default: 3). Not used for `gpio` method
+  // (which uses `gpio_line` instead to avoid indexing ambiguity).
+  uint32 gpio_pin = 10;
+  // 0-indexed GPIO line offset for the `gpio` method (gpiochip chardev v2).
+  // For CM108, use `gpio_pin` (1-indexed) instead.
+  uint32 gpio_line = 11;
 }
 
 // Begin audio processing on all configured devices.

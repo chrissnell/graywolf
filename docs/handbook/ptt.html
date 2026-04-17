@@ -91,13 +91,18 @@
             </tr>
             <tr>
               <td><code>gpio</code></td>
-              <td>Linux GPIO pin (sysfs or libgpiod)</td>
+              <td>Linux GPIO pin via gpiochip character device</td>
               <td>Raspberry Pi GPIO header</td>
             </tr>
             <tr>
               <td><code>cm108</code></td>
               <td>USB HID GPIO on CM108/CM119 audio codec</td>
               <td>USB sound cards with built-in PTT</td>
+            </tr>
+            <tr>
+              <td><code>rigctld</code></td>
+              <td>Hamlib rigctld over TCP (CAT control)</td>
+              <td>Any rig supported by hamlib</td>
             </tr>
           </tbody>
         </table>
@@ -121,12 +126,17 @@
             <tr>
               <td><code>device</code></td>
               <td>&mdash;</td>
-              <td>Serial device path (e.g., <code>/dev/ttyUSB0</code>) or GPIO device</td>
+              <td>Serial device path (e.g., <code>/dev/ttyUSB0</code>), CM108 hidraw node, or gpiochip device (e.g., <code>/dev/gpiochip0</code>)</td>
+            </tr>
+            <tr>
+              <td><code>gpio_line</code></td>
+              <td><code>0</code></td>
+              <td>GPIO line offset on the selected gpiochip for the <code>gpio</code> method. 0-indexed, matches the kernel&rsquo;s line numbering shown by <code>gpioinfo</code>.</td>
             </tr>
             <tr>
               <td><code>gpio_pin</code></td>
-              <td>&mdash;</td>
-              <td>GPIO pin number (for <code>gpio</code> and <code>cm108</code> methods)</td>
+              <td><code>3</code></td>
+              <td>CM108 HID GPIO pin number for the <code>cm108</code> method. 1-indexed (1&ndash;4 on CM108/CM108B, 1&ndash;8 on CM119). Not used by the <code>gpio</code> method.</td>
             </tr>
             <tr>
               <td><code>invert</code></td>
@@ -163,10 +173,65 @@ ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
     <h2>GPIO PTT (Raspberry Pi)</h2>
 
     <p>
-      For Raspberry Pi setups, you can key the radio directly from a GPIO
-      pin. Specify the <code>gpio</code> method with the pin number. The
-      modem uses Linux&rsquo;s GPIO character device interface.
+      GPIO PTT is <strong>Linux-only</strong>. It targets single-board
+      computers with exposed GPIO headers &mdash; Raspberry Pi, BeagleBone,
+      and similar &mdash; where you can wire a GPIO line directly to your
+      radio&rsquo;s PTT input. On non-Linux hosts the <code>gpio</code>
+      method is hidden from the method dropdown and the backend returns
+      <code>gpio ptt is only supported on Linux</code> if forced via API.
     </p>
+
+    <p>
+      Graywolf uses the chardev v2 API (<code>/dev/gpiochipN</code>). The
+      legacy sysfs interface (<code>/sys/class/gpio</code>) is deprecated
+      and not supported.
+    </p>
+
+    <p>
+      In the PTT dialog, select <code>gpio</code>, then pick the gpiochip
+      device from the auto-detected list (typically <code>/dev/gpiochip0</code>
+      on a Pi). The UI then calls
+      <code>/api/ptt/gpio-lines</code> and populates a line selector with
+      the lines reported by the chip. Each entry shows the offset and the
+      kernel&rsquo;s line name (for example, <code>Line 14 &mdash; TXD1</code>).
+      Lines already claimed by another kernel driver &mdash; SPI, I2C,
+      UART, and so on &mdash; are annotated <code>[in use: &lt;consumer&gt;]</code>
+      in the label and are rejected by the form before submit with a message
+      like <code>Line 2 is claimed by i2c-bcm2835. Pick another line.</code>
+    </p>
+
+    <p>
+      When GPIO PTT is active, the consumer label <code>graywolf-ptt</code>
+      shows up in <code>gpioinfo</code> output so you can confirm which
+      process is holding the line. Graywolf drives the line low before
+      releasing it, so the PTT input is left inactive when graywolf stops
+      or the channel is reconfigured.
+    </p>
+
+    <p>
+      If you run graywolf on a Linux host where no gpiochip devices are
+      available &mdash; for example, inside a container without a bind mount
+      for <code>/dev/gpiochip*</code>, or as a user without read/write
+      access &mdash; the GPIO method stays visible in the dropdown but the
+      line selector reports <code>No GPIO chips detected. Check that you
+      have access to /dev/gpiochip* (typically the &lsquo;gpio&rsquo; group
+      on Raspberry Pi OS).</code>
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Linux permissions:</strong> the graywolf user must have
+          read/write access to <code>/dev/gpiochipN</code> &mdash; typically
+          the <code>gpio</code> group on Raspberry Pi OS, or
+          <code>plugdev</code> on other distros. If a line open fails with
+          <code>permission denied</code>, add the user to the appropriate
+          group and re-login (or reboot):
+        </p>
+<pre><code>sudo usermod -aG gpio $USER</code></pre>
+      </div>
+    </div>
 
     <div class="callout warn">
       <span class="callout-icon">&#9888;</span>
@@ -333,6 +398,8 @@ sudo udevadm trigger</code></pre>
             <tr><td>GET</td><td><code>/api/ptt/{channel_id}</code></td><td>Get PTT config for a channel</td></tr>
             <tr><td>POST</td><td><code>/api/ptt/{channel_id}</code></td><td>Create or update PTT config</td></tr>
             <tr><td>DELETE</td><td><code>/api/ptt/{channel_id}</code></td><td>Delete PTT config (receive only)</td></tr>
+            <tr><td>GET</td><td><code>/api/ptt/capabilities</code></td><td>Platform capability flags, including <code>platform_supports_gpio</code> (true on Linux)</td></tr>
+            <tr><td>GET</td><td><code>/api/ptt/gpio-lines?chip={path}</code></td><td>Enumerate GPIO lines on a gpiochip device (Linux only; returns 501 elsewhere)</td></tr>
             <tr><td>GET</td><td><code>/api/tx-timing/{channel_id}</code></td><td>Get CSMA parameters</td></tr>
             <tr><td>POST</td><td><code>/api/tx-timing/{channel_id}</code></td><td>Create or update CSMA parameters</td></tr>
           </tbody>

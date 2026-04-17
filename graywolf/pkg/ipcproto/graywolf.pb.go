@@ -1321,17 +1321,31 @@ func (x *ConfigureAudio) GetGainDb() float32 {
 
 // Configure PTT (push-to-talk) control for a channel.
 type ConfigurePtt struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Channel       uint32                 `protobuf:"varint,1,opt,name=channel,proto3" json:"channel,omitempty"`
-	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"` // "serial_rts" | "serial_dtr" | "gpio" | "cm108" | "none"
-	Device        string                 `protobuf:"bytes,3,opt,name=device,proto3" json:"device,omitempty"`
-	TxdelayMs     uint32                 `protobuf:"varint,4,opt,name=txdelay_ms,json=txdelayMs,proto3" json:"txdelay_ms,omitempty"`
-	TxtailMs      uint32                 `protobuf:"varint,5,opt,name=txtail_ms,json=txtailMs,proto3" json:"txtail_ms,omitempty"`
-	SlottimeMs    uint32                 `protobuf:"varint,6,opt,name=slottime_ms,json=slottimeMs,proto3" json:"slottime_ms,omitempty"`
-	Persist       uint32                 `protobuf:"varint,7,opt,name=persist,proto3" json:"persist,omitempty"` // p-persistence 0..255
-	DwaitMs       uint32                 `protobuf:"varint,8,opt,name=dwait_ms,json=dwaitMs,proto3" json:"dwait_ms,omitempty"`
-	Invert        bool                   `protobuf:"varint,9,opt,name=invert,proto3" json:"invert,omitempty"`                   // reverse polarity for rigs wired backwards
-	GpioPin       uint32                 `protobuf:"varint,10,opt,name=gpio_pin,json=gpioPin,proto3" json:"gpio_pin,omitempty"` // CM108 GPIO pin number (1-indexed, default: 3)
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Channel uint32                 `protobuf:"varint,1,opt,name=channel,proto3" json:"channel,omitempty"`
+	Method  string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"` // "serial_rts" | "serial_dtr" | "gpio" | "cm108" | "rigctld" | "none"
+	// device is interpreted by the selected method:
+	//   - serial_rts/serial_dtr → filesystem device path, e.g. "/dev/ttyUSB0"
+	//   - cm108                 → HID device path, e.g. "/dev/hidraw0"
+	//   - rigctld               → "host:port", e.g. "localhost:4532" (IPv4/hostname only; no IPv6 bracketing)
+	//   - gpio                  → gpiochip device path, e.g. "/dev/gpiochip0"
+	//   - none                  → ignored
+	//
+	// If a fourth PTT method needs to overload this field, migrate to a
+	// structured `endpoint` oneof instead of piling on more string schemas.
+	Device     string `protobuf:"bytes,3,opt,name=device,proto3" json:"device,omitempty"`
+	TxdelayMs  uint32 `protobuf:"varint,4,opt,name=txdelay_ms,json=txdelayMs,proto3" json:"txdelay_ms,omitempty"`
+	TxtailMs   uint32 `protobuf:"varint,5,opt,name=txtail_ms,json=txtailMs,proto3" json:"txtail_ms,omitempty"`
+	SlottimeMs uint32 `protobuf:"varint,6,opt,name=slottime_ms,json=slottimeMs,proto3" json:"slottime_ms,omitempty"`
+	Persist    uint32 `protobuf:"varint,7,opt,name=persist,proto3" json:"persist,omitempty"` // p-persistence 0..255
+	DwaitMs    uint32 `protobuf:"varint,8,opt,name=dwait_ms,json=dwaitMs,proto3" json:"dwait_ms,omitempty"`
+	Invert     bool   `protobuf:"varint,9,opt,name=invert,proto3" json:"invert,omitempty"` // reverse polarity for rigs wired backwards
+	// CM108 GPIO pin number (1-indexed, default: 3). Not used for `gpio` method
+	// (which uses `gpio_line` instead to avoid indexing ambiguity).
+	GpioPin uint32 `protobuf:"varint,10,opt,name=gpio_pin,json=gpioPin,proto3" json:"gpio_pin,omitempty"`
+	// 0-indexed GPIO line offset for the `gpio` method (gpiochip chardev v2).
+	// For CM108, use `gpio_pin` (1-indexed) instead.
+	GpioLine      uint32 `protobuf:"varint,11,opt,name=gpio_line,json=gpioLine,proto3" json:"gpio_line,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1432,6 +1446,13 @@ func (x *ConfigurePtt) GetInvert() bool {
 func (x *ConfigurePtt) GetGpioPin() uint32 {
 	if x != nil {
 		return x.GpioPin
+	}
+	return 0
+}
+
+func (x *ConfigurePtt) GetGpioLine() uint32 {
+	if x != nil {
+		return x.GpioLine
 	}
 	return 0
 }
@@ -2170,7 +2191,7 @@ const file_graywolf_proto_rawDesc = "" +
 	"\vsource_type\x18\x05 \x01(\tR\n" +
 	"sourceType\x12\x16\n" +
 	"\x06format\x18\x06 \x01(\tR\x06format\x12\x17\n" +
-	"\again_db\x18\a \x01(\x02R\x06gainDb\"\x9d\x02\n" +
+	"\again_db\x18\a \x01(\x02R\x06gainDb\"\xba\x02\n" +
 	"\fConfigurePtt\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x16\n" +
@@ -2184,7 +2205,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"\bdwait_ms\x18\b \x01(\rR\adwaitMs\x12\x16\n" +
 	"\x06invert\x18\t \x01(\bR\x06invert\x12\x19\n" +
 	"\bgpio_pin\x18\n" +
-	" \x01(\rR\agpioPin\"\f\n" +
+	" \x01(\rR\agpioPin\x12\x1b\n" +
+	"\tgpio_line\x18\v \x01(\rR\bgpioLine\"\f\n" +
 	"\n" +
 	"StartAudio\"\v\n" +
 	"\tStopAudio\")\n" +

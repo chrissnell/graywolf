@@ -12,7 +12,13 @@ type PttRequest struct {
 	ChannelID  uint32 `json:"channel_id"`
 	Method     string `json:"method"`
 	DevicePath string `json:"device_path"`
-	GpioPin    uint32 `json:"gpio_pin"`
+	// GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used
+	// by the `gpio` method, which references `gpio_line` instead to avoid
+	// indexing ambiguity between CM108 pin numbers and gpiochip line offsets.
+	GpioPin uint32 `json:"gpio_pin"`
+	// GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
+	// method. Ignored for every other method.
+	GpioLine   uint32 `json:"gpio_line"`
 	Invert     bool   `json:"invert"`
 	SlotTimeMs uint32 `json:"slot_time_ms"`
 	Persist    uint32 `json:"persist"`
@@ -32,6 +38,7 @@ func (r PttRequest) ToModel() configstore.PttConfig {
 		Method:     r.Method,
 		Device:     r.DevicePath,
 		GpioPin:    r.GpioPin,
+		GpioLine:   r.GpioLine,
 		Invert:     r.Invert,
 		SlotTimeMs: r.SlotTimeMs,
 		Persist:    r.Persist,
@@ -62,6 +69,7 @@ func PttFromModel(m configstore.PttConfig) PttResponse {
 			Method:     m.Method,
 			DevicePath: m.Device,
 			GpioPin:    m.GpioPin,
+			GpioLine:   m.GpioLine,
 			Invert:     m.Invert,
 			SlotTimeMs: m.SlotTimeMs,
 			Persist:    m.Persist,

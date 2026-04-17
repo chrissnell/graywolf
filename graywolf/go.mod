@@ -7,6 +7,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
+	github.com/warthog618/go-gpiocdev v0.9.1
 	go.bug.st/serial v1.6.4
 	golang.org/x/crypto v0.49.0
 	google.golang.org/protobuf v1.36.11

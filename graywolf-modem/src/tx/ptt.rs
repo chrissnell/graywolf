@@ -89,6 +89,10 @@ mod ptt_cm108_macos;
 #[path = "ptt_cm108_win.rs"]
 mod ptt_cm108_win;
 
+#[cfg(target_os = "linux")]
+#[path = "ptt_gpio_linux.rs"]
+mod ptt_gpio_linux;
+
 #[path = "ptt_rigctld.rs"]
 mod ptt_rigctld;
 
@@ -189,6 +193,14 @@ type SharedLines = Arc<Mutex<Box<dyn ModemControlLines>>>;
 /// (e.g. different GPIO pins on a multi-output board).
 type SharedCm108 = Arc<Mutex<Box<dyn Cm108GpioControl>>>;
 
+/// Shared handle type for Linux gpiochip line requests. One entry per
+/// `chip:line` pair; the `gpiocdev::Request` inside owns both the line
+/// fd and a chip fd. A second channel pointing at the same chip:line
+/// would be unusual (only one PTT per radio) but is supported through
+/// the standard Arc-clone pattern.
+#[cfg(target_os = "linux")]
+pub(crate) type SharedGpiochip = Arc<Mutex<Box<dyn GpiochipControl>>>;
+
 /// Minimal hardware-facing interface for CM108 HID GPIO output reports.
 /// Analogous to [`ModemControlLines`] for serial ports. Platform adapters
 /// implement this behind `#[cfg]` — `UnixCm108Gpio` on Linux (via
@@ -198,6 +210,68 @@ pub(crate) trait Cm108GpioControl: Send {
     /// Write a CM108 HID output report to set or clear a GPIO pin.
     /// `pin` is 1-indexed (GPIO3 = pin 3 → mask 0x04).
     fn write_gpio(&mut self, pin: u8, level: bool) -> Result<(), String>;
+}
+
+/// Structured error type returned by [`GpiochipControl::set_line`]. Upper
+/// layers pattern-match on these variants to decide whether to evict the
+/// cached line fd (`LineGone`) vs. surface a user-visible error
+/// (`PermissionDenied` / `Busy` / `Other`).
+///
+/// Linux-only: the gpiochip chardev API is a Linux kernel surface.
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+pub(crate) enum GpioError {
+    /// Post-open I/O failure (EPIPE / EIO / ENODEV / ENXIO). Hotplug
+    /// class — the caller should drop the cached fd and let the next
+    /// key() attempt reopen, mirroring the rigctld lazy-retry pattern.
+    LineGone { chip: String, line: u32 },
+    /// EACCES on open. User needs to be in the 'gpio' group (or
+    /// equivalent plugdev on non-Raspbian distros) to access
+    /// `/dev/gpiochipN`.
+    PermissionDenied { chip: String },
+    /// EBUSY — another driver (SPI, I2C, UART, or another user-space
+    /// consumer) has claimed this line.
+    Busy { chip: String, line: u32 },
+    /// Any other failure, including invalid paths, out-of-range line
+    /// offsets, or unrecognised ioctl errnos.
+    Other(String),
+}
+
+#[cfg(target_os = "linux")]
+impl std::fmt::Display for GpioError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GpioError::LineGone { chip, line } => write!(
+                f,
+                "gpio line {} on {}: device went away mid-operation",
+                line, chip
+            ),
+            GpioError::PermissionDenied { chip } => write!(
+                f,
+                "gpio {}: permission denied — add user to 'gpio' group",
+                chip
+            ),
+            GpioError::Busy { chip, line } => write!(
+                f,
+                "gpio line {} on {}: already claimed — check for kernel drivers (SPI, I2C, UART) using this pin",
+                line, chip
+            ),
+            GpioError::Other(msg) => write!(f, "gpio: {}", msg),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl std::error::Error for GpioError {}
+
+/// Minimal hardware-facing interface for Linux gpiochip v2 line output.
+/// Analogous to [`Cm108GpioControl`] for CM108 HID and [`ModemControlLines`]
+/// for serial ports. The real impl lives in [`ptt_gpio_linux::LinuxGpiochip`];
+/// tests substitute an in-memory fake.
+#[cfg(target_os = "linux")]
+pub(crate) trait GpiochipControl: Send {
+    /// Drive the requested line active (`true`) or inactive (`false`).
+    fn set_line(&mut self, level: bool) -> Result<(), GpioError>;
 }
 
 /// Serial-port PTT driver. Holds a shared reference to an already-open
@@ -275,6 +349,95 @@ impl Drop for Cm108Ptt {
     }
 }
 
+/// Linux gpiochip v2 PTT driver. Holds a shared reference to a
+/// requested gpio line (owned by the registry) and toggles it via
+/// `set_line`. `invert` is honoured the same way as serial / CM108.
+///
+/// `chip_path` and `line` are retained so that on [`GpioError::LineGone`]
+/// the driver can tell the registry which cache entry to evict. The
+/// registry's `gpio_lines` cache is keyed by `"chip:line"` (see
+/// [`gpio_line_key`]); evicting on `LineGone` mirrors the rigctld
+/// driver's lazy-retry-on-disconnect behaviour.
+#[cfg(target_os = "linux")]
+pub(crate) struct GpioPtt {
+    port: SharedGpiochip,
+    invert: bool,
+    chip_path: String,
+    line: u32,
+    /// Shared handle back to the registry's line cache. On `LineGone`
+    /// we evict our entry so the next `build_driver` call reopens.
+    /// Held as a weak reference to avoid a cycle (the registry owns
+    /// the map this driver's handle lives in).
+    eviction_cache: std::sync::Weak<Mutex<HashMap<String, SharedGpiochip>>>,
+}
+
+#[cfg(target_os = "linux")]
+impl GpioPtt {
+    fn set(&mut self, assert: bool) -> Result<(), String> {
+        let level = assert ^ self.invert;
+        let result = {
+            let mut port = self
+                .port
+                .lock()
+                .map_err(|e| format!("gpio port mutex poisoned: {}", e))?;
+            port.set_line(level)
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(e @ GpioError::LineGone { .. }) => {
+                // Device removed mid-operation. Evict the cached line
+                // fd so the next build_driver call reopens cleanly,
+                // then surface the error so the current TX attempt
+                // fails loudly rather than silently keying nothing.
+                // Mirrors rigctld's ensure_connected() drop-on-down.
+                self.evict_from_cache();
+                Err(format!("{}", e))
+            }
+            Err(e) => Err(format!("{}", e)),
+        }
+    }
+
+    fn evict_from_cache(&self) {
+        if let Some(cache) = self.eviction_cache.upgrade() {
+            if let Ok(mut map) = cache.lock() {
+                map.remove(&gpio_line_key(&self.chip_path, self.line));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl PttDriver for GpioPtt {
+    fn key(&mut self) -> Result<(), String> {
+        self.set(true)
+    }
+
+    fn unkey(&mut self) -> Result<(), String> {
+        self.set(false)
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for GpioPtt {
+    fn drop(&mut self) {
+        // graywolf drives the line low before closing the fd — the
+        // kernel's post-release line state depends on the SoC reset
+        // behavior and is not guaranteed to be low. Best-effort: any
+        // Err from unkey() (device already gone, etc.) is swallowed
+        // here because there's no reasonable recovery in Drop and the
+        // kernel closes the fd anyway.
+        let _ = self.unkey();
+    }
+}
+
+/// Registry cache key for a (chip_path, line) pair. Stable across the
+/// lifetime of the process; used by both the registry map and
+/// [`GpioPtt::evict_from_cache`].
+#[cfg(target_os = "linux")]
+fn gpio_line_key(chip_path: &str, line: u32) -> String {
+    format!("{}:{}", chip_path, line)
+}
+
 /// Cache of open serial ports keyed by device path. A single port
 /// handle is reused by every channel that points at the same device,
 /// regardless of which modem-control line that channel drives. This
@@ -289,6 +452,21 @@ impl Drop for Cm108Ptt {
 pub(crate) struct PortRegistry {
     ports: HashMap<String, SharedLines>,
     cm108_ports: HashMap<String, SharedCm108>,
+    /// Cache of open gpiochip line requests, keyed by `"chip_path:line"`.
+    /// Wrapped in `Arc<Mutex<..>>` (unlike the other registry maps) so
+    /// that `GpioPtt` instances can hold a `Weak` clone and evict their
+    /// own entry when `set_line()` returns `GpioError::LineGone` —
+    /// parity with rigctld's lazy-reconnect-on-disconnect behaviour.
+    ///
+    /// Note on chip-fd sharing: `gpiocdev::Request` owns both its line
+    /// fd *and* the chip fd it opened internally; there is no public
+    /// API for sharing a chip fd across multiple `Request`s. A separate
+    /// `gpio_chips` refcount map would therefore cache handles the
+    /// library doesn't let us reuse, buying nothing. Per-line caching
+    /// on its own still de-duplicates the (rare) case of two channels
+    /// sharing one gpiochip line.
+    #[cfg(target_os = "linux")]
+    gpio_lines: Arc<Mutex<HashMap<String, SharedGpiochip>>>,
 }
 
 impl PortRegistry {
@@ -298,6 +476,8 @@ impl PortRegistry {
         Self {
             ports: HashMap::new(),
             cm108_ports: HashMap::new(),
+            #[cfg(target_os = "linux")]
+            gpio_lines: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -337,7 +517,21 @@ impl PortRegistry {
                 };
                 Ok(Box::new(self.cm108_driver(&cfg.device, gpio_pin, cfg.invert)?))
             }
-            PttMethod::Gpio => Err("gpio ptt not yet implemented".into()),
+            PttMethod::Gpio => {
+                #[cfg(target_os = "linux")]
+                {
+                    Ok(Box::new(self.gpio_driver(
+                        &cfg.device,
+                        cfg.gpio_line,
+                        cfg.invert,
+                    )?))
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let _ = cfg;
+                    Err("gpio ptt is only supported on Linux".into())
+                }
+            }
             PttMethod::Rigctld => {
                 if cfg.device.is_empty() {
                     return Err("rigctld ptt: device (host:port) is empty".into());
@@ -409,6 +603,72 @@ impl PortRegistry {
         Ok(shared)
     }
 
+    /// Build a [`GpioPtt`] for the given chip path / line / invert.
+    /// Reuses an existing `chip:line` handle if one is cached; opens a
+    /// new gpiochip request otherwise. Mirrors [`cm108_driver`].
+    #[cfg(target_os = "linux")]
+    fn gpio_driver(
+        &mut self,
+        device: &str,
+        line: u32,
+        invert: bool,
+    ) -> Result<GpioPtt, String> {
+        if device.is_empty() {
+            return Err("gpio ptt: device path is empty".into());
+        }
+        let port = self.open_or_reuse_gpio(device, line)?;
+        let mut driver = GpioPtt {
+            port,
+            invert,
+            chip_path: device.to_string(),
+            line,
+            eviction_cache: Arc::downgrade(&self.gpio_lines),
+        };
+        // Known-low start state, parity with serial_driver / cm108_driver.
+        driver.unkey()?;
+        Ok(driver)
+    }
+
+    /// Look up or open the gpiochip line handle for `(device, line)`.
+    /// Returns the shared handle; the registry retains a clone for
+    /// reuse and for `GpioPtt::evict_from_cache`.
+    #[cfg(target_os = "linux")]
+    fn open_or_reuse_gpio(
+        &mut self,
+        device: &str,
+        line: u32,
+    ) -> Result<SharedGpiochip, String> {
+        let key = gpio_line_key(device, line);
+        {
+            let map = self
+                .gpio_lines
+                .lock()
+                .map_err(|e| format!("gpio registry mutex poisoned: {}", e))?;
+            if let Some(port) = map.get(&key) {
+                return Ok(port.clone());
+            }
+        }
+        // Open outside the lock so a slow kernel call doesn't block
+        // other threads. The slot is only populated after a successful
+        // open, so a concurrent open of the same key is harmless
+        // (last-writer-wins; the loser's handle drops cleanly).
+        let gpio: Box<dyn GpiochipControl> = Box::new(
+            ptt_gpio_linux::LinuxGpiochip::open(device, line).map_err(|e| format!("{}", e))?,
+        );
+        let shared: SharedGpiochip = Arc::new(Mutex::new(gpio));
+        let mut map = self
+            .gpio_lines
+            .lock()
+            .map_err(|e| format!("gpio registry mutex poisoned: {}", e))?;
+        // If a racing open beat us to it, drop ours and return the
+        // winner's so both channels share one handle.
+        if let Some(existing) = map.get(&key) {
+            return Ok(existing.clone());
+        }
+        map.insert(key, shared.clone());
+        Ok(shared)
+    }
+
     /// Test hook: pre-install a fake serial port so tests can verify
     /// fd-sharing semantics without touching real hardware.
     #[cfg(test)]
@@ -420,6 +680,18 @@ impl PortRegistry {
     #[cfg(test)]
     fn install_cm108_for_test(&mut self, device: &str, port: SharedCm108) {
         self.cm108_ports.insert(device.to_string(), port);
+    }
+
+    /// Test hook: pre-install a fake gpiochip line handle under
+    /// `"chip_path:line"` (see [`gpio_line_key`]). Phase 2 uses this
+    /// to exercise key/unkey, invert, construction unkey, and
+    /// LineGone-triggered eviction without touching /dev/gpiochip*.
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn install_gpio_for_test(&mut self, key: &str, port: SharedGpiochip) {
+        self.gpio_lines
+            .lock()
+            .expect("gpio test cache mutex poisoned")
+            .insert(key.to_string(), port);
     }
 }
 
@@ -473,6 +745,7 @@ pub(crate) mod tests {
             dwait_ms: 0,
             invert: false,
             gpio_pin: 3,
+            gpio_line: 0,
         }
     }
 
@@ -537,14 +810,23 @@ pub(crate) mod tests {
         );
     }
 
+    /// On non-Linux, selecting GPIO must report the platform restriction
+    /// loudly rather than silently falling back to a no-op. Phase 2
+    /// owns the Linux-side build_driver tests; this just guards the
+    /// cross-platform behaviour contract.
+    #[cfg(not(target_os = "linux"))]
     #[test]
-    fn build_driver_returns_unimplemented_error_for_gpio() {
+    fn build_driver_rejects_gpio_on_non_linux() {
         let mut registry = PortRegistry::new();
         let mut gpio = base_cfg();
         gpio.method = "gpio".into();
         gpio.device = "/dev/null".into();
         let err = expect_err(registry.build_driver(&gpio));
-        assert!(err.contains("gpio"), "unexpected error: {}", err);
+        assert!(
+            err.contains("only supported on Linux"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]
@@ -901,6 +1183,308 @@ pub(crate) mod tests {
         );
     }
 
+    // --- GPIO (Linux gpiochip v2) fakes and tests ---
+    //
+    // Mirrors the CM108 block above. The fake records every `set_line`
+    // call into a shared [`GpioOpLog`] the test owns, and optionally
+    // returns a pre-armed [`GpioError`] on the next call so tests can
+    // drive the `LineGone` eviction path without real kernel state.
+
+    /// Recorded gpiochip operations: just the level written (true = high/Active,
+    /// false = low/Inactive). There is only one line per fake, so no
+    /// offset is recorded — the `chip:line` identity is fixed by how the
+    /// test installs the fake into the registry.
+    #[cfg(all(test, target_os = "linux"))]
+    type GpioOpLog = Arc<Mutex<Vec<bool>>>;
+
+    /// In-memory [`GpiochipControl`] for tests. `next_error` is a
+    /// single-shot slot: whatever error is armed there is returned on
+    /// the next `set_line` call, then cleared. Tests use this to trigger
+    /// `GpioError::LineGone` exactly once and observe the eviction.
+    #[cfg(all(test, target_os = "linux"))]
+    struct FakeGpiochip {
+        ops: GpioOpLog,
+        next_error: Option<GpioError>,
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    impl GpiochipControl for FakeGpiochip {
+        fn set_line(&mut self, level: bool) -> Result<(), GpioError> {
+            if let Some(err) = self.next_error.take() {
+                return Err(err);
+            }
+            self.ops.lock().expect("ops log mutex poisoned").push(level);
+            Ok(())
+        }
+    }
+
+    /// Build a shared gpiochip handle backed by an in-memory
+    /// [`FakeGpiochip`] with no error armed. Mirrors [`shared_fake_cm108`].
+    #[cfg(all(test, target_os = "linux"))]
+    fn shared_fake_gpio() -> (SharedGpiochip, GpioOpLog) {
+        let ops: GpioOpLog = Arc::new(Mutex::new(Vec::new()));
+        let fake = FakeGpiochip {
+            ops: ops.clone(),
+            next_error: None,
+        };
+        let shared: SharedGpiochip = Arc::new(Mutex::new(Box::new(fake)));
+        (shared, ops)
+    }
+
+    /// Build a shared gpiochip handle with a one-shot error armed on
+    /// the next `set_line` call. Returns the handle and a cloneable log.
+    #[cfg(all(test, target_os = "linux"))]
+    fn shared_fake_gpio_with_error(err: GpioError) -> (SharedGpiochip, GpioOpLog) {
+        let ops: GpioOpLog = Arc::new(Mutex::new(Vec::new()));
+        let fake = FakeGpiochip {
+            ops: ops.clone(),
+            next_error: Some(err),
+        };
+        let shared: SharedGpiochip = Arc::new(Mutex::new(Box::new(fake)));
+        (shared, ops)
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn gpio_ptt_writes_high_on_key_and_low_on_unkey() {
+        // Direct-struct parity with `cm108_ptt_writes_gpio_high_on_key_and_low_on_unkey`.
+        // A freshly constructed GpioPtt with invert=false writes
+        // Active on key() and Inactive on unkey().
+        let (port, ops) = shared_fake_gpio();
+        let mut driver = GpioPtt {
+            port,
+            invert: false,
+            chip_path: "/dev/gpiochip0".into(),
+            line: 17,
+            // Construction outside the registry: no cache to evict into.
+            eviction_cache: std::sync::Weak::new(),
+        };
+        driver.key().unwrap();
+        driver.unkey().unwrap();
+        assert_eq!(*ops.lock().unwrap(), vec![true, false]);
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn gpio_ptt_invert_reverses_polarity() {
+        // Mirror of `cm108_ptt_invert_reverses_polarity`: with invert=true,
+        // key() should drive the line Inactive and unkey() Active.
+        let (port, ops) = shared_fake_gpio();
+        let mut driver = GpioPtt {
+            port,
+            invert: true,
+            chip_path: "/dev/gpiochip0".into(),
+            line: 17,
+            eviction_cache: std::sync::Weak::new(),
+        };
+        driver.key().unwrap();
+        driver.unkey().unwrap();
+        assert_eq!(*ops.lock().unwrap(), vec![false, true]);
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn gpio_driver_unkeys_on_construction() {
+        // Mirror of `cm108_driver_unkeys_on_construction`: build_driver
+        // must call unkey() before returning so the line starts known-low
+        // even if the previous process or hardware default left it high.
+        let mut registry = PortRegistry::new();
+        let (port, ops) = shared_fake_gpio();
+        registry.install_gpio_for_test("/dev/fake-gpiochip:17", port);
+
+        let cfg = ConfigurePtt {
+            method: "gpio".into(),
+            device: "/dev/fake-gpiochip".into(),
+            gpio_line: 17,
+            ..base_cfg()
+        };
+        let _driver = registry.build_driver(&cfg).unwrap();
+
+        assert_eq!(
+            *ops.lock().unwrap(),
+            vec![false],
+            "gpio_driver must unkey() before returning"
+        );
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn gpio_driver_rejects_empty_device_path() {
+        // Mirror of `cm108_driver_rejects_empty_device_path`. Validation
+        // must trip before any kernel interaction.
+        let mut registry = PortRegistry::new();
+        let cfg = ConfigurePtt {
+            method: "gpio".into(),
+            device: String::new(),
+            gpio_line: 0,
+            ..base_cfg()
+        };
+        let err = expect_err(registry.build_driver(&cfg));
+        assert!(
+            err.contains("device path is empty"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn gpio_ptt_drop_calls_unkey() {
+        // Mirror of `cm108_ptt_drop_calls_unkey`: a stuck PTT means
+        // continuous transmission (repeater lockout, FCC problem). Drop
+        // must best-effort drive the line low. The gpiochip kernel
+        // post-release state is not guaranteed, so graywolf drives the
+        // line low explicitly before close — see GpioPtt::drop.
+        let (port, ops) = shared_fake_gpio();
+        {
+            let _driver = GpioPtt {
+                port,
+                invert: false,
+                chip_path: "/dev/gpiochip0".into(),
+                line: 17,
+                eviction_cache: std::sync::Weak::new(),
+            };
+            // driver drops here
+        }
+        assert_eq!(
+            *ops.lock().unwrap(),
+            vec![false],
+            "Drop must call unkey()"
+        );
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn gpio_line_gone_triggers_registry_evict() {
+        // New test (no CM108 analog): rigctld-style lazy-retry-on-disconnect.
+        // A `GpioError::LineGone` bubbling out of `set_line` must cause
+        // `GpioPtt` to evict its `"chip:line"` entry from the registry's
+        // `gpio_lines` map, so the next `build_driver` reopens cleanly.
+        let mut registry = PortRegistry::new();
+        let key = "/dev/fake-gpiochip:17";
+        let (fake, _ops) = shared_fake_gpio_with_error(GpioError::LineGone {
+            chip: "/dev/fake-gpiochip".into(),
+            line: 17,
+        });
+        registry.install_gpio_for_test(key, fake.clone());
+
+        // After install: test + registry each hold one strong Arc.
+        assert_eq!(
+            Arc::strong_count(&fake),
+            2,
+            "expected registry + test to own the fake before build_driver"
+        );
+
+        // build_driver performs an unkey()-on-construction that will
+        // consume the armed LineGone error. Because the error fires
+        // during construction, build_driver itself surfaces it — and
+        // the GpioPtt that *would* have been returned has already run
+        // its eviction hook via Drop (and via evict_from_cache called
+        // from set()). Assert the map has been emptied.
+        let build_result = registry.build_driver(&ConfigurePtt {
+            method: "gpio".into(),
+            device: "/dev/fake-gpiochip".into(),
+            gpio_line: 17,
+            ..base_cfg()
+        });
+        assert!(
+            build_result.is_err(),
+            "LineGone during construction unkey should surface as build error"
+        );
+        let err = build_result.unwrap_err();
+        assert_eq!(
+            err,
+            "gpio line 17 on /dev/fake-gpiochip: device went away mid-operation",
+            "error text must match GpioError::LineGone Display exactly",
+        );
+
+        // The registry must have evicted the entry so a subsequent
+        // build_driver reopens cleanly.
+        let map = registry
+            .gpio_lines
+            .lock()
+            .expect("gpio_lines mutex poisoned");
+        assert!(
+            !map.contains_key(key),
+            "registry must evict `{}` on LineGone; map still holds it",
+            key
+        );
+        drop(map);
+
+        // After eviction: only the test's Arc remains. (The partially
+        // constructed GpioPtt dropped during build_driver's `?` unwind,
+        // so its strong ref is gone.)
+        assert_eq!(
+            Arc::strong_count(&fake),
+            1,
+            "after eviction, only the test handle should reference the fake"
+        );
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn gpio_chip_fd_released_when_last_line_dropped() {
+        // Reinterpreted from the plan: the current registry only caches
+        // per-line (no chip-fd refcount cache — see Phase 1 handoff §1
+        // explaining why `gpiocdev::Request` prevents chip-fd sharing).
+        // The surviving invariant worth exercising is that once a
+        // `"chip:line"` entry is removed from `gpio_lines` AND every
+        // driver pointed at it has been dropped, nothing in the registry
+        // holds a strong Arc to the underlying `gpiocdev::Request` (here,
+        // the fake standing in for it).
+        //
+        // This differs from `gpio_line_gone_triggers_registry_evict`:
+        // that test drives eviction through an error path. This one
+        // asserts the refcount story for the *success* path — after
+        // a clean driver drop plus manual eviction, the fake's
+        // strong_count must fall to 1 (the test alone).
+        let mut registry = PortRegistry::new();
+        let (fake, _ops) = shared_fake_gpio();
+        let key = "/dev/fake-gpiochip:17";
+        registry.install_gpio_for_test(key, fake.clone());
+
+        let cfg = ConfigurePtt {
+            method: "gpio".into(),
+            device: "/dev/fake-gpiochip".into(),
+            gpio_line: 17,
+            ..base_cfg()
+        };
+
+        {
+            let _driver = registry.build_driver(&cfg).unwrap();
+            // With the driver alive: test + registry + driver = 3.
+            assert_eq!(
+                Arc::strong_count(&fake),
+                3,
+                "test + registry + driver should all hold the fake while driver is alive"
+            );
+        } // driver drops here — unkey()-on-Drop runs against the fake, then Arc released.
+
+        // Driver dropped, but the registry still caches the line.
+        assert_eq!(
+            Arc::strong_count(&fake),
+            2,
+            "after driver drop, test + registry remain"
+        );
+
+        // Simulate the "last line evicted" case: remove the entry from
+        // the registry's map the same way the LineGone path would.
+        {
+            let mut map = registry
+                .gpio_lines
+                .lock()
+                .expect("gpio_lines mutex poisoned");
+            map.remove(key);
+        }
+
+        // No one in the registry references the fake anymore.
+        assert_eq!(
+            Arc::strong_count(&fake),
+            1,
+            "after eviction, only the test handle should hold the fake"
+        );
+    }
+
     /// Instrumented [`PttDriver`] used by the modem-level tests (see
     /// `src/modem/tx_worker.rs`). Records every `key`/`unkey` call into
     /// a shared log so tests can assert the exact call order.
@@ -985,6 +1569,28 @@ pub(crate) mod tests {
             err.contains("open") && err.to_lowercase().contains("no such"),
             "unexpected error: {}",
             err
+        );
+    }
+
+    // GPIO platform smoke test: same pattern as CM108 — open() a
+    // definitely-missing chip path, confirm we get a descriptive
+    // `GpioError` rather than a panic. The upstream `gpiocdev` crate
+    // maps this to an ENOENT-backed `Error::Os` which our mapping in
+    // `map_open_error` routes to `GpioError::Other("open …: no such
+    // device …")`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_gpiochip_open_rejects_nonexistent_path() {
+        use super::ptt_gpio_linux::LinuxGpiochip;
+        let err = match LinuxGpiochip::open("/dev/graywolf-gpio-definitely-not-real-xyz", 0) {
+            Err(e) => e,
+            Ok(_) => panic!("must fail on missing device"),
+        };
+        let msg = format!("{}", err);
+        assert!(
+            msg.to_lowercase().contains("no such"),
+            "unexpected error: {}",
+            msg
         );
     }
 

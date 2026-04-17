@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Button, Input, Select, Badge, Toggle, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
@@ -11,6 +11,8 @@
   let channels = $state([]);
   let available = $state([]);
   let loadingAvail = $state(false);
+  let autoScanFailed = $state(false);
+  let capabilities = $state(null);
   let modalOpen = $state(false);
   let editing = $state(null);
   let form = $state(emptyForm());
@@ -18,7 +20,19 @@
   let deleteTarget = $state(null);
   let deleteOpen = $state(false);
 
-  const methodOptions = [
+  // GPIO line selector state
+  let gpioLines = $state([]);
+  let loadingGpioLines = $state(false);
+  let gpioLinesLoadError = $state(null);
+  let gpioLinesReqId = $state(0);
+  let gpioLinesDebounce;
+
+  onDestroy(() => {
+    if (gpioLinesDebounce) clearTimeout(gpioLinesDebounce);
+  });
+
+  // All method values. GPIO is filtered in/out dynamically via methodOptions.
+  const allMethods = [
     { value: 'none', label: 'None' },
     { value: 'serial_rts', label: 'Serial RTS' },
     { value: 'serial_dtr', label: 'Serial DTR' },
@@ -27,7 +41,20 @@
     { value: 'rigctld', label: 'Hamlib rigctld (CAT)' },
   ];
 
-  const methodLabels = Object.fromEntries(methodOptions.map(o => [o.value, o.label]));
+  const methodLabels = Object.fromEntries(allMethods.map(o => [o.value, o.label]));
+
+  let platformSupportsGpio = $derived(capabilities?.platform_supports_gpio === true);
+  let editingGpio = $derived(editing?.method === 'gpio');
+  // Keep GPIO visible when the platform supports it OR the user is editing
+  // an existing GPIO config (prevents silent data loss if the gpiochip
+  // temporarily disappears — kernel module unload, SD-card reshuffle,
+  // container without bind-mount).
+  let methodOptions = $derived(
+    (platformSupportsGpio || editingGpio)
+      ? allMethods
+      : allMethods.filter(m => m.value !== 'gpio')
+  );
+  let hasGpioDevices = $derived(available.some(d => d.type === 'gpio'));
 
   let channelOptions = $derived(
     channels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
@@ -47,9 +74,12 @@
     }
   });
 
-  // Scrub fields that don't apply when entering/leaving rigctld. Prevents stale
-  // device_path/gpio/invert from smuggling into a rigctld save, and prevents
-  // stale rigctld_host/port from leaking back in if the user flips away and back.
+  // Scrub fields that don't apply when entering/leaving rigctld/gpio. Prevents
+  // stale device_path/gpio/invert from smuggling into a rigctld save, prevents
+  // stale rigctld_host/port from leaking back in if the user flips away and
+  // back, and seeds gpio_line to '0' on a fresh transition into gpio (but not
+  // when opening an existing GPIO config for edit — openEdit sets lastMethod
+  // to the current method so no transition fires).
   let lastMethod = $state(null);
   $effect(() => {
     const m = form.method;
@@ -63,7 +93,22 @@
       form.rigctld_port = 4532;
       form.device_path = '';
     }
+    if (lastMethod !== 'gpio' && m === 'gpio') {
+      form.gpio_line = '0';
+    }
     lastMethod = m;
+  });
+
+  // Load GPIO lines whenever method is gpio and a chip path is present.
+  // Race-guarded + debounced inside loadGpioLines.
+  $effect(() => {
+    if (form.method === 'gpio' && form.device_path) {
+      loadGpioLines(form.device_path);
+    } else {
+      gpioLines = [];
+      gpioLinesLoadError = null;
+      loadingGpioLines = false;
+    }
   });
 
   // Test Connection FSM for rigctld. Kinds: 'idle' | 'testing' | 'success' | 'error'.
@@ -88,6 +133,7 @@
       method: 'none',
       device_path: '',
       gpio_pin: '0',
+      gpio_line: '0',
       invert: false,
       rigctld_host: 'localhost',
       rigctld_port: 4532,
@@ -95,8 +141,39 @@
   }
 
   onMount(async () => {
-    await Promise.all([loadItems(), loadChannels()]);
+    // Load items, channels, capabilities in parallel. Capabilities gates the
+    // GPIO method dropdown and must be loaded before the user opens the dialog.
+    await Promise.all([loadItems(), loadChannels(), loadCapabilities()]);
+    // Silent auto-scan so `available` is populated before the user opens the
+    // Add PTT dialog. Failure is surfaced as an inline notice (see template),
+    // not a toast — toasts are reserved for manual "Detect Devices" clicks.
+    await autoScanSilently();
   });
+
+  async function loadCapabilities() {
+    try {
+      const res = await api.get('/ptt/capabilities');
+      capabilities = res || { platform_supports_gpio: false };
+    } catch {
+      // Mock-data fallback in api.js may return null for unknown paths;
+      // treat as "unsupported" rather than failing the whole page.
+      capabilities = { platform_supports_gpio: false };
+    }
+  }
+
+  async function autoScanSilently() {
+    loadingAvail = true;
+    autoScanFailed = false;
+    try {
+      available = await api.get('/ptt/available') || [];
+    } catch (err) {
+      console.warn('ptt auto-scan failed:', err);
+      available = [];
+      autoScanFailed = true;
+    } finally {
+      loadingAvail = false;
+    }
+  }
 
   async function loadItems() {
     items = await api.get('/ptt') || [];
@@ -108,14 +185,45 @@
 
   async function refreshAvailable() {
     loadingAvail = true;
+    autoScanFailed = false;
     try {
       available = await api.get('/ptt/available') || [];
       toasts.success(`Found ${available.length} PTT-capable device(s)`);
     } catch (err) {
+      autoScanFailed = true;
       toasts.error(err.message);
     } finally {
       loadingAvail = false;
     }
+  }
+
+  // Fetches gpiochip lines for the given chip path with a 150ms debounce and
+  // a monotonic request-id guard so rapid chip-switching discards stale
+  // out-of-order responses.
+  async function loadGpioLines(chipPath) {
+    clearTimeout(gpioLinesDebounce);
+    if (!chipPath) {
+      gpioLines = [];
+      gpioLinesLoadError = null;
+      loadingGpioLines = false;
+      return;
+    }
+    gpioLinesDebounce = setTimeout(async () => {
+      const myId = ++gpioLinesReqId;
+      loadingGpioLines = true;
+      gpioLinesLoadError = null;
+      try {
+        const result = await api.get('/ptt/gpio-lines?chip=' + encodeURIComponent(chipPath));
+        if (myId !== gpioLinesReqId) return;
+        gpioLines = Array.isArray(result) ? result : [];
+      } catch (e) {
+        if (myId !== gpioLinesReqId) return;
+        gpioLines = [];
+        gpioLinesLoadError = e?.message || 'Failed to load GPIO lines';
+      } finally {
+        if (myId === gpioLinesReqId) loadingGpioLines = false;
+      }
+    }, 150);
   }
 
   function openCreate() {
@@ -151,12 +259,14 @@
       method: item.method,
       device_path: item.device_path || '',
       gpio_pin: String(item.gpio_pin || 0),
+      gpio_line: String(item.gpio_line || 0),
       invert: !!item.invert,
       rigctld_host: rigctldHost,
       rigctld_port: rigctldPort,
     };
-    // Prevent the method-change $effect from clobbering freshly loaded rigctld
-    // values on open — lastMethod is already this method, so no transition fires.
+    // Prevent the method-change $effect from clobbering freshly loaded
+    // rigctld/gpio values on open — lastMethod is already this method, so no
+    // transition fires and gpio_line is preserved as loaded.
     lastMethod = item.method;
     errors = {};
     modalOpen = true;
@@ -176,6 +286,9 @@
       method,
       device_path: dev.path,
       gpio_pin: method === 'cm108' ? '3' : '0',
+      // Line 0 is a real GPIO line on every chip; use as the starting point.
+      // The user must explicitly pick their wired line from the dropdown.
+      gpio_line: '0',
       invert: false,
       rigctld_host: 'localhost',
       rigctld_port: 4532,
@@ -208,19 +321,32 @@
     } else if (form.method !== 'none') {
       if (!form.device_path.trim()) e.device_path = 'Device path required';
     }
+    if (form.method === 'gpio' && Array.isArray(gpioLines) && gpioLines.length > 0) {
+      const line = gpioLines.find(l => String(l.offset) === String(form.gpio_line));
+      if (line?.used) {
+        e.gpio_line = `Line ${line.offset} is claimed by ${line.consumer || 'another driver'}. Pick another line.`;
+      }
+    }
     errors = e;
     return Object.keys(e).length === 0;
   }
 
   async function handleSave() {
     if (!validate()) return;
-    const data = { ...form, channel_id: parseInt(form.channel_id), gpio_pin: parseInt(form.gpio_pin), invert: !!form.invert };
+    const data = {
+      ...form,
+      channel_id: parseInt(form.channel_id, 10),
+      gpio_pin: parseInt(form.gpio_pin, 10),
+      gpio_line: parseInt(form.gpio_line, 10),
+      invert: !!form.invert,
+    };
     // For rigctld, unconditionally pack host:port into device_path and zero
     // out unused fields. Don't trust that the method-change $effect already
     // ran — belt + suspenders, per plan.
     if (form.method === 'rigctld') {
       data.device_path = `${form.rigctld_host}:${form.rigctld_port}`;
       data.gpio_pin = 0;
+      data.gpio_line = 0;
       data.invert = false;
     }
     // Strip UI-only keys that shouldn't hit the API.
@@ -343,7 +469,7 @@
 
   function typeBadgeVariant(type) {
     if (type === 'serial') return 'info';
-    if (type === 'gpio') return 'warning';
+    if (type === 'gpio') return 'info';
     if (type === 'cm108') return 'success';
     return 'default';
   }
@@ -401,10 +527,16 @@
               <span class="detail-value" title={item.device_path}>{truncatePath(item.device_path)}</span>
             </div>
           {/if}
-          {#if item.method === 'gpio' || item.method === 'cm108'}
+          {#if item.method === 'cm108'}
             <div class="detail-row">
               <span class="detail-label">GPIO Pin</span>
-              <span class="detail-value">{item.method === 'cm108' ? `GPIO ${item.gpio_pin} (pin ${item.gpio_pin + 10})` : item.gpio_pin}</span>
+              <span class="detail-value">GPIO {item.gpio_pin} (pin {item.gpio_pin + 10})</span>
+            </div>
+          {/if}
+          {#if item.method === 'gpio'}
+            <div class="detail-row">
+              <span class="detail-label">GPIO Line</span>
+              <span class="detail-value">Line {item.gpio_line ?? 0}</span>
             </div>
           {/if}
           {#if item.method === 'none'}
@@ -421,6 +553,12 @@
       </div>
     {/each}
   </div>
+{/if}
+
+<!-- Auto-scan failure notice (inline, not a toast — toasts are reserved for manual clicks) -->
+{#if autoScanFailed}
+  <div class="section-label" style="margin-top: 24px;">Detected Hardware</div>
+  <p class="section-hint">Auto-scan failed — click Detect Devices to retry.</p>
 {/if}
 
 <!-- Available devices from hardware scan -->
@@ -471,9 +609,45 @@
       {/if}
     {/if}
     {#if form.method === 'gpio'}
-      <FormField label="GPIO Pin" id="ptt-gpio">
-        <Input id="ptt-gpio" bind:value={form.gpio_pin} type="number" />
-      </FormField>
+      {#if platformSupportsGpio && !hasGpioDevices}
+        <p class="field-hint">No GPIO chips detected. Check that you have access to <code>/dev/gpiochip*</code> (typically the <code>gpio</code> group on Raspberry Pi OS).</p>
+      {/if}
+      {#if loadingGpioLines}
+        <FormField label="GPIO Line" id="ptt-gpio-line"
+          hint="Loading lines from the selected gpiochip…">
+          <div aria-busy="true">
+            <Select id="ptt-gpio-line" disabled
+              value="__loading__"
+              options={[{ value: '__loading__', label: 'Loading lines…' }]} />
+          </div>
+        </FormField>
+      {:else if gpioLines.length > 0}
+        <FormField label="GPIO Line" error={errors.gpio_line} id="ptt-gpio-line"
+          hint="Select the GPIO line wired to your radio's PTT input. Lines marked 'in use' are claimed by a kernel driver.">
+          <Select id="ptt-gpio-line" bind:value={form.gpio_line}
+            options={gpioLines.map(l => ({
+              value: String(l.offset),
+              label: l.used
+                ? `Line ${l.offset} — ${l.name || `Line ${l.offset}`} [in use: ${l.consumer || 'unknown'}]`
+                : `Line ${l.offset} — ${l.name || `Line ${l.offset}`}`,
+            }))} />
+        </FormField>
+      {:else if gpioLinesLoadError}
+        <FormField label="GPIO Line" error={errors.gpio_line} id="ptt-gpio-line"
+          hint={`Couldn't load lines: ${gpioLinesLoadError}. Enter the line number manually.`}>
+          <Input id="ptt-gpio-line" bind:value={form.gpio_line} type="number" min={0} />
+        </FormField>
+      {:else if form.device_path}
+        <FormField label="GPIO Line" error={errors.gpio_line} id="ptt-gpio-line"
+          hint="No lines reported by this chip — enter the line number manually.">
+          <Input id="ptt-gpio-line" bind:value={form.gpio_line} type="number" min={0} />
+        </FormField>
+      {:else}
+        <FormField label="GPIO Line" error={errors.gpio_line} id="ptt-gpio-line"
+          hint="Enter a device path above to see available lines.">
+          <Input id="ptt-gpio-line" bind:value={form.gpio_line} type="number" min={0} />
+        </FormField>
+      {/if}
     {/if}
     {#if form.method === 'cm108'}
       <FormField label="GPIO Pin" id="ptt-cm108-gpio"

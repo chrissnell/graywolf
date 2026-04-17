@@ -50,6 +50,13 @@ Building Graywolf (demod_bench)...
   - FX.25 and IL2P forward error correction
   - SDR input support
 
+- **Push-to-Talk** - Multiple PTT methods for any setup
+
+  - Serial RTS/DTR (Digirig, USB-serial adapters)
+  - CM108 USB HID GPIO (AIOC, homebrew sound card adapters)
+  - Linux GPIO (Raspberry Pi, BeagleBone)
+  - Hamlib rigctld (CAT control)
+
 - **Digipeater** - Full-featured APRS digipeater
 
   - WIDEn-N path handling

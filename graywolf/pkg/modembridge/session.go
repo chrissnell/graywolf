@@ -220,6 +220,26 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			txTailMs = tt.TxTailMs
 		}
 
+		// Pre-gpio_line configs stashed the user-typed line number in
+		// gpio_pin (CM108's field) because the UI had no separate input.
+		// Persist the fix the first time we see it so the DB converges
+		// and the UI's gpio_line-backed form loads the right value.
+		if ptt.Method == "gpio" && ptt.GpioLine == 0 && ptt.GpioPin != 0 {
+			b.logger.Warn("migrating legacy gpio_pin to gpio_line",
+				"channel", ch.ID, "gpio_pin", ptt.GpioPin)
+			ptt.GpioLine = ptt.GpioPin
+			ptt.GpioPin = 0
+			if err := b.cfg.Store.UpsertPttConfig(ctx, ptt); err != nil {
+				b.logger.Warn("persist gpio_line migration failed",
+					"channel", ch.ID, "err", err)
+			}
+		}
+
+		gpioPin := ptt.GpioPin
+		if ptt.Method == "gpio" {
+			gpioPin = 0
+		}
+
 		pmsg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigurePtt{ConfigurePtt: &pb.ConfigurePtt{
 			Channel:    ch.ID,
 			Method:     ptt.Method,
@@ -230,7 +250,8 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			SlottimeMs: ptt.SlotTimeMs,
 			Persist:    ptt.Persist,
 			DwaitMs:    ptt.DwaitMs,
-			GpioPin:    ptt.GpioPin,
+			GpioPin:    gpioPin,
+			GpioLine:   ptt.GpioLine,
 		}}}
 		if err := send(pmsg); err != nil {
 			return false, err
