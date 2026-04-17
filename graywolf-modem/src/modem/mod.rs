@@ -6,7 +6,7 @@
 
 mod tx_worker;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::Arc;
@@ -132,6 +132,9 @@ pub struct Modem {
     audio_configs: HashMap<u32, AudioConfig>,
     channel_configs: HashMap<u32, ChannelConfig>,
     ptt_cfgs: HashMap<u32, ConfigurePtt>,
+    // Rigctld channels whose driver build failed (daemon wasn't running).
+    // Re-attempted lazily on the next TransmitFrame for the channel.
+    ptt_rigctld_pending: HashSet<u32>,
 
     // Shared cache of open PTT hardware (serial fds today, HID handles
     // and gpiochip handles in later phases). One port is opened at most
@@ -174,6 +177,7 @@ impl Modem {
             audio_configs: HashMap::new(),
             channel_configs: HashMap::new(),
             ptt_cfgs: HashMap::new(),
+            ptt_rigctld_pending: HashSet::new(),
             ptt_registry: PortRegistry::new(),
             gain_atoms: HashMap::new(),
             output_devices: HashMap::new(),
@@ -694,6 +698,7 @@ impl Modem {
     /// missing-driver error rather than silently keying nothing.
     fn apply_ptt_config(&mut self, cfg: ConfigurePtt) {
         let channel = cfg.channel;
+        let is_rigctld = cfg.method == "rigctld";
         match self.ptt_registry.build_driver(&cfg) {
             Ok(driver) => {
                 if let Err(e) = self.tx_worker.register_driver(channel, driver) {
@@ -702,6 +707,7 @@ impl Modem {
                         channel, e
                     );
                 } else {
+                    self.ptt_rigctld_pending.remove(&channel);
                     eprintln!(
                         "graywolf-modem: PTT configured for channel {} ({})",
                         channel, cfg.method
@@ -713,6 +719,9 @@ impl Modem {
                     "graywolf-modem: ConfigurePtt: build driver for channel {} ({}): {}",
                     channel, cfg.method, e
                 );
+                if is_rigctld {
+                    self.ptt_rigctld_pending.insert(channel);
+                }
                 self.tx_worker.release_driver(channel);
             }
         }
@@ -725,6 +734,16 @@ impl Modem {
     /// drain). This returns immediately; audio drain does not block the
     /// IPC loop and RX audio keeps flowing through `pump_all_audio`.
     fn handle_transmit_frame(&mut self, tf: TransmitFrame) {
+        // Lazy retry for rigctld: if the daemon wasn't running when the
+        // driver was first built, re-attempt now before dropping the frame.
+        // Only rigctld benefits — it's the only networked driver where late
+        // availability is expected. Serial/CM108 failures are config errors.
+        if self.ptt_rigctld_pending.contains(&tf.channel) {
+            if let Some(cfg) = self.ptt_cfgs.get(&tf.channel).cloned() {
+                self.apply_ptt_config(cfg);
+            }
+        }
+
         let ccfg = match self.channel_configs.get(&tf.channel) {
             Some(c) => c,
             None => {
