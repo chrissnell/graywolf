@@ -23,7 +23,7 @@ MANIFEST := --manifest-path $(MODEM_DIR)/Cargo.toml
 # Rust picks up these env vars in build.rs.
 CARGO_ENV := GRAYWOLF_VERSION="$(VERSION)" GRAYWOLF_GIT_COMMIT="$(FULL_COMMIT)"
 
-.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta
+.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta handbook-sync
 
 all: release web
 	mkdir -p bin
@@ -151,3 +151,6 @@ bump-beta:
 	git diff --cached --quiet || git commit -m "Beta $(BETA_TAG)"
 	git tag "$(BETA_TAG)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "$(BETA_TAG)"
+
+handbook-sync:
+	rsync -av --delete docs/handbook/ /Volumes/NFS/static-sites/chrissnell.com/software/handbook/
