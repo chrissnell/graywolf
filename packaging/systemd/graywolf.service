@@ -12,7 +12,7 @@ RestartSec=5
 
 User=graywolf
 Group=graywolf
-SupplementaryGroups=audio dialout plugdev
+SupplementaryGroups=audio dialout plugdev gpio
 
 # Writable state for SQLite database
 StateDirectory=graywolf

@@ -13,23 +13,25 @@ async function request(method, path, body = null) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
+  let res;
   try {
-    const res = await fetch(`/api${path}`, opts);
-    if (res.status === 401) {
-      window.location.hash = '#/login';
-      throw new Error('Unauthorized');
-    }
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    if (res.status === 204) return null;
-    return res.json();
-  } catch (e) {
-    if (e.message === 'Unauthorized') throw e;
-    // API unreachable — return mock data
+    res = await fetch(`/api${path}`, opts);
+  } catch {
+    // Genuine network failure (dev without backend, DNS, CORS). HTTP
+    // errors from a reachable backend must NOT fall through here —
+    // they need to surface so pages can render their error state.
     return getMockData(method, path, body);
   }
+  if (res.status === 401) {
+    window.location.hash = '#/login';
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  if (res.status === 204) return null;
+  return res.json();
 }
 
 export const api = {

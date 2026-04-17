@@ -2,6 +2,8 @@ package webapi
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"net/http"
 	"runtime"
 	"strings"
@@ -103,13 +105,26 @@ func (s *Server) handlePttByChannel(w http.ResponseWriter, r *http.Request) {
 			// On non-Linux hosts EnumerateGpioLines always fails with a
 			// fixed "only supported on Linux" message; map that to 501
 			// so clients can distinguish a platform limitation from a
-			// genuine server fault (bad chip path, permission denied,
-			// kernel ENODEV). Everything else stays a sanitized 500.
+			// genuine server fault.
 			if runtime.GOOS != "linux" {
 				s.logger.InfoContext(r.Context(), "gpio lines requested on non-linux",
 					"chip", chip, "err", err)
 				writeJSON(w, http.StatusNotImplemented,
 					map[string]string{"error": "gpio line enumeration requires linux"})
+				return
+			}
+			// Surface permission failures with an actionable hint —
+			// the most common deployment mistake is the service user
+			// missing the gpio group. The chip path is user-supplied
+			// but limited to a /dev/gpiochipN pattern in practice;
+			// echoing it back helps the admin know which device is
+			// inaccessible.
+			if errors.Is(err, fs.ErrPermission) {
+				s.logger.WarnContext(r.Context(), "gpio chip access denied",
+					"chip", chip, "err", err)
+				writeJSON(w, http.StatusForbidden, map[string]string{
+					"error": "permission denied on " + chip + " — the graywolf service needs membership in the 'gpio' group (Raspberry Pi OS/Debian) or equivalent on your distro",
+				})
 				return
 			}
 			s.internalError(w, r, "enumerate gpio lines", err)
