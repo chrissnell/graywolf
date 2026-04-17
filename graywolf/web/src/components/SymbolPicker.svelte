@@ -1,15 +1,20 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button } from '@chrissnell/chonky-ui';
+  import { Button, Select } from '@chrissnell/chonky-ui';
   import Modal from './Modal.svelte';
   import {
     CELL_PX, COLS, ROWS,
     PRIMARY_TABLE, ALTERNATE_TABLE,
     SPRITE_URLS,
     FIRST_SYMBOL_CODE, LAST_SYMBOL_CODE,
+    OVERLAY_CHARS,
     backgroundPosition, loadSymbols, describe,
-    isValidOverlay,
   } from '../lib/aprsSymbols.js';
+
+  const overlayOptions = [
+    { value: '', label: '(none)' },
+    ...OVERLAY_CHARS.split('').map((c) => ({ value: c, label: c })),
+  ];
 
   let {
     open = $bindable(false),
@@ -57,15 +62,6 @@
   function selectTable(t) {
     workTable = t;
     if (t === PRIMARY_TABLE) workOverlay = '';
-  }
-
-  function handleOverlayInput(e) {
-    const v = e.target.value.toUpperCase().slice(0, 1);
-    if (v === '' || isValidOverlay(v)) {
-      workOverlay = v;
-    } else {
-      e.target.value = workOverlay;
-    }
   }
 
   function confirm() {
@@ -152,13 +148,11 @@
     {#if workTable === ALTERNATE_TABLE}
       <div class="overlay-row">
         <label for="sym-overlay">Overlay character</label>
-        <input
+        <Select
           id="sym-overlay"
-          class="overlay-input"
-          type="text"
-          maxlength="1"
-          value={workOverlay}
-          oninput={handleOverlayInput}
+          class="overlay-select"
+          bind:value={workOverlay}
+          options={overlayOptions}
           placeholder="(none)"
         />
         <span class="overlay-hint">Optional A&ndash;Z or 0&ndash;9.</span>
@@ -208,7 +202,7 @@
     grid-template-rows: repeat(var(--rows), var(--cell));
     gap: 2px;
     padding: 4px;
-    background: var(--color-bg-elevated, #1a1a1a);
+    background: #fff;
     border: 1px solid var(--color-border);
     border-radius: 4px;
     width: max-content;
@@ -225,7 +219,7 @@
     transition: background-color 60ms, border-color 60ms;
   }
   .cell:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: rgba(0, 0, 0, 0.08);
     border-color: var(--color-border);
   }
   .cell.selected {
@@ -255,7 +249,7 @@
     background-repeat: no-repeat;
     border: 1px solid var(--color-border);
     border-radius: 4px;
-    background-color: var(--color-bg-elevated, #1a1a1a);
+    background-color: #fff;
     position: relative;
     flex: 0 0 auto;
   }
@@ -268,6 +262,7 @@
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: 18px;
     font-weight: 700;
+    line-height: 1;
     color: #000;
     text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff;
     pointer-events: none;
@@ -281,31 +276,19 @@
   .overlay-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: var(--color-bg-elevated, #1a1a1a);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
+    gap: 10px;
+    padding: 8px 0 4px;
   }
   .overlay-row label {
     font-size: 13px;
-    color: var(--color-text, #ddd);
+    color: var(--color-text);
   }
-  .overlay-input {
-    width: 38px;
-    text-align: center;
-    font-family: ui-monospace, SFMono-Regular, monospace;
-    font-size: 14px;
-    padding: 4px;
-    background: var(--color-bg, #0d0d0d);
-    color: var(--color-text, #ddd);
-    border: 1px solid var(--color-border);
-    border-radius: 3px;
-    text-transform: uppercase;
+  .overlay-row :global(.overlay-select) {
+    min-width: 88px;
   }
   .overlay-hint {
     font-size: 12px;
-    color: var(--color-text-dim, #888);
+    color: var(--color-text-muted, #888);
   }
 
   .actions {

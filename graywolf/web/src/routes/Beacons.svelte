@@ -702,7 +702,7 @@
     width: 24px;
     height: 24px;
     background-repeat: no-repeat;
-    background-color: var(--color-bg-elevated, #1a1a1a);
+    background-color: #fff;
     border: 1px solid var(--color-border);
     border-radius: 3px;
     position: relative;
@@ -716,6 +716,7 @@
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: 12px;
     font-weight: 700;
+    line-height: 1;
     color: #000;
     text-shadow: 0 0 1px #fff, 0 0 1px #fff, 0 0 1px #fff;
     pointer-events: none;
