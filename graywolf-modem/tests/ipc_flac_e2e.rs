@@ -4,7 +4,7 @@
 //!
 //! Skipped at runtime if the WB2OSZ test tracks are not present.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
