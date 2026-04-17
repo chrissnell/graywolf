@@ -8,6 +8,8 @@ Graywolf is a modern APRS station with a software modem, digipeater, iGate, and 
 
 **🔧 [Known-Working Configurations](https://chrissnell.com/software/graywolf/configurations.html)** — community-tested hardware setups with exact settings. Check here for your device, and submit a PR if yours isn't listed.
 
+**💬 [Graywolf APRS Discord](https://discord.gg/TYcHzgWf)** — community chat for help, discussion, and development.
+
 Written by Chris Snell, [NW5W](https://nw5w.com). 
 
 The modem is written in Rust and includes a port of the AFSK demodulator from [Dire Wolf](https://github.com/wb2osz/direwolf) by WB2OSZ.
