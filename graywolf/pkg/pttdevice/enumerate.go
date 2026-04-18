@@ -3,6 +3,7 @@
 package pttdevice
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -116,6 +117,17 @@ func enumerateGPIO() []AvailableDevice {
 // annotateAndSort marks macOS tty.* serial devices as not recommended and
 // sorts the list so recommended devices appear first.
 func annotateAndSort(devs []AvailableDevice) []AvailableDevice {
+	// Build a VID:PID → CM108 hidraw path index so the AIOC-style warning
+	// can name the concrete device the user should pick instead, rather
+	// than a vague "CM108 HID entry". Keyed by vendor:product; the same
+	// USB adapter may appear as both a CM108 and a serial entry.
+	cm108ByUSB := map[string]string{}
+	for _, d := range devs {
+		if d.Type == "cm108" && d.USBVendor != "" {
+			cm108ByUSB[d.USBVendor+":"+d.USBProduct] = d.Path
+		}
+	}
+
 	for i := range devs {
 		if runtime.GOOS == "darwin" && devs[i].Type == "serial" && strings.HasPrefix(devs[i].Path, "/dev/tty.") {
 			devs[i].Recommended = false
@@ -129,7 +141,11 @@ func annotateAndSort(devs []AvailableDevice) []AvailableDevice {
 			isCM108Compatible(devs[i].USBVendor, devs[i].USBProduct) {
 			devs[i].Recommended = false
 			if devs[i].Warning == "" {
-				devs[i].Warning = "Use the CM108 HID entry for PTT on this adapter; this serial port is for data"
+				if hidPath := cm108ByUSB[devs[i].USBVendor+":"+devs[i].USBProduct]; hidPath != "" {
+					devs[i].Warning = fmt.Sprintf("Use %s for PTT on this adapter; this serial port is for data", hidPath)
+				} else {
+					devs[i].Warning = "Use the CM108 HID entry for PTT on this adapter; this serial port is for data"
+				}
 			}
 		}
 	}

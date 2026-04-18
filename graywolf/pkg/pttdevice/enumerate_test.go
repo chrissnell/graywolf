@@ -1,11 +1,15 @@
 package pttdevice
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAnnotateAndSort_DemotesCM108CompositeSerial(t *testing.T) {
 	// AIOC (VID 1209 PID 7388) exposes both a CDC-ACM serial port and a
 	// CM108-compatible HID. The serial port should be demoted so the UI
-	// steers users to the HID for PTT.
+	// steers users to the HID for PTT, and the warning should name the
+	// concrete hidraw path so users know exactly which card to pick.
 	devs := []AvailableDevice{
 		{
 			Path:        "/dev/ttyACM1",
@@ -34,8 +38,30 @@ func TestAnnotateAndSort_DemotesCM108CompositeSerial(t *testing.T) {
 	if got[1].Recommended {
 		t.Error("AIOC serial should be demoted to Recommended=false")
 	}
-	if got[1].Warning == "" {
-		t.Error("AIOC serial should carry a warning pointing to the HID entry")
+	if !strings.Contains(got[1].Warning, "/dev/hidraw0") {
+		t.Errorf("AIOC serial warning should name /dev/hidraw0, got %q", got[1].Warning)
+	}
+}
+
+func TestAnnotateAndSort_CM108SerialWarningFallback(t *testing.T) {
+	// If only the serial side of a CM108 composite adapter is listed (the
+	// HID didn't enumerate for some reason), the warning falls back to a
+	// generic message — we can't name a hidraw we don't have.
+	devs := []AvailableDevice{
+		{
+			Path:        "/dev/ttyACM1",
+			Type:        "serial",
+			USBVendor:   "1209",
+			USBProduct:  "7388",
+			Recommended: true,
+		},
+	}
+	got := annotateAndSort(devs)
+	if got[0].Recommended {
+		t.Error("AIOC serial should be demoted even without a CM108 companion")
+	}
+	if !strings.Contains(got[0].Warning, "CM108 HID") {
+		t.Errorf("fallback warning should mention CM108 HID, got %q", got[0].Warning)
 	}
 }
 

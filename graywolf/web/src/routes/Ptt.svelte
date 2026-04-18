@@ -56,6 +56,14 @@
   );
   let hasGpioDevices = $derived(available.some(d => d.type === 'gpio'));
 
+  // Split detected hardware into two visually-distinct sections so the
+  // eye lands on the right choice first. "Recommended" carries the
+  // explicit badge from the server; everything else (unknown USB,
+  // platform UARTs, bare gpiochips, demoted AIOC serial) is grouped
+  // below as reference material.
+  let recommendedDevices = $derived(available.filter(d => d.recommended));
+  let otherDevices = $derived(available.filter(d => !d.recommended));
+
   let channelOptions = $derived(
     channels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
   );
@@ -572,32 +580,63 @@
 
 <!-- Available devices from hardware scan -->
 {#if available.length > 0}
-  <div class="section-label" style="margin-top: 24px;">Detected Hardware</div>
-  <p class="section-hint">Click a device to create a PTT configuration for it.</p>
-  <div class="avail-grid">
-    {#each available as dev}
-      <button class="avail-card" class:warning={dev.warning} onclick={() => openCreateFromAvail(dev)}>
-        <div class="avail-header">
-          <strong class="avail-name">{dev.description || dev.name}</strong>
-          <div class="avail-badges">
-            <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
-              {dev.type}
-            </Badge>
-            {#if dev.recommended && !dev.warning}
-              <Badge variant="success">Recommended</Badge>
+  <!-- Recommended section: prominent, visually distinct -->
+  {#if recommendedDevices.length > 0}
+    <section class="detected-section detected-recommended" style="margin-top: 24px;">
+      <header class="detected-heading">
+        <h3 class="detected-title">
+          <span class="detected-title-dot" aria-hidden="true"></span>
+          Recommended for PTT
+        </h3>
+        <p class="detected-subtitle">Best match for your hardware — click to configure.</p>
+      </header>
+      <div class="avail-grid avail-grid-prominent">
+        {#each recommendedDevices as dev}
+          <button class="avail-card avail-card-recommended" onclick={() => openCreateFromAvail(dev)}>
+            <div class="avail-header">
+              <strong class="avail-name">{dev.description || dev.name}</strong>
+              <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
+                {dev.type}
+              </Badge>
+            </div>
+            <span class="avail-path" title={dev.path}>{dev.path}</span>
+            {#if dev.usb_vendor && dev.usb_product}
+              <span class="avail-usb">USB {dev.usb_vendor}:{dev.usb_product}</span>
             {/if}
-          </div>
-        </div>
-        <span class="avail-path" title={dev.path}>{dev.path}</span>
-        {#if dev.usb_vendor && dev.usb_product}
-          <span class="avail-usb">USB {dev.usb_vendor}:{dev.usb_product}</span>
-        {/if}
-        {#if dev.warning}
-          <span class="avail-warning">⚠ {dev.warning}</span>
-        {/if}
-      </button>
-    {/each}
-  </div>
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  <!-- Other detected devices: muted, listed for completeness -->
+  {#if otherDevices.length > 0}
+    <section class="detected-section detected-others" style="margin-top: 24px;">
+      <header class="detected-heading">
+        <h3 class="detected-title detected-title-muted">Other detected devices</h3>
+        <p class="detected-subtitle">Listed for completeness. Pick one only if you know it's correct for your adapter.</p>
+      </header>
+      <div class="avail-grid avail-grid-compact">
+        {#each otherDevices as dev}
+          <button class="avail-card avail-card-muted" onclick={() => openCreateFromAvail(dev)}>
+            <div class="avail-header">
+              <strong class="avail-name">{dev.description || dev.name}</strong>
+              <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
+                {dev.type}
+              </Badge>
+            </div>
+            <span class="avail-path" title={dev.path}>{dev.path}</span>
+            {#if dev.usb_vendor && dev.usb_product}
+              <span class="avail-usb">USB {dev.usb_vendor}:{dev.usb_product}</span>
+            {/if}
+            {#if dev.warning}
+              <span class="avail-warning-text">{dev.warning}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
 {/if}
 
 <!-- Add/Edit modal -->
@@ -902,11 +941,59 @@
     border-top: 1px solid var(--border-color);
   }
 
-  /* Available device cards */
+  /* Detected hardware sections */
+  .detected-section {
+    display: block;
+  }
+  .detected-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .detected-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--success, #3fb950);
+  }
+  .detected-title-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success, #3fb950);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success, #3fb950) 20%, transparent);
+  }
+  .detected-title-muted {
+    color: var(--text-muted);
+  }
+  .detected-subtitle {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* Shared card grid/base */
   .avail-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 10px;
+  }
+  .avail-grid-prominent {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  .avail-grid-compact {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
   }
   .avail-card {
     display: flex;
@@ -921,24 +1008,56 @@
     color: var(--text-primary);
     text-align: left;
     font-size: 13px;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.08s;
   }
   .avail-card:hover {
     border-color: var(--accent);
     background: var(--bg-secondary);
   }
-  .avail-card.warning {
-    border-left: 3px solid var(--color-warning, #d29922);
+  .avail-card:active {
+    transform: translateY(1px);
   }
+
+  /* Recommended variant: visually prominent, success-tinted accent */
+  .avail-card-recommended {
+    border-left: 3px solid var(--success, #3fb950);
+    background: color-mix(in srgb, var(--success, #3fb950) 5%, var(--bg-tertiary));
+  }
+  .avail-card-recommended .avail-name {
+    color: var(--text-primary);
+  }
+  .avail-card-recommended:hover {
+    border-color: var(--success, #3fb950);
+    background: color-mix(in srgb, var(--success, #3fb950) 10%, var(--bg-secondary));
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--success, #3fb950) 20%, transparent);
+  }
+
+  /* Muted variant: lower visual weight so the eye skips them */
+  .avail-card-muted {
+    min-height: 68px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    opacity: 0.82;
+  }
+  .avail-card-muted .avail-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+  .avail-card-muted .avail-path {
+    font-size: 11px;
+  }
+  .avail-card-muted:hover {
+    opacity: 1;
+    background: var(--bg-tertiary);
+    border-color: var(--border-color);
+  }
+
   .avail-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-  }
-  .avail-badges {
-    display: flex;
-    gap: 4px;
-    flex-shrink: 0;
+    gap: 8px;
   }
   .avail-name {
     font-size: 14px;
@@ -960,10 +1079,14 @@
     font-size: 11px;
     color: var(--text-muted);
   }
-  .avail-warning {
+  /* Inline warning text for muted cards — quiet, advisory, not a
+     yellow stripe that steals attention. */
+  .avail-warning-text {
     font-size: 11px;
-    color: var(--color-warning, #d29922);
-    margin-top: 4px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 2px;
+    line-height: 1.4;
   }
 
   .modal-actions {
