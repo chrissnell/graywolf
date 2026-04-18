@@ -213,7 +213,9 @@
       loadingGpioLines = true;
       gpioLinesLoadError = null;
       try {
-        const result = await api.get('/ptt/gpio-lines?chip=' + encodeURIComponent(chipPath));
+        // Encoded {chip} path parameter — see the listGpioLines
+        // handler docblock for the URL-encoding contract.
+        const result = await api.get('/ptt/gpio-chips/' + encodeURIComponent(chipPath) + '/lines');
         if (myId !== gpioLinesReqId) return;
         gpioLines = Array.isArray(result) ? result : [];
       } catch (e) {

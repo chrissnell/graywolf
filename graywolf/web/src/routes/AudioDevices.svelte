@@ -170,6 +170,8 @@
   async function handleSave() {
     if (!validate()) return;
     const data = { ...form, sample_rate: parseInt(form.sample_rate), channels: 1 };
+    // Strip fields not in AudioDeviceRequest DTO (backend rejects unknown fields)
+    delete data.id;
     try {
       if (editing) {
         await api.put(`/audio-devices/${editing.id}`, data);

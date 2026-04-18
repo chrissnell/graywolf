@@ -1,0 +1,3582 @@
+basePath: /api
+definitions:
+  aprs.Capabilities:
+    properties:
+      entries:
+        additionalProperties:
+          type: string
+        description: key → value (value empty for flag entries)
+        type: object
+    type: object
+  aprs.DecodedAPRSPacket:
+    properties:
+      caps:
+        $ref: '#/definitions/aprs.Capabilities'
+      channel:
+        type: integer
+      comment:
+        description: residual free-form text after structured fields
+        type: string
+      dest:
+        type: string
+      df:
+        $ref: '#/definitions/aprs.DirectionFinding'
+      item:
+        $ref: '#/definitions/aprs.Item'
+      message:
+        $ref: '#/definitions/aprs.Message'
+      micE:
+        $ref: '#/definitions/aprs.MicE'
+      object:
+        $ref: '#/definitions/aprs.Object'
+      path:
+        items:
+          type: string
+        type: array
+      position:
+        $ref: '#/definitions/aprs.Position'
+      quality:
+        description: modem-reported quality (0..100) if available
+        type: integer
+      raw:
+        description: original AX.25 frame bytes
+        items:
+          type: integer
+        type: array
+      source:
+        description: callsign-SSID
+        type: string
+      status:
+        description: for '>' status reports
+        type: string
+      telemetry:
+        $ref: '#/definitions/aprs.Telemetry'
+      telemetryMeta:
+        allOf:
+          - $ref: '#/definitions/aprs.TelemetryMeta'
+        description: PARM/UNIT/EQNS/BITS metadata (APRS101 ch 13)
+      thirdParty:
+        allOf:
+          - $ref: '#/definitions/aprs.DecodedAPRSPacket'
+        description: recursively-decoded inner packet for '}' traffic (APRS101 ch 20)
+      timestamp:
+        type: string
+      type:
+        $ref: '#/definitions/aprs.PacketType'
+      weather:
+        $ref: '#/definitions/aprs.Weather'
+    type: object
+  aprs.DeviceInfo:
+    properties:
+      class:
+        type: string
+      model:
+        type: string
+      vendor:
+        type: string
+    type: object
+  aprs.DirectionFinding:
+    properties:
+      bearing:
+        description: degrees true
+        type: integer
+      number:
+        description: 0..9 station count
+        type: integer
+      quality:
+        description: 0..9
+        type: integer
+      range:
+        description: miles
+        type: integer
+    type: object
+  aprs.Item:
+    properties:
+      comment:
+        type: string
+      live:
+        type: boolean
+      name:
+        type: string
+      position:
+        $ref: '#/definitions/aprs.Position'
+    type: object
+  aprs.Message:
+    properties:
+      addressee:
+        description: 1..9 chars, space-padded in packet
+        type: string
+      hasReplyAck:
+        description: true if a reply-ack trailer was present (ack may still be "")
+        type: boolean
+      isAck:
+        type: boolean
+      isBulletin:
+        description: addressee starts with BLN
+        type: boolean
+      isNWS:
+        description: NWS-originated
+        type: boolean
+      isRej:
+        type: boolean
+      messageID:
+        description: optional identifier used for ACK/REJ correlation
+        type: string
+      replyAck:
+        description: piggybacked reply-ack id (aprs11/replyacks), empty if absent
+        type: string
+      text:
+        type: string
+    type: object
+  aprs.MicE:
+    properties:
+      manufacturer:
+        description: e.g. "Kenwood TH-D74", "" if unknown
+        type: string
+      messageCode:
+        description: 0..7 index into the standard Mic-E message table
+        type: integer
+      messageText:
+        type: string
+      position:
+        $ref: '#/definitions/aprs.Position'
+      status:
+        description: trailing status text
+        type: string
+    type: object
+  aprs.Object:
+    properties:
+      comment:
+        type: string
+      live:
+        type: boolean
+      name:
+        type: string
+      position:
+        $ref: '#/definitions/aprs.Position'
+      timestamp:
+        type: string
+    type: object
+  aprs.PHG:
+    properties:
+      directivity:
+        description: 0=omni, 1..8 = 45°·d compass direction (N, NE, E, …)
+        type: integer
+      gainDB:
+        description: g dB (0..9)
+        type: integer
+      heightFt:
+        description: 10·2^h feet above average terrain
+        type: integer
+      powerWatts:
+        description: p² watts
+        type: integer
+      raw:
+        description: four-digit "phgd" body (e.g. "7700"); never includes the "PHG" prefix
+        type: string
+    type: object
+  aprs.PacketType:
+    enum:
+      - unknown
+      - position
+      - message
+      - telemetry
+      - weather
+      - object
+      - item
+      - mic-e
+      - status
+      - capabilities
+      - df-report
+      - query
+      - third-party
+    type: string
+    x-enum-varnames:
+      - PacketUnknown
+      - PacketPosition
+      - PacketMessage
+      - PacketTelemetry
+      - PacketWeather
+      - PacketObject
+      - PacketItem
+      - PacketMicE
+      - PacketStatus
+      - PacketCapabilities
+      - PacketDF
+      - PacketQuery
+      - PacketThirdParty
+  aprs.Position:
+    properties:
+      altitude:
+        description: meters (0 if none reported)
+        type: number
+      ambiguity:
+        description: 0..4, digits of ambiguity introduced by spaces
+        type: integer
+      compressed:
+        type: boolean
+      course:
+        description: degrees true (0..359)
+        type: integer
+      daodatum:
+        description: DAO datum byte (APRS101 DAO extension), 0 if not present
+        type: integer
+      hasAlt:
+        type: boolean
+      hasCourse:
+        type: boolean
+      latitude:
+        description: decimal degrees, positive north
+        type: number
+      localTime:
+        description: true if the timestamp was the '/' local-time form (APRS101 ch 6)
+        type: boolean
+      longitude:
+        description: decimal degrees, positive east
+        type: number
+      phg:
+        allOf:
+          - $ref: '#/definitions/aprs.PHG'
+        description: decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present
+      speed:
+        description: knots
+        type: number
+      symbol:
+        $ref: '#/definitions/aprs.Symbol'
+      timestamp:
+        description: nil if positionless or no embedded time
+        type: string
+    type: object
+  aprs.Symbol:
+    properties:
+      code:
+        type: integer
+      table:
+        type: integer
+    type: object
+  aprs.Telemetry:
+    properties:
+      analog:
+        items:
+          type: number
+        type: array
+      analogHas:
+        description: true for channels actually reported (distinguishes 0 from missing)
+        items:
+          type: boolean
+        type: array
+      comment:
+        description: trailing free-form
+        type: string
+      digital:
+        description: bits 0..7 (only lower 8)
+        type: integer
+      hasDigital:
+        type: boolean
+      seq:
+        description: 0..999, -1 if absent
+        type: integer
+    type: object
+  aprs.TelemetryMeta:
+    properties:
+      bits:
+        description: BITS. sense-bits bitmap (active-high per bit)
+        type: integer
+      eqns:
+        description: a, b, c coefficients per analog channel
+        items:
+          items:
+            type: number
+          type: array
+        type: array
+      kind:
+        description: '"parm", "unit", "eqns", or "bits"'
+        type: string
+      parm:
+        items:
+          type: string
+        type: array
+      projectName:
+        description: BITS. project title
+        type: string
+      unit:
+        items:
+          type: string
+        type: array
+    type: object
+  aprs.Weather:
+    properties:
+      hasHumidity:
+        type: boolean
+      hasLuminosity:
+        type: boolean
+      hasPressure:
+        type: boolean
+      hasRain1h:
+        type: boolean
+      hasRain24h:
+        type: boolean
+      hasRainMid:
+        type: boolean
+      hasRawRain:
+        type: boolean
+      hasSnow:
+        type: boolean
+      hasTemp:
+        type: boolean
+      hasWindDir:
+        type: boolean
+      hasWindGust:
+        type: boolean
+      hasWindSpeed:
+        type: boolean
+      humidity:
+        description: percent (0..100)
+        type: integer
+      luminosity:
+        description: watts/m^2
+        type: integer
+      pressure:
+        description: tenths of millibar (e.g. 10132 = 1013.2)
+        type: number
+      rain1Hour:
+        description: hundredths of an inch
+        type: number
+      rain24Hour:
+        type: number
+      rainSinceMid:
+        type: number
+      rawRainCounter:
+        description: raw rain counter ('#' field)
+        type: integer
+      snowfall24h:
+        description: inches (via 's' after 'g')
+        type: number
+      softwareType:
+        description: one-letter software code (e.g. 'w', 'x', 'd')
+        type: string
+      temperature:
+        description: degrees F
+        type: number
+      weatherUnitTag:
+        description: 2..4 ASCII letters identifying the unit/model
+        type: string
+      windDirection:
+        description: degrees true
+        type: integer
+      windGust:
+        description: mph (5-minute peak)
+        type: number
+      windSpeed:
+        description: mph (1-minute sustained)
+        type: number
+    type: object
+  dto.AgwRequest:
+    properties:
+      callsigns:
+        type: string
+      enabled:
+        type: boolean
+      listen_addr:
+        type: string
+    type: object
+  dto.AgwResponse:
+    properties:
+      callsigns:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      listen_addr:
+        type: string
+    type: object
+  dto.AudioDeviceDeleteConflict:
+    properties:
+      channels:
+        items:
+          $ref: '#/definitions/dto.ChannelResponse'
+        type: array
+      error:
+        type: string
+    type: object
+  dto.AudioDeviceDeleteResponse:
+    properties:
+      deleted:
+        items:
+          $ref: '#/definitions/dto.ChannelResponse'
+        type: array
+    type: object
+  dto.AudioDeviceLevelsResponse:
+    additionalProperties:
+      $ref: '#/definitions/modembridge.DeviceLevel'
+    type: object
+  dto.AudioDeviceRequest:
+    properties:
+      channels:
+        type: integer
+      device_path:
+        type: string
+      direction:
+        type: string
+      format:
+        type: string
+      gain_db:
+        type: number
+      name:
+        type: string
+      sample_rate:
+        type: integer
+      source_type:
+        type: string
+    type: object
+  dto.AudioDeviceResponse:
+    properties:
+      channels:
+        type: integer
+      device_path:
+        type: string
+      direction:
+        type: string
+      format:
+        type: string
+      gain_db:
+        type: number
+      id:
+        type: integer
+      name:
+        type: string
+      sample_rate:
+        type: integer
+      source_type:
+        type: string
+    type: object
+  dto.AudioDeviceSetGainRequest:
+    properties:
+      gain_db:
+        type: number
+    type: object
+  dto.BeaconRequest:
+    properties:
+      alt_ft:
+        type: number
+      ambiguity:
+        type: integer
+      callsign:
+        type: string
+      channel:
+        type: integer
+      comment:
+        type: string
+      comment_cmd:
+        type: string
+      compress:
+        type: boolean
+      custom_info:
+        type: string
+      delay_seconds:
+        type: integer
+      destination:
+        type: string
+      dir:
+        type: integer
+      enabled:
+        type: boolean
+      freq:
+        type: string
+      freq_offset:
+        type: string
+      gain:
+        type: integer
+      height:
+        type: integer
+      interval:
+        type: integer
+      latitude:
+        type: number
+      longitude:
+        type: number
+      messaging:
+        type: boolean
+      object_name:
+        type: string
+      overlay:
+        type: string
+      path:
+        type: string
+      power:
+        type: integer
+      sb_fast_rate:
+        type: integer
+      sb_fast_speed:
+        type: integer
+      sb_min_turn_time:
+        type: integer
+      sb_slow_rate:
+        type: integer
+      sb_slow_speed:
+        type: integer
+      sb_turn_angle:
+        type: integer
+      sb_turn_slope:
+        type: integer
+      send_to_aprs_is:
+        type: boolean
+      slot_seconds:
+        type: integer
+      smart_beacon:
+        type: boolean
+      symbol:
+        type: string
+      symbol_table:
+        type: string
+      tone:
+        type: string
+      type:
+        type: string
+      use_gps:
+        type: boolean
+    type: object
+  dto.BeaconResponse:
+    properties:
+      alt_ft:
+        type: number
+      ambiguity:
+        type: integer
+      callsign:
+        type: string
+      channel:
+        type: integer
+      comment:
+        type: string
+      comment_cmd:
+        type: string
+      compress:
+        type: boolean
+      custom_info:
+        type: string
+      delay_seconds:
+        type: integer
+      destination:
+        type: string
+      dir:
+        type: integer
+      enabled:
+        type: boolean
+      freq:
+        type: string
+      freq_offset:
+        type: string
+      gain:
+        type: integer
+      height:
+        type: integer
+      id:
+        type: integer
+      interval:
+        type: integer
+      latitude:
+        type: number
+      longitude:
+        type: number
+      messaging:
+        type: boolean
+      object_name:
+        type: string
+      overlay:
+        type: string
+      path:
+        type: string
+      power:
+        type: integer
+      sb_fast_rate:
+        type: integer
+      sb_fast_speed:
+        type: integer
+      sb_min_turn_time:
+        type: integer
+      sb_slow_rate:
+        type: integer
+      sb_slow_speed:
+        type: integer
+      sb_turn_angle:
+        type: integer
+      sb_turn_slope:
+        type: integer
+      send_to_aprs_is:
+        type: boolean
+      slot_seconds:
+        type: integer
+      smart_beacon:
+        type: boolean
+      symbol:
+        type: string
+      symbol_table:
+        type: string
+      tone:
+        type: string
+      type:
+        type: string
+      use_gps:
+        type: boolean
+    type: object
+  dto.BeaconSendResponse:
+    properties:
+      status:
+        description: '"sent"'
+        type: string
+    type: object
+  dto.ChannelRequest:
+    properties:
+      bit_rate:
+        type: integer
+      decoder_offset:
+        type: integer
+      fix_bits:
+        type: string
+      fx25_encode:
+        type: boolean
+      il2p_encode:
+        type: boolean
+      input_channel:
+        type: integer
+      input_device_id:
+        type: integer
+      mark_freq:
+        type: integer
+      modem_type:
+        type: string
+      name:
+        type: string
+      num_decoders:
+        type: integer
+      num_slicers:
+        type: integer
+      output_channel:
+        type: integer
+      output_device_id:
+        type: integer
+      profile:
+        type: string
+      space_freq:
+        type: integer
+    type: object
+  dto.ChannelResponse:
+    properties:
+      bit_rate:
+        type: integer
+      decoder_offset:
+        type: integer
+      fix_bits:
+        type: string
+      fx25_encode:
+        type: boolean
+      id:
+        type: integer
+      il2p_encode:
+        type: boolean
+      input_channel:
+        type: integer
+      input_device_id:
+        type: integer
+      mark_freq:
+        type: integer
+      modem_type:
+        type: string
+      name:
+        type: string
+      num_decoders:
+        type: integer
+      num_slicers:
+        type: integer
+      output_channel:
+        type: integer
+      output_device_id:
+        type: integer
+      profile:
+        type: string
+      space_freq:
+        type: integer
+    type: object
+  dto.DigipeaterConfigRequest:
+    properties:
+      dedupe_window_seconds:
+        type: integer
+      enabled:
+        type: boolean
+      my_call:
+        type: string
+    type: object
+  dto.DigipeaterConfigResponse:
+    properties:
+      dedupe_window_seconds:
+        type: integer
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      my_call:
+        type: string
+    type: object
+  dto.DigipeaterRuleRequest:
+    properties:
+      action:
+        type: string
+      alias:
+        type: string
+      alias_type:
+        type: string
+      enabled:
+        type: boolean
+      from_channel:
+        type: integer
+      max_hops:
+        type: integer
+      priority:
+        type: integer
+      to_channel:
+        type: integer
+    type: object
+  dto.DigipeaterRuleResponse:
+    properties:
+      action:
+        type: string
+      alias:
+        type: string
+      alias_type:
+        type: string
+      enabled:
+        type: boolean
+      from_channel:
+        type: integer
+      id:
+        type: integer
+      max_hops:
+        type: integer
+      priority:
+        type: integer
+      to_channel:
+        type: integer
+    type: object
+  dto.GPSRequest:
+    properties:
+      baud_rate:
+        type: integer
+      gpsd_host:
+        type: string
+      gpsd_port:
+        type: integer
+      serial_port:
+        type: string
+      source:
+        type: string
+    type: object
+  dto.GPSResponse:
+    properties:
+      baud_rate:
+        type: integer
+      enabled:
+        type: boolean
+      gpsd_host:
+        type: string
+      gpsd_port:
+        type: integer
+      id:
+        type: integer
+      serial_port:
+        type: string
+      source:
+        type: string
+    type: object
+  dto.HealthResponse:
+    properties:
+      started_at:
+        description: process start time, RFC3339
+        type: string
+      status:
+        description: '"ok"'
+        type: string
+      time:
+        description: current UTC time, RFC3339
+        type: string
+    type: object
+  dto.IGateConfigRequest:
+    properties:
+      callsign:
+        type: string
+      enabled:
+        type: boolean
+      gate_is_to_rf:
+        type: boolean
+      gate_rf_to_is:
+        type: boolean
+      max_msg_hops:
+        type: integer
+      passcode:
+        type: string
+      port:
+        type: integer
+      rf_channel:
+        type: integer
+      server:
+        type: string
+      server_filter:
+        type: string
+      simulation_mode:
+        type: boolean
+      software_name:
+        type: string
+      software_version:
+        type: string
+      tx_channel:
+        type: integer
+    type: object
+  dto.IGateConfigResponse:
+    properties:
+      callsign:
+        type: string
+      enabled:
+        type: boolean
+      gate_is_to_rf:
+        type: boolean
+      gate_rf_to_is:
+        type: boolean
+      id:
+        type: integer
+      max_msg_hops:
+        type: integer
+      passcode:
+        type: string
+      port:
+        type: integer
+      rf_channel:
+        type: integer
+      server:
+        type: string
+      server_filter:
+        type: string
+      simulation_mode:
+        type: boolean
+      software_name:
+        type: string
+      software_version:
+        type: string
+      tx_channel:
+        type: integer
+    type: object
+  dto.IGateRfFilterRequest:
+    properties:
+      action:
+        type: string
+      channel:
+        type: integer
+      enabled:
+        type: boolean
+      pattern:
+        type: string
+      priority:
+        type: integer
+      type:
+        type: string
+    type: object
+  dto.IGateRfFilterResponse:
+    properties:
+      action:
+        type: string
+      channel:
+        type: integer
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      pattern:
+        type: string
+      priority:
+        type: integer
+      type:
+        type: string
+    type: object
+  dto.KissRequest:
+    properties:
+      baud_rate:
+        type: integer
+      channel:
+        type: integer
+      serial_device:
+        type: string
+      tcp_port:
+        type: integer
+      type:
+        type: string
+    type: object
+  dto.KissResponse:
+    properties:
+      baud_rate:
+        type: integer
+      channel:
+        type: integer
+      id:
+        type: integer
+      serial_device:
+        type: string
+      tcp_port:
+        type: integer
+      type:
+        type: string
+    type: object
+  dto.PositionLogRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  dto.PositionLogResponse:
+    properties:
+      db_path:
+        type: string
+      enabled:
+        type: boolean
+    type: object
+  dto.PttRequest:
+    properties:
+      channel_id:
+        type: integer
+      device_path:
+        type: string
+      dwait_ms:
+        type: integer
+      gpio_line:
+        description: |-
+          GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
+          method. Ignored for every other method.
+        type: integer
+      gpio_pin:
+        description: |-
+          GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used
+          by the `gpio` method, which references `gpio_line` instead to avoid
+          indexing ambiguity between CM108 pin numbers and gpiochip line offsets.
+        type: integer
+      invert:
+        type: boolean
+      method:
+        type: string
+      persist:
+        type: integer
+      slot_time_ms:
+        type: integer
+    type: object
+  dto.PttResponse:
+    properties:
+      channel_id:
+        type: integer
+      device_path:
+        type: string
+      dwait_ms:
+        type: integer
+      gpio_line:
+        description: |-
+          GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
+          method. Ignored for every other method.
+        type: integer
+      gpio_pin:
+        description: |-
+          GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used
+          by the `gpio` method, which references `gpio_line` instead to avoid
+          indexing ambiguity between CM108 pin numbers and gpiochip line offsets.
+        type: integer
+      id:
+        type: integer
+      invert:
+        type: boolean
+      method:
+        type: string
+      persist:
+        type: integer
+      slot_time_ms:
+        type: integer
+    type: object
+  dto.TestRigctldRequest:
+    properties:
+      host:
+        type: string
+      port:
+        type: integer
+    type: object
+  dto.TestRigctldResponse:
+    properties:
+      latency_ms:
+        type: integer
+      message:
+        type: string
+      ok:
+        type: boolean
+    type: object
+  dto.TestToneResponse:
+    properties:
+      status:
+        type: string
+    type: object
+  dto.TxTimingRequest:
+    properties:
+      channel:
+        type: integer
+      full_dup:
+        type: boolean
+      persist:
+        type: integer
+      rate_1min:
+        type: integer
+      rate_5min:
+        type: integer
+      slot_ms:
+        type: integer
+      tx_delay_ms:
+        type: integer
+      tx_tail_ms:
+        type: integer
+    type: object
+  dto.TxTimingResponse:
+    properties:
+      channel:
+        type: integer
+      full_dup:
+        type: boolean
+      id:
+        type: integer
+      persist:
+        type: integer
+      rate_1min:
+        type: integer
+      rate_5min:
+        type: integer
+      slot_ms:
+        type: integer
+      tx_delay_ms:
+        type: integer
+      tx_tail_ms:
+        type: integer
+    type: object
+  gps.SerialPortInfo:
+    properties:
+      description:
+        description: human-readable description
+        type: string
+      is_usb:
+        type: boolean
+      name:
+        description: basename of path
+        type: string
+      path:
+        description: device path, e.g. /dev/cu.usbserial-110
+        type: string
+      pid:
+        type: string
+      product:
+        type: string
+      recommended:
+        description: |-
+          Recommended is true for the device path users should pick. On macOS
+          we recommend the /dev/cu.* callout device over /dev/tty.* (which
+          blocks until DCD is asserted).
+        type: boolean
+      serial_number:
+        type: string
+      vid:
+        type: string
+      warning:
+        description: |-
+          Warning is set when there's a known gotcha with this path (e.g. the
+          macOS tty.* / cu.* distinction).
+        type: string
+    type: object
+  igate.Status:
+    properties:
+      callsign:
+        type: string
+      connected:
+        type: boolean
+      is_to_rf_gated:
+        type: integer
+      last_connected:
+        type: string
+      packets_filtered:
+        type: integer
+      rf_to_is_dropped:
+        type: integer
+      rf_to_is_gated:
+        type: integer
+      server:
+        type: string
+      simulation_mode:
+        type: boolean
+    type: object
+  modembridge.AvailableDevice:
+    properties:
+      channels:
+        items:
+          type: integer
+        type: array
+      description:
+        description: human-friendly name (e.g. USB product string)
+        type: string
+      host_api:
+        type: string
+      is_default:
+        type: boolean
+      is_input:
+        type: boolean
+      name:
+        type: string
+      path:
+        description: pcm_id (used as device_path in config)
+        type: string
+      recommended:
+        description: 'true for plughw: devices (ALSA software conversion)'
+        type: boolean
+      sample_rates:
+        items:
+          type: integer
+        type: array
+    type: object
+  modembridge.ChannelStats:
+    properties:
+      audio_level_mark:
+        type: number
+      audio_level_peak:
+        type: number
+      audio_level_space:
+        type: number
+      channel:
+        type: integer
+      dcd_state:
+        type: boolean
+      dcd_transitions:
+        type: integer
+      rx_bad_fcs:
+        type: integer
+      rx_frames:
+        type: integer
+      tx_frames:
+        type: integer
+    type: object
+  modembridge.DeviceLevel:
+    properties:
+      clipping:
+        type: boolean
+      device_id:
+        type: integer
+      peak_dbfs:
+        type: number
+      rms_dbfs:
+        type: number
+    type: object
+  modembridge.InputLevel:
+    properties:
+      error:
+        type: string
+      has_signal:
+        type: boolean
+      name:
+        type: string
+      peak_dbfs:
+        type: number
+    type: object
+  packetlog.Direction:
+    enum:
+      - RX
+      - TX
+      - IS
+    type: string
+    x-enum-comments:
+      DirIS: APRS-IS upload/download (iGate)
+      DirRX: heard on the air
+      DirTX: transmitted by us
+    x-enum-varnames:
+      - DirRX
+      - DirTX
+      - DirIS
+  pttdevice.AvailableDevice:
+    properties:
+      description:
+        description: human-friendly label (USB product, GPIO chip)
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      recommended:
+        description: |-
+          Recommended is true for the device path users should prefer. On macOS
+          we recommend /dev/cu.* over /dev/tty.* (which blocks until DCD).
+        type: boolean
+      type:
+        description: serial, gpio, cm108
+        type: string
+      usb_product:
+        type: string
+      usb_vendor:
+        type: string
+      warning:
+        description: Warning is set when there's a known gotcha with this path.
+        type: string
+    type: object
+  pttdevice.GpioLineInfo:
+    properties:
+      consumer:
+        description: Consumer is the label of the driver currently holding the line, if any.
+        type: string
+      name:
+        description: |-
+          Name is the kernel-assigned line name. May be empty if the line is
+          unnamed on this chip.
+        type: string
+      offset:
+        description: Offset is the 0-indexed line offset within the chip.
+        type: integer
+      used:
+        description: |-
+          Used is true when another driver has claimed this line (e.g. SPI, I2C,
+          UART, or a previously-running graywolf process).
+        type: boolean
+    type: object
+  webapi.IgateSimulationResponse:
+    properties:
+      simulation_mode:
+        type: boolean
+    type: object
+  webapi.IgateToggleRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  webapi.PositionDTO:
+    properties:
+      alt_m:
+        type: number
+      has_alt:
+        type: boolean
+      has_course:
+        type: boolean
+      heading_deg:
+        type: number
+      lat:
+        type: number
+      lon:
+        type: number
+      source:
+        description: '"gps", "fixed", or "none"'
+        type: string
+      speed_kt:
+        type: number
+      timestamp:
+        type: string
+      valid:
+        type: boolean
+    type: object
+  webapi.StationDTO:
+    properties:
+      callsign:
+        description: Callsign is the station or object name (APRS callsign-SSID for stations, object/item name otherwise).
+        type: string
+      channel:
+        description: Channel is the graywolf channel ID that received the most recent packet.
+        type: integer
+      comment:
+        description: Comment is the free-form comment field from the most recent packet.
+        type: string
+      direction:
+        description: 'Direction indicates the source of the most recent packet: "RX" (heard on air), "TX" (sent by us), or "IS" (APRS-IS).'
+        type: string
+      hops:
+        description: Hops is the APRS digipeater hop count (number of H-bit entries in Path).
+        type: integer
+      is_object:
+        description: IsObject is true for APRS objects and items; false for regular stations.
+        type: boolean
+      last_heard:
+        description: LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station.
+        type: string
+      path:
+        description: Path is the raw AX.25 digipeater path from the most recent packet (entries with trailing "*" have the H-bit set).
+        items:
+          type: string
+        type: array
+      path_positions:
+        description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
+        items:
+          items:
+            type: number
+          type: array
+        type: array
+      positions:
+        description: Positions is the station's position history, newest first; static stations have exactly one entry.
+        items:
+          $ref: '#/definitions/webapi.StationPosDTO'
+        type: array
+      symbol_code:
+        description: SymbolCode is the APRS symbol code character within the selected table.
+        type: string
+      symbol_table:
+        description: SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char).
+        type: string
+      via:
+        description: Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets.
+        type: string
+      weather:
+        allOf:
+          - $ref: '#/definitions/webapi.WeatherDTO'
+        description: Weather is optional weather telemetry; present only when include=weather is requested and the station reports weather.
+    type: object
+  webapi.StationPosDTO:
+    properties:
+      alt_m:
+        description: Alt is the reported altitude in meters above mean sea level; omitted when not reported.
+        type: number
+      channel:
+        description: Channel is the graywolf channel ID that received this position packet.
+        type: integer
+      comment:
+        description: Comment is the free-form comment field from this position packet.
+        type: string
+      course:
+        description: Course is the reported course over ground in degrees true (0-359); omitted when not reported.
+        type: integer
+      direction:
+        description: 'Direction indicates the source of this position packet: "RX", "TX", or "IS".'
+        type: string
+      has_alt:
+        description: HasAlt is true when the originating packet reported an altitude.
+        type: boolean
+      hops:
+        description: Hops is the APRS digipeater hop count (number of H-bit entries in Path) for this fix.
+        type: integer
+      lat:
+        description: Lat is the reported latitude in decimal degrees (WGS84, north positive).
+        type: number
+      lon:
+        description: Lon is the reported longitude in decimal degrees (WGS84, east positive).
+        type: number
+      path:
+        description: Path is the AX.25 digipeater path recorded with this position fix.
+        items:
+          type: string
+        type: array
+      path_positions:
+        description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
+        items:
+          items:
+            type: number
+          type: array
+        type: array
+      speed_kt:
+        description: Speed is the reported ground speed in knots; omitted when not reported.
+        type: number
+      timestamp:
+        description: Timestamp is the UTC RFC3339 time the position was received.
+        type: string
+      via:
+        description: Via is the callsign of the last digipeater (H-bit) that forwarded this position packet; empty for direct.
+        type: string
+    type: object
+  webapi.StatusChannel:
+    properties:
+      audio_peak:
+        type: number
+      bit_rate:
+        type: integer
+      dcd_state:
+        type: boolean
+      device_clipping:
+        type: boolean
+      device_peak_dbfs:
+        type: number
+      device_rms_dbfs:
+        type: number
+      id:
+        type: integer
+      input_device_id:
+        type: integer
+      modem_type:
+        type: string
+      name:
+        type: string
+      rx_frames:
+        type: integer
+      tx_frames:
+        type: integer
+    type: object
+  webapi.StatusDTO:
+    properties:
+      channels:
+        description: Channels is the per-channel live status snapshot (frame counters, audio levels).
+        items:
+          $ref: '#/definitions/webapi.StatusChannel'
+        type: array
+      igate:
+        allOf:
+          - $ref: '#/definitions/webapi.StatusIgateDTO'
+        description: Igate is the current iGate session state; omitted when no iGate is configured.
+      uptime_seconds:
+        description: UptimeSeconds is the server process uptime in whole seconds.
+        type: integer
+    type: object
+  webapi.StatusIgateDTO:
+    properties:
+      callsign:
+        description: Callsign is the login callsign-SSID presented to APRS-IS.
+        type: string
+      connected:
+        description: Connected is true while an APRS-IS session is established.
+        type: boolean
+      is_to_rf_gated:
+        description: Downlinked is the cumulative count of IS packets transmitted on RF.
+        type: integer
+      last_connected:
+        description: LastConnected is the UTC RFC3339 timestamp of the most recent successful IS login; omitted if never connected.
+        type: string
+      packets_filtered:
+        description: Filtered is the cumulative count of packets dropped by the filter engine.
+        type: integer
+      rf_to_is_dropped:
+        description: DroppedOffline is the cumulative count of RF packets dropped because the IS session was offline.
+        type: integer
+      rf_to_is_gated:
+        description: Gated is the cumulative count of RF packets forwarded to APRS-IS.
+        type: integer
+      server:
+        description: Server is the APRS-IS host:port currently in use (or last attempted).
+        type: string
+      simulation_mode:
+        description: SimulationMode is true when RF->IS uploads are suppressed for testing.
+        type: boolean
+    type: object
+  webapi.VersionResponse:
+    properties:
+      version:
+        type: string
+    type: object
+  webapi.WeatherDTO:
+    properties:
+      gust_mph:
+        description: WindGust is the peak wind gust in miles per hour; nil when not reported.
+        type: number
+      humidity:
+        description: Humidity is the relative humidity in percent (0-100); nil when not reported.
+        type: integer
+      luminosity_wm2:
+        description: Luminosity is solar radiation in watts per square meter; nil when not reported.
+        type: integer
+      pressure_mb:
+        description: Pressure is the barometric pressure in millibars; nil when not reported.
+        type: number
+      rain_1h_in:
+        description: Rain1h is rainfall in the last hour in inches; nil when not reported.
+        type: number
+      rain_24h_in:
+        description: Rain24h is rainfall in the last 24 hours in inches; nil when not reported.
+        type: number
+      snow_24h_in:
+        description: Snow24h is snowfall in the last 24 hours in inches; nil when not reported.
+        type: number
+      temp_f:
+        description: Temperature is the ambient temperature in degrees Fahrenheit; nil when not reported.
+        type: number
+      wind_dir:
+        description: WindDir is the wind direction in degrees true (0-359); nil when not reported.
+        type: integer
+      wind_mph:
+        description: WindSpeed is the sustained wind speed in miles per hour; nil when not reported.
+        type: number
+    type: object
+  webapi.packetDTO:
+    properties:
+      channel:
+        description: Channel is the graywolf channel ID that observed or transmitted the packet.
+        type: integer
+      decoded:
+        allOf:
+          - $ref: '#/definitions/aprs.DecodedAPRSPacket'
+        description: Decoded is the parsed APRS payload when decoding succeeded; nil otherwise.
+      device:
+        allOf:
+          - $ref: '#/definitions/aprs.DeviceInfo'
+        description: Device is APRS device identification (manufacturer, model) inferred from the TOCALL field; omitted when unknown.
+      direction:
+        allOf:
+          - $ref: '#/definitions/packetlog.Direction'
+        description: 'Direction labels the flow: "RX" (heard on air), "TX" (transmitted by us), or "IS" (APRS-IS upload/download).'
+      display:
+        description: 'Display is a direwolf-style human-readable rendering: "SRC>DEST[,DIGI*]:info".'
+        type: string
+      distance_mi:
+        description: DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable.
+        type: number
+      notes:
+        description: Notes is a short annotation describing how this entry was handled (e.g. "deduped", "rate-limited", "digi consumed WIDE1-1").
+        type: string
+      raw:
+        description: Raw is the on-air AX.25 frame bytes with FCS stripped; omitted for entries without raw framing.
+        items:
+          type: integer
+        type: array
+      source:
+        description: 'Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is".'
+        type: string
+      timestamp:
+        description: Timestamp is the UTC RFC3339 time the packet was recorded.
+        type: string
+      type:
+        description: Type is the APRS packet type (position, message, status, ...) when the payload decoded successfully.
+        type: string
+      via:
+        description: Via is the callsign of the last digipeater that forwarded this packet (H-bit set); empty string for direct packets.
+        type: string
+    type: object
+  webapi.pttCapabilities:
+    properties:
+      platform_supports_gpio:
+        description: |-
+          PlatformSupportsGpio is true on Linux, where the gpiochip v2
+          character-device API is available. The UI consults this flag —
+          not the presence of enumerated chips — to decide whether the
+          GPIO method appears in its dropdown, so a Linux host without
+          any detected chips still shows GPIO with an explained empty
+          state rather than silently omitting the option.
+        type: boolean
+    type: object
+  webauth.LoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  webauth.SetupCreatedResponse:
+    properties:
+      status:
+        type: string
+      username:
+        type: string
+    type: object
+  webauth.SetupRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  webauth.SetupStatusResponse:
+    properties:
+      needs_setup:
+        type: boolean
+    type: object
+  webauth.StatusResponse:
+    properties:
+      status:
+        type: string
+    type: object
+  webtypes.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: REST API for graywolf configuration and control.
+  title: Graywolf Management API
+  version: "1.0"
+tags:
+  - name: channels
+    description: Radio channel configuration.
+  - name: beacons
+    description: Beacon configuration and send-now.
+  - name: audio-devices
+    description: Audio input/output device binding.
+  - name: kiss
+    description: KISS TCP server interfaces.
+  - name: tx-timing
+    description: Per-channel TX timing parameters.
+  - name: ptt
+    description: Push-to-talk device configuration.
+  - name: digipeater
+    description: Digipeater configuration and rules.
+  - name: igate
+    description: Igate configuration, filters, status, and simulation.
+  - name: gps
+    description: GPS source configuration.
+  - name: position-log
+    description: Position logging configuration.
+  - name: agw
+    description: AGW TCP server configuration.
+  - name: packets
+    description: Received packet history.
+  - name: stations
+    description: Station registry derived from received packets.
+  - name: position
+    description: Current station position.
+  - name: auth
+    description: Session login, logout, and first-user setup.
+  - name: version
+    description: Build version and commit hash.
+  - name: status
+    description: Aggregated runtime status for the dashboard.
+  - name: health
+    description: Liveness probe for orchestration.
+paths:
+  /agw:
+    get:
+      operationId: getAgw
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AgwResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get AGW config
+      tags:
+        - agw
+    put:
+      consumes:
+        - application/json
+      operationId: updateAgw
+      parameters:
+        - description: AGW config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AgwRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AgwResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update AGW config
+      tags:
+        - agw
+  /audio-devices:
+    get:
+      operationId: listAudioDevices
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.AudioDeviceResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List audio devices
+      tags:
+        - audio-devices
+    post:
+      consumes:
+        - application/json
+      operationId: createAudioDevice
+      parameters:
+        - description: Audio device definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create audio device
+      tags:
+        - audio-devices
+  /audio-devices/{id}:
+    delete:
+      operationId: deleteAudioDevice
+      parameters:
+        - description: Audio device id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Cascade-delete referencing channels
+          in: query
+          name: cascade
+          type: boolean
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceDeleteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceDeleteConflict'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete audio device
+      tags:
+        - audio-devices
+    get:
+      operationId: getAudioDevice
+      parameters:
+        - description: Audio device id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get audio device
+      tags:
+        - audio-devices
+    put:
+      consumes:
+        - application/json
+      operationId: updateAudioDevice
+      parameters:
+        - description: Audio device id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Audio device definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update audio device
+      tags:
+        - audio-devices
+  /audio-devices/{id}/gain:
+    put:
+      consumes:
+        - application/json
+      operationId: setAudioDeviceGain
+      parameters:
+        - description: Audio device id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Gain setting
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceSetGainRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Set audio device gain
+      tags:
+        - audio-devices
+  /audio-devices/{id}/test-tone:
+    post:
+      operationId: playTestTone
+      parameters:
+        - description: Audio device id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TestToneResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Play test tone on audio device
+      tags:
+        - audio-devices
+  /audio-devices/available:
+    get:
+      operationId: listAvailableAudioDevices
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/modembridge.AvailableDevice'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List available audio devices
+      tags:
+        - audio-devices
+  /audio-devices/levels:
+    get:
+      operationId: getAudioDeviceLevels
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AudioDeviceLevelsResponse'
+      security:
+        - CookieAuth: []
+      summary: Get audio device levels
+      tags:
+        - audio-devices
+  /audio-devices/scan-levels:
+    post:
+      operationId: scanAudioDeviceLevels
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/modembridge.InputLevel'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Scan audio device input levels
+      tags:
+        - audio-devices
+  /auth/login:
+    post:
+      consumes:
+        - application/json
+      operationId: login
+      parameters:
+        - description: Credentials
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/webauth.LoginRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: Session cookie
+              type: string
+          schema:
+            $ref: '#/definitions/webauth.StatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      summary: Log in
+      tags:
+        - auth
+  /auth/logout:
+    post:
+      operationId: logout
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: Cleared session cookie
+              type: string
+          schema:
+            $ref: '#/definitions/webauth.StatusResponse'
+      summary: Log out
+      tags:
+        - auth
+  /auth/setup:
+    get:
+      operationId: getSetupStatus
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webauth.SetupStatusResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      summary: Get first-run setup status
+      tags:
+        - auth
+    post:
+      consumes:
+        - application/json
+      operationId: createFirstUser
+      parameters:
+        - description: Credentials for the first administrator
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/webauth.SetupRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/webauth.SetupCreatedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      summary: Create first-run user
+      tags:
+        - auth
+  /beacons:
+    get:
+      operationId: listBeacons
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.BeaconResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List beacons
+      tags:
+        - beacons
+    post:
+      consumes:
+        - application/json
+      operationId: createBeacon
+      parameters:
+        - description: Beacon definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BeaconRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.BeaconResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create beacon
+      tags:
+        - beacons
+  /beacons/{id}:
+    delete:
+      operationId: deleteBeacon
+      parameters:
+        - description: Beacon id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete beacon
+      tags:
+        - beacons
+    get:
+      operationId: getBeacon
+      parameters:
+        - description: Beacon id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BeaconResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get beacon
+      tags:
+        - beacons
+    put:
+      consumes:
+        - application/json
+      operationId: updateBeacon
+      parameters:
+        - description: Beacon id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Beacon definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BeaconRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BeaconResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update beacon
+      tags:
+        - beacons
+  /beacons/{id}/send:
+    post:
+      operationId: sendBeacon
+      parameters:
+        - description: Beacon id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BeaconSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Send beacon now
+      tags:
+        - beacons
+  /channels:
+    get:
+      operationId: listChannels
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.ChannelResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List channels
+      tags:
+        - channels
+    post:
+      consumes:
+        - application/json
+      operationId: createChannel
+      parameters:
+        - description: Channel definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ChannelRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.ChannelResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create channel
+      tags:
+        - channels
+  /channels/{id}:
+    delete:
+      operationId: deleteChannel
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete channel
+      tags:
+        - channels
+    get:
+      operationId: getChannel
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ChannelResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get channel
+      tags:
+        - channels
+    put:
+      consumes:
+        - application/json
+      operationId: updateChannel
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Channel definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ChannelRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ChannelResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update channel
+      tags:
+        - channels
+  /channels/{id}/stats:
+    get:
+      operationId: getChannelStats
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/modembridge.ChannelStats'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get channel stats
+      tags:
+        - channels
+  /digipeater:
+    get:
+      operationId: getDigipeaterConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.DigipeaterConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get digipeater config
+      tags:
+        - digipeater
+    put:
+      consumes:
+        - application/json
+      operationId: updateDigipeaterConfig
+      parameters:
+        - description: Digipeater config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.DigipeaterConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.DigipeaterConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update digipeater config
+      tags:
+        - digipeater
+  /digipeater/rules:
+    get:
+      operationId: listDigipeaterRules
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.DigipeaterRuleResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List digipeater rules
+      tags:
+        - digipeater
+    post:
+      consumes:
+        - application/json
+      operationId: createDigipeaterRule
+      parameters:
+        - description: Digipeater rule definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.DigipeaterRuleRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.DigipeaterRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create digipeater rule
+      tags:
+        - digipeater
+  /digipeater/rules/{id}:
+    delete:
+      operationId: deleteDigipeaterRule
+      parameters:
+        - description: Digipeater rule id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete digipeater rule
+      tags:
+        - digipeater
+    put:
+      consumes:
+        - application/json
+      operationId: updateDigipeaterRule
+      parameters:
+        - description: Digipeater rule id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Digipeater rule definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.DigipeaterRuleRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.DigipeaterRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update digipeater rule
+      tags:
+        - digipeater
+  /gps:
+    get:
+      operationId: getGps
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GPSResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get GPS config
+      tags:
+        - gps
+    put:
+      consumes:
+        - application/json
+      operationId: updateGps
+      parameters:
+        - description: GPS config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.GPSRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GPSResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update GPS config
+      tags:
+        - gps
+  /gps/available:
+    get:
+      operationId: listAvailableGps
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/gps.SerialPortInfo'
+            type: array
+      security:
+        - CookieAuth: []
+      summary: List available GPS serial ports
+      tags:
+        - gps
+  /health:
+    get:
+      operationId: getHealth
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.HealthResponse'
+      summary: Health check
+      tags:
+        - health
+  /igate:
+    get:
+      operationId: getIgateStatus
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/igate.Status'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get igate status
+      tags:
+        - igate
+  /igate/config:
+    get:
+      operationId: getIgateConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.IGateConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get igate config
+      tags:
+        - igate
+    put:
+      consumes:
+        - application/json
+      operationId: updateIgateConfig
+      parameters:
+        - description: Igate config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.IGateConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.IGateConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update igate config
+      tags:
+        - igate
+  /igate/filters:
+    get:
+      operationId: listIgateFilters
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.IGateRfFilterResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List igate RF filters
+      tags:
+        - igate
+    post:
+      consumes:
+        - application/json
+      operationId: createIgateFilter
+      parameters:
+        - description: Igate RF filter definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.IGateRfFilterRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.IGateRfFilterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create igate RF filter
+      tags:
+        - igate
+  /igate/filters/{id}:
+    delete:
+      operationId: deleteIgateFilter
+      parameters:
+        - description: Igate RF filter id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete igate RF filter
+      tags:
+        - igate
+    put:
+      consumes:
+        - application/json
+      operationId: updateIgateFilter
+      parameters:
+        - description: Igate RF filter id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Igate RF filter definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.IGateRfFilterRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.IGateRfFilterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update igate RF filter
+      tags:
+        - igate
+  /igate/simulation:
+    post:
+      consumes:
+        - application/json
+      description: |-
+        When enabled, the igate logs packets it would have sent
+        (RF-to-APRS-IS gating and IS-to-RF beacons) instead of
+        transmitting them. Useful for validating filter rules
+        and bandwidth behaviour before going live.
+      operationId: setIgateSimulation
+      parameters:
+        - description: Desired simulation mode
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/webapi.IgateToggleRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.IgateSimulationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Toggle igate simulation mode
+      tags:
+        - igate
+  /kiss:
+    get:
+      operationId: listKiss
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.KissResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List KISS interfaces
+      tags:
+        - kiss
+    post:
+      consumes:
+        - application/json
+      operationId: createKiss
+      parameters:
+        - description: KISS interface definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.KissRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.KissResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create KISS interface
+      tags:
+        - kiss
+  /kiss/{id}:
+    delete:
+      operationId: deleteKiss
+      parameters:
+        - description: KISS interface id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete KISS interface
+      tags:
+        - kiss
+    get:
+      operationId: getKiss
+      parameters:
+        - description: KISS interface id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.KissResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get KISS interface
+      tags:
+        - kiss
+    put:
+      consumes:
+        - application/json
+      operationId: updateKiss
+      parameters:
+        - description: KISS interface id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: KISS interface definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.KissRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.KissResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update KISS interface
+      tags:
+        - kiss
+  /packets:
+    get:
+      operationId: listPackets
+      parameters:
+        - description: Only entries at or after this RFC3339 timestamp
+          in: query
+          name: since
+          type: string
+        - description: Filter by Entry.Source (e.g. rf, is)
+          in: query
+          name: source
+          type: string
+        - description: Filter by APRS packet type (Entry.Type)
+          in: query
+          name: type
+          type: string
+        - description: Filter by direction (RX|TX|IS)
+          in: query
+          name: direction
+          type: string
+        - description: Filter by channel number
+          in: query
+          name: channel
+          type: integer
+        - description: Cap result count (non-negative)
+          in: query
+          name: limit
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/webapi.packetDTO'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List packets
+      tags:
+        - packets
+  /position:
+    get:
+      operationId: getPosition
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.PositionDTO'
+      security:
+        - CookieAuth: []
+      summary: Get station position
+      tags:
+        - position
+  /position-log:
+    get:
+      operationId: getPositionLog
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PositionLogResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get position log config
+      tags:
+        - position-log
+    put:
+      consumes:
+        - application/json
+      operationId: updatePositionLog
+      parameters:
+        - description: Position log config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.PositionLogRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PositionLogResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update position log config
+      tags:
+        - position-log
+  /ptt:
+    get:
+      operationId: listPttConfigs
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.PttResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List PTT configs
+      tags:
+        - ptt
+    post:
+      consumes:
+        - application/json
+      operationId: upsertPttConfig
+      parameters:
+        - description: PTT config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.PttRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.PttResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Upsert PTT config
+      tags:
+        - ptt
+  /ptt/{channel}:
+    delete:
+      operationId: deletePttConfig
+      parameters:
+        - description: Channel id
+          in: path
+          name: channel
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete PTT config
+      tags:
+        - ptt
+    get:
+      operationId: getPttConfig
+      parameters:
+        - description: Channel id
+          in: path
+          name: channel
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PttResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get PTT config
+      tags:
+        - ptt
+    put:
+      consumes:
+        - application/json
+      operationId: updatePttConfig
+      parameters:
+        - description: Channel id
+          in: path
+          name: channel
+          required: true
+          type: integer
+        - description: PTT config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.PttRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PttResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update PTT config
+      tags:
+        - ptt
+  /ptt/available:
+    get:
+      operationId: listPttDevices
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pttdevice.AvailableDevice'
+            type: array
+      security:
+        - CookieAuth: []
+      summary: List PTT devices
+      tags:
+        - ptt
+  /ptt/capabilities:
+    get:
+      operationId: getPttCapabilities
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.pttCapabilities'
+      security:
+        - CookieAuth: []
+      summary: Get PTT capabilities
+      tags:
+        - ptt
+  /ptt/gpio-chips/{chip}/lines:
+    get:
+      operationId: listGpioLines
+      parameters:
+        - description: URL-encoded gpiochip device path (e.g. %2Fdev%2Fgpiochip0)
+          in: path
+          name: chip
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pttdevice.GpioLineInfo'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List GPIO lines
+      tags:
+        - ptt
+  /ptt/test-rigctld:
+    post:
+      consumes:
+        - application/json
+      operationId: testRigctld
+      parameters:
+        - description: rigctld endpoint
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TestRigctldRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TestRigctldResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Test rigctld connection
+      tags:
+        - ptt
+  /stations:
+    get:
+      operationId: listStations
+      parameters:
+        - description: Bounding box as sw_lat,sw_lon,ne_lat,ne_lon
+          in: query
+          name: bbox
+          required: true
+          type: string
+        - description: Lookback window in seconds (default 3600)
+          in: query
+          name: timerange
+          type: integer
+        - description: 'Delta mode: only stations heard at or after this RFC3339Nano timestamp'
+          in: query
+          name: since
+          type: string
+        - description: 'Comma-separated extras (currently: weather)'
+          in: query
+          name: include
+          type: string
+        - description: ETag from a prior response; returns 304 on match
+          in: header
+          name: If-None-Match
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/webapi.StationDTO'
+            type: array
+        "304":
+          description: Not Modified
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List stations
+      tags:
+        - stations
+  /status:
+    get:
+      operationId: getStatus
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.StatusDTO'
+      security:
+        - CookieAuth: []
+      summary: System status dashboard
+      tags:
+        - status
+  /tx-timing:
+    get:
+      operationId: listTxTiming
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.TxTimingResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List tx-timing records
+      tags:
+        - tx-timing
+    post:
+      consumes:
+        - application/json
+      operationId: createTxTiming
+      parameters:
+        - description: Tx-timing definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TxTimingRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.TxTimingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Upsert tx-timing record
+      tags:
+        - tx-timing
+  /tx-timing/{id}:
+    get:
+      operationId: getTxTiming
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TxTimingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get tx-timing record
+      tags:
+        - tx-timing
+    put:
+      consumes:
+        - application/json
+      operationId: updateTxTiming
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Tx-timing definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TxTimingRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TxTimingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update tx-timing record
+      tags:
+        - tx-timing
+  /version:
+    get:
+      operationId: getVersion
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.VersionResponse'
+      summary: Get server version
+      tags:
+        - version
+schemes:
+  - http
+securityDefinitions:
+  CookieAuth:
+    description: |-
+      Session cookie issued by POST /api/auth/login.
+      Swagger 2.0 lacks a native `in: cookie` apiKey
+      location, so the spec models the same credential
+      as a `Cookie:` request header. Browsers send this
+      automatically once the session cookie is set; the
+      session cookie is named `graywolf_session`.
+    in: header
+    name: Cookie
+    type: apiKey
+swagger: "2.0"

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/modembridge"
 )
 
 // AudioDeviceRequest is the body accepted by POST /api/audio-devices
@@ -89,3 +90,55 @@ func AudioDevicesFromModels(ms []configstore.AudioDevice) []AudioDeviceResponse 
 	}
 	return out
 }
+
+// AudioDeviceDeleteResponse is the body returned by
+// DELETE /api/audio-devices/{id} on success. Deleted lists the
+// channels that were removed alongside the device when cascade was
+// requested; empty when the device had no referencing channels.
+type AudioDeviceDeleteResponse struct {
+	Deleted []ChannelResponse `json:"deleted"`
+}
+
+// AudioDeviceDeleteConflict is the body returned by
+// DELETE /api/audio-devices/{id} with a 409 when the device is
+// referenced by one or more channels and the caller did not request
+// cascade deletion. The channels slice lists the referencing channels
+// so the UI can surface them in the confirm dialog.
+//
+// Wire shape matches the pre-typed `map[string]any{"error": ..., "channels": ...}`
+// literal previously emitted by the handler — byte-identical when the
+// slice fields are populated the same way.
+type AudioDeviceDeleteConflict struct {
+	Error    string            `json:"error"`
+	Channels []ChannelResponse `json:"channels"`
+}
+
+// AudioDeviceSetGainRequest is the body for PUT /api/audio-devices/{id}/gain.
+type AudioDeviceSetGainRequest struct {
+	GainDB float32 `json:"gain_db"`
+}
+
+// Validate enforces the same gain window as AudioDeviceRequest so the
+// live-update path can't install a value the create/update path would
+// reject.
+func (r AudioDeviceSetGainRequest) Validate() error {
+	if r.GainDB < -60 || r.GainDB > 12 {
+		return fmt.Errorf("gain_db must be between -60 and +12")
+	}
+	return nil
+}
+
+// TestToneResponse is the body returned by POST /api/audio-devices/{id}/test-tone
+// on success. Preserves the pre-typed `{"status":"ok"}` wire shape.
+type TestToneResponse struct {
+	Status string `json:"status"`
+}
+
+// AudioDeviceLevelsResponse is the body returned by
+// GET /api/audio-devices/levels — a map from device id to the latest
+// cached peak/rms/clipping measurement. Swag cannot render a keyed
+// map[uint32]*T directly in a Swagger 2.0 definition, so the response
+// is documented as {object} and the TypeScript client represents it as
+// Record<string, modembridge.DeviceLevel> (JSON object keys are always
+// strings on the wire).
+type AudioDeviceLevelsResponse map[uint32]*modembridge.DeviceLevel

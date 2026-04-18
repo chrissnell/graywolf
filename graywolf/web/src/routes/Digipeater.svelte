@@ -127,14 +127,15 @@
   ];
 
   onMount(async () => {
+    // GET /digipeater always returns 200 with defaults on a fresh
+    // install; the zero-value DTO produces enabled=false, my_call="",
+    // dedupe_window_seconds=0 → fall back to DEFAULT_DEDUPE_SECONDS.
     const data = await api.get('/digipeater');
-    if (data) {
-      config = {
-        enabled: !!data.enabled,
-        my_call: data.my_call || '',
-        dedupe_window_seconds: String(data.dedupe_window_seconds ?? DEFAULT_DEDUPE_SECONDS),
-      };
-    }
+    config = {
+      enabled: !!data.enabled,
+      my_call: data.my_call || '',
+      dedupe_window_seconds: String(data.dedupe_window_seconds || DEFAULT_DEDUPE_SECONDS),
+    };
     rules = await api.get('/digipeater/rules') || [];
     channels = await api.get('/channels') || [];
   });

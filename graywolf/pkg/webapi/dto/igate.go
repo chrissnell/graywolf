@@ -6,6 +6,23 @@ import (
 	"github.com/chrissnell/graywolf/pkg/configstore"
 )
 
+// First-run defaults seeded into the response DTO when the source model
+// field is the Go zero value. These mirror the gorm column defaults on
+// configstore.IGateConfig so GET /api/igate/config on a fresh install
+// (empty store) returns a populated, UI-ready config. Users who
+// explicitly save these fields as zero will see them overwritten on the
+// next GET; this is acceptable for singleton config where "no row yet"
+// and "saved as zero" are not meaningfully distinguishable anyway.
+const (
+	DefaultIGateServer          = "rotate.aprs2.net"
+	DefaultIGatePort            = 14580
+	DefaultIGateRfChannel       = 1
+	DefaultIGateMaxMsgHops      = 2
+	DefaultIGateSoftwareName    = "graywolf"
+	DefaultIGateSoftwareVersion = "0.1"
+	DefaultIGateTxChannel       = 1
+)
+
 // IGateConfigRequest is the body accepted by PUT /api/igate/config.
 type IGateConfigRequest struct {
 	Enabled         bool   `json:"enabled"`
@@ -51,23 +68,51 @@ type IGateConfigResponse struct {
 }
 
 func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
+	server := m.Server
+	if server == "" {
+		server = DefaultIGateServer
+	}
+	port := m.Port
+	if port == 0 {
+		port = DefaultIGatePort
+	}
+	rfChannel := m.RfChannel
+	if rfChannel == 0 {
+		rfChannel = DefaultIGateRfChannel
+	}
+	maxMsgHops := m.MaxMsgHops
+	if maxMsgHops == 0 {
+		maxMsgHops = DefaultIGateMaxMsgHops
+	}
+	softwareName := m.SoftwareName
+	if softwareName == "" {
+		softwareName = DefaultIGateSoftwareName
+	}
+	softwareVersion := m.SoftwareVersion
+	if softwareVersion == "" {
+		softwareVersion = DefaultIGateSoftwareVersion
+	}
+	txChannel := m.TxChannel
+	if txChannel == 0 {
+		txChannel = DefaultIGateTxChannel
+	}
 	return IGateConfigResponse{
 		ID: m.ID,
 		IGateConfigRequest: IGateConfigRequest{
 			Enabled:         m.Enabled,
-			Server:          m.Server,
-			Port:            m.Port,
+			Server:          server,
+			Port:            port,
 			Callsign:        m.Callsign,
 			Passcode:        m.Passcode,
 			ServerFilter:    m.ServerFilter,
 			SimulationMode:  m.SimulationMode,
 			GateRfToIs:      m.GateRfToIs,
 			GateIsToRf:      m.GateIsToRf,
-			RfChannel:       m.RfChannel,
-			MaxMsgHops:      m.MaxMsgHops,
-			SoftwareName:    m.SoftwareName,
-			SoftwareVersion: m.SoftwareVersion,
-			TxChannel:       m.TxChannel,
+			RfChannel:       rfChannel,
+			MaxMsgHops:      maxMsgHops,
+			SoftwareName:    softwareName,
+			SoftwareVersion: softwareVersion,
+			TxChannel:       txChannel,
 		},
 	}
 }

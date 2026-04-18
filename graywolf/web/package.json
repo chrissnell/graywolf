@@ -6,11 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api:generate": "node scripts/generate-api.mjs",
+    "api:check": "tsc --noEmit -p src/api/tsconfig.json"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "openapi-typescript": "7.13.0",
     "svelte": "^5.0.0",
+    "swagger2openapi": "7.0.8",
+    "typescript": "5.7.2",
     "vite": "^5.4.0"
   },
   "dependencies": {
@@ -18,6 +23,13 @@
     "@internationalized/date": "^3.8.0",
     "bits-ui": "^2.0.0",
     "leaflet": "^1.9.4",
+    "openapi-fetch": "0.17.0",
     "svelte-spa-router": "^4.0.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "4.60.1",
+    "@rollup/rollup-darwin-x64": "4.60.1",
+    "@rollup/rollup-linux-arm64-gnu": "4.60.1",
+    "@rollup/rollup-linux-x64-gnu": "4.60.1"
   }
 }

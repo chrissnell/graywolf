@@ -2,8 +2,9 @@ package webauth
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
+
+	"github.com/chrissnell/graywolf/pkg/webtypes"
 )
 
 type contextKey int
@@ -52,8 +53,10 @@ func (s *AuthStore) getUserByID(ctx context.Context, id uint32) (*WebUser, error
 	return &u, nil
 }
 
+// jsonError writes a typed webtypes.ErrorResponse envelope using the
+// package's writeJSON helper. The helper handles Content-Type, status,
+// and logs any encode failure via slog.Default (middleware has no
+// *Handlers receiver from which to pull a configured logger).
 func jsonError(w http.ResponseWriter, code int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	writeJSON(nil, w, code, webtypes.ErrorResponse{Error: message})
 }

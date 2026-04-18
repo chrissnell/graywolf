@@ -48,30 +48,35 @@
   ];
 
   onMount(async () => {
+    // GET /igate/config always returns 200 with defaults on a fresh
+    // install. The DTO constructor server-side seeds non-empty defaults
+    // for string/numeric fields (server, port, software_name, etc.) so
+    // no UI-side || fallbacks are needed. Booleans still use ??
+    // because the server can't distinguish "unset" from "explicit
+    // false", and tx_channel falls back to the first available channel
+    // since the default only makes sense relative to the live list.
     const [data, chList] = await Promise.all([
       api.get('/igate/config'),
       api.get('/channels'),
     ]);
     channels = chList || [];
-    if (data) {
-      const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
-      form = {
-        enabled: data.enabled ?? false,
-        server: data.server ?? 'rotate.aprs2.net',
-        port: String(data.port ?? 14580),
-        callsign: data.callsign ?? '',
-        passcode: data.passcode ?? '',
-        server_filter: data.server_filter ?? '',
-        tx_channel: data.tx_channel || defaultCh,
-        simulation_mode: data.simulation_mode ?? false,
-        gate_rf_to_is: data.gate_rf_to_is ?? true,
-        gate_is_to_rf: data.gate_is_to_rf ?? false,
-        rf_channel: data.rf_channel ?? 1,
-        max_msg_hops: data.max_msg_hops ?? 2,
-        software_name: data.software_name ?? 'graywolf',
-        software_version: data.software_version ?? '0.1',
-      };
-    }
+    const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
+    form = {
+      enabled: data.enabled ?? false,
+      server: data.server,
+      port: String(data.port),
+      callsign: data.callsign ?? '',
+      passcode: data.passcode ?? '',
+      server_filter: data.server_filter ?? '',
+      tx_channel: data.tx_channel || defaultCh,
+      simulation_mode: data.simulation_mode ?? false,
+      gate_rf_to_is: data.gate_rf_to_is ?? true,
+      gate_is_to_rf: data.gate_is_to_rf ?? false,
+      rf_channel: data.rf_channel,
+      max_msg_hops: data.max_msg_hops,
+      software_name: data.software_name,
+      software_version: data.software_version,
+    };
     filters = await api.get('/igate/filters') || [];
   });
 
@@ -122,12 +127,14 @@
 
   async function handleFilterSave() {
     if (!validateFilter()) return;
+    // Strip fields not in IGateRfFilterRequest DTO (backend rejects unknown fields)
+    const { id: _id, ...data } = filterForm;
     try {
       if (editing) {
-        await api.put(`/igate/filters/${editing.id}`, filterForm);
+        await api.put(`/igate/filters/${editing.id}`, data);
         toasts.success('Filter updated');
       } else {
-        await api.post('/igate/filters', filterForm);
+        await api.post('/igate/filters', data);
         toasts.success('Filter created');
       }
       modalOpen = false;

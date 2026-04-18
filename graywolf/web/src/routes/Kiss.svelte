@@ -46,6 +46,8 @@
 
   async function handleSave() {
     const data = { ...form, tcp_port: parseInt(form.tcp_port), baud_rate: parseInt(form.baud_rate), channel: parseInt(form.channel) };
+    // Strip fields not in KissRequest DTO (backend rejects unknown fields)
+    delete data.id;
     try {
       if (editing) {
         await api.put(`/kiss/${editing.id}`, data);

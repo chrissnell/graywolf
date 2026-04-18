@@ -15,9 +15,12 @@ import (
 // packetDTO enriches a packet log entry with device identification and distance.
 type packetDTO struct {
 	packetlog.Entry
-	Device     *aprs.DeviceInfo `json:"device,omitempty"`
-	DistanceMi *float64         `json:"distance_mi,omitempty"`
-	Via        string           `json:"via,omitempty"` // "" = direct, "CALL" = via digipeater
+	// Device is APRS device identification (manufacturer, model) inferred from the TOCALL field; omitted when unknown.
+	Device *aprs.DeviceInfo `json:"device,omitempty"`
+	// DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable.
+	DistanceMi *float64 `json:"distance_mi,omitempty"`
+	// Via is the callsign of the last digipeater that forwarded this packet (H-bit set); empty string for direct packets.
+	Via string `json:"via,omitempty"`
 }
 
 // RegisterPackets installs a GET /api/packets handler backed by the
@@ -25,74 +28,90 @@ type packetDTO struct {
 // /api/packets so this helper can own the route without triggering a
 // net/http ServeMux duplicate-pattern panic.
 //
-// Query parameters:
+// Signature shape (mux second) is shared with every out-of-band
+// RegisterXxx in this package — see RegisterPosition, RegisterIgate,
+// RegisterStations. Keep callers consistent.
 //
-//	since=RFC3339  only entries at or after this timestamp
-//	source=KIND    filter by Entry.Source
-//	type=TYPE      filter by Entry.Type (APRS packet type)
-//	direction=RX|TX|IS
-//	channel=N      filter by channel
-//	limit=N        cap result count
-func RegisterPackets(srv *Server, log *packetlog.Log, posCache gps.PositionCache) func(mux *http.ServeMux) {
-	return func(mux *http.ServeMux) {
-		mux.HandleFunc("/api/packets", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+// Operation IDs in the swag annotation blocks below are frozen against
+// constants in pkg/webapi/docs/op_ids.go; `make docs-lint` enforces the
+// correspondence.
+func RegisterPackets(srv *Server, mux *http.ServeMux, log *packetlog.Log, posCache gps.PositionCache) {
+	_ = srv // kept in signature for consistency with other RegisterXxx
+	mux.HandleFunc("GET /api/packets", listPackets(log, posCache))
+}
+
+// listPackets returns recent APRS packets from the in-memory packet log.
+// Results are enriched with tocall-derived device info and, when a local
+// station position is known, haversine distance from the receiver.
+//
+// @Summary  List packets
+// @Tags     packets
+// @ID       listPackets
+// @Produce  json
+// @Param    since     query string false "Only entries at or after this RFC3339 timestamp"
+// @Param    source    query string false "Filter by Entry.Source (e.g. rf, is)"
+// @Param    type      query string false "Filter by APRS packet type (Entry.Type)"
+// @Param    direction query string false "Filter by direction (RX|TX|IS)"
+// @Param    channel   query int    false "Filter by channel number"
+// @Param    limit     query int    false "Cap result count (non-negative)"
+// @Success  200 {array}  webapi.packetDTO
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /packets [get]
+func listPackets(log *packetlog.Log, posCache gps.PositionCache) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		f := packetlog.Filter{
+			Source:    q.Get("source"),
+			Type:      q.Get("type"),
+			Direction: packetlog.Direction(q.Get("direction")),
+			Channel:   -1,
+		}
+		if s := q.Get("since"); s != "" {
+			t, err := time.Parse(time.RFC3339, s)
+			if err != nil {
+				badRequest(w, "bad since (expected RFC3339)")
 				return
 			}
-			q := r.URL.Query()
-			f := packetlog.Filter{
-				Source:    q.Get("source"),
-				Type:      q.Get("type"),
-				Direction: packetlog.Direction(q.Get("direction")),
-				Channel:   -1,
+			f.Since = t
+		}
+		if s := q.Get("channel"); s != "" {
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				badRequest(w, "bad channel")
+				return
 			}
-			if s := q.Get("since"); s != "" {
-				t, err := time.Parse(time.RFC3339, s)
-				if err != nil {
-					http.Error(w, "bad since (expected RFC3339)", http.StatusBadRequest)
-					return
-				}
-				f.Since = t
+			f.Channel = n
+		}
+		if s := q.Get("limit"); s != "" {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 0 {
+				badRequest(w, "bad limit")
+				return
 			}
-			if s := q.Get("channel"); s != "" {
-				n, err := strconv.Atoi(s)
-				if err != nil {
-					http.Error(w, "bad channel", http.StatusBadRequest)
-					return
-				}
-				f.Channel = n
-			}
-			if s := q.Get("limit"); s != "" {
-				n, err := strconv.Atoi(s)
-				if err != nil || n < 0 {
-					http.Error(w, "bad limit", http.StatusBadRequest)
-					return
-				}
-				f.Limit = n
-			}
-			entries := log.Query(f)
+			f.Limit = n
+		}
+		entries := log.Query(f)
 
-			// Get our station position for distance calc
-			var myLat, myLon float64
-			var havePos bool
-			if posCache != nil {
-				fix, ok := posCache.Get()
-				if ok && fix.Latitude != 0 && fix.Longitude != 0 {
-					myLat, myLon = fix.Latitude, fix.Longitude
-					havePos = true
-				}
+		// Get our station position for distance calc
+		var myLat, myLon float64
+		var havePos bool
+		if posCache != nil {
+			fix, ok := posCache.Get()
+			if ok && fix.Latitude != 0 && fix.Longitude != 0 {
+				myLat, myLon = fix.Latitude, fix.Longitude
+				havePos = true
 			}
+		}
 
-			out := make([]packetDTO, len(entries))
-			for i := range entries {
-				out[i].Entry = entries[i]
-				enrichPacket(&out[i], havePos, myLat, myLon)
-			}
+		out := make([]packetDTO, len(entries))
+		for i := range entries {
+			out[i].Entry = entries[i]
+			enrichPacket(&out[i], havePos, myLat, myLon)
+		}
 
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(out)
-		})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
 	}
 }
 

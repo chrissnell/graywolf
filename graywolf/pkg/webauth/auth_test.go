@@ -193,7 +193,7 @@ func TestMiddleware(t *testing.T) {
 
 	// Bad cookie → 401
 	req = httptest.NewRequest("GET", "/api/test", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "bad-token"})
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "bad-token"})
 	rec = httptest.NewRecorder()
 	protected.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -202,7 +202,7 @@ func TestMiddleware(t *testing.T) {
 
 	// Valid cookie → 200
 	req = httptest.NewRequest("GET", "/api/test", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "valid-token"})
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "valid-token"})
 	rec = httptest.NewRecorder()
 	protected.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -218,7 +218,7 @@ func TestFirstRunSetup(t *testing.T) {
 	body, _ := json.Marshal(setupRequest{Username: "admin", Password: "secret"})
 	req := httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
-	h.HandleSetup(rec, req)
+	h.CreateFirstUser(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -227,7 +227,7 @@ func TestFirstRunSetup(t *testing.T) {
 	body, _ = json.Marshal(setupRequest{Username: "hacker", Password: "evil"})
 	req = httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
-	h.HandleSetup(rec, req)
+	h.CreateFirstUser(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", rec.Code)
 	}
@@ -261,7 +261,7 @@ func TestLoginLogout(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	var sessionCookieValue string
 	for _, c := range cookies {
-		if c.Name == "session" {
+		if c.Name == sessionCookie {
 			sessionCookieValue = c.Value
 			if !c.HttpOnly {
 				t.Fatal("session cookie should be HttpOnly")
@@ -274,7 +274,7 @@ func TestLoginLogout(t *testing.T) {
 
 	// Logout should clear cookie
 	req = httptest.NewRequest("POST", "/api/auth/logout", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: sessionCookieValue})
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: sessionCookieValue})
 	rec = httptest.NewRecorder()
 	h.HandleLogout(rec, req)
 	if rec.Code != http.StatusOK {
@@ -369,10 +369,10 @@ func TestCreateFirstUserConcurrent(t *testing.T) {
 	}
 }
 
-// TestHandleSetupErrorSanitization confirms that a second setup attempt
+// TestCreateFirstUserErrorSanitization confirms that a second setup attempt
 // returns a clean "setup already completed" error body — not a leaked DB
 // message like a UNIQUE constraint violation.
-func TestHandleSetupErrorSanitization(t *testing.T) {
+func TestCreateFirstUserErrorSanitization(t *testing.T) {
 	s := testAuthStore(t)
 	h := &Handlers{Auth: s}
 
@@ -384,7 +384,7 @@ func TestHandleSetupErrorSanitization(t *testing.T) {
 	body, _ := json.Marshal(setupRequest{Username: "newbie", Password: "secret"})
 	req := httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
-	h.HandleSetup(rec, req)
+	h.CreateFirstUser(rec, req)
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())

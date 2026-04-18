@@ -43,7 +43,7 @@ func (m *mockStationCache) Gen() uint64 { return m.gen }
 
 func stationsHandler(cache StationCache) http.Handler {
 	mux := http.NewServeMux()
-	RegisterStations(cache)(mux)
+	RegisterStations(nil, mux, cache)
 	return mux
 }
 

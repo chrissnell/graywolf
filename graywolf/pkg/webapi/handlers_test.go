@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 type testPayload struct {
@@ -210,10 +213,59 @@ func TestHandleGet_NotFoundMaps404(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 
 	get := func(_ context.Context, _ uint32) (fakeModel, error) {
-		return fakeModel{}, errors.New("record not found")
+		return fakeModel{}, gorm.ErrRecordNotFound
 	}
 
-	handleGet[fakeModel](srv, rec, req, 1, get, fakeToResp)
+	handleGet[fakeModel](srv, rec, req, "get fake", 1, get, fakeToResp)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+// TestHandleGet_NonNotFoundErrorReturns500 proves the handler no longer
+// masks every store error as 404. A synthetic non-gorm error (e.g. a
+// connection failure) must surface as 500 with a sanitized body and the
+// real error must reach the logger via internalError.
+func TestHandleGet_NonNotFoundErrorReturns500(t *testing.T) {
+	var logBuf bytes.Buffer
+	srv := &Server{logger: slog.New(slog.NewTextHandler(&logBuf, nil))}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+
+	const secret = "db connection failed: dial tcp 127.0.0.1:5432: connect: connection refused"
+	get := func(_ context.Context, _ uint32) (fakeModel, error) {
+		return fakeModel{}, errors.New(secret)
+	}
+
+	handleGet[fakeModel](srv, rec, req, "get fake", 1, get, fakeToResp)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "internal error" {
+		t.Errorf("response leaked store error: %q", body["error"])
+	}
+	if !strings.Contains(logBuf.String(), secret) {
+		t.Error("logger did not receive real error")
+	}
+}
+
+// TestHandleGet_WrappedNotFoundMaps404 confirms errors.Is traversal —
+// the store wraps gorm.ErrRecordNotFound with fmt.Errorf and we must
+// still return 404 for wrapped instances.
+func TestHandleGet_WrappedNotFoundMaps404(t *testing.T) {
+	srv := newTestSrv()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+
+	get := func(_ context.Context, _ uint32) (fakeModel, error) {
+		return fakeModel{}, fmt.Errorf("lookup channel: %w", gorm.ErrRecordNotFound)
+	}
+
+	handleGet[fakeModel](srv, rec, req, "get fake", 1, get, fakeToResp)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)

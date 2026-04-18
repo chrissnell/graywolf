@@ -20,19 +20,39 @@ type PositionDTO struct {
 	Timestamp string  `json:"timestamp,omitempty"`
 }
 
-// RegisterPosition installs GET /api/position on the Server's mux.
-func RegisterPosition(srv *Server, pos *gps.StationPos, mux *http.ServeMux) {
+// RegisterPosition installs GET /api/position on the Server's mux using
+// a Go 1.22+ method-scoped pattern.
+//
+// Signature shape (mux second) is shared with every out-of-band
+// RegisterXxx in this package — see RegisterPackets, RegisterIgate,
+// RegisterStations. Keep callers consistent.
+//
+// Operation IDs in the swag annotation blocks below are frozen against
+// constants in pkg/webapi/docs/op_ids.go; `make docs-lint` enforces the
+// correspondence.
+func RegisterPosition(srv *Server, mux *http.ServeMux, pos *gps.StationPos) {
+	_ = srv // kept in signature so main.go wiring reads naturally
+	mux.HandleFunc("GET /api/position", getPosition(pos))
+}
+
+// getPosition returns the current station position. A station with no
+// GPS fix and no fixed-position fallback reports `source: "none"` with
+// `valid: false` rather than a 404 — the endpoint is always a 200.
+//
+// @Summary  Get station position
+// @Tags     position
+// @ID       getPosition
+// @Produce  json
+// @Success  200 {object} webapi.PositionDTO
+// @Security CookieAuth
+// @Router   /position [get]
+func getPosition(pos *gps.StationPos) http.HandlerFunc {
 	sourceLabel := [...]string{
 		gps.SourceNone:  "none",
 		gps.SourceGPS:   "gps",
 		gps.SourceFixed: "fixed",
 	}
-
-	mux.HandleFunc("/api/position", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+	return func(w http.ResponseWriter, r *http.Request) {
 		if pos == nil {
 			writeJSON(w, http.StatusOK, PositionDTO{Source: sourceLabel[gps.SourceNone]})
 			return
@@ -54,6 +74,5 @@ func RegisterPosition(srv *Server, pos *gps.StationPos, mux *http.ServeMux) {
 			HasCourse: fix.HasCourse,
 			Timestamp: fix.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
 		})
-	})
-	_ = srv // kept in signature so main.go wiring reads naturally
+	}
 }

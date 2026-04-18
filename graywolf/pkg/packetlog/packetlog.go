@@ -24,15 +24,24 @@ const (
 
 // Entry is one recorded packet.
 type Entry struct {
-	Timestamp time.Time                 `json:"timestamp"`
-	Channel   uint32                    `json:"channel"`
-	Direction Direction                 `json:"direction"`
-	Source    string                    `json:"source"`          // "kiss"|"agw"|"digi"|"igate-tx"|"beacon"|"modem"|"igate-is"
-	Raw       []byte                    `json:"raw,omitempty"`   // raw AX.25 bytes (no FCS)
-	Display   string                    `json:"display"`         // direwolf-style "SRC>DEST[,DIGI*]:info"
-	Type      string                    `json:"type,omitempty"`  // APRS packet type (position, message, ...) if decoded
-	Decoded   *aprs.DecodedAPRSPacket   `json:"decoded,omitempty"`
-	Notes     string                    `json:"notes,omitempty"` // e.g. "deduped", "rate-limited", "digi consumed WIDE1-1"
+	// Timestamp is the UTC RFC3339 time the packet was recorded.
+	Timestamp time.Time `json:"timestamp"`
+	// Channel is the graywolf channel ID that observed or transmitted the packet.
+	Channel uint32 `json:"channel"`
+	// Direction labels the flow: "RX" (heard on air), "TX" (transmitted by us), or "IS" (APRS-IS upload/download).
+	Direction Direction `json:"direction"`
+	// Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is".
+	Source string `json:"source"`
+	// Raw is the on-air AX.25 frame bytes with FCS stripped; omitted for entries without raw framing.
+	Raw []byte `json:"raw,omitempty"`
+	// Display is a direwolf-style human-readable rendering: "SRC>DEST[,DIGI*]:info".
+	Display string `json:"display"`
+	// Type is the APRS packet type (position, message, status, ...) when the payload decoded successfully.
+	Type string `json:"type,omitempty"`
+	// Decoded is the parsed APRS payload when decoding succeeded; nil otherwise.
+	Decoded *aprs.DecodedAPRSPacket `json:"decoded,omitempty"`
+	// Notes is a short annotation describing how this entry was handled (e.g. "deduped", "rate-limited", "digi consumed WIDE1-1").
+	Notes string `json:"notes,omitempty"`
 }
 
 // Hook lets other packages record packets into the log without taking

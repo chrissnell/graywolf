@@ -1,0 +1,4352 @@
+/**
+ * GENERATED FILE — DO NOT EDIT.
+ *
+ * Regenerate with `npm run api:generate` (or `make api-client` from
+ * the repo root). Source of truth: pkg/webapi/docs/gen/swagger.json.
+ */
+
+export interface paths {
+    "/agw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get AGW config */
+        get: operations["getAgw"];
+        /** Update AGW config */
+        put: operations["updateAgw"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audio-devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List audio devices */
+        get: operations["listAudioDevices"];
+        put?: never;
+        /** Create audio device */
+        post: operations["createAudioDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audio-devices/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List available audio devices */
+        get: operations["listAvailableAudioDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audio-devices/levels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get audio device levels */
+        get: operations["getAudioDeviceLevels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audio-devices/scan-levels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan audio device input levels */
+        post: operations["scanAudioDeviceLevels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audio-devices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get audio device */
+        get: operations["getAudioDevice"];
+        /** Update audio device */
+        put: operations["updateAudioDevice"];
+        post?: never;
+        /** Delete audio device */
+        delete: operations["deleteAudioDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audio-devices/{id}/gain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set audio device gain */
+        put: operations["setAudioDeviceGain"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audio-devices/{id}/test-tone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Play test tone on audio device */
+        post: operations["playTestTone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log in */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log out */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get first-run setup status */
+        get: operations["getSetupStatus"];
+        put?: never;
+        /** Create first-run user */
+        post: operations["createFirstUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/beacons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List beacons */
+        get: operations["listBeacons"];
+        put?: never;
+        /** Create beacon */
+        post: operations["createBeacon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/beacons/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get beacon */
+        get: operations["getBeacon"];
+        /** Update beacon */
+        put: operations["updateBeacon"];
+        post?: never;
+        /** Delete beacon */
+        delete: operations["deleteBeacon"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/beacons/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send beacon now */
+        post: operations["sendBeacon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List channels */
+        get: operations["listChannels"];
+        put?: never;
+        /** Create channel */
+        post: operations["createChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get channel */
+        get: operations["getChannel"];
+        /** Update channel */
+        put: operations["updateChannel"];
+        post?: never;
+        /** Delete channel */
+        delete: operations["deleteChannel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/{id}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get channel stats */
+        get: operations["getChannelStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/digipeater": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get digipeater config */
+        get: operations["getDigipeaterConfig"];
+        /** Update digipeater config */
+        put: operations["updateDigipeaterConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/digipeater/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List digipeater rules */
+        get: operations["listDigipeaterRules"];
+        put?: never;
+        /** Create digipeater rule */
+        post: operations["createDigipeaterRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/digipeater/rules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update digipeater rule */
+        put: operations["updateDigipeaterRule"];
+        post?: never;
+        /** Delete digipeater rule */
+        delete: operations["deleteDigipeaterRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/gps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get GPS config */
+        get: operations["getGps"];
+        /** Update GPS config */
+        put: operations["updateGps"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/gps/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List available GPS serial ports */
+        get: operations["listAvailableGps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health check */
+        get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/igate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get igate status */
+        get: operations["getIgateStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/igate/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get igate config */
+        get: operations["getIgateConfig"];
+        /** Update igate config */
+        put: operations["updateIgateConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/igate/filters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List igate RF filters */
+        get: operations["listIgateFilters"];
+        put?: never;
+        /** Create igate RF filter */
+        post: operations["createIgateFilter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/igate/filters/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update igate RF filter */
+        put: operations["updateIgateFilter"];
+        post?: never;
+        /** Delete igate RF filter */
+        delete: operations["deleteIgateFilter"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/igate/simulation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Toggle igate simulation mode
+         * @description When enabled, the igate logs packets it would have sent
+         *     (RF-to-APRS-IS gating and IS-to-RF beacons) instead of
+         *     transmitting them. Useful for validating filter rules
+         *     and bandwidth behaviour before going live.
+         */
+        post: operations["setIgateSimulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List KISS interfaces */
+        get: operations["listKiss"];
+        put?: never;
+        /** Create KISS interface */
+        post: operations["createKiss"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kiss/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get KISS interface */
+        get: operations["getKiss"];
+        /** Update KISS interface */
+        put: operations["updateKiss"];
+        post?: never;
+        /** Delete KISS interface */
+        delete: operations["deleteKiss"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/packets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List packets */
+        get: operations["listPackets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get station position */
+        get: operations["getPosition"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/position-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get position log config */
+        get: operations["getPositionLog"];
+        /** Update position log config */
+        put: operations["updatePositionLog"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ptt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List PTT configs */
+        get: operations["listPttConfigs"];
+        put?: never;
+        /** Upsert PTT config */
+        post: operations["upsertPttConfig"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ptt/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List PTT devices */
+        get: operations["listPttDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ptt/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get PTT capabilities */
+        get: operations["getPttCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ptt/gpio-chips/{chip}/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List GPIO lines */
+        get: operations["listGpioLines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ptt/test-rigctld": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test rigctld connection */
+        post: operations["testRigctld"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ptt/{channel}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get PTT config */
+        get: operations["getPttConfig"];
+        /** Update PTT config */
+        put: operations["updatePttConfig"];
+        post?: never;
+        /** Delete PTT config */
+        delete: operations["deletePttConfig"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List stations */
+        get: operations["listStations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** System status dashboard */
+        get: operations["getStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tx-timing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List tx-timing records */
+        get: operations["listTxTiming"];
+        put?: never;
+        /** Upsert tx-timing record */
+        post: operations["createTxTiming"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tx-timing/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get tx-timing record */
+        get: operations["getTxTiming"];
+        /** Update tx-timing record */
+        put: operations["updateTxTiming"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get server version */
+        get: operations["getVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
+export type webhooks = Record<string, never>;
+export interface components {
+    schemas: {
+        "aprs.Capabilities": {
+            /** @description key → value (value empty for flag entries) */
+            entries?: {
+                [key: string]: string;
+            };
+        };
+        "aprs.DecodedAPRSPacket": {
+            caps?: components["schemas"]["aprs.Capabilities"];
+            channel?: number;
+            /** @description residual free-form text after structured fields */
+            comment?: string;
+            dest?: string;
+            df?: components["schemas"]["aprs.DirectionFinding"];
+            item?: components["schemas"]["aprs.Item"];
+            message?: components["schemas"]["aprs.Message"];
+            micE?: components["schemas"]["aprs.MicE"];
+            object?: components["schemas"]["aprs.Object"];
+            path?: string[];
+            position?: components["schemas"]["aprs.Position"];
+            /** @description modem-reported quality (0..100) if available */
+            quality?: number;
+            /** @description original AX.25 frame bytes */
+            raw?: number[];
+            /** @description callsign-SSID */
+            source?: string;
+            /** @description for '>' status reports */
+            status?: string;
+            telemetry?: components["schemas"]["aprs.Telemetry"];
+            /** @description PARM/UNIT/EQNS/BITS metadata (APRS101 ch 13) */
+            telemetryMeta?: components["schemas"]["aprs.TelemetryMeta"];
+            /** @description recursively-decoded inner packet for '}' traffic (APRS101 ch 20) */
+            thirdParty?: components["schemas"]["aprs.DecodedAPRSPacket"];
+            timestamp?: string;
+            type?: components["schemas"]["aprs.PacketType"];
+            weather?: components["schemas"]["aprs.Weather"];
+        };
+        "aprs.DeviceInfo": {
+            class?: string;
+            model?: string;
+            vendor?: string;
+        };
+        "aprs.DirectionFinding": {
+            /** @description degrees true */
+            bearing?: number;
+            /** @description 0..9 station count */
+            number?: number;
+            /** @description 0..9 */
+            quality?: number;
+            /** @description miles */
+            range?: number;
+        };
+        "aprs.Item": {
+            comment?: string;
+            live?: boolean;
+            name?: string;
+            position?: components["schemas"]["aprs.Position"];
+        };
+        "aprs.Message": {
+            /** @description 1..9 chars, space-padded in packet */
+            addressee?: string;
+            /** @description true if a reply-ack trailer was present (ack may still be "") */
+            hasReplyAck?: boolean;
+            isAck?: boolean;
+            /** @description addressee starts with BLN */
+            isBulletin?: boolean;
+            /** @description NWS-originated */
+            isNWS?: boolean;
+            isRej?: boolean;
+            /** @description optional identifier used for ACK/REJ correlation */
+            messageID?: string;
+            /** @description piggybacked reply-ack id (aprs11/replyacks), empty if absent */
+            replyAck?: string;
+            text?: string;
+        };
+        "aprs.MicE": {
+            /** @description e.g. "Kenwood TH-D74", "" if unknown */
+            manufacturer?: string;
+            /** @description 0..7 index into the standard Mic-E message table */
+            messageCode?: number;
+            messageText?: string;
+            position?: components["schemas"]["aprs.Position"];
+            /** @description trailing status text */
+            status?: string;
+        };
+        "aprs.Object": {
+            comment?: string;
+            live?: boolean;
+            name?: string;
+            position?: components["schemas"]["aprs.Position"];
+            timestamp?: string;
+        };
+        "aprs.PHG": {
+            /** @description 0=omni, 1..8 = 45°·d compass direction (N, NE, E, …) */
+            directivity?: number;
+            /** @description g dB (0..9) */
+            gainDB?: number;
+            /** @description 10·2^h feet above average terrain */
+            heightFt?: number;
+            /** @description p² watts */
+            powerWatts?: number;
+            /** @description four-digit "phgd" body (e.g. "7700"); never includes the "PHG" prefix */
+            raw?: string;
+        };
+        /** @enum {string} */
+        "aprs.PacketType": "unknown" | "position" | "message" | "telemetry" | "weather" | "object" | "item" | "mic-e" | "status" | "capabilities" | "df-report" | "query" | "third-party";
+        "aprs.Position": {
+            /** @description meters (0 if none reported) */
+            altitude?: number;
+            /** @description 0..4, digits of ambiguity introduced by spaces */
+            ambiguity?: number;
+            compressed?: boolean;
+            /** @description degrees true (0..359) */
+            course?: number;
+            /** @description DAO datum byte (APRS101 DAO extension), 0 if not present */
+            daodatum?: number;
+            hasAlt?: boolean;
+            hasCourse?: boolean;
+            /** @description decimal degrees, positive north */
+            latitude?: number;
+            /** @description true if the timestamp was the '/' local-time form (APRS101 ch 6) */
+            localTime?: boolean;
+            /** @description decimal degrees, positive east */
+            longitude?: number;
+            /** @description decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present */
+            phg?: components["schemas"]["aprs.PHG"];
+            /** @description knots */
+            speed?: number;
+            symbol?: components["schemas"]["aprs.Symbol"];
+            /** @description nil if positionless or no embedded time */
+            timestamp?: string;
+        };
+        "aprs.Symbol": {
+            code?: number;
+            table?: number;
+        };
+        "aprs.Telemetry": {
+            analog?: number[];
+            /** @description true for channels actually reported (distinguishes 0 from missing) */
+            analogHas?: boolean[];
+            /** @description trailing free-form */
+            comment?: string;
+            /** @description bits 0..7 (only lower 8) */
+            digital?: number;
+            hasDigital?: boolean;
+            /** @description 0..999, -1 if absent */
+            seq?: number;
+        };
+        "aprs.TelemetryMeta": {
+            /** @description BITS. sense-bits bitmap (active-high per bit) */
+            bits?: number;
+            /** @description a, b, c coefficients per analog channel */
+            eqns?: number[][];
+            /** @description "parm", "unit", "eqns", or "bits" */
+            kind?: string;
+            parm?: string[];
+            /** @description BITS. project title */
+            projectName?: string;
+            unit?: string[];
+        };
+        "aprs.Weather": {
+            hasHumidity?: boolean;
+            hasLuminosity?: boolean;
+            hasPressure?: boolean;
+            hasRain1h?: boolean;
+            hasRain24h?: boolean;
+            hasRainMid?: boolean;
+            hasRawRain?: boolean;
+            hasSnow?: boolean;
+            hasTemp?: boolean;
+            hasWindDir?: boolean;
+            hasWindGust?: boolean;
+            hasWindSpeed?: boolean;
+            /** @description percent (0..100) */
+            humidity?: number;
+            /** @description watts/m^2 */
+            luminosity?: number;
+            /** @description tenths of millibar (e.g. 10132 = 1013.2) */
+            pressure?: number;
+            /** @description hundredths of an inch */
+            rain1Hour?: number;
+            rain24Hour?: number;
+            rainSinceMid?: number;
+            /** @description raw rain counter ('#' field) */
+            rawRainCounter?: number;
+            /** @description inches (via 's' after 'g') */
+            snowfall24h?: number;
+            /** @description one-letter software code (e.g. 'w', 'x', 'd') */
+            softwareType?: string;
+            /** @description degrees F */
+            temperature?: number;
+            /** @description 2..4 ASCII letters identifying the unit/model */
+            weatherUnitTag?: string;
+            /** @description degrees true */
+            windDirection?: number;
+            /** @description mph (5-minute peak) */
+            windGust?: number;
+            /** @description mph (1-minute sustained) */
+            windSpeed?: number;
+        };
+        "dto.AgwRequest": {
+            callsigns?: string;
+            enabled?: boolean;
+            listen_addr?: string;
+        };
+        "dto.AgwResponse": {
+            callsigns?: string;
+            enabled?: boolean;
+            id?: number;
+            listen_addr?: string;
+        };
+        "dto.AudioDeviceDeleteConflict": {
+            channels?: components["schemas"]["dto.ChannelResponse"][];
+            error?: string;
+        };
+        "dto.AudioDeviceDeleteResponse": {
+            deleted?: components["schemas"]["dto.ChannelResponse"][];
+        };
+        "dto.AudioDeviceLevelsResponse": {
+            [key: string]: components["schemas"]["modembridge.DeviceLevel"];
+        };
+        "dto.AudioDeviceRequest": {
+            channels?: number;
+            device_path?: string;
+            direction?: string;
+            format?: string;
+            gain_db?: number;
+            name?: string;
+            sample_rate?: number;
+            source_type?: string;
+        };
+        "dto.AudioDeviceResponse": {
+            channels?: number;
+            device_path?: string;
+            direction?: string;
+            format?: string;
+            gain_db?: number;
+            id?: number;
+            name?: string;
+            sample_rate?: number;
+            source_type?: string;
+        };
+        "dto.AudioDeviceSetGainRequest": {
+            gain_db?: number;
+        };
+        "dto.BeaconRequest": {
+            alt_ft?: number;
+            ambiguity?: number;
+            callsign?: string;
+            channel?: number;
+            comment?: string;
+            comment_cmd?: string;
+            compress?: boolean;
+            custom_info?: string;
+            delay_seconds?: number;
+            destination?: string;
+            dir?: number;
+            enabled?: boolean;
+            freq?: string;
+            freq_offset?: string;
+            gain?: number;
+            height?: number;
+            interval?: number;
+            latitude?: number;
+            longitude?: number;
+            messaging?: boolean;
+            object_name?: string;
+            overlay?: string;
+            path?: string;
+            power?: number;
+            sb_fast_rate?: number;
+            sb_fast_speed?: number;
+            sb_min_turn_time?: number;
+            sb_slow_rate?: number;
+            sb_slow_speed?: number;
+            sb_turn_angle?: number;
+            sb_turn_slope?: number;
+            send_to_aprs_is?: boolean;
+            slot_seconds?: number;
+            smart_beacon?: boolean;
+            symbol?: string;
+            symbol_table?: string;
+            tone?: string;
+            type?: string;
+            use_gps?: boolean;
+        };
+        "dto.BeaconResponse": {
+            alt_ft?: number;
+            ambiguity?: number;
+            callsign?: string;
+            channel?: number;
+            comment?: string;
+            comment_cmd?: string;
+            compress?: boolean;
+            custom_info?: string;
+            delay_seconds?: number;
+            destination?: string;
+            dir?: number;
+            enabled?: boolean;
+            freq?: string;
+            freq_offset?: string;
+            gain?: number;
+            height?: number;
+            id?: number;
+            interval?: number;
+            latitude?: number;
+            longitude?: number;
+            messaging?: boolean;
+            object_name?: string;
+            overlay?: string;
+            path?: string;
+            power?: number;
+            sb_fast_rate?: number;
+            sb_fast_speed?: number;
+            sb_min_turn_time?: number;
+            sb_slow_rate?: number;
+            sb_slow_speed?: number;
+            sb_turn_angle?: number;
+            sb_turn_slope?: number;
+            send_to_aprs_is?: boolean;
+            slot_seconds?: number;
+            smart_beacon?: boolean;
+            symbol?: string;
+            symbol_table?: string;
+            tone?: string;
+            type?: string;
+            use_gps?: boolean;
+        };
+        "dto.BeaconSendResponse": {
+            /** @description "sent" */
+            status?: string;
+        };
+        "dto.ChannelRequest": {
+            bit_rate?: number;
+            decoder_offset?: number;
+            fix_bits?: string;
+            fx25_encode?: boolean;
+            il2p_encode?: boolean;
+            input_channel?: number;
+            input_device_id?: number;
+            mark_freq?: number;
+            modem_type?: string;
+            name?: string;
+            num_decoders?: number;
+            num_slicers?: number;
+            output_channel?: number;
+            output_device_id?: number;
+            profile?: string;
+            space_freq?: number;
+        };
+        "dto.ChannelResponse": {
+            bit_rate?: number;
+            decoder_offset?: number;
+            fix_bits?: string;
+            fx25_encode?: boolean;
+            id?: number;
+            il2p_encode?: boolean;
+            input_channel?: number;
+            input_device_id?: number;
+            mark_freq?: number;
+            modem_type?: string;
+            name?: string;
+            num_decoders?: number;
+            num_slicers?: number;
+            output_channel?: number;
+            output_device_id?: number;
+            profile?: string;
+            space_freq?: number;
+        };
+        "dto.DigipeaterConfigRequest": {
+            dedupe_window_seconds?: number;
+            enabled?: boolean;
+            my_call?: string;
+        };
+        "dto.DigipeaterConfigResponse": {
+            dedupe_window_seconds?: number;
+            enabled?: boolean;
+            id?: number;
+            my_call?: string;
+        };
+        "dto.DigipeaterRuleRequest": {
+            action?: string;
+            alias?: string;
+            alias_type?: string;
+            enabled?: boolean;
+            from_channel?: number;
+            max_hops?: number;
+            priority?: number;
+            to_channel?: number;
+        };
+        "dto.DigipeaterRuleResponse": {
+            action?: string;
+            alias?: string;
+            alias_type?: string;
+            enabled?: boolean;
+            from_channel?: number;
+            id?: number;
+            max_hops?: number;
+            priority?: number;
+            to_channel?: number;
+        };
+        "dto.GPSRequest": {
+            baud_rate?: number;
+            gpsd_host?: string;
+            gpsd_port?: number;
+            serial_port?: string;
+            source?: string;
+        };
+        "dto.GPSResponse": {
+            baud_rate?: number;
+            enabled?: boolean;
+            gpsd_host?: string;
+            gpsd_port?: number;
+            id?: number;
+            serial_port?: string;
+            source?: string;
+        };
+        "dto.HealthResponse": {
+            /** @description process start time, RFC3339 */
+            started_at?: string;
+            /** @description "ok" */
+            status?: string;
+            /** @description current UTC time, RFC3339 */
+            time?: string;
+        };
+        "dto.IGateConfigRequest": {
+            callsign?: string;
+            enabled?: boolean;
+            gate_is_to_rf?: boolean;
+            gate_rf_to_is?: boolean;
+            max_msg_hops?: number;
+            passcode?: string;
+            port?: number;
+            rf_channel?: number;
+            server?: string;
+            server_filter?: string;
+            simulation_mode?: boolean;
+            software_name?: string;
+            software_version?: string;
+            tx_channel?: number;
+        };
+        "dto.IGateConfigResponse": {
+            callsign?: string;
+            enabled?: boolean;
+            gate_is_to_rf?: boolean;
+            gate_rf_to_is?: boolean;
+            id?: number;
+            max_msg_hops?: number;
+            passcode?: string;
+            port?: number;
+            rf_channel?: number;
+            server?: string;
+            server_filter?: string;
+            simulation_mode?: boolean;
+            software_name?: string;
+            software_version?: string;
+            tx_channel?: number;
+        };
+        "dto.IGateRfFilterRequest": {
+            action?: string;
+            channel?: number;
+            enabled?: boolean;
+            pattern?: string;
+            priority?: number;
+            type?: string;
+        };
+        "dto.IGateRfFilterResponse": {
+            action?: string;
+            channel?: number;
+            enabled?: boolean;
+            id?: number;
+            pattern?: string;
+            priority?: number;
+            type?: string;
+        };
+        "dto.KissRequest": {
+            baud_rate?: number;
+            channel?: number;
+            serial_device?: string;
+            tcp_port?: number;
+            type?: string;
+        };
+        "dto.KissResponse": {
+            baud_rate?: number;
+            channel?: number;
+            id?: number;
+            serial_device?: string;
+            tcp_port?: number;
+            type?: string;
+        };
+        "dto.PositionLogRequest": {
+            enabled?: boolean;
+        };
+        "dto.PositionLogResponse": {
+            db_path?: string;
+            enabled?: boolean;
+        };
+        "dto.PttRequest": {
+            channel_id?: number;
+            device_path?: string;
+            dwait_ms?: number;
+            /**
+             * @description GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
+             *     method. Ignored for every other method.
+             */
+            gpio_line?: number;
+            /**
+             * @description GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used
+             *     by the `gpio` method, which references `gpio_line` instead to avoid
+             *     indexing ambiguity between CM108 pin numbers and gpiochip line offsets.
+             */
+            gpio_pin?: number;
+            invert?: boolean;
+            method?: string;
+            persist?: number;
+            slot_time_ms?: number;
+        };
+        "dto.PttResponse": {
+            channel_id?: number;
+            device_path?: string;
+            dwait_ms?: number;
+            /**
+             * @description GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
+             *     method. Ignored for every other method.
+             */
+            gpio_line?: number;
+            /**
+             * @description GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used
+             *     by the `gpio` method, which references `gpio_line` instead to avoid
+             *     indexing ambiguity between CM108 pin numbers and gpiochip line offsets.
+             */
+            gpio_pin?: number;
+            id?: number;
+            invert?: boolean;
+            method?: string;
+            persist?: number;
+            slot_time_ms?: number;
+        };
+        "dto.TestRigctldRequest": {
+            host?: string;
+            port?: number;
+        };
+        "dto.TestRigctldResponse": {
+            latency_ms?: number;
+            message?: string;
+            ok?: boolean;
+        };
+        "dto.TestToneResponse": {
+            status?: string;
+        };
+        "dto.TxTimingRequest": {
+            channel?: number;
+            full_dup?: boolean;
+            persist?: number;
+            rate_1min?: number;
+            rate_5min?: number;
+            slot_ms?: number;
+            tx_delay_ms?: number;
+            tx_tail_ms?: number;
+        };
+        "dto.TxTimingResponse": {
+            channel?: number;
+            full_dup?: boolean;
+            id?: number;
+            persist?: number;
+            rate_1min?: number;
+            rate_5min?: number;
+            slot_ms?: number;
+            tx_delay_ms?: number;
+            tx_tail_ms?: number;
+        };
+        "gps.SerialPortInfo": {
+            /** @description human-readable description */
+            description?: string;
+            is_usb?: boolean;
+            /** @description basename of path */
+            name?: string;
+            /** @description device path, e.g. /dev/cu.usbserial-110 */
+            path?: string;
+            pid?: string;
+            product?: string;
+            /**
+             * @description Recommended is true for the device path users should pick. On macOS
+             *     we recommend the /dev/cu.* callout device over /dev/tty.* (which
+             *     blocks until DCD is asserted).
+             */
+            recommended?: boolean;
+            serial_number?: string;
+            vid?: string;
+            /**
+             * @description Warning is set when there's a known gotcha with this path (e.g. the
+             *     macOS tty.* / cu.* distinction).
+             */
+            warning?: string;
+        };
+        "igate.Status": {
+            callsign?: string;
+            connected?: boolean;
+            is_to_rf_gated?: number;
+            last_connected?: string;
+            packets_filtered?: number;
+            rf_to_is_dropped?: number;
+            rf_to_is_gated?: number;
+            server?: string;
+            simulation_mode?: boolean;
+        };
+        "modembridge.AvailableDevice": {
+            channels?: number[];
+            /** @description human-friendly name (e.g. USB product string) */
+            description?: string;
+            host_api?: string;
+            is_default?: boolean;
+            is_input?: boolean;
+            name?: string;
+            /** @description pcm_id (used as device_path in config) */
+            path?: string;
+            /** @description true for plughw: devices (ALSA software conversion) */
+            recommended?: boolean;
+            sample_rates?: number[];
+        };
+        "modembridge.ChannelStats": {
+            audio_level_mark?: number;
+            audio_level_peak?: number;
+            audio_level_space?: number;
+            channel?: number;
+            dcd_state?: boolean;
+            dcd_transitions?: number;
+            rx_bad_fcs?: number;
+            rx_frames?: number;
+            tx_frames?: number;
+        };
+        "modembridge.DeviceLevel": {
+            clipping?: boolean;
+            device_id?: number;
+            peak_dbfs?: number;
+            rms_dbfs?: number;
+        };
+        "modembridge.InputLevel": {
+            error?: string;
+            has_signal?: boolean;
+            name?: string;
+            peak_dbfs?: number;
+        };
+        /** @enum {string} */
+        "packetlog.Direction": "RX" | "TX" | "IS";
+        "pttdevice.AvailableDevice": {
+            /** @description human-friendly label (USB product, GPIO chip) */
+            description?: string;
+            name?: string;
+            path?: string;
+            /**
+             * @description Recommended is true for the device path users should prefer. On macOS
+             *     we recommend /dev/cu.* over /dev/tty.* (which blocks until DCD).
+             */
+            recommended?: boolean;
+            /** @description serial, gpio, cm108 */
+            type?: string;
+            usb_product?: string;
+            usb_vendor?: string;
+            /** @description Warning is set when there's a known gotcha with this path. */
+            warning?: string;
+        };
+        "pttdevice.GpioLineInfo": {
+            /** @description Consumer is the label of the driver currently holding the line, if any. */
+            consumer?: string;
+            /**
+             * @description Name is the kernel-assigned line name. May be empty if the line is
+             *     unnamed on this chip.
+             */
+            name?: string;
+            /** @description Offset is the 0-indexed line offset within the chip. */
+            offset?: number;
+            /**
+             * @description Used is true when another driver has claimed this line (e.g. SPI, I2C,
+             *     UART, or a previously-running graywolf process).
+             */
+            used?: boolean;
+        };
+        "webapi.IgateSimulationResponse": {
+            simulation_mode?: boolean;
+        };
+        "webapi.IgateToggleRequest": {
+            enabled?: boolean;
+        };
+        "webapi.PositionDTO": {
+            alt_m?: number;
+            has_alt?: boolean;
+            has_course?: boolean;
+            heading_deg?: number;
+            lat?: number;
+            lon?: number;
+            /** @description "gps", "fixed", or "none" */
+            source?: string;
+            speed_kt?: number;
+            timestamp?: string;
+            valid?: boolean;
+        };
+        "webapi.StationDTO": {
+            /** @description Callsign is the station or object name (APRS callsign-SSID for stations, object/item name otherwise). */
+            callsign?: string;
+            /** @description Channel is the graywolf channel ID that received the most recent packet. */
+            channel?: number;
+            /** @description Comment is the free-form comment field from the most recent packet. */
+            comment?: string;
+            /** @description Direction indicates the source of the most recent packet: "RX" (heard on air), "TX" (sent by us), or "IS" (APRS-IS). */
+            direction?: string;
+            /** @description Hops is the APRS digipeater hop count (number of H-bit entries in Path). */
+            hops?: number;
+            /** @description IsObject is true for APRS objects and items; false for regular stations. */
+            is_object?: boolean;
+            /** @description LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station. */
+            last_heard?: string;
+            /** @description Path is the raw AX.25 digipeater path from the most recent packet (entries with trailing "*" have the H-bit set). */
+            path?: string[];
+            /** @description PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown. */
+            path_positions?: number[][];
+            /** @description Positions is the station's position history, newest first; static stations have exactly one entry. */
+            positions?: components["schemas"]["webapi.StationPosDTO"][];
+            /** @description SymbolCode is the APRS symbol code character within the selected table. */
+            symbol_code?: string;
+            /** @description SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char). */
+            symbol_table?: string;
+            /** @description Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets. */
+            via?: string;
+            /** @description Weather is optional weather telemetry; present only when include=weather is requested and the station reports weather. */
+            weather?: components["schemas"]["webapi.WeatherDTO"];
+        };
+        "webapi.StationPosDTO": {
+            /** @description Alt is the reported altitude in meters above mean sea level; omitted when not reported. */
+            alt_m?: number;
+            /** @description Channel is the graywolf channel ID that received this position packet. */
+            channel?: number;
+            /** @description Comment is the free-form comment field from this position packet. */
+            comment?: string;
+            /** @description Course is the reported course over ground in degrees true (0-359); omitted when not reported. */
+            course?: number;
+            /** @description Direction indicates the source of this position packet: "RX", "TX", or "IS". */
+            direction?: string;
+            /** @description HasAlt is true when the originating packet reported an altitude. */
+            has_alt?: boolean;
+            /** @description Hops is the APRS digipeater hop count (number of H-bit entries in Path) for this fix. */
+            hops?: number;
+            /** @description Lat is the reported latitude in decimal degrees (WGS84, north positive). */
+            lat?: number;
+            /** @description Lon is the reported longitude in decimal degrees (WGS84, east positive). */
+            lon?: number;
+            /** @description Path is the AX.25 digipeater path recorded with this position fix. */
+            path?: string[];
+            /** @description PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown. */
+            path_positions?: number[][];
+            /** @description Speed is the reported ground speed in knots; omitted when not reported. */
+            speed_kt?: number;
+            /** @description Timestamp is the UTC RFC3339 time the position was received. */
+            timestamp?: string;
+            /** @description Via is the callsign of the last digipeater (H-bit) that forwarded this position packet; empty for direct. */
+            via?: string;
+        };
+        "webapi.StatusChannel": {
+            audio_peak?: number;
+            bit_rate?: number;
+            dcd_state?: boolean;
+            device_clipping?: boolean;
+            device_peak_dbfs?: number;
+            device_rms_dbfs?: number;
+            id?: number;
+            input_device_id?: number;
+            modem_type?: string;
+            name?: string;
+            rx_frames?: number;
+            tx_frames?: number;
+        };
+        "webapi.StatusDTO": {
+            /** @description Channels is the per-channel live status snapshot (frame counters, audio levels). */
+            channels?: components["schemas"]["webapi.StatusChannel"][];
+            /** @description Igate is the current iGate session state; omitted when no iGate is configured. */
+            igate?: components["schemas"]["webapi.StatusIgateDTO"];
+            /** @description UptimeSeconds is the server process uptime in whole seconds. */
+            uptime_seconds?: number;
+        };
+        "webapi.StatusIgateDTO": {
+            /** @description Callsign is the login callsign-SSID presented to APRS-IS. */
+            callsign?: string;
+            /** @description Connected is true while an APRS-IS session is established. */
+            connected?: boolean;
+            /** @description Downlinked is the cumulative count of IS packets transmitted on RF. */
+            is_to_rf_gated?: number;
+            /** @description LastConnected is the UTC RFC3339 timestamp of the most recent successful IS login; omitted if never connected. */
+            last_connected?: string;
+            /** @description Filtered is the cumulative count of packets dropped by the filter engine. */
+            packets_filtered?: number;
+            /** @description DroppedOffline is the cumulative count of RF packets dropped because the IS session was offline. */
+            rf_to_is_dropped?: number;
+            /** @description Gated is the cumulative count of RF packets forwarded to APRS-IS. */
+            rf_to_is_gated?: number;
+            /** @description Server is the APRS-IS host:port currently in use (or last attempted). */
+            server?: string;
+            /** @description SimulationMode is true when RF->IS uploads are suppressed for testing. */
+            simulation_mode?: boolean;
+        };
+        "webapi.VersionResponse": {
+            version?: string;
+        };
+        "webapi.WeatherDTO": {
+            /** @description WindGust is the peak wind gust in miles per hour; nil when not reported. */
+            gust_mph?: number;
+            /** @description Humidity is the relative humidity in percent (0-100); nil when not reported. */
+            humidity?: number;
+            /** @description Luminosity is solar radiation in watts per square meter; nil when not reported. */
+            luminosity_wm2?: number;
+            /** @description Pressure is the barometric pressure in millibars; nil when not reported. */
+            pressure_mb?: number;
+            /** @description Rain1h is rainfall in the last hour in inches; nil when not reported. */
+            rain_1h_in?: number;
+            /** @description Rain24h is rainfall in the last 24 hours in inches; nil when not reported. */
+            rain_24h_in?: number;
+            /** @description Snow24h is snowfall in the last 24 hours in inches; nil when not reported. */
+            snow_24h_in?: number;
+            /** @description Temperature is the ambient temperature in degrees Fahrenheit; nil when not reported. */
+            temp_f?: number;
+            /** @description WindDir is the wind direction in degrees true (0-359); nil when not reported. */
+            wind_dir?: number;
+            /** @description WindSpeed is the sustained wind speed in miles per hour; nil when not reported. */
+            wind_mph?: number;
+        };
+        "webapi.packetDTO": {
+            /** @description Channel is the graywolf channel ID that observed or transmitted the packet. */
+            channel?: number;
+            /** @description Decoded is the parsed APRS payload when decoding succeeded; nil otherwise. */
+            decoded?: components["schemas"]["aprs.DecodedAPRSPacket"];
+            /** @description Device is APRS device identification (manufacturer, model) inferred from the TOCALL field; omitted when unknown. */
+            device?: components["schemas"]["aprs.DeviceInfo"];
+            /** @description Direction labels the flow: "RX" (heard on air), "TX" (transmitted by us), or "IS" (APRS-IS upload/download). */
+            direction?: components["schemas"]["packetlog.Direction"];
+            /** @description Display is a direwolf-style human-readable rendering: "SRC>DEST[,DIGI*]:info". */
+            display?: string;
+            /** @description DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable. */
+            distance_mi?: number;
+            /** @description Notes is a short annotation describing how this entry was handled (e.g. "deduped", "rate-limited", "digi consumed WIDE1-1"). */
+            notes?: string;
+            /** @description Raw is the on-air AX.25 frame bytes with FCS stripped; omitted for entries without raw framing. */
+            raw?: number[];
+            /** @description Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is". */
+            source?: string;
+            /** @description Timestamp is the UTC RFC3339 time the packet was recorded. */
+            timestamp?: string;
+            /** @description Type is the APRS packet type (position, message, status, ...) when the payload decoded successfully. */
+            type?: string;
+            /** @description Via is the callsign of the last digipeater that forwarded this packet (H-bit set); empty string for direct packets. */
+            via?: string;
+        };
+        "webapi.pttCapabilities": {
+            /**
+             * @description PlatformSupportsGpio is true on Linux, where the gpiochip v2
+             *     character-device API is available. The UI consults this flag —
+             *     not the presence of enumerated chips — to decide whether the
+             *     GPIO method appears in its dropdown, so a Linux host without
+             *     any detected chips still shows GPIO with an explained empty
+             *     state rather than silently omitting the option.
+             */
+            platform_supports_gpio?: boolean;
+        };
+        "webauth.LoginRequest": {
+            password?: string;
+            username?: string;
+        };
+        "webauth.SetupCreatedResponse": {
+            status?: string;
+            username?: string;
+        };
+        "webauth.SetupRequest": {
+            password?: string;
+            username?: string;
+        };
+        "webauth.SetupStatusResponse": {
+            needs_setup?: boolean;
+        };
+        "webauth.StatusResponse": {
+            status?: string;
+        };
+        "webtypes.ErrorResponse": {
+            error?: string;
+        };
+    };
+    responses: never;
+    parameters: never;
+    requestBodies: {
+        /** @description Igate RF filter definition */
+        "dto.IGateRfFilterRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.IGateRfFilterRequest"];
+            };
+        };
+        /** @description Tx-timing definition */
+        "dto.TxTimingRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.TxTimingRequest"];
+            };
+        };
+        /** @description Audio device definition */
+        "dto.AudioDeviceRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.AudioDeviceRequest"];
+            };
+        };
+        /** @description Beacon definition */
+        "dto.BeaconRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.BeaconRequest"];
+            };
+        };
+        /** @description Channel definition */
+        "dto.ChannelRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.ChannelRequest"];
+            };
+        };
+        /** @description Digipeater rule definition */
+        "dto.DigipeaterRuleRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.DigipeaterRuleRequest"];
+            };
+        };
+        /** @description KISS interface definition */
+        "dto.KissRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.KissRequest"];
+            };
+        };
+        /** @description PTT config */
+        "dto.PttRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.PttRequest"];
+            };
+        };
+    };
+    headers: never;
+    pathItems: never;
+}
+export type $defs = Record<string, never>;
+export interface operations {
+    getAgw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AgwResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description AGW config */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.AgwRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AgwResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAudioDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAudioDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.AudioDeviceRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAvailableAudioDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["modembridge.AvailableDevice"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAudioDeviceLevels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceLevelsResponse"];
+                };
+            };
+        };
+    };
+    scanAudioDeviceLevels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["modembridge.InputLevel"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAudioDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Audio device id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAudioDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Audio device id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.AudioDeviceRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAudioDevice: {
+        parameters: {
+            query?: {
+                /** @description Cascade-delete referencing channels */
+                cascade?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Audio device id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceDeleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceDeleteConflict"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    setAudioDeviceGain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Audio device id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Gain setting */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.AudioDeviceSetGainRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AudioDeviceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    playTestTone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Audio device id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TestToneResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Credentials */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["webauth.LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description Session cookie */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webauth.StatusResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description Cleared session cookie */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webauth.StatusResponse"];
+                };
+            };
+        };
+    };
+    getSetupStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webauth.SetupStatusResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createFirstUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Credentials for the first administrator */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["webauth.SetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webauth.SetupCreatedResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listBeacons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BeaconResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createBeacon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BeaconRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BeaconResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getBeacon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Beacon id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BeaconResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateBeacon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Beacon id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BeaconRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BeaconResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteBeacon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Beacon id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    sendBeacon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Beacon id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BeaconSendResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listChannels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ChannelResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.ChannelRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ChannelResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ChannelResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.ChannelRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ChannelResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getChannelStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["modembridge.ChannelStats"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDigipeaterConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.DigipeaterConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDigipeaterConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Digipeater config */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.DigipeaterConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.DigipeaterConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDigipeaterRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.DigipeaterRuleResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createDigipeaterRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.DigipeaterRuleRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.DigipeaterRuleResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDigipeaterRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Digipeater rule id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.DigipeaterRuleRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.DigipeaterRuleResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDigipeaterRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Digipeater rule id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getGps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.GPSResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateGps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GPS config */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.GPSRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.GPSResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAvailableGps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["gps.SerialPortInfo"][];
+                };
+            };
+        };
+    };
+    getHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.HealthResponse"];
+                };
+            };
+        };
+    };
+    getIgateStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["igate.Status"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getIgateConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.IGateConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateIgateConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Igate config */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.IGateConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.IGateConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listIgateFilters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.IGateRfFilterResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createIgateFilter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.IGateRfFilterRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.IGateRfFilterResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateIgateFilter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Igate RF filter id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.IGateRfFilterRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.IGateRfFilterResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteIgateFilter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Igate RF filter id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    setIgateSimulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Desired simulation mode */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["webapi.IgateToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.IgateSimulationResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listKiss: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.KissResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createKiss: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.KissRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.KissResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getKiss: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description KISS interface id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.KissResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateKiss: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description KISS interface id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.KissRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.KissResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteKiss: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description KISS interface id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPackets: {
+        parameters: {
+            query?: {
+                /** @description Only entries at or after this RFC3339 timestamp */
+                since?: string;
+                /** @description Filter by Entry.Source (e.g. rf, is) */
+                source?: string;
+                /** @description Filter by APRS packet type (Entry.Type) */
+                type?: string;
+                /** @description Filter by direction (RX|TX|IS) */
+                direction?: string;
+                /** @description Filter by channel number */
+                channel?: number;
+                /** @description Cap result count (non-negative) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.packetDTO"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPosition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.PositionDTO"];
+                };
+            };
+        };
+    };
+    getPositionLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.PositionLogResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updatePositionLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Position log config */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.PositionLogRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.PositionLogResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPttConfigs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.PttResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertPttConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.PttRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.PttResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPttDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["pttdevice.AvailableDevice"][];
+                };
+            };
+        };
+    };
+    getPttCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.pttCapabilities"];
+                };
+            };
+        };
+    };
+    listGpioLines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description URL-encoded gpiochip device path (e.g. %2Fdev%2Fgpiochip0) */
+                chip: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["pttdevice.GpioLineInfo"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    testRigctld: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description rigctld endpoint */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.TestRigctldRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TestRigctldResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPttConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                channel: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.PttResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updatePttConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                channel: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.PttRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.PttResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deletePttConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                channel: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listStations: {
+        parameters: {
+            query: {
+                /** @description Bounding box as sw_lat,sw_lon,ne_lat,ne_lon */
+                bbox: string;
+                /** @description Lookback window in seconds (default 3600) */
+                timerange?: number;
+                /** @description Delta mode: only stations heard at or after this RFC3339Nano timestamp */
+                since?: string;
+                /** @description Comma-separated extras (currently: weather) */
+                include?: string;
+            };
+            header?: {
+                /** @description ETag from a prior response; returns 304 on match */
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.StationDTO"][];
+                };
+            };
+            /** @description Not Modified */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.StatusDTO"];
+                };
+            };
+        };
+    };
+    listTxTiming: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TxTimingResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createTxTiming: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.TxTimingRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TxTimingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getTxTiming: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TxTimingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateTxTiming: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.TxTimingRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TxTimingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.VersionResponse"];
+                };
+            };
+        };
+    };
+}
