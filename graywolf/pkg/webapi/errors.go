@@ -1,22 +1,35 @@
 package webapi
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/chrissnell/graywolf/pkg/webtypes"
+)
+
+// The canonical JSON error envelope for every non-2xx response lives
+// in pkg/webtypes (webtypes.ErrorResponse). Sharing the type across
+// webapi and webauth keeps the OpenAPI spec pointing at a single
+// schema for failure bodies. The wire shape is intentionally
+// unchanged from the historical map-based writers — `{"error": "..."}`
+// — so existing clients and tests are unaffected.
 
 // badRequest writes a 400 with a generic JSON error body. Use for
 // validation failures and malformed request bodies.
 func badRequest(w http.ResponseWriter, msg string) {
-	writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+	writeJSON(w, http.StatusBadRequest, webtypes.ErrorResponse{Error: msg})
 }
 
 // notFound writes a 404 with a generic JSON error body.
 func notFound(w http.ResponseWriter) {
-	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	writeJSON(w, http.StatusNotFound, webtypes.ErrorResponse{Error: "not found"})
 }
 
-// methodNotAllowed writes a 405 with a generic JSON error body.
-func methodNotAllowed(w http.ResponseWriter) {
-	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-}
+// NOTE: a `methodNotAllowed` helper used to live here for hand-rolled
+// dispatchers. Every handler is now registered with a Go 1.22
+// method-scoped pattern (e.g. `mux.HandleFunc("GET /api/foo", …)`), so
+// the mux emits 405 with an `Allow:` header automatically and no caller
+// needs the helper. If a future hand-rolled dispatcher reintroduces the
+// need, prefer upgrading the site to a method-scoped route first.
 
 // internalError logs the real error with request context and writes a
 // generic message to the client. Use for every 5xx response so we don't
@@ -24,5 +37,5 @@ func methodNotAllowed(w http.ResponseWriter) {
 // that enable account or schema enumeration.
 func (s *Server) internalError(w http.ResponseWriter, r *http.Request, op string, err error) {
 	s.logger.ErrorContext(r.Context(), "webapi internal error", "op", op, "err", err)
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	writeJSON(w, http.StatusInternalServerError, webtypes.ErrorResponse{Error: "internal error"})
 }

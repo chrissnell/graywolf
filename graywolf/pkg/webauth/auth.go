@@ -11,9 +11,14 @@ import (
 )
 
 const (
-	bcryptCost   = 10
-	tokenBytes   = 32
-	sessionCookie = "session"
+	bcryptCost = 10
+	tokenBytes = 32
+	// sessionCookie is the name of the HTTP cookie that carries a
+	// session token. Prefixed with "graywolf_" so graywolf running
+	// behind a reverse proxy that multiplexes several apps on the
+	// same origin does not collide with some other app's generic
+	// "session" cookie.
+	sessionCookie = "graywolf_session"
 )
 
 // HashPassword returns a bcrypt hash suitable for storage.

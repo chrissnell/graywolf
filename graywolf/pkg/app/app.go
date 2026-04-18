@@ -57,6 +57,12 @@ type App struct {
 	gov         *txgovernor.Governor
 	kissMgr     *kiss.Manager
 	agwServer   *agw.Server // nil if AGW is disabled in config
+	// agwMu guards access to agwServer so a reload can swap in a new
+	// instance while the modem-bridge frame consumer is calling
+	// BroadcastMonitoredUI on the old one. Readers use currentAgw();
+	// the reload goroutine takes the write lock to stop the old server
+	// and install (or clear) a replacement.
+	agwMu sync.Mutex
 	digi        *digipeater.Digipeater
 	gpsCache    *gps.MemCache
 	stationPos  *gps.StationPos
@@ -77,6 +83,7 @@ type App struct {
 	digipeaterReload  chan struct{}
 	igateReload       chan struct{}
 	positionLogReload chan struct{}
+	agwReload         chan struct{}
 
 	// --- APRS fan-out plumbing ------------------------------------------
 	aprsQueue       chan *aprs.DecodedAPRSPacket
@@ -89,14 +96,15 @@ type App struct {
 	// owns without tangling with siblings. Having one catchall WG would
 	// force every stop to wait for every other component to exit,
 	// defeating the ordered-teardown contract.
-	govWG            sync.WaitGroup
-	statsWG          sync.WaitGroup
-	kissWG           sync.WaitGroup
-	agwWG            sync.WaitGroup
-	digiReloadWG     sync.WaitGroup
-	igateReloadWG    sync.WaitGroup
-	gpsWG            sync.WaitGroup
-	beaconWG         sync.WaitGroup
+	govWG               sync.WaitGroup
+	statsWG             sync.WaitGroup
+	kissWG              sync.WaitGroup
+	agwWG               sync.WaitGroup
+	agwReloadWG         sync.WaitGroup
+	digiReloadWG        sync.WaitGroup
+	igateReloadWG       sync.WaitGroup
+	gpsWG               sync.WaitGroup
+	beaconWG            sync.WaitGroup
 	beaconReloadWG      sync.WaitGroup
 	positionLogReloadWG sync.WaitGroup
 	httpWG              sync.WaitGroup

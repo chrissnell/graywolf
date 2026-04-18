@@ -28,6 +28,34 @@ jobs:
           go-version-file: graywolf/go.mod
           cache-dependency-path: graywolf/go.sum
 
+      # Node is needed for the generated OpenAPI TypeScript client drift
+      # guard (`make api-client-check`). Version tracks the local
+      # developer setup; bump when the web/ toolchain bumps.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: graywolf/web/package-lock.json
+
+      # swag is a dev-time CLI only; install it into the repo-local
+      # scratch/bin (the same location the Makefile's SWAG variable
+      # points at) so `make docs-check` / `make docs-lint` can find it
+      # without polluting $GOBIN or the runner's PATH.
+      - name: Install swag CLI
+        run: |
+          mkdir -p scratch/bin
+          GOBIN="$(pwd)/scratch/bin" go install github.com/swaggo/swag/cmd/swag@v1.16.4
+
+      - name: OpenAPI spec drift guard (make docs-check)
+        run: make docs-check
+
+      - name: OpenAPI @ID linter (make docs-lint)
+        run: make docs-lint
+
+      - name: OpenAPI TypeScript client drift guard (make api-client-check)
+        run: make api-client-check
+
       - name: go vet
         working-directory: graywolf
         run: go vet ./...

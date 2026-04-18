@@ -33,8 +33,10 @@
   });
 
   async function loadConfig() {
-    const data = await api.get('/gps');
-    if (data) config = data;
+    // GET /gps always returns 200 with defaults on a fresh install;
+    // the zero-value DTO has source="" / source="none", which the
+    // `hasGps` derived check below treats as "unconfigured".
+    config = await api.get('/gps');
   }
 
   async function detectPorts() {

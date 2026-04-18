@@ -177,3 +177,9 @@ func BeaconsFromModels(ms []configstore.Beacon) []BeaconResponse {
 	}
 	return out
 }
+
+// BeaconSendResponse is the body returned by POST /api/beacons/{id}/send
+// when a one-shot transmission has been handed to the beacon scheduler.
+type BeaconSendResponse struct {
+	Status string `json:"status"` // "sent"
+}

@@ -253,6 +253,7 @@ func newAuthGateServer(t *testing.T) *authGateServer {
 		Bridge:  bridge,
 		KissCtx: context.Background(),
 		Logger:  silent,
+		Version: "test",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -270,14 +271,12 @@ func newAuthGateServer(t *testing.T) *authGateServer {
 	outer := http.NewServeMux()
 
 	// Public routes mirror the wiring order.
-	outer.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"version":"test"}`))
-	})
+	RegisterVersion(apiSrv, outer)
 	authHandlers := &webauth.Handlers{Auth: authStore, Logger: silent}
-	outer.HandleFunc("/api/auth/login", authHandlers.HandleLogin)
-	outer.HandleFunc("/api/auth/logout", authHandlers.HandleLogout)
-	outer.HandleFunc("/api/auth/setup", authHandlers.HandleSetup)
+	outer.HandleFunc("POST /api/auth/login", authHandlers.HandleLogin)
+	outer.HandleFunc("POST /api/auth/logout", authHandlers.HandleLogout)
+	outer.HandleFunc("GET /api/auth/setup", authHandlers.GetSetupStatus)
+	outer.HandleFunc("POST /api/auth/setup", authHandlers.CreateFirstUser)
 
 	// Protected routes live on an inner mux wrapped with RequireAuth.
 	apiMux := http.NewServeMux()
@@ -370,7 +369,7 @@ func doRequest(h http.Handler, method, path, body, token string) *httptest.Respo
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if token != "" {
-		req.AddCookie(&http.Cookie{Name: "session", Value: token})
+		req.AddCookie(&http.Cookie{Name: "graywolf_session", Value: token})
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -378,18 +377,18 @@ func doRequest(h http.Handler, method, path, body, token string) *httptest.Respo
 }
 
 // hasSessionCookie reports whether the response set a cookie named
-// "session" — used by the public-routes test to confirm login
+// "graywolf_session" — used by the public-routes test to confirm login
 // actually issued a credential.
 func hasSessionCookie(rec *httptest.ResponseRecorder) bool {
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == "session" && c.Value != "" {
+		if c.Name == "graywolf_session" && c.Value != "" {
 			return true
 		}
 	}
 	// Fallback: some middleware compositions only set the raw
 	// Set-Cookie header without going through SetCookie.
 	for _, hdr := range rec.Header().Values("Set-Cookie") {
-		if strings.HasPrefix(hdr, "session=") {
+		if strings.HasPrefix(hdr, "graywolf_session=") {
 			return true
 		}
 	}

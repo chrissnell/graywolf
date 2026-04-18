@@ -10,10 +10,13 @@
   let loading = $state(false);
 
   onMount(async () => {
+    // GET /agw always returns 200 with defaults on a fresh install; the
+    // DTO constructor seeds non-empty defaults for listen_addr and
+    // callsigns server-side, so no UI-side || fallback is needed.
     const data = await api.get('/agw');
-    if (data) form = {
-      listen_addr: data.listen_addr || '0.0.0.0:8000',
-      callsigns: data.callsigns || 'N0CALL',
+    form = {
+      listen_addr: data.listen_addr,
+      callsigns: data.callsigns,
       enabled: data.enabled,
     };
   });

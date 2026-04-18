@@ -16,9 +16,9 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
-	"github.com/chrissnell/graywolf/pkg/historydb"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/historydb"
 	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
@@ -482,18 +482,28 @@ func (a *App) wireIGate(ctx context.Context) error {
 }
 
 // wireAGW constructs a.agwServer from configstore. A disabled or
-// missing AGW config leaves a.agwServer nil.
+// missing AGW config leaves a.agwServer nil. The agwReload channel is
+// created unconditionally so an initially-disabled AGW can be toggled
+// on via the API without restarting graywolf.
 func (a *App) wireAGW(ctx context.Context) error {
+	a.agwReload = make(chan struct{}, 1)
+
 	agwCfg, err := a.store.GetAgwConfig(ctx)
 	if err != nil || agwCfg == nil || !agwCfg.Enabled {
 		return nil
 	}
+	a.agwServer = a.buildAgwServer(agwCfg)
+	return nil
+}
 
+// buildAgwServer constructs an *agw.Server from the given AGW config.
+// Shared by wireAGW (startup) and reloadAgw (live reconfigure).
+func (a *App) buildAgwServer(agwCfg *configstore.AgwConfig) *agw.Server {
 	calls := strings.Split(agwCfg.Callsigns, ",")
 	for i := range calls {
 		calls[i] = strings.TrimSpace(calls[i])
 	}
-	a.agwServer = agw.NewServer(agw.ServerConfig{
+	return agw.NewServer(agw.ServerConfig{
 		ListenAddr:    agwCfg.ListenAddr,
 		PortCallsigns: calls,
 		PortToChannel: map[uint8]uint32{0: 1},
@@ -506,7 +516,15 @@ func (a *App) wireAGW(ctx context.Context) error {
 			a.metrics.AgwDecodeErrors.WithLabelValues(stage).Inc()
 		},
 	})
-	return nil
+}
+
+// currentAgwServer returns the currently-installed AGW server or nil
+// if AGW is disabled. Takes the guard mutex so callers can race with
+// a live reload swap.
+func (a *App) currentAgwServer() *agw.Server {
+	a.agwMu.Lock()
+	defer a.agwMu.Unlock()
+	return a.agwServer
 }
 
 // wireHTTP builds the HTTP server, webapi server, auth handlers, and
@@ -531,6 +549,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		KissCtx:       ctx,
 		Logger:        a.logger,
 		HistoryDBPath: a.cfg.HistoryDBPath,
+		Version:       a.cfg.Version,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)
@@ -545,25 +564,37 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	apiSrv.SetBeaconReload(a.beaconReload)
 	apiSrv.SetBeaconSendNow(a.beaconSched.SendNow)
 	apiSrv.SetDigipeaterReload(a.digipeaterReload)
+	apiSrv.SetAgwReload(a.agwReload)
 	a.positionLogReload = make(chan struct{}, 1)
 	apiSrv.SetPositionLogReload(a.positionLogReload)
 
-	version := a.cfg.Version
-	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"version":%q}`, version)
-	})
+	// /api/version is public (the UI reads it before login to pick
+	// which screens to show). It is mounted on the outer mux so it
+	// bypasses RequireAuth. The handler itself lives in pkg/webapi.
+	webapi.RegisterVersion(apiSrv, mux)
 
-	authHandlers := &webauth.Handlers{Auth: a.authStore, Secure: secure, Logger: a.logger}
-	mux.HandleFunc("/api/auth/login", authHandlers.HandleLogin)
-	mux.HandleFunc("/api/auth/logout", authHandlers.HandleLogout)
-	mux.HandleFunc("/api/auth/setup", authHandlers.HandleSetup)
+	// /api/auth/* is public and lives on the outer mux (not the
+	// RequireAuth-wrapped apiMux). Each endpoint is bound to an explicit
+	// method via Go 1.22 method-scoped patterns so the mux produces
+	// 405 with an Allow header automatically for wrong verbs.
+	authHandlers := &webauth.Handlers{
+		Auth:          a.authStore,
+		Secure:        secure,
+		Logger:        a.logger,
+		SessionMaxAge: a.cfg.SessionMaxAge,
+	}
+	mux.HandleFunc("POST /api/auth/login", authHandlers.HandleLogin)
+	mux.HandleFunc("POST /api/auth/logout", authHandlers.HandleLogout)
+	mux.HandleFunc("GET /api/auth/setup", authHandlers.GetSetupStatus)
+	mux.HandleFunc("POST /api/auth/setup", authHandlers.CreateFirstUser)
 
 	apiMux := http.NewServeMux()
 	apiSrv.RegisterRoutes(apiMux)
-	webapi.RegisterPackets(apiSrv, a.plog, a.stationPos)(apiMux)
-	webapi.RegisterStations(a.stationCache)(apiMux)
-	webapi.RegisterPosition(apiSrv, a.stationPos, apiMux)
+	// Canonical shape for every out-of-band RegisterXxx helper is
+	// (srv, mux, deps...). Keep this block consistent.
+	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
+	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
+	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
 	if a.ig != nil {
 		webapi.RegisterIgate(apiSrv, apiMux, a.ig.SetSimulationMode, a.ig.Status)
 	}
@@ -983,8 +1014,8 @@ func (a *App) bridgeComponent() namedComponent {
 					}
 
 					if f.IsUI() {
-						if a.agwServer != nil {
-							a.agwServer.BroadcastMonitoredUI(uint8(rf.Channel), f)
+						if srv := a.currentAgwServer(); srv != nil {
+							srv.BroadcastMonitoredUI(uint8(rf.Channel), f)
 						}
 						a.digi.Handle(ctx, rf.Channel, f)
 						if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
@@ -1034,31 +1065,100 @@ func (a *App) agwComponent() namedComponent {
 	return namedComponent{
 		name: "agw",
 		start: func(ctx context.Context) error {
-			if a.agwServer == nil {
-				return nil
+			if a.agwServer != nil {
+				a.startAgwServer(ctx, a.agwServer)
 			}
-			a.agwWG.Add(1)
-			go func() {
-				defer a.agwWG.Done()
-				if err := a.agwServer.ListenAndServe(ctx); err != nil {
-					a.logger.Error("agw server", "err", err)
-				}
-			}()
+			if a.agwReload != nil {
+				a.agwReloadWG.Add(1)
+				go func() {
+					defer a.agwReloadWG.Done()
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-a.agwReload:
+							a.reloadAgw(ctx)
+						}
+					}
+				}()
+			}
 			return nil
 		},
 		stop: func(shutdownCtx context.Context) error {
-			if a.agwServer == nil {
+			// Stop the reload watcher before tearing the server down so
+			// a signal racing with shutdown cannot revive it.
+			if err := waitGroup(shutdownCtx, &a.agwReloadWG, "agw reload"); err != nil {
+				return err
+			}
+			srv := a.currentAgwServer()
+			if srv == nil {
 				return nil
 			}
 			// Shutdown closes live connections and the listener port
 			// so a quick restart is safe even before ListenAndServe
 			// observes ctx cancel.
-			if err := a.agwServer.Shutdown(shutdownCtx); err != nil {
+			if err := srv.Shutdown(shutdownCtx); err != nil {
 				a.logger.Warn("agw server shutdown", "err", err)
 			}
 			return waitGroup(shutdownCtx, &a.agwWG, "agw server")
 		},
 	}
+}
+
+// startAgwServer launches ListenAndServe for the given server in a
+// goroutine tracked by a.agwWG. Caller is expected to have already
+// installed the server via a.agwMu.
+func (a *App) startAgwServer(ctx context.Context, srv *agw.Server) {
+	a.agwWG.Add(1)
+	go func() {
+		defer a.agwWG.Done()
+		if err := srv.ListenAndServe(ctx); err != nil {
+			a.logger.Error("agw server", "err", err)
+		}
+	}()
+}
+
+// reloadAgw re-reads AGW config from configstore and reconciles the
+// running AGW server with it: stops the old one (if any), starts a
+// fresh one (if enabled), and updates a.agwServer under a.agwMu.
+//
+// Any live TCP clients on the old listener are dropped — AGW has no
+// graceful mid-connection config switch, so the only correct behaviour
+// on a ListenAddr or callsign change is a hard cycle. Clients will see
+// their TCP connection close and reconnect.
+func (a *App) reloadAgw(ctx context.Context) {
+	agwCfg, err := a.store.GetAgwConfig(ctx)
+	if err != nil {
+		a.logger.Warn("agw reload: read config", "err", err)
+		return
+	}
+
+	a.agwMu.Lock()
+	old := a.agwServer
+	a.agwServer = nil
+	a.agwMu.Unlock()
+
+	// Tear the old listener down outside the lock so a slow shutdown
+	// can't stall BroadcastMonitoredUI callers.
+	if old != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := old.Shutdown(shutdownCtx); err != nil {
+			a.logger.Warn("agw reload: old server shutdown", "err", err)
+		}
+		cancel()
+	}
+
+	if agwCfg == nil || !agwCfg.Enabled {
+		a.logger.Info("agw reload: disabled")
+		return
+	}
+
+	srv := a.buildAgwServer(agwCfg)
+	a.agwMu.Lock()
+	a.agwServer = srv
+	a.agwMu.Unlock()
+	a.startAgwServer(ctx, srv)
+	a.logger.Info("agw reload: restarted", "listen_addr", agwCfg.ListenAddr)
 }
 
 func (a *App) igateComponent() namedComponent {

@@ -1,0 +1,15 @@
+# Generated OpenAPI artifacts — collapse in review-by-default.
+# Regenerate with `make docs` (Go spec) and `make docs-api-html`
+# (static Swagger UI page). See pkg/webapi/docs/op_ids.go for the
+# frozen operation-ID contract.
+graywolf/pkg/webapi/docs/gen/** linguist-generated=true
+docs/handbook/openapi.json    linguist-generated=true
+docs/handbook/openapi.yaml    linguist-generated=true
+docs/handbook/api.html        linguist-generated=true
+
+# Generated TypeScript client for the UI. Regenerate with
+# `make api-client` (which runs `npm run api:generate` under the hood).
+graywolf/web/src/api/generated/** linguist-generated=true
+
+# Vendored Swagger UI distribution (Apache-2.0). Not our code.
+docs/handbook/vendor/swagger-ui/** linguist-vendored=true

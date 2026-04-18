@@ -3,10 +3,12 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
+	"gorm.io/gorm"
 )
 
 // decodeJSON reads a JSON request body into T and rejects any unknown
@@ -47,20 +49,27 @@ func handleList[TModel any, TResp any](
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleGet is a generic GET-by-id handler. A lookup failure maps to
-// 404 (the store returns a gorm.ErrRecordNotFound which is not a
-// server fault).
+// handleGet is a generic GET-by-id handler. Only gorm.ErrRecordNotFound
+// maps to 404; every other store error routes through internalError so
+// real failures (connection loss, context cancel, driver faults) are
+// logged and surfaced as 500 with a sanitized body instead of being
+// silently masked as "not found".
 func handleGet[TModel any, TResp any](
 	s *Server,
 	w http.ResponseWriter,
 	r *http.Request,
+	op string,
 	id uint32,
 	get func(ctx context.Context, id uint32) (TModel, error),
 	toResp func(TModel) TResp,
 ) {
 	m, err := get(r.Context(), id)
 	if err != nil {
-		notFound(w)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			notFound(w)
+			return
+		}
+		s.internalError(w, r, op, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toResp(m))

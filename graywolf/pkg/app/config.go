@@ -46,6 +46,12 @@ type Config struct {
 	// Debug enables debug-level logging (-debug).
 	Debug bool
 
+	// SessionMaxAge, when non-zero, overrides the webauth package's
+	// default session cookie lifetime. Zero means use the webauth
+	// default (currently 7 days). Threaded through wireHTTP into
+	// webauth.Handlers; not yet surfaced as a CLI flag.
+	SessionMaxAge time.Duration
+
 	// Version and GitCommit are injected by the main shim from
 	// -ldflags-provided build constants. They are not parsed from
 	// command-line flags.
