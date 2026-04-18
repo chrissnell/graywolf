@@ -196,7 +196,7 @@ bump-beta:
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "$(BETA_TAG)"
 
 handbook-sync:
-	rsync -av --delete docs/handbook/ /Volumes/NFS/static-sites/chrissnell.com/software/handbook/
+	rsync -av --delete docs/handbook/ /Volumes/NFS/static-sites/chrissnell.com/software/graywolf
 
 # --- OpenAPI documentation pipeline --------------------------------------
 #
