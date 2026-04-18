@@ -232,10 +232,10 @@ func makeGateableLine(a, b byte) string {
 	return "W5" + string([]byte{a, b}) + ">APRS,WIDE1-1:!3725.00N/12158.00W>hi"
 }
 
-// TestIsToRfHookCalledOnFilterAllow verifies that IsToRfHook fires for
+// TestIsRxHookCalledOnFilterAllow verifies that IsRxHook fires for
 // packets that pass the filter, and receives the decoded packet and
 // original line.
-func TestIsToRfHookCalledOnFilterAllow(t *testing.T) {
+func TestIsRxHookCalledOnFilterAllow(t *testing.T) {
 	var hookCalls int32
 	var gotLine string
 	ig, err := New(Config{
@@ -249,7 +249,7 @@ func TestIsToRfHookCalledOnFilterAllow(t *testing.T) {
 				return nil
 			},
 		},
-		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+		IsRxHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
 			atomic.AddInt32(&hookCalls, 1)
 			gotLine = line
 		},
@@ -261,16 +261,18 @@ func TestIsToRfHookCalledOnFilterAllow(t *testing.T) {
 	ig.handleISLine(gateableLine)
 
 	if got := atomic.LoadInt32(&hookCalls); got != 1 {
-		t.Fatalf("IsToRfHook calls = %d, want 1", got)
+		t.Fatalf("IsRxHook calls = %d, want 1", got)
 	}
 	if gotLine != gateableLine {
-		t.Fatalf("IsToRfHook line = %q, want %q", gotLine, gateableLine)
+		t.Fatalf("IsRxHook line = %q, want %q", gotLine, gateableLine)
 	}
 }
 
-// TestIsToRfHookNotCalledOnFilterReject verifies that IsToRfHook does
-// not fire when the filter rejects the packet.
-func TestIsToRfHookNotCalledOnFilterReject(t *testing.T) {
+// TestIsRxHookFiresEvenWhenFilterRejects verifies that IsRxHook fires
+// for every received APRS-IS packet regardless of whether the local
+// IS->RF filter engine would allow it. The filter only gates RF
+// transmission; map display must not be coupled to it.
+func TestIsRxHookFiresEvenWhenFilterRejects(t *testing.T) {
 	var hookCalls int32
 	ig, err := New(Config{
 		Server:   "127.0.0.1:1",
@@ -278,7 +280,7 @@ func TestIsToRfHookNotCalledOnFilterReject(t *testing.T) {
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
-		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+		IsRxHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
 			atomic.AddInt32(&hookCalls, 1)
 		},
 	})
@@ -286,17 +288,22 @@ func TestIsToRfHookNotCalledOnFilterReject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Send a line whose source does not match the W5 prefix rule.
+	// Send a line whose source does not match the W5 prefix rule; the
+	// filter will reject it for transmission, but the hook must still
+	// fire so the station reaches the map.
 	ig.handleISLine("K0ABC>APRS,WIDE1-1:!3725.00N/12158.00W>hi")
 
-	if got := atomic.LoadInt32(&hookCalls); got != 0 {
-		t.Fatalf("IsToRfHook calls = %d, want 0 (filter rejected)", got)
+	if got := atomic.LoadInt32(&hookCalls); got != 1 {
+		t.Fatalf("IsRxHook calls = %d, want 1 (must fire regardless of filter)", got)
+	}
+	if got := atomic.LoadUint64(&ig.statFiltered); got != 1 {
+		t.Fatalf("statFiltered = %d, want 1 (filter still counts the reject)", got)
 	}
 }
 
-// TestIsToRfHookFiresWithoutGovernor verifies that IsToRfHook fires
-// even when Governor is nil (IS->RF gating disabled).
-func TestIsToRfHookFiresWithoutGovernor(t *testing.T) {
+// TestIsRxHookFiresWithoutGovernor verifies that IsRxHook fires even
+// when Governor is nil (IS->RF gating disabled).
+func TestIsRxHookFiresWithoutGovernor(t *testing.T) {
 	var hookCalls int32
 	ig, err := New(Config{
 		Server:   "127.0.0.1:1",
@@ -305,7 +312,7 @@ func TestIsToRfHookFiresWithoutGovernor(t *testing.T) {
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
 		Governor: nil, // IS->RF gating disabled
-		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+		IsRxHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
 			atomic.AddInt32(&hookCalls, 1)
 		},
 	})
@@ -316,6 +323,6 @@ func TestIsToRfHookFiresWithoutGovernor(t *testing.T) {
 	ig.handleISLine(gateableLine)
 
 	if got := atomic.LoadInt32(&hookCalls); got != 1 {
-		t.Fatalf("IsToRfHook calls = %d, want 1 (must fire even without Governor)", got)
+		t.Fatalf("IsRxHook calls = %d, want 1 (must fire even without Governor)", got)
 	}
 }

@@ -450,7 +450,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 				a.stationCache.Update(entries)
 			}
 		},
-		IsToRfHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
+		IsRxHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
 			if pkt == nil {
 				return
 			}

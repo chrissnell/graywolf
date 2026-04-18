@@ -155,8 +155,8 @@
 <PageHeader title="iGate" subtitle="Internet gateway configuration" />
 
 <div class="tabs">
-  <button class="tab" class:active={activeTab === 'config'} onclick={() => activeTab = 'config'}>RF → APRS-IS</button>
-  <button class="tab" class:active={activeTab === 'filters'} onclick={() => activeTab = 'filters'}>APRS-IS → RF</button>
+  <button class="tab" class:active={activeTab === 'config'} onclick={() => activeTab = 'config'}>Connection</button>
+  <button class="tab" class:active={activeTab === 'filters'} onclick={() => activeTab = 'filters'}>APRS-IS Feed & TX Rules</button>
 </div>
 
 <div class="tab-panel" class:hidden={activeTab !== 'config'}>
@@ -193,14 +193,14 @@
 
 <div class="tab-panel" class:hidden={activeTab !== 'filters'}>
   <p class="tab-doc">
-    Controls which APRS-IS packets reach graywolf and which are gated to RF.
-    The server filter limits what the APRS-IS server forwards to you (if empty,
-    no packets are received). The rules below decide which of those packets are
-    transmitted on RF — if no rules are defined, nothing is gated.
+    Two independent controls: the <strong>server filter</strong> tells the APRS-IS
+    server which packets to send you, and the <strong>IS → RF transmit rules</strong>
+    decide which of those packets get re-transmitted on RF. Every packet the server
+    sends you appears on the live map regardless of the transmit rules.
   </p>
   <Box>
     <form onsubmit={handleSave}>
-      <FormField label="APRS-IS Server Filter" id="ig-filter" hint="Filter string sent to APRS-IS at login (e.g. r/35.0/-106.0/100). If empty, no packets are received from APRS-IS.">
+      <FormField label="APRS-IS Server Filter" id="ig-filter" hint="Sent to the APRS-IS server at login to control what it forwards to you (e.g. r/35.0/-106.0/100 for a 100 km radius). Everything the server sends — including packets rejected by the transmit rules below — is shown on the live map. If empty, no packets are received.">
         <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" />
       </FormField>
       <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
@@ -213,7 +213,11 @@
       </div>
     </form>
   </Box>
-  <h3 class="section-heading">IS → RF Gating Rules</h3>
+  <h3 class="section-heading">IS → RF Transmit Rules</h3>
+  <p class="section-doc">
+    First matching rule wins; if none match, the packet is not transmitted.
+    These rules only affect RF transmission — they do not hide stations from the map.
+  </p>
   <div class="filters-header">
     <Button variant="primary" onclick={openCreate}>+ Add Rule</Button>
   </div>
@@ -270,6 +274,13 @@
     font-weight: 600;
     color: var(--text-primary);
     margin: 20px 0 8px;
+  }
+  .section-doc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0 0 12px;
+    max-width: 720px;
   }
   .filters-header {
     display: flex;
