@@ -127,12 +127,14 @@
 
   async function handleFilterSave() {
     if (!validateFilter()) return;
+    // Strip fields not in IGateRfFilterRequest DTO (backend rejects unknown fields)
+    const { id: _id, ...data } = filterForm;
     try {
       if (editing) {
-        await api.put(`/igate/filters/${editing.id}`, filterForm);
+        await api.put(`/igate/filters/${editing.id}`, data);
         toasts.success('Filter updated');
       } else {
-        await api.post('/igate/filters', filterForm);
+        await api.post('/igate/filters', data);
         toasts.success('Filter created');
       }
       modalOpen = false;
