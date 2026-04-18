@@ -4,7 +4,7 @@
 
 Graywolf is a modern APRS station with a software modem, digipeater, iGate, and web UI. It bundles everything you need to put an APRS station on the air — from raw audio demodulation to APRS-IS gating — and makes it easy with a browser-based configuration interface. 
 
-**📖 [Read the Handbook](https://chrissnell.com/software/graywolf/)** — installation, configuration, and operation guide.
+**📖 [Read the Handbook](https://chrissnell.com/software/graywolf/)** — installation, configuration, operation guide, and REST API reference.
 
 **🔧 [Known-Working Configurations](https://chrissnell.com/software/graywolf/configurations.html)** — community-tested hardware setups with exact settings. Check here for your device, and submit a PR if yours isn't listed.
 
