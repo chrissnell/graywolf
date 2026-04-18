@@ -168,6 +168,10 @@ func (s *Server) testRigctld(w http.ResponseWriter, r *http.Request) {
 // Error mapping:
 //   - missing/empty {chip}         → 400 (defense in depth; the mux
 //     requires a non-empty segment)
+//   - path is not a gpiochip        → 400 "not a gpiochip device" (client
+//     supplied a stale tty/other char device — e.g., the PTT form left a
+//     /dev/ttyACM* selected when the user flipped method to gpio)
+//   - path does not exist          → 404
 //   - non-Linux host               → 501 "gpio line enumeration requires linux"
 //   - permission denied on the chip → 403 with a hint about gpio group
 //     membership
@@ -181,6 +185,7 @@ func (s *Server) testRigctld(w http.ResponseWriter, r *http.Request) {
 // @Success  200  {array}  pttdevice.GpioLineInfo
 // @Failure  400  {object} webtypes.ErrorResponse
 // @Failure  403  {object} webtypes.ErrorResponse
+// @Failure  404  {object} webtypes.ErrorResponse
 // @Failure  500  {object} webtypes.ErrorResponse
 // @Failure  501  {object} webtypes.ErrorResponse
 // @Security CookieAuth
@@ -202,6 +207,22 @@ func (s *Server) listGpioLines(w http.ResponseWriter, r *http.Request) {
 				"chip", chip, "err", err)
 			writeJSON(w, http.StatusNotImplemented,
 				webtypes.ErrorResponse{Error: "gpio line enumeration requires linux"})
+			return
+		}
+		// Client supplied a path that isn't a gpiochip (e.g., the PTT
+		// form kept a stale /dev/ttyACM* when switching method to
+		// gpio). That's a 400, not a 500.
+		if errors.Is(err, pttdevice.ErrNotGpioChip) {
+			writeJSON(w, http.StatusBadRequest, webtypes.ErrorResponse{
+				Error: chip + " is not a gpiochip device — select a /dev/gpiochipN path",
+			})
+			return
+		}
+		// Missing path is a client mistake, not a server fault.
+		if errors.Is(err, fs.ErrNotExist) {
+			writeJSON(w, http.StatusNotFound, webtypes.ErrorResponse{
+				Error: "gpiochip not found: " + chip,
+			})
 			return
 		}
 		// Surface permission failures with an actionable hint — the

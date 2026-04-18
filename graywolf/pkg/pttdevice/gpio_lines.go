@@ -1,5 +1,12 @@
 package pttdevice
 
+import "errors"
+
+// ErrNotGpioChip is returned by EnumerateGpioLines when the supplied path
+// exists but is not a GPIO character device (e.g., a serial tty). Callers
+// map this to a 400 rather than a 500: the caller supplied a bad path.
+var ErrNotGpioChip = errors.New("not a gpiochip device")
+
 // GpioLineInfo describes a single GPIO line on a gpiochip character device.
 // Returned by EnumerateGpioLines; consumed by the PTT web API to populate the
 // GPIO line selector in the UI.

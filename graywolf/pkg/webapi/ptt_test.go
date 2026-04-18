@@ -84,9 +84,8 @@ func TestHandlePttGpioLinesMethodNotAllowed(t *testing.T) {
 //   - non-Linux: always 501 (the enumeration stub's fixed error), so the
 //     UI can distinguish "this platform can't do it" from a genuine
 //     server fault.
-//   - Linux with a guaranteed-missing path: 500, because the kernel
-//     returns ENOENT and that's a legitimate server-side failure, not a
-//     platform limitation.
+//   - Linux with a guaranteed-missing path: 404, because a missing chip
+//     path is a client mistake, not a server fault.
 //
 // The URL shape post-Phase-4 encodes the chip device path in a single
 // segment. Go's ServeMux already unescapes %2F in a path value, and
@@ -105,8 +104,8 @@ func TestHandlePttGpioLinesPlatform(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 
 	if runtime.GOOS == "linux" {
-		if rec.Code != http.StatusInternalServerError {
-			t.Fatalf("expected 500 for missing chip on linux, got %d: %s",
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for missing chip on linux, got %d: %s",
 				rec.Code, rec.Body.String())
 		}
 		return
@@ -125,6 +124,32 @@ func TestHandlePttGpioLinesPlatform(t *testing.T) {
 	// the UI can show a helpful message.
 	if body["error"] == "" {
 		t.Errorf("expected non-empty error body, got %+v", body)
+	}
+}
+
+// TestHandlePttGpioLinesNotAGpioChip verifies that supplying a path that
+// exists but is not a gpiochip (typical case: a stale /dev/ttyACM* left
+// in the PTT form when the user flips method to "gpio") returns 400, not
+// 500. /dev/null is present on every Unix host and is a char device but
+// is not under /sys/bus/gpio/devices, so gpiocdev.IsChip rejects it.
+// Linux-only: on other platforms the stub returns 501 before the check.
+func TestHandlePttGpioLinesNotAGpioChip(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("gpio line enumeration is Linux-only")
+	}
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// url.PathEscape("/dev/null") → "%2Fdev%2Fnull"
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/ptt/gpio-chips/%2Fdev%2Fnull/lines", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-gpiochip path, got %d: %s",
+			rec.Code, rec.Body.String())
 	}
 }
 

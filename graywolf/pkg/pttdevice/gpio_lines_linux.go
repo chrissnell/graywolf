@@ -3,6 +3,7 @@
 package pttdevice
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/warthog618/go-gpiocdev"
@@ -13,9 +14,16 @@ import (
 //
 // chipPath should be an absolute path to a gpiochip device node (for example,
 // "/dev/gpiochip0"). Errors from the kernel are wrapped with chipPath context.
+// When chipPath resolves to a file that isn't a GPIO character device (the
+// typical case is a stale tty left in a PTT form when the user flips method
+// to "gpio"), the wrapped error includes ErrNotGpioChip so callers can
+// distinguish client mistakes from genuine server faults.
 func EnumerateGpioLines(chipPath string) ([]GpioLineInfo, error) {
 	chip, err := gpiocdev.NewChip(chipPath)
 	if err != nil {
+		if errors.Is(err, gpiocdev.ErrNotCharacterDevice) {
+			return nil, fmt.Errorf("enumerate gpio lines on %s: %w", chipPath, ErrNotGpioChip)
+		}
 		return nil, fmt.Errorf("enumerate gpio lines on %s: open chip: %w", chipPath, err)
 	}
 	defer chip.Close()
