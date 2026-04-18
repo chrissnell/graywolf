@@ -95,6 +95,13 @@
     }
     if (lastMethod !== 'gpio' && m === 'gpio') {
       form.gpio_line = '0';
+      // Scrub a stale device_path that isn't a gpiochip. Common trigger:
+      // user clicks a detected /dev/ttyACM* (setting method=serial_rts),
+      // then flips the dropdown to gpio. Without this, the load-lines
+      // $effect fires against a non-gpiochip path and the server 400s.
+      if (form.device_path && !form.device_path.startsWith('/dev/gpiochip')) {
+        form.device_path = '';
+      }
     }
     lastMethod = m;
   });
