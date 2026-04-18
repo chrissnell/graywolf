@@ -611,7 +611,7 @@
 
   <!-- Other detected devices: muted, listed for completeness -->
   {#if otherDevices.length > 0}
-    <section class="detected-section detected-others" style="margin-top: 24px;">
+    <section class="detected-section detected-others" style="margin-top: 44px;">
       <header class="detected-heading">
         <h3 class="detected-title detected-title-muted">Other detected devices</h3>
         <p class="detected-subtitle">Listed for completeness. Pick one only if you know it's correct for your adapter.</p>
@@ -630,7 +630,7 @@
               <span class="avail-usb">USB {dev.usb_vendor}:{dev.usb_product}</span>
             {/if}
             {#if dev.warning}
-              <span class="avail-warning-text">{dev.warning}</span>
+              <span class="avail-warning-text" title={dev.warning}>{dev.warning}</span>
             {/if}
           </button>
         {/each}
@@ -973,7 +973,7 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--success, #3fb950) 20%, transparent);
   }
   .detected-title-muted {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
   .detected-subtitle {
     margin: 0;
@@ -1032,12 +1032,16 @@
     box-shadow: 0 1px 4px color-mix(in srgb, var(--success, #3fb950) 20%, transparent);
   }
 
-  /* Muted variant: lower visual weight so the eye skips them */
+  /* Muted variant: lower visual weight so the eye skips them. Fixed
+     height so every row is the same regardless of whether a card
+     carries an advisory warning line — mixed heights make the grid
+     feel busy and draw the eye unpredictably. */
   .avail-card-muted {
-    min-height: 68px;
+    height: 104px;
     padding: 10px 12px;
     background: var(--bg-secondary);
     opacity: 0.82;
+    overflow: hidden;
   }
   .avail-card-muted .avail-name {
     font-size: 13px;
@@ -1080,13 +1084,19 @@
     color: var(--text-muted);
   }
   /* Inline warning text for muted cards — quiet, advisory, not a
-     yellow stripe that steals attention. */
+     yellow stripe that steals attention. Clamped to fit the fixed
+     card height; full text is available via the native title tooltip. */
   .avail-warning-text {
     font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
     margin-top: 2px;
     line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .modal-actions {
