@@ -43,6 +43,15 @@ const (
 	OpSendBeacon   = "sendBeacon"
 )
 
+// SmartBeacon config — singleton at /api/smart-beacon. Tagged under
+// the `beacons` group so the Swagger UI clusters it with the
+// per-beacon CRUD endpoints. The curve parameters are global (no
+// per-beacon override), mirroring direwolf's SMARTBEACON directive.
+const (
+	OpGetSmartBeacon    = "getSmartBeacon"
+	OpUpdateSmartBeacon = "updateSmartBeacon"
+)
+
 // Audio devices resource — /api/audio-devices (Phase 2).
 //
 // Sub-resource endpoints (available, scan-levels, levels, test-tone,

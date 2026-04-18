@@ -248,18 +248,82 @@ type Beacon struct {
 	DelaySeconds  uint32    `gorm:"not null;default:30" json:"delay_seconds"`
 	EverySeconds  uint32    `gorm:"not null;default:1800" json:"interval"`
 	SlotSeconds   int32     `gorm:"not null;default:-1" json:"slot_seconds"`
-	SmartBeacon   bool      `gorm:"not null;default:false" json:"smart_beacon"`
-	SbFastSpeed   uint32    `gorm:"default:60" json:"sb_fast_speed"`
-	SbSlowSpeed   uint32    `gorm:"default:5" json:"sb_slow_speed"`
-	SbFastRate    uint32    `gorm:"default:60" json:"sb_fast_rate"`
-	SbSlowRate    uint32    `gorm:"default:1800" json:"sb_slow_rate"`
-	SbTurnAngle   uint32    `gorm:"default:30" json:"sb_turn_angle"`
-	SbTurnSlope   uint32    `gorm:"default:255" json:"sb_turn_slope"`
-	SbMinTurnTime uint32    `gorm:"default:5" json:"sb_min_turn_time"`
+	SmartBeacon bool `gorm:"not null;default:false" json:"smart_beacon"`
+	// Deprecated: use the global configstore.SmartBeaconConfig instead.
+	// This column is no longer read as of 2026-04-18 (the SmartBeacon
+	// curve is now a global singleton, matching direwolf). The column
+	// will be dropped in a future migration once all deployments have
+	// moved to the global config. See
+	// .context/2026-04-18-smart-beacon-implementation.md.
+	SbFastSpeed uint32 `gorm:"default:60" json:"sb_fast_speed"`
+	// Deprecated: use the global configstore.SmartBeaconConfig instead.
+	// This column is no longer read as of 2026-04-18 (the SmartBeacon
+	// curve is now a global singleton, matching direwolf). The column
+	// will be dropped in a future migration once all deployments have
+	// moved to the global config. See
+	// .context/2026-04-18-smart-beacon-implementation.md.
+	SbSlowSpeed uint32 `gorm:"default:5" json:"sb_slow_speed"`
+	// Deprecated: use the global configstore.SmartBeaconConfig instead.
+	// This column is no longer read as of 2026-04-18 (the SmartBeacon
+	// curve is now a global singleton, matching direwolf). The column
+	// will be dropped in a future migration once all deployments have
+	// moved to the global config. See
+	// .context/2026-04-18-smart-beacon-implementation.md.
+	SbFastRate uint32 `gorm:"default:60" json:"sb_fast_rate"`
+	// Deprecated: use the global configstore.SmartBeaconConfig instead.
+	// This column is no longer read as of 2026-04-18 (the SmartBeacon
+	// curve is now a global singleton, matching direwolf). The column
+	// will be dropped in a future migration once all deployments have
+	// moved to the global config. See
+	// .context/2026-04-18-smart-beacon-implementation.md.
+	SbSlowRate uint32 `gorm:"default:1800" json:"sb_slow_rate"`
+	// Deprecated: use the global configstore.SmartBeaconConfig instead.
+	// This column is no longer read as of 2026-04-18 (the SmartBeacon
+	// curve is now a global singleton, matching direwolf). The column
+	// will be dropped in a future migration once all deployments have
+	// moved to the global config. See
+	// .context/2026-04-18-smart-beacon-implementation.md.
+	SbTurnAngle uint32 `gorm:"default:30" json:"sb_turn_angle"`
+	// Deprecated: use the global configstore.SmartBeaconConfig instead.
+	// This column is no longer read as of 2026-04-18 (the SmartBeacon
+	// curve is now a global singleton, matching direwolf). The column
+	// will be dropped in a future migration once all deployments have
+	// moved to the global config. See
+	// .context/2026-04-18-smart-beacon-implementation.md.
+	SbTurnSlope uint32 `gorm:"default:255" json:"sb_turn_slope"`
+	// Deprecated: use the global configstore.SmartBeaconConfig instead.
+	// This column is no longer read as of 2026-04-18 (the SmartBeacon
+	// curve is now a global singleton, matching direwolf). The column
+	// will be dropped in a future migration once all deployments have
+	// moved to the global config. See
+	// .context/2026-04-18-smart-beacon-implementation.md.
+	SbMinTurnTime uint32 `gorm:"default:5" json:"sb_min_turn_time"`
 	SendToAPRSIS  bool      `gorm:"column:send_to_aprs_is;not null;default:false" json:"send_to_aprs_is"`
 	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt     time.Time `json:"-"`
 	UpdatedAt     time.Time `json:"-"`
+}
+
+// SmartBeaconConfig is a singleton (id=1) row holding the global
+// SmartBeacon curve parameters applied to every beacon with
+// SmartBeacon=true. Mirrors direwolf's single SMARTBEACON directive:
+// the curve is global, not per-beacon. No integer defaults are declared
+// in gorm tags — defaults live in pkg/beacon.DefaultSmartBeacon() (the
+// single source of truth) and are surfaced to callers via the DTO layer
+// when no row exists. GetSmartBeaconConfig returning (nil, nil) signals
+// "no row yet — apply defaults."
+type SmartBeaconConfig struct {
+	ID          uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
+	Enabled     bool      `gorm:"not null" json:"enabled"`
+	FastSpeedKt uint32    `gorm:"not null" json:"fast_speed"`
+	FastRateSec uint32    `gorm:"not null" json:"fast_rate"`
+	SlowSpeedKt uint32    `gorm:"not null" json:"slow_speed"`
+	SlowRateSec uint32    `gorm:"not null" json:"slow_rate"`
+	MinTurnDeg  uint32    `gorm:"not null" json:"min_turn_angle"`
+	TurnSlope   uint32    `gorm:"not null" json:"turn_slope"`
+	MinTurnSec  uint32    `gorm:"not null" json:"min_turn_time"`
+	CreatedAt   time.Time `json:"-"`
+	UpdatedAt   time.Time `json:"-"`
 }
 
 // PositionLogConfig controls the optional persistent position history

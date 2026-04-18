@@ -80,6 +80,7 @@ type App struct {
 	// --- Reload channels (webapi signals, drained by reload goroutines) -
 	gpsReload         chan struct{}
 	beaconReload      chan struct{}
+	smartBeaconReload chan struct{}
 	digipeaterReload  chan struct{}
 	igateReload       chan struct{}
 	positionLogReload chan struct{}
@@ -119,6 +120,12 @@ type App struct {
 	// startup (e.g. the third of seven components failing) still only
 	// tears down what actually came up.
 	started []namedComponent
+
+	// beaconReloadDone is an optional test-only hook. When non-nil, the
+	// beacon reload goroutine performs a non-blocking send onto it
+	// after every successful reload pass so tests can wait for a
+	// specific reload to land without polling. Unset in production.
+	beaconReloadDone chan struct{}
 }
 
 // New returns an App with the given config and logger. It does not

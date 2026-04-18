@@ -58,6 +58,7 @@ type Server struct {
 	igateReload       chan struct{}                              // signalled when igate config/filters change
 	positionLogReload chan struct{}                              // signalled when position log config changes
 	agwReload         chan struct{}                              // signalled when AGW config changes
+	smartBeaconReload chan struct{}                              // signalled when smart-beacon singleton config changes
 	beaconSendNow     func(ctx context.Context, id uint32) error // triggers an immediate beacon send
 }
 
@@ -135,6 +136,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerDigipeater(mux)
 	s.registerGps(mux)
 	s.registerPositionLog(mux)
+	s.registerSmartBeacon(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
@@ -177,6 +179,13 @@ func (s *Server) SetPositionLogReload(ch chan struct{}) { s.positionLogReload = 
 // and restart the AGW TCP server so new ListenAddr / callsign /
 // enabled state takes effect without a graywolf restart.
 func (s *Server) SetAgwReload(ch chan struct{}) { s.agwReload = ch }
+
+// SetSmartBeaconReload installs the channel signalled after a
+// successful PUT /api/smart-beacon. Wiring (pkg/app) is expected to
+// drain this channel and re-run the beacon reload pipeline so new
+// curve parameters take effect without a graywolf restart. Buffer size
+// 1 + coalesced non-blocking sends keep rapid edits from stacking.
+func (s *Server) SetSmartBeaconReload(ch chan struct{}) { s.smartBeaconReload = ch }
 
 // SetIgateStatusFn installs the function used by /api/status to report
 // igate counters.

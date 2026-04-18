@@ -103,11 +103,21 @@ func (s *Store) Migrate() error {
 		&Beacon{},
 		&PacketFilter{},
 		&GPSConfig{},
+		&SmartBeaconConfig{},
 		&PositionLogConfig{},
 	); err != nil {
 		return err
 	}
-	return s.runMigrations(postAutoMigrate)
+	if err := s.runMigrations(postAutoMigrate); err != nil {
+		return err
+	}
+	// Seed the SmartBeacon singleton from any legacy per-beacon Sb*
+	// tunings the first time the new table appears. Idempotent — no-op
+	// once the singleton row exists or no beacon has non-default values.
+	if err := s.seedSmartBeaconFromLegacyBeacons(context.Background()); err != nil {
+		return fmt.Errorf("seed smart beacon: %w", err)
+	}
+	return nil
 }
 
 

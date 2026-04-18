@@ -994,6 +994,97 @@ definitions:
       slot_time_ms:
         type: integer
     type: object
+  dto.SmartBeaconConfigRequest:
+    properties:
+      enabled:
+        description: |-
+          Enabled is true when SmartBeacon curve computation is active.
+          When false, every beacon with smart_beacon=true falls back to
+          its fixed interval.
+        type: boolean
+      fast_rate:
+        description: |-
+          FastRateSec is the beacon interval in seconds at or above
+          FastSpeedKt. Must be shorter than SlowRateSec.
+        type: integer
+      fast_speed:
+        description: |-
+          FastSpeedKt is the knots threshold at or above which beacons
+          transmit at FastRateSec. The "moving fast" end of the curve.
+          Must be greater than SlowSpeedKt.
+        type: integer
+      min_turn_angle:
+        description: |-
+          MinTurnDeg is the fixed-component turn angle threshold, in
+          degrees, used in the corner-pegging formula. Must be in
+          [1, 179].
+        type: integer
+      min_turn_time:
+        description: |-
+          MinTurnSec is the minimum interval in seconds between
+          turn-triggered beacons. Must be greater than zero.
+        type: integer
+      slow_rate:
+        description: |-
+          SlowRateSec is the beacon interval in seconds at or below
+          SlowSpeedKt. Must be longer than FastRateSec.
+        type: integer
+      slow_speed:
+        description: |-
+          SlowSpeedKt is the knots threshold at or below which beacons
+          transmit at SlowRateSec. Must be greater than zero to prevent a
+          degenerate middle-branch division by zero inside
+          beacon.SmartBeaconConfig.Interval().
+        type: integer
+      turn_slope:
+        description: |-
+          TurnSlope is the speed-dependent component (degrees·knots) of
+          the corner-pegging turn threshold. Higher speed → lower
+          effective threshold → corner pegs fire sooner. Must be greater
+          than zero.
+        type: integer
+    type: object
+  dto.SmartBeaconConfigResponse:
+    properties:
+      enabled:
+        description: Enabled is true when SmartBeacon curve computation is active.
+        type: boolean
+      fast_rate:
+        description: |-
+          FastRateSec is the beacon interval in seconds at or above
+          FastSpeedKt.
+        type: integer
+      fast_speed:
+        description: |-
+          FastSpeedKt is the knots threshold at or above which beacons
+          transmit at FastRateSec.
+        type: integer
+      min_turn_angle:
+        description: |-
+          MinTurnDeg is the fixed-component turn angle threshold in
+          degrees.
+        type: integer
+      min_turn_time:
+        description: |-
+          MinTurnSec is the minimum interval in seconds between
+          turn-triggered beacons.
+        type: integer
+      slow_rate:
+        description: |-
+          SlowRateSec is the beacon interval in seconds at or below
+          SlowSpeedKt.
+        type: integer
+      slow_speed:
+        description: |-
+          SlowSpeedKt is the knots threshold at or below which beacons
+          transmit at SlowRateSec.
+        type: integer
+      turn_slope:
+        description: |-
+          TurnSlope is the speed-dependent component (degrees·knots) of
+          the corner-pegging turn threshold.
+        type: integer
+    type: object
   dto.TestRigctldRequest:
     properties:
       host:
@@ -3375,6 +3466,64 @@ paths:
       summary: Test rigctld connection
       tags:
         - ptt
+  /smart-beacon:
+    get:
+      description: |-
+        Returns the global SmartBeacon parameters that control
+        transmit cadence for every beacon with smart_beacon=true.
+        Returns defaults when no configuration has been saved yet.
+      operationId: getSmartBeacon
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SmartBeaconConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get SmartBeacon configuration
+      tags:
+        - beacons
+    put:
+      consumes:
+        - application/json
+      description: |-
+        Replaces the global SmartBeacon curve parameters. On
+        success, re-reads the persisted row and returns it so
+        the client sees the stored shape.
+      operationId: updateSmartBeacon
+      parameters:
+        - description: SmartBeacon configuration
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.SmartBeaconConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SmartBeaconConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update SmartBeacon configuration
+      tags:
+        - beacons
   /stations:
     get:
       operationId: listStations

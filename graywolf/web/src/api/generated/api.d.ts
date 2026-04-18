@@ -700,6 +700,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/smart-beacon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get SmartBeacon configuration
+         * @description Returns the global SmartBeacon parameters that control
+         *     transmit cadence for every beacon with smart_beacon=true.
+         *     Returns defaults when no configuration has been saved yet.
+         */
+        get: operations["getSmartBeacon"];
+        /**
+         * Update SmartBeacon configuration
+         * @description Replaces the global SmartBeacon curve parameters. On
+         *     success, re-reads the persisted row and returns it so
+         *     the client sees the stored shape.
+         */
+        put: operations["updateSmartBeacon"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stations": {
         parameters: {
             query?: never;
@@ -1327,6 +1355,94 @@ export interface components {
             method?: string;
             persist?: number;
             slot_time_ms?: number;
+        };
+        "dto.SmartBeaconConfigRequest": {
+            /**
+             * @description Enabled is true when SmartBeacon curve computation is active.
+             *     When false, every beacon with smart_beacon=true falls back to
+             *     its fixed interval.
+             */
+            enabled?: boolean;
+            /**
+             * @description FastRateSec is the beacon interval in seconds at or above
+             *     FastSpeedKt. Must be shorter than SlowRateSec.
+             */
+            fast_rate?: number;
+            /**
+             * @description FastSpeedKt is the knots threshold at or above which beacons
+             *     transmit at FastRateSec. The "moving fast" end of the curve.
+             *     Must be greater than SlowSpeedKt.
+             */
+            fast_speed?: number;
+            /**
+             * @description MinTurnDeg is the fixed-component turn angle threshold, in
+             *     degrees, used in the corner-pegging formula. Must be in
+             *     [1, 179].
+             */
+            min_turn_angle?: number;
+            /**
+             * @description MinTurnSec is the minimum interval in seconds between
+             *     turn-triggered beacons. Must be greater than zero.
+             */
+            min_turn_time?: number;
+            /**
+             * @description SlowRateSec is the beacon interval in seconds at or below
+             *     SlowSpeedKt. Must be longer than FastRateSec.
+             */
+            slow_rate?: number;
+            /**
+             * @description SlowSpeedKt is the knots threshold at or below which beacons
+             *     transmit at SlowRateSec. Must be greater than zero to prevent a
+             *     degenerate middle-branch division by zero inside
+             *     beacon.SmartBeaconConfig.Interval().
+             */
+            slow_speed?: number;
+            /**
+             * @description TurnSlope is the speed-dependent component (degrees·knots) of
+             *     the corner-pegging turn threshold. Higher speed → lower
+             *     effective threshold → corner pegs fire sooner. Must be greater
+             *     than zero.
+             */
+            turn_slope?: number;
+        };
+        "dto.SmartBeaconConfigResponse": {
+            /** @description Enabled is true when SmartBeacon curve computation is active. */
+            enabled?: boolean;
+            /**
+             * @description FastRateSec is the beacon interval in seconds at or above
+             *     FastSpeedKt.
+             */
+            fast_rate?: number;
+            /**
+             * @description FastSpeedKt is the knots threshold at or above which beacons
+             *     transmit at FastRateSec.
+             */
+            fast_speed?: number;
+            /**
+             * @description MinTurnDeg is the fixed-component turn angle threshold in
+             *     degrees.
+             */
+            min_turn_angle?: number;
+            /**
+             * @description MinTurnSec is the minimum interval in seconds between
+             *     turn-triggered beacons.
+             */
+            min_turn_time?: number;
+            /**
+             * @description SlowRateSec is the beacon interval in seconds at or below
+             *     SlowSpeedKt.
+             */
+            slow_rate?: number;
+            /**
+             * @description SlowSpeedKt is the knots threshold at or below which beacons
+             *     transmit at SlowRateSec.
+             */
+            slow_speed?: number;
+            /**
+             * @description TurnSlope is the speed-dependent component (degrees·knots) of
+             *     the corner-pegging turn threshold.
+             */
+            turn_slope?: number;
         };
         "dto.TestRigctldRequest": {
             host?: string;
@@ -4108,6 +4224,78 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSmartBeacon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.SmartBeaconConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateSmartBeacon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description SmartBeacon configuration */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.SmartBeaconConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.SmartBeaconConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

@@ -58,7 +58,18 @@ func (o *beaconObserver) OnBeaconSkipped(beaconName string, reason string) {
 // models the runtime shape (parsed addresses, durations, typed enums).
 // Keeping the mapping explicit here surfaces parse errors per beacon
 // without taking out the whole scheduler on a single bad row.
-func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
+//
+// SmartBeacon precedence rule: the returned cfg.SmartBeacon is non-nil
+// only when BOTH b.SmartBeacon == true AND smart != nil && smart.Enabled
+// == true. Either being false means cfg.SmartBeacon = nil and this
+// beacon falls back to its fixed Every interval. This matches direwolf's
+// semantics — the SMARTBEACON directive is all-or-nothing, so turning
+// the global config off makes every per-beacon smart_beacon toggle a
+// no-op. The per-beacon Sb* fields on configstore.Beacon are no longer
+// consulted; the SmartBeacon curve is a global singleton
+// (configstore.SmartBeaconConfig). See
+// .context/2026-04-18-smart-beacon-implementation.md.
+func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconConfig) (beacon.Config, error) {
 	src, err := ax25.ParseAddress(b.Callsign)
 	if err != nil {
 		return beacon.Config{}, fmt.Errorf("parse callsign %q: %w", b.Callsign, err)
@@ -137,16 +148,16 @@ func beaconConfigFromStore(b configstore.Beacon) (beacon.Config, error) {
 		Enabled:        b.Enabled,
 	}
 
-	if b.SmartBeacon {
+	if b.SmartBeacon && smart != nil && smart.Enabled {
 		cfg.SmartBeacon = &beacon.SmartBeaconConfig{
 			Enabled:   true,
-			FastSpeed: float64(b.SbFastSpeed),
-			SlowSpeed: float64(b.SbSlowSpeed),
-			FastRate:  time.Duration(b.SbFastRate) * time.Second,
-			SlowRate:  time.Duration(b.SbSlowRate) * time.Second,
-			TurnAngle: float64(b.SbTurnAngle),
-			TurnSlope: float64(b.SbTurnSlope),
-			TurnTime:  time.Duration(b.SbMinTurnTime) * time.Second,
+			FastSpeed: float64(smart.FastSpeedKt),
+			SlowSpeed: float64(smart.SlowSpeedKt),
+			FastRate:  time.Duration(smart.FastRateSec) * time.Second,
+			SlowRate:  time.Duration(smart.SlowRateSec) * time.Second,
+			TurnAngle: float64(smart.MinTurnDeg),
+			TurnSlope: float64(smart.TurnSlope),
+			TurnTime:  time.Duration(smart.MinTurnSec) * time.Second,
 		}
 	}
 

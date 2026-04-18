@@ -98,11 +98,6 @@ const mockBeacons = [
   { id: 1, channel: 1, callsign: 'N0CALL-9', destination: 'APGRW', path: 'WIDE1-1,WIDE2-1', comment: 'graywolf', interval: 600, enabled: true },
 ];
 
-const mockSmartBeacon = {
-  enabled: false, fast_speed: 60, fast_rate: 60, slow_speed: 5, slow_rate: 1800,
-  min_turn_angle: 28, turn_slope: 26, min_turn_time: 30,
-};
-
 const mockGps = { source: 'serial', serial_port: '/dev/ttyACM0', baud_rate: 9600, gpsd_host: 'localhost', gpsd_port: 2947 };
 
 const mockPackets = [
@@ -191,8 +186,6 @@ function getMockData(method, path, body) {
   if (path.match(/^\/beacons\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/beacons\/\d+$/) && method === 'DELETE') return delay(null);
   if (path.match(/^\/beacons\/\d+\/send$/) && method === 'POST') return delay({ status: 'sent' });
-  if (path === '/smart-beacon' && method === 'GET') return delay(mockSmartBeacon);
-  if (path === '/smart-beacon' && method === 'PUT') return delay(body);
 
   // GPS
   if (path === '/gps' && method === 'GET') return delay(mockGps);

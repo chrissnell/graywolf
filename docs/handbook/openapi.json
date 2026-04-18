@@ -2854,6 +2854,88 @@
                 }
             }
         },
+        "/smart-beacon": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns the global SmartBeacon parameters that control\ntransmit cadence for every beacon with smart_beacon=true.\nReturns defaults when no configuration has been saved yet.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "beacons"
+                ],
+                "summary": "Get SmartBeacon configuration",
+                "operationId": "getSmartBeacon",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SmartBeaconConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Replaces the global SmartBeacon curve parameters. On\nsuccess, re-reads the persisted row and returns it so\nthe client sees the stored shape.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "beacons"
+                ],
+                "summary": "Update SmartBeacon configuration",
+                "operationId": "updateSmartBeacon",
+                "parameters": [
+                    {
+                        "description": "SmartBeacon configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SmartBeaconConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SmartBeaconConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/stations": {
             "get": {
                 "security": [
@@ -4613,6 +4695,80 @@
                     "type": "integer"
                 },
                 "slot_time_ms": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.SmartBeaconConfigRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enabled is true when SmartBeacon curve computation is active.\nWhen false, every beacon with smart_beacon=true falls back to\nits fixed interval.",
+                    "type": "boolean"
+                },
+                "fast_rate": {
+                    "description": "FastRateSec is the beacon interval in seconds at or above\nFastSpeedKt. Must be shorter than SlowRateSec.",
+                    "type": "integer"
+                },
+                "fast_speed": {
+                    "description": "FastSpeedKt is the knots threshold at or above which beacons\ntransmit at FastRateSec. The \"moving fast\" end of the curve.\nMust be greater than SlowSpeedKt.",
+                    "type": "integer"
+                },
+                "min_turn_angle": {
+                    "description": "MinTurnDeg is the fixed-component turn angle threshold, in\ndegrees, used in the corner-pegging formula. Must be in\n[1, 179].",
+                    "type": "integer"
+                },
+                "min_turn_time": {
+                    "description": "MinTurnSec is the minimum interval in seconds between\nturn-triggered beacons. Must be greater than zero.",
+                    "type": "integer"
+                },
+                "slow_rate": {
+                    "description": "SlowRateSec is the beacon interval in seconds at or below\nSlowSpeedKt. Must be longer than FastRateSec.",
+                    "type": "integer"
+                },
+                "slow_speed": {
+                    "description": "SlowSpeedKt is the knots threshold at or below which beacons\ntransmit at SlowRateSec. Must be greater than zero to prevent a\ndegenerate middle-branch division by zero inside\nbeacon.SmartBeaconConfig.Interval().",
+                    "type": "integer"
+                },
+                "turn_slope": {
+                    "description": "TurnSlope is the speed-dependent component (degrees·knots) of\nthe corner-pegging turn threshold. Higher speed → lower\neffective threshold → corner pegs fire sooner. Must be greater\nthan zero.",
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.SmartBeaconConfigResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enabled is true when SmartBeacon curve computation is active.",
+                    "type": "boolean"
+                },
+                "fast_rate": {
+                    "description": "FastRateSec is the beacon interval in seconds at or above\nFastSpeedKt.",
+                    "type": "integer"
+                },
+                "fast_speed": {
+                    "description": "FastSpeedKt is the knots threshold at or above which beacons\ntransmit at FastRateSec.",
+                    "type": "integer"
+                },
+                "min_turn_angle": {
+                    "description": "MinTurnDeg is the fixed-component turn angle threshold in\ndegrees.",
+                    "type": "integer"
+                },
+                "min_turn_time": {
+                    "description": "MinTurnSec is the minimum interval in seconds between\nturn-triggered beacons.",
+                    "type": "integer"
+                },
+                "slow_rate": {
+                    "description": "SlowRateSec is the beacon interval in seconds at or below\nSlowSpeedKt.",
+                    "type": "integer"
+                },
+                "slow_speed": {
+                    "description": "SlowSpeedKt is the knots threshold at or below which beacons\ntransmit at SlowRateSec.",
+                    "type": "integer"
+                },
+                "turn_slope": {
+                    "description": "TurnSlope is the speed-dependent component (degrees·knots) of\nthe corner-pegging turn threshold.",
                     "type": "integer"
                 }
             }

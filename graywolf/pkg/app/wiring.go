@@ -280,6 +280,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	}
 	a.beaconSched = beaconSched
 	a.beaconReload = make(chan struct{}, 1)
+	a.smartBeaconReload = make(chan struct{}, 1)
 
 	// --- iGate (optional) ----------------------------------------------
 	if err := a.wireIGate(ctx); err != nil {
@@ -562,6 +563,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	}
 	apiSrv.SetGPSReload(a.gpsReload)
 	apiSrv.SetBeaconReload(a.beaconReload)
+	apiSrv.SetSmartBeaconReload(a.smartBeaconReload)
 	apiSrv.SetBeaconSendNow(a.beaconSched.SendNow)
 	apiSrv.SetDigipeaterReload(a.digipeaterReload)
 	apiSrv.SetAgwReload(a.agwReload)
@@ -877,43 +879,10 @@ func (a *App) gpsComponent() namedComponent {
 }
 
 func (a *App) beaconComponent() namedComponent {
-	loadBeaconConfigs := func(ctx context.Context) []beacon.Config {
-		stored, err := a.store.ListBeacons(ctx)
-		if err != nil {
-			a.logger.Warn("beacon load", "err", err)
-			return nil
-		}
-		var configs []beacon.Config
-		for _, b := range stored {
-			bc, err := beaconConfigFromStore(b)
-			if err != nil {
-				a.logger.Warn("beacon config", "id", b.ID, "err", err)
-				continue
-			}
-			configs = append(configs, bc)
-		}
-		// Seed station-position fallback from the first enabled
-		// fixed-position beacon so distance works without GPS.
-		var fb *gps.Fix
-		for _, c := range configs {
-			if c.Enabled && !c.UseGps && c.Lat != 0 && c.Lon != 0 {
-				f := gps.Fix{Latitude: c.Lat, Longitude: c.Lon}
-				if c.AltFt != 0 {
-					f.Altitude = c.AltFt / 3.28084
-					f.HasAlt = true
-				}
-				fb = &f
-				break
-			}
-		}
-		a.stationPos.SetFallback(fb)
-		return configs
-	}
-
 	return namedComponent{
 		name: "beacon",
 		start: func(ctx context.Context) error {
-			a.beaconSched.SetBeacons(loadBeaconConfigs(ctx))
+			a.beaconSched.SetBeacons(a.loadBeaconConfigs(ctx, "initial"))
 			a.beaconWG.Add(1)
 			go func() {
 				defer a.beaconWG.Done()
@@ -924,12 +893,24 @@ func (a *App) beaconComponent() namedComponent {
 			a.beaconReloadWG.Add(1)
 			go func() {
 				defer a.beaconReloadWG.Done()
+				// Fan in both beacon reload signals: per-beacon rows
+				// (beaconReload) and the global SmartBeacon singleton
+				// (smartBeaconReload) both feed into the same
+				// loadBeaconConfigs → scheduler.Reload path, because
+				// beaconConfigFromStore re-reads both on every reload.
+				// Extending the existing select is simpler than a
+				// forwarder goroutine and keeps non-blocking-send
+				// coalescing on both source channels.
 				for {
 					select {
 					case <-ctx.Done():
 						return
 					case <-a.beaconReload:
-						a.beaconSched.Reload(loadBeaconConfigs(ctx))
+						a.beaconSched.Reload(a.loadBeaconConfigs(ctx, "beacon-reload"))
+						a.notifyBeaconReload()
+					case <-a.smartBeaconReload:
+						a.beaconSched.Reload(a.loadBeaconConfigs(ctx, "smart-beacon-reload"))
+						a.notifyBeaconReload()
 					}
 				}
 			}()
@@ -941,6 +922,76 @@ func (a *App) beaconComponent() namedComponent {
 			}
 			return waitGroup(shutdownCtx, &a.beaconWG, "beacon scheduler")
 		},
+	}
+}
+
+// loadBeaconConfigs reads the current beacon rows and the global
+// SmartBeacon singleton from configstore, maps each beacon through
+// beaconConfigFromStore against the same singleton, and seeds the
+// station-position fallback from the first enabled fixed-position
+// beacon. Extracted from beaconComponent's start closure so the integration
+// test in pkg/app can exercise the read-and-map path directly without
+// standing up the full scheduler goroutine.
+func (a *App) loadBeaconConfigs(ctx context.Context, source string) []beacon.Config {
+	stored, err := a.store.ListBeacons(ctx)
+	if err != nil {
+		// Returning nil here unschedules every beacon for this reload
+		// cycle — log at Error level so transient DB faults don't hide
+		// behind routine Warn traffic. Source tags the reload trigger
+		// so operators can correlate with webapi PUTs.
+		a.logger.Error("beacon load", "source", source, "err", err)
+		return nil
+	}
+	// Fetch the global SmartBeacon singleton once before the loop so
+	// every beacon row is mapped against the same curve. nil is fine
+	// — beaconConfigFromStore treats a nil singleton as "global off"
+	// per the precedence rule, which means per-beacon SmartBeacon
+	// flags become no-ops until a global config is saved.
+	smart, err := a.store.GetSmartBeaconConfig(ctx)
+	if err != nil {
+		a.logger.Warn("smart-beacon load failed; falling back to disabled", "err", err)
+		smart = nil
+	}
+	var configs []beacon.Config
+	for _, b := range stored {
+		bc, err := beaconConfigFromStore(b, smart)
+		if err != nil {
+			a.logger.Warn("beacon config", "id", b.ID, "err", err)
+			continue
+		}
+		configs = append(configs, bc)
+	}
+	// Seed station-position fallback from the first enabled
+	// fixed-position beacon so distance works without GPS.
+	var fb *gps.Fix
+	for _, c := range configs {
+		if c.Enabled && !c.UseGps && c.Lat != 0 && c.Lon != 0 {
+			f := gps.Fix{Latitude: c.Lat, Longitude: c.Lon}
+			if c.AltFt != 0 {
+				f.Altitude = c.AltFt / 3.28084
+				f.HasAlt = true
+			}
+			fb = &f
+			break
+		}
+	}
+	if a.stationPos != nil {
+		a.stationPos.SetFallback(fb)
+	}
+	return configs
+}
+
+// notifyBeaconReload is a test seam. When a.beaconReloadDone is non-nil,
+// every successful reload performs a non-blocking send onto it so tests
+// can wait for a specific reload pass to land without polling. Nil in
+// production — the channel stays unset unless a test wires it up.
+func (a *App) notifyBeaconReload() {
+	if a.beaconReloadDone == nil {
+		return
+	}
+	select {
+	case a.beaconReloadDone <- struct{}{}:
+	default:
 	}
 }
 
