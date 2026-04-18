@@ -4053,6 +4053,15 @@ export interface operations {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {

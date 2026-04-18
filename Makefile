@@ -42,6 +42,13 @@ DOCS_GEN_DIR     := $(APP_DIR)/pkg/webapi/docs/gen
 DOCS_HANDBOOK    := docs/handbook
 SWAGGER_UI_VENDOR := $(DOCS_HANDBOOK)/vendor/swagger-ui
 
+# Generated artifacts that must stay in sync with the Go source (swag
+# annotations) and the rendered swagger spec. The release bump targets
+# regenerate these and stage them so a release commit is always self-
+# consistent — drift in these files is what the CI docs-check and
+# api-client-check guards catch.
+GENERATED_SPEC_FILES := $(DOCS_GEN_DIR)/swagger.json $(DOCS_GEN_DIR)/swagger.yaml $(WEB_DIR)/src/api/generated/api.d.ts
+
 .PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check
 
 all: release web
@@ -148,6 +155,7 @@ version:
 	@echo "v$(VERSION)-$(FULL_COMMIT)"
 
 bump-minor:
+	@$(MAKE) --no-print-directory api-client
 	@echo "Current version: $(VERSION)"
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.0", $$1, $$2+1}'))
 	@echo "$(NEW)" > VERSION
@@ -158,12 +166,13 @@ bump-minor:
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
 
 bump-point:
+	@$(MAKE) --no-print-directory api-client
 	@echo "Current version: $(VERSION)"
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'))
 	@echo "$(NEW)" > VERSION
@@ -174,7 +183,7 @@ bump-point:
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
