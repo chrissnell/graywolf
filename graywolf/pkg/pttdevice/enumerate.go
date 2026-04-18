@@ -72,6 +72,16 @@ func enumerateSerial() []AvailableDevice {
 				}
 			}
 			vendor, product, desc := usbInfoFromSysfs(m)
+			// On Linux we read USB VID:PID from sysfs, so only recommend
+			// serial ports whose chipset we recognize as a likely ham PTT
+			// interface. Unknown USB devices (e.g., uBlox GPS on ttyACMx)
+			// and bare platform UARTs (ttyS*, ttyAMA*) are listed but not
+			// highlighted. On other platforms VID:PID is not populated
+			// from sysfs, so fall back to recommending by default.
+			recommended := true
+			if runtime.GOOS == "linux" {
+				recommended = lookupUSB(vendor, product).LikelyPTT
+			}
 			devs = append(devs, AvailableDevice{
 				Path:        m,
 				Type:        "serial",
@@ -79,7 +89,7 @@ func enumerateSerial() []AvailableDevice {
 				Description: desc,
 				USBVendor:   vendor,
 				USBProduct:  product,
-				Recommended: true,
+				Recommended: recommended,
 			})
 		}
 	}
@@ -110,6 +120,17 @@ func annotateAndSort(devs []AvailableDevice) []AvailableDevice {
 		if runtime.GOOS == "darwin" && devs[i].Type == "serial" && strings.HasPrefix(devs[i].Path, "/dev/tty.") {
 			devs[i].Recommended = false
 			devs[i].Warning = "macOS tty.* device blocks until DCD is asserted; use the matching cu.* device instead"
+		}
+		// Demote the CDC-ACM serial side of composite CM108-compatible
+		// adapters (e.g., AIOC): the canonical PTT path is the CM108 HID
+		// entry, not this serial port. Firmware RTS→GPIO mapping may
+		// still work, but users should prefer the HID.
+		if devs[i].Type == "serial" && devs[i].USBVendor != "" &&
+			isCM108Compatible(devs[i].USBVendor, devs[i].USBProduct) {
+			devs[i].Recommended = false
+			if devs[i].Warning == "" {
+				devs[i].Warning = "Use the CM108 HID entry for PTT on this adapter; this serial port is for data"
+			}
 		}
 	}
 	sort.SliceStable(devs, func(i, j int) bool {

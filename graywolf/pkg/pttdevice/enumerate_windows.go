@@ -40,7 +40,10 @@ func enumerateSerialWindows() []AvailableDevice {
 			Type:        "serial",
 			Name:        port.Name,
 			Description: desc,
-			Recommended: true,
+			// Recommend only COM ports whose USB chipset we recognize as
+			// a likely ham PTT interface. Unknown/non-USB ports are
+			// listed but not highlighted. Matches the Linux policy.
+			Recommended: port.IsUSB && lookupUSB(port.VID, port.PID).LikelyPTT,
 		}
 		if port.IsUSB {
 			dev.USBVendor = port.VID

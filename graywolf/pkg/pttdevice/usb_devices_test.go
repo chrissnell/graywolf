@@ -4,17 +4,19 @@ import "testing"
 
 func TestLookupUSB(t *testing.T) {
 	cases := []struct {
-		name           string
-		vid, pid       string
-		wantName       string
-		wantHasCM108   bool
-		wantZero       bool
+		name          string
+		vid, pid      string
+		wantName      string
+		wantHasCM108  bool
+		wantLikelyPTT bool
+		wantZero      bool
 	}{
 		{
 			name:         "specific PID wins over vendor-only fallback",
 			vid:          "0d8c", pid: "000c",
 			wantName:     "CM108 USB Audio (GPIO PTT capable)",
 			wantHasCM108: true,
+			// LikelyPTT=false: CM108 devices are recommended via HID, not serial.
 		},
 		{
 			name:         "unlisted 0d8c PID falls back to vendor entry",
@@ -35,16 +37,28 @@ func TestLookupUSB(t *testing.T) {
 			wantHasCM108: true,
 		},
 		{
-			name:         "CH340 is known but not CM108-capable",
-			vid:          "1a86", pid: "7523",
-			wantName:     "CH340 USB-Serial (Digirig, Mobilinkd, generic)",
-			wantHasCM108: false,
+			name:          "CH340 is a likely PTT serial chipset",
+			vid:           "1a86", pid: "7523",
+			wantName:      "CH340 USB-Serial (Digirig, Mobilinkd, generic)",
+			wantLikelyPTT: true,
 		},
 		{
-			name:         "FTDI is known but not CM108-capable",
-			vid:          "0403", pid: "6001",
-			wantName:     "FTDI FT232R USB-Serial",
-			wantHasCM108: false,
+			name:          "FTDI FT232R is a likely PTT serial chipset",
+			vid:           "0403", pid: "6001",
+			wantName:      "FTDI FT232R USB-Serial",
+			wantLikelyPTT: true,
+		},
+		{
+			name:          "CP2102 is a likely PTT serial chipset",
+			vid:           "10c4", pid: "ea60",
+			wantName:      "CP2102 USB-Serial (SignaLink, Digirig)",
+			wantLikelyPTT: true,
+		},
+		{
+			name:     "Arduino Uno is known but not PTT",
+			vid:      "2341", pid: "0001",
+			wantName: "Arduino Uno",
+			// LikelyPTT=false: dev board, not a ham interface.
 		},
 		{
 			name:     "unknown vendor returns zero value",
@@ -79,6 +93,9 @@ func TestLookupUSB(t *testing.T) {
 			}
 			if got.HasCM108 != tc.wantHasCM108 {
 				t.Errorf("HasCM108 = %v, want %v", got.HasCM108, tc.wantHasCM108)
+			}
+			if got.LikelyPTT != tc.wantLikelyPTT {
+				t.Errorf("LikelyPTT = %v, want %v", got.LikelyPTT, tc.wantLikelyPTT)
 			}
 		})
 	}

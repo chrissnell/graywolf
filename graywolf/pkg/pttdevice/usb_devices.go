@@ -12,6 +12,14 @@ type usbDevice struct {
 	// HasCM108 is true if this VID:PID has CM108-compatible HID GPIO and
 	// can be driven by the CM108 PTT path.
 	HasCM108 bool
+	// LikelyPTT is true for USB-serial chipsets commonly seen on ham
+	// radio PTT interfaces (CH340, CP210x, FTDI FT232R, PL2303).
+	// Detection marks these "Recommended"; all other serial devices
+	// (GPS receivers, dev boards, bare platform UARTs) are listed but
+	// not recommended so users aren't steered at the wrong port. For
+	// CM108-family adapters the HID is the canonical path, so their
+	// serial side stays LikelyPTT=false.
+	LikelyPTT bool
 }
 
 // knownUSBDevices is the single source of truth for USB VID:PID metadata
@@ -43,16 +51,19 @@ var knownUSBDevices = []usbDevice{
 	// CM108-compatible HID.
 	{VID: "1209", PID: "7388", Name: "AIOC All-In-One-Cable (CM108-compatible PTT)", HasCM108: true},
 
-	// Generic USB-serial chips and hobby boards. Display names only — not
-	// CM108 HID-capable.
-	{VID: "1a86", PID: "7523", Name: "CH340 USB-Serial (Digirig, Mobilinkd, generic)"},
-	{VID: "0403", PID: "6001", Name: "FTDI FT232R USB-Serial"},
-	{VID: "0403", PID: "6010", Name: "FTDI FT2232 Dual USB-Serial"},
-	{VID: "0403", PID: "6014", Name: "FTDI FT232H USB-Serial"},
-	{VID: "0403", PID: "6015", Name: "FTDI FT-X USB-Serial"},
-	{VID: "067b", PID: "2303", Name: "Prolific PL2303 USB-Serial"},
-	{VID: "10c4", PID: "ea60", Name: "CP2102 USB-Serial (SignaLink, Digirig)"},
-	{VID: "10c4", PID: "ea70", Name: "CP2105 Dual USB-Serial"},
+	// USB-serial chipsets commonly found on ham PTT interfaces. These get
+	// the Recommended badge when they show up as /dev/ttyUSB* or a COM port.
+	{VID: "1a86", PID: "7523", Name: "CH340 USB-Serial (Digirig, Mobilinkd, generic)", LikelyPTT: true},
+	{VID: "0403", PID: "6001", Name: "FTDI FT232R USB-Serial", LikelyPTT: true},
+	{VID: "0403", PID: "6010", Name: "FTDI FT2232 Dual USB-Serial", LikelyPTT: true},
+	{VID: "0403", PID: "6014", Name: "FTDI FT232H USB-Serial", LikelyPTT: true},
+	{VID: "0403", PID: "6015", Name: "FTDI FT-X USB-Serial", LikelyPTT: true},
+	{VID: "067b", PID: "2303", Name: "Prolific PL2303 USB-Serial", LikelyPTT: true},
+	{VID: "10c4", PID: "ea60", Name: "CP2102 USB-Serial (SignaLink, Digirig)", LikelyPTT: true},
+	{VID: "10c4", PID: "ea70", Name: "CP2105 Dual USB-Serial", LikelyPTT: true},
+
+	// Known-but-not-PTT: dev boards. Named so Detect Devices shows what
+	// they are, but not recommended — they aren't ham PTT interfaces.
 	{VID: "2341", PID: "0043", Name: "Arduino Mega 2560"},
 	{VID: "2341", PID: "0001", Name: "Arduino Uno"},
 	{VID: "1b4f", PID: "9206", Name: "SparkFun Pro Micro"},
