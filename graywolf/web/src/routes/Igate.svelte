@@ -7,6 +7,7 @@
   import FormField from '../components/FormField.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
+  import ConfirmDialog from '../components/ConfirmDialog.svelte';
 
   let activeTab = $state('config');
 
@@ -26,6 +27,11 @@
   let editing = $state(null);
   let filterForm = $state({ type: 'prefix', pattern: '', action: 'allow', priority: 100, enabled: true });
   let errors = $state({});
+
+  // Delete-confirmation state (bound to ConfirmDialog)
+  let confirmOpen = $state(false);
+  let confirmMessage = $state('');
+  let pendingDeleteId = $state(null);
 
   const columns = [
     { key: 'type', label: 'Type' },
@@ -144,11 +150,23 @@
     }
   }
 
-  async function handleDelete(row) {
-    if (!confirm(`Delete filter "${row.name}"?`)) return;
-    await api.delete(`/igate/filters/${row.id}`);
-    toasts.success('Deleted');
-    filters = await api.get('/igate/filters') || [];
+  function handleDelete(row) {
+    pendingDeleteId = row.id;
+    confirmMessage = `Delete the ${row.type} rule for “${row.pattern}”?`;
+    confirmOpen = true;
+  }
+
+  async function confirmDelete() {
+    const id = pendingDeleteId;
+    pendingDeleteId = null;
+    if (id == null) return;
+    try {
+      await api.delete(`/igate/filters/${id}`);
+      toasts.success('Rule deleted');
+      filters = await api.get('/igate/filters') || [];
+    } catch (err) {
+      toasts.error(err.message);
+    }
   }
 </script>
 
@@ -243,6 +261,14 @@
       <Button variant="primary" onclick={handleFilterSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
 </Modal>
+
+<ConfirmDialog
+  bind:open={confirmOpen}
+  title="Delete Rule"
+  message={confirmMessage}
+  confirmLabel="Delete"
+  onConfirm={confirmDelete}
+/>
 
 <style>
   .tabs {

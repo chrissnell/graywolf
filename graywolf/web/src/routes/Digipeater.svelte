@@ -6,6 +6,7 @@
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
+  import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import FormField from '../components/FormField.svelte';
 
   const DEFAULT_DEDUPE_SECONDS = 30;
@@ -58,6 +59,11 @@
   let channels = $state([]);
   let modalOpen = $state(false);
   let editing = $state(null);
+
+  // Delete-confirmation state (bound to ConfirmDialog)
+  let confirmOpen = $state(false);
+  let confirmMessage = $state('');
+  let pendingDeleteId = $state(null);
   // to_channel is not exposed in the UI yet (same-channel repeat is
   // the only supported mode); the save payload sets to_channel to
   // match from_channel so the backend schema is still satisfied.
@@ -245,11 +251,19 @@
     }
   }
 
-  async function handleDelete(row) {
-    if (!confirm(`Delete "${describePreset(row)}" rule on ${channelName(row.from_channel)}?`)) return;
+  function handleDelete(row) {
+    pendingDeleteId = row.id;
+    confirmMessage = `Delete “${describePreset(row)}” rule on ${channelName(row.from_channel)}?`;
+    confirmOpen = true;
+  }
+
+  async function confirmDelete() {
+    const id = pendingDeleteId;
+    pendingDeleteId = null;
+    if (id == null) return;
     try {
-      await api.delete(`/digipeater/rules/${row.id}`);
-      toasts.success('Deleted');
+      await api.delete(`/digipeater/rules/${id}`);
+      toasts.success('Rule deleted');
       rules = await api.get('/digipeater/rules') || [];
     } catch (err) {
       toasts.error(err.message);
@@ -323,6 +337,14 @@
       <Button variant="primary" onclick={handleSaveRule}>{editing ? 'Save' : 'Create'}</Button>
     </div>
 </Modal>
+
+<ConfirmDialog
+  bind:open={confirmOpen}
+  title="Delete Rule"
+  message={confirmMessage}
+  confirmLabel="Delete"
+  onConfirm={confirmDelete}
+/>
 
 <style>
   .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }

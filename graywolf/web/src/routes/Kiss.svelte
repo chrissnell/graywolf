@@ -6,6 +6,7 @@
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
+  import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import FormField from '../components/FormField.svelte';
 
   let items = $state([]);
@@ -13,6 +14,11 @@
   let modalOpen = $state(false);
   let editing = $state(null);
   let form = $state({ type: 'tcp', tcp_port: '8001', serial_device: '', baud_rate: '9600', channel: '1' });
+
+  // Delete-confirmation state (bound to ConfirmDialog)
+  let confirmOpen = $state(false);
+  let confirmMessage = $state('');
+  let pendingDeleteId = $state(null);
 
   const columns = [
     { key: 'type', label: 'Type' },
@@ -63,11 +69,29 @@
     }
   }
 
-  async function handleDelete(row) {
-    if (!confirm('Delete KISS config?')) return;
-    await api.delete(`/kiss/${row.id}`);
-    toasts.success('Deleted');
-    items = await api.get('/kiss') || [];
+  function describeRow(row) {
+    if (row.type === 'tcp') return `TCP port ${row.tcp_port}`;
+    if (row.type === 'serial') return `serial ${row.serial_device || ''}`.trim();
+    return `#${row.id}`;
+  }
+
+  function handleDelete(row) {
+    pendingDeleteId = row.id;
+    confirmMessage = `Delete KISS interface (${describeRow(row)}) on channel ${row.channel}?`;
+    confirmOpen = true;
+  }
+
+  async function confirmDelete() {
+    const id = pendingDeleteId;
+    pendingDeleteId = null;
+    if (id == null) return;
+    try {
+      await api.delete(`/kiss/${id}`);
+      toasts.success('Interface deleted');
+      items = await api.get('/kiss') || [];
+    } catch (err) {
+      toasts.error(err.message);
+    }
   }
 </script>
 
@@ -105,6 +129,14 @@
       <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
     </div>
 </Modal>
+
+<ConfirmDialog
+  bind:open={confirmOpen}
+  title="Delete Interface"
+  message={confirmMessage}
+  confirmLabel="Delete"
+  onConfirm={confirmDelete}
+/>
 
 <style>
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
