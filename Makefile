@@ -87,9 +87,14 @@ proto:
 
 NODE_STAMP := $(WEB_DIR)/node_modules/.stamp-$(shell uname -s)-$(shell uname -m)
 
+# `npm install` (not `npm ci`) because npm CLI bug #4828 drops platform-specific
+# optional deps from the lockfile when it's regenerated on a different OS —
+# `npm ci` then refuses to fetch them, breaking Rollup on Pi/Linux builds
+# after a macOS-originated lockfile change. `npm install` tolerates the drift
+# and fetches what the current platform needs.
 $(NODE_STAMP): $(WEB_DIR)/package.json $(WEB_DIR)/package-lock.json
 	rm -rf $(WEB_DIR)/node_modules
-	cd $(WEB_DIR) && npm ci
+	cd $(WEB_DIR) && npm install --no-audit --no-fund
 	@touch $@
 
 web: $(NODE_STAMP)
