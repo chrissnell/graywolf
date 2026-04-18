@@ -125,25 +125,35 @@ func TestBuildCM108Inventory(t *testing.T) {
 		}
 	})
 
-	t.Run("wrong bInterfaceNumber on composite device excluded", func(t *testing.T) {
+	t.Run("multiple hidraws on one device picks interface 03", func(t *testing.T) {
 		s := newSysfsTree(t)
 		s.addUSBDevice("usb1/1-4", "0d8c", "000e", "USB Audio")
 		s.addSoundCard("usb1/1-4", "1-4:1.0", "2", "Audio")
-		// Interface 02 instead of 03 on a composite device
+		// Two HID interfaces on the same USB device (e.g., CM108 GPIO +
+		// keypad HID). Only the interface-03 hidraw should be chosen.
 		s.addHidraw("usb1/1-4", "1-4:1.2", "2", "02")
+		s.addHidraw("usb1/1-4", "1-4:1.3", "3", "03")
 
 		entries := buildCM108InventoryFrom(s.root)
-		if len(entries) != 0 {
-			t.Fatalf("got %d entries, want 0 (wrong interface should be excluded)", len(entries))
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1", len(entries))
+		}
+		if entries[0].InterfaceNum != "03" {
+			t.Errorf("InterfaceNum = %q, want 03 (disambiguation picks 03)", entries[0].InterfaceNum)
+		}
+		if entries[0].HidrawPath != "/dev/hidraw3" {
+			t.Errorf("HidrawPath = %q, want /dev/hidraw3", entries[0].HidrawPath)
 		}
 	})
 
-	t.Run("AIOC matched by VID:PID", func(t *testing.T) {
+	t.Run("AIOC HID on interface 05 accepted (single hidraw)", func(t *testing.T) {
 		s := newSysfsTree(t)
-		// AIOC uses pid.codes VID 1209 — matched by specific 1209:7388 entry in knownUSBDevices
+		// AIOC is composite (CDC x2, Audio Control/Streaming x3, HID) and
+		// places its GPIO HID on interface 05, not 03. Single hidraw on
+		// the device means no disambiguation is needed; accept iface 05.
 		s.addUSBDevice("usb1/1-5", "1209", "7388", "AIOC")
 		s.addSoundCard("usb1/1-5", "1-5:1.0", "3", "AIOC")
-		s.addHidraw("usb1/1-5", "1-5:1.3", "3", "03")
+		s.addHidraw("usb1/1-5", "1-5:1.5", "3", "05")
 
 		entries := buildCM108InventoryFrom(s.root)
 		if len(entries) != 1 {
@@ -152,12 +162,15 @@ func TestBuildCM108Inventory(t *testing.T) {
 		if entries[0].Vendor != "1209" || entries[0].Product != "7388" {
 			t.Errorf("VID:PID = %s:%s, want 1209:7388", entries[0].Vendor, entries[0].Product)
 		}
+		if entries[0].InterfaceNum != "05" {
+			t.Errorf("InterfaceNum = %q, want 05", entries[0].InterfaceNum)
+		}
 		if entries[0].Description != "AIOC All-In-One-Cable (CM108-compatible PTT)" {
 			t.Errorf("Description = %q, want known AIOC description", entries[0].Description)
 		}
 	})
 
-	t.Run("non-composite device accepts any interface number", func(t *testing.T) {
+	t.Run("single hidraw accepts any interface number", func(t *testing.T) {
 		s := newSysfsTree(t)
 		s.addUSBDevice("usb1/1-6", "0d8c", "013c", "USB Audio")
 		// Single interface: sound and hidraw both under 1-6:1.0
@@ -166,7 +179,7 @@ func TestBuildCM108Inventory(t *testing.T) {
 
 		entries := buildCM108InventoryFrom(s.root)
 		if len(entries) != 1 {
-			t.Fatalf("got %d entries, want 1 (non-composite should accept any iface)", len(entries))
+			t.Fatalf("got %d entries, want 1 (single hidraw should accept any iface)", len(entries))
 		}
 		if entries[0].InterfaceNum != "00" {
 			t.Errorf("InterfaceNum = %q, want 00", entries[0].InterfaceNum)
@@ -238,38 +251,3 @@ func TestBuildCM108Inventory(t *testing.T) {
 	})
 }
 
-func TestIsCompositeUSBDevice(t *testing.T) {
-	t.Run("multiple interfaces is composite", func(t *testing.T) {
-		dir := t.TempDir()
-		os.MkdirAll(filepath.Join(dir, "1-2:1.0"), 0o755)
-		os.MkdirAll(filepath.Join(dir, "1-2:1.3"), 0o755)
-		if !isCompositeUSBDevice(dir) {
-			t.Error("expected composite=true with two interface dirs")
-		}
-	})
-
-	t.Run("single interface is not composite", func(t *testing.T) {
-		dir := t.TempDir()
-		os.MkdirAll(filepath.Join(dir, "1-2:1.0"), 0o755)
-		if isCompositeUSBDevice(dir) {
-			t.Error("expected composite=false with one interface dir")
-		}
-	})
-
-	t.Run("no interface dirs is not composite", func(t *testing.T) {
-		dir := t.TempDir()
-		os.MkdirAll(filepath.Join(dir, "power"), 0o755)
-		if isCompositeUSBDevice(dir) {
-			t.Error("expected composite=false with no interface dirs")
-		}
-	})
-
-	t.Run("non-directory entries with colon ignored", func(t *testing.T) {
-		dir := t.TempDir()
-		os.MkdirAll(filepath.Join(dir, "1-2:1.0"), 0o755)
-		os.WriteFile(filepath.Join(dir, "1-2:1.1"), []byte("file"), 0o644)
-		if isCompositeUSBDevice(dir) {
-			t.Error("expected composite=false (file with colon should not count)")
-		}
-	})
-}

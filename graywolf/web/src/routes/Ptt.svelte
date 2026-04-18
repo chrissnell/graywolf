@@ -653,7 +653,7 @@
     {/if}
     {#if form.method === 'cm108'}
       <FormField label="GPIO Pin" id="ptt-cm108-gpio"
-        hint="GPIO 3 is used by nearly all homebrew designs and commercial products (Digirig, AIOC). Only change this if you know your adapter uses a different pin.">
+        hint="GPIO 3 is used by nearly all homebrew designs and commercial products (e.g., AIOC). Only change this if you know your adapter uses a different pin.">
         <Select id="ptt-cm108-gpio" bind:value={form.gpio_pin} options={[
           { value: '1', label: 'GPIO 1 (pin 11)' },
           { value: '2', label: 'GPIO 2 (pin 12) — not on CM108AH/B' },

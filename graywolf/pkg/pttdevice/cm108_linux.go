@@ -5,7 +5,6 @@ package pttdevice
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -78,8 +77,19 @@ func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 		}
 	}
 
-	// Pass 2: /sys/class/hidraw/hidraw* → find USB parent → join with Pass 1.
+	// Pre-pass: count hidraw nodes per USB device so Pass 2 can decide
+	// whether interface disambiguation is needed. Single hidraw = no
+	// ambiguity; multiple hidraws (rare, e.g. CM108 GPIO + keypad HID) =
+	// require interface 03 to pick the GPIO HID.
 	hidrawPaths, _ := filepath.Glob(filepath.Join(sysRoot, "class/hidraw/hidraw[0-9]*"))
+	hidrawsPerParent := map[string]int{}
+	for _, hidrawSys := range hidrawPaths {
+		if p := usbParentDir(hidrawSys); p != "" {
+			hidrawsPerParent[p]++
+		}
+	}
+
+	// Pass 2: /sys/class/hidraw/hidraw* → find USB parent → join with Pass 1.
 	for _, hidrawSys := range hidrawPaths {
 		usbParent := usbParentDir(hidrawSys)
 		if usbParent == "" {
@@ -92,7 +102,10 @@ func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 		}
 
 		// Resolve device symlink to the USB interface directory to read
-		// bInterfaceNumber. CM108 HID is interface 03; AIOC mirrors this.
+		// bInterfaceNumber. CM108 chips put GPIO HID on interface 03;
+		// AIOC firmware places it elsewhere (interface 05 on current
+		// revisions), so don't hardcode 03 when only one hidraw exists
+		// on this USB device.
 		ifaceDir, err := filepath.EvalSymlinks(filepath.Join(hidrawSys, "device"))
 		if err != nil {
 			slog.Debug("cm108: cannot resolve hidraw device symlink", "path", hidrawSys, "err", err)
@@ -100,11 +113,12 @@ func buildCM108InventoryFrom(sysRoot string) []cm108Entry {
 		}
 		ifaceNum := readSysfsFile(filepath.Join(ifaceDir, "bInterfaceNumber"))
 
-		// On composite devices (multiple USB interfaces), only accept
-		// interface 03 to avoid opening the wrong hidraw node.
-		// Non-composite devices (single interface): accept any number.
-		if ifaceNum != "03" && isCompositeUSBDevice(usbParent) {
-			slog.Debug("cm108: skipping hidraw (wrong interface on composite device)",
+		// Only apply the interface-03 filter when the USB device exposes
+		// multiple hidraw nodes (real ambiguity). When there's exactly
+		// one, there's nothing to disambiguate — accept it regardless of
+		// interface number, which is required for AIOC (HID on iface 05).
+		if hidrawsPerParent[usbParent] > 1 && ifaceNum != "03" {
+			slog.Debug("cm108: skipping hidraw (multiple hidraws on device, picking iface 03)",
 				"path", hidrawSys, "iface", ifaceNum)
 			continue
 		}
@@ -138,28 +152,10 @@ func enumerateCM108() []AvailableDevice {
 			Description: fmt.Sprintf("%s (ALSA card %s)", entry.Description, entry.CardNumber),
 			USBVendor:   entry.Vendor,
 			USBProduct:  entry.Product,
+			// CM108 HID is the canonical PTT path for CM108-family
+			// adapters; mark it Recommended so the UI highlights it.
+			Recommended: true,
 		})
 	}
 	return devs
-}
-
-// isCompositeUSBDevice returns true if the USB device at the given sysfs
-// path has multiple interfaces. USB interface directories are named by the
-// kernel as "busnum-devpath:config.iface" (e.g. "1-2:1.0"), so the presence
-// of a colon distinguishes them from other child directories.
-func isCompositeUSBDevice(usbDevDir string) bool {
-	entries, err := os.ReadDir(usbDevDir)
-	if err != nil {
-		return false
-	}
-	count := 0
-	for _, e := range entries {
-		if e.IsDir() && strings.Contains(e.Name(), ":") {
-			count++
-			if count > 1 {
-				return true
-			}
-		}
-	}
-	return false
 }
