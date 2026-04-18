@@ -387,27 +387,6 @@ sudo udevadm trigger</code></pre>
       </div>
     </div>
 
-    <h2>API Reference</h2>
-
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>GET</td><td><code>/api/ptt/{channel_id}</code></td><td>Get PTT config for a channel</td></tr>
-            <tr><td>POST</td><td><code>/api/ptt/{channel_id}</code></td><td>Create or update PTT config</td></tr>
-            <tr><td>DELETE</td><td><code>/api/ptt/{channel_id}</code></td><td>Delete PTT config (receive only)</td></tr>
-            <tr><td>GET</td><td><code>/api/ptt/capabilities</code></td><td>Platform capability flags, including <code>platform_supports_gpio</code> (true on Linux)</td></tr>
-            <tr><td>GET</td><td><code>/api/ptt/gpio-lines?chip={path}</code></td><td>Enumerate GPIO lines on a gpiochip device (Linux only; returns 501 elsewhere)</td></tr>
-            <tr><td>GET</td><td><code>/api/tx-timing/{channel_id}</code></td><td>Get CSMA parameters</td></tr>
-            <tr><td>POST</td><td><code>/api/tx-timing/{channel_id}</code></td><td>Create or update CSMA parameters</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
     <nav class="page-nav">
       <a href="channels.html">
         <span class="label">Previous</span>
