@@ -341,15 +341,21 @@ func TestPttRoutePrecedence_RealHandlers(t *testing.T) {
 	}
 
 	// GPIO lines: the response varies by OS (200 on linux with a real
-	// chip, 500 on linux with a missing chip, 501 on non-linux) but
+	// chip, 404 on linux with a missing chip, 501 on non-linux) but
 	// must never be a mux-level 404, which would mean the {chip}
-	// path parameter didn't match.
+	// path parameter didn't match. The handler's own 404 (missing
+	// chip) emits JSON; the mux's 404 emits plain-text "404 page not
+	// found\n", so Content-Type disambiguates the two.
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/ptt/gpio-chips/%2Fdev%2Fgpiochip0/lines", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code == http.StatusNotFound {
-		t.Fatalf("GET /api/ptt/gpio-chips/.../lines: mux 404 — {chip} segment did not match")
+		ct := rec.Header().Get("Content-Type")
+		if !strings.HasPrefix(ct, "application/json") {
+			t.Fatalf("GET /api/ptt/gpio-chips/.../lines: mux 404 (Content-Type=%q body=%q) — {chip} segment did not match",
+				ct, rec.Body.String())
+		}
 	}
 
 	// GET /{channel} with a numeric id: the handler may 404 for a
