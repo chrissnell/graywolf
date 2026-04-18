@@ -25,5 +25,11 @@
     "leaflet": "^1.9.4",
     "openapi-fetch": "0.17.0",
     "svelte-spa-router": "^4.0.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "4.60.1",
+    "@rollup/rollup-darwin-x64": "4.60.1",
+    "@rollup/rollup-linux-arm64-gnu": "4.60.1",
+    "@rollup/rollup-linux-x64-gnu": "4.60.1"
   }
 }

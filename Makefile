@@ -42,7 +42,7 @@ DOCS_GEN_DIR     := $(APP_DIR)/pkg/webapi/docs/gen
 DOCS_HANDBOOK    := docs/handbook
 SWAGGER_UI_VENDOR := $(DOCS_HANDBOOK)/vendor/swagger-ui
 
-.PHONY: all build release test bench clean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check
+.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check
 
 all: release web
 	mkdir -p bin
@@ -73,8 +73,27 @@ lint: fmt
 doc:
 	$(CARGO) doc --no-deps --open $(MANIFEST)
 
-clean:
+# clean: remove build artifacts (Rust target/, Go binaries, web node_modules
+# and dist). Leaves committed generated files alone — use `make distclean`
+# for those.
+clean: clean-web
 	$(CARGO) clean $(MANIFEST)
+	rm -rf bin
+	rm -f $(APP_DIR)/graywolf
+
+# clean-web: force-reinstall node_modules on next build. Useful after pulling
+# a branch that regenerated package-lock.json on a different OS (npm CLI
+# bug #4828 leaves Rollup's platform-specific native binary uninstalled).
+clean-web:
+	rm -rf $(WEB_DIR)/node_modules $(WEB_DIR)/dist
+
+# distclean: clean + wipe committed generated artifacts. Use this only when
+# you intend to regenerate the OpenAPI spec, Swagger UI page, and
+# TypeScript client from scratch.
+distclean: clean
+	rm -rf $(DOCS_GEN_DIR)
+	rm -f $(DOCS_HANDBOOK)/api.html $(DOCS_HANDBOOK)/openapi.json $(DOCS_HANDBOOK)/openapi.yaml
+	rm -rf $(WEB_DIR)/src/api/generated
 
 # Regenerate Go protobuf bindings from proto/graywolf.proto. Requires protoc
 # and protoc-gen-go on PATH. Install the latter with:
