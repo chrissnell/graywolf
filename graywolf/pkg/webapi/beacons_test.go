@@ -21,7 +21,7 @@ func TestBeaconCreate_HappyPath(t *testing.T) {
 		"type":"position",
 		"channel":1,
 		"callsign":"N0CAL",
-		"destination":"APGRWF",
+		"destination":"APGRWO",
 		"path":"WIDE1-1",
 		"latitude":37.5,
 		"longitude":-122.0,

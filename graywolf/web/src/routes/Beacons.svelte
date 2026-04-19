@@ -58,7 +58,7 @@
   let deleteTarget = $state(null);
   let deleteOpen = $state(false);
   let form = $state({
-    channel: '', callsign: '', destination: 'APGRW', path: 'WIDE1-1,WIDE2-1',
+    channel: '', callsign: '', destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', send_to_aprs_is: false, enabled: true,
@@ -121,7 +121,7 @@
     editing = null;
     form.channel = String(channels[0].id);
     form.callsign = '';
-    form.destination = 'APGRW';
+    form.destination = 'APGRWO';
     form.path = 'WIDE1-1,WIDE2-1';
     form.symbol_table = '/';
     form.symbol = '-';
@@ -416,8 +416,8 @@
         <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
       </FormField>
       <FormField label="Destination" id="bcn-dest"
-        hint="APRS tocall identifying the originating software. Leave as APGRW unless you know you need to change it.">
-        <Input id="bcn-dest" bind:value={form.destination} placeholder="APGRW" />
+        hint="APRS tocall identifying the originating software. Leave as APGRWO unless you know you need to change it.">
+        <Input id="bcn-dest" bind:value={form.destination} placeholder="APGRWO" />
       </FormField>
       <FormField label="Path" id="bcn-path">
         <Input id="bcn-path" bind:value={form.path} placeholder="WIDE1-1,WIDE2-1" />

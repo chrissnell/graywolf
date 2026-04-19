@@ -254,7 +254,7 @@ func makeInboundDM(t *testing.T, source, addressee, text, msgID string) *aprs.De
 	if err != nil {
 		t.Fatalf("ParseAddress: %v", err)
 	}
-	dst, err := ax25.ParseAddress("APGRWF")
+	dst, err := ax25.ParseAddress("APGRWO")
 	if err != nil {
 		t.Fatalf("ParseAddress dest: %v", err)
 	}

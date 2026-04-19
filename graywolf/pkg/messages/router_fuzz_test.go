@@ -32,7 +32,7 @@ func FuzzRouterClassify(f *testing.F) {
 		{"N0CALL", "N0CALL", "self loopback", "042"},
 		{"W1ABC", "NET", "tactical", "100"},
 		{"W1ABC", "N0CALL", "", ""},
-		{"W1ABC", "N0CALL", "}K1XYZ>APGRWF::N0CALL   :inner", "002"},
+		{"W1ABC", "N0CALL", "}K1XYZ>APGRWO::N0CALL   :inner", "002"},
 		{"W1ABC", "N0CALL", strings.Repeat("A", 200), "999"},
 		{"W1ABC", "SKY100", "nws sky", "003"},
 		{"W1ABC", "CWA001", "nws cwa", "004"},
@@ -109,7 +109,7 @@ func FuzzRouterClassify(f *testing.F) {
 		if err != nil {
 			t.Skip()
 		}
-		dst, err := ax25.ParseAddress("APGRWF")
+		dst, err := ax25.ParseAddress("APGRWO")
 		if err != nil {
 			t.Skip()
 		}

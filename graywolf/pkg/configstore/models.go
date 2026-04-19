@@ -227,7 +227,7 @@ type Beacon struct {
 	Type          string    `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
 	Channel       uint32    `gorm:"not null;default:1" json:"channel"`
 	Callsign      string    `gorm:"not null" json:"callsign"`
-	Destination   string    `gorm:"not null;default:'APGRWF'" json:"destination"`
+	Destination   string    `gorm:"not null;default:'APGRWO'" json:"destination"`
 	Path          string    `gorm:"not null;default:'WIDE1-1'" json:"path"`
 	UseGps        bool      `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
 	Latitude      float64   `json:"latitude"`

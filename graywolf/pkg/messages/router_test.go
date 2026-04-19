@@ -163,7 +163,7 @@ func makeMessagePacket(t *testing.T, source, addressee, text, msgID string, dir 
 	if err != nil {
 		t.Fatalf("ParseAddress: %v", err)
 	}
-	dst, err := ax25.ParseAddress("APGRWF")
+	dst, err := ax25.ParseAddress("APGRWO")
 	if err != nil {
 		t.Fatalf("ParseAddress dest: %v", err)
 	}
@@ -185,7 +185,7 @@ func makeAckRejPacket(t *testing.T, source, addressee, prefix, msgID string) *ap
 	pad := addressee + strings.Repeat(" ", 9-len(addressee))
 	info := ":" + pad + ":" + prefix + msgID
 	src, _ := ax25.ParseAddress(source)
-	dst, _ := ax25.ParseAddress("APGRWF")
+	dst, _ := ax25.ParseAddress("APGRWO")
 	f, _ := ax25.NewUIFrame(src, dst, nil, []byte(info))
 	pkt, err := aprs.Parse(f)
 	if err != nil {
@@ -201,7 +201,7 @@ func makeReplyAckPacket(t *testing.T, source, addressee, text, msgID, replyAckID
 	pad := addressee + strings.Repeat(" ", 9-len(addressee))
 	info := ":" + pad + ":" + text + "{" + msgID + "}" + replyAckID
 	src, _ := ax25.ParseAddress(source)
-	dst, _ := ax25.ParseAddress("APGRWF")
+	dst, _ := ax25.ParseAddress("APGRWO")
 	f, _ := ax25.NewUIFrame(src, dst, nil, []byte(info))
 	pkt, err := aprs.Parse(f)
 	if err != nil {
@@ -703,7 +703,7 @@ func TestRouterTelemetryMetaExcluded(t *testing.T) {
 	pad := "N0CALL" + strings.Repeat(" ", 9-len("N0CALL"))
 	info := ":" + pad + ":PARM.A1,A2,A3"
 	src, _ := ax25.ParseAddress("W1ABC")
-	dst, _ := ax25.ParseAddress("APGRWF")
+	dst, _ := ax25.ParseAddress("APGRWO")
 	f, _ := ax25.NewUIFrame(src, dst, nil, []byte(info))
 	pkt, err := aprs.Parse(f)
 	if err != nil {
@@ -747,7 +747,7 @@ func TestRouterISInboundMirrorsToIGate(t *testing.T) {
 
 	// Validate the TNC-2 line shape.
 	line := igs.list()[0]
-	if !strings.HasPrefix(line, "N0CALL>APGRWF::") {
+	if !strings.HasPrefix(line, "N0CALL>APGRWO::") {
 		t.Fatalf("unexpected line: %q", line)
 	}
 	if !strings.HasSuffix(line, ":ack001") {
@@ -777,11 +777,11 @@ func TestRouterThirdPartyUnwrapReattributesSource(t *testing.T) {
 	// wraps a real message from K1ABC to N0CALL. The router should
 	// re-attribute the source to K1ABC.
 	inner := ":N0CALL   :real msg{042"
-	body := "}K1ABC>APGRWF,WIDE1-1:" + inner
+	body := "}K1ABC>APGRWO,WIDE1-1:" + inner
 	pad := "N0CALL" + strings.Repeat(" ", 9-len("N0CALL"))
 	info := ":" + pad + ":" + body
 	src, _ := ax25.ParseAddress("W2XYZ")
-	dst, _ := ax25.ParseAddress("APGRWF")
+	dst, _ := ax25.ParseAddress("APGRWO")
 	f, _ := ax25.NewUIFrame(src, dst, nil, []byte(info))
 	pkt, err := aprs.Parse(f)
 	if err != nil {

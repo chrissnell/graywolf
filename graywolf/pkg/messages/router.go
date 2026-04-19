@@ -644,7 +644,7 @@ func (r *Router) sendAutoAck(
 }
 
 // buildAckFrame constructs a ready-to-submit ax25.Frame carrying the
-// ack info field. Uses APGRWF as the destination (graywolf's APRS
+// ack info field. Uses APGRWO as the destination (graywolf's APRS
 // software identifier) and no digipeater path — auto-ACKs reply
 // directly to the sender.
 func buildAckFrame(ourCall, peerCall, msgID string) (*ax25.Frame, error) {
@@ -656,7 +656,7 @@ func buildAckFrame(ourCall, peerCall, msgID string) (*ax25.Frame, error) {
 	if err != nil {
 		return nil, fmt.Errorf("messages: ack source: %w", err)
 	}
-	dest, err := ax25.ParseAddress("APGRWF")
+	dest, err := ax25.ParseAddress("APGRWO")
 	if err != nil {
 		return nil, fmt.Errorf("messages: ack dest: %w", err)
 	}
@@ -674,7 +674,7 @@ func buildAckTNC2(ourCall, peerCall, msgID string) string {
 	if len(addr) < 9 {
 		addr = addr + strings.Repeat(" ", 9-len(addr))
 	}
-	return fmt.Sprintf("%s>APGRWF::%s:ack%s", ourCall, addr, msgID)
+	return fmt.Sprintf("%s>APGRWO::%s:ack%s", ourCall, addr, msgID)
 }
 
 // checkDedup consults the 30-second (from, msgid, text_hash) cache.

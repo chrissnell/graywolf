@@ -48,10 +48,10 @@ func buildMessagePkt(t *testing.T, source, addressee, msgID string) *aprs.Decode
 		pad += " "
 	}
 	info := ":" + pad + ":hello{" + msgID
-	raw := buildRawFrame(t, source, "APGRWF", []string{"WIDE1-1"}, info)
+	raw := buildRawFrame(t, source, "APGRWO", []string{"WIDE1-1"}, info)
 	return &aprs.DecodedAPRSPacket{
 		Source: source,
-		Dest:   "APGRWF",
+		Dest:   "APGRWO",
 		Path:   []string{"WIDE1-1"},
 		Type:   aprs.PacketMessage,
 		Message: &aprs.Message{

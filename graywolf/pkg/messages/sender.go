@@ -414,7 +414,7 @@ func (s *Sender) rfAvailable() bool {
 }
 
 // buildFrame constructs the AX.25 UI frame carrying the APRS message
-// for row. Uses APGRWF as destination (graywolf's software identifier)
+// for row. Uses APGRWO as destination (graywolf's software identifier)
 // — matches the router's auto-ACK convention.
 func (s *Sender) buildFrame(row *configstore.Message) (*ax25.Frame, error) {
 	info, err := aprs.EncodeMessage(row.ToCall, row.Text, row.MsgID)
@@ -425,7 +425,7 @@ func (s *Sender) buildFrame(row *configstore.Message) (*ax25.Frame, error) {
 	if err != nil {
 		return nil, fmt.Errorf("messages: source %q: %w", row.FromCall, err)
 	}
-	dest, err := ax25.ParseAddress("APGRWF")
+	dest, err := ax25.ParseAddress("APGRWO")
 	if err != nil {
 		return nil, fmt.Errorf("messages: dest: %w", err)
 	}
@@ -463,7 +463,7 @@ func parsePath(p string) ([]ax25.Address, error) {
 }
 
 // buildMessageTNC2 renders the TNC-2 text line for APRS-IS. Uses
-// APGRWF as the destination (software identifier) and TCPIP as the
+// APGRWO as the destination (software identifier) and TCPIP as the
 // digipeater path (APRS-IS convention for locally-originated traffic).
 // Addressee is padded to 9 chars.
 func buildMessageTNC2(row *configstore.Message) string {
@@ -478,7 +478,7 @@ func buildMessageTNC2(row *configstore.Message) string {
 	if row.MsgID != "" {
 		body = body + "{" + row.MsgID
 	}
-	return fmt.Sprintf("%s>APGRWF,TCPIP*%s", row.FromCall, body)
+	return fmt.Sprintf("%s>APGRWO,TCPIP*%s", row.FromCall, body)
 }
 
 // recordPending stores metadata keyed by frame pointer for the TxHook.

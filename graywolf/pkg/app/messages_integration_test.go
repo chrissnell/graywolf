@@ -397,7 +397,7 @@ func makeInboundMessage(t *testing.T, source, addressee, text, msgID string) *ap
 	if err != nil {
 		t.Fatalf("ParseAddress: %v", err)
 	}
-	dst, err := ax25.ParseAddress("APGRWF")
+	dst, err := ax25.ParseAddress("APGRWO")
 	if err != nil {
 		t.Fatalf("ParseAddress dest: %v", err)
 	}
@@ -419,7 +419,7 @@ func makeInboundAck(t *testing.T, source, addressee, msgID string) *aprs.Decoded
 	pad := addressee + strings.Repeat(" ", 9-len(addressee))
 	info := ":" + pad + ":ack" + msgID
 	src, _ := ax25.ParseAddress(source)
-	dst, _ := ax25.ParseAddress("APGRWF")
+	dst, _ := ax25.ParseAddress("APGRWO")
 	f, err := ax25.NewUIFrame(src, dst, nil, []byte(info))
 	if err != nil {
 		t.Fatalf("NewUIFrame: %v", err)
@@ -438,7 +438,7 @@ func makeInboundReplyAck(t *testing.T, source, addressee, text, msgID, replyAckI
 	pad := addressee + strings.Repeat(" ", 9-len(addressee))
 	info := ":" + pad + ":" + text + "{" + msgID + "}" + replyAckID
 	src, _ := ax25.ParseAddress(source)
-	dst, _ := ax25.ParseAddress("APGRWF")
+	dst, _ := ax25.ParseAddress("APGRWO")
 	f, err := ax25.NewUIFrame(src, dst, nil, []byte(info))
 	if err != nil {
 		t.Fatalf("NewUIFrame: %v", err)

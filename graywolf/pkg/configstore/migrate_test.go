@@ -55,7 +55,7 @@ func TestMigrationsAreIdempotentOnDisk(t *testing.T) {
 	}
 	if err := s1.DB().Exec(`INSERT INTO beacons
 		(type, channel, callsign, destination, path, symbol_table, symbol, compress, every_seconds, slot_seconds, enabled)
-		VALUES ('position', 1, 'TEST', 'APGRWF', 'WIDE1-1', '/', '>', 0, 1800, -1, 1)`).Error; err != nil {
+		VALUES ('position', 1, 'TEST', 'APGRWO', 'WIDE1-1', '/', '>', 0, 1800, -1, 1)`).Error; err != nil {
 		t.Fatalf("raw insert beacon: %v", err)
 	}
 	var v1 int
