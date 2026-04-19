@@ -24,6 +24,20 @@
   import { autocompleteStations } from '../../api/messages.js';
   import { relativeLong } from './time.js';
 
+  // Portal action: move the node to document.body so `position: fixed`
+  // is relative to the viewport rather than a transformed ancestor
+  // (chonky's Modal applies a transform for centering, which otherwise
+  // reparents fixed-positioned descendants' containing block to the
+  // modal itself and throws the dropdown off-screen).
+  function portal(node) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      },
+    };
+  }
+
   /** @type {{
    *    value?: string,
    *    placeholder?: string,
@@ -233,6 +247,7 @@
   </div>
   {#if open && (flatItems.length > 0 || (value && value.trim()))}
     <ul
+      use:portal
       id={listId}
       role="listbox"
       class="list"
