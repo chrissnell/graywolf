@@ -12,7 +12,7 @@ Graywolf is a modern APRS station with a software modem, digipeater, iGate, and 
 
 Written by Chris Snell, [NW5W](https://nw5w.com). 
 
-The modem is written in Rust and includes a port of the AFSK demodulator from [Dire Wolf](https://github.com/wb2osz/direwolf) by WB2OSZ.
+The modem is written in Rust and includes a port of the AFSK demodulator from [Dire Wolf](https://github.com/wb2osz/direwolf) by WB2OSZ.  The decision-feedback AGC and hard-limiter correlator techniques are credited to Ion Todirel (W7ION), from his [libmodem](https://github.com/iontodirel/libmodem).
 
 The AX.25 decoding, APRS operatations (beacons, digipeater, and iGate), and the web API is handled by a service written in the Go programming language.
 
@@ -29,7 +29,7 @@ Graywolf's AFSK demodulator beats Direwolf's best mode (`-P AD+`) on every track
 | 03 — flat Mic-E (100 reps) | 100 | 100 |
 | 04 — drive test | 107 | **108** |
 
-Reproduce with `./bench.sh`. The decision-feedback AGC and hard-limiter correlator techniques are credited to Ion Todirel (W7ION), from his [libmodem](https://github.com/iontodirel/libmodem).
+Reproduce with `./bench.sh`. 
 
 ## Features
 
