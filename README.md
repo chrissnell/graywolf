@@ -20,7 +20,7 @@ The web frontend was built in Svelte.
 
 ## Performance
 
-Graywolf's AFSK demodulator **beats Direwolf's best published mode** on every track of the [WA8LMF TNC test CD](http://www.wa8lmf.net/TNCtest/), using about 1.6% of one CPU core. The gains come from a three-demodulator ensemble running in parallel and cross-deduped per-packet, combining Profile A (amplitude comparison), Profile A with a hard-limiter for flat-audio boost, and Profile B (FM discriminator) into a single output stream.
+Graywolf's AFSK demodulator **beats Direwolf's best published mode** on every track of the [WA8LMF TNC test CD](http://www.wa8lmf.net/TNCtest/), using about **19% of a single Raspberry Pi 5 CPU core**, or about 5% of the Pi's total available CPU power. The gains come from a three-demodulator ensemble running in parallel and cross-deduped per-packet, combining Profile A (amplitude comparison), Profile A with a hard-limiter for flat-audio boost, and Profile B (FM discriminator) into a single output stream.
 
 | WA8LMF Track | Direwolf `-P AD+` | Graywolf (default) | Δ |
 |---|---:|---:|---:|
