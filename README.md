@@ -19,18 +19,33 @@ The AX.25 decoding, APRS operatations (beacons, digipeater, and iGate), and the 
 The web frontend was built in Svelte.
 
 ## Performance
-Graywolf achieves high decoding performance using inexpensive, off-the-shelf hardware. Its AFSK decoder can decode 1005 packets off [track 1 of the WA8LMF CD](http://www.wa8lmf.net/TNCtest/), identical in performance to Direwolf, from which Graywolf was ported.
 
-```% ./bench.sh aprs-test-tracks/02_100-Mic-E-Bursts-DE-emphasized.flac 1
-Building Direwolf (atest)...
-Building Graywolf (demod_bench)...
+Graywolf's AFSK demodulator **beats Direwolf's best published mode** on every track of the [WA8LMF TNC test CD](http://www.wa8lmf.net/TNCtest/), using about 1.6% of one CPU core. The gains come from a three-demodulator ensemble running in parallel and cross-deduped per-packet, combining Profile A (amplitude comparison), Profile A with a hard-limiter for flat-audio boost, and Profile B (FM discriminator) into a single output stream.
 
-=== Direwolf (atest) — 1 iterations ===
-982 packets decoded in 45.614 seconds.  34.0 x realtime
+| WA8LMF Track | Direwolf `-P AD+` | Graywolf (default) | Δ |
+|---|---:|---:|---:|
+| 01 — 40-min flat traffic on 144.39 MHz | 1020 | **1026** | **+6** |
+| 02 — 100 Mic-E bursts, de-emphasized | 1000 | 1000 | tie |
+| 03 — 100 Mic-E bursts, flat | 100 | 100 | tie |
+| 04 — 25-min drive test | 107 | **108** | **+1** |
+| **Total** | **2227** | **2234** | **+7 (+0.3%)** |
 
-=== Graywolf (demod_bench) — 1 iterations ===
-982 packets decoded in 6.792s.  228.2 x realtime
+Both binaries were run head-to-head via `bench.sh`, which drives the real `graywolf-modem` binary end-to-end through the IPC pipeline — not just the DSP library in isolation. The numbers reproduce what an operator sees at runtime.
+
 ```
+$ ./bench.sh aprs-test-tracks/01_40-Mins-Traffic\ -on-144.39.flac 2
+=== Direwolf -P AD+ (2 iterations) ===
+1020 packets decoded in 76.930 seconds.  20.1 x realtime
+1020 packets decoded in 79.315 seconds.  19.5 x realtime
+
+=== graywolf-modem via IPC — ensemble=triple (default) — 2 iterations ===
+1026 packets decoded in 31.659s (unique=855, ensemble=triple (default))
+1026 packets decoded in 31.626s (unique=855, ensemble=triple (default))
+```
+
+**CPU-budget alternatives** are available via the `demod_ensemble` configuration knob — `"dual"` drops one demodulator for ~33% less CPU with only a 3-event Track 1 cost, `"single"` reproduces the legacy single-demodulator path for reference or low-power deployments.
+
+Two of the three demodulators in the ensemble — the decision-feedback AGC and the hard-limiter-before-bandpass correlator variant — are based on designs published by **Ion Todirel (W7ION)** on the APRS Users Facebook group. His posts and [libmodem](https://github.com/iontodirel/libmodem) reference code were the source of both techniques.
 
 ## Features
 

@@ -4,6 +4,17 @@
 //! parallel (conceptually — processing is actually serialized per sample) and
 //! emits a deduplicated stream of decoded frames.
 //!
+//! # Attribution
+//!
+//! Two of the building blocks the recommended ensemble relies on — the
+//! decision-feedback AGC inside Profile A and the hard-limiter-before-
+//! bandpass correlator used by the `A9HL` variant — are based on designs
+//! published by Ion Todirel (W7ION) on the APRS Users Facebook group.
+//! His reference implementation at <https://github.com/iontodirel/libmodem>
+//! was the source of both techniques. The ensemble architecture that
+//! combines them across Profile A / A-with-HL / Profile B is also his
+//! "hydra" idea, adapted here to graywolf's existing profile ports.
+//!
 //! # Why this exists
 //!
 //! No single demodulator configuration is best across all radio conditions:
@@ -34,10 +45,12 @@
 //! - The same physical transmission decoded by two demods that happened to
 //!   fire their closing-flag detection a few samples apart counts as one.
 //!
-//! The default window is 1 second (44100 samples at 44.1 kHz), which is
-//! comfortably longer than the worst-case filter-group-delay skew between
-//! Profile A and Profile B (~50 ms) and shorter than the typical inter-burst
-//! gap on the APRS channel (~1 minute for adjacent beacons).
+//! The default window is 3 symbol times (110 samples at 44.1 kHz / 1200
+//! baud), matching Direwolf's `multi_modem.c` PROCESS_AFTER_BITS. This is
+//! wide enough to collapse the same transmission decoded by several
+//! slicers within one symbol period, yet narrow enough that legitimate
+//! fast rebroadcasts (digipeater hops, APRS-IS reinjection) count as
+//! separate events — matching Direwolf's event-counting semantics exactly.
 //!
 //! # Typical use
 //!
