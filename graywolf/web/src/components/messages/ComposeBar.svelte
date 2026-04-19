@@ -6,7 +6,8 @@
   //   - Character counter: neutral until ≤ 10 remain → warning,
   //     at ≤ 0 soft-splits into Part 2/2. Hard cap at 3 parts (201
   //     chars) disables send.
-  //   - Ctrl/Cmd+Enter sends. Enter alone inserts a newline.
+  //   - Enter sends (and Ctrl/Cmd+Enter too). Shift+Enter inserts a
+  //     newline. IME composition guards prevent sending mid-candidate.
   //   - iOS keyboard handling: `position: absolute` + manual
   //     translateY driven by visualViewport.resize.
   //
@@ -107,11 +108,19 @@
   }
 
   function onKeyDown(e) {
-    // Ctrl/Cmd+Enter sends; plain Enter inserts newline.
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      send();
-    }
+    // Messaging-app convention: plain Enter sends, Shift+Enter inserts
+    // a newline. Ctrl/Cmd+Enter also sends (for muscle-memory users).
+    //
+    // IME guard: when composing a non-Latin character via an input
+    // method editor (Japanese, Chinese, Korean, etc.) the Enter key
+    // commits the candidate. e.isComposing is true in that case — we
+    // must NOT treat it as a send. Legacy WebKit fires keyCode 229
+    // during composition; check that too for robustness.
+    if (e.key !== 'Enter') return;
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.shiftKey) return; // Shift+Enter → newline
+    e.preventDefault();
+    send();
   }
 
   function onInput(e) {
