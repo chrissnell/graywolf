@@ -197,6 +197,35 @@ export function getTacticalParticipants(key, params) {
   return api.get(`/messages/tactical/${encodeURIComponent(key)}/participants${qs(params)}`);
 }
 
+// --- Tactical invite accept ----------------------------------------
+
+/**
+ * POST /api/tacticals — subscribe the operator to a tactical callsign
+ * in response to an `!GW1 INVITE <TAC>` invite bubble's Accept button.
+ *
+ * The endpoint is tactical-keyed, not message-keyed: "accept" means
+ * "enable my subscription to TAC". `source_message_id` lets the server
+ * stamp the triggering invite row with `invite_accepted_at` for audit;
+ * omit (or pass 0) when there isn't a bubble context.
+ *
+ * `already_member=true` is a normal 200 OK with a distinct UX meaning
+ * ("Already a member of TAC") — clients must not treat it as an error.
+ *
+ * Phase-invite-2 may finalize the path as `/tacticals/subscribe`; Phase
+ * 3 defaulted to `/tacticals` per the plan. If Phase 2 landed a different
+ * confirmed path, update the string below and regenerate the TS client.
+ *
+ * @param {{callsign: string, source_message_id?: number}} req
+ * @returns {Promise<{tactical: import('./generated/api').components['schemas']['dto.TacticalCallsignResponse'], already_member: boolean}>}
+ */
+export function acceptTactical(req) {
+  const body = {
+    callsign: (req?.callsign || '').toUpperCase(),
+    source_message_id: req?.source_message_id || 0,
+  };
+  return api.post('/tacticals', body);
+}
+
 // --- Station autocomplete (out-of-band helper) ---------------------
 
 /**

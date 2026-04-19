@@ -435,6 +435,17 @@ func (r *Router) persistInbound(
 		ReplyAckID: m.ReplyAck,
 		ThreadKind: threadKind,
 		ThreadKey:  threadKey,
+		Kind:       MessageKindText,
+	}
+	// Detect tactical-invite wire bodies on DM rows only. ParseInvite
+	// is strict: valid iff `^!GW1 INVITE <TAC>$`. On match we stamp
+	// Kind=invite + InviteTactical so the UI can render the accept
+	// affordance; otherwise the row remains a plain text DM.
+	if threadKind == ThreadKindDM {
+		if tac, ok := ParseInvite(m.Text); ok {
+			row.Kind = MessageKindInvite
+			row.InviteTactical = tac
+		}
 	}
 	if pkt.Direction == aprs.DirectionRF {
 		row.Channel = uint32(pkt.Channel)

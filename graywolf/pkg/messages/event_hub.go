@@ -27,6 +27,12 @@ const (
 	// EventMessageDeleted is emitted when an operator soft-deletes
 	// an outbound or inbound row via REST.
 	EventMessageDeleted = "message.deleted"
+	// EventMessageUpdated is emitted when a row's rendered state
+	// changes without a more specific event (e.g. an invite gets
+	// InviteAcceptedAt stamped). The webapi SSE layer already maps
+	// unknown event types to the "updated" wire kind, but handlers
+	// should prefer this constant for readability.
+	EventMessageUpdated = "message.updated"
 )
 
 // Event is the payload delivered to subscribers. MessageID is 0 for

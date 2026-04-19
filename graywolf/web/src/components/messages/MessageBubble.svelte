@@ -23,8 +23,18 @@
   // message body in proportional system fallback — otherwise bubbles
   // feel like a terminal log. Callsigns and timestamps stay mono.
 
-  import { Badge, Icon, Tooltip } from '@chrissnell/chonky-ui';
+  import { tick } from 'svelte';
+  import { push } from 'svelte-spa-router';
+  import { Badge, Button, Icon, Tooltip } from '@chrissnell/chonky-ui';
   import { callsignColors, callsignMonogram } from '../../lib/callsignColor.js';
+  import { messages as store } from '../../lib/messagesStore.svelte.js';
+  import { acceptTactical } from '../../api/messages.js';
+  import { toasts } from '../../lib/stores.js';
+  import {
+    ignoredInviteIds,
+    markAutoNavDone,
+    hasAutoNavFired,
+  } from '../../lib/stores/ignoredInvites.js';
   import { timeOfDay } from './time.js';
 
   /** @type {{
@@ -157,6 +167,118 @@
   }
 
   const showReplyPrivately = $derived(isTactical && !isOut && !!sender);
+
+  // --- Invite-branch state ------------------------------------------
+  // An invite bubble (kind === 'invite') renders differently from a
+  // normal DM bubble: inbound gets an Accept CTA, outbound gets
+  // "You invited …" copy. "Joined" rendering is driven by tactical-set
+  // membership, not by `msg.invite_accepted_at` (per plan — refresh-safe
+  // on first paint, race-free with SSE set updates).
+
+  const isInvite = $derived(msg?.kind === 'invite');
+  const inviteTactical = $derived(msg?.invite_tactical || '');
+  const toCall = $derived(msg?.to_call || msg?.peer_call || '');
+
+  // Accept button state machine: idle → accepting → joined | failed.
+  // Local to this bubble instance — a second bubble for the same TAC
+  // starts at `joined` naturally because tactSet.has(tactical) flips.
+  let acceptState = $state('idle'); // 'idle' | 'accepting' | 'failed'
+  let acceptError = $state('');
+  let openTacBtnWrap = $state(null);
+
+  // Membership in the tactical set IS the source of truth for "Joined"
+  // — `invite_accepted_at` is audit-only (see Phase 1 handoff §"For
+  // Phase 3"). Checking this reactively means that accepting from
+  // another tab or receiving an invite for an already-subscribed
+  // tactical both render "Joined" on first paint.
+  const isJoined = $derived.by(() => {
+    if (!isInvite) return false;
+    const t = inviteTactical;
+    if (!t) return false;
+    const entry = store.tacticals.get(t);
+    return !!entry && entry.enabled !== false;
+  });
+
+  // Narrow viewport stacking for the inbound Accept row.
+  let narrowViewport = $state(false);
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 359px)');
+    const apply = () => { narrowViewport = mq.matches; };
+    apply();
+    mq.addEventListener?.('change', apply);
+    return () => mq.removeEventListener?.('change', apply);
+  });
+
+  // Is this bubble in the user's local ignored set? The parent (thread
+  // view) usually filters these out, but we defensively render a
+  // collapsed placeholder here as well.
+  const isThisIgnored = $derived.by(() => {
+    if (!msg?.id) return false;
+    // Touch the subscribed store so Svelte picks up changes.
+    const set = $ignoredInviteIds;
+    return set?.has?.(msg.id) ?? false;
+  });
+
+  async function handleAccept() {
+    if (!isInvite || !inviteTactical || acceptState === 'accepting') return;
+    acceptState = 'accepting';
+    acceptError = '';
+    try {
+      const res = await acceptTactical({
+        callsign: inviteTactical,
+        source_message_id: msg?.id || 0,
+      });
+      // Server returns { tactical, already_member }. Fold the tactical
+      // into the store so the "Joined" derivation picks it up without
+      // waiting for the next /tactical rollup.
+      if (res?.tactical?.callsign) {
+        store.tacticals.set(res.tactical.callsign, {
+          id: res.tactical.id,
+          alias: res.tactical.alias || '',
+          enabled: res.tactical.enabled !== false,
+        });
+      }
+      acceptState = 'idle';
+
+      if (res?.already_member) {
+        toasts.success(`Already a member of ${inviteTactical}`);
+        // Do not auto-nav — they already had this tactical enabled.
+        await tick();
+        focusOpenLink();
+      } else {
+        const firstAccept = !hasAutoNavFired(msg?.id);
+        if (firstAccept) {
+          markAutoNavDone(msg?.id);
+          // Toast with Stay-here undo is shown via chonky's toast;
+          // since the base toast helper doesn't expose an action slot,
+          // degrade to a plain success message. Undo-via-toast would
+          // require a richer toast API — left as follow-up.
+          toasts.success(`Joined ${inviteTactical}`);
+          const threadId = `tactical:${inviteTactical}`;
+          push(`/messages?thread=${encodeURIComponent(threadId)}`);
+        } else {
+          toasts.success(`Joined ${inviteTactical}`);
+          await tick();
+          focusOpenLink();
+        }
+      }
+    } catch (err) {
+      acceptState = 'failed';
+      acceptError = err?.message || "Couldn't join";
+    }
+  }
+
+  function focusOpenLink() {
+    const link = openTacBtnWrap?.querySelector?.('a, button');
+    link?.focus?.();
+  }
+
+  function openTacticalThread() {
+    if (!inviteTactical) return;
+    const threadId = `tactical:${inviteTactical}`;
+    push(`/messages?thread=${encodeURIComponent(threadId)}`);
+  }
 </script>
 
 <article
@@ -199,7 +321,110 @@
         aria-hidden="true"
       >{monogram}</span>
     {/if}
-    <p class="bubble-text">{bodyText}</p>
+
+    {#if isInvite}
+      {#if isThisIgnored}
+        <p class="bubble-text invite-dismissed" data-testid="invite-dismissed">
+          Invitation hidden.
+        </p>
+      {:else if isOut}
+        <!-- Outbound invite: "You invited CALL to TAC". The ack-state
+             pill is reused from the normal DM bubble machinery below. -->
+        <p class="bubble-text invite-text" data-testid="invite-outbound">
+          <span class="invite-emoji" aria-hidden="true">📻</span>
+          You invited <strong class="invite-call">{toCall}</strong> to
+          <strong class="invite-tac">{inviteTactical}</strong>
+        </p>
+      {:else}
+        <!-- Inbound invite: broadcast line + Accept CTA (or Joined state). -->
+        <div
+          class="invite-inbound"
+          class:narrow={narrowViewport}
+          data-testid="invite-inbound"
+        >
+          <p class="bubble-text invite-text">
+            <span class="invite-emoji" aria-hidden="true">📻</span>
+            <strong class="invite-call">{sender}</strong>
+            invites you to
+            <strong class="invite-tac">{inviteTactical}</strong>
+          </p>
+          {#if isJoined}
+            <div
+              class="invite-actions joined"
+              role="group"
+              aria-label={`Invitation to ${inviteTactical}`}
+              aria-live="polite"
+            >
+              <!-- Joined state is not Tab-focusable: skip the pill (it's
+                   non-interactive text anyway) and keep Open reachable
+                   only via mouse/touch when the bubble isn't the
+                   operator's immediate task. Per plan: "Viewed/accepted
+                   invites are not Tab-focusable." -->
+              <span class="joined-pill" aria-hidden="true">
+                <Icon name="check" size="xs" />
+                Joined
+              </span>
+              <span class="open-wrap" bind:this={openTacBtnWrap}>
+                <button
+                  type="button"
+                  class="open-tac-btn"
+                  onclick={openTacticalThread}
+                  tabindex="-1"
+                  aria-label={`Open ${inviteTactical}`}
+                  data-testid="invite-open-tac"
+                >
+                  Open {inviteTactical}
+                  <Icon name="chevron-right" size="xs" />
+                </button>
+              </span>
+            </div>
+          {:else}
+            <div
+              class="invite-actions"
+              role="group"
+              aria-label={`Invitation to ${inviteTactical}`}
+              aria-live="polite"
+            >
+              <button
+                type="button"
+                class="accept-btn"
+                onclick={handleAccept}
+                disabled={acceptState === 'accepting'}
+                aria-label={`Accept invitation and join ${inviteTactical}`}
+                data-testid="invite-accept"
+              >
+                {#if acceptState === 'accepting'}
+                  <span class="accept-spin" aria-hidden="true">
+                    <Icon name="refresh-cw" size="sm" />
+                  </span>
+                  Joining…
+                {:else}
+                  <Icon name="check" size="sm" />
+                  Accept · Join {inviteTactical}
+                {/if}
+              </button>
+              {#if acceptState === 'failed'}
+                <div class="accept-error" role="alert">
+                  <span>{acceptError || "Couldn't join."} Retry.</span>
+                  <button
+                    type="button"
+                    class="accept-retry"
+                    onclick={handleAccept}
+                    aria-label={`Retry joining ${inviteTactical}`}
+                    data-testid="invite-accept-retry"
+                  >
+                    <Icon name="refresh-cw" size="xs" />
+                    Retry
+                  </button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    {:else}
+      <p class="bubble-text">{bodyText}</p>
+    {/if}
     <div class="bubble-meta">
       <button
         type="button"
@@ -488,5 +713,160 @@
       width: 32px;
       height: 32px;
     }
+  }
+
+  /* --- Invite branch ------------------------------------------------ */
+  .invite-inbound {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .invite-inbound.narrow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .invite-text {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+      'Helvetica Neue', Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+  .invite-emoji {
+    margin-right: 4px;
+  }
+  .invite-call,
+  .invite-tac {
+    font-family: var(--font-mono);
+    letter-spacing: 0.3px;
+  }
+  .invite-dismissed {
+    margin: 0;
+    font-style: italic;
+    color: var(--color-text-dim);
+    font-size: 12px;
+  }
+  .invite-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .invite-actions.joined {
+    margin-top: 2px;
+  }
+
+  .accept-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--color-primary);
+    background: var(--color-primary);
+    color: var(--color-primary-foreground, #fff);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: filter 0.15s, background 0.15s;
+  }
+  .accept-btn:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+  .accept-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  .accept-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+  }
+  .accept-spin {
+    display: inline-flex;
+    align-items: center;
+  }
+  .accept-spin :global(svg) {
+    animation: bubble-invite-spin 1s linear infinite;
+  }
+  @keyframes bubble-invite-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .accept-error {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--color-danger-muted);
+    border: 1px solid var(--color-danger);
+    border-radius: 6px;
+    color: var(--color-danger);
+    font-size: 12px;
+  }
+  .accept-retry {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--color-danger);
+    color: var(--color-danger);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .accept-retry:hover {
+    background: var(--color-danger);
+    color: var(--color-primary-foreground, #fff);
+  }
+  .accept-retry:focus-visible {
+    outline: 2px solid var(--color-danger);
+    outline-offset: 1px;
+  }
+
+  .joined-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .open-wrap {
+    display: inline-flex;
+  }
+  .open-tac-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-primary);
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .open-tac-btn:hover {
+    background: var(--color-primary);
+    color: var(--color-primary-foreground, #fff);
+  }
+  .open-tac-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 </style>

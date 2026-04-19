@@ -116,3 +116,20 @@ func (s *Store) ListEnabledTacticalCallsigns(ctx context.Context) ([]TacticalCal
 	var out []TacticalCallsign
 	return out, s.db.WithContext(ctx).Where("enabled = ?", true).Order("callsign").Find(&out).Error
 }
+
+// GetTacticalCallsignByCallsign returns the entry whose Callsign
+// equals the uppercase-normalized argument. Returns (nil, nil) on
+// not-found to match the other singleton getters. Used by the invite
+// accept handler so it can upsert without racing the autoincrement
+// ID.
+func (s *Store) GetTacticalCallsignByCallsign(ctx context.Context, callsign string) (*TacticalCallsign, error) {
+	var t TacticalCallsign
+	err := s.db.WithContext(ctx).Where("callsign = ?", callsign).First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}

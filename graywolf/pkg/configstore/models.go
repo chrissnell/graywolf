@@ -408,6 +408,23 @@ type Message struct {
 	ThreadKind     string         `gorm:"size:10;not null;default:'dm';index:idx_msg_thread,priority:1" json:"thread_kind"` // dm | tactical
 	ThreadKey      string         `gorm:"size:9;not null;default:'';index:idx_msg_thread,priority:2" json:"thread_key"`     // peer callsign for dm, tactical label for tactical
 	ReceivedByCall string         `gorm:"size:9" json:"received_by_call"`                                                   // tactical outbound: first acker's call
+	// Kind classifies the message body so the UI can render specialized
+	// affordances (e.g. an Accept button for tactical invites) without
+	// having to re-parse the wire text. Defaults to "text"; "invite"
+	// marks a `!GW1 INVITE <TAC>` DM. The CHECK constraint pins the
+	// enum at the SQL layer as a backstop against accidental writes of
+	// other values from SQL shells or future migrations. No index — the
+	// column is never a query predicate, only a display tag.
+	Kind string `gorm:"size:10;not null;default:'text';check:kind IN ('text','invite')" json:"kind"`
+	// InviteTactical is the tactical callsign referenced by an invite
+	// message. Empty when Kind != "invite". Size 9 mirrors ThreadKey /
+	// TacticalCallsign.Callsign.
+	InviteTactical string `gorm:"size:9;not null;default:''" json:"invite_tactical"`
+	// InviteAcceptedAt records when the local operator accepted this
+	// invite. Audit-only: UI rendering of "Joined" keys off the live
+	// TacticalSet cache, not this column, so first-paint is race-free
+	// on refresh. Nil until accept. No index.
+	InviteAcceptedAt *time.Time `json:"invite_accepted_at,omitempty"`
 }
 
 // TableName pins the messages table name to the plural lower-case form

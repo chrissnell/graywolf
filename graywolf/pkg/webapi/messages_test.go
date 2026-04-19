@@ -17,8 +17,10 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/messages"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
@@ -344,6 +346,181 @@ func TestSendMessage_Unavailable(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)
 	}
+}
+
+// TestSendMessage_InviteRoundTrip asserts that a POST with
+// kind=invite + invite_tactical passes the fields through to the
+// service layer unchanged. The fake service records the call so we
+// can assert on the forwarded struct.
+func TestSendMessage_InviteRoundTrip(t *testing.T) {
+	sentCh := make(chan messages.SendMessageRequest, 1)
+	svc := &fakeMessagesSvc{
+		sendFn: func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
+			sentCh <- req
+			return &configstore.Message{
+				ID:             99,
+				Direction:      "out",
+				OurCall:        req.OurCall,
+				FromCall:       req.OurCall,
+				ToCall:         req.To,
+				Text:           "!GW1 INVITE TAC-NET",
+				ThreadKind:     messages.ThreadKindDM,
+				ThreadKey:      req.To,
+				MsgID:          "002",
+				CreatedAt:      time.Now(),
+				AckState:       messages.AckStateNone,
+				Kind:           messages.MessageKindInvite,
+				InviteTactical: "TAC-NET",
+			}, nil
+		},
+	}
+	_, mux, _ := newMessagesTestServer(t, svc)
+
+	body := `{"to":"W1ABC","text":"","kind":"invite","invite_tactical":"TAC-NET"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got := <-sentCh
+	if got.Kind != messages.MessageKindInvite {
+		t.Errorf("Kind forwarded = %q, want %q", got.Kind, messages.MessageKindInvite)
+	}
+	if got.InviteTactical != "TAC-NET" {
+		t.Errorf("InviteTactical forwarded = %q, want TAC-NET", got.InviteTactical)
+	}
+	// Response echoes the server-built wire body.
+	var resp dto.MessageResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Text != "!GW1 INVITE TAC-NET" {
+		t.Errorf("response Text = %q, want the server-built wire body", resp.Text)
+	}
+	if resp.Kind != messages.MessageKindInvite {
+		t.Errorf("response Kind = %q, want %q", resp.Kind, messages.MessageKindInvite)
+	}
+}
+
+// TestSendMessage_InviteMissingTactical asserts that a kind=invite
+// request without invite_tactical is rejected at the webapi
+// boundary with 400, not forwarded to the service.
+func TestSendMessage_InviteMissingTactical(t *testing.T) {
+	called := false
+	svc := &fakeMessagesSvc{
+		sendFn: func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
+			called = true
+			return nil, nil
+		},
+	}
+	_, mux, _ := newMessagesTestServer(t, svc)
+
+	body := `{"to":"W1ABC","text":"","kind":"invite"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if called {
+		t.Error("service SendMessage must NOT be called when invite_tactical is missing")
+	}
+}
+
+// TestSendMessage_InviteEndToEndPersistsRow wires the real messages
+// Service + Store and verifies that a kind=invite POST results in a
+// persisted row with Kind=invite, InviteTactical=TAC-NET, and the
+// server-built wire body — i.e., the full round trip through the
+// send path.
+func TestSendMessage_InviteEndToEndPersistsRow(t *testing.T) {
+	ctx := context.Background()
+	store, err := configstore.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
+		Callsign: "N0CALL", Server: "rotate.aprs2.net", Port: 14580,
+		Passcode: "-1", TxChannel: 1, RfChannel: 1, MaxMsgHops: 2, GateRfToIs: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msgStore := messages.NewStore(store.DB())
+	svc, err := messages.NewService(messages.ServiceConfig{
+		Store:       msgStore,
+		ConfigStore: store,
+		TxSink:      &inviteFakeSink{},
+		TxHookReg:   &inviteNopHookReg{},
+		OurCall:     func() string { return "N0CALL" },
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Stop()
+
+	srv, err := NewServer(Config{
+		Store:  store,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetMessagesService(svc)
+	srv.SetMessagesStore(msgStore)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// Client deliberately sends a bogus Text to prove the server
+	// overwrites it.
+	body := `{"to":"W1ABC","text":"IGNORED","kind":"invite","invite_tactical":"TAC-NET"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Pull the row back and assert persisted state.
+	rows, _, err := msgStore.List(ctx, messages.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 persisted row, got %d", len(rows))
+	}
+	row := rows[0]
+	if row.Kind != messages.MessageKindInvite {
+		t.Errorf("Kind = %q, want %q", row.Kind, messages.MessageKindInvite)
+	}
+	if row.InviteTactical != "TAC-NET" {
+		t.Errorf("InviteTactical = %q, want TAC-NET", row.InviteTactical)
+	}
+	if want := "!GW1 INVITE TAC-NET"; row.Text != want {
+		t.Errorf("persisted Text = %q, want %q (server must overwrite the client body)", row.Text, want)
+	}
+}
+
+// inviteFakeSink + inviteNopHookReg are minimal stubs so the Service
+// can be constructed without dragging in the full txgovernor wiring.
+// They intentionally discard submissions — the invite tests care
+// about persistence, not radio I/O.
+type inviteFakeSink struct{}
+
+func (inviteFakeSink) Submit(ctx context.Context, ch uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+	return nil
+}
+
+type inviteNopHookReg struct{}
+
+func (inviteNopHookReg) AddTxHook(h txgovernor.TxHook) (uint64, func()) {
+	return 0, func() {}
 }
 
 // --- DELETE /api/messages/{id} -------------------------------------------

@@ -40,6 +40,16 @@ const (
 	AckStateBroadcast = "broadcast"
 )
 
+// MessageKind wire values. Classifies the body of a persisted message
+// so the UI can render specialized affordances (invite → Accept button)
+// without re-parsing the APRS text. "text" is the legacy default for
+// every row written before the invite feature landed; migration 6
+// backfills legacy NULL/"" rows to "text" explicitly.
+const (
+	MessageKindText   = "text"
+	MessageKindInvite = "invite"
+)
+
 // Folder discriminator for List.
 const (
 	FolderAll    = "all"

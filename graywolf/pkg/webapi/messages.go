@@ -222,9 +222,24 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err.Error())
 		return
 	}
-	if err := req.Validate(); err != nil {
-		badRequest(w, err.Error())
-		return
+	// Invite requests skip the default Text validation: the server
+	// builds the wire body from InviteTactical, so an empty Text is
+	// valid and a client-supplied Text is ignored downstream.
+	isInvite := strings.EqualFold(req.Kind, messages.MessageKindInvite)
+	if isInvite {
+		if err := dto.ValidateAddressee(req.To); err != nil {
+			badRequest(w, err.Error())
+			return
+		}
+		if strings.TrimSpace(req.InviteTactical) == "" {
+			badRequest(w, "invite_tactical is required when kind=invite")
+			return
+		}
+	} else {
+		if err := req.Validate(); err != nil {
+			badRequest(w, err.Error())
+			return
+		}
 	}
 	// Loopback guard — client must not target its own base callsign.
 	ourCall, err := s.resolveOurCall(r.Context())
@@ -237,17 +252,26 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "cannot send a message to our own callsign")
 		return
 	}
-	row, err := svc.SendMessage(r.Context(), messages.SendMessageRequest{
+	svcReq := messages.SendMessageRequest{
 		To:      to,
 		Text:    req.Text,
 		OurCall: ourCall,
-	})
+	}
+	if isInvite {
+		svcReq.Kind = messages.MessageKindInvite
+		svcReq.InviteTactical = strings.ToUpper(strings.TrimSpace(req.InviteTactical))
+	}
+	row, err := svc.SendMessage(r.Context(), svcReq)
 	if err != nil {
 		if errors.Is(err, messages.ErrMsgIDExhausted) {
 			serviceUnavailable(w, "all 999 msgid slots for this peer are outstanding; retry later")
 			return
 		}
 		if errors.Is(err, messages.ErrInvalidThreadKind) {
+			badRequest(w, err.Error())
+			return
+		}
+		if errors.Is(err, messages.ErrInvalidInvite) {
 			badRequest(w, err.Error())
 			return
 		}
