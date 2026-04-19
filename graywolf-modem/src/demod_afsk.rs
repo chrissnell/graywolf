@@ -4,7 +4,9 @@
 //!
 //! - **Profile A**: Mixes the input with separate mark and space local
 //!   oscillators, low-pass filters the I/Q products, computes amplitudes
-//!   via `hypot`, and applies AGC before comparing.
+//!   via `hypot`, and applies AGC before comparing. Single-slicer uses a
+//!   decision-feedback AGC (mark/space references tracked independently);
+//!   multi-slicer uses the classic peak/valley envelope tracker.
 //!
 //! - **Profile B**: Mixes with a single center-frequency oscillator, low-pass
 //!   filters, and measures the instantaneous frequency via phase-rate (FM
@@ -24,6 +26,15 @@ use crate::types::*;
 // logarithmically spaced from MIN_G to MAX_G.
 const MIN_G: f32 = 0.5;
 const MAX_G: f32 = 4.0;
+
+// Decision-feedback AGC: exponential-average rates for the mark and space
+// reference levels. Asymmetric (mark tracks faster) because mark tones are
+// more frequent on typical packet traffic and benefit from tighter tracking.
+//
+// Technique credit: Ion Todirel (W7ION), described in posts on the APRS
+// Users Facebook group. Coefficients match his published design.
+const DFB_ALPHA_MARK: f32 = 0.008;
+const DFB_ALPHA_SPACE: f32 = 0.005;
 
 // ---------------------------------------------------------------------------
 // Cosine lookup table — 256 entries indexed by the top 8 bits of a u32 phase
@@ -163,6 +174,14 @@ pub struct AfskDemodulator {
     dcd_changes: Vec<DcdChange>,
     fcos256_table: [f32; 256],
     space_gain: [f32; MAX_SUBCHANS],
+
+    // Decision-feedback AGC state (Profile A single-slicer path).
+    // Tracks mark and space amplitude references independently, updating
+    // whichever one matched the previous soft decision's sign. Seeded to a
+    // tiny non-zero value so the first division never hits zero.
+    dfb_mark_ref: f32,
+    dfb_space_ref: f32,
+    dfb_last_soft: f32,
 }
 
 impl AfskDemodulator {
@@ -211,6 +230,9 @@ impl AfskDemodulator {
             dcd_changes: Vec::new(),
             fcos256_table,
             space_gain,
+            dfb_mark_ref: 0.001,
+            dfb_space_ref: 0.001,
+            dfb_last_soft: 0.0,
         }
     }
 
@@ -457,21 +479,21 @@ impl AfskDemodulator {
         );
 
         if self.state.num_slicers <= 1 {
-            let m_norm = agc(
-                m_amp,
-                self.state.agc_fast_attack,
-                self.state.agc_slow_decay,
-                &mut self.state.m_peak,
-                &mut self.state.m_valley,
-            );
-            let s_norm = agc(
-                s_amp,
-                self.state.agc_fast_attack,
-                self.state.agc_slow_decay,
-                &mut self.state.s_peak,
-                &mut self.state.s_valley,
-            );
-            self.nudge_pll(0, m_norm - s_norm, 1.0);
+            // Decision-feedback AGC (technique per Ion Todirel W7ION, APRS
+            // Users Facebook group): update the reference matching the prior
+            // decision's dominant tone, then emit the normalized soft output.
+            // Holds the other reference steady to avoid cross-talk when only
+            // one tone is active.
+            if self.dfb_last_soft > 0.0 {
+                self.dfb_mark_ref =
+                    DFB_ALPHA_MARK * m_amp + (1.0 - DFB_ALPHA_MARK) * self.dfb_mark_ref;
+            } else {
+                self.dfb_space_ref =
+                    DFB_ALPHA_SPACE * s_amp + (1.0 - DFB_ALPHA_SPACE) * self.dfb_space_ref;
+            }
+            let soft = m_amp / self.dfb_mark_ref - s_amp / self.dfb_space_ref;
+            self.dfb_last_soft = soft;
+            self.nudge_pll(0, soft, 1.0);
         } else {
             agc(m_amp, self.state.agc_fast_attack, self.state.agc_slow_decay,
                 &mut self.state.m_peak, &mut self.state.m_valley);
