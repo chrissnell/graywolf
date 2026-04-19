@@ -90,6 +90,17 @@ type Config struct {
 	// in the packet log / station cache for map display, which must not
 	// be coupled to the transmit-gating filter. Optional.
 	IsRxHook func(pkt *aprs.DecodedAPRSPacket, line string)
+	// LocalOrigin is an optional lookup for locally-originated messages.
+	// When non-nil and SuppressLocalMessageReGate is true, the gateway
+	// skips RF->IS gating for any message packet whose (source, msg_id)
+	// is present in the ring — this prevents our own outbound messages
+	// from being re-gated to APRS-IS after a digipeater repeats them
+	// back onto RF.
+	LocalOrigin LocalOriginRing
+	// SuppressLocalMessageReGate enables the LocalOrigin consult step.
+	// Defaults to true in Phase 5 wiring; operators can set false to
+	// preserve legacy behavior (re-gate every packet).
+	SuppressLocalMessageReGate bool
 	// now is an optional clock for tests.
 	now func() time.Time
 }
@@ -333,6 +344,10 @@ func (ig *Igate) handleISLine(line string) {
 		// the frame header, so construct a minimal decoded packet.
 		pkt = &aprs.DecodedAPRSPacket{Source: frame.Source.String(), Dest: frame.Dest.String()}
 	}
+	// Provenance: this ingress path is APRS-IS, so downstream consumers
+	// (messages router, Source badge, IS-mirror ack logic) can rely on
+	// Direction to distinguish from RF arrivals.
+	pkt.Direction = aprs.DirectionIS
 	// Map display and packet-log capture happen for every received IS
 	// packet. The local filter engine below only gates RF transmission.
 	if ig.cfg.IsRxHook != nil {
@@ -419,6 +434,14 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	// TCPXX/NOGATE/RFONLY marker (the APRS-IS convention for
 	// already-gated or do-not-gate traffic).
 	if pathBlocksGating(pkt.Path) {
+		return
+	}
+	// Rule: never gate a message packet that we originated ourselves.
+	// The messages sender records (source, msg_id) in the LocalOrigin
+	// ring on every submit; a later RF read of the same packet (via
+	// a digipeater repeat) hits the ring and is suppressed here so
+	// APRS-IS doesn't see our own outbound twice.
+	if ig.shouldSuppressLocalMessage(pkt) {
 		return
 	}
 	// APRS-level dedup on (source + info bytes); the helper lives
