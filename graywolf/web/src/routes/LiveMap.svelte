@@ -407,7 +407,7 @@
   }
 </script>
 
-<div class="map-wrapper">
+<div class="map-wrapper" class:labels-high-contrast={mapState.highContrastLabels}>
   <div class="map-container" bind:this={container}></div>
 
   {#if map}
@@ -429,6 +429,14 @@
           <label>
             <input type="checkbox" checked={mapState.layerToggles.stations} onchange={() => toggleLayer('stations')} />
             Stations
+          </label>
+          <label class="sub-toggle">
+            <input
+              type="checkbox"
+              checked={mapState.highContrastLabels}
+              onchange={() => mapState.highContrastLabels = !mapState.highContrastLabels}
+            />
+            High-contrast labels
           </label>
           <label>
             <input type="checkbox" checked={mapState.layerToggles.aprsIs} onchange={() => toggleLayer('aprsIs')} />
@@ -542,6 +550,10 @@
   }
   .layer-panel label:hover {
     color: var(--color-text);
+  }
+  .layer-panel label.sub-toggle {
+    padding-left: 18px;
+    font-size: 11px;
   }
 
   /* ── Timerange dropdown (top-right) ──────────────── */
@@ -708,6 +720,13 @@
   }
   :global(.leaflet-tooltip.callsign-label::before) {
     display: none;
+  }
+
+  /* High-contrast label mode: opaque black w/ white text + white outline */
+  .map-wrapper.labels-high-contrast :global(.leaflet-tooltip.callsign-label) {
+    background: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
   }
 
   /* Zoom controls */

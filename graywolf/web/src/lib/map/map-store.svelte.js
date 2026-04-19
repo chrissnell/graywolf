@@ -31,6 +31,8 @@ export const mapState = (() => {
     myPosition: false,
   });
 
+  let highContrastLabels = $state(localStorage.getItem('map-high-contrast-labels') === '1');
+
   let timerange = $state(loadInt('map-timerange', 3600));
   let mapCenter = $state([
     loadFloat('map-center-lat', US_CENTER[0]),
@@ -56,6 +58,12 @@ export const mapState = (() => {
 
     get layerToggles() { return layerToggles; },
     set layerToggles(v) { layerToggles = v; },
+
+    get highContrastLabels() { return highContrastLabels; },
+    set highContrastLabels(v) {
+      highContrastLabels = v;
+      localStorage.setItem('map-high-contrast-labels', v ? '1' : '0');
+    },
 
     get timerange() { return timerange; },
     set timerange(v) {
