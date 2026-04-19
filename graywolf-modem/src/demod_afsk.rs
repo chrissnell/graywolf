@@ -182,6 +182,18 @@ pub struct AfskDemodulator {
     dfb_mark_ref: f32,
     dfb_space_ref: f32,
     dfb_last_soft: f32,
+
+    /// Hard-limit the audio sample to sign(x) before the bandpass prefilter.
+    /// Discards amplitude information and retains only zero-crossing timing.
+    /// Useful on flat (non-emphasized) audio where the BPF cleanly rejects
+    /// the square-wave harmonics. May hurt on de-emphasized audio where the
+    /// space tone is weaker than the mark and gets captured-out.
+    hard_limit: bool,
+
+    /// Monotonic audio-sample counter, written into each emitted frame's
+    /// `sample_offset` so downstream code can dedup across demodulators by
+    /// matching identical frame content within a short time window.
+    sample_counter: u64,
 }
 
 impl AfskDemodulator {
@@ -233,7 +245,15 @@ impl AfskDemodulator {
             dfb_mark_ref: 0.001,
             dfb_space_ref: 0.001,
             dfb_last_soft: 0.0,
+            hard_limit: false,
+            sample_counter: 0,
         }
+    }
+
+    /// Enable or disable audio hard-limiting before the bandpass prefilter.
+    /// Default is off. See the `hard_limit` field documentation for tradeoffs.
+    pub fn set_hard_limit(&mut self, enable: bool) {
+        self.hard_limit = enable;
     }
 
     // --- Init helpers (called once during construction) ---------------------
@@ -427,12 +447,18 @@ impl AfskDemodulator {
             AfskProfile::A => self.process_profile_a(fsam),
             AfskProfile::B => self.process_profile_b(fsam),
         }
+
+        self.sample_counter = self.sample_counter.wrapping_add(1);
     }
 
     /// Profile A: dual local oscillator, amplitude comparison.
     #[inline(always)]
     fn process_profile_a(&mut self, mut fsam: f32) {
         let taps = self.state.lp_filter_taps;
+
+        if self.hard_limit {
+            fsam = if fsam >= 0.0 { 1.0 } else { -1.0 };
+        }
 
         // Bandpass prefilter
         if self.state.use_prefilter {
@@ -516,6 +542,10 @@ impl AfskDemodulator {
     fn process_profile_b(&mut self, mut fsam: f32) {
         let taps = self.state.lp_filter_taps;
 
+        if self.hard_limit {
+            fsam = if fsam >= 0.0 { 1.0 } else { -1.0 };
+        }
+
         // Bandpass prefilter
         if self.state.use_prefilter {
             let pre_taps = self.state.pre_filter_taps;
@@ -596,6 +626,7 @@ impl AfskDemodulator {
                 &mut self.state.slicer[slice].pll_symbol_count,
             ) {
                 frame.quality = quality;
+                frame.sample_offset = self.sample_counter;
                 self.decoded_frames.push(frame);
             }
 

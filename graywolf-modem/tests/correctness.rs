@@ -265,6 +265,7 @@ fn test_decoded_frame_metadata() {
         audio_level_mark: 0.5,
         audio_level_space: 0.3,
         speed_error: 0.02,
+        sample_offset: 0,
     };
 
     assert_eq!(frame.chan, 1);
