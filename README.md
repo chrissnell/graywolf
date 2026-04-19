@@ -48,6 +48,7 @@ Building Graywolf (demod_bench)...
 
   - 1:1 direct messages with auto-ACK, retry, and reply-ack correlation
   - Tactical callsigns (e.g. `NET`, `EOC`) for group nets — broadcast to every monitor, color-coded sender labels per bubble
+  - Tactical invites via `!GW1 INVITE <TAC>` DM — recipient clicks Accept to subscribe locally, no out-of-band coordination needed
   - Soft-split for messages longer than 67 chars, RF-first with IS fallback
   - Manage monitored tactical callsigns under *Messages → Manage tactical callsigns*
 
