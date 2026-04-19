@@ -302,11 +302,15 @@
     align-items: center;
   }
   .lead {
+    /* Span the full height of the input, flex-center the icon
+       inside. Exact rather than `top: 50%; translateY(-50%)` which
+       can drift fractionally with Inconsolata's line metrics. */
     position: absolute;
     left: 8px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: inline-flex;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
     color: var(--color-text-dim);
     pointer-events: none;
     z-index: 1;
