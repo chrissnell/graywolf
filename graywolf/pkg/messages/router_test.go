@@ -816,6 +816,62 @@ func TestRouterThirdPartyUnwrapReattributesSource(t *testing.T) {
 	}
 }
 
+// TestRouterThirdPartyEnvelopeReattributesSource covers the real APRS101
+// ch 20 case where the outer info field starts with '}' — the shape an
+// IS→RF gating iGate produces when relaying a directed message to RF.
+// Reproduces a wire capture of KB7COX-10 relaying KK4ODA's DM to NW5W-5
+// (inner addressee short-padded, which exercises the lenient parser).
+func TestRouterThirdPartyEnvelopeReattributesSource(t *testing.T) {
+	r, store, sink, _, _, _, cleanup := buildRouter(t, "NW5W-5", nil)
+	defer cleanup()
+
+	// Outer info starts with '}' so the APRS parser dispatches to the
+	// third-party case and recursively decodes the inner.
+	inner := ":NW5W-5 :testing from newest version{005"
+	info := "}KK4ODA>APGRWO,TCPIP,KB7COX-10*:" + inner
+	src, _ := ax25.ParseAddress("KB7COX-10")
+	dst, _ := ax25.ParseAddress("APDW17")
+	f, _ := ax25.NewUIFrame(src, dst, nil, []byte(info))
+	pkt, err := aprs.Parse(f)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if pkt.Type != aprs.PacketThirdParty {
+		t.Fatalf("outer type = %q, want third-party", pkt.Type)
+	}
+	if pkt.ThirdParty == nil || pkt.ThirdParty.Message == nil {
+		t.Fatalf("inner message not populated: %+v", pkt.ThirdParty)
+	}
+	pkt.Direction = aprs.DirectionRF
+
+	_ = r.SendPacket(context.Background(), pkt)
+	waitFor(t, time.Second, func() bool {
+		ms, _, _ := store.List(context.Background(), Filter{})
+		return len(ms) == 1
+	}, "third-party envelope row persisted")
+
+	ms, _, _ := store.List(context.Background(), Filter{})
+	if ms[0].FromCall != "KK4ODA" {
+		t.Fatalf("FromCall = %q, want KK4ODA (inner author, not relaying iGate)", ms[0].FromCall)
+	}
+	if ms[0].MsgID != "005" {
+		t.Fatalf("MsgID = %q, want 005", ms[0].MsgID)
+	}
+	if ms[0].Text != "testing from newest version" {
+		t.Fatalf("Text = %q", ms[0].Text)
+	}
+
+	// Auto-ACK goes to KK4ODA, not the relaying iGate.
+	sub := sink.list()
+	if len(sub) != 1 {
+		t.Fatalf("want 1 auto-ACK, got %d", len(sub))
+	}
+	want := ":KK4ODA   :ack005"
+	if string(sub[0].Frame.Info) != want {
+		t.Fatalf("ack info = %q, want %q", string(sub[0].Frame.Info), want)
+	}
+}
+
 func TestRouterQueueFullDropsOldest(t *testing.T) {
 	// Build a router by hand with a small queue to exercise the drop
 	// path deterministically.

@@ -247,8 +247,10 @@ func (r *Router) SendPacket(ctx context.Context, pkt *aprs.DecodedAPRSPacket) er
 		return nil
 	}
 	// Pre-filter cheaply: discard anything that isn't a non-meta
-	// message. This avoids burning queue slots on noise.
-	if pkt.Type != aprs.PacketMessage || pkt.Message == nil || pkt.TelemetryMeta != nil {
+	// message — either direct or wrapped in an APRS101 ch 20 third-party
+	// envelope (as produced by an IS→RF gating iGate). Everything else
+	// is noise.
+	if !isClassifiableMessage(pkt) {
 		return nil
 	}
 	if !r.running.Load() {
@@ -307,7 +309,7 @@ func (r *Router) runConsumer(ctx context.Context) {
 
 // classify runs the full pipeline for one packet.
 func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
-	if pkt == nil || pkt.Message == nil {
+	if !isClassifiableMessage(pkt) {
 		return
 	}
 
@@ -744,16 +746,43 @@ func firstVia(p []string) string {
 	return ""
 }
 
-// unwrapThirdParty detects an in-band third-party envelope carried in
-// the message text (leading '}') and returns the re-attributed source
-// and Message. If no unwrap is needed, returns the original.
+// isClassifiableMessage reports whether pkt carries a message the router
+// should classify. Accepts direct PacketMessage and APRS101 ch 20
+// third-party envelopes whose inner is itself a message (the shape an
+// IS→RF gating iGate produces when relaying a directed message onto RF).
+func isClassifiableMessage(pkt *aprs.DecodedAPRSPacket) bool {
+	if pkt == nil {
+		return false
+	}
+	if pkt.Type == aprs.PacketMessage && pkt.Message != nil && pkt.TelemetryMeta == nil {
+		return true
+	}
+	if pkt.Type == aprs.PacketThirdParty && pkt.ThirdParty != nil {
+		inner := pkt.ThirdParty
+		if inner.Type == aprs.PacketMessage && inner.Message != nil && inner.TelemetryMeta == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// unwrapThirdParty returns the effective (source, message) for pkt.
 //
-// Per APRS101 ch 20, third-party packets are typically delivered by
-// the parser as PacketThirdParty (with pkt.ThirdParty populated). This
-// helper handles the edge case where the outer packet parsed as a
-// Message but the body starts with '}' — a malformed or hand-rolled
-// third-party envelope that still reached the message pipeline.
+// For an APRS101 ch 20 third-party envelope, the outer parser has
+// already recursively decoded the inner packet into pkt.ThirdParty and
+// we use its source/message directly — the outer source identifies the
+// relaying iGate, not the author.
+//
+// For the edge case where the outer parsed as a PacketMessage but its
+// body starts with '}' (a malformed/hand-rolled envelope that slipped
+// past the dispatcher), the inner TNC-2 body is parsed here.
+//
+// If neither applies, returns the original (outer) source and message.
 func unwrapThirdParty(pkt *aprs.DecodedAPRSPacket) (string, *aprs.Message) {
+	if pkt.Type == aprs.PacketThirdParty && pkt.ThirdParty != nil &&
+		pkt.ThirdParty.Message != nil {
+		return pkt.ThirdParty.Source, pkt.ThirdParty.Message
+	}
 	source := pkt.Source
 	msg := pkt.Message
 	if msg == nil {
