@@ -59,14 +59,14 @@
       Graywolf&rsquo;s messaging screen is a chat client that speaks APRS.
       Every outbound message is transmitted as an APRS11 text packet over
       RF (with an APRS-IS fallback when the peer is internet-only), and
-      every APRS text frame graywolf hears is rendered as a bubble in the
+      every APRS text frame graywolf hears is shown as a message in the
       matching conversation. Messages longer than the 67-byte APRS cap are
-      soft-split into numbered segments and reassembled on receive.
+      split into numbered segments and reassembled on receive.
     </p>
 
     <div class="screenshot">
-      <img src="img/messages-tactical.png" alt="Tactical chat view with participant chips, color-coded sender labels, and a broadcast compose bar" />
-      <div class="caption">A tactical net in progress. Every monitoring station sees each bubble; sender labels are color-coded per callsign.</div>
+      <img src="img/messages-tactical.png" alt="Tactical chat showing participant callsigns at the top and color-coded sender labels on each message" />
+      <div class="caption">A tactical net in progress. Every monitoring station sees each message; sender callsigns are color-coded.</div>
     </div>
 
     <h2>Two kinds of threads</h2>
@@ -81,12 +81,12 @@
             <tr>
               <td><strong>Direct (DM)</strong></td>
               <td>One peer callsign</td>
-              <td>APRS11 auto-ACK + reply-ack correlation, with retry until acked or timed out</td>
+              <td>APRS11 auto-ACK and reply-ack, retransmitting until acknowledged or the retry budget runs out</td>
             </tr>
             <tr>
               <td><strong>Tactical broadcast</strong></td>
-              <td>A tactical label (e.g. <code>NET</code>, <code>EOC</code>, <code>TAC-NET</code>)</td>
-              <td>No ACKs &mdash; tactical traffic is one-to-many. The status pill shows &ldquo;broadcast sent.&rdquo;</td>
+              <td>A tactical label (e.g. <code>NW5WOPS</code>, <code>SLCARES</code>)</td>
+              <td>No ACKs &mdash; tactical traffic is one-to-many. Each message is marked simply as transmitted.</td>
             </tr>
           </tbody>
         </table>
@@ -97,88 +97,111 @@
 
     <p>
       A DM is a normal APRS text packet addressed to a single callsign
-      (optionally with SSID). Graywolf handles ACK correlation, retry, and
-      reply-ack matching automatically. The bubble shows an ack-state pill:
-      awaiting &rarr; acked / timeout / rejected.
+      (optionally with SSID). Graywolf handles acknowledgments, retries,
+      and reply-ack matching automatically. Each outbound message shows
+      whether it&rsquo;s still waiting for an acknowledgment, was
+      acknowledged, timed out, or was rejected.
     </p>
 
     <div class="screenshot">
-      <img src="img/messages-dm.png" alt="A direct-message conversation with W1ABC-9, outbound bubbles in amber and inbound in grey, acked status below each" />
-      <div class="caption">A 1:1 DM. Outbound bubbles sit on the right; ack status lives in the meta row under each bubble.</div>
+      <img src="img/messages-dm.png" alt="A direct-message conversation with W1ABC-9: outbound messages on the right, inbound on the left, with delivery status on each" />
+      <div class="caption">A 1:1 DM. Your messages appear on the right; delivery status sits under each one.</div>
     </div>
 
     <p>
-      Retry behavior is controlled by the <em>Messages &rarr; Preferences</em>
-      pane. The default is 4 transmissions total (1 initial + 3 retries) at
-      30-second spacing with &plusmn;10% jitter &mdash; aligned with Xastir /
-      UI-View32 / APRSdroid norms so graywolf isn&rsquo;t noticeably more
-      chatty than other stations sharing 144.39.
+      The default retry behavior is 4 transmissions total per DM (1
+      initial plus 3 retries) at 30-second spacing with &plusmn;10%
+      jitter &mdash; aligned with Xastir / UI-View32 / APRSdroid norms so
+      graywolf isn&rsquo;t noticeably more chatty than other stations
+      sharing 144.39. Operators who need to tune this can do so via the
+      <a href="api.html">REST API</a>
+      (<code>GET/PUT /api/messages/preferences</code>).
     </p>
 
     <h2>Tactical callsigns</h2>
 
     <p>
       A tactical callsign is a short label operators agree on ahead of an
-      event. Think <code>NET</code>, <code>EOC</code>, <code>SKYWARN</code>,
-      or <code>TAC-NET</code>. Every station that subscribes to the label
-      sees messages addressed to it, and every station subscribed can post
-      as the group. Membership is local &mdash; there is no server-side
-      roster. Graywolf derives participants from message history, not a
-      join table.
+      event. Every station that subscribes to the label sees messages
+      addressed to it, and every subscribed station can post as the
+      group. Membership is maintained on each operator&rsquo;s own
+      machine &mdash; nothing tracks it centrally. Graywolf figures out
+      who has been participating by looking at recent traffic on the
+      tactical.
     </p>
+
+    <div class="callout danger">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Pick a unique label.</strong> Tactical traffic goes out
+          over RF and reaches APRS-IS, so it&rsquo;s visible to every
+          APRS operator in the world. Generic names like <code>NET</code>,
+          <code>EOC</code>, or <code>TAC</code> collide with every other
+          net on the planet using the same convention. Prefix the label
+          with something identifying &mdash; your club callsign, a
+          location code, an event abbreviation &mdash; so remote stations
+          don&rsquo;t accidentally join your net or see stray traffic
+          they think is theirs. Good examples: <code>NW5WOPS</code>,
+          <code>SLCARES</code>, <code>FD2026NE</code>,
+          <code>UTSKYWRN</code>. Bad examples: <code>NET</code>,
+          <code>TAC</code>, <code>EOC</code>.
+        </p>
+      </div>
+    </div>
 
     <p>
       Manage your own subscriptions under <em>Messages &rarr; Manage
       tactical callsigns &rarr;</em> (bottom of the conversation list).
-      Each row has a callsign, an optional friendly alias that only you see
-      (&ldquo;Main Ops Net,&rdquo; &ldquo;Club repeater coord&rdquo;), and an
-      enable toggle. Monitoring a tactical means its traffic is persisted,
-      shown in the sidebar, and included in unread counts; disabling hides
-      it without forgetting the history.
+      Each entry has a callsign, an optional friendly alias that only you
+      see (&ldquo;Main Ops Net,&rdquo; &ldquo;Club repeater coord&rdquo;),
+      and an enable toggle. Monitoring a tactical means its traffic is
+      recorded, shown in the sidebar, and included in unread counts;
+      disabling it hides the thread without forgetting the history.
     </p>
 
     <p>
-      Inside a tactical thread, sender callsigns are rendered as color-coded
-      chips above the bubble text so a fast-moving net is still readable at
-      a glance. The participant chip row at the top is populated from
-      observed senders.
+      Inside a tactical thread, sender callsigns are shown as color-coded
+      labels above each message so a fast-moving net is still readable at
+      a glance. The list of participants at the top is populated from
+      recently observed senders.
     </p>
 
     <h2>Inviting stations to a tactical chat</h2>
 
     <p>
-      A tactical chat works by convention: if you don&rsquo;t know the label
-      exists, you can&rsquo;t subscribe. The <strong>Invite Users</strong>
-      button in a tactical thread header gives you a way to nudge a remote
-      station to subscribe without them needing out-of-band coordination.
+      A tactical chat works by convention: if you don&rsquo;t know the
+      label exists, you can&rsquo;t subscribe. The <strong>Invite
+      Users</strong> button in a tactical thread header gives you a way to
+      nudge a remote station to subscribe without coordinating by voice
+      first.
     </p>
 
     <div class="screenshot">
-      <img src="img/messages-invite-modal.png" alt="Invite to NET modal with a Recipients chip picker, autocomplete suggesting W1ABC-9, and a Send button" />
-      <div class="caption">The invite modal. Paste a roster or type callsigns one at a time; each recipient becomes a chip that the governor transmits in parallel.</div>
+      <img src="img/messages-invite-modal.png" alt="Invite to NET dialog with a Recipients field, autocomplete suggesting W1ABC-9, and a Send button" />
+      <div class="caption">The invite dialog. Paste a roster or add callsigns one at a time; graywolf sends one DM per recipient, paced by the normal RF transmit scheduler.</div>
     </div>
 
     <p>
-      Clicking <strong>Invite Users</strong> opens a modal with a chip
-      picker. You can:
+      Clicking <strong>Invite Users</strong> opens a dialog where you add
+      one or more recipients:
     </p>
 
     <ul>
-      <li>Type a callsign and pick it from the autocomplete list</li>
-      <li>Paste a comma- or whitespace-separated roster &mdash; valid
-        callsigns become chips, invalid tokens stay in the input with a
+      <li>Type a callsign and pick it from the suggestions that appear</li>
+      <li>Or paste a comma- or whitespace-separated roster &mdash; valid
+        callsigns are added, invalid tokens stay in the input with a
         <code>N added &middot; M invalid</code> hint</li>
-      <li>Remove a chip with <code>&times;</code>, or delete the last chip
-        with Backspace on an empty input</li>
+      <li>Remove a recipient with <code>&times;</code>, or delete the last
+        one with Backspace on an empty input</li>
     </ul>
 
     <p>
-      <strong>Cmd/Ctrl+Enter</strong> sends; plain Enter focuses the Send
-      button so an accidental keystroke can&rsquo;t fire N transmissions at
-      once. Each chip gets its own state (<em>sending</em>,
-      <em>sent</em>, or <em>failed</em> with a retry button) driven by the
-      live SSE event stream so you see the tx governor pace the
-      transmissions over RF in real time.
+      <strong>Cmd/Ctrl+Enter</strong> sends; plain Enter just focuses the
+      Send button so an accidental keystroke doesn&rsquo;t fire off a
+      batch of transmissions. Each recipient shows its own progress
+      &mdash; waiting to send, sent, or failed with a retry option &mdash;
+      updating live as graywolf works through the queue.
     </p>
 
     <h3>Wire format</h3>
@@ -205,11 +228,12 @@
 
     <p>
       The invitee&rsquo;s graywolf installation classifies the inbound
-      packet and renders it as an <strong>Accept</strong> bubble rather
-      than raw text. Clicking <strong>Accept</strong> subscribes the
-      station to the tactical locally and flips the bubble to
-      <code>&#10003; Joined &middot; Open TAC-NET &rarr;</code>. The first
-      accept in a session auto-navigates into the newly joined thread.
+      packet and shows an <strong>Accept</strong> button on the message
+      instead of raw text. Clicking <strong>Accept</strong> subscribes the
+      station to the tactical locally and changes the message to
+      <code>&#10003; Joined &middot; Open NW5WOPS &rarr;</code>. The
+      first accept in a session takes you directly into the newly joined
+      thread.
       Ignoring an invite is local-only &mdash; there is no server-side
       &ldquo;declined&rdquo; state, and the invite persists as a normal DM
       row.
@@ -217,42 +241,42 @@
 
     <p>
       Stations running other APRS software see the literal
-      <code>!GW1 INVITE TAC-NET</code> string and can join manually by
+      <code>!GW1 INVITE NW5WOPS</code> string and can join manually by
       adding the tactical callsign to their client however their client
       supports it.
     </p>
 
-    <h2>Message preferences</h2>
+    <h2>Message transmission settings</h2>
 
     <p>
-      <em>Messages &rarr; Preferences</em> controls transmission
-      behavior. The fields that matter for most operators:
+      Defaults are tuned to match mainstream APRS clients, and most
+      operators never need to change them:
     </p>
 
     <div class="box">
       <div class="box-body">
         <table>
           <thead>
-            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+            <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
           </thead>
           <tbody>
             <tr>
-              <td><code>retry_max_attempts</code></td>
-              <td><code>4</code></td>
-              <td>Total transmissions on RF per DM (initial + retries). 1 disables retry.</td>
+              <td>Retry attempts</td>
+              <td>4</td>
+              <td>Total transmissions on RF per DM (1 initial plus 3 retries). Set to 1 to disable retry.</td>
             </tr>
             <tr>
-              <td><code>retry_backoff_seconds</code></td>
-              <td><code>[30]</code></td>
-              <td>Spacing between retries. Single-entry list = constant cadence; longer lists define a ladder.</td>
+              <td>Retry spacing</td>
+              <td>30 seconds</td>
+              <td>Time between retries. A single value means constant spacing; a list of values defines a ladder.</td>
             </tr>
             <tr>
-              <td><code>aprs_is_fallback</code></td>
-              <td><code>true</code></td>
-              <td>Fall back to APRS-IS when the peer is marked internet-only or RF retries exhaust.</td>
+              <td>APRS-IS fallback</td>
+              <td>on</td>
+              <td>Fall back to APRS-IS when the peer is marked internet-only or RF retries are exhausted.</td>
             </tr>
             <tr>
-              <td><code>channel</code></td>
+              <td>Outbound channel</td>
               <td>&mdash;</td>
               <td>Radio channel used for outbound messages.</td>
             </tr>
@@ -261,14 +285,22 @@
       </div>
     </div>
 
+    <p>
+      These values live in the <code>message_preferences</code> record
+      and can be read or changed via the
+      <a href="api.html">REST API</a> (<code>GET/PUT
+      /api/messages/preferences</code>). A dedicated settings page is
+      not shipped today.
+    </p>
+
     <h2>Edge cases</h2>
 
     <ul>
       <li>
-        <strong>Soft-split messages.</strong> DMs over 67 bytes are split
+        <strong>Split messages.</strong> DMs over 67 bytes are split
         into numbered segments (<code>{1/2}</code>, <code>{2/2}</code>)
-        and reassembled on receive. The inbound bubble shows the joined
-        text.
+        and reassembled on receive. The received message shows the
+        joined text.
       </li>
       <li>
         <strong>Duplicate inbound.</strong> Packets arriving twice within
@@ -276,16 +308,15 @@
         once. This applies to invites too.
       </li>
       <li>
-        <strong>Self-addressed DM.</strong> Graywolf refuses to send a DM
-        to your own callsign. The invite modal filters your own callsign
-        at chip-commit time.
+        <strong>Self-addressed DM.</strong> Graywolf refuses to send a
+        DM to your own callsign. The invite dialog also rejects your own
+        callsign when you add it as a recipient.
       </li>
       <li>
-        <strong>Invite to an already-enabled tactical.</strong> The
-        Accept handler is idempotent; the response includes an
-        <code>already_member</code> flag, and the bubble transitions to
-        <code>&#10003; Joined</code> with a &ldquo;Already a member&rdquo;
-        toast instead of the usual join toast.
+        <strong>Invite to an already-enabled tactical.</strong> Accept
+        is safe to press more than once. If you&rsquo;re already
+        subscribed, graywolf says so (&ldquo;Already a member&rdquo;)
+        instead of showing the usual join notification.
       </li>
     </ul>
 
