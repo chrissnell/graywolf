@@ -411,6 +411,11 @@ impl Modem {
                     },
                     tx,
                 )?,
+                "flac_fast" => audio::flac::spawn_fast(
+                    &acfg.device_name,
+                    channel_cfgs.first().map(|c| c.input_channel).unwrap_or(0),
+                    tx,
+                )?,
                 "stdin" => audio::stdin_raw::spawn(acfg.sample_rate, tx)?,
                 "sdr_udp" => {
                     let udp_cfg = crate::sdr::parse_config(

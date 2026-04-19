@@ -172,7 +172,10 @@ message ConfigureAudio {
   string device_name = 2;       // cpal device name, "stdin", or file path
   uint32 sample_rate = 3;
   uint32 channels = 4;          // 1=mono, 2=stereo
-  string source_type = 5;       // "soundcard" | "stdin" | "flac" | "sdr_udp"
+  string source_type = 5;       // "soundcard" | "stdin" | "flac" | "flac_fast" | "sdr_udp"
+                                // ("flac_fast" drives the FLAC decoder as
+                                //  fast as possible with no realtime pacing,
+                                //  intended for benchmarking / offline runs.)
   string format = 6;            // "s16le" | "f32" etc. (source-specific)
   float gain_db = 7;            // software gain in dB (-60 to +12), 0 = unity
 }
