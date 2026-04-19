@@ -212,14 +212,23 @@ fn run_cfg(cfg: &Cfg, samples: &[i16], sample_rate: u32) -> Vec<DecodedFrame> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
+    if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help") {
         eprintln!("Usage: demod-multi <audio-file> [cfg-list] [--library]");
         eprintln!();
-        eprintln!("If no cfg-list is given, the default candidate set runs.");
-        eprintln!("cfg-list syntax: comma-separated names from {{A1,A6,A9,A1HL,A6HL,A9HL,B1,B9,B1HL,B9HL}}");
-        eprintln!("--library       use MultiAfskDemodulator (live cross-demod dedup) instead of");
-        eprintln!("                running each config separately and deduping at the end.");
-        std::process::exit(1);
+        eprintln!("cfg-list:  comma-separated names drawn from");
+        eprintln!("           A1 A6 A9 A1HL A6HL A9HL B1 B9 B1HL B9HL");
+        eprintln!("           where the letter is the profile, the number is the slicer");
+        eprintln!("           count (1/6/9), and a trailing HL enables the sign(x) hard");
+        eprintln!("           limiter before the bandpass prefilter. Default: all 10.");
+        eprintln!();
+        eprintln!("Notable presets:");
+        eprintln!("  recommended 2-demod:  A9,A9HL           (~1.1% of a core)");
+        eprintln!("  recommended 3-demod:  A9,A9HL,B9        (~1.6% of a core)");
+        eprintln!();
+        eprintln!("--library   run the set through MultiAfskDemodulator with live");
+        eprintln!("            cross-demod dedup (integration-test mode). Default is");
+        eprintln!("            bench mode: run each config separately, dedup at end.");
+        std::process::exit(if args.len() < 2 { 1 } else { 0 });
     }
     let file = &args[1];
     let use_library = args.iter().any(|a| a == "--library");
