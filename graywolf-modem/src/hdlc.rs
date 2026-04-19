@@ -222,6 +222,10 @@ pub struct DecodedFrame {
 
     /// Received baud rate error as percentage.
     pub speed_error: f32,
+
+    /// Approximate audio sample offset at frame emission (0 if not set).
+    /// Populated by the demodulator, not the HDLC decoder itself.
+    pub sample_offset: u64,
 }
 
 // --- EAS state ---
@@ -468,6 +472,7 @@ impl HdlcDecoder {
                     audio_level_mark: self.rrbb.audio_level_mark,
                     audio_level_space: self.rrbb.audio_level_space,
                     speed_error: self.rrbb.speed_error,
+                    sample_offset: 0,
                 });
             }
         }
@@ -570,6 +575,7 @@ impl HdlcDecoder {
                             audio_level_mark: rrbb.audio_level_mark,
                             audio_level_space: rrbb.audio_level_space,
                             speed_error: rrbb.speed_error,
+                            sample_offset: 0,
                         });
                     }
                 }
@@ -612,6 +618,7 @@ impl HdlcDecoder {
                     audio_level_mark: rrbb.audio_level_mark,
                     audio_level_space: rrbb.audio_level_space,
                     speed_error: rrbb.speed_error,
+                    sample_offset: 0,
                 });
             }
         }

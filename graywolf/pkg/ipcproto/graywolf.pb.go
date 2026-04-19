@@ -1066,8 +1066,18 @@ type ConfigureChannel struct {
 	InputChannel   uint32                 `protobuf:"varint,16,opt,name=input_channel,json=inputChannel,proto3" json:"input_channel,omitempty"`         // input stereo select (replaces audio_channel)
 	OutputDeviceId uint32                 `protobuf:"varint,17,opt,name=output_device_id,json=outputDeviceId,proto3" json:"output_device_id,omitempty"` // output audio device, 0 = RX-only
 	OutputChannel  uint32                 `protobuf:"varint,18,opt,name=output_channel,json=outputChannel,proto3" json:"output_channel,omitempty"`      // output stereo select
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Multi-demodulator ensemble preset for AFSK. Overrides `profile` and
+	// `num_slicers` when non-empty. Known values:
+	//
+	//	""        — single demodulator, respects `profile` and `num_slicers`
+	//	"dual"    — RECOMMENDED_2DEMOD: A9 + A9HL (Profile A with + without HL)
+	//	"triple"  — RECOMMENDED_3DEMOD: A9 + A9HL + B9
+	//
+	// When a preset is active, output frames are deduped across the ensemble
+	// using a 3-symbol time window (matching Direwolf's dedup semantics).
+	DemodEnsemble string `protobuf:"bytes,19,opt,name=demod_ensemble,json=demodEnsemble,proto3" json:"demod_ensemble,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ConfigureChannel) Reset() {
@@ -1224,6 +1234,13 @@ func (x *ConfigureChannel) GetOutputChannel() uint32 {
 		return x.OutputChannel
 	}
 	return 0
+}
+
+func (x *ConfigureChannel) GetDemodEnsemble() string {
+	if x != nil {
+		return x.DemodEnsemble
+	}
+	return ""
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
@@ -2155,7 +2172,7 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12.\n" +
 	"\x13txdelay_override_ms\x18\x03 \x01(\rR\x11txdelayOverrideMs\x12,\n" +
 	"\x12txtail_override_ms\x18\x04 \x01(\rR\x10txtailOverrideMs\x12\x1a\n" +
-	"\bpriority\x18\x05 \x01(\rR\bpriority\"\xdd\x04\n" +
+	"\bpriority\x18\x05 \x01(\rR\bpriority\"\x84\x05\n" +
 	"\x10ConfigureChannel\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\rR\bdeviceId\x12#\n" +
@@ -2180,7 +2197,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x0finput_device_id\x18\x0f \x01(\rR\rinputDeviceId\x12#\n" +
 	"\rinput_channel\x18\x10 \x01(\rR\finputChannel\x12(\n" +
 	"\x10output_device_id\x18\x11 \x01(\rR\x0eoutputDeviceId\x12%\n" +
-	"\x0eoutput_channel\x18\x12 \x01(\rR\routputChannel\"\xdd\x01\n" +
+	"\x0eoutput_channel\x18\x12 \x01(\rR\routputChannel\x12%\n" +
+	"\x0edemod_ensemble\x18\x13 \x01(\tR\rdemodEnsemble\"\xdd\x01\n" +
 	"\x0eConfigureAudio\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\rR\bdeviceId\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +

@@ -4,7 +4,9 @@
 //!
 //! - **Profile A**: Mixes the input with separate mark and space local
 //!   oscillators, low-pass filters the I/Q products, computes amplitudes
-//!   via `hypot`, and applies AGC before comparing.
+//!   via `hypot`, and applies AGC before comparing. Single-slicer uses a
+//!   decision-feedback AGC (mark/space references tracked independently);
+//!   multi-slicer uses the classic peak/valley envelope tracker.
 //!
 //! - **Profile B**: Mixes with a single center-frequency oscillator, low-pass
 //!   filters, and measures the instantaneous frequency via phase-rate (FM
@@ -24,6 +26,15 @@ use crate::types::*;
 // logarithmically spaced from MIN_G to MAX_G.
 const MIN_G: f32 = 0.5;
 const MAX_G: f32 = 4.0;
+
+// Decision-feedback AGC: exponential-average rates for the mark and space
+// reference levels. Asymmetric (mark tracks faster) because mark tones are
+// more frequent on typical packet traffic and benefit from tighter tracking.
+//
+// Technique credit: Ion Todirel (W7ION), described in posts on the APRS
+// Users Facebook group. Coefficients match his published design.
+const DFB_ALPHA_MARK: f32 = 0.008;
+const DFB_ALPHA_SPACE: f32 = 0.005;
 
 // ---------------------------------------------------------------------------
 // Cosine lookup table — 256 entries indexed by the top 8 bits of a u32 phase
@@ -163,6 +174,26 @@ pub struct AfskDemodulator {
     dcd_changes: Vec<DcdChange>,
     fcos256_table: [f32; 256],
     space_gain: [f32; MAX_SUBCHANS],
+
+    // Decision-feedback AGC state (Profile A single-slicer path).
+    // Tracks mark and space amplitude references independently, updating
+    // whichever one matched the previous soft decision's sign. Seeded to a
+    // tiny non-zero value so the first division never hits zero.
+    dfb_mark_ref: f32,
+    dfb_space_ref: f32,
+    dfb_last_soft: f32,
+
+    /// Hard-limit the audio sample to sign(x) before the bandpass prefilter.
+    /// Discards amplitude information and retains only zero-crossing timing.
+    /// Useful on flat (non-emphasized) audio where the BPF cleanly rejects
+    /// the square-wave harmonics. May hurt on de-emphasized audio where the
+    /// space tone is weaker than the mark and gets captured-out.
+    hard_limit: bool,
+
+    /// Monotonic audio-sample counter, written into each emitted frame's
+    /// `sample_offset` so downstream code can dedup across demodulators by
+    /// matching identical frame content within a short time window.
+    sample_counter: u64,
 }
 
 impl AfskDemodulator {
@@ -211,7 +242,18 @@ impl AfskDemodulator {
             dcd_changes: Vec::new(),
             fcos256_table,
             space_gain,
+            dfb_mark_ref: 0.001,
+            dfb_space_ref: 0.001,
+            dfb_last_soft: 0.0,
+            hard_limit: false,
+            sample_counter: 0,
         }
+    }
+
+    /// Enable or disable audio hard-limiting before the bandpass prefilter.
+    /// Default is off. See the `hard_limit` field documentation for tradeoffs.
+    pub fn set_hard_limit(&mut self, enable: bool) {
+        self.hard_limit = enable;
     }
 
     // --- Init helpers (called once during construction) ---------------------
@@ -405,12 +447,18 @@ impl AfskDemodulator {
             AfskProfile::A => self.process_profile_a(fsam),
             AfskProfile::B => self.process_profile_b(fsam),
         }
+
+        self.sample_counter = self.sample_counter.wrapping_add(1);
     }
 
     /// Profile A: dual local oscillator, amplitude comparison.
     #[inline(always)]
     fn process_profile_a(&mut self, mut fsam: f32) {
         let taps = self.state.lp_filter_taps;
+
+        if self.hard_limit {
+            fsam = if fsam >= 0.0 { 1.0 } else { -1.0 };
+        }
 
         // Bandpass prefilter
         if self.state.use_prefilter {
@@ -457,21 +505,21 @@ impl AfskDemodulator {
         );
 
         if self.state.num_slicers <= 1 {
-            let m_norm = agc(
-                m_amp,
-                self.state.agc_fast_attack,
-                self.state.agc_slow_decay,
-                &mut self.state.m_peak,
-                &mut self.state.m_valley,
-            );
-            let s_norm = agc(
-                s_amp,
-                self.state.agc_fast_attack,
-                self.state.agc_slow_decay,
-                &mut self.state.s_peak,
-                &mut self.state.s_valley,
-            );
-            self.nudge_pll(0, m_norm - s_norm, 1.0);
+            // Decision-feedback AGC (technique per Ion Todirel W7ION, APRS
+            // Users Facebook group): update the reference matching the prior
+            // decision's dominant tone, then emit the normalized soft output.
+            // Holds the other reference steady to avoid cross-talk when only
+            // one tone is active.
+            if self.dfb_last_soft > 0.0 {
+                self.dfb_mark_ref =
+                    DFB_ALPHA_MARK * m_amp + (1.0 - DFB_ALPHA_MARK) * self.dfb_mark_ref;
+            } else {
+                self.dfb_space_ref =
+                    DFB_ALPHA_SPACE * s_amp + (1.0 - DFB_ALPHA_SPACE) * self.dfb_space_ref;
+            }
+            let soft = m_amp / self.dfb_mark_ref - s_amp / self.dfb_space_ref;
+            self.dfb_last_soft = soft;
+            self.nudge_pll(0, soft, 1.0);
         } else {
             agc(m_amp, self.state.agc_fast_attack, self.state.agc_slow_decay,
                 &mut self.state.m_peak, &mut self.state.m_valley);
@@ -493,6 +541,10 @@ impl AfskDemodulator {
     #[inline(always)]
     fn process_profile_b(&mut self, mut fsam: f32) {
         let taps = self.state.lp_filter_taps;
+
+        if self.hard_limit {
+            fsam = if fsam >= 0.0 { 1.0 } else { -1.0 };
+        }
 
         // Bandpass prefilter
         if self.state.use_prefilter {
@@ -574,6 +626,7 @@ impl AfskDemodulator {
                 &mut self.state.slicer[slice].pll_symbol_count,
             ) {
                 frame.quality = quality;
+                frame.sample_offset = self.sample_counter;
                 self.decoded_frames.push(frame);
             }
 

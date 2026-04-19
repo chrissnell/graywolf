@@ -149,6 +149,21 @@ message ConfigureChannel {
   uint32 input_channel = 16;    // input stereo select (replaces audio_channel)
   uint32 output_device_id = 17; // output audio device, 0 = RX-only
   uint32 output_channel = 18;   // output stereo select
+
+  // Multi-demodulator ensemble preset for AFSK. Overrides `profile` and
+  // `num_slicers` when it resolves to a multi-demod preset. Known values:
+  //   ""        — default, treated as "triple" (recommended for all new
+  //               installs; matches or beats Direwolf -P AD+ on the
+  //               WA8LMF reference tracks, costs ~1.6% of one CPU core)
+  //   "triple"  — RECOMMENDED_3DEMOD: Profile A ×9 slicers + A ×9 with
+  //               hard-limiter + Profile B ×9 slicers
+  //   "dual"    — RECOMMENDED_2DEMOD: Profile A ×9 with and without HL
+  //   "single"  — explicit legacy single-demodulator path; respects
+  //               `profile` and `num_slicers`. Use when you need the
+  //               lowest possible CPU or want to reproduce old behavior.
+  // When a preset is active, output frames are deduped across the ensemble
+  // using a 3-symbol time window (matching Direwolf's dedup semantics).
+  string demod_ensemble = 19;
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
@@ -157,7 +172,10 @@ message ConfigureAudio {
   string device_name = 2;       // cpal device name, "stdin", or file path
   uint32 sample_rate = 3;
   uint32 channels = 4;          // 1=mono, 2=stereo
-  string source_type = 5;       // "soundcard" | "stdin" | "flac" | "sdr_udp"
+  string source_type = 5;       // "soundcard" | "stdin" | "flac" | "flac_fast" | "sdr_udp"
+                                // ("flac_fast" drives the FLAC decoder as
+                                //  fast as possible with no realtime pacing,
+                                //  intended for benchmarking / offline runs.)
   string format = 6;            // "s16le" | "f32" etc. (source-specific)
   float gain_db = 7;            // software gain in dB (-60 to +12), 0 = unity
 }

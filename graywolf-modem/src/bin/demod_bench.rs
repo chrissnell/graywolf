@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
@@ -18,7 +19,9 @@ fn usage() {
     eprintln!("  --mark n       Mark frequency in Hz (default 1200)");
     eprintln!("  --space n      Space frequency in Hz (default 2200)");
     eprintln!("  --raw-rate n   Sample rate for raw PCM files");
-    eprintln!("  --dump-frames  Print decoded frame hex to stdout");
+    eprintln!("  --dump-frames  Print decoded frame hex to stdout (deduped)");
+    eprintln!("  --raw-count    Report raw frame count (includes multi-slicer duplicates)");
+    eprintln!("  --hard-limit   Apply sign(x) hard limiter before the bandpass prefilter");
     eprintln!("  --wav          Force WAV parsing");
     eprintln!("  -h             Print this help message");
     std::process::exit(1);
@@ -176,6 +179,8 @@ fn main() {
     let mut space_freq = DEFAULT_SPACE_FREQ;
     let mut raw_rate: Option<u32> = None;
     let mut dump_frames = false;
+    let mut raw_count = false;
+    let mut hard_limit = false;
     let mut force_wav = false;
     let mut decimate: u32 = 1;
     let mut fix_bits = RetryType::None;
@@ -242,6 +247,12 @@ fn main() {
             }
             "--dump-frames" => {
                 dump_frames = true;
+            }
+            "--raw-count" => {
+                raw_count = true;
+            }
+            "--hard-limit" => {
+                hard_limit = true;
             }
             "--wav" => {
                 force_wav = true;
@@ -321,6 +332,9 @@ fn main() {
     if fix_bits != RetryType::None {
         demod.set_fix_bits(fix_bits);
     }
+    if hard_limit {
+        demod.set_hard_limit(true);
+    }
 
     // Time only the demodulation loop
     let start = Instant::now();
@@ -329,20 +343,37 @@ fn main() {
     }
     let elapsed = start.elapsed();
 
-    let packet_count = demod.frame_count();
+    let raw_packet_count = demod.frame_count();
+    let frames = demod.take_frames();
+    let mut unique: HashSet<Vec<u8>> = HashSet::with_capacity(frames.len());
+    for f in &frames {
+        unique.insert(f.data.clone());
+    }
+    let unique_count = unique.len();
+
     let duration_secs = samples.len() as f64 / sample_rate as f64;
     let elapsed_secs = elapsed.as_secs_f64();
     let realtime_ratio = duration_secs / elapsed_secs;
 
     if dump_frames {
-        for frame in demod.take_frames() {
-            let hex: Vec<String> = frame.data.iter().map(|b| format!("{:02x}", b)).collect();
-            println!("{}", hex.join(" "));
+        let mut seen = HashSet::new();
+        for frame in &frames {
+            if seen.insert(frame.data.clone()) {
+                let hex: Vec<String> = frame.data.iter().map(|b| format!("{:02x}", b)).collect();
+                println!("{}", hex.join(" "));
+            }
         }
     }
 
-    eprintln!(
-        "{} packets decoded in {:.3}s.  {:.1} x realtime",
-        packet_count, elapsed_secs, realtime_ratio
-    );
+    if raw_count {
+        eprintln!(
+            "{} packets decoded ({} unique) in {:.3}s.  {:.1} x realtime",
+            raw_packet_count, unique_count, elapsed_secs, realtime_ratio
+        );
+    } else {
+        eprintln!(
+            "{} packets decoded in {:.3}s.  {:.1} x realtime",
+            unique_count, elapsed_secs, realtime_ratio
+        );
+    }
 }

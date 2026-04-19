@@ -65,3 +65,11 @@ path = "src/bin/graywolf_modem.rs"
 [[bin]]
 name = "demod-bench"
 path = "src/bin/demod_bench.rs"
+
+[[bin]]
+name = "demod-multi"
+path = "src/bin/demod_multi.rs"
+
+[[bin]]
+name = "demod-ipc-bench"
+path = "src/bin/demod_ipc_bench.rs"
