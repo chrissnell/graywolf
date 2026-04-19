@@ -200,7 +200,7 @@
       </div>
     </div>
 
-    <div class="callout danger">
+    <div class="callout danger" id="rf-transmit-warning">
       <span class="callout-icon">&#9888;</span>
       <div class="callout-body">
         <p>
@@ -208,7 +208,203 @@
           this if you have a valid amateur radio license, proper PTT and
           channel configuration, and understand the impact on your local
           APRS channel. A misconfigured IS&rarr;RF gate can flood a busy
-          frequency.
+          frequency. Always test new rules in
+          <a href="#simulation-mode">simulation mode</a> before going live,
+          and pair narrow gating rules with a tight
+          <strong>APRS-IS Server Filter</strong> so the server never even
+          sends you the traffic you don&rsquo;t want to gate.
+        </p>
+      </div>
+    </div>
+
+    <h4>Rule Types</h4>
+
+    <p>
+      Each rule matches on one of four fields. The semantics differ by type
+      &mdash; pay particular attention to where SSIDs are compared literally
+      vs. stripped, and where the trailing <code>*</code> wildcard is
+      supported.
+    </p>
+
+    <h4>Callsign</h4>
+
+    <p>
+      Exact, case-insensitive match on the <strong>full source callsign
+      including SSID</strong>. Pattern <code>NW5W-7</code> matches only the
+      source <code>NW5W-7</code> &mdash; not <code>NW5W</code>,
+      <code>NW5W-1</code>, or any other SSID.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <code>*</code> is <strong>not</strong> a wildcard character for
+          Callsign rules. Save will be rejected if your pattern contains
+          <code>*</code>. Use a <strong>Prefix</strong> rule instead when you
+          want to match every SSID of a base callsign.
+        </p>
+      </div>
+    </div>
+
+    <h4>Prefix</h4>
+
+    <p>
+      Case-insensitive prefix match on the source&rsquo;s <strong>base
+      callsign with its SSID stripped</strong>. Pattern <code>W5</code>
+      matches source callsigns <code>W5XYZ</code>, <code>W5XYZ-9</code>,
+      <code>W5AA-15</code>, and so on. Pattern <code>NW5W</code> matches
+      <code>NW5W</code> and every SSID of <code>NW5W</code>.
+    </p>
+
+    <div class="callout danger">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Broad prefixes flood your local RF channel.</strong> Short
+          prefixes like <code>K</code>, <code>W</code>, <code>K5</code>, or
+          <code>KE</code> match tens of thousands of stations worldwide, and
+          an Allow rule on such a prefix will gate every one of them that
+          reaches your APRS-IS server filter. This can saturate your local
+          APRS frequency within seconds. See the
+          <a href="#rf-transmit-warning">on-air transmission warning above</a>.
+        </p>
+        <p>To stay safe:</p>
+        <ul>
+          <li>Use the <strong>most specific prefix possible</strong> &mdash;
+            prefer the full base callsign (<code>NW5W</code>) over a short
+            prefix (<code>NW</code>).</li>
+          <li>Pair every Prefix rule with a tight <strong>APRS-IS Server
+            Filter</strong> (for example <code>b/NW5W*</code> or
+            <code>g/NW5W*</code>) so APRS-IS doesn&rsquo;t send you the
+            firehose in the first place.</li>
+          <li>Test the rule in <a href="#simulation-mode">simulation mode</a>
+            and watch the log before enabling RF output.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Common gotcha:</strong> putting an SSID into a Prefix
+          pattern &mdash; for example <code>NW5W-7</code> &mdash; silently
+          <strong>never matches anything</strong>. The source callsign has
+          its SSID stripped before comparison, so <code>NW5W-7</code> in a
+          Prefix pattern compares against a source like <code>NW5W</code>
+          and fails on the <code>-7</code>. Use a <strong>Callsign</strong>
+          rule for exact SSID matching, or drop the SSID from your Prefix
+          pattern.
+        </p>
+        <p>
+          <code>*</code> is <strong>not</strong> a wildcard character for
+          Prefix rules &mdash; the entire Prefix type is already a prefix
+          match. Save will be rejected if your pattern contains
+          <code>*</code>.
+        </p>
+      </div>
+    </div>
+
+    <h4>Message Dest</h4>
+
+    <p>
+      Case-insensitive match on the <strong>addressee of a message
+      packet</strong> (the station a message is directed to). Plain
+      patterns like <code>NW5W-7</code> are an exact match. A pattern
+      ending in <code>*</code> is a <strong>trailing wildcard</strong>: the
+      <code>*</code> matches any suffix of the addressee.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Pattern</th><th>Matches</th><th>Does not match</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>NW5W-7</code></td>
+              <td><code>NW5W-7</code></td>
+              <td><code>NW5W</code>, <code>NW5W-1</code></td>
+            </tr>
+            <tr>
+              <td><code>NW5W-*</code></td>
+              <td><code>NW5W-1</code>, <code>NW5W-7</code>, <code>NW5W-15</code></td>
+              <td><code>NW5W</code> (no SSID), <code>K5XYZ-7</code></td>
+            </tr>
+            <tr>
+              <td><code>NW5W*</code></td>
+              <td><code>NW5W</code>, <code>NW5W-7</code>, <code>NW5WX</code></td>
+              <td><code>K5XYZ</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout danger">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Broad wildcards flood your local RF channel.</strong> A
+          pattern like <code>B*</code> would match every bulletin
+          (<code>BLN1</code>, <code>BLNA</code>&hellip;) that reaches your
+          APRS-IS server filter &mdash; potentially hundreds of packets per
+          minute. Keep the static prefix as long and specific as possible,
+          and pair the rule with a narrow <strong>APRS-IS Server
+          Filter</strong>. See the
+          <a href="#rf-transmit-warning">on-air transmission warning above</a>.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Bare <code>*</code> patterns, empty patterns, and patterns that
+          trim to just a <code>*</code> are rejected at save as a flooding
+          guard. <code>*</code> is supported only as a <em>trailing</em>
+          character &mdash; <code>*NW5W</code> or <code>NW*W</code> are
+          also rejected.
+        </p>
+      </div>
+    </div>
+
+    <h4>Object</h4>
+
+    <p>
+      Case-insensitive match on the <strong>name of an APRS object or
+      item</strong>. Plain patterns like <code>WX-001</code> are an exact
+      match. A pattern ending in <code>*</code> is a trailing wildcard, so
+      <code>WX-*</code> matches every object name starting with
+      <code>WX-</code>.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Broad object patterns may catch unrelated objects.</strong>
+          APRS object names are not reserved, so a pattern like
+          <code>W*</code> will match any object whose name happens to
+          start with <code>W</code> &mdash; including weather, repeater,
+          and arbitrary user-created objects from other regions. Prefer
+          the longest specific prefix that still covers the objects you
+          actually want to gate, and see the
+          <a href="#rf-transmit-warning">on-air transmission warning above</a>.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Bare <code>*</code> patterns, empty patterns, and <code>*</code>
+          anywhere other than the final character are rejected at save,
+          identical to Message Dest.
         </p>
       </div>
     </div>
@@ -229,7 +425,36 @@ Pattern:  NW5W-12
 Action:   Allow
 Priority: 100</code></pre>
 
-    <h2>Simulation Mode</h2>
+    <h3>Example: Gate All Messages To Your Callsign</h3>
+
+    <p>
+      To gate every message addressed to any SSID of <code>NW5W</code>
+      (for example <code>NW5W</code>, <code>NW5W-1</code>, &hellip;,
+      <code>NW5W-15</code>), use a Message Dest rule with the new trailing
+      wildcard and pair it with a server filter narrowed to the same base
+      callsign:
+    </p>
+
+<pre><code>APRS-IS Server Filter: g/NW5W*
+
+Type:     Message Dest
+Pattern:  NW5W-*
+Action:   Allow
+Priority: 100</code></pre>
+
+    <p>
+      This pair is safe because <strong>both layers narrow to a single
+      base callsign</strong>. The APRS-IS Server Filter
+      (<code>g/NW5W*</code>) tells the server to forward only messages
+      whose addressee starts with <code>NW5W</code>, so the firehose
+      never reaches graywolf. The gating rule then gates those messages
+      to RF. Neither layer alone would be safe: without the server
+      filter, graywolf would still receive (and evaluate) every message
+      on APRS-IS; without the gating rule, graywolf would receive those
+      messages but never transmit them.
+    </p>
+
+    <h2 id="simulation-mode">Simulation Mode</h2>
 
     <p>
       Simulation mode lets you test your iGate configuration without actually

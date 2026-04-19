@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Toggle, Select, Box } from '@chrissnell/chonky-ui';
+  import { Button, Input, Toggle, Select, Box, Icon, Badge } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -26,12 +26,16 @@
   let modalOpen = $state(false);
   let editing = $state(null);
   let filterForm = $state({ type: 'prefix', pattern: '', action: 'allow', priority: 100, enabled: true });
-  let errors = $state({});
 
   // Delete-confirmation state (bound to ConfirmDialog)
   let confirmOpen = $state(false);
   let confirmMessage = $state('');
   let pendingDeleteId = $state(null);
+
+  // Broad-pattern confirmation state (separate from delete confirm so they
+  // can't stomp each other).
+  let broadConfirmOpen = $state(false);
+  let broadConfirmMessage = $state('');
 
   const columns = [
     { key: 'type', label: 'Type' },
@@ -52,6 +56,113 @@
     { value: 'allow', label: 'Allow' },
     { value: 'deny', label: 'Deny' },
   ];
+
+  // ------------------------------------------------------------------
+  // Per-type UX helpers for the Pattern field.
+  //
+  // Keep these table-driven instead of ad-hoc {#if}s so adding a rule type
+  // is one place to edit, and so placeholder/hint stay in lock-step with
+  // the validation rules below.
+  // ------------------------------------------------------------------
+
+  function placeholderFor(type) {
+    switch (type) {
+      case 'callsign':     return 'NW5W-7';
+      case 'prefix':       return 'W5';
+      case 'message_dest': return 'NW5W-*';
+      // Showcase the new wildcard syntax rather than a literal example —
+      // the wildcard form is what this phase is introducing, and a
+      // literal like "WX-001" would imply objects are exact-match only.
+      case 'object':       return 'WX-*';
+      default:             return '';
+    }
+  }
+
+  function hintFor(type) {
+    switch (type) {
+      case 'callsign':
+        return 'Exact match on the source callsign including SSID (e.g. NW5W-7). ' +
+               '`*` is not supported here and will be rejected on save.';
+      case 'prefix':
+        return 'Case-insensitive prefix match on the source base callsign; the ' +
+               'SSID is stripped before comparison (so NW5W-7 matches prefix NW5W). ' +
+               '`*` is not supported here and will be rejected on save.';
+      case 'message_dest':
+        return 'Matches the addressee of a message packet. Exact match by ' +
+               'default, or use a trailing `*` as a prefix wildcard ' +
+               '(e.g. NW5W-* matches any SSID of NW5W). See warning above.';
+      case 'object':
+        return 'Matches the object or item name. Exact match by default, or use ' +
+               'a trailing `*` as a prefix wildcard (e.g. WX-* matches all WX- ' +
+               'objects). See warning above.';
+      default:
+        return '';
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Live Pattern validation — client-side mirror of the server-side
+  // rules in dto.validateIGateRfFilterPattern. Same three checks, same
+  // order. Server is authoritative; this exists so the user gets
+  // feedback before hitting Save.
+  //
+  // Copy differs intentionally: UI uses sentence case with a trailing
+  // period (idiomatic for UI labels / error slots); the Go side uses
+  // lowercase, no period (idiomatic Go errors per ST1005). If the user
+  // bypasses client validation, the toast will show the Go wording.
+  // ------------------------------------------------------------------
+
+  function validatePattern(type, pattern) {
+    const trimmed = (pattern ?? '').trim();
+    if (trimmed === '' || trimmed === '*') {
+      return 'Pattern must not be empty or a bare wildcard.';
+    }
+    if (trimmed.includes('*') && (type === 'callsign' || type === 'prefix')) {
+      return '`*` wildcard is only supported for Message Dest and Object types.';
+    }
+    const starIdx = trimmed.indexOf('*');
+    if (starIdx !== -1 && starIdx !== trimmed.length - 1) {
+      return '`*` is only supported as a trailing wildcard.';
+    }
+    return '';
+  }
+
+  // Silence the "empty pattern" error on an untouched, brand-new form so
+  // the user isn't greeted with a red error the moment the modal opens.
+  // Any keystroke (or type change with non-empty pattern) re-runs
+  // validation through the same rules.
+  let patternTouched = $state(false);
+
+  let patternError = $derived.by(() => {
+    if (!patternTouched && (filterForm.pattern ?? '').trim() === '') return '';
+    return validatePattern(filterForm.type, filterForm.pattern);
+  });
+
+  // ------------------------------------------------------------------
+  // Broad-pattern heuristic — the user is about to gate a large slice of
+  // APRS-IS traffic to RF. Require an explicit confirmation so they
+  // don't flood their local frequency with a rushed Save.
+  //
+  // - Prefix ≤ BROAD_PATTERN_MAX_STATIC_CHARS chars  →  K / W / K5
+  // - Wildcard rule whose static prefix (pattern without trailing *)
+  //   is ≤ BROAD_PATTERN_MAX_STATIC_CHARS chars  →  B* / BL*
+  // ------------------------------------------------------------------
+
+  const BROAD_PATTERN_MAX_STATIC_CHARS = 2;
+
+  function isBroadPattern(form) {
+    if (form.action !== 'allow') return false;
+    const p = (form.pattern ?? '').trim();
+    if (form.type === 'prefix') {
+      return p.length > 0 && p.length <= BROAD_PATTERN_MAX_STATIC_CHARS;
+    }
+    if (form.type === 'message_dest' || form.type === 'object') {
+      if (!p.endsWith('*')) return false;
+      const staticPrefix = p.slice(0, -1);
+      return staticPrefix.length > 0 && staticPrefix.length <= BROAD_PATTERN_MAX_STATIC_CHARS;
+    }
+    return false;
+  }
 
   onMount(async () => {
     // GET /igate/config always returns 200 with defaults on a fresh
@@ -113,26 +224,28 @@
   function openCreate() {
     editing = null;
     filterForm = { type: 'prefix', pattern: '', action: 'allow', priority: 100, enabled: true };
-    errors = {};
+    patternTouched = false;
     modalOpen = true;
   }
 
   function openEdit(row) {
     editing = row;
     filterForm = { ...row };
-    errors = {};
+    // An existing rule's pattern has already been saved — if it's now
+    // invalid under the new validation rules the user should see that
+    // immediately rather than only after typing.
+    patternTouched = true;
     modalOpen = true;
   }
 
   function validateFilter() {
-    const e = {};
-    if (!filterForm.pattern.trim()) e.pattern = 'Required';
-    errors = e;
-    return Object.keys(e).length === 0;
+    // Force live error to surface even if the user tabbed straight to
+    // Save without touching Pattern.
+    patternTouched = true;
+    return !patternError;
   }
 
-  async function handleFilterSave() {
-    if (!validateFilter()) return;
+  async function persistFilter() {
     // Strip fields not in IGateRfFilterRequest DTO (backend rejects unknown fields)
     const { id: _id, ...data } = filterForm;
     try {
@@ -148,6 +261,19 @@
     } catch (err) {
       toasts.error(err.message);
     }
+  }
+
+  async function handleFilterSave() {
+    if (!validateFilter()) return;
+    if (isBroadPattern(filterForm)) {
+      broadConfirmMessage =
+        `This rule will gate a very large number of packets to RF and may flood ` +
+        `your local APRS frequency. Consider a narrower pattern, or test in ` +
+        `simulation mode first. Save anyway?`;
+      broadConfirmOpen = true;
+      return;
+    }
+    await persistFilter();
   }
 
   function handleDelete(row) {
@@ -167,6 +293,13 @@
     } catch (err) {
       toasts.error(err.message);
     }
+  }
+
+  // Trailing-`*` detection for the DataTable pattern cell. Mirrors the
+  // engine's definition of "is this a wildcard rule?" so the visual
+  // grouping matches runtime behavior.
+  function isWildcardPattern(p) {
+    return typeof p === 'string' && p.trim().endsWith('*');
   }
 </script>
 
@@ -219,10 +352,14 @@
   <Box>
     <form onsubmit={handleSave}>
       <FormField label="APRS-IS Server Filter" id="ig-filter" hint="Sent to the APRS-IS server at login to control what it forwards to you (e.g. r/35.0/-106.0/100 for a 100 km radius). Everything the server sends — including packets rejected by the transmit rules below — is shown on the live map. If empty, no packets are received.">
-        <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" />
+        {#snippet children(describedBy)}
+          <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" aria-describedby={describedBy} />
+        {/snippet}
       </FormField>
       <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
-        <Select id="ig-txch" bind:value={form.tx_channel} options={channels.map(c => ({ value: c.id, label: `${c.id} — ${c.name}` }))} />
+        {#snippet children(describedBy)}
+          <Select id="ig-txch" bind:value={form.tx_channel} options={channels.map(c => ({ value: c.id, label: `${c.id} — ${c.name}` }))} aria-describedby={describedBy} />
+        {/snippet}
       </FormField>
       <div class="form-actions">
         <Button variant="primary" type="submit" disabled={loading}>
@@ -236,29 +373,81 @@
     First matching rule wins; if none match, the packet is not transmitted.
     These rules only affect RF transmission — they do not hide stations from the map.
   </p>
+  <div class="rf-danger-panel" role="note">
+    <div class="rf-danger-icon" aria-hidden="true">
+      <Icon name="alert-circle" size="md" />
+    </div>
+    <div class="rf-danger-body">
+      <strong>This panel transmits packets on the air.</strong>
+      Broad patterns — short prefixes like <code>K</code> or <code>W5</code>, or
+      broad wildcards like <code>B*</code> — can flood your local APRS frequency
+      with gated traffic. Use the most specific rule you can, pair it with a
+      tight server filter above, and test in simulation mode first.
+    </div>
+  </div>
   <div class="filters-header">
     <Button variant="primary" onclick={openCreate}>+ Add Rule</Button>
   </div>
-  <DataTable {columns} rows={filters} onEdit={openEdit} onDelete={handleDelete} />
+  <DataTable
+    {columns}
+    rows={filters}
+    onEdit={openEdit}
+    onDelete={handleDelete}
+    cells={{ pattern: patternCell }}
+  />
 </div>
+
+{#snippet patternCell(value, _row)}
+  {#if isWildcardPattern(value)}
+    <span class="wildcard-pattern">
+      <code>{value}</code>
+      <Badge variant="warning">wildcard</Badge>
+    </span>
+  {:else}
+    <code class="literal-pattern">{value ?? '—'}</code>
+  {/if}
+{/snippet}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Rule' : 'New Rule'}>
     <FormField label="Type" id="flt-type">
-      <Select id="flt-type" bind:value={filterForm.type} options={typeOptions} />
+      {#snippet children(describedBy)}
+        <Select id="flt-type" bind:value={filterForm.type} options={typeOptions} aria-describedby={describedBy} />
+      {/snippet}
     </FormField>
-    <FormField label="Pattern" error={errors.pattern} id="flt-pattern">
-      <Input id="flt-pattern" bind:value={filterForm.pattern} placeholder="W5" />
+    <FormField
+      label="Pattern"
+      id="flt-pattern"
+      hint={hintFor(filterForm.type)}
+      error={patternError}
+    >
+      {#snippet children(describedBy)}
+        <Input
+          id="flt-pattern"
+          bind:value={filterForm.pattern}
+          placeholder={placeholderFor(filterForm.type)}
+          aria-describedby={describedBy}
+          oninput={() => { patternTouched = true; }}
+        />
+      {/snippet}
     </FormField>
     <FormField label="Action" id="flt-action">
-      <Select id="flt-action" bind:value={filterForm.action} options={actionOptions} />
+      {#snippet children(describedBy)}
+        <Select id="flt-action" bind:value={filterForm.action} options={actionOptions} aria-describedby={describedBy} />
+      {/snippet}
     </FormField>
     <FormField label="Priority" id="flt-priority">
-      <Input id="flt-priority" bind:value={filterForm.priority} type="number" placeholder="100" />
+      {#snippet children(describedBy)}
+        <Input id="flt-priority" bind:value={filterForm.priority} type="number" placeholder="100" aria-describedby={describedBy} />
+      {/snippet}
     </FormField>
     <Toggle bind:checked={filterForm.enabled} label="Enabled" />
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" onclick={handleFilterSave}>{editing ? 'Save' : 'Create'}</Button>
+      <Button
+        variant="primary"
+        onclick={handleFilterSave}
+        disabled={!!patternError}
+      >{editing ? 'Save' : 'Create'}</Button>
     </div>
 </Modal>
 
@@ -268,6 +457,16 @@
   message={confirmMessage}
   confirmLabel="Delete"
   onConfirm={confirmDelete}
+/>
+
+<ConfirmDialog
+  bind:open={broadConfirmOpen}
+  title="Broad rule — confirm RF transmit"
+  message={broadConfirmMessage}
+  confirmLabel="Save anyway"
+  cancelLabel="Go back"
+  confirmVariant="danger"
+  onConfirm={persistFilter}
 />
 
 <style>
@@ -308,6 +507,40 @@
     margin: 0 0 12px;
     max-width: 720px;
   }
+  /* Section-level warning that the rules below transmit on RF. Matches
+     the amber look used in Digipeater.svelte's no-rules-warning so the
+     app has one consistent "danger callout" pattern. */
+  .rf-danger-panel {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--color-warning, #d4a72c);
+    border-left-width: 4px;
+    border-radius: 4px;
+    background: var(--color-warning-bg, rgba(212, 167, 44, 0.12));
+    color: var(--text-primary, inherit);
+    line-height: 1.45;
+    max-width: 720px;
+  }
+  .rf-danger-icon {
+    color: var(--color-warning, #d4a72c);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+    padding-top: 1px;
+  }
+  .rf-danger-body {
+    font-size: 13px;
+  }
+  .rf-danger-body code {
+    font-size: 12px;
+    padding: 1px 4px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 3px;
+  }
   .filters-header {
     display: flex;
     justify-content: flex-end;
@@ -323,4 +556,27 @@
   }
   .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  /* Wildcard vs. literal rendering in the rule DataTable.
+     - Wildcard patterns get an accent-toned monospace value plus a
+       `wildcard` badge so the user can scan their rule list for the
+       high-impact rules at a glance.
+     - Literal patterns get plain monospace so both render in the same
+       type metrics and users can visually compare prefixes. */
+  .wildcard-pattern {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .wildcard-pattern code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--color-warning, #d4a72c);
+    font-style: italic;
+  }
+  .literal-pattern {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+  }
 </style>

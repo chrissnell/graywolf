@@ -103,7 +103,7 @@ func matches(r Rule, pkt *aprs.DecodedAPRSPacket) bool {
 		if pkt.Message == nil {
 			return false
 		}
-		return strings.EqualFold(strings.TrimSpace(pkt.Message.Addressee), strings.TrimSpace(r.Pattern))
+		return matchPattern(r.Pattern, pkt.Message.Addressee)
 	case TypeObject:
 		name := ""
 		switch {
@@ -114,7 +114,27 @@ func matches(r Rule, pkt *aprs.DecodedAPRSPacket) bool {
 		default:
 			return false
 		}
-		return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(r.Pattern))
+		return matchPattern(r.Pattern, name)
 	}
 	return false
+}
+
+// matchPattern returns true if value matches pattern.
+// A trailing '*' in pattern is a case-insensitive prefix wildcard.
+// Otherwise the comparison is case-insensitive equality.
+// A pattern that trims to "" or "*" never matches (flooding guard).
+func matchPattern(pattern, value string) bool {
+	p := strings.TrimSpace(pattern)
+	v := strings.TrimSpace(value)
+	if p == "" {
+		return false
+	}
+	if strings.HasSuffix(p, "*") {
+		prefix := p[:len(p)-1]
+		if prefix == "" {
+			return false
+		}
+		return strings.HasPrefix(strings.ToUpper(v), strings.ToUpper(prefix))
+	}
+	return strings.EqualFold(p, v)
 }

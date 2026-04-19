@@ -2,6 +2,7 @@ package dto
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 )
@@ -135,8 +136,65 @@ func (r IGateRfFilterRequest) Validate() error {
 	if r.Pattern == "" {
 		return fmt.Errorf("pattern is required")
 	}
+	if err := validateIGateRfFilterPattern(r.Type, r.Pattern); err != nil {
+		return err
+	}
 	return nil
 }
+
+// validateIGateRfFilterPattern enforces the wildcard-safety rules shared
+// by POST and PUT on /api/igate/filters. The three rules derive directly
+// from the engine semantics in pkg/igate/filters: `*` is only meaningful
+// as a trailing suffix on TypeMessageDest / TypeObject patterns, a
+// pattern that trims to "" or "*" never matches at the engine level
+// (flooding guard), and `*` in a TypeCallsign / TypePrefix pattern would
+// silently never match. Rejecting these at save time keeps the UI and
+// the engine from disagreeing about what a rule "means".
+//
+// Whitespace semantics: only leading/trailing whitespace is trimmed for
+// the empty/bare-wildcard check (matching matchPattern in the engine,
+// which uses strings.TrimSpace). Internal whitespace is preserved —
+// patterns like "FOO BAR" or "FOO *" are evaluated as-is, which means
+// an internal `*` in "FOO *" is rejected by the trailing-only rule.
+//
+// Client-side mirror: web/src/routes/Igate.svelte validatePattern()
+// enforces the same rules in the same order so the UI surfaces an
+// error before Save. Client copy uses UI-idiomatic sentence case; the
+// error values here use idiomatic Go (lowercase, no period) per
+// staticcheck ST1005. Keep the rule set and check order in sync.
+func validateIGateRfFilterPattern(ruleType, pattern string) error {
+	trimmed := strings.TrimSpace(pattern)
+	if trimmed == "" || trimmed == "*" {
+		return fmt.Errorf("pattern must not be empty or a bare wildcard")
+	}
+	// Callsign / Prefix: `*` has no wildcard meaning in the engine for
+	// these types, so a literal `*` would silently never match real
+	// APRS strings. Reject before persistence.
+	if ruleType == filtersTypeCallsign || ruleType == filtersTypePrefix {
+		if strings.Contains(trimmed, "*") {
+			return fmt.Errorf("`*` wildcard is only supported for message_dest and object types")
+		}
+	}
+	// Any type: if `*` appears, it must be the final character of the
+	// (trimmed) pattern. Leading / mid-string `*` are silent no-ops in
+	// the engine (literal-match against APRS strings that never contain
+	// `*`), so reject to avoid a footgun. Trimming before the position
+	// check mirrors the engine's strings.TrimSpace on the pattern.
+	if idx := strings.Index(trimmed, "*"); idx != -1 && idx != len(trimmed)-1 {
+		return fmt.Errorf("`*` is only supported as a trailing wildcard")
+	}
+	return nil
+}
+
+// filtersType* mirror the string values of pkg/igate/filters RuleType
+// constants. Duplicated here rather than imported so the DTO layer
+// doesn't pull the filter engine (and its aprs dependency) into every
+// handler build. The values must stay in sync with
+// pkg/igate/filters/filters.go:17.
+const (
+	filtersTypeCallsign = "callsign"
+	filtersTypePrefix   = "prefix"
+)
 
 func (r IGateRfFilterRequest) ToModel() configstore.IGateRfFilter {
 	return configstore.IGateRfFilter{

@@ -4,12 +4,18 @@
   // extraActions: optional array of {icon, title, variant, onClick: (row) => any}
   // rendered before the built-in edit/delete buttons. Lets callers add custom
   // row actions without bloating this component with feature-specific props.
+  //
+  // cells: optional record mapping column key → snippet(value, row). Lets a
+  // caller override rendering for a specific cell (e.g., wildcard badges)
+  // without teaching DataTable about feature-specific formats. Any key not
+  // listed falls back to the default text/boolean rendering.
   let {
     columns = [],
     rows = [],
     onEdit = undefined,
     onDelete = undefined,
     extraActions = [],
+    cells = undefined,
   } = $props();
 
   let hasActions = $derived(!!onEdit || !!onDelete || extraActions.length > 0);
@@ -39,7 +45,9 @@
           <tr>
             {#each columns as col}
               <td>
-                {#if typeof row[col.key] === 'boolean'}
+                {#if cells && cells[col.key]}
+                  {@render cells[col.key](row[col.key], row)}
+                {:else if typeof row[col.key] === 'boolean'}
                   <Badge variant={row[col.key] ? 'success' : 'default'}>{row[col.key] ? 'On' : 'Off'}</Badge>
                 {:else}
                   {row[col.key] ?? '—'}
