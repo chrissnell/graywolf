@@ -55,17 +55,15 @@ Two of the three demodulators in the ensemble — the decision-feedback AGC and 
 
 - **Modern Web UI** - Configure and monitor your station from your browser, with live packet logs and preset-driven setup for digipeater and iGate
 
-  - Imperial/Metric unit toggle for altitude, distance, and speed
-
 - **Live Map** - Real-time APRS station map with trails, weather overlays, APRS-IS layer, and station popups with path and heard-via details
 
-- **Messages** - SMS-style APRS messaging with unread badges, delivery status, and APRS-IS fallback
+- **Messages** - SMS-style APRS messaging with delivery status and unread badges
 
-  - 1:1 direct messages with auto-ACK, retry, and reply-ack correlation
-  - Tactical callsigns (e.g. `NET`, `EOC`) for group nets — broadcast to every monitor, color-coded sender labels per bubble
-  - Tactical invites via `!GW1 INVITE <TAC>` DM — recipient clicks Accept to subscribe locally, no out-of-band coordination needed
-  - Soft-split for messages longer than 67 chars, RF-first with IS fallback
-  - Manage monitored tactical callsigns under *Messages → Manage tactical callsigns*
+  - Direct messages with auto-ACK and retry
+  - Tactical callsigns (e.g. `NET`, `EOC`) for group nets
+  - Tactical invites via `!GW1 INVITE <TAC>` DM
+  - RF-first delivery with APRS-IS fallback
+  - Auto-split for long messages
 
 - **Software Modem** - Native Rust DSP, no external sound card tooling required
 
