@@ -4,12 +4,16 @@ set -e
 # Create plugdev group if it doesn't exist (Debian/Ubuntu have it; others may not).
 groupadd -f plugdev 2>/dev/null || true
 
+# Create gpio group if it doesn't exist (Raspberry Pi OS has it; stock Debian/Ubuntu do not).
+# The systemd unit references it in SupplementaryGroups and will refuse to start if missing.
+groupadd -f gpio 2>/dev/null || true
+
 # Create service user if it doesn't exist.
 if ! id graywolf >/dev/null 2>&1; then
     useradd --system --home-dir /var/lib/graywolf --shell /usr/sbin/nologin \
-        --groups audio,dialout,plugdev graywolf
+        --groups audio,dialout,plugdev,gpio graywolf
 else
-    usermod -aG plugdev graywolf 2>/dev/null || true
+    usermod -aG plugdev,gpio graywolf 2>/dev/null || true
 fi
 
 # Reload udev rules for CM108 HID device access.
