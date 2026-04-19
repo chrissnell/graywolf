@@ -371,6 +371,11 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     /* z-index high enough to sit above chonky Modal's backdrop + content. */
     z-index: 1000;
+    /* bits-ui Dialog sets pointer-events:none on <body> while open to
+       scope clicks to Dialog.Content. Our portaled listbox is a body
+       descendant and inherits `none`, so clicks fall through to the
+       modal. Re-enable explicitly. */
+    pointer-events: auto;
   }
   .group-heading {
     padding: 6px 12px 4px;

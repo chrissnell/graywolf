@@ -549,11 +549,11 @@
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
-    padding: 6px;
+    padding: 4px;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
-    min-height: 44px;
+    min-height: 36px;
   }
   .chip-area:focus-within {
     border-color: var(--color-primary);
