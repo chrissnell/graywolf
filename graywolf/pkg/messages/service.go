@@ -3,13 +3,26 @@ package messages
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"regexp"
 	"sync"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
+
+// tacticalCallsignRe is the canonical APRS tactical-callsign regex:
+// 1-9 uppercase alnum or hyphen. Kept local to the service so the
+// invite validator and any future tactical-keyed send path agree on
+// one shape. Matches the wire regex in pkg/messages/invite.go.
+var tacticalCallsignRe = regexp.MustCompile(`^[A-Z0-9-]{1,9}$`)
+
+// ErrInvalidInvite indicates SendMessage was invoked with Kind=invite
+// but InviteTactical was absent or malformed. Returned to handlers so
+// they can surface a 400 to REST callers.
+var ErrInvalidInvite = errors.New("messages: invite requires a valid invite_tactical")
 
 // ServiceConfigReader is the narrow read/write surface the Service
 // needs from *configstore.Store. Kept as an interface so tests can
@@ -295,7 +308,10 @@ func (s *Service) ReloadTacticalCallsigns(ctx context.Context) error {
 type SendMessageRequest struct {
 	// To is the destination callsign (DM) or tactical label. Required.
 	To string
-	// Text is the message body (<=67 APRS chars). Required.
+	// Text is the message body (<=67 APRS chars). Required unless
+	// Kind == MessageKindInvite, in which case the service builds the
+	// wire body server-side from InviteTactical and the caller's Text
+	// is ignored.
 	Text string
 	// OurCall is the source callsign — usually the operator's
 	// primary callsign (possibly with SSID). Required.
@@ -303,6 +319,13 @@ type SendMessageRequest struct {
 	// ThreadKind is optional; when empty, Service derives it from
 	// the tactical set (exact match → tactical, else DM).
 	ThreadKind string
+	// Kind classifies the outbound row. Empty or "text" is a normal
+	// DM/tactical message; "invite" triggers invite semantics below.
+	Kind string
+	// InviteTactical is the tactical callsign referenced by an
+	// invite. Required and validated when Kind == "invite"; ignored
+	// otherwise. Uppercase, 1-9 of [A-Z0-9-].
+	InviteTactical string
 }
 
 // SendMessage persists the outbound row via store.Insert (allocating
@@ -317,11 +340,29 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 	if req.To == "" {
 		return nil, errors.New("messages: SendMessage requires To")
 	}
-	if req.Text == "" {
-		return nil, errors.New("messages: SendMessage requires Text")
-	}
 	if req.OurCall == "" {
 		return nil, errors.New("messages: SendMessage requires OurCall")
+	}
+
+	// Invite branch: the server is the single source of truth for the
+	// wire body — we validate the tactical and construct
+	// `!GW1 INVITE <TAC>` ourselves, discarding any client-supplied
+	// Text. This mirrors the inbound ParseInvite contract: the wire
+	// format lives in exactly two places (this builder and the
+	// parser), both agreeing on the strict grammar.
+	bodyKind := MessageKindText
+	inviteTactical := ""
+	text := req.Text
+	if req.Kind == MessageKindInvite {
+		tac := req.InviteTactical
+		if tac == "" || !tacticalCallsignRe.MatchString(tac) {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidInvite, tac)
+		}
+		bodyKind = MessageKindInvite
+		inviteTactical = tac
+		text = "!GW1 INVITE " + tac
+	} else if text == "" {
+		return nil, errors.New("messages: SendMessage requires Text")
 	}
 
 	kind := req.ThreadKind
@@ -334,14 +375,16 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 	}
 
 	row := &configstore.Message{
-		Direction:  "out",
-		OurCall:    req.OurCall,
-		FromCall:   req.OurCall,
-		ToCall:     req.To,
-		Text:       req.Text,
-		ThreadKind: kind,
-		AckState:   AckStateNone,
-		Unread:     false,
+		Direction:      "out",
+		OurCall:        req.OurCall,
+		FromCall:       req.OurCall,
+		ToCall:         req.To,
+		Text:           text,
+		ThreadKind:     kind,
+		AckState:       AckStateNone,
+		Unread:         false,
+		Kind:           bodyKind,
+		InviteTactical: inviteTactical,
 	}
 	// DM requires a msgid; tactical may omit.
 	if kind == ThreadKindDM {

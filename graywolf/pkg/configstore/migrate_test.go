@@ -146,6 +146,123 @@ func TestForeignKeyCascade_PttConfig(t *testing.T) {
 	}
 }
 
+// TestLegacyMessagesKindBackfill builds a database file with a
+// pre-Phase-1-invite messages schema (no kind / invite_tactical /
+// invite_accepted_at columns), seeds it with legacy rows, stamps
+// PRAGMA user_version at 5 (the version before the kind-backfill
+// migration), then re-opens with the current binary.
+//
+// After Open, every row must carry kind='text'. Two paths can reach
+// that invariant:
+//   - AutoMigrate's ADD COLUMN ... NOT NULL DEFAULT 'text' (SQLite
+//     applies constant defaults to pre-existing rows at ADD time).
+//   - Migration 6's explicit UPDATE … WHERE kind IS NULL OR kind = ''.
+//
+// The test asserts the *observable* contract (every legacy row ends
+// with kind='text') without caring which layer did the work. If a
+// future SQLite quirk leaves rows with NULL or empty kind, migration
+// 6 is the safety net; this test fails if both paths are broken.
+func TestLegacyMessagesKindBackfill(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy_messages.db")
+
+	// Build a pre-Phase-1-invite schema directly — no kind columns.
+	// The column list matches the Message model as of migration 5.
+	// Keep in sync with models.go if new pre-invite columns arrive.
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	_, err = raw.Exec(`
+CREATE TABLE messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  direction TEXT NOT NULL,
+  our_call TEXT NOT NULL,
+  peer_call TEXT NOT NULL,
+  from_call TEXT NOT NULL,
+  to_call TEXT NOT NULL,
+  text TEXT NOT NULL,
+  msg_id TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  received_at DATETIME,
+  sent_at DATETIME,
+  acked_at DATETIME,
+  ack_state TEXT NOT NULL DEFAULT 'none',
+  source TEXT NOT NULL DEFAULT '',
+  channel INTEGER NOT NULL DEFAULT 0,
+  path TEXT,
+  via TEXT,
+  raw_tnc2 TEXT,
+  unread NUMERIC NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_retry_at DATETIME,
+  failure_reason TEXT,
+  reply_ack_id TEXT,
+  is_ack NUMERIC NOT NULL DEFAULT 0,
+  is_rej NUMERIC NOT NULL DEFAULT 0,
+  is_bulletin NUMERIC NOT NULL DEFAULT 0,
+  is_nws NUMERIC NOT NULL DEFAULT 0,
+  prefer_is NUMERIC NOT NULL DEFAULT 0,
+  deleted_at DATETIME,
+  thread_kind TEXT NOT NULL DEFAULT 'dm',
+  thread_key TEXT NOT NULL DEFAULT '',
+  received_by_call TEXT
+);
+INSERT INTO messages (direction, our_call, peer_call, from_call, to_call, text, created_at, updated_at, thread_kind, thread_key)
+  VALUES ('in',  'N0CALL', 'W1ABC', 'W1ABC', 'N0CALL', 'hello 1', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'dm',       'W1ABC');
+INSERT INTO messages (direction, our_call, peer_call, from_call, to_call, text, created_at, updated_at, thread_kind, thread_key)
+  VALUES ('out', 'N0CALL', 'W1ABC', 'N0CALL', 'W1ABC', 'hello 2', '2026-01-02 00:00:00', '2026-01-02 00:00:00', 'dm',       'W1ABC');
+INSERT INTO messages (direction, our_call, peer_call, from_call, to_call, text, created_at, updated_at, thread_kind, thread_key)
+  VALUES ('in',  'N0CALL', 'TAC',   'W9XYZ', 'TAC',    'hello 3', '2026-01-03 00:00:00', '2026-01-03 00:00:00', 'tactical', 'TAC');
+-- Stamp the pre-Phase-1-invite user_version so the new migration runs.
+PRAGMA user_version = 5;
+`)
+	raw.Close()
+	if err != nil {
+		t.Fatalf("seed pre-invite messages schema: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open legacy messages db: %v", err)
+	}
+	defer s.Close()
+
+	// Every legacy row must be kind='text' after migration.
+	var rows []struct {
+		ID   uint64
+		Kind string
+	}
+	if err := s.DB().Raw(`SELECT id, kind FROM messages ORDER BY id`).Scan(&rows).Error; err != nil {
+		t.Fatalf("scan messages.kind: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 legacy rows, got %d", len(rows))
+	}
+	for _, r := range rows {
+		if r.Kind != "text" {
+			t.Errorf("row id=%d kind=%q, want %q", r.ID, r.Kind, "text")
+		}
+	}
+
+	// No row should have NULL kind either (the CHECK constraint would
+	// have rejected it, but belt-and-braces: count the SQL-level NULLs).
+	var nullCount int
+	if err := s.DB().Raw(`SELECT COUNT(*) FROM messages WHERE kind IS NULL OR kind = ''`).Scan(&nullCount).Error; err != nil {
+		t.Fatalf("scan null kinds: %v", err)
+	}
+	if nullCount != 0 {
+		t.Errorf("found %d rows with NULL or empty kind after migration; want 0", nullCount)
+	}
+
+	// user_version must have advanced to at least 6.
+	var version int
+	s.DB().Raw("PRAGMA user_version").Scan(&version)
+	if version < 6 {
+		t.Errorf("user_version = %d, want >= 6 after invite-kind migration", version)
+	}
+}
+
 // TestLegacySchemaUpgrade builds a database file with the pre-split
 // channels columns (audio_device_id/audio_channel) and confirms that
 // Open applies migration 2, preserves the row, and retrofits the new

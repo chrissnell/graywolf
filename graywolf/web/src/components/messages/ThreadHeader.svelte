@@ -6,8 +6,9 @@
   // Back chevron is rendered on mobile (<768 px) so the user can pop
   // back to the conversation list.
 
-  import { Icon, Toggle } from '@chrissnell/chonky-ui';
+  import { Icon, Toggle, Tooltip } from '@chrissnell/chonky-ui';
   import ParticipantChips from './ParticipantChips.svelte';
+  import InviteToTacticalModal from './InviteToTacticalModal.svelte';
   import { relativeLong } from './time.js';
 
   /** @type {{
@@ -27,6 +28,16 @@
     onMuteToggle,
     onOpenDm,
   } = $props();
+
+  let inviteOpen = $state(false);
+  const tacticalKey = $derived(thread?.key || '');
+
+  function openInvite() {
+    inviteOpen = true;
+  }
+  function closeInvite() {
+    inviteOpen = false;
+  }
 
   const lastHeard = $derived(thread?.lastAt ? relativeLong(thread.lastAt) : '');
   const muted = $derived(!!thread?.muted);
@@ -58,22 +69,47 @@
       {/if}
     </div>
     {#if isTactical}
-      <div class="monitor">
-        <Toggle
-          checked={!muted}
-          onCheckedChange={handleMute}
-          label="Monitor"
-          aria-label={muted ? 'Unmute tactical monitoring' : 'Mute tactical monitoring'}
-        />
+      <div class="actions">
+        <div class="monitor">
+          <Toggle
+            checked={!muted}
+            onCheckedChange={handleMute}
+            label="Monitor"
+            aria-label={muted ? 'Unmute tactical monitoring' : 'Mute tactical monitoring'}
+          />
+        </div>
+        <Tooltip>
+          <Tooltip.Trigger>
+            <button
+              type="button"
+              class="invite-btn"
+              onclick={openInvite}
+              aria-label={`Invite stations to ${tacticalKey}`}
+              data-testid="thread-invite-btn"
+            >
+              <Icon name="users" size="md" />
+              <span class="invite-label">Invite Users</span>
+            </button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>Invite</Tooltip.Content>
+        </Tooltip>
       </div>
     {/if}
   </div>
   {#if isTactical}
     <div class="row chips">
-      <ParticipantChips tacticalKey={thread?.key || ''} {onOpenDm} />
+      <ParticipantChips tacticalKey={tacticalKey} {onOpenDm} />
     </div>
   {/if}
 </header>
+
+{#if isTactical}
+  <InviteToTacticalModal
+    tactical={tacticalKey}
+    bind:open={inviteOpen}
+    onClose={closeInvite}
+  />
+{/if}
 
 <style>
   .thread-header {
@@ -149,10 +185,46 @@
     font-size: 11px;
     color: var(--color-text-dim);
   }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
   .monitor {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
+  }
+  .invite-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-shrink: 0;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    font: inherit;
+    line-height: 1;
+  }
+  .invite-label {
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+  .invite-btn:hover {
+    background: var(--color-surface-raised);
+    color: var(--color-primary);
+    border-color: var(--color-border);
+  }
+  .invite-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
   .chips {
     padding-left: 34px;
@@ -162,5 +234,14 @@
 
   @media (max-width: 767px) {
     .chips { padding-left: 0; }
+    /* Let actions wrap to their own row below the title so the
+       tactical name isn't crushed to "GR…" next to a Monitor toggle
+       and "Invite Users" button. */
+    .primary { flex-wrap: wrap; }
+    .actions {
+      flex: 1 1 100%;
+      justify-content: flex-end;
+      margin-top: 2px;
+    }
   }
 </style>

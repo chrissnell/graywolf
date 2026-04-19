@@ -2,6 +2,7 @@ package messages
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -287,6 +288,119 @@ func TestService_SendMessage_TacticalDerivedFromSet(t *testing.T) {
 	}
 	if row.MsgID != "" {
 		t.Errorf("tactical row has msg_id %q, want empty", row.MsgID)
+	}
+}
+
+// TestService_SendMessage_InviteBuildsWireBody asserts that when
+// Kind=invite + InviteTactical are supplied, the service constructs
+// the wire body server-side as "!GW1 INVITE <TAC>" and stamps Kind
+// and InviteTactical on the persisted row. Any client-supplied Text
+// is overwritten — the server is the single source of truth for the
+// wire format.
+func TestService_SendMessage_InviteBuildsWireBody(t *testing.T) {
+	svc, _, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	row, err := svc.SendMessage(ctx, SendMessageRequest{
+		OurCall:        "N0CALL",
+		To:             "W1ABC",
+		Text:           "ignored by server",
+		Kind:           MessageKindInvite,
+		InviteTactical: "TAC-NET",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage invite: %v", err)
+	}
+	if row.Kind != MessageKindInvite {
+		t.Errorf("Kind = %q, want %q", row.Kind, MessageKindInvite)
+	}
+	if row.InviteTactical != "TAC-NET" {
+		t.Errorf("InviteTactical = %q, want TAC-NET", row.InviteTactical)
+	}
+	if want := "!GW1 INVITE TAC-NET"; row.Text != want {
+		t.Errorf("Text = %q, want %q (server must construct the wire body)", row.Text, want)
+	}
+	if row.ThreadKind != ThreadKindDM {
+		t.Errorf("ThreadKind = %q, want dm (invite is DM by construction)", row.ThreadKind)
+	}
+	if row.MsgID == "" {
+		t.Error("DM invite must have a msg_id allocated")
+	}
+}
+
+// TestService_SendMessage_InviteEmptyTextAllowed verifies that an
+// invite send with an empty Text does not trip the "Text required"
+// guard — the server builds the wire body from InviteTactical and
+// doesn't need a caller-supplied body.
+func TestService_SendMessage_InviteEmptyTextAllowed(t *testing.T) {
+	svc, _, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	row, err := svc.SendMessage(ctx, SendMessageRequest{
+		OurCall:        "N0CALL",
+		To:             "W1ABC",
+		Kind:           MessageKindInvite,
+		InviteTactical: "TAC",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage invite with empty Text: %v", err)
+	}
+	if want := "!GW1 INVITE TAC"; row.Text != want {
+		t.Errorf("Text = %q, want %q", row.Text, want)
+	}
+}
+
+// TestService_SendMessage_InviteRejectsMalformedTactical asserts that
+// a send with Kind=invite but a malformed InviteTactical returns
+// ErrInvalidInvite (so the webapi layer can surface a 400) rather
+// than silently corrupting a row.
+func TestService_SendMessage_InviteRejectsMalformedTactical(t *testing.T) {
+	svc, _, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	cases := []struct {
+		name string
+		tac  string
+	}{
+		{"empty", ""},
+		{"lowercase", "tac-net"},
+		{"too long", "TOOLONGTACTICAL"},
+		{"invalid chars", "TAC_NET"},
+		{"space", "TAC NET"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := svc.SendMessage(ctx, SendMessageRequest{
+				OurCall:        "N0CALL",
+				To:             "W1ABC",
+				Kind:           MessageKindInvite,
+				InviteTactical: tc.tac,
+			})
+			if err == nil {
+				t.Fatal("expected error for malformed InviteTactical, got nil")
+			}
+			if !errors.Is(err, ErrInvalidInvite) {
+				t.Errorf("error = %v, want wraps ErrInvalidInvite", err)
+			}
+		})
 	}
 }
 

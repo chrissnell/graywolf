@@ -222,6 +222,7 @@ const (
 	OpUpdateTacticalCallsign  = "updateTacticalCallsign"
 	OpDeleteTacticalCallsign  = "deleteTacticalCallsign"
 	OpGetTacticalParticipants = "getTacticalParticipants"
+	OpAcceptTacticalInvite    = "acceptTacticalInvite"
 	OpAutocompleteStations    = "autocompleteStations"
 )
 

@@ -24,12 +24,27 @@
   import { autocompleteStations } from '../../api/messages.js';
   import { relativeLong } from './time.js';
 
+  // Portal action: move the node to document.body so `position: fixed`
+  // is relative to the viewport rather than a transformed ancestor
+  // (chonky's Modal applies a transform for centering, which otherwise
+  // reparents fixed-positioned descendants' containing block to the
+  // modal itself and throws the dropdown off-screen).
+  function portal(node) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      },
+    };
+  }
+
   /** @type {{
    *    value?: string,
    *    placeholder?: string,
    *    onCommit?: (call: string) => void,
    *    disabled?: boolean,
    *    autofocus?: boolean,
+   *    excludeBots?: boolean,
    *  }}
    */
   let {
@@ -38,6 +53,7 @@
     onCommit,
     disabled = false,
     autofocus = false,
+    excludeBots = false,
   } = $props();
 
   let inputEl = $state(null);
@@ -112,7 +128,11 @@
     const q = (value || '').trim();
     try {
       const res = await autocompleteStations({ q, limit: 20 });
-      results = Array.isArray(res) ? res : [];
+      const arr = Array.isArray(res) ? res : [];
+      // In invite contexts the caller passes excludeBots — APRS
+      // services aren't valid invite targets (they don't subscribe
+      // to tactical chats), so drop them from the candidate list.
+      results = excludeBots ? arr.filter(r => r.source !== 'bot') : arr;
       // Initial highlight: pick the best station (non-bot) if any,
       // else the first row. Bots remain visible at the top of the
       // rendered list, but highlight defaults to stations so the
@@ -182,7 +202,18 @@
     }
   }
 
+  // Suppresses the focus event that our own onMount autofocus fires.
+  // Without this, mounting inside a modal whose focus trap immediately
+  // steals focus back produces a brief dropdown flash: onFocusIn →
+  // open=true → list renders → focus moves to modal close button →
+  // input blurs → onBlurOut 120ms later → open=false.
+  let suppressNextFocus = false;
+
   function onFocusIn() {
+    if (suppressNextFocus) {
+      suppressNextFocus = false;
+      return;
+    }
     open = true;
     if (results.length === 0) runFetch();
   }
@@ -197,7 +228,12 @@
 
   onMount(() => {
     if (autofocus && inputEl) {
+      suppressNextFocus = true;
       inputEl.focus();
+      // If the modal's focus trap doesn't actually steal focus away,
+      // clear the flag after a frame so the next real focus (e.g., the
+      // user re-clicking the input) still opens the dropdown.
+      requestAnimationFrame(() => { suppressNextFocus = false; });
     }
   });
 
@@ -233,6 +269,7 @@
   </div>
   {#if open && (flatItems.length > 0 || (value && value.trim()))}
     <ul
+      use:portal
       id={listId}
       role="listbox"
       class="list"
@@ -242,6 +279,8 @@
       style:width="{popWidth}px"
       data-combobox={listId}
       data-testid="callsign-autocomplete-list"
+      onpointerdown={(e) => e.stopPropagation()}
+      onmousedown={(e) => e.stopPropagation()}
     >
       {#each groups as g}
         <li role="presentation" class="group-heading">{g.heading}</li>
@@ -332,6 +371,11 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     /* z-index high enough to sit above chonky Modal's backdrop + content. */
     z-index: 1000;
+    /* bits-ui Dialog sets pointer-events:none on <body> while open to
+       scope clicks to Dialog.Content. Our portaled listbox is a body
+       descendant and inherits `none`, so clicks fall through to the
+       modal. Re-enable explicitly. */
+    pointer-events: auto;
   }
   .group-heading {
     padding: 6px 12px 4px;

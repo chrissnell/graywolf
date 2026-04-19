@@ -991,3 +991,158 @@ func TestRouterCloseReturnsNil(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 }
+
+// TestRouterInboundInviteClassified exercises the ParseInvite call in
+// persistInbound: a DM body matching `!GW1 INVITE <TAC>` must stamp
+// Kind=invite + InviteTactical on the persisted row.
+func TestRouterInboundInviteClassified(t *testing.T) {
+	r, store, _, _, _, _, cleanup := buildRouter(t, "N0CALL", nil)
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "W1ABC", "N0CALL", "!GW1 INVITE TAC-NET", "101", aprs.DirectionRF)
+	if err := r.SendPacket(context.Background(), pkt); err != nil {
+		t.Fatalf("SendPacket: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		ms, _, _ := store.List(context.Background(), Filter{})
+		return len(ms) == 1
+	}, "invite row persisted")
+
+	ms, _, _ := store.List(context.Background(), Filter{})
+	row := ms[0]
+	if row.Kind != MessageKindInvite {
+		t.Fatalf("Kind = %q, want %q", row.Kind, MessageKindInvite)
+	}
+	if row.InviteTactical != "TAC-NET" {
+		t.Fatalf("InviteTactical = %q, want TAC-NET", row.InviteTactical)
+	}
+	if row.ThreadKind != ThreadKindDM {
+		t.Fatalf("ThreadKind = %q, want dm", row.ThreadKind)
+	}
+	if row.InviteAcceptedAt != nil {
+		t.Errorf("InviteAcceptedAt must be nil on fresh invite, got %v", row.InviteAcceptedAt)
+	}
+}
+
+// TestRouterInboundInviteMalformedBodyIsText verifies that a DM that
+// almost looks like an invite (lowercase sigil, trailing note,
+// missing token) persists as a plain text row, not an invite.
+func TestRouterInboundInviteMalformedBodyIsText(t *testing.T) {
+	r, store, _, _, _, _, cleanup := buildRouter(t, "N0CALL", nil)
+	defer cleanup()
+
+	// Trailing note — strict regex rejects this.
+	pkt := makeMessagePacket(t, "W1ABC", "N0CALL", "!GW1 INVITE TAC-NET pls join", "102", aprs.DirectionRF)
+	if err := r.SendPacket(context.Background(), pkt); err != nil {
+		t.Fatalf("SendPacket: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		ms, _, _ := store.List(context.Background(), Filter{})
+		return len(ms) == 1
+	}, "row persisted")
+
+	ms, _, _ := store.List(context.Background(), Filter{})
+	row := ms[0]
+	if row.Kind != MessageKindText {
+		t.Fatalf("Kind = %q, want %q for malformed invite", row.Kind, MessageKindText)
+	}
+	if row.InviteTactical != "" {
+		t.Errorf("InviteTactical = %q, want empty on text row", row.InviteTactical)
+	}
+}
+
+// TestRouterInboundInviteTacticalRouteNotClassifiedAsInvite asserts
+// that a tactical-addressed packet whose body matches the invite
+// grammar is still persisted as Kind=text: invites are a DM-only
+// construct by design (the plan reserves `!GW1 INVITE ...` on a DM
+// body; misuse on a tactical thread shouldn't render an accept
+// button).
+func TestRouterInboundInviteTacticalRouteNotClassifiedAsInvite(t *testing.T) {
+	r, store, _, _, _, _, cleanup := buildRouter(t, "N0CALL", []string{"NET"})
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "W1ABC", "NET", "!GW1 INVITE TAC-NET", "103", aprs.DirectionRF)
+	if err := r.SendPacket(context.Background(), pkt); err != nil {
+		t.Fatalf("SendPacket: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		ms, _, _ := store.List(context.Background(), Filter{})
+		return len(ms) == 1
+	}, "row persisted")
+
+	ms, _, _ := store.List(context.Background(), Filter{})
+	row := ms[0]
+	if row.Kind != MessageKindText {
+		t.Fatalf("tactical-addressed invite-looking body must persist as text; got Kind=%q", row.Kind)
+	}
+	if row.ThreadKind != ThreadKindTactical {
+		t.Fatalf("ThreadKind = %q, want tactical", row.ThreadKind)
+	}
+}
+
+// TestRouterInboundInviteDedupWindowKeepsKind verifies that when two
+// identical invite packets arrive inside the dedup window, the
+// single persisted row retains Kind=invite — the dedup path is
+// independent of Kind classification.
+func TestRouterInboundInviteDedupWindowKeepsKind(t *testing.T) {
+	r, store, _, _, _, _, cleanup := buildRouter(t, "N0CALL", nil)
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "W1ABC", "N0CALL", "!GW1 INVITE TAC-NET", "110", aprs.DirectionRF)
+	if err := r.SendPacket(context.Background(), pkt); err != nil {
+		t.Fatalf("SendPacket 1: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		ms, _, _ := store.List(context.Background(), Filter{})
+		return len(ms) == 1
+	}, "first invite row")
+
+	// Byte-for-byte duplicate.
+	pkt2 := makeMessagePacket(t, "W1ABC", "N0CALL", "!GW1 INVITE TAC-NET", "110", aprs.DirectionRF)
+	if err := r.SendPacket(context.Background(), pkt2); err != nil {
+		t.Fatalf("SendPacket 2: %v", err)
+	}
+	// Let the pipeline settle — dedup suppresses the Insert but still
+	// emits the auto-ACK, so we can't rely on a row-count transition.
+	time.Sleep(100 * time.Millisecond)
+
+	ms, _, _ := store.List(context.Background(), Filter{})
+	if len(ms) != 1 {
+		t.Fatalf("dedup must suppress second Insert; got %d rows", len(ms))
+	}
+	if ms[0].Kind != MessageKindInvite {
+		t.Fatalf("Kind = %q after dedup, want %q", ms[0].Kind, MessageKindInvite)
+	}
+}
+
+// TestRouterInboundRFInviteNoSpecialHandling verifies that an
+// invite body arriving over RF from a remote station persists as
+// Kind=invite with no special RF-vs-IS branching. The plan notes
+// that "trust" is not enforced server-side: any inbound invite
+// classifies normally and relies on operator judgment for the
+// accept flow.
+func TestRouterInboundRFInviteNoSpecialHandling(t *testing.T) {
+	r, store, _, _, _, _, cleanup := buildRouter(t, "N0CALL", nil)
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "W1ABC-7", "N0CALL", "!GW1 INVITE TAC-NET", "120", aprs.DirectionRF)
+	if err := r.SendPacket(context.Background(), pkt); err != nil {
+		t.Fatalf("SendPacket: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		ms, _, _ := store.List(context.Background(), Filter{})
+		return len(ms) == 1
+	}, "RF invite persisted")
+
+	ms, _, _ := store.List(context.Background(), Filter{})
+	row := ms[0]
+	if row.Kind != MessageKindInvite {
+		t.Fatalf("Kind = %q, want %q", row.Kind, MessageKindInvite)
+	}
+	if row.FromCall != "W1ABC-7" {
+		t.Errorf("FromCall = %q, want W1ABC-7 (preserved verbatim)", row.FromCall)
+	}
+	if row.Source != string(aprs.DirectionRF) {
+		t.Errorf("Source = %q, want rf", row.Source)
+	}
+}

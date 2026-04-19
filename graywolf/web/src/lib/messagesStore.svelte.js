@@ -47,6 +47,12 @@ class MessagesStore {
   tacticals = new SvelteMap();
   // clientId -> optimistic outbound row (awaiting server reconciliation)
   pendingByClientId = new SvelteMap();
+  // id -> MessageResponse (sparse). Populated by upsertMessage for every
+  // persisted row the transport hands us. The invite modal subscribes to
+  // this map to drive per-chip ack state without spinning up its own
+  // EventSource. Unbounded in principle, but each entry is ~500B and a
+  // full page reload reseeds via /conversations + /messages. Fine.
+  messageById = new SvelteMap();
 
   activeThreadId = $state(null);
   filter = $state('all');
@@ -120,6 +126,14 @@ class MessagesStore {
     }
 
     this.conversations.set(threadId, thread);
+
+    // Stash the full row by id so per-bubble consumers (e.g. the invite
+    // modal's per-chip state machine) can react to ack status changes
+    // without reopening a thread. Only persisted rows have an id — the
+    // optimistic pending bubbles live separately on pendingByClientId.
+    if (typeof msg.id === 'number' && msg.id > 0) {
+      this.messageById.set(msg.id, msg);
+    }
 
     // Clear any pending optimistic bubble that this message reconciles.
     if (msg.msg_id && this.pendingByClientId.has(msg.msg_id)) {

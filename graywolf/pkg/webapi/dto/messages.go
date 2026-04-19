@@ -142,6 +142,8 @@ type SendMessageRequest struct {
 	// label for a group broadcast. Uppercase-normalized server-side.
 	To string `json:"to"`
 	// Text is the message body (<= 67 APRS chars after validation).
+	// Ignored when Kind == "invite" — the server builds the wire body
+	// from InviteTactical.
 	Text string `json:"text"`
 	// PreferIS, when true, routes the outbound via APRS-IS regardless
 	// of the current fallback policy.
@@ -155,6 +157,15 @@ type SendMessageRequest struct {
 	// unchanged in the response so the optimistic UI can reconcile its
 	// local row with the persisted ID.
 	ClientID string `json:"client_id,omitempty"`
+	// Kind classifies the outbound row. Empty or "text" is a normal
+	// DM/tactical message; "invite" makes the sender build a
+	// `!GW1 INVITE <InviteTactical>` body and stamp the row with
+	// Kind=invite + InviteTactical. The sender (Phase 2) is
+	// responsible for honoring this; the DTO just carries it.
+	Kind string `json:"kind,omitempty"`
+	// InviteTactical is the tactical callsign referenced by an invite.
+	// Must be set when Kind == "invite"; ignored otherwise.
+	InviteTactical string `json:"invite_tactical,omitempty"`
 }
 
 // Validate enforces the minimal invariants every compose request must
@@ -200,6 +211,19 @@ type MessageResponse struct {
 	ThreadKind     string     `json:"thread_kind"`
 	ThreadKey      string     `json:"thread_key"`
 	ReceivedByCall string     `json:"received_by_call,omitempty"`
+	// Kind is the body classification. Always populated — "text" for
+	// normal messages, "invite" for tactical invitations. Never omitted
+	// so clients can use a simple equality check without worrying about
+	// a legacy empty string.
+	Kind string `json:"kind"`
+	// InviteTactical is the tactical callsign referenced by an invite.
+	// Empty (and omitted) on non-invite rows.
+	InviteTactical string `json:"invite_tactical,omitempty"`
+	// InviteAcceptedAt is audit-only: set when the local operator
+	// accepted this invite. The UI must NOT use this to decide "joined"
+	// state — that comes from the live TacticalSet cache. Kept so
+	// operators can see when/if an invite was acted on.
+	InviteAcceptedAt *time.Time `json:"invite_accepted_at,omitempty"`
 }
 
 // MessageFromModel renders one row into its DTO. Channel is surfaced
@@ -229,9 +253,12 @@ func MessageFromModel(m configstore.Message) MessageResponse {
 		FailureReason:  m.FailureReason,
 		IsAck:          m.IsAck,
 		IsBulletin:     m.IsBulletin,
-		ThreadKind:     m.ThreadKind,
-		ThreadKey:      m.ThreadKey,
-		ReceivedByCall: m.ReceivedByCall,
+		ThreadKind:       m.ThreadKind,
+		ThreadKey:        m.ThreadKey,
+		ReceivedByCall:   m.ReceivedByCall,
+		Kind:             m.Kind,
+		InviteTactical:   m.InviteTactical,
+		InviteAcceptedAt: nilUTC(m.InviteAcceptedAt),
 	}
 	if m.Channel != 0 {
 		c := m.Channel
@@ -451,6 +478,37 @@ func TacticalCallsignFromModel(m configstore.TacticalCallsign) TacticalCallsignR
 		CreatedAt: m.CreatedAt.UTC(),
 		UpdatedAt: m.UpdatedAt.UTC(),
 	}
+}
+
+// AcceptInviteRequest is the body accepted by the accept-invite endpoint
+// (Phase 2 wires POST /api/tacticals/subscribe or similar). Acceptance
+// is tactical-keyed, not message-keyed: the message ID is optional and
+// exists only to let the handler stamp InviteAcceptedAt on the originating
+// row for audit.
+type AcceptInviteRequest struct {
+	// Callsign is the tactical label to subscribe to. Required. Must
+	// match the APRS tactical syntax (1-9 of [A-Z0-9-]) after uppercase
+	// normalization.
+	Callsign string `json:"callsign" binding:"required"`
+	// SourceMessageID, when non-zero, identifies the inbound invite
+	// message that triggered the accept. Used only for audit — the
+	// handler sets InviteAcceptedAt on that row if it resolves to a
+	// valid invite for the same tactical. Zero = accept without audit.
+	SourceMessageID uint `json:"source_message_id"`
+}
+
+// AcceptInviteResponse is the body returned by a successful accept.
+// Never returns 409 — "already a member" is a normal success with
+// AlreadyMember=true so the client can render a distinct toast without
+// error-handling ceremony.
+type AcceptInviteResponse struct {
+	// Tactical is the post-accept state of the subscription. Always
+	// populated with Enabled=true (accept is the "turn it on" verb).
+	Tactical TacticalCallsignResponse `json:"tactical"`
+	// AlreadyMember is true when the operator was already subscribed
+	// and enabled before this request. Lets the UI suppress the
+	// "Joined TAC" toast and emit "Already a member" instead.
+	AlreadyMember bool `json:"already_member"`
 }
 
 // --- Participants --------------------------------------------------------

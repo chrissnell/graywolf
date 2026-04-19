@@ -175,6 +175,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerPositionLog(mux)
 	s.registerSmartBeacon(mux)
 	s.registerMessages(mux)
+	s.registerTacticals(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)

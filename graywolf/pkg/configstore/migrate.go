@@ -63,6 +63,12 @@ type migration struct {
 //	    closer to mainstream client norms than the original 5 attempts.
 //	    Only touches rows equal to the old default so operators who
 //	    explicitly chose another value keep it.
+//	7 — messages_kind_backfill: backfill legacy messages.kind rows to
+//	    'text'. AutoMigrate adds the column with a DEFAULT clause, but
+//	    SQLite ALTER TABLE ADD COLUMN DEFAULT only applies to rows
+//	    inserted AFTER the ALTER — legacy rows end up with NULL. This
+//	    migration rewrites them to 'text' explicitly so every downstream
+//	    reader can trust the column.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -70,6 +76,7 @@ var schemaMigrations = []migration{
 	{version: 4, name: "messages_partial_retry_index", phase: postAutoMigrate, run: migrateMessagesPartialRetryIndex},
 	{version: 5, name: "messages_thread_rollup_index", phase: postAutoMigrate, run: migrateMessagesThreadRollupIndex},
 	{version: 6, name: "messages_retry_max_attempts_default", phase: postAutoMigrate, run: migrateMessagesRetryMaxAttemptsDefault},
+	{version: 7, name: "messages_kind_backfill", phase: postAutoMigrate, run: migrateMessagesKindBackfill},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -217,5 +224,21 @@ func migrateMessagesThreadRollupIndex(tx *gorm.DB) error {
 func migrateMessagesRetryMaxAttemptsDefault(tx *gorm.DB) error {
 	return tx.Exec(
 		`UPDATE message_preferences SET retry_max_attempts = 4 WHERE retry_max_attempts = 5`,
+	).Error
+}
+
+// migrateMessagesKindBackfill rewrites every legacy messages.kind to
+// 'text'. AutoMigrate adds the column with DEFAULT 'text' NOT NULL,
+// but SQLite's ALTER TABLE ADD COLUMN ... DEFAULT only applies the
+// default to newly-inserted rows; existing rows get NULL (or an empty
+// string when SQLite reinterprets the NOT NULL constraint silently),
+// and relying on the GORM tag to paper over that at read time is
+// exactly the "defensive render-time fallback" the plan forbids.
+//
+// UPDATE … WHERE kind IS NULL OR kind = '' is idempotent: once the
+// column is fully populated, the statement is a no-op.
+func migrateMessagesKindBackfill(tx *gorm.DB) error {
+	return tx.Exec(
+		`UPDATE messages SET kind = 'text' WHERE kind IS NULL OR kind = ''`,
 	).Error
 }
