@@ -329,6 +329,7 @@
     position: relative;
     padding: 7px 12px;
     border-radius: 12px;
+    border: 1px solid var(--color-border);
     background: var(--color-surface-raised);
     color: var(--color-text);
     word-wrap: break-word;
@@ -339,7 +340,7 @@
   }
   .bubble-wrap.out .bubble {
     background: var(--color-primary-muted);
-    border-left: 1px solid var(--color-primary);
+    border-color: var(--color-primary);
     border-radius: 12px 12px 4px 12px;
   }
   .bubble-wrap.in .bubble {
