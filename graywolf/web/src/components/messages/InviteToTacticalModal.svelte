@@ -564,12 +564,17 @@
     min-width: 180px;
   }
   /* The autocomplete renders its own bordered input; flatten it so it
-     blends into the chip-area surface. */
+     blends into the chip-area surface. Match the chip's 24px height
+     so the placeholder and the chip callsign share the same baseline
+     when the chip-area flex row centers them. */
   :global(.chip-area .wrap .input) {
     border: none !important;
     box-shadow: none !important;
     background: transparent !important;
-    padding: 4px 2px !important;
+    height: 24px !important;
+    line-height: 24px !important;
+    padding: 0 2px !important;
+    font-size: 13px !important;
   }
   .chip {
     display: inline-flex;

@@ -202,7 +202,18 @@
     }
   }
 
+  // Suppresses the focus event that our own onMount autofocus fires.
+  // Without this, mounting inside a modal whose focus trap immediately
+  // steals focus back produces a brief dropdown flash: onFocusIn →
+  // open=true → list renders → focus moves to modal close button →
+  // input blurs → onBlurOut 120ms later → open=false.
+  let suppressNextFocus = false;
+
   function onFocusIn() {
+    if (suppressNextFocus) {
+      suppressNextFocus = false;
+      return;
+    }
     open = true;
     if (results.length === 0) runFetch();
   }
@@ -217,7 +228,12 @@
 
   onMount(() => {
     if (autofocus && inputEl) {
+      suppressNextFocus = true;
       inputEl.focus();
+      // If the modal's focus trap doesn't actually steal focus away,
+      // clear the flag after a frame so the next real focus (e.g., the
+      // user re-clicking the input) still opens the dropdown.
+      requestAnimationFrame(() => { suppressNextFocus = false; });
     }
   });
 
@@ -263,6 +279,8 @@
       style:width="{popWidth}px"
       data-combobox={listId}
       data-testid="callsign-autocomplete-list"
+      onpointerdown={(e) => e.stopPropagation()}
+      onmousedown={(e) => e.stopPropagation()}
     >
       {#each groups as g}
         <li role="presentation" class="group-heading">{g.heading}</li>
