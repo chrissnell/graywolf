@@ -170,9 +170,6 @@
       </Button>
     </div>
     <div class="search">
-      <span class="search-icon" aria-hidden="true">
-        <Icon name="search" size="sm" />
-      </span>
       <input
         type="text"
         class="search-input"
@@ -266,28 +263,12 @@
   }
 
   .search {
-    position: relative;
     display: flex;
     align-items: center;
-  }
-  .search-icon {
-    /* Span the full height of the input, flex-center the icon
-       inside. Avoids `top: 50%; translateY(-50%)`-style centering
-       which can drift by fractions of a px with Inconsolata's line
-       metrics — using the container's actual height is exact. */
-    position: absolute;
-    left: 8px;
-    top: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    color: var(--color-text-dim);
-    pointer-events: none;
-    z-index: 1;
   }
   .search-input {
     width: 100%;
-    padding: 7px 8px 7px 28px;
+    padding: 7px 8px;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);

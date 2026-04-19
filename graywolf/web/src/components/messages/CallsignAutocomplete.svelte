@@ -209,7 +209,6 @@
 
 <div class="wrap" data-combobox={listId}>
   <div class="input-wrap">
-    <span class="lead" aria-hidden="true"><Icon name="search" size="sm" /></span>
     <input
       bind:this={inputEl}
       type="text"
@@ -301,23 +300,9 @@
     display: flex;
     align-items: center;
   }
-  .lead {
-    /* Span the full height of the input, flex-center the icon
-       inside. Exact rather than `top: 50%; translateY(-50%)` which
-       can drift fractionally with Inconsolata's line metrics. */
-    position: absolute;
-    left: 8px;
-    top: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    color: var(--color-text-dim);
-    pointer-events: none;
-    z-index: 1;
-  }
   .input {
     width: 100%;
-    padding: 7px 8px 7px 28px;
+    padding: 7px 8px;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
