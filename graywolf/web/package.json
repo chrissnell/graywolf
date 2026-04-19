@@ -19,10 +19,11 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
-    "@chrissnell/chonky-ui": "^0.1.17",
+    "@chrissnell/chonky-ui": "^0.2.0",
     "@internationalized/date": "^3.8.0",
     "bits-ui": "^2.0.0",
     "leaflet": "^1.9.4",
+    "lucide-svelte": "^0.577.0",
     "openapi-fetch": "0.17.0",
     "svelte-spa-router": "^4.0.0"
   },

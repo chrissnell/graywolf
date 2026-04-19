@@ -3,6 +3,7 @@
   import Router, { location } from 'svelte-spa-router';
   import { Toaster } from '@chrissnell/chonky-ui';
   import Sidebar from './components/Sidebar.svelte';
+  import { start as startMessagesTransport } from './lib/messagesTransport.js';
 
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
@@ -21,11 +22,14 @@
   import LiveMap from './routes/LiveMap.svelte';
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
+  import Messages from './routes/Messages.svelte';
 
   const routes = {
     '/login': Login,
     '/': Dashboard,
     '/map': LiveMap,
+    '/messages': Messages,
+    '/messages/*': Messages,
     '/channels': Channels,
     '/audio-devices': AudioDevices,
     '/ptt': Ptt,
@@ -74,6 +78,18 @@
       })
       .catch(() => { authChecked = true; });
   });
+
+  // Start the messages transport once we know the user is authenticated.
+  // Running it app-wide (not per-route) keeps the sidebar unread badge
+  // fresh from every page — the whole point of a global signal. Polling
+  // every 5 s is cheap enough to be always-on; SSE is opt-in via `?sse=1`.
+  let messagesTransportStarted = false;
+  $effect(() => {
+    if (authChecked && !isLoginPage && !messagesTransportStarted) {
+      messagesTransportStarted = true;
+      startMessagesTransport();
+    }
+  });
 </script>
 
 <Toaster />
@@ -83,7 +99,7 @@
 {:else if authChecked}
   <div class="app-layout">
     <Sidebar />
-    <main class="main-content" class:full-bleed={currentPath === '/map'}>
+    <main class="main-content" class:full-bleed={currentPath === '/map' || currentPath === '/messages' || currentPath.startsWith('/messages/')}>
       <Router {routes} />
       <footer class="app-footer">
         <a href="https://github.com/chrissnell/graywolf" target="_blank" rel="noopener">
