@@ -971,6 +971,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tacticals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept a tactical invite (subscribe) */
+        post: operations["acceptTacticalInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tx-timing": {
         parameters: {
             query?: never;
@@ -1236,6 +1253,34 @@ export interface components {
             windGust?: number;
             /** @description mph (1-minute sustained) */
             windSpeed?: number;
+        };
+        "dto.AcceptInviteRequest": {
+            /**
+             * @description Callsign is the tactical label to subscribe to. Required. Must
+             *     match the APRS tactical syntax (1-9 of [A-Z0-9-]) after uppercase
+             *     normalization.
+             */
+            callsign: string;
+            /**
+             * @description SourceMessageID, when non-zero, identifies the inbound invite
+             *     message that triggered the accept. Used only for audit — the
+             *     handler sets InviteAcceptedAt on that row if it resolves to a
+             *     valid invite for the same tactical. Zero = accept without audit.
+             */
+            source_message_id?: number;
+        };
+        "dto.AcceptInviteResponse": {
+            /**
+             * @description AlreadyMember is true when the operator was already subscribed
+             *     and enabled before this request. Lets the UI suppress the
+             *     "Joined TAC" toast and emit "Already a member" instead.
+             */
+            already_member?: boolean;
+            /**
+             * @description Tactical is the post-accept state of the subscription. Always
+             *     populated with Enabled=true (accept is the "turn it on" verb).
+             */
+            tactical?: components["schemas"]["dto.TacticalCallsignResponse"];
         };
         "dto.AgwRequest": {
             callsigns?: string;
@@ -1570,8 +1615,27 @@ export interface components {
             failure_reason?: string;
             from_call?: string;
             id?: number;
+            /**
+             * @description InviteAcceptedAt is audit-only: set when the local operator
+             *     accepted this invite. The UI must NOT use this to decide "joined"
+             *     state — that comes from the live TacticalSet cache. Kept so
+             *     operators can see when/if an invite was acted on.
+             */
+            invite_accepted_at?: string;
+            /**
+             * @description InviteTactical is the tactical callsign referenced by an invite.
+             *     Empty (and omitted) on non-invite rows.
+             */
+            invite_tactical?: string;
             is_ack?: boolean;
             is_bulletin?: boolean;
+            /**
+             * @description Kind is the body classification. Always populated — "text" for
+             *     normal messages, "invite" for tactical invitations. Never omitted
+             *     so clients can use a simple equality check without worrying about
+             *     a legacy empty string.
+             */
+            kind?: string;
             msg_id?: string;
             next_retry_at?: string;
             our_call?: string;
@@ -1658,6 +1722,19 @@ export interface components {
              */
             client_id?: string;
             /**
+             * @description InviteTactical is the tactical callsign referenced by an invite.
+             *     Must be set when Kind == "invite"; ignored otherwise.
+             */
+            invite_tactical?: string;
+            /**
+             * @description Kind classifies the outbound row. Empty or "text" is a normal
+             *     DM/tactical message; "invite" makes the sender build a
+             *     `!GW1 INVITE <InviteTactical>` body and stamp the row with
+             *     Kind=invite + InviteTactical. The sender (Phase 2) is
+             *     responsible for honoring this; the DTO just carries it.
+             */
+            kind?: string;
+            /**
              * @description Path overrides the default RF path from preferences. Empty =
              *     use MessagePreferences.DefaultPath.
              */
@@ -1667,7 +1744,11 @@ export interface components {
              *     of the current fallback policy.
              */
             prefer_is?: boolean;
-            /** @description Text is the message body (<= 67 APRS chars after validation). */
+            /**
+             * @description Text is the message body (<= 67 APRS chars after validation).
+             *     Ignored when Kind == "invite" — the server builds the wire body
+             *     from InviteTactical.
+             */
             text?: string;
             /**
              * @description To is the addressee: a station callsign for a DM or a tactical
@@ -5527,6 +5608,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webapi.StatusDTO"];
+                };
+            };
+        };
+    };
+    acceptTacticalInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Tactical + optional source message id */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.AcceptInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AcceptInviteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };
