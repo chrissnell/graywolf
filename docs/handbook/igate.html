@@ -157,6 +157,47 @@
       with a Message Dest rule.
     </p>
 
+    <h3>Spec-Mandated IS&rarr;RF Policy</h3>
+
+    <p>
+      Before your gating rules are consulted, every packet arriving from
+      APRS-IS passes through a spec-mandated policy gate. The gate has
+      two branches depending on packet type:
+    </p>
+
+    <ul>
+      <li><strong>Directed messages</strong> &mdash; forwarded only when
+        the addressee has been heard directly on RF (no digipeater
+        repeat) within the last 30 minutes. This is the APRS iGate
+        specification: remote-origin messages only reach RF when
+        there&rsquo;s a realistic chance the local recipient will hear
+        them. Bulletins (<code>BLN*</code>) and NWS broadcasts are
+        never gated.</li>
+      <li><strong>Non-message traffic</strong> (positions, weather,
+        telemetry, status) &mdash; forwarded only when the packet&rsquo;s
+        source shares your iGate&rsquo;s base callsign <em>but is not
+        your iGate&rsquo;s exact callsign</em>. So an iGate running as
+        <code>N0CALL-10</code> can echo <code>N0CALL-7</code> (e.g. a
+        family tracker or internet-fed weather station) onto local RF,
+        but packets from strangers and self-echoes from
+        <code>N0CALL-10</code> itself are dropped.</li>
+    </ul>
+
+    <p>
+      Packets that fail the policy gate never reach your gating rules.
+      Packets that pass still have to be allowed by a gating rule to
+      actually transmit &mdash; the gating rules are the narrower layer.
+      Every packet that does transmit is wrapped in APRS third-party
+      format so other iGates and applications can see it originated on
+      the internet side (this prevents re-gating loops).
+    </p>
+
+    <p>
+      Loop prevention applies to both branches: if your callsign
+      already appears in the packet&rsquo;s RF path, the packet has
+      already transited your station and will not be re-transmitted.
+    </p>
+
     <h3>APRS-IS Server Filter</h3>
 
     <p>
@@ -478,10 +519,27 @@ Priority: 100</code></pre>
     <p>The iGate automatically handles several edge cases:</p>
 
     <ul>
-      <li><strong>Deduplication</strong> &mdash; packets already seen on RF are not gated again</li>
-      <li><strong>Third-party suppression</strong> &mdash; packets that originated from APRS-IS (third-party format) are not re-gated</li>
-      <li><strong>Beacon exemption</strong> &mdash; your own beacons are not gated to APRS-IS via the iGate path</li>
-      <li><strong>Reconnection</strong> &mdash; the APRS-IS connection is automatically re-established if it drops</li>
+      <li><strong>Third-party suppression</strong> &mdash; packets that
+        originated from APRS-IS (third-party format) or carry a
+        <code>TCPIP</code>/<code>TCPXX</code>/<code>NOGATE</code>/<code>RFONLY</code>
+        path marker are not gated RF&rarr;IS</li>
+      <li><strong>Local-message suppression</strong> &mdash; messages
+        you originated on RF are not re-gated to APRS-IS if a
+        digipeater repeats them back to you</li>
+      <li><strong>No client-side RF&rarr;IS deduplication</strong> &mdash;
+        graywolf does not drop &ldquo;duplicate&rdquo; RF packets
+        before sending to APRS-IS. The APRS-IS network does
+        content-aware dedup server-side and benefits from seeing
+        duplicates for path analysis, per aprsc&rsquo;s
+        <a href="https://github.com/hessu/aprsc/blob/main/doc/IGATE-HINTS.md">IGATE-HINTS</a>.</li>
+      <li><strong>Third-party wrapping</strong> &mdash; every IS&rarr;RF
+        frame is wrapped in APRS third-party format (APRS101 &sect;20)
+        with an empty digipeater path, so other iGates can see the
+        packet originated on the internet side</li>
+      <li><strong>Reconnection</strong> &mdash; the APRS-IS connection
+        is automatically re-established if it drops, with DNS
+        re-resolved on every attempt so hostnames like
+        <code>rotate.aprs2.net</code> load-balance correctly</li>
     </ul>
 
     <nav class="page-nav">
