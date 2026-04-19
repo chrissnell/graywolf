@@ -151,10 +151,16 @@ message ConfigureChannel {
   uint32 output_channel = 18;   // output stereo select
 
   // Multi-demodulator ensemble preset for AFSK. Overrides `profile` and
-  // `num_slicers` when non-empty. Known values:
-  //   ""        — single demodulator, respects `profile` and `num_slicers`
-  //   "dual"    — RECOMMENDED_2DEMOD: A9 + A9HL (Profile A with + without HL)
-  //   "triple"  — RECOMMENDED_3DEMOD: A9 + A9HL + B9
+  // `num_slicers` when it resolves to a multi-demod preset. Known values:
+  //   ""        — default, treated as "triple" (recommended for all new
+  //               installs; matches or beats Direwolf -P AD+ on the
+  //               WA8LMF reference tracks, costs ~1.6% of one CPU core)
+  //   "triple"  — RECOMMENDED_3DEMOD: Profile A ×9 slicers + A ×9 with
+  //               hard-limiter + Profile B ×9 slicers
+  //   "dual"    — RECOMMENDED_2DEMOD: Profile A ×9 with and without HL
+  //   "single"  — explicit legacy single-demodulator path; respects
+  //               `profile` and `num_slicers`. Use when you need the
+  //               lowest possible CPU or want to reproduce old behavior.
   // When a preset is active, output frames are deduped across the ensemble
   // using a 3-symbol time window (matching Direwolf's dedup semantics).
   string demod_ensemble = 19;

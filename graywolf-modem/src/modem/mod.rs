@@ -901,11 +901,24 @@ fn create_demod(ccfg: &ChannelConfig, sample_rate: u32) -> ChannelDemod {
             ChannelDemod::Baseband9600(demod)
         }
         _ => {
-            // Default: AFSK. A non-empty `demod_ensemble` selects a preset
-            // and overrides `profile` / `num_slicers`.
-            match ccfg.demod_ensemble.as_str() {
+            // Default: AFSK. The `demod_ensemble` field selects the demod
+            // architecture. Recognized values:
+            //   ""        → same as "triple" (default for new installs,
+            //               picked because it matches or beats Direwolf
+            //               -P AD+ on every WA8LMF reference track while
+            //               costing ~1.6% of one CPU core)
+            //   "triple"  → Profile A ×9 + A ×9 with hard-limiter + B ×9
+            //   "dual"    → Profile A ×9, with and without hard-limiter
+            //   "single"  → explicit single-demod (legacy, respects
+            //               `profile` and `num_slicers`)
+            let effective = if ccfg.demod_ensemble.is_empty() {
+                "triple"
+            } else {
+                ccfg.demod_ensemble.as_str()
+            };
+            match effective {
                 "dual" | "triple" => {
-                    let preset: &[MultiConfig] = match ccfg.demod_ensemble.as_str() {
+                    let preset: &[MultiConfig] = match effective {
                         "dual" => &RECOMMENDED_2DEMOD,
                         "triple" => &RECOMMENDED_3DEMOD,
                         _ => unreachable!(),
@@ -921,6 +934,8 @@ fn create_demod(ccfg: &ChannelConfig, sample_rate: u32) -> ChannelDemod {
                     ChannelDemod::AfskMulti(Box::new(multi))
                 }
                 _ => {
+                    // "single" or any unrecognized value falls back to the
+                    // legacy single-demodulator path.
                     let mut demod = AfskDemodulator::new(
                         sample_rate, ccfg.baud, ccfg.mark_freq, ccfg.space_freq,
                         ccfg.profile, ccfg.channel as usize, 0,
