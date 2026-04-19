@@ -574,7 +574,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 4px 2px 10px;
+    min-height: 24px;
+    padding: 0 4px 0 10px;
     background: var(--color-surface-raised);
     border: 1px solid var(--color-border);
     border-radius: 999px;
@@ -606,6 +607,9 @@
     border-color: var(--color-primary);
   }
   .chip-call {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
     font-weight: 600;
   }
   .chip-remove,
