@@ -575,7 +575,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    min-height: 24px;
+    height: 24px;
     padding: 0 4px 0 10px;
     background: var(--color-surface-raised);
     border: 1px solid var(--color-border);
@@ -608,8 +608,13 @@
     border-color: var(--color-primary);
   }
   .chip-call {
+    /* Match the icon buttons' 18px box so align-items:center on .chip
+       puts both on the same midline. Without an explicit height, the
+       text collapses to font-size (12px) and its font-metric ink
+       offset within that tight box drifts visibly against the icon. */
     display: inline-flex;
     align-items: center;
+    height: 18px;
     line-height: 1;
     font-weight: 600;
   }
