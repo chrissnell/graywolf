@@ -48,10 +48,21 @@ type migration struct {
 //	3 — drop_channel_tx_timing: remove vestigial tx_delay_ms and
 //	    tx_tail_ms columns from channels table; these values now live
 //	    exclusively in the tx_timings table.
+//	4 — messages_partial_retry_index: partial index that backs the
+//	    retry-due scan over outstanding DM outbound messages. GORM
+//	    AutoMigrate cannot express a partial index, so this runs as
+//	    raw SQL post-AutoMigrate.
+//	5 — messages_thread_rollup_index: composite index used by the
+//	    conversation-rollup query. Plain AutoMigrate would create this
+//	    from the struct tags, but the migration-list entry lets us
+//	    evolve the index shape independently and keeps the intent
+//	    centralized with the partial index above.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
 	{version: 3, name: "drop_channel_tx_timing", phase: preAutoMigrate, run: migrateDropChannelTxTiming},
+	{version: 4, name: "messages_partial_retry_index", phase: postAutoMigrate, run: migrateMessagesPartialRetryIndex},
+	{version: 5, name: "messages_thread_rollup_index", phase: postAutoMigrate, run: migrateMessagesThreadRollupIndex},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -165,4 +176,29 @@ func migrateDropChannelTxTiming(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// migrateMessagesPartialRetryIndex creates the partial index that backs
+// the retry-due scan in pkg/messages. A partial index on the tuple used
+// by the scan keeps the index tiny (tens of rows at most — only
+// outstanding DM outbound messages) and lets the planner skip the
+// WHERE-clause filtering entirely. GORM AutoMigrate cannot express a
+// partial index, so we issue the raw SQL here. `CREATE INDEX IF NOT
+// EXISTS` is idempotent across upgrade and fresh-install paths.
+func migrateMessagesPartialRetryIndex(tx *gorm.DB) error {
+	return tx.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_msg_retry ON messages(next_retry_at) ` +
+			`WHERE ack_state='none' AND direction='out' AND thread_kind='dm' AND deleted_at IS NULL`,
+	).Error
+}
+
+// migrateMessagesThreadRollupIndex creates the composite index used by
+// the conversation-rollup query. The index covers the GROUP BY
+// (thread_kind, thread_key) with created_at as the trailing key so the
+// "last message" scan is an index-range seek per group rather than a
+// full sort.
+func migrateMessagesThreadRollupIndex(tx *gorm.DB) error {
+	return tx.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_kind, thread_key, created_at)`,
+	).Error
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/kiss"
+	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
@@ -198,7 +199,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// update the station cache for beacon transmissions.
 	plog := a.plog
 	sc := a.stationCache
-	a.gov.SetTxHook(func(channel uint32, frame *ax25.Frame, source txgovernor.SubmitSource) {
+	_, unregisterTxHook := a.gov.AddTxHook(func(channel uint32, frame *ax25.Frame, source txgovernor.SubmitSource) {
 		e := packetlog.Entry{
 			Channel:   channel,
 			Direction: packetlog.DirTX,
@@ -221,6 +222,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			}
 		}
 	})
+	a.govHookUnregister = unregisterTxHook
 
 	// --- KISS manager --------------------------------------------------
 	a.kissMgr = kiss.NewManager(kiss.ManagerConfig{
@@ -282,12 +284,27 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.beaconReload = make(chan struct{}, 1)
 	a.smartBeaconReload = make(chan struct{}, 1)
 
+	// --- Messages: LocalTxRing is shared by iGate gating + messages ----
+	//
+	// The ring is constructed before the iGate so we can pass it into
+	// igate.Config.LocalOrigin with SuppressLocalMessageReGate=true; the
+	// same ring is later handed to messages.Service via ServiceConfig.
+	// Keeping construction here (rather than deferred into wireMessages)
+	// means the iGate and messages.Service share the exact same ring
+	// pointer without needing a post-construction SetLocalOrigin setter.
+	a.msgLocalRing = messages.NewLocalTxRing(messages.DefaultLocalTxRingSize, messages.DefaultLocalTxRingTTL)
+
 	// --- iGate (optional) ----------------------------------------------
 	if err := a.wireIGate(ctx); err != nil {
 		return err
 	}
 	if a.ig != nil {
 		a.beaconSched.SetISSink(a.ig)
+	}
+
+	// --- Messages service ---------------------------------------------
+	if err := a.wireMessages(ctx); err != nil {
+		return err
 	}
 
 	// --- AGW server (optional) -----------------------------------------
@@ -327,6 +344,12 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.bridgeComponent(),
 		a.agwComponent(),
 		a.igateComponent(),
+		// messages runs after igate (sender needs IGateLineSender) and
+		// after the bridge fan-out is spun up (Router is already in the
+		// outputs slice). It runs BEFORE http so handlers see a fully
+		// started service on first request; the 503 guard in the webapi
+		// layer covers the brief window between http bind and start.
+		a.messagesComponent(),
 		a.httpComponent(),
 	}
 	return nil
@@ -432,6 +455,13 @@ func (a *App) wireIGate(ctx context.Context) error {
 		SimulationMode:  igCfg.SimulationMode,
 		Logger:          a.logger,
 		Registry:        a.metrics.Registry,
+		// Messages self-filter: messages.Service records every outbound
+		// message (source, msg_id) into a.msgLocalRing before submit.
+		// When a digipeater re-broadcasts our packet back to us over RF,
+		// the iGate's gateRFToIS path consults this ring and skips the
+		// APRS-IS upload so we don't double-gate our own messages.
+		LocalOrigin:                a.msgLocalRing,
+		SuppressLocalMessageReGate: true,
 		RfToIsHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
 			if pkt == nil {
 				return
@@ -479,6 +509,80 @@ func (a *App) wireIGate(ctx context.Context) error {
 	}
 	a.ig = ig
 	a.igateReload = make(chan struct{}, 1)
+	return nil
+}
+
+// wireMessages constructs the messages.Service that owns the APRS
+// text-messaging pipeline (inbound Router, outbound Sender, RetryManager,
+// Preferences cache, EventHub, TacticalSet). Construction is unconditional:
+// the service exists even when iGate is disabled because RF-only messaging
+// is a supported mode. The service's iGate fallback path is a no-op when
+// a.ig is nil — Sender.sendIS returns a clear error and the RF-only
+// policy (or RF-only passcode fallback) continues to work.
+//
+// Ordering — this runs AFTER wireIGate so the Service sees the live
+// *igate.Igate (for IGateLineSender) and shares the same LocalTxRing
+// pointer that was already bound into igate.Config.LocalOrigin. The
+// Service is NOT started here — Service.Start happens inside
+// messagesComponent so the TxHook registration and the Router / retry
+// goroutines fire in the right lifecycle slot.
+func (a *App) wireMessages(ctx context.Context) error {
+	a.msgStore = messages.NewStore(a.store.DB())
+	a.messagesReload = make(chan struct{}, 1)
+
+	// OurCall closure: resolves the operator's primary callsign from
+	// the iGate config row. This mirrors the router's existing
+	// self-filter strategy (Phase 2) and the compose handler's
+	// loopback-guard path (Phase 4). A missing row returns "" which
+	// the Service's SendMessage rejects with an explicit error rather
+	// than silently generating self-addressed traffic.
+	ourCall := func() string {
+		c, _ := a.store.GetIGateConfig(context.Background())
+		if c == nil {
+			return ""
+		}
+		return c.Callsign
+	}
+
+	// TxChannel / IGatePasscode are read from the iGate config when
+	// present so the sender picks the operator's preferred RF channel
+	// and short-circuits IS when running read-only. When no iGate row
+	// exists, defaults (TxChannel=1, Passcode="") apply.
+	var (
+		txChannel uint32
+		passcode  string
+	)
+	if igCfg, _ := a.store.GetIGateConfig(ctx); igCfg != nil {
+		txChannel = igCfg.TxChannel
+		passcode = igCfg.Passcode
+	}
+
+	// iGate line-sender: only when the iGate is wired. A nil IGate in
+	// ServiceConfig means the IS path logs + emits message.failed and
+	// falls back per policy; the Service tolerates nil.
+	var igSender messages.IGateLineSender
+	if a.ig != nil {
+		igSender = a.ig
+	}
+
+	svc, err := messages.NewService(messages.ServiceConfig{
+		Store:         a.msgStore,
+		ConfigStore:   a.store,
+		TxSink:        a.gov,
+		TxHookReg:     a.gov,
+		IGate:         igSender,
+		Bridge:        a.bridge,
+		StationCache:  a.stationCache,
+		Logger:        a.logger.With("component", "messages"),
+		TxChannel:     txChannel,
+		IGatePasscode: passcode,
+		OurCall:       ourCall,
+		LocalTxRing:   a.msgLocalRing, // shared with iGate.Config.LocalOrigin
+	})
+	if err != nil {
+		return fmt.Errorf("messages service init: %w", err)
+	}
+	a.msgSvc = svc
 	return nil
 }
 
@@ -570,6 +674,30 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	a.positionLogReload = make(chan struct{}, 1)
 	apiSrv.SetPositionLogReload(a.positionLogReload)
 
+	// --- Messages wiring on the API server ---------------------------
+	//
+	// Install the store first so pure-read handlers (list, get,
+	// conversations, participants) can serve as soon as the HTTP
+	// listener binds. Then install the service so mutating handlers
+	// (compose, resend, delete, read/unread, preferences PUT) can
+	// route through the Service. Finally install the reload channel
+	// — messagesComponent's drainer goroutine consumes from it.
+	//
+	// Handlers guard each setter with a 503 until the corresponding
+	// field is populated, so the narrow window between HTTP listener
+	// bind and messagesComponent.start is safe: any request that
+	// lands early gets "service unavailable" rather than a crash.
+	if a.msgStore != nil {
+		apiSrv.SetMessagesStore(a.msgStore)
+	}
+	if a.msgSvc != nil {
+		apiSrv.SetMessagesService(a.msgSvc)
+	}
+	if a.messagesReload != nil {
+		apiSrv.SetMessagesReload(a.messagesReload)
+	}
+	apiSrv.SetMessagesBotDirectory(messages.DefaultBotDirectory)
+
 	// /api/version is public (the UI reads it before login to pick
 	// which screens to show). It is mounted on the outer mux so it
 	// bypasses RequireAuth. The handler itself lives in pkg/webapi.
@@ -599,6 +727,14 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
 	if a.ig != nil {
 		webapi.RegisterIgate(apiSrv, apiMux, a.ig.SetSimulationMode, a.ig.Status)
+	}
+	// Stations autocomplete is an out-of-band registrar (matches the
+	// RegisterPackets / RegisterStations shape). Needs the messages
+	// store for history-prefix lookups and the station cache for
+	// live-station prefix lookups; bot results come from the
+	// BotDirectory installed via SetMessagesBotDirectory above.
+	if a.msgStore != nil {
+		webapi.RegisterStationsAutocomplete(apiSrv, apiMux, a.msgStore, a.stationCache)
 	}
 
 	mux.Handle("/api/", webauth.RequireAuth(a.authStore)(apiMux))
@@ -713,6 +849,13 @@ func (a *App) governorComponent() namedComponent {
 			return nil
 		},
 		stop: func(shutdownCtx context.Context) error {
+			// Release the packetlog/stationcache TX hook before draining
+			// so any in-flight post-send invocation completes before we
+			// declare the governor stopped.
+			if a.govHookUnregister != nil {
+				a.govHookUnregister()
+				a.govHookUnregister = nil
+			}
 			// Run exits when its parent ctx is cancelled, which already
 			// happened by the time shutdown started in Run. Just wait.
 			return waitGroup(shutdownCtx, &a.govWG, "tx governor")
@@ -1020,6 +1163,19 @@ func (a *App) bridgeComponent() namedComponent {
 				igateOut = igate.NewIgateOutput(a.ig)
 			}
 
+			// Messages router output: classifies inbound APRS text
+			// messages into DM / tactical / auto-ACK responses. Nil
+			// is tolerated (messagesComponent wires it above; an empty
+			// slot in the outputs slice is filtered by runAPRSFanOut).
+			// The router's SendPacket drops silently until Router.Start
+			// runs inside messagesComponent; the net effect is that any
+			// inbound packets arriving before the Service starts are
+			// ignored rather than queued indefinitely.
+			var msgOut aprs.PacketOutput
+			if a.msgSvc != nil {
+				msgOut = a.msgSvc.Router()
+			}
+
 			a.fanOutWG.Add(1)
 			go func() {
 				defer a.fanOutWG.Done()
@@ -1027,7 +1183,7 @@ func (a *App) bridgeComponent() namedComponent {
 				if igateOut != nil {
 					igOut = igateOut
 				}
-				runAPRSFanOut(ctx, a.aprsQueue, aprsOut, igOut)
+				runAPRSFanOut(ctx, a.aprsQueue, aprsOut, igOut, msgOut)
 			}()
 
 			a.frameConsumerWG.Add(1)
@@ -1071,6 +1227,7 @@ func (a *App) bridgeComponent() namedComponent {
 						a.digi.Handle(ctx, rf.Channel, f)
 						if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
 							pkt.Channel = int(rf.Channel)
+							pkt.Direction = aprs.DirectionRF
 							e.Type = string(pkt.Type)
 							e.Decoded = pkt
 							aprsSubmit.submit(pkt)
@@ -1279,6 +1436,76 @@ func (a *App) reloadIgate(ctx context.Context) {
 		gov = a.gov
 	}
 	a.ig.Reconfigure(igCfg.ServerFilter, rules, gov)
+}
+
+// messagesComponent owns the messages.Service lifecycle: Start registers
+// the TxHook with the governor, loads initial preferences + tactical
+// callsigns, and spins up the Router + RetryManager goroutines. A
+// drainer goroutine forwards messagesReload signals into
+// Service.ReloadTacticalCallsigns + ReloadPreferences so a REST CRUD
+// handler's non-blocking send propagates into the in-memory caches.
+//
+// Lifecycle invariants:
+//   - Start runs AFTER igate so the sender's IS-fallback path has a
+//     live *igate.Igate (when enabled). The bridge fan-out is already
+//     running by then; Router.SendPacket drops silently until Start
+//     flips the running flag, so any inbound message packets that
+//     arrived before Start are ignored rather than queued.
+//   - Stop runs BEFORE igate / governor in reverse-startup order.
+//     Service.Stop unregisters the TxHook before the governor stops
+//     so a late hook fire can't touch a torn-down store handle.
+//   - The reload-channel drainer exits on ctx.Done or channel close;
+//     the channel is owned by the webapi Server, so the drainer never
+//     closes it. Stop waits for the drainer via messagesReloadWG.
+func (a *App) messagesComponent() namedComponent {
+	return namedComponent{
+		name: "messages",
+		start: func(ctx context.Context) error {
+			if a.msgSvc == nil {
+				return nil
+			}
+			if err := a.msgSvc.Start(ctx); err != nil {
+				return fmt.Errorf("messages service start: %w", err)
+			}
+			if a.messagesReload != nil {
+				a.messagesReloadWG.Add(1)
+				go func() {
+					defer a.messagesReloadWG.Done()
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case _, ok := <-a.messagesReload:
+							if !ok {
+								return
+							}
+							if err := a.msgSvc.ReloadTacticalCallsigns(ctx); err != nil {
+								a.logger.Warn("messages reload tactical callsigns", "err", err)
+							}
+							if err := a.msgSvc.ReloadPreferences(ctx); err != nil {
+								a.logger.Warn("messages reload preferences", "err", err)
+							}
+						}
+					}
+				}()
+			}
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			if a.msgSvc == nil {
+				return nil
+			}
+			// Stop the Service first: unregisters the TxHook, stops the
+			// Router consumer goroutine, stops the RetryManager. Late
+			// hook fires from a governor drain can no longer reach the
+			// Service after this returns.
+			a.msgSvc.Stop()
+			// Then drain the reload goroutine. ctx cancel already woke
+			// it via the select; the wait is only here for the narrow
+			// case where a signal and the cancel race.
+			return waitGroup(shutdownCtx, &a.messagesReloadWG, "messages reload")
+		},
+	}
 }
 
 func (a *App) httpComponent() namedComponent {

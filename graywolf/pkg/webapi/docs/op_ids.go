@@ -196,6 +196,35 @@ const (
 	OpCreateFirstUser = "createFirstUser"
 )
 
+// Messages resource — /api/messages (APRS messaging feature).
+//
+// The messages surface covers DM + tactical-broadcast inbound/outbound
+// rows, preferences, tactical callsign CRUD, conversation rollup,
+// per-thread participants, and an SSE event stream. The autocomplete
+// endpoint is an out-of-band helper registered via
+// webapi.RegisterStationsAutocomplete; its operation ID lives alongside
+// the messages block because it's the same feature slice, even though
+// the URL sits under /api/stations.
+const (
+	OpListMessages            = "listMessages"
+	OpGetMessage              = "getMessage"
+	OpSendMessage             = "sendMessage"
+	OpDeleteMessage           = "deleteMessage"
+	OpMarkMessageRead         = "markMessageRead"
+	OpMarkMessageUnread       = "markMessageUnread"
+	OpResendMessage           = "resendMessage"
+	OpListConversations       = "listConversations"
+	OpStreamMessageEvents     = "streamMessageEvents"
+	OpGetMessagePreferences   = "getMessagePreferences"
+	OpPutMessagePreferences   = "putMessagePreferences"
+	OpListTacticalCallsigns   = "listTacticalCallsigns"
+	OpCreateTacticalCallsign  = "createTacticalCallsign"
+	OpUpdateTacticalCallsign  = "updateTacticalCallsign"
+	OpDeleteTacticalCallsign  = "deleteTacticalCallsign"
+	OpGetTacticalParticipants = "getTacticalParticipants"
+	OpAutocompleteStations    = "autocompleteStations"
+)
+
 // PTT resource — /api/ptt (Phase 4).
 //
 // Breaking change versus pre-Phase-4: the GPIO-lines endpoint moved

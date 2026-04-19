@@ -105,6 +105,10 @@ func (s *Store) Migrate() error {
 		&GPSConfig{},
 		&SmartBeaconConfig{},
 		&PositionLogConfig{},
+		&Message{},
+		&MessageCounter{},
+		&MessagePreferences{},
+		&TacticalCallsign{},
 	); err != nil {
 		return err
 	}
@@ -116,6 +120,11 @@ func (s *Store) Migrate() error {
 	// once the singleton row exists or no beacon has non-default values.
 	if err := s.seedSmartBeaconFromLegacyBeacons(context.Background()); err != nil {
 		return fmt.Errorf("seed smart beacon: %w", err)
+	}
+	// Seed the MessagePreferences singleton with defaults on first run.
+	// Idempotent: no-op once the row exists.
+	if err := s.seedMessagePreferences(context.Background()); err != nil {
+		return fmt.Errorf("seed message preferences: %w", err)
 	}
 	return nil
 }

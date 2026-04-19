@@ -95,6 +95,11 @@ func (b *Bridge) runSession(ctx context.Context, conn sessionConn) error {
 // subsystem: frames channel, status cache, DCD publisher, dispatchers,
 // or device-level cache. Called by ipcLoop.Run for every received frame.
 func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
+	// Record peer liveness for IsRunning. Every inbound IPC message
+	// counts as a heartbeat: ReceivedFrame in normal traffic, the
+	// periodic StatusUpdate otherwise. Unix-nano so IsRunning can
+	// compute the age with a single time.Since call.
+	b.lastActivityUnix.Store(time.Now().UnixNano())
 	switch p := msg.GetPayload().(type) {
 	case *pb.IpcMessage_ReceivedFrame:
 		if b.cfg.Metrics != nil {

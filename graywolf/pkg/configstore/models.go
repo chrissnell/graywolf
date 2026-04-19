@@ -1,6 +1,11 @@
 package configstore
 
-import "time"
+import (
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // AudioDevice describes a single audio input source feeding the modem.
 // SourceType selects how the Rust modem opens the device:
@@ -345,4 +350,119 @@ type PacketFilter struct {
 	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
+}
+
+// Message is one persisted APRS text message, DM or tactical, in either
+// direction. Columns cover the full lifecycle: receipt metadata, state
+// transitions (SentAt/AckedAt/AckState/Attempts), retry scheduling
+// (NextRetryAt + FailureReason), ack/reply-ack correlation (MsgID +
+// ReplyAckID), and thread identity ((ThreadKind, ThreadKey) — "dm"
+// uses peer callsign, "tactical" uses the tactical label).
+//
+// Lifecycle columns set by the repository:
+//
+//   - Insert: CreatedAt, ReceivedAt (inbound), Direction, FromCall,
+//     ToCall, OurCall, ThreadKind, ThreadKey, PeerCall, Text, Unread,
+//     etc. The repository derives ThreadKey + PeerCall at insert and
+//     writes them directly — callers only need to set ThreadKind and
+//     the direction-dependent raw callsigns.
+//   - Send pipeline (Phase 3): QueuedAt, SentAt, AckState, Attempts,
+//     NextRetryAt, FailureReason.
+//   - Router (Phase 2): AckedAt, AckState, ReceivedByCall (for tactical
+//     reply-ack correlation).
+//
+// ThreadKind is one of: "dm" (1:1) or "tactical" (group broadcast via
+// tactical callsign). See the APRS messages feature plan for the full
+// design.
+type Message struct {
+	ID             uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
+	Direction      string         `gorm:"not null;index:idx_msg_direction_unread,priority:1" json:"direction"` // "in" | "out"
+	OurCall        string         `gorm:"size:9;not null;index:idx_msg_peer,priority:1;index:idx_msg_to_time,priority:1" json:"our_call"`
+	PeerCall       string         `gorm:"size:9;not null;index:idx_msg_peer,priority:2;index:idx_msg_peer_time" json:"peer_call"`
+	FromCall       string         `gorm:"size:9;not null;index:idx_msg_from_time,priority:1;index:idx_msg_msgid_from,priority:2" json:"from_call"`
+	ToCall         string         `gorm:"size:9;not null;index:idx_msg_to_time,priority:2" json:"to_call"`
+	Text           string         `gorm:"size:200;not null" json:"text"`
+	MsgID          string         `gorm:"size:5;index:idx_msg_msgid_from,priority:1" json:"msg_id"`
+	CreatedAt      time.Time      `gorm:"not null;index:idx_msg_peer,priority:3;index:idx_msg_from_time,priority:2;index:idx_msg_to_time,priority:3;index:idx_msg_peer_time,priority:2;index:idx_msg_thread,priority:3" json:"created_at"`
+	UpdatedAt      time.Time      `gorm:"not null" json:"updated_at"`
+	ReceivedAt     *time.Time     `json:"received_at,omitempty"`
+	SentAt         *time.Time     `json:"sent_at,omitempty"`
+	AckedAt        *time.Time     `json:"acked_at,omitempty"`
+	AckState       string         `gorm:"size:16;not null;default:'none'" json:"ack_state"`       // none | acked | rejected | broadcast
+	Source         string         `gorm:"size:4;not null;default:''" json:"source"`               // rf | is (string form of aprs.Direction)
+	Channel        uint32         `gorm:"not null;default:0" json:"channel"`
+	Path           string         `gorm:"size:64" json:"path"`                                    // display path, e.g. "W1ABC*,WIDE1-1*"
+	Via            string         `gorm:"size:64" json:"via"`                                     // last used digipeater
+	RawTNC2        string         `gorm:"column:raw_tnc2;size:512" json:"raw_tnc2"`               // archival raw text
+	Unread         bool           `gorm:"not null;default:false;index:idx_msg_direction_unread,priority:2" json:"unread"`
+	Attempts       uint32         `gorm:"not null;default:0" json:"attempts"`
+	NextRetryAt    *time.Time     `json:"next_retry_at,omitempty"`
+	FailureReason  string         `gorm:"size:128" json:"failure_reason"`
+	ReplyAckID     string         `gorm:"size:5" json:"reply_ack_id"`                             // inbound: APRS11 reply-ack id we observed
+	IsAck          bool           `gorm:"not null;default:false" json:"is_ack"`
+	IsRej          bool           `gorm:"not null;default:false" json:"is_rej"`
+	IsBulletin     bool           `gorm:"not null;default:false" json:"is_bulletin"`
+	IsNWS          bool           `gorm:"column:is_nws;not null;default:false" json:"is_nws"`
+	PreferIS       bool           `gorm:"column:prefer_is;not null;default:false" json:"prefer_is"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ThreadKind     string         `gorm:"size:10;not null;default:'dm';index:idx_msg_thread,priority:1" json:"thread_kind"` // dm | tactical
+	ThreadKey      string         `gorm:"size:9;not null;default:'';index:idx_msg_thread,priority:2" json:"thread_key"`     // peer callsign for dm, tactical label for tactical
+	ReceivedByCall string         `gorm:"size:9" json:"received_by_call"`                                                   // tactical outbound: first acker's call
+}
+
+// TableName pins the messages table name to the plural lower-case form
+// GORM would infer. Explicit so the migration-list raw SQL stays
+// obviously in sync with the model.
+func (Message) TableName() string { return "messages" }
+
+// MessageCounter is a singleton (id=1) holding the next msgid to
+// allocate. NextID rolls 1..999; allocation skips values currently
+// held by outstanding outbound DM rows (see pkg/messages/store.go
+// AllocateMsgID). Separate from MessagePreferences so bumping the
+// counter does not touch the preferences row.
+type MessageCounter struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
+	NextID    uint32    `gorm:"not null;default:1" json:"next_id"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// MessagePreferences is a singleton (id=1) holding operator-level
+// messaging preferences. Seeded at migrate-time with defaults if no row
+// exists. See plan Phase 3 for semantics.
+type MessagePreferences struct {
+	ID               uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
+	FallbackPolicy   string    `gorm:"size:16;not null;default:'is_fallback'" json:"fallback_policy"` // rf_only | is_fallback | is_only | both
+	DefaultPath      string    `gorm:"size:64;not null;default:'WIDE1-1,WIDE2-1'" json:"default_path"`
+	RetryMaxAttempts uint32    `gorm:"not null;default:5" json:"retry_max_attempts"`
+	RetentionDays    uint32    `gorm:"not null;default:0" json:"retention_days"` // 0 = forever
+	CreatedAt        time.Time `json:"-"`
+	UpdatedAt        time.Time `json:"-"`
+}
+
+// TacticalCallsign is one monitored tactical addressee label. Operators
+// register these to participate in group threads keyed by the label.
+// Callsign is normalized to uppercase via BeforeSave so any path in/out
+// is safe. See plan "Group chat via tactical callsigns" section.
+type TacticalCallsign struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Callsign  string    `gorm:"size:9;not null;uniqueIndex" json:"callsign"` // 1-9 [A-Z0-9-], uppercase
+	Alias     string    `gorm:"size:64" json:"alias"`                        // optional free-text
+	// Enabled: column does not declare default:true on purpose. The
+	// handler-level default ("Monitor now" toggle) runs before the
+	// insert, and a GORM default:true would silently override a caller
+	// passing false (GORM treats Go-zero values as "use the DB
+	// default"), which is hostile to the common "create disabled" path.
+	Enabled   bool      `gorm:"not null" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// BeforeSave normalizes Callsign to uppercase and trims whitespace
+// before insert or update. Ensures the router's case-sensitive exact
+// match against the cached set always sees a canonical value regardless
+// of how a handler constructed the row.
+func (t *TacticalCallsign) BeforeSave(_ *gorm.DB) error {
+	t.Callsign = strings.ToUpper(strings.TrimSpace(t.Callsign))
+	return nil
 }

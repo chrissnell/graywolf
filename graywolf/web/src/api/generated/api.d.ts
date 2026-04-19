@@ -543,6 +543,198 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List messages */
+        get: operations["listMessages"];
+        put?: never;
+        /** Send message */
+        post: operations["sendMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List conversations */
+        get: operations["listConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream message events */
+        get: operations["streamMessageEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get message preferences */
+        get: operations["getMessagePreferences"];
+        /** Update message preferences */
+        put: operations["putMessagePreferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/tactical": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List tactical callsigns */
+        get: operations["listTacticalCallsigns"];
+        put?: never;
+        /** Create tactical callsign */
+        post: operations["createTacticalCallsign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/tactical/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update tactical callsign */
+        put: operations["updateTacticalCallsign"];
+        post?: never;
+        /** Delete tactical callsign */
+        delete: operations["deleteTacticalCallsign"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/tactical/{key}/participants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tactical thread participants */
+        get: operations["getTacticalParticipants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get message */
+        get: operations["getMessage"];
+        put?: never;
+        post?: never;
+        /** Delete message */
+        delete: operations["deleteMessage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark message read */
+        post: operations["markMessageRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend message */
+        post: operations["resendMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{id}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark message unread */
+        post: operations["markMessageUnread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packets": {
         parameters: {
             query?: never;
@@ -745,6 +937,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stations/autocomplete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Station autocomplete */
+        get: operations["autocompleteStations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/status": {
         parameters: {
             query?: never;
@@ -832,6 +1041,14 @@ export interface components {
             comment?: string;
             dest?: string;
             df?: components["schemas"]["aprs.DirectionFinding"];
+            /**
+             * @description Direction identifies the ingress path: DirectionRF for packets heard
+             *     over RF via the modem bridge / KISS / AGW, DirectionIS for packets
+             *     received from APRS-IS by the iGate. Unset (DirectionUnknown) when
+             *     the packet is synthesized (e.g. inner third-party decode, tests) or
+             *     constructed before ingress provenance is known.
+             */
+            direction?: components["schemas"]["aprs.Direction"];
             item?: components["schemas"]["aprs.Item"];
             message?: components["schemas"]["aprs.Message"];
             micE?: components["schemas"]["aprs.MicE"];
@@ -860,6 +1077,8 @@ export interface components {
             model?: string;
             vendor?: string;
         };
+        /** @enum {string} */
+        "aprs.Direction": "" | "rf" | "is";
         "aprs.DirectionFinding": {
             /** @description degrees true */
             bearing?: number;
@@ -1187,6 +1406,18 @@ export interface components {
             profile?: string;
             space_freq?: number;
         };
+        "dto.ConversationSummary": {
+            alias?: string;
+            archived?: boolean;
+            last_at?: string;
+            last_sender_call?: string;
+            last_snippet?: string;
+            participant_count?: number;
+            thread_key?: string;
+            thread_kind?: string;
+            total_count?: number;
+            unread_count?: number;
+        };
         "dto.DigipeaterConfigRequest": {
             dedupe_window_seconds?: number;
             enabled?: boolean;
@@ -1308,6 +1539,67 @@ export interface components {
             tcp_port?: number;
             type?: string;
         };
+        "dto.MessageChange": {
+            id?: number;
+            kind?: string;
+            message?: components["schemas"]["dto.MessageResponse"];
+        };
+        "dto.MessageListResponse": {
+            changes?: components["schemas"]["dto.MessageChange"][];
+            cursor?: string;
+        };
+        "dto.MessagePreferencesRequest": {
+            default_path?: string;
+            fallback_policy?: string;
+            retention_days?: number;
+            retry_max_attempts?: number;
+        };
+        "dto.MessagePreferencesResponse": {
+            default_path?: string;
+            fallback_policy?: string;
+            retention_days?: number;
+            retry_max_attempts?: number;
+        };
+        "dto.MessageResponse": {
+            acked_at?: string;
+            attempts?: number;
+            channel?: number;
+            created_at?: string;
+            /** @description "in" | "out" */
+            direction?: string;
+            failure_reason?: string;
+            from_call?: string;
+            id?: number;
+            is_ack?: boolean;
+            is_bulletin?: boolean;
+            msg_id?: string;
+            next_retry_at?: string;
+            our_call?: string;
+            path?: string;
+            peer_call?: string;
+            received_at?: string;
+            received_by_call?: string;
+            sent_at?: string;
+            /** @description "rf" | "is" */
+            source?: string;
+            /** @description derived — see DeriveMessageStatus */
+            status?: string;
+            text?: string;
+            thread_key?: string;
+            thread_kind?: string;
+            to_call?: string;
+            unread?: boolean;
+            via?: string;
+        };
+        "dto.ParticipantResponse": {
+            callsign?: string;
+            last_active?: string;
+            message_count?: number;
+        };
+        "dto.ParticipantsEnvelope": {
+            effective_within_days?: number;
+            participants?: components["schemas"]["dto.ParticipantResponse"][];
+        };
         "dto.PositionLogRequest": {
             enabled?: boolean;
         };
@@ -1355,6 +1647,33 @@ export interface components {
             method?: string;
             persist?: number;
             slot_time_ms?: number;
+        };
+        "dto.SendMessageRequest": {
+            /** @description Channel overrides the configured TX channel. Nil = use default. */
+            channel?: number;
+            /**
+             * @description ClientID is an opaque client-side correlation token. Echoed back
+             *     unchanged in the response so the optimistic UI can reconcile its
+             *     local row with the persisted ID.
+             */
+            client_id?: string;
+            /**
+             * @description Path overrides the default RF path from preferences. Empty =
+             *     use MessagePreferences.DefaultPath.
+             */
+            path?: string;
+            /**
+             * @description PreferIS, when true, routes the outbound via APRS-IS regardless
+             *     of the current fallback policy.
+             */
+            prefer_is?: boolean;
+            /** @description Text is the message body (<= 67 APRS chars after validation). */
+            text?: string;
+            /**
+             * @description To is the addressee: a station callsign for a DM or a tactical
+             *     label for a group broadcast. Uppercase-normalized server-side.
+             */
+            to?: string;
         };
         "dto.SmartBeaconConfigRequest": {
             /**
@@ -1443,6 +1762,27 @@ export interface components {
              *     the corner-pegging turn threshold.
              */
             turn_slope?: number;
+        };
+        "dto.StationAutocomplete": {
+            callsign?: string;
+            description?: string;
+            /** @description RFC3339, empty for bots / missing */
+            last_heard?: string;
+            /** @description "bot" | "cache" | "history" | "cache+history" */
+            source?: string;
+        };
+        "dto.TacticalCallsignRequest": {
+            alias?: string;
+            callsign?: string;
+            enabled?: boolean;
+        };
+        "dto.TacticalCallsignResponse": {
+            alias?: string;
+            callsign?: string;
+            created_at?: string;
+            enabled?: boolean;
+            id?: number;
+            updated_at?: string;
         };
         "dto.TestRigctldRequest": {
             host?: string;
@@ -1832,6 +2172,12 @@ export interface components {
         "dto.KissRequest": {
             content: {
                 "application/json": components["schemas"]["dto.KissRequest"];
+            };
+        };
+        /** @description Tactical definition */
+        "dto.TacticalCallsignRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.TacticalCallsignRequest"];
             };
         };
         /** @description PTT config */
@@ -3773,6 +4119,771 @@ export interface operations {
             };
         };
     };
+    listMessages: {
+        parameters: {
+            query?: {
+                /** @description Folder filter: inbox|sent|all */
+                folder?: string;
+                /** @description PeerCall filter */
+                peer?: string;
+                /** @description dm|tactical */
+                thread_kind?: string;
+                /** @description Exact thread key (peer callsign for DM, tactical label for tactical) */
+                thread_key?: string;
+                /** @description Only messages at or after this RFC3339 timestamp */
+                since?: string;
+                /** @description Opaque cursor from a prior response; pages forward */
+                cursor?: string;
+                /** @description Restrict to unread rows */
+                unread_only?: boolean;
+                /** @description Cap result count (1..500) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MessageListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    sendMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Compose payload */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MessageResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listConversations: {
+        parameters: {
+            query?: {
+                /** @description Cap result count (1..500, default 200) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ConversationSummary"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    streamMessageEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent-Events stream of message changes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMessagePreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MessagePreferencesResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    putMessagePreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Preferences */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.MessagePreferencesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MessagePreferencesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listTacticalCallsigns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TacticalCallsignResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createTacticalCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.TacticalCallsignRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TacticalCallsignResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateTacticalCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Tactical id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.TacticalCallsignRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TacticalCallsignResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteTacticalCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Tactical id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getTacticalParticipants: {
+        parameters: {
+            query?: {
+                /** @description Lookback window (e.g. 7d, 72h); default 7d */
+                within?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Tactical key (callsign label) */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ParticipantsEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Message id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MessageResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Message id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    markMessageRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Message id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    resendMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Message id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MessageResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    markMessageUnread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Message id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
     listPackets: {
         parameters: {
             query?: {
@@ -4348,6 +5459,49 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    autocompleteStations: {
+        parameters: {
+            query?: {
+                /** @description Prefix (case-insensitive). Empty returns bots + recent stations. */
+                q?: string;
+                /** @description Cap result count (1..100, default 25) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.StationAutocomplete"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

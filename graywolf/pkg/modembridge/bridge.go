@@ -21,10 +21,18 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 )
+
+// bridgeHeartbeatTimeout is the maximum age of the last inbound IPC
+// message (frame / status / dcd change) for the bridge to be considered
+// "running" by IsRunning. The supervisor already restarts the child on
+// socket failure, so this is strictly a dead-peer / stuck-session check.
+const bridgeHeartbeatTimeout = 30 * time.Second
 
 // State names the current supervisor state.
 type State int
@@ -89,6 +97,13 @@ type Bridge struct {
 	sendFn func(*pb.IpcMessage) error
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	// lastActivityUnix is the Unix-nanosecond timestamp of the most
+	// recent inbound IPC message dispatched by dispatchIPC. Updated
+	// with atomic.Store under no lock so IsRunning can read it
+	// without contending with the session read loop. Zero means "no
+	// activity since bridge construction / last restart".
+	lastActivityUnix atomic.Int64
 }
 
 // errBridgeStopped is returned to any caller whose request/response
@@ -173,6 +188,9 @@ func (b *Bridge) supervise(ctx context.Context) {
 	b.toneDispatcher.Reset()
 	b.scanDispatcher.Reset()
 	b.status.Reset()
+	// Reset liveness: IsRunning must be false until a fresh session
+	// starts exchanging IPC messages.
+	b.lastActivityUnix.Store(0)
 
 	defer close(b.done)
 	defer close(b.frames)
@@ -195,6 +213,31 @@ func (b *Bridge) closePendingRequests() {
 
 // State returns the current supervisor state.
 func (b *Bridge) State() State { return b.sup.State() }
+
+// IsRunning reports whether the bridge is actively exchanging messages
+// with the Rust modem child. A bridge is running when both:
+//
+//  1. the supervisor is in StateRunning (socket connected, configuration
+//     pushed, StartAudio sent), and
+//  2. the most recent inbound IPC message (ReceivedFrame, StatusUpdate,
+//     DcdChange, DeviceLevelUpdate, or any dispatcher reply) was
+//     received within the last bridgeHeartbeatTimeout (30 s).
+//
+// A disconnected socket, a session that is still configuring, or a
+// session that has gone silent for more than 30 s all return false.
+// Callers (e.g. the messages sender deciding whether RF is available
+// for fallback) should treat false as "modem currently unreliable;
+// route via an alternate path or wait".
+func (b *Bridge) IsRunning() bool {
+	if b.sup.State() != StateRunning {
+		return false
+	}
+	last := b.lastActivityUnix.Load()
+	if last == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, last)) < bridgeHeartbeatTimeout
+}
 
 // setState exposes the supervisor's state setter to session.go, which
 // still takes a Bridge receiver.

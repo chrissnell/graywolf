@@ -36,6 +36,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/kiss"
+	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
@@ -59,7 +60,43 @@ type Server struct {
 	positionLogReload chan struct{}                              // signalled when position log config changes
 	agwReload         chan struct{}                              // signalled when AGW config changes
 	smartBeaconReload chan struct{}                              // signalled when smart-beacon singleton config changes
+	messagesReload    chan struct{}                              // signalled when messages preferences or tactical callsigns change
 	beaconSendNow     func(ctx context.Context, id uint32) error // triggers an immediate beacon send
+
+	// messages-service is late-bound: it exists only after the Phase 5
+	// app wiring has constructed the configstore + txgovernor + igate,
+	// so the webapi Server handlers must guard against a nil value and
+	// return 503 until SetMessagesService is called. See
+	// RegisterMessages / registerMessages.
+	messagesService  MessagesService
+	messagesStore    MessagesStore    // optional: defaults to messagesService.Store() via adapter
+	messagesBotDir   messages.BotDirectory
+}
+
+// MessagesService is the narrow surface the webapi handlers consume
+// from pkg/messages.*Service. Kept as an interface so tests can inject
+// a fake and so the webapi package doesn't drag in the router / retry
+// goroutines at import time.
+type MessagesService interface {
+	SendMessage(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
+	Resend(ctx context.Context, id uint64) (messages.SendResult, error)
+	SoftDelete(ctx context.Context, id uint64) error
+	MarkRead(ctx context.Context, id uint64) error
+	MarkUnread(ctx context.Context, id uint64) error
+	ReloadTacticalCallsigns(ctx context.Context) error
+	ReloadPreferences(ctx context.Context) error
+	EventHub() *messages.EventHub
+}
+
+// MessagesStore is the narrow read surface the handlers consume for
+// pure queries (list, get, conversations, participants). Wiring passes
+// a *messages.Store directly; tests may swap.
+type MessagesStore interface {
+	List(ctx context.Context, f messages.Filter) ([]configstore.Message, string, error)
+	GetByID(ctx context.Context, id uint64) (*configstore.Message, error)
+	ConversationRollup(ctx context.Context, limit int) ([]messages.ConversationSummary, error)
+	ListParticipants(ctx context.Context, tacticalKey string, within time.Duration) ([]messages.Participant, time.Duration, error)
+	QueryMessageHistoryByPeer(ctx context.Context, prefix string, limit int) ([]messages.MessageHistoryEntry, error)
 }
 
 // Config bundles the dependencies for NewServer.
@@ -137,6 +174,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerGps(mux)
 	s.registerPositionLog(mux)
 	s.registerSmartBeacon(mux)
+	s.registerMessages(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
@@ -186,6 +224,39 @@ func (s *Server) SetAgwReload(ch chan struct{}) { s.agwReload = ch }
 // curve parameters take effect without a graywolf restart. Buffer size
 // 1 + coalesced non-blocking sends keep rapid edits from stacking.
 func (s *Server) SetSmartBeaconReload(ch chan struct{}) { s.smartBeaconReload = ch }
+
+// SetMessagesReload installs the channel signalled after a successful
+// messages preferences or tactical-callsign mutation. Wiring (pkg/app)
+// drains this channel and calls Service.ReloadPreferences +
+// Service.ReloadTacticalCallsigns so the router / sender pick up the
+// new snapshot. Buffer size 1 + coalesced non-blocking sends keep rapid
+// edits from stacking. The handlers also call the service's reload
+// methods inline where the new value must be visible before the
+// request returns (e.g. immediately after registering a new tactical
+// label so the next compose classifies it as tactical).
+func (s *Server) SetMessagesReload(ch chan struct{}) { s.messagesReload = ch }
+
+// MessagesReload returns the messages reload channel for wiring's
+// drainer goroutine. Safe to call before SetMessagesReload; nil is
+// returned and the drainer becomes a no-op until the channel is
+// installed.
+func (s *Server) MessagesReload() <-chan struct{} { return s.messagesReload }
+
+// SetMessagesService installs the messages service Phase 5 wiring
+// constructed. Until this is called, the messages handlers return 503.
+// The service is optional so tests that don't exercise the messages
+// surface can omit it entirely.
+func (s *Server) SetMessagesService(svc MessagesService) { s.messagesService = svc }
+
+// SetMessagesStore installs the message repository used by pure read
+// handlers (list, get, conversations, participants). When nil the
+// read handlers return 503. Wiring passes a *messages.Store directly.
+func (s *Server) SetMessagesStore(store MessagesStore) { s.messagesStore = store }
+
+// SetMessagesBotDirectory overrides the bot directory used by the
+// stations autocomplete endpoint. Useful for tests; production leaves
+// it unset so the package default (messages.DefaultBotDirectory) wins.
+func (s *Server) SetMessagesBotDirectory(dir messages.BotDirectory) { s.messagesBotDir = dir }
 
 // SetIgateStatusFn installs the function used by /api/status to report
 // igate counters.

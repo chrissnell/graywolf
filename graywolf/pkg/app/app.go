@@ -15,6 +15,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/kiss"
+	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
@@ -55,6 +56,10 @@ type App struct {
 	stationCache *stationcache.PersistentCache
 	bridge       *modembridge.Bridge
 	gov         *txgovernor.Governor
+	// govHookUnregister releases the packetlog/stationcache TX hook on
+	// shutdown so later test runs in the same process don't accumulate
+	// stale hooks against a stopped governor.
+	govHookUnregister func()
 	kissMgr     *kiss.Manager
 	agwServer   *agw.Server // nil if AGW is disabled in config
 	// agwMu guards access to agwServer so a reload can swap in a new
@@ -72,6 +77,19 @@ type App struct {
 	apiSrv      *webapi.Server
 	httpSrv     *http.Server
 
+	// --- Messages service --------------------------------------------------
+	// msgSvc owns the inbound Router + outbound Sender + RetryManager for
+	// APRS text messaging. Its Router is registered with the APRS fan-out
+	// in bridgeComponent so inbound UI-message packets reach the router's
+	// classification path alongside the existing log/igate outputs.
+	// msgLocalRing is the LocalOriginRing the iGate consults to suppress
+	// re-gating of our own outbound messages heard back via digipeater;
+	// it is shared by construction between the iGate (via Config.LocalOrigin)
+	// and the messages.Service (via ServiceConfig.LocalTxRing).
+	msgSvc       *messages.Service
+	msgStore     *messages.Store
+	msgLocalRing *messages.LocalTxRing
+
 	// resolvedModem is the absolute path to the graywolf-modem binary
 	// after running through ResolveModemPath. Retained so diagnostic
 	// messages can name the exact binary being used.
@@ -85,6 +103,7 @@ type App struct {
 	igateReload       chan struct{}
 	positionLogReload chan struct{}
 	agwReload         chan struct{}
+	messagesReload    chan struct{}
 
 	// --- APRS fan-out plumbing ------------------------------------------
 	aprsQueue       chan *aprs.DecodedAPRSPacket
@@ -109,6 +128,7 @@ type App struct {
 	beaconReloadWG      sync.WaitGroup
 	positionLogReloadWG sync.WaitGroup
 	httpWG              sync.WaitGroup
+	messagesReloadWG    sync.WaitGroup
 
 	// --- Lifecycle ------------------------------------------------------
 	// startOrder is the full list of components wireServices produced.
