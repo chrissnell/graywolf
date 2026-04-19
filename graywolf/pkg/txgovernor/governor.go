@@ -138,10 +138,20 @@ func (c *Config) timingFor(channel uint32) ChannelTiming {
 
 // TxHook is invoked after a frame has been successfully submitted to the
 // downstream Sender. It runs inline in the governor's worker goroutine,
-// so implementations must be fast and non-blocking (packetlog record,
-// counter bumps, etc). Zero or one hook is supported; use a fanout
-// wrapper for multiple consumers.
+// so implementations MUST be fast and non-blocking (packetlog record,
+// counter bumps, channel send with default, etc). A blocking hook stalls
+// the governor's send loop for every registered consumer.
+//
+// Multiple hooks may be registered concurrently via AddTxHook; they are
+// invoked in registration order on each successful send.
 type TxHook func(channel uint32, frame *ax25.Frame, source SubmitSource)
+
+// txHookEntry pairs a registered hook with its assigned id so
+// AddTxHook's unregister closure can locate and remove it.
+type txHookEntry struct {
+	id uint64
+	fn TxHook
+}
 
 // Stats exposes counters for metrics.
 type Stats struct {
@@ -175,15 +185,50 @@ type Governor struct {
 	wake   chan struct{}
 	stats  Stats
 	closed bool
-	txHook TxHook
+	// hooks is the registered TxHook set. Protected by g.mu. The send
+	// path snapshots the slice under the lock and invokes each entry
+	// without holding the lock.
+	hooks      []txHookEntry
+	nextHookID uint64
 }
 
-// SetTxHook installs (or clears) the post-send hook. Safe to call at
-// any time. Passing nil removes the hook.
-func (g *Governor) SetTxHook(h TxHook) {
+// AddTxHook registers h to be invoked after every successful frame
+// submission. It returns the assigned id (for diagnostics) and an
+// unregister closure that removes h when called. unregister is
+// idempotent: calling it twice is a no-op.
+//
+// Hooks run inline in the governor's worker goroutine, in registration
+// order. See TxHook for the non-blocking contract — any slow work
+// (disk I/O, network, blocking channel sends) must be pushed to a
+// separate goroutine by the hook itself.
+//
+// AddTxHook is safe to call at any time, including while the worker
+// loop is invoking hooks. A hook registered concurrently with a send
+// may or may not observe that send; subsequent sends will see it.
+func (g *Governor) AddTxHook(h TxHook) (id uint64, unregister func()) {
+	if h == nil {
+		return 0, func() {}
+	}
 	g.mu.Lock()
-	g.txHook = h
+	g.nextHookID++
+	id = g.nextHookID
+	g.hooks = append(g.hooks, txHookEntry{id: id, fn: h})
 	g.mu.Unlock()
+
+	var once sync.Once
+	unregister = func() {
+		once.Do(func() {
+			g.mu.Lock()
+			for i := range g.hooks {
+				if g.hooks[i].id == id {
+					g.hooks = append(g.hooks[:i], g.hooks[i+1:]...)
+					break
+				}
+			}
+			g.mu.Unlock()
+		})
+	}
+	return id, unregister
 }
 
 // SetChannelTiming installs or replaces the timing parameters for one
@@ -401,11 +446,15 @@ func (g *Governor) processOne(ctx context.Context) {
 	if err := g.cfg.Sender(tf); err != nil {
 		g.logger.Warn("send transmit frame", "err", err, "channel", top.channel)
 	} else {
+		// Snapshot the hook slice under the lock, then invoke each
+		// without holding it so a hook cannot deadlock the governor
+		// by calling back into AddTxHook / Submit / QueueLen.
 		g.mu.Lock()
-		hook := g.txHook
+		snap := make([]txHookEntry, len(g.hooks))
+		copy(snap, g.hooks)
 		g.mu.Unlock()
-		if hook != nil {
-			hook(top.channel, top.frame, top.source)
+		for _, h := range snap {
+			h.fn(top.channel, top.frame, top.source)
 		}
 	}
 	// Touch ctx just to satisfy lint if unused on some paths.

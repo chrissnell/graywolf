@@ -24,3 +24,14 @@ type TxSink interface {
 
 // Compile-time assertion that *Governor implements TxSink.
 var _ TxSink = (*Governor)(nil)
+
+// TxHookRegistry is the narrow hook-registration interface. Callers
+// that only need to register/unregister a TxHook should depend on
+// this interface rather than the concrete *Governor so tests can
+// inject a fake. The returned unregister closure is idempotent.
+type TxHookRegistry interface {
+	AddTxHook(h TxHook) (id uint64, unregister func())
+}
+
+// Compile-time assertion that *Governor implements TxHookRegistry.
+var _ TxHookRegistry = (*Governor)(nil)
