@@ -27,6 +27,19 @@ const (
 	PacketThirdParty   PacketType = "third-party"
 )
 
+// Direction identifies the provenance of a decoded packet as it flows
+// through the APRS fan-out: RF (heard on-air via the modem / KISS / AGW
+// ingress) vs IS (received from APRS-IS by the iGate). Downstream
+// consumers (messages router, Source badge in the web UI, IS-mirror ack
+// logic, RF-fallback policy) rely on this to make routing decisions.
+type Direction string
+
+const (
+	DirectionUnknown Direction = ""
+	DirectionRF      Direction = "rf"
+	DirectionIS      Direction = "is"
+)
+
 // Position is the decoded geographic location carried by a packet. Not
 // every packet type has one (messages and telemetry do not).
 type Position struct {
@@ -187,6 +200,12 @@ type DecodedAPRSPacket struct {
 	Timestamp     time.Time
 	Channel       int
 	Quality       int // modem-reported quality (0..100) if available
+	// Direction identifies the ingress path: DirectionRF for packets heard
+	// over RF via the modem bridge / KISS / AGW, DirectionIS for packets
+	// received from APRS-IS by the iGate. Unset (DirectionUnknown) when
+	// the packet is synthesized (e.g. inner third-party decode, tests) or
+	// constructed before ingress provenance is known.
+	Direction     Direction
 }
 
 // FromAX25 populates the Source/Dest/Path fields of a DecodedAPRSPacket
