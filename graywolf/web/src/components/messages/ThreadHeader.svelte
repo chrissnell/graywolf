@@ -87,6 +87,7 @@
             data-testid="thread-invite-btn"
           >
             <Icon name="users" size="md" />
+            <span class="invite-label">Invite Users</span>
           </button>
         </Tooltip.Trigger>
         <Tooltip.Content>Invite</Tooltip.Content>
@@ -191,16 +192,22 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     flex-shrink: 0;
-    width: 32px;
     height: 32px;
-    padding: 0;
+    padding: 0 10px;
     border: 1px solid transparent;
     border-radius: var(--radius);
     background: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
+    font: inherit;
+    line-height: 1;
+  }
+  .invite-label {
+    font-size: 0.875rem;
+    white-space: nowrap;
   }
   .invite-btn:hover {
     background: var(--color-surface-raised);
