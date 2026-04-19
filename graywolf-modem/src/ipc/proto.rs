@@ -81,6 +81,7 @@ mod tests {
                 input_channel: 0,
                 output_device_id: 0,
                 output_channel: 0,
+                demod_ensemble: String::new(),
             })),
         };
         let mut buf = Vec::new();

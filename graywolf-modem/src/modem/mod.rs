@@ -14,6 +14,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::audio::{self, AudioChunk, AudioSource, CHUNK_QUEUE_DEPTH};
 use crate::demod_afsk::AfskDemodulator;
+use crate::demod_afsk_multi::{
+    MultiAfskDemodulator, MultiConfig, RECOMMENDED_2DEMOD, RECOMMENDED_3DEMOD,
+};
 use crate::hdlc::DecodedFrame;
 use crate::ipc::proto::{
     ipc_message::Payload, AudioDeviceInfo, AudioDeviceKind, AudioDeviceList, ConfigureChannel,
@@ -46,6 +49,9 @@ pub struct ChannelConfig {
     pub decoder_offset: i32,
     pub fx25_encode: bool,
     pub il2p_encode: bool,
+    /// Multi-demodulator ensemble preset; overrides `profile` and `num_slicers`
+    /// when non-empty. Supported values: "" (single demod), "dual", "triple".
+    pub demod_ensemble: String,
 }
 
 impl Default for ChannelConfig {
@@ -67,6 +73,7 @@ impl Default for ChannelConfig {
             decoder_offset: 0,
             fx25_encode: false,
             il2p_encode: false,
+            demod_ensemble: String::new(),
         }
     }
 }
@@ -107,6 +114,7 @@ struct DevicePipeline {
 /// Per-channel demodulator (within a device pipeline).
 enum ChannelDemod {
     Afsk(Box<AfskDemodulator>),
+    AfskMulti(Box<MultiAfskDemodulator>),
     Psk(PskDemodulator),
     Baseband9600(Demod9600),
 }
@@ -893,18 +901,39 @@ fn create_demod(ccfg: &ChannelConfig, sample_rate: u32) -> ChannelDemod {
             ChannelDemod::Baseband9600(demod)
         }
         _ => {
-            // Default: AFSK
-            let mut demod = AfskDemodulator::new(
-                sample_rate, ccfg.baud, ccfg.mark_freq, ccfg.space_freq,
-                ccfg.profile, ccfg.channel as usize, 0,
-            );
-            if ccfg.num_slicers > 1 {
-                demod.set_num_slicers(ccfg.num_slicers);
+            // Default: AFSK. A non-empty `demod_ensemble` selects a preset
+            // and overrides `profile` / `num_slicers`.
+            match ccfg.demod_ensemble.as_str() {
+                "dual" | "triple" => {
+                    let preset: &[MultiConfig] = match ccfg.demod_ensemble.as_str() {
+                        "dual" => &RECOMMENDED_2DEMOD,
+                        "triple" => &RECOMMENDED_3DEMOD,
+                        _ => unreachable!(),
+                    };
+                    let multi = MultiAfskDemodulator::new(
+                        sample_rate, ccfg.baud, ccfg.mark_freq, ccfg.space_freq,
+                        preset,
+                    );
+                    // Note: fix_bits is intentionally not plumbed through the
+                    // ensemble — Direwolf's best mode doesn't use bit-flipping
+                    // either, and the ensemble's cross-demod diversity already
+                    // covers the cases bit-flipping was designed to catch.
+                    ChannelDemod::AfskMulti(Box::new(multi))
+                }
+                _ => {
+                    let mut demod = AfskDemodulator::new(
+                        sample_rate, ccfg.baud, ccfg.mark_freq, ccfg.space_freq,
+                        ccfg.profile, ccfg.channel as usize, 0,
+                    );
+                    if ccfg.num_slicers > 1 {
+                        demod.set_num_slicers(ccfg.num_slicers);
+                    }
+                    if ccfg.fix_bits != RetryType::None {
+                        demod.set_fix_bits(ccfg.fix_bits);
+                    }
+                    ChannelDemod::Afsk(Box::new(demod))
+                }
             }
-            if ccfg.fix_bits != RetryType::None {
-                demod.set_fix_bits(ccfg.fix_bits);
-            }
-            ChannelDemod::Afsk(Box::new(demod))
         }
     }
 }
@@ -912,6 +941,7 @@ fn create_demod(ccfg: &ChannelConfig, sample_rate: u32) -> ChannelDemod {
 fn process_demod_sample(demod: &mut ChannelDemod, sample: i32) {
     match demod {
         ChannelDemod::Afsk(d) => d.process_sample(sample),
+        ChannelDemod::AfskMulti(d) => d.process_sample(sample),
         ChannelDemod::Psk(d) => d.process_sample(sample),
         ChannelDemod::Baseband9600(d) => d.process_sample(sample),
     }
@@ -920,6 +950,7 @@ fn process_demod_sample(demod: &mut ChannelDemod, sample: i32) {
 fn take_demod_frames(demod: &mut ChannelDemod) -> Vec<DecodedFrame> {
     match demod {
         ChannelDemod::Afsk(d) => d.take_frames(),
+        ChannelDemod::AfskMulti(d) => d.take_frames(),
         ChannelDemod::Psk(d) => d.take_frames(),
         ChannelDemod::Baseband9600(d) => d.take_frames(),
     }
@@ -933,6 +964,23 @@ fn take_demod_dcd_changes(
 ) -> Vec<crate::demod_afsk::DcdChange> {
     match demod {
         ChannelDemod::Afsk(d) => d.take_dcd_changes(),
+        ChannelDemod::AfskMulti(d) => {
+            // MultiAfskDemodulator reports any-demod-has-DCD as a coarse
+            // boolean, translated into an edge-triggered event for the
+            // channel. Finer per-slicer DCD is not exposed by the ensemble.
+            let cur = d.data_detect_any();
+            if cur != *prev_dcd {
+                *prev_dcd = cur;
+                vec![crate::demod_afsk::DcdChange {
+                    chan,
+                    subchan,
+                    slice: 0,
+                    data_detect: cur,
+                }]
+            } else {
+                Vec::new()
+            }
+        }
         ChannelDemod::Psk(d) => {
             let cur = d.data_detect();
             if cur != *prev_dcd {
@@ -1451,6 +1499,7 @@ fn parse_channel(c: &ConfigureChannel) -> ChannelConfig {
         decoder_offset: c.decoder_offset,
         fx25_encode: c.fx25_encode,
         il2p_encode: c.il2p_encode,
+        demod_ensemble: c.demod_ensemble.clone(),
     }
 }
 

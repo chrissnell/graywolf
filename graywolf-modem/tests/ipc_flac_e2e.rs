@@ -162,6 +162,7 @@ fn flac_end_to_end_yields_frames() {
             input_channel: 0,
             output_device_id: 0,
             output_channel: 0,
+            demod_ensemble: String::new(),
         })),
     };
     write_frame(&mut client, &cfg_chan).unwrap();

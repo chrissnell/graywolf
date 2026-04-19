@@ -149,6 +149,15 @@ message ConfigureChannel {
   uint32 input_channel = 16;    // input stereo select (replaces audio_channel)
   uint32 output_device_id = 17; // output audio device, 0 = RX-only
   uint32 output_channel = 18;   // output stereo select
+
+  // Multi-demodulator ensemble preset for AFSK. Overrides `profile` and
+  // `num_slicers` when non-empty. Known values:
+  //   ""        — single demodulator, respects `profile` and `num_slicers`
+  //   "dual"    — RECOMMENDED_2DEMOD: A9 + A9HL (Profile A with + without HL)
+  //   "triple"  — RECOMMENDED_3DEMOD: A9 + A9HL + B9
+  // When a preset is active, output frames are deduped across the ensemble
+  // using a 3-symbol time window (matching Direwolf's dedup semantics).
+  string demod_ensemble = 19;
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
