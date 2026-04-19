@@ -2,16 +2,60 @@
 // gatewaying between the RF side (decoded APRS packets coming out of
 // pkg/aprs as PacketOutput submissions) and the APRS-IS internet
 // backbone. It owns a single long-lived TCP session to an APRS-IS
-// server, handles login/keepalive/reconnect, applies the RF->IS gating
-// rules (third-party suppression, 30s duplicate window with a fixed
-// beacon exemption), and applies the IS->RF filter engine plus
-// txgovernor submission for traffic flowing in the reverse direction.
+// server, handles login/keepalive/reconnect, and gates traffic in both
+// directions.
+//
+// RF→IS suppresses only third-party packets, NOGATE/RFONLY paths, and
+// locally-originated messages echoed back to us by a digipeater —
+// aprsc's IGATE-HINTS explicitly says RX iGates must NOT dedup
+// client-side.
+//
+// IS→RF is a two-tier policy: directed messages follow the APRS iGate
+// spec (addressed to a station heard directly on RF within 30 min, not
+// a bulletin/NWS broadcast), while non-message traffic (positions,
+// weather, telemetry, …) is gated only when the source shares the
+// iGate's base callsign but is not the iGate itself — so an operator
+// can echo their internet-fed weather station onto local RF without
+// re-broadcasting strangers' traffic. Every IS→RF frame is wrapped in
+// APRS third-party format and passes the operator's filter engine
+// before reaching txgovernor.
 //
 // The package exposes two adapters: IgateOutput implements
-// aprs.PacketOutput for the RF->IS direction and IgateInput implements
-// aprs.PacketInput for IS->RF. A simulation mode (runtime-toggleable)
+// aprs.PacketOutput for the RF→IS direction and IgateInput implements
+// aprs.PacketInput for IS→RF. A simulation mode (runtime-toggleable)
 // logs what would be sent to APRS-IS without actually writing to the
 // socket, useful for shakedown tests on a production radio.
+//
+// IGATE-HINTS compliance audit
+// (https://github.com/hessu/aprsc/blob/main/doc/IGATE-HINTS.md)
+//
+//  1. Packets modified by iGates — client.go reads with bufio.ReadString('\n')
+//     and strips only "\r\n" via strings.TrimRight; whitespace, non-ASCII
+//     bytes, and NULs inside the info field are preserved byte-for-byte.
+//  2. C-string truncation — Go strings are byte-counted (not NUL-terminated);
+//     parseTNC2/encodeTNC2 pass the info field as []byte through ax25.Frame.Info,
+//     so embedded 0x00 / 0x1C survive intact.
+//  3. Character encoding — no UTF-8 decoding is applied to APRS-IS lines or
+//     info fields; TCP is binary by default in Go's net package.
+//  4. TX-capable iGate packet selection — shouldForwardISToRF enforces the
+//     APRS iGate spec for messages (directed, heard-direct addressee, not a
+//     broadcast) plus loop prevention on every IS→RF packet. Non-messages
+//     additionally require the source to share the iGate's base callsign
+//     but not be the iGate itself — an operator can echo their own
+//     SSIDs (e.g. an internet-fed weather station) but not strangers'
+//     non-message traffic. Strangers' messages addressed to heard-direct
+//     stations still forward normally — that is the iGate's core job.
+//     The user filter then applies as a narrower layer.
+//  5. Third-party wrap — every IS→RF frame passes through wrapThirdParty,
+//     producing APRS101 §20 format "}origSrc>origDest[,origPath…],TCPIP,IGATECALL*:info".
+//  6. Duplicate filtering — RF→IS does NOT dedup (by explicit design; APRS-IS
+//     servers dedup content-aware). NOGATE / RFONLY / TCPIP path markers are
+//     honored via pathBlocksGating.
+//  7. DNS caching — client.go builds a fresh net.Dialer on every reconnect;
+//     Go's resolver does not cache across calls, so each TCP connection
+//     re-resolves the hostname (required for rotate.aprs2.net load balancing).
+//  8. Multiple connections — supervise() drives a single *client with
+//     serialized reconnects; there is no parallel connection to APRS-IS.
 package igate
 
 import (
@@ -126,7 +170,7 @@ type Igate struct {
 	logger *slog.Logger
 
 	filter atomic.Pointer[filters.Engine]
-	dedup  *dedupCache
+	heard  *heardDirect
 
 	mu            sync.Mutex
 	connected     bool
@@ -192,7 +236,7 @@ func New(cfg Config) (*Igate, error) {
 	ig := &Igate{
 		cfg:     cfg,
 		logger:  logger,
-		dedup:   newDedupCache(),
+		heard:   newHeardDirect(),
 		inputCh: make(chan *aprs.InboundPacket, 64),
 		done:    make(chan struct{}),
 	}
@@ -259,6 +303,7 @@ func (ig *Igate) Start(ctx context.Context) error {
 	ig.cancel = cancel
 	ig.mu.Unlock()
 	ig.sessCtx.Store(&sessCtxHolder{ctx: sessCtx})
+	ig.heard.startSweeper(sessCtx, heardDirectTTL, heardSweepInterval)
 	go ig.supervise(sessCtx)
 	return nil
 }
@@ -349,9 +394,20 @@ func (ig *Igate) handleISLine(line string) {
 	// Direction to distinguish from RF arrivals.
 	pkt.Direction = aprs.DirectionIS
 	// Map display and packet-log capture happen for every received IS
-	// packet. The local filter engine below only gates RF transmission.
+	// packet — the hook must fire regardless of the spec/filter gates
+	// below, which only govern RF transmission.
 	if ig.cfg.IsRxHook != nil {
 		ig.cfg.IsRxHook(pkt, line)
+	}
+	// Policy gate: messages follow the APRS iGate spec (heard-direct
+	// addressee); non-messages require only loop prevention so the
+	// user filter below can decide which sources the operator wants
+	// echoed onto RF (e.g. their own internet-connected weather
+	// station). See shouldForwardISToRF for the full rules.
+	if !ig.shouldForwardISToRF(pkt) {
+		atomic.AddUint64(&ig.statFiltered, 1)
+		ig.mFilteredTotal.Inc()
+		return
 	}
 	if !ig.filter.Load().Allow(pkt) {
 		atomic.AddUint64(&ig.statFiltered, 1)
@@ -362,12 +418,21 @@ func (ig *Igate) handleISLine(line string) {
 		ig.logger.Debug("IS->RF drop: no governor configured")
 		return
 	}
+	// Wrap in APRS third-party format so other iGates and apps can see
+	// the packet originated on the internet side (prevents re-gating
+	// loops and stops receivers from treating the original sender as
+	// an RF-local station).
+	wrapped, err := wrapThirdParty(frame, ig.cfg.Callsign)
+	if err != nil {
+		ig.logger.Debug("IS->RF drop: third-party wrap failed", "err", err)
+		return
+	}
 	// sessCtx is initialized in New and replaced with the real session
 	// context in Start, so Load always returns a non-nil holder on the
 	// read-loop hot path.
 	parent := ig.sessCtx.Load().ctx
 	submitCtx, cancel := context.WithTimeout(parent, igateSubmitTimeout)
-	err = ig.cfg.Governor.Submit(submitCtx, ig.cfg.TxChannel, frame, txgovernor.SubmitSource{
+	err = ig.cfg.Governor.Submit(submitCtx, ig.cfg.TxChannel, wrapped, txgovernor.SubmitSource{
 		Kind:     "igate",
 		Detail:   "is2rf",
 		Priority: txgovernor.PriorityIGateMsg,
@@ -375,20 +440,117 @@ func (ig *Igate) handleISLine(line string) {
 	cancel()
 	if err != nil {
 		ig.mSubmitDropped.Inc()
-		ig.logSubmitDrop(frame, err)
+		ig.logSubmitDrop(wrapped, err)
 		return
 	}
 	atomic.AddUint64(&ig.statDownlinked, 1)
 	ig.mGatedTotal.WithLabelValues("is_to_rf").Inc()
 
 	// Also publish into the PacketInput fan-out for any listeners.
-	// Drops are counted but not logged: inputCh is a best-effort tap
-	// and a slow consumer should not back-pressure gating.
+	// Publish the wrapped frame (what was actually transmitted) —
+	// consumers of IgateInput expect the transmittable form. Drops
+	// are counted but not logged: inputCh is a best-effort tap and a
+	// slow consumer should not back-pressure gating.
 	select {
-	case ig.inputCh <- &aprs.InboundPacket{Raw: mustEncode(frame), Source: "aprs-is", Channel: int(ig.cfg.TxChannel)}:
+	case ig.inputCh <- &aprs.InboundPacket{Raw: mustEncode(wrapped), Source: "aprs-is", Channel: int(ig.cfg.TxChannel)}:
 	default:
 		ig.mFanoutDropped.Inc()
 	}
+}
+
+// shouldForwardISToRF decides whether an APRS-IS packet is eligible for
+// IS→RF transmission, per a two-tier policy:
+//
+//   - Directed messages follow the strict APRS iGate spec: addressed to
+//     a station heard directly on RF within heardDirectTTL, not a
+//     bulletin/NWS broadcast, and not already transited via us.
+//   - Non-message traffic (positions, weather, telemetry, status, …)
+//     must be sourced from one of the operator's own SSIDs (base-call
+//     match) but NOT from the iGate's own transmitting call itself.
+//     The intent: an operator can echo their internet-connected weather
+//     station or family tracker onto local RF, but cannot inadvertently
+//     re-broadcast strangers' packets or their own iGate beacons.
+//
+// Loop prevention applies to both branches: if our callsign already
+// appears in the path, the packet has transited us and must not be
+// re-transmitted. The user-configurable filter runs after this gate
+// as a narrower layer.
+func (ig *Igate) shouldForwardISToRF(pkt *aprs.DecodedAPRSPacket) bool {
+	if pkt == nil {
+		return false
+	}
+	if ig.pathContainsSelf(pkt.Path) {
+		return false
+	}
+	if pkt.Type != aprs.PacketMessage {
+		return ig.sourceIsOwnSSID(pkt.Source)
+	}
+	if pkt.Message == nil {
+		return false
+	}
+	if pkt.Message.IsBulletin || pkt.Message.IsNWS {
+		return false
+	}
+	addressee := strings.TrimSpace(pkt.Message.Addressee)
+	if addressee == "" {
+		return false
+	}
+	return ig.heard.HeardWithin(addressee, heardDirectTTL)
+}
+
+// sourceIsOwnSSID reports whether source shares the iGate's base call
+// but is not the iGate's exact transmitting callsign. Returns false
+// for an empty source or empty configured callsign. Comparison is
+// case-insensitive and whitespace-tolerant. The base-call-match / not-
+// exact-match pair is the non-message IS→RF ownership gate: it lets an
+// N0CALL-10 iGate forward N0CALL-7 (e.g. a family tracker or weather
+// rig uploading via internet) while rejecting N0CALL-10 itself (which
+// would be a self-echo) and rejecting anything not on our base call.
+func (ig *Igate) sourceIsOwnSSID(source string) bool {
+	source = strings.ToUpper(strings.TrimSpace(source))
+	if source == "" {
+		return false
+	}
+	me := strings.ToUpper(strings.TrimSpace(ig.cfg.Callsign))
+	if me == "" {
+		return false
+	}
+	if source == me {
+		return false
+	}
+	srcBase := source
+	if i := strings.IndexByte(srcBase, '-'); i > 0 {
+		srcBase = srcBase[:i]
+	}
+	myBase := me
+	if i := strings.IndexByte(myBase, '-'); i > 0 {
+		myBase = myBase[:i]
+	}
+	return srcBase == myBase
+}
+
+// pathContainsSelf reports whether our own callsign (base, case- and
+// SSID-insensitive) appears anywhere in the packet's RF path. Used for
+// IS→RF loop prevention: if we've already handled this packet, we
+// must not re-transmit it.
+func (ig *Igate) pathContainsSelf(path []string) bool {
+	me := strings.ToUpper(strings.TrimSpace(ig.cfg.Callsign))
+	if i := strings.IndexByte(me, '-'); i > 0 {
+		me = me[:i]
+	}
+	if me == "" {
+		return false
+	}
+	for _, p := range path {
+		hop := strings.ToUpper(strings.TrimSuffix(strings.TrimSpace(p), "*"))
+		if i := strings.IndexByte(hop, '-'); i > 0 {
+			hop = hop[:i]
+		}
+		if hop == me {
+			return true
+		}
+	}
+	return false
 }
 
 // logSubmitDrop emits a rate-limited debug line for an IS->RF submit
@@ -426,6 +588,15 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	if pkt == nil {
 		return
 	}
+	// Record every direct-RF arrival in the heard-direct tracker so
+	// the IS->RF gate knows which stations are in range for
+	// message-delivery. We do this BEFORE any drop checks because
+	// even packets we choose not to gate up still tell us who is
+	// audible on RF. "Direct" means no digipeater has repeated the
+	// frame yet (no '*' marker in the path).
+	if pkt.Source != "" && pathIsDirect(pkt.Path) {
+		ig.heard.Record(pkt.Source)
+	}
 	// Rule: never gate third-party traffic (already came from the net).
 	if pkt.ThirdParty != nil || pkt.Type == aprs.PacketThirdParty {
 		return
@@ -444,17 +615,11 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	if ig.shouldSuppressLocalMessage(pkt) {
 		return
 	}
-	// APRS-level dedup on (source + info bytes); the helper lives
-	// next to DecodedAPRSPacket so every caller uses the same key
-	// construction.
-	key := pkt.DedupKey()
-	if key == "" {
-		return
-	}
-	fixed := isFixedPositionBeacon(pkt)
-	if !ig.dedup.shouldGate(key, fixed) {
-		return
-	}
+	// NOTE: no client-side dedup. IGATE-HINTS §"iGates dropping
+	// duplicate packets unnecessarily" says RX iGates must not dedup:
+	// APRS-IS servers dedup content-aware and actually benefit from
+	// receiving duplicates (useful for infrastructure analysis).
+	//
 	// Connection check. If disconnected, drop and count.
 	ig.mu.Lock()
 	connected := ig.connected
@@ -500,19 +665,6 @@ func pathBlocksGating(path []string) bool {
 		}
 	}
 	return false
-}
-
-// isFixedPositionBeacon reports whether a packet is a plain stationary
-// position report (no course/speed, no message or telemetry), for the
-// dedup fixed-beacon exemption (>1min apart is not suppressed).
-func isFixedPositionBeacon(pkt *aprs.DecodedAPRSPacket) bool {
-	if pkt.Type != aprs.PacketPosition || pkt.Position == nil {
-		return false
-	}
-	if pkt.Position.HasCourse && pkt.Position.Speed > 0 {
-		return false
-	}
-	return true
 }
 
 // SendLine writes a pre-formatted TNC-2 line to APRS-IS. Used by the

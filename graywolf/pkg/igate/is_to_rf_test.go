@@ -37,9 +37,12 @@ func (s *stubGovernor) Submit(ctx context.Context, channel uint32, frame *ax25.F
 }
 
 // gateableLine is a TNC2-format APRS-IS line that will parse into a
-// position packet the filter engine accepts under the prefix rule
-// installed by newTestIgate.
-const gateableLine = "W5ABC-7>APRS,WIDE1-1:!3725.00N/12158.00W>hi"
+// directed-message packet addressed to N0CALL. Tests that use this
+// line call newTestIgate, which pre-seeds N0CALL in the heard-direct
+// tracker so the spec gate lets the message through. The existing
+// W5-prefix filter rule allows the source; together those match the
+// real two-stage gating path (spec first, user filter second).
+const gateableLine = "W5ABC-7>APRS,WIDE1-1::N0CALL   :hello{1"
 
 func newTestIgate(t *testing.T, gov txgovernor.TxSink) *Igate {
 	t.Helper()
@@ -54,6 +57,9 @@ func newTestIgate(t *testing.T, gov txgovernor.TxSink) *Igate {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The IS->RF spec gate requires the addressee to have been heard
+	// directly on RF. Seed N0CALL so gateableLine survives the gate.
+	ig.heard.Record("N0CALL")
 	return ig
 }
 
@@ -213,9 +219,9 @@ func TestHandleISLineFanoutDropCounted(t *testing.T) {
 	})
 
 	// inputCh has capacity 64 and no consumer. Send 65 gateable
-	// frames with distinct sources so dedup does not swallow them.
-	// The first 64 fit in the buffer; the 65th must be counted as
-	// a fan-out drop.
+	// message frames with distinct sources, all addressed to N0CALL
+	// (the heard-direct recipient newTestIgate seeds). The first 64
+	// fit in the buffer; the 65th must be counted as a fan-out drop.
 	for i := 0; i < 65; i++ {
 		line := makeGateableLine(byte('A' + i/26), byte('A'+i%26))
 		ig.handleISLine(line)
@@ -226,10 +232,12 @@ func TestHandleISLineFanoutDropCounted(t *testing.T) {
 	}
 }
 
-// makeGateableLine builds a TNC2 line whose source varies so dedup
-// does not merge successive calls in TestHandleISLineFanoutDropCounted.
+// makeGateableLine builds a TNC2 line whose source varies so each
+// call is distinct. All frames are directed-message packets addressed
+// to N0CALL (which newTestIgate pre-seeds as heard-direct) so they
+// survive the spec gate and reach the fan-out path.
 func makeGateableLine(a, b byte) string {
-	return "W5" + string([]byte{a, b}) + ">APRS,WIDE1-1:!3725.00N/12158.00W>hi"
+	return "W5" + string([]byte{a, b}) + ">APRS,WIDE1-1::N0CALL   :hello{1"
 }
 
 // TestIsRxHookCalledOnFilterAllow verifies that IsRxHook fires for
@@ -257,6 +265,11 @@ func TestIsRxHookCalledOnFilterAllow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Hooks fire before the IS->RF spec/filter gate, so we don't
+	// need to seed the heard-direct tracker for this test — but
+	// seed it anyway so the full pipeline runs and any regression
+	// in the hook-ordering invariant is obvious.
+	ig.heard.Record("N0CALL")
 
 	ig.handleISLine(gateableLine)
 

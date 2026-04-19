@@ -24,27 +24,6 @@ func TestPathBlocksGating(t *testing.T) {
 	}
 }
 
-func TestIsFixedPositionBeacon(t *testing.T) {
-	stationary := &aprs.DecodedAPRSPacket{
-		Type:     aprs.PacketPosition,
-		Position: &aprs.Position{HasCourse: false},
-	}
-	moving := &aprs.DecodedAPRSPacket{
-		Type:     aprs.PacketPosition,
-		Position: &aprs.Position{HasCourse: true, Speed: 35},
-	}
-	if !isFixedPositionBeacon(stationary) {
-		t.Error("stationary position must be a fixed beacon")
-	}
-	if isFixedPositionBeacon(moving) {
-		t.Error("moving position (course+speed) is not a fixed beacon")
-	}
-	msg := &aprs.DecodedAPRSPacket{Type: aprs.PacketMessage}
-	if isFixedPositionBeacon(msg) {
-		t.Error("message is not a fixed beacon")
-	}
-}
-
 func TestGateRFToISSkipsThirdParty(t *testing.T) {
 	ig, err := New(Config{Server: "127.0.0.1:1", Callsign: "N0CALL"})
 	if err != nil {
