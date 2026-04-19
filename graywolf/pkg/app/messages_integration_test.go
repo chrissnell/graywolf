@@ -23,6 +23,12 @@ import (
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
+// testWait is the deadline every poll/waitFor in this file uses. Generous
+// enough to survive `-race` overhead on contended CI runners (the 1s value
+// these tests started with flaked on GitHub Actions runners) while still
+// failing fast if a real bug stalls the pipeline.
+const testWait = 5 * time.Second
+
 // ---------------------------------------------------------------------------
 // Phase 8a — end-to-end integration tests for the APRS messages stack.
 //
@@ -471,7 +477,7 @@ func TestMessagesIntegration(t *testing.T) {
 		}
 
 		// Wait for the sender goroutine to submit exactly one frame.
-		tctx.sink.waitForSubmit(t, 1, time.Second)
+		tctx.sink.waitForSubmit(t, 1, testWait)
 		submits := tctx.sink.list()
 		if submits[0].Src.Kind != messages.SubmitKindMessages {
 			t.Errorf("submit Kind = %q, want %q", submits[0].Src.Kind, messages.SubmitKindMessages)
@@ -480,7 +486,7 @@ func TestMessagesIntegration(t *testing.T) {
 		// Fire the TxHook — this is what the real governor does after it
 		// hands the frame to the modem. SentAt should flip.
 		tctx.sink.fireTxHook(0)
-		row := tctx.waitForRow(t, resp.ID, time.Second, func(m *configstore.Message) bool {
+		row := tctx.waitForRow(t, resp.ID, testWait, func(m *configstore.Message) bool {
 			return m.SentAt != nil
 		})
 		if row.AckState != messages.AckStateNone {
@@ -489,7 +495,7 @@ func TestMessagesIntegration(t *testing.T) {
 
 		// Simulate the peer's ack arriving via the router.
 		tctx.msgSvc.Router().SendPacket(context.Background(), makeInboundAck(t, "W1ABC", "N0CALL", resp.MsgID))
-		row = tctx.waitForRow(t, resp.ID, time.Second, func(m *configstore.Message) bool {
+		row = tctx.waitForRow(t, resp.ID, testWait, func(m *configstore.Message) bool {
 			return m.AckState == messages.AckStateAcked
 		})
 		if row.AckedAt == nil {
@@ -504,7 +510,7 @@ func TestMessagesIntegration(t *testing.T) {
 		// First copy of the inbound DM — router persists + emits auto-ACK.
 		pkt1 := makeInboundMessage(t, "W1ABC", "N0CALL", "hi there", "042")
 		tctx.msgSvc.Router().SendPacket(context.Background(), pkt1)
-		tctx.sink.waitForSubmit(t, 1, time.Second)
+		tctx.sink.waitForSubmit(t, 1, testWait)
 		first := tctx.sink.list()[0]
 		if first.Src.Kind != messages.SubmitKindMessagesAutoAck {
 			t.Errorf("first submit Kind = %q, want %q", first.Src.Kind, messages.SubmitKindMessagesAutoAck)
@@ -518,7 +524,7 @@ func TestMessagesIntegration(t *testing.T) {
 		// "ack every copy" contract.
 		pkt2 := makeInboundMessage(t, "W1ABC", "N0CALL", "hi there", "042")
 		tctx.msgSvc.Router().SendPacket(context.Background(), pkt2)
-		tctx.sink.waitForSubmit(t, 2, time.Second)
+		tctx.sink.waitForSubmit(t, 2, testWait)
 		second := tctx.sink.list()[1]
 		if second.Src.Kind != messages.SubmitKindMessagesAutoAck {
 			t.Errorf("second submit Kind = %q, want %q", second.Src.Kind, messages.SubmitKindMessagesAutoAck)
@@ -558,7 +564,7 @@ func TestMessagesIntegration(t *testing.T) {
 		tctx.msgSvc.Router().SendPacket(context.Background(), pkt)
 
 		// Poll for row insertion.
-		deadline := time.Now().Add(time.Second)
+		deadline := time.Now().Add(testWait)
 		var tacRow *configstore.Message
 		for time.Now().Before(deadline) {
 			rows, _, err := tctx.msgStore.List(context.Background(), messages.Filter{
@@ -622,11 +628,11 @@ func TestMessagesIntegration(t *testing.T) {
 			t.Errorf("tactical MsgID = %q, want empty (no ack correlation)", row.MsgID)
 		}
 
-		tctx.sink.waitForSubmit(t, 1, time.Second)
+		tctx.sink.waitForSubmit(t, 1, testWait)
 		tctx.sink.fireTxHook(0)
 
 		// After TxHook: tactical → AckState=broadcast, SentAt set.
-		cur := tctx.waitForRow(t, row.ID, time.Second, func(m *configstore.Message) bool {
+		cur := tctx.waitForRow(t, row.ID, testWait, func(m *configstore.Message) bool {
 			return m.AckState == messages.AckStateBroadcast
 		})
 		if cur.SentAt == nil {
@@ -687,7 +693,7 @@ func TestMessagesIntegration(t *testing.T) {
 		tctx.msgSvc.Router().SendPacket(context.Background(), pkt)
 
 		// Poll for ReceivedByCall to flip.
-		cur := tctx.waitForRow(t, row.ID, time.Second, func(m *configstore.Message) bool {
+		cur := tctx.waitForRow(t, row.ID, testWait, func(m *configstore.Message) bool {
 			return m.ReceivedByCall != ""
 		})
 		if cur.ReceivedByCall != "W1ABC" {
@@ -748,12 +754,12 @@ func TestMessagesIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SendMessage: %v", err)
 		}
-		sink1.waitForSubmit(t, 1, time.Second)
+		sink1.waitForSubmit(t, 1, testWait)
 		sink1.fireTxHook(0)
 
 		// Wait for the RetryManager to schedule the first retry (async
 		// via the Service.SendMessage goroutine).
-		deadline := time.Now().Add(time.Second)
+		deadline := time.Now().Add(testWait)
 		var awaiting *configstore.Message
 		for time.Now().Before(deadline) {
 			cur, _ := msgStore1.GetByID(ctx, row.ID)
@@ -834,7 +840,7 @@ func TestMessagesIntegration(t *testing.T) {
 		// inline, so the change should be visible immediately — but the
 		// reload signal also fires through the drainer goroutine and
 		// re-reloads; either path is sufficient.
-		deadline := time.Now().Add(time.Second)
+		deadline := time.Now().Add(testWait)
 		for time.Now().Before(deadline) {
 			if messages.NormalizeFallbackPolicy(tctx.msgSvc.Preferences().Current().FallbackPolicy) == messages.FallbackPolicyISOnly {
 				return
@@ -869,7 +875,7 @@ func TestMessagesIntegration(t *testing.T) {
 		}
 
 		// Handler reloads inline, but wait to be sure.
-		deadline := time.Now().Add(time.Second)
+		deadline := time.Now().Add(testWait)
 		for time.Now().Before(deadline) {
 			if tctx.msgSvc.TacticalSet().Contains("NET") {
 				break
@@ -886,7 +892,7 @@ func TestMessagesIntegration(t *testing.T) {
 
 		// Poll for persistence.
 		var found bool
-		deadline = time.Now().Add(time.Second)
+		deadline = time.Now().Add(testWait)
 		for time.Now().Before(deadline) {
 			rows, _, _ := tctx.msgStore.List(context.Background(), messages.Filter{
 				ThreadKind: messages.ThreadKindTactical, ThreadKey: "NET",
@@ -912,7 +918,7 @@ func TestMessagesIntegration(t *testing.T) {
 			t.Fatalf("PUT tactical: status=%d body=%s", status, string(body))
 		}
 		// Wait for reload.
-		deadline = time.Now().Add(time.Second)
+		deadline = time.Now().Add(testWait)
 		for time.Now().Before(deadline) {
 			if !tctx.msgSvc.TacticalSet().Contains("NET") {
 				break
@@ -982,9 +988,9 @@ func TestMessagesIntegration(t *testing.T) {
 		}
 		var resp dto.MessageResponse
 		_ = json.Unmarshal(body, &resp)
-		tctx.sink.waitForSubmit(t, 1, time.Second)
+		tctx.sink.waitForSubmit(t, 1, testWait)
 		tctx.sink.fireTxHook(0)
-		tctx.waitForRow(t, resp.ID, time.Second, func(m *configstore.Message) bool {
+		tctx.waitForRow(t, resp.ID, testWait, func(m *configstore.Message) bool {
 			return m.SentAt != nil && m.AckState == messages.AckStateNone
 		})
 
@@ -1006,7 +1012,7 @@ func TestMessagesIntegration(t *testing.T) {
 		}
 
 		// Verify the row is soft-deleted.
-		tombstoned := tctx.waitForRow(t, resp.ID, time.Second, func(m *configstore.Message) bool {
+		tombstoned := tctx.waitForRow(t, resp.ID, testWait, func(m *configstore.Message) bool {
 			return m.DeletedAt.Valid
 		})
 		if tombstoned.AckState != messages.AckStateNone {
@@ -1018,7 +1024,7 @@ func TestMessagesIntegration(t *testing.T) {
 		tctx.msgSvc.Router().SendPacket(context.Background(), makeInboundAck(t, "W1ABC", "N0CALL", resp.MsgID))
 
 		// Poll for AckedAt to flip while DeletedAt stays valid.
-		deadline := time.Now().Add(time.Second)
+		deadline := time.Now().Add(testWait)
 		var got *configstore.Message
 		for time.Now().Before(deadline) {
 			rows, err := tctx.msgStore.FindOutstandingByMsgID(context.Background(), resp.MsgID, "W1ABC")
