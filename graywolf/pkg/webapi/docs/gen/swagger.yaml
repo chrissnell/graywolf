@@ -390,6 +390,39 @@ definitions:
         description: mph (1-minute sustained)
         type: number
     type: object
+  dto.AcceptInviteRequest:
+    properties:
+      callsign:
+        description: |-
+          Callsign is the tactical label to subscribe to. Required. Must
+          match the APRS tactical syntax (1-9 of [A-Z0-9-]) after uppercase
+          normalization.
+        type: string
+      source_message_id:
+        description: |-
+          SourceMessageID, when non-zero, identifies the inbound invite
+          message that triggered the accept. Used only for audit — the
+          handler sets InviteAcceptedAt on that row if it resolves to a
+          valid invite for the same tactical. Zero = accept without audit.
+        type: integer
+    required:
+      - callsign
+    type: object
+  dto.AcceptInviteResponse:
+    properties:
+      already_member:
+        description: |-
+          AlreadyMember is true when the operator was already subscribed
+          and enabled before this request. Lets the UI suppress the
+          "Joined TAC" toast and emit "Already a member" instead.
+        type: boolean
+      tactical:
+        allOf:
+          - $ref: '#/definitions/dto.TacticalCallsignResponse'
+        description: |-
+          Tactical is the post-accept state of the subscription. Always
+          populated with Enabled=true (accept is the "turn it on" verb).
+    type: object
   dto.AgwRequest:
     properties:
       callsigns:
@@ -1025,10 +1058,29 @@ definitions:
         type: string
       id:
         type: integer
+      invite_accepted_at:
+        description: |-
+          InviteAcceptedAt is audit-only: set when the local operator
+          accepted this invite. The UI must NOT use this to decide "joined"
+          state — that comes from the live TacticalSet cache. Kept so
+          operators can see when/if an invite was acted on.
+        type: string
+      invite_tactical:
+        description: |-
+          InviteTactical is the tactical callsign referenced by an invite.
+          Empty (and omitted) on non-invite rows.
+        type: string
       is_ack:
         type: boolean
       is_bulletin:
         type: boolean
+      kind:
+        description: |-
+          Kind is the body classification. Always populated — "text" for
+          normal messages, "invite" for tactical invitations. Never omitted
+          so clients can use a simple equality check without worrying about
+          a legacy empty string.
+        type: string
       msg_id:
         type: string
       next_retry_at:
@@ -1163,6 +1215,19 @@ definitions:
           unchanged in the response so the optimistic UI can reconcile its
           local row with the persisted ID.
         type: string
+      invite_tactical:
+        description: |-
+          InviteTactical is the tactical callsign referenced by an invite.
+          Must be set when Kind == "invite"; ignored otherwise.
+        type: string
+      kind:
+        description: |-
+          Kind classifies the outbound row. Empty or "text" is a normal
+          DM/tactical message; "invite" makes the sender build a
+          `!GW1 INVITE <InviteTactical>` body and stamp the row with
+          Kind=invite + InviteTactical. The sender (Phase 2) is
+          responsible for honoring this; the DTO just carries it.
+        type: string
       path:
         description: |-
           Path overrides the default RF path from preferences. Empty =
@@ -1174,7 +1239,10 @@ definitions:
           of the current fallback policy.
         type: boolean
       text:
-        description: Text is the message body (<= 67 APRS chars after validation).
+        description: |-
+          Text is the message body (<= 67 APRS chars after validation).
+          Ignored when Kind == "invite" — the server builds the wire body
+          from InviteTactical.
         type: string
       to:
         description: |-
@@ -4373,6 +4441,42 @@ paths:
       summary: System status dashboard
       tags:
         - status
+  /tacticals:
+    post:
+      consumes:
+        - application/json
+      operationId: acceptTacticalInvite
+      parameters:
+        - description: Tactical + optional source message id
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AcceptInviteRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AcceptInviteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Accept a tactical invite (subscribe)
+      tags:
+        - messages
   /tx-timing:
     get:
       operationId: listTxTiming

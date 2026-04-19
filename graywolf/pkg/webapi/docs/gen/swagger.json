@@ -3921,6 +3921,63 @@
                 }
             }
         },
+        "/tacticals": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Accept a tactical invite (subscribe)",
+                "operationId": "acceptTacticalInvite",
+                "parameters": [
+                    {
+                        "description": "Tactical + optional source message id",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AcceptInviteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AcceptInviteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/tx-timing": {
             "get": {
                 "security": [
@@ -4677,6 +4734,39 @@
                 "windSpeed": {
                     "description": "mph (1-minute sustained)",
                     "type": "number"
+                }
+            }
+        },
+        "dto.AcceptInviteRequest": {
+            "type": "object",
+            "required": [
+                "callsign"
+            ],
+            "properties": {
+                "callsign": {
+                    "description": "Callsign is the tactical label to subscribe to. Required. Must\nmatch the APRS tactical syntax (1-9 of [A-Z0-9-]) after uppercase\nnormalization.",
+                    "type": "string"
+                },
+                "source_message_id": {
+                    "description": "SourceMessageID, when non-zero, identifies the inbound invite\nmessage that triggered the accept. Used only for audit — the\nhandler sets InviteAcceptedAt on that row if it resolves to a\nvalid invite for the same tactical. Zero = accept without audit.",
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.AcceptInviteResponse": {
+            "type": "object",
+            "properties": {
+                "already_member": {
+                    "description": "AlreadyMember is true when the operator was already subscribed\nand enabled before this request. Lets the UI suppress the\n\"Joined TAC\" toast and emit \"Already a member\" instead.",
+                    "type": "boolean"
+                },
+                "tactical": {
+                    "description": "Tactical is the post-accept state of the subscription. Always\npopulated with Enabled=true (accept is the \"turn it on\" verb).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.TacticalCallsignResponse"
+                        }
+                    ]
                 }
             }
         },
@@ -5645,11 +5735,23 @@
                 "id": {
                     "type": "integer"
                 },
+                "invite_accepted_at": {
+                    "description": "InviteAcceptedAt is audit-only: set when the local operator\naccepted this invite. The UI must NOT use this to decide \"joined\"\nstate — that comes from the live TacticalSet cache. Kept so\noperators can see when/if an invite was acted on.",
+                    "type": "string"
+                },
+                "invite_tactical": {
+                    "description": "InviteTactical is the tactical callsign referenced by an invite.\nEmpty (and omitted) on non-invite rows.",
+                    "type": "string"
+                },
                 "is_ack": {
                     "type": "boolean"
                 },
                 "is_bulletin": {
                     "type": "boolean"
+                },
+                "kind": {
+                    "description": "Kind is the body classification. Always populated — \"text\" for\nnormal messages, \"invite\" for tactical invitations. Never omitted\nso clients can use a simple equality check without worrying about\na legacy empty string.",
+                    "type": "string"
                 },
                 "msg_id": {
                     "type": "string"
@@ -5832,6 +5934,14 @@
                     "description": "ClientID is an opaque client-side correlation token. Echoed back\nunchanged in the response so the optimistic UI can reconcile its\nlocal row with the persisted ID.",
                     "type": "string"
                 },
+                "invite_tactical": {
+                    "description": "InviteTactical is the tactical callsign referenced by an invite.\nMust be set when Kind == \"invite\"; ignored otherwise.",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "Kind classifies the outbound row. Empty or \"text\" is a normal\nDM/tactical message; \"invite\" makes the sender build a\n`!GW1 INVITE \u003cInviteTactical\u003e` body and stamp the row with\nKind=invite + InviteTactical. The sender (Phase 2) is\nresponsible for honoring this; the DTO just carries it.",
+                    "type": "string"
+                },
                 "path": {
                     "description": "Path overrides the default RF path from preferences. Empty =\nuse MessagePreferences.DefaultPath.",
                     "type": "string"
@@ -5841,7 +5951,7 @@
                     "type": "boolean"
                 },
                 "text": {
-                    "description": "Text is the message body (\u003c= 67 APRS chars after validation).",
+                    "description": "Text is the message body (\u003c= 67 APRS chars after validation).\nIgnored when Kind == \"invite\" — the server builds the wire body\nfrom InviteTactical.",
                     "type": "string"
                 },
                 "to": {
