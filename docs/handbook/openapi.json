@@ -67,6 +67,10 @@
             "description": "Current station position."
         },
         {
+            "name": "messages",
+            "description": "APRS text messaging: DMs, tactical threads, preferences, and SSE events."
+        },
+        {
             "name": "auth",
             "description": "Session login, logout, and first-user setup."
         },
@@ -2295,6 +2299,832 @@
                 }
             }
         },
+        "/messages": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "List messages",
+                "operationId": "listMessages",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Folder filter: inbox|sent|all",
+                        "name": "folder",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "PeerCall filter",
+                        "name": "peer",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "dm|tactical",
+                        "name": "thread_kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact thread key (peer callsign for DM, tactical label for tactical)",
+                        "name": "thread_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only messages at or after this RFC3339 timestamp",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor from a prior response; pages forward",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Restrict to unread rows",
+                        "name": "unread_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Cap result count (1..500)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessageListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Send message",
+                "operationId": "sendMessage",
+                "parameters": [
+                    {
+                        "description": "Compose payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/conversations": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "List conversations",
+                "operationId": "listConversations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Cap result count (1..500, default 200)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.ConversationSummary"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/events": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Stream message events",
+                "operationId": "streamMessageEvents",
+                "responses": {
+                    "200": {
+                        "description": "Server-Sent-Events stream of message changes",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/preferences": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Get message preferences",
+                "operationId": "getMessagePreferences",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessagePreferencesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Update message preferences",
+                "operationId": "putMessagePreferences",
+                "parameters": [
+                    {
+                        "description": "Preferences",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessagePreferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessagePreferencesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/tactical": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "List tactical callsigns",
+                "operationId": "listTacticalCallsigns",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.TacticalCallsignResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Create tactical callsign",
+                "operationId": "createTacticalCallsign",
+                "parameters": [
+                    {
+                        "description": "Tactical definition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.TacticalCallsignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TacticalCallsignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/tactical/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Update tactical callsign",
+                "operationId": "updateTacticalCallsign",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Tactical id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Tactical definition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.TacticalCallsignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TacticalCallsignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Delete tactical callsign",
+                "operationId": "deleteTacticalCallsign",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Tactical id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/tactical/{key}/participants": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Tactical thread participants",
+                "operationId": "getTacticalParticipants",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tactical key (callsign label)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lookback window (e.g. 7d, 72h); default 7d",
+                        "name": "within",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ParticipantsEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Get message",
+                "operationId": "getMessage",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Message id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Delete message",
+                "operationId": "deleteMessage",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Message id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/{id}/read": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Mark message read",
+                "operationId": "markMessageRead",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Message id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/{id}/resend": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Resend message",
+                "operationId": "resendMessage",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Message id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/{id}/unread": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Mark message unread",
+                "operationId": "markMessageUnread",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Message id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/packets": {
             "get": {
                 "security": [
@@ -2654,6 +3484,12 @@
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -3006,6 +3842,60 @@
                 }
             }
         },
+        "/stations/autocomplete": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Station autocomplete",
+                "operationId": "autocompleteStations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Prefix (case-insensitive). Empty returns bots + recent stations.",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Cap result count (1..100, default 25)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.StationAutocomplete"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/status": {
             "get": {
                 "security": [
@@ -3026,6 +3916,63 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/webapi.StatusDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/tacticals": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Accept a tactical invite (subscribe)",
+                "operationId": "acceptTacticalInvite",
+                "parameters": [
+                    {
+                        "description": "Tactical + optional source message id",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AcceptInviteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AcceptInviteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
                     }
                 }
@@ -3269,6 +4216,14 @@
                 "df": {
                     "$ref": "#/definitions/aprs.DirectionFinding"
                 },
+                "direction": {
+                    "description": "Direction identifies the ingress path: DirectionRF for packets heard\nover RF via the modem bridge / KISS / AGW, DirectionIS for packets\nreceived from APRS-IS by the iGate. Unset (DirectionUnknown) when\nthe packet is synthesized (e.g. inner third-party decode, tests) or\nconstructed before ingress provenance is known.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/aprs.Direction"
+                        }
+                    ]
+                },
                 "item": {
                     "$ref": "#/definitions/aprs.Item"
                 },
@@ -3352,6 +4307,19 @@
                     "type": "string"
                 }
             }
+        },
+        "aprs.Direction": {
+            "type": "string",
+            "enum": [
+                "",
+                "rf",
+                "is"
+            ],
+            "x-enum-varnames": [
+                "DirectionUnknown",
+                "DirectionRF",
+                "DirectionIS"
+            ]
         },
         "aprs.DirectionFinding": {
             "type": "object",
@@ -3766,6 +4734,39 @@
                 "windSpeed": {
                     "description": "mph (1-minute sustained)",
                     "type": "number"
+                }
+            }
+        },
+        "dto.AcceptInviteRequest": {
+            "type": "object",
+            "required": [
+                "callsign"
+            ],
+            "properties": {
+                "callsign": {
+                    "description": "Callsign is the tactical label to subscribe to. Required. Must\nmatch the APRS tactical syntax (1-9 of [A-Z0-9-]) after uppercase\nnormalization.",
+                    "type": "string"
+                },
+                "source_message_id": {
+                    "description": "SourceMessageID, when non-zero, identifies the inbound invite\nmessage that triggered the accept. Used only for audit — the\nhandler sets InviteAcceptedAt on that row if it resolves to a\nvalid invite for the same tactical. Zero = accept without audit.",
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.AcceptInviteResponse": {
+            "type": "object",
+            "properties": {
+                "already_member": {
+                    "description": "AlreadyMember is true when the operator was already subscribed\nand enabled before this request. Lets the UI suppress the\n\"Joined TAC\" toast and emit \"Already a member\" instead.",
+                    "type": "boolean"
+                },
+                "tactical": {
+                    "description": "Tactical is the post-accept state of the subscription. Always\npopulated with Enabled=true (accept is the \"turn it on\" verb).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.TacticalCallsignResponse"
+                        }
+                    ]
                 }
             }
         },
@@ -4265,6 +5266,41 @@
                 }
             }
         },
+        "dto.ConversationSummary": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "archived": {
+                    "type": "boolean"
+                },
+                "last_at": {
+                    "type": "string"
+                },
+                "last_sender_call": {
+                    "type": "string"
+                },
+                "last_snippet": {
+                    "type": "string"
+                },
+                "participant_count": {
+                    "type": "integer"
+                },
+                "thread_key": {
+                    "type": "string"
+                },
+                "thread_kind": {
+                    "type": "string"
+                },
+                "total_count": {
+                    "type": "integer"
+                },
+                "unread_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.DigipeaterConfigRequest": {
             "type": "object",
             "properties": {
@@ -4609,6 +5645,194 @@
                 }
             }
         },
+        "dto.MessageChange": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "message": {
+                    "$ref": "#/definitions/dto.MessageResponse"
+                }
+            }
+        },
+        "dto.MessageListResponse": {
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.MessageChange"
+                    }
+                },
+                "cursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.MessagePreferencesRequest": {
+            "type": "object",
+            "properties": {
+                "default_path": {
+                    "type": "string"
+                },
+                "fallback_policy": {
+                    "type": "string"
+                },
+                "retention_days": {
+                    "type": "integer"
+                },
+                "retry_max_attempts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.MessagePreferencesResponse": {
+            "type": "object",
+            "properties": {
+                "default_path": {
+                    "type": "string"
+                },
+                "fallback_policy": {
+                    "type": "string"
+                },
+                "retention_days": {
+                    "type": "integer"
+                },
+                "retry_max_attempts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "acked_at": {
+                    "type": "string"
+                },
+                "attempts": {
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "direction": {
+                    "description": "\"in\" | \"out\"",
+                    "type": "string"
+                },
+                "failure_reason": {
+                    "type": "string"
+                },
+                "from_call": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "invite_accepted_at": {
+                    "description": "InviteAcceptedAt is audit-only: set when the local operator\naccepted this invite. The UI must NOT use this to decide \"joined\"\nstate — that comes from the live TacticalSet cache. Kept so\noperators can see when/if an invite was acted on.",
+                    "type": "string"
+                },
+                "invite_tactical": {
+                    "description": "InviteTactical is the tactical callsign referenced by an invite.\nEmpty (and omitted) on non-invite rows.",
+                    "type": "string"
+                },
+                "is_ack": {
+                    "type": "boolean"
+                },
+                "is_bulletin": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "description": "Kind is the body classification. Always populated — \"text\" for\nnormal messages, \"invite\" for tactical invitations. Never omitted\nso clients can use a simple equality check without worrying about\na legacy empty string.",
+                    "type": "string"
+                },
+                "msg_id": {
+                    "type": "string"
+                },
+                "next_retry_at": {
+                    "type": "string"
+                },
+                "our_call": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "peer_call": {
+                    "type": "string"
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "received_by_call": {
+                    "type": "string"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "\"rf\" | \"is\"",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "derived — see DeriveMessageStatus",
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "thread_key": {
+                    "type": "string"
+                },
+                "thread_kind": {
+                    "type": "string"
+                },
+                "to_call": {
+                    "type": "string"
+                },
+                "unread": {
+                    "type": "boolean"
+                },
+                "via": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ParticipantResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "last_active": {
+                    "type": "string"
+                },
+                "message_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.ParticipantsEnvelope": {
+            "type": "object",
+            "properties": {
+                "effective_within_days": {
+                    "type": "integer"
+                },
+                "participants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ParticipantResponse"
+                    }
+                }
+            }
+        },
         "dto.PositionLogRequest": {
             "type": "object",
             "properties": {
@@ -4699,6 +5923,43 @@
                 }
             }
         },
+        "dto.SendMessageRequest": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "description": "Channel overrides the configured TX channel. Nil = use default.",
+                    "type": "integer"
+                },
+                "client_id": {
+                    "description": "ClientID is an opaque client-side correlation token. Echoed back\nunchanged in the response so the optimistic UI can reconcile its\nlocal row with the persisted ID.",
+                    "type": "string"
+                },
+                "invite_tactical": {
+                    "description": "InviteTactical is the tactical callsign referenced by an invite.\nMust be set when Kind == \"invite\"; ignored otherwise.",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "Kind classifies the outbound row. Empty or \"text\" is a normal\nDM/tactical message; \"invite\" makes the sender build a\n`!GW1 INVITE \u003cInviteTactical\u003e` body and stamp the row with\nKind=invite + InviteTactical. The sender (Phase 2) is\nresponsible for honoring this; the DTO just carries it.",
+                    "type": "string"
+                },
+                "path": {
+                    "description": "Path overrides the default RF path from preferences. Empty =\nuse MessagePreferences.DefaultPath.",
+                    "type": "string"
+                },
+                "prefer_is": {
+                    "description": "PreferIS, when true, routes the outbound via APRS-IS regardless\nof the current fallback policy.",
+                    "type": "boolean"
+                },
+                "text": {
+                    "description": "Text is the message body (\u003c= 67 APRS chars after validation).\nIgnored when Kind == \"invite\" — the server builds the wire body\nfrom InviteTactical.",
+                    "type": "string"
+                },
+                "to": {
+                    "description": "To is the addressee: a station callsign for a DM or a tactical\nlabel for a group broadcast. Uppercase-normalized server-side.",
+                    "type": "string"
+                }
+            }
+        },
         "dto.SmartBeaconConfigRequest": {
             "type": "object",
             "properties": {
@@ -4770,6 +6031,62 @@
                 "turn_slope": {
                     "description": "TurnSlope is the speed-dependent component (degrees·knots) of\nthe corner-pegging turn threshold.",
                     "type": "integer"
+                }
+            }
+        },
+        "dto.StationAutocomplete": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "last_heard": {
+                    "description": "RFC3339, empty for bots / missing",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "\"bot\" | \"cache\" | \"history\" | \"cache+history\"",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TacticalCallsignRequest": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "callsign": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.TacticalCallsignResponse": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "callsign": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

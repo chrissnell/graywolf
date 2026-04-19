@@ -21,6 +21,15 @@ definitions:
         type: string
       df:
         $ref: '#/definitions/aprs.DirectionFinding'
+      direction:
+        allOf:
+          - $ref: '#/definitions/aprs.Direction'
+        description: |-
+          Direction identifies the ingress path: DirectionRF for packets heard
+          over RF via the modem bridge / KISS / AGW, DirectionIS for packets
+          received from APRS-IS by the iGate. Unset (DirectionUnknown) when
+          the packet is synthesized (e.g. inner third-party decode, tests) or
+          constructed before ingress provenance is known.
       item:
         $ref: '#/definitions/aprs.Item'
       message:
@@ -75,6 +84,16 @@ definitions:
       vendor:
         type: string
     type: object
+  aprs.Direction:
+    enum:
+      - ""
+      - rf
+      - is
+    type: string
+    x-enum-varnames:
+      - DirectionUnknown
+      - DirectionRF
+      - DirectionIS
   aprs.DirectionFinding:
     properties:
       bearing:
@@ -370,6 +389,39 @@ definitions:
       windSpeed:
         description: mph (1-minute sustained)
         type: number
+    type: object
+  dto.AcceptInviteRequest:
+    properties:
+      callsign:
+        description: |-
+          Callsign is the tactical label to subscribe to. Required. Must
+          match the APRS tactical syntax (1-9 of [A-Z0-9-]) after uppercase
+          normalization.
+        type: string
+      source_message_id:
+        description: |-
+          SourceMessageID, when non-zero, identifies the inbound invite
+          message that triggered the accept. Used only for audit — the
+          handler sets InviteAcceptedAt on that row if it resolves to a
+          valid invite for the same tactical. Zero = accept without audit.
+        type: integer
+    required:
+      - callsign
+    type: object
+  dto.AcceptInviteResponse:
+    properties:
+      already_member:
+        description: |-
+          AlreadyMember is true when the operator was already subscribed
+          and enabled before this request. Lets the UI suppress the
+          "Joined TAC" toast and emit "Already a member" instead.
+        type: boolean
+      tactical:
+        allOf:
+          - $ref: '#/definitions/dto.TacticalCallsignResponse'
+        description: |-
+          Tactical is the post-accept state of the subscription. Always
+          populated with Enabled=true (accept is the "turn it on" verb).
     type: object
   dto.AgwRequest:
     properties:
@@ -698,6 +750,29 @@ definitions:
       space_freq:
         type: integer
     type: object
+  dto.ConversationSummary:
+    properties:
+      alias:
+        type: string
+      archived:
+        type: boolean
+      last_at:
+        type: string
+      last_sender_call:
+        type: string
+      last_snippet:
+        type: string
+      participant_count:
+        type: integer
+      thread_key:
+        type: string
+      thread_kind:
+        type: string
+      total_count:
+        type: integer
+      unread_count:
+        type: integer
+    type: object
   dto.DigipeaterConfigRequest:
     properties:
       dedupe_window_seconds:
@@ -924,6 +999,141 @@ definitions:
       type:
         type: string
     type: object
+  dto.MessageChange:
+    properties:
+      id:
+        type: integer
+      kind:
+        type: string
+      message:
+        $ref: '#/definitions/dto.MessageResponse'
+    type: object
+  dto.MessageListResponse:
+    properties:
+      changes:
+        items:
+          $ref: '#/definitions/dto.MessageChange'
+        type: array
+      cursor:
+        type: string
+    type: object
+  dto.MessagePreferencesRequest:
+    properties:
+      default_path:
+        type: string
+      fallback_policy:
+        type: string
+      retention_days:
+        type: integer
+      retry_max_attempts:
+        type: integer
+    type: object
+  dto.MessagePreferencesResponse:
+    properties:
+      default_path:
+        type: string
+      fallback_policy:
+        type: string
+      retention_days:
+        type: integer
+      retry_max_attempts:
+        type: integer
+    type: object
+  dto.MessageResponse:
+    properties:
+      acked_at:
+        type: string
+      attempts:
+        type: integer
+      channel:
+        type: integer
+      created_at:
+        type: string
+      direction:
+        description: '"in" | "out"'
+        type: string
+      failure_reason:
+        type: string
+      from_call:
+        type: string
+      id:
+        type: integer
+      invite_accepted_at:
+        description: |-
+          InviteAcceptedAt is audit-only: set when the local operator
+          accepted this invite. The UI must NOT use this to decide "joined"
+          state — that comes from the live TacticalSet cache. Kept so
+          operators can see when/if an invite was acted on.
+        type: string
+      invite_tactical:
+        description: |-
+          InviteTactical is the tactical callsign referenced by an invite.
+          Empty (and omitted) on non-invite rows.
+        type: string
+      is_ack:
+        type: boolean
+      is_bulletin:
+        type: boolean
+      kind:
+        description: |-
+          Kind is the body classification. Always populated — "text" for
+          normal messages, "invite" for tactical invitations. Never omitted
+          so clients can use a simple equality check without worrying about
+          a legacy empty string.
+        type: string
+      msg_id:
+        type: string
+      next_retry_at:
+        type: string
+      our_call:
+        type: string
+      path:
+        type: string
+      peer_call:
+        type: string
+      received_at:
+        type: string
+      received_by_call:
+        type: string
+      sent_at:
+        type: string
+      source:
+        description: '"rf" | "is"'
+        type: string
+      status:
+        description: derived — see DeriveMessageStatus
+        type: string
+      text:
+        type: string
+      thread_key:
+        type: string
+      thread_kind:
+        type: string
+      to_call:
+        type: string
+      unread:
+        type: boolean
+      via:
+        type: string
+    type: object
+  dto.ParticipantResponse:
+    properties:
+      callsign:
+        type: string
+      last_active:
+        type: string
+      message_count:
+        type: integer
+    type: object
+  dto.ParticipantsEnvelope:
+    properties:
+      effective_within_days:
+        type: integer
+      participants:
+        items:
+          $ref: '#/definitions/dto.ParticipantResponse'
+        type: array
+    type: object
   dto.PositionLogRequest:
     properties:
       enabled:
@@ -993,6 +1203,52 @@ definitions:
         type: integer
       slot_time_ms:
         type: integer
+    type: object
+  dto.SendMessageRequest:
+    properties:
+      channel:
+        description: Channel overrides the configured TX channel. Nil = use default.
+        type: integer
+      client_id:
+        description: |-
+          ClientID is an opaque client-side correlation token. Echoed back
+          unchanged in the response so the optimistic UI can reconcile its
+          local row with the persisted ID.
+        type: string
+      invite_tactical:
+        description: |-
+          InviteTactical is the tactical callsign referenced by an invite.
+          Must be set when Kind == "invite"; ignored otherwise.
+        type: string
+      kind:
+        description: |-
+          Kind classifies the outbound row. Empty or "text" is a normal
+          DM/tactical message; "invite" makes the sender build a
+          `!GW1 INVITE <InviteTactical>` body and stamp the row with
+          Kind=invite + InviteTactical. The sender (Phase 2) is
+          responsible for honoring this; the DTO just carries it.
+        type: string
+      path:
+        description: |-
+          Path overrides the default RF path from preferences. Empty =
+          use MessagePreferences.DefaultPath.
+        type: string
+      prefer_is:
+        description: |-
+          PreferIS, when true, routes the outbound via APRS-IS regardless
+          of the current fallback policy.
+        type: boolean
+      text:
+        description: |-
+          Text is the message body (<= 67 APRS chars after validation).
+          Ignored when Kind == "invite" — the server builds the wire body
+          from InviteTactical.
+        type: string
+      to:
+        description: |-
+          To is the addressee: a station callsign for a DM or a tactical
+          label for a group broadcast. Uppercase-normalized server-side.
+        type: string
     type: object
   dto.SmartBeaconConfigRequest:
     properties:
@@ -1084,6 +1340,43 @@ definitions:
           TurnSlope is the speed-dependent component (degrees·knots) of
           the corner-pegging turn threshold.
         type: integer
+    type: object
+  dto.StationAutocomplete:
+    properties:
+      callsign:
+        type: string
+      description:
+        type: string
+      last_heard:
+        description: RFC3339, empty for bots / missing
+        type: string
+      source:
+        description: '"bot" | "cache" | "history" | "cache+history"'
+        type: string
+    type: object
+  dto.TacticalCallsignRequest:
+    properties:
+      alias:
+        type: string
+      callsign:
+        type: string
+      enabled:
+        type: boolean
+    type: object
+  dto.TacticalCallsignResponse:
+    properties:
+      alias:
+        type: string
+      callsign:
+        type: string
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      updated_at:
+        type: string
     type: object
   dto.TestRigctldRequest:
     properties:
@@ -1704,6 +1997,8 @@ tags:
     description: Station registry derived from received packets.
   - name: position
     description: Current station position.
+  - name: messages
+    description: 'APRS text messaging: DMs, tactical threads, preferences, and SSE events.'
   - name: auth
     description: Session login, logout, and first-user setup.
   - name: version
@@ -3115,6 +3410,530 @@ paths:
       summary: Update KISS interface
       tags:
         - kiss
+  /messages:
+    get:
+      operationId: listMessages
+      parameters:
+        - description: 'Folder filter: inbox|sent|all'
+          in: query
+          name: folder
+          type: string
+        - description: PeerCall filter
+          in: query
+          name: peer
+          type: string
+        - description: dm|tactical
+          in: query
+          name: thread_kind
+          type: string
+        - description: Exact thread key (peer callsign for DM, tactical label for tactical)
+          in: query
+          name: thread_key
+          type: string
+        - description: Only messages at or after this RFC3339 timestamp
+          in: query
+          name: since
+          type: string
+        - description: Opaque cursor from a prior response; pages forward
+          in: query
+          name: cursor
+          type: string
+        - description: Restrict to unread rows
+          in: query
+          name: unread_only
+          type: boolean
+        - description: Cap result count (1..500)
+          in: query
+          name: limit
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessageListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List messages
+      tags:
+        - messages
+    post:
+      consumes:
+        - application/json
+      operationId: sendMessage
+      parameters:
+        - description: Compose payload
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.SendMessageRequest'
+      produces:
+        - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Send message
+      tags:
+        - messages
+  /messages/{id}:
+    delete:
+      operationId: deleteMessage
+      parameters:
+        - description: Message id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete message
+      tags:
+        - messages
+    get:
+      operationId: getMessage
+      parameters:
+        - description: Message id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get message
+      tags:
+        - messages
+  /messages/{id}/read:
+    post:
+      operationId: markMessageRead
+      parameters:
+        - description: Message id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Mark message read
+      tags:
+        - messages
+  /messages/{id}/resend:
+    post:
+      operationId: resendMessage
+      parameters:
+        - description: Message id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Resend message
+      tags:
+        - messages
+  /messages/{id}/unread:
+    post:
+      operationId: markMessageUnread
+      parameters:
+        - description: Message id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Mark message unread
+      tags:
+        - messages
+  /messages/conversations:
+    get:
+      operationId: listConversations
+      parameters:
+        - description: Cap result count (1..500, default 200)
+          in: query
+          name: limit
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.ConversationSummary'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List conversations
+      tags:
+        - messages
+  /messages/events:
+    get:
+      operationId: streamMessageEvents
+      produces:
+        - text/event-stream
+      responses:
+        "200":
+          description: Server-Sent-Events stream of message changes
+          schema:
+            type: string
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Stream message events
+      tags:
+        - messages
+  /messages/preferences:
+    get:
+      operationId: getMessagePreferences
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessagePreferencesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get message preferences
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: putMessagePreferences
+      parameters:
+        - description: Preferences
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.MessagePreferencesRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessagePreferencesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update message preferences
+      tags:
+        - messages
+  /messages/tactical:
+    get:
+      operationId: listTacticalCallsigns
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.TacticalCallsignResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List tactical callsigns
+      tags:
+        - messages
+    post:
+      consumes:
+        - application/json
+      operationId: createTacticalCallsign
+      parameters:
+        - description: Tactical definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TacticalCallsignRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.TacticalCallsignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create tactical callsign
+      tags:
+        - messages
+  /messages/tactical/{id}:
+    delete:
+      operationId: deleteTacticalCallsign
+      parameters:
+        - description: Tactical id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete tactical callsign
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: updateTacticalCallsign
+      parameters:
+        - description: Tactical id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Tactical definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TacticalCallsignRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TacticalCallsignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update tactical callsign
+      tags:
+        - messages
+  /messages/tactical/{key}/participants:
+    get:
+      operationId: getTacticalParticipants
+      parameters:
+        - description: Tactical key (callsign label)
+          in: path
+          name: key
+          required: true
+          type: string
+        - description: Lookback window (e.g. 7d, 72h); default 7d
+          in: query
+          name: within
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ParticipantsEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Tactical thread participants
+      tags:
+        - messages
   /packets:
     get:
       operationId: listPackets
@@ -3425,6 +4244,10 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -3569,6 +4392,40 @@ paths:
       summary: List stations
       tags:
         - stations
+  /stations/autocomplete:
+    get:
+      operationId: autocompleteStations
+      parameters:
+        - description: Prefix (case-insensitive). Empty returns bots + recent stations.
+          in: query
+          name: q
+          type: string
+        - description: Cap result count (1..100, default 25)
+          in: query
+          name: limit
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.StationAutocomplete'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Station autocomplete
+      tags:
+        - messages
   /status:
     get:
       operationId: getStatus
@@ -3584,6 +4441,42 @@ paths:
       summary: System status dashboard
       tags:
         - status
+  /tacticals:
+    post:
+      consumes:
+        - application/json
+      operationId: acceptTacticalInvite
+      parameters:
+        - description: Tactical + optional source message id
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AcceptInviteRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AcceptInviteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Accept a tactical invite (subscribe)
+      tags:
+        - messages
   /tx-timing:
     get:
       operationId: listTxTiming
