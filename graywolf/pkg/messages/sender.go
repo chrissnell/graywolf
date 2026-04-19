@@ -218,9 +218,19 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 	// the entry on fire; we remove it ourselves on submit failure.
 	s.recordPending(frame, row)
 
+	// SkipDedup=true: APRS101 §14.3 specifies retransmission of the
+	// same frame (same source/dest/info + msgid) until an ack arrives.
+	// The governor's 30s dedup window would silently swallow the first
+	// retry — identical bytes, tight window. That broke retry semantics
+	// in practice: operators saw a 60s gap to the *second* retry
+	// instead of 30s to the first, because attempt 1 was eaten on the
+	// wire. Opting out of dedup is correct for message TX; we keep the
+	// governor's other admission controls (rate limits, DCD-aware
+	// CSMA, queue capacity) active.
 	submitErr := s.cfg.TxSink.Submit(ctx, s.cfg.TxChannel, frame, txgovernor.SubmitSource{
-		Kind:     SubmitKindMessages,
-		Priority: txgovernor.PriorityIGateMsg,
+		Kind:      SubmitKindMessages,
+		Priority:  txgovernor.PriorityIGateMsg,
+		SkipDedup: true,
 	})
 	if submitErr == nil {
 		// Governor accepted. SentAt flips later when the TxHook fires

@@ -233,6 +233,14 @@ func TestSender_RF_HappyPath_SentAtOnlyFlipsOnHookFire(t *testing.T) {
 	if got := rig.sink.list(); len(got) != 1 {
 		t.Fatalf("submitted frames = %d, want 1", len(got))
 	}
+	// SkipDedup must be set so APRS-101 retransmission (identical
+	// frames under the 30s dedup window) actually reaches the wire.
+	if !rig.sink.list()[0].Src.SkipDedup {
+		t.Error("SubmitSource.SkipDedup = false, want true for messages TX")
+	}
+	if rig.sink.list()[0].Src.Kind != SubmitKindMessages {
+		t.Errorf("SubmitSource.Kind = %q, want %q", rig.sink.list()[0].Src.Kind, SubmitKindMessages)
+	}
 	// SentAt MUST still be nil — TxHook hasn't fired yet.
 	reloaded, _ := rig.store.GetByID(context.Background(), row.ID)
 	if reloaded.SentAt != nil {
