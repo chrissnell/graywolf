@@ -119,10 +119,14 @@
   .row {
     position: relative;
     display: grid;
-    grid-template-columns: 4px 24px 1fr;
+    grid-template-columns: 24px 1fr;
     gap: 10px;
     align-items: center;
-    padding: 10px 12px 10px 0;
+    /* padding-left clears the 4px accent stripe + a 10px gutter so
+       content alignment doesn't shift when the stripe appears or
+       disappears. The row background fills the full row box
+       including the stripe area — the stripe paints on top. */
+    padding: 10px 12px 10px 14px;
     cursor: pointer;
     border-bottom: 1px solid var(--color-border-subtle);
     outline: none;
@@ -155,10 +159,16 @@
     box-shadow: inset 0 0 0 2px var(--color-primary);
   }
 
+  /* The accent stripe sits absolutely inside the row so it can span
+     the row's full height (not just the text area) without disturbing
+     flex/grid alignment. Transparent until the row is unread or
+     active. */
   .accent {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
     width: 4px;
-    height: 36px;
-    border-radius: 0 2px 2px 0;
     background: transparent;
   }
   .row.unread .accent {
