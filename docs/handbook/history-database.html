@@ -66,9 +66,10 @@
     <h2>Enabling the Position Log</h2>
 
     <p>
-      Open <strong>Settings &rarr; Position Log</strong> in the web UI,
-      toggle <em>Enable persistent position log</em>, and optionally change
-      the database path. Click <strong>Save</strong>. The change takes effect
+      Open <strong>Settings &rarr; Position Log</strong> in the web UI and
+      toggle <em>Enable persistent position log</em>. The database path is
+      shown read-only; it is set by the service manager via the
+      <code>-history-db</code> flag (see below). The change takes effect
       immediately &mdash; no restart required.
     </p>
 
@@ -104,38 +105,26 @@
 
     <p>
       The simplest solution is to store the history database on a
-      <strong>tmpfs</strong> (RAM&nbsp;disk). Raspberry Pi&nbsp;OS mounts
-      <code>/tmp</code> as tmpfs by default. You can verify this:
+      <strong>tmpfs</strong> (RAM&nbsp;disk). On systemd-based systems
+      (including Raspberry Pi&nbsp;OS) <code>/run</code> is always a tmpfs,
+      and systemd can manage a per-service subdirectory for you with
+      correct ownership and lifecycle. Point graywolf at
+      <code>/run/graywolf/history.db</code>.
     </p>
-
-    <pre><code>df -h /tmp
-# Look for "tmpfs" in the Filesystem column
-
-# Or:
-mount | grep /tmp</code></pre>
 
     <p>
-      If <code>/tmp</code> is not a tmpfs, you can add one to
-      <code>/etc/fstab</code>:
+      Note that the packaged systemd unit has <code>PrivateTmp=yes</code>,
+      which gives the service a namespaced <code>/tmp</code> that is
+      <em>wiped on every service restart</em>. For that reason
+      <code>/tmp</code> is <strong>not</strong> a good choice for the
+      history database &mdash; use <code>/run/graywolf/</code> instead.
     </p>
-
-    <pre><code>tmpfs /tmp tmpfs defaults,noatime,size=64M 0 0</code></pre>
-
-    <p>Then reboot or run <code>sudo mount -a</code>.</p>
 
     <h3>Configure the database path</h3>
 
     <p>
-      In the web UI under <strong>Settings &rarr; Position Log</strong>,
-      set the database path to:
-    </p>
-
-    <pre><code>/tmp/graywolf-history.db</code></pre>
-
-    <p>
-      Alternatively, if graywolf runs as a systemd service, you can set the
-      path via a unit override so it takes effect before the web UI is
-      available:
+      The path is passed to graywolf via the <code>-history-db</code>
+      command-line flag. When running under systemd, add a drop-in:
     </p>
 
     <pre><code>sudo systemctl edit graywolf</code></pre>
@@ -143,9 +132,27 @@ mount | grep /tmp</code></pre>
     <p>This opens an override file. Add:</p>
 
     <pre><code>[Service]
-Environment="GRAYWOLF_HISTORY_DB=/tmp/graywolf-history.db"</code></pre>
+ExecStart=
+ExecStart=/usr/bin/graywolf -config /var/lib/graywolf/graywolf.db -history-db /run/graywolf/history.db -modem /usr/bin/graywolf-modem -http 0.0.0.0:8080
+RuntimeDirectory=graywolf
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes</code></pre>
 
-    <p>Then restart: <code>sudo systemctl restart graywolf</code>.</p>
+    <p>
+      <code>RuntimeDirectory=graywolf</code> creates
+      <code>/run/graywolf/</code> owned by the <code>graywolf</code> user.
+      <code>RuntimeDirectoryPreserve=yes</code> keeps its contents across
+      <code>systemctl restart</code> so the database survives service
+      restarts (it is still cleared on reboot &mdash; see below).
+    </p>
+
+    <p>The empty <code>ExecStart=</code> line is required to clear the
+      inherited ExecStart before replacing it.</p>
+
+    <p>Then reload and restart:</p>
+
+    <pre><code>sudo systemctl daemon-reload
+sudo systemctl restart graywolf</code></pre>
 
     <h3>What happens on reboot?</h3>
 
