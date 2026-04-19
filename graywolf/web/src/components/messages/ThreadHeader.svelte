@@ -69,29 +69,31 @@
       {/if}
     </div>
     {#if isTactical}
-      <div class="monitor">
-        <Toggle
-          checked={!muted}
-          onCheckedChange={handleMute}
-          label="Monitor"
-          aria-label={muted ? 'Unmute tactical monitoring' : 'Mute tactical monitoring'}
-        />
+      <div class="actions">
+        <div class="monitor">
+          <Toggle
+            checked={!muted}
+            onCheckedChange={handleMute}
+            label="Monitor"
+            aria-label={muted ? 'Unmute tactical monitoring' : 'Mute tactical monitoring'}
+          />
+        </div>
+        <Tooltip>
+          <Tooltip.Trigger>
+            <button
+              type="button"
+              class="invite-btn"
+              onclick={openInvite}
+              aria-label={`Invite stations to ${tacticalKey}`}
+              data-testid="thread-invite-btn"
+            >
+              <Icon name="users" size="md" />
+              <span class="invite-label">Invite Users</span>
+            </button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>Invite</Tooltip.Content>
+        </Tooltip>
       </div>
-      <Tooltip>
-        <Tooltip.Trigger>
-          <button
-            type="button"
-            class="invite-btn"
-            onclick={openInvite}
-            aria-label={`Invite stations to ${tacticalKey}`}
-            data-testid="thread-invite-btn"
-          >
-            <Icon name="users" size="md" />
-            <span class="invite-label">Invite Users</span>
-          </button>
-        </Tooltip.Trigger>
-        <Tooltip.Content>Invite</Tooltip.Content>
-      </Tooltip>
     {/if}
   </div>
   {#if isTactical}
@@ -183,6 +185,12 @@
     font-size: 11px;
     color: var(--color-text-dim);
   }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
   .monitor {
     flex-shrink: 0;
     display: inline-flex;
@@ -226,5 +234,14 @@
 
   @media (max-width: 767px) {
     .chips { padding-left: 0; }
+    /* Let actions wrap to their own row below the title so the
+       tactical name isn't crushed to "GR…" next to a Monitor toggle
+       and "Invite Users" button. */
+    .primary { flex-wrap: wrap; }
+    .actions {
+      flex: 1 1 100%;
+      justify-content: flex-end;
+      margin-top: 2px;
+    }
   }
 </style>
