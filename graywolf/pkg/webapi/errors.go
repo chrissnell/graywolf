@@ -24,6 +24,20 @@ func notFound(w http.ResponseWriter) {
 	writeJSON(w, http.StatusNotFound, webtypes.ErrorResponse{Error: "not found"})
 }
 
+// conflict writes a 409 with a JSON error body. Use when a request is
+// syntactically valid but rejected by an invariant (duplicate name,
+// state-machine mismatch, etc).
+func conflict(w http.ResponseWriter, msg string) {
+	writeJSON(w, http.StatusConflict, webtypes.ErrorResponse{Error: msg})
+}
+
+// serviceUnavailable writes a 503 with a JSON error body. Use when a
+// dependency the handler needs isn't wired yet (e.g. messages service
+// before Phase 5 hooks it up).
+func serviceUnavailable(w http.ResponseWriter, msg string) {
+	writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: msg})
+}
+
 // NOTE: a `methodNotAllowed` helper used to live here for hand-rolled
 // dispatchers. Every handler is now registered with a Go 1.22
 // method-scoped pattern (e.g. `mux.HandleFunc("GET /api/foo", …)`), so
