@@ -33,9 +33,12 @@ use graywolf_demod::hdlc::DecodedFrame;
 use graywolf_demod::types::*;
 
 /// Sample window used to merge identical-content frames into a single event.
-/// At 44100 samples/sec this is ~1 second, which comfortably bridges the
-/// worst-case filter-delay skew between Profile A and Profile B.
-const SAMPLE_WINDOW: u64 = 44100;
+/// Matches Direwolf's `multi_modem.c` PROCESS_AFTER_BITS = 3 — three symbol
+/// times. At 1200 baud / 44100 sps that's 3 * 44100 / 1200 ≈ 110 samples.
+/// Narrow enough that legitimate fast rebroadcasts (digipeaters, APRS-IS
+/// injection) count as separate events, wide enough that a single packet
+/// decoded by multiple slicers / profiles within one symbol collapses to one.
+const SAMPLE_WINDOW: u64 = 110;
 
 #[derive(Clone)]
 struct Cfg {

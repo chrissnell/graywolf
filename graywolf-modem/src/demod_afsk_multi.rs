@@ -71,8 +71,20 @@ use crate::hdlc::DecodedFrame;
 use crate::types::AfskProfile;
 
 /// Sample-offset window used to merge same-content frames emitted close
-/// together in time. One second at the default 44.1 kHz sample rate.
-pub const DEFAULT_WINDOW_SAMPLES: u64 = 44_100;
+/// together in time. Matches Direwolf's `multi_modem.c` PROCESS_AFTER_BITS
+/// constant of 3 symbol times, which at 1200 baud / 44100 sps is ≈110
+/// samples (~2.5 ms).
+///
+/// This is narrow enough that legitimate rapid rebroadcasts (digipeaters,
+/// APRS-IS injection) count as separate events, and wide enough to collapse
+/// the same transmission decoded by multiple slicers or parallel profiles
+/// within one symbol period into a single event.
+///
+/// The value is expressed in samples rather than milliseconds so it scales
+/// directly with the configured sample rate. Callers running at non-44.1 kHz
+/// rates or at non-1200 baud should override via
+/// [`MultiAfskDemodulator::set_window_samples`].
+pub const DEFAULT_WINDOW_SAMPLES: u64 = 110;
 
 /// Recommended 3-demodulator ensemble with broad coverage across channel
 /// conditions.
