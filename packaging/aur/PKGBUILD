@@ -1,6 +1,6 @@
 # Maintainer: Chris Snell
 pkgname=graywolf-aprs
-pkgver=0.9.20
+pkgver=0.10.0
 pkgrel=1
 pkgdesc='APRS radio transceiver, digipeater, and Internet gateway'
 arch=('x86_64' 'aarch64')
