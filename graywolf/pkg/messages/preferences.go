@@ -85,7 +85,7 @@ func defaultPrefs() *configstore.MessagePreferences {
 	return &configstore.MessagePreferences{
 		FallbackPolicy:   FallbackPolicyISFallback,
 		DefaultPath:      "WIDE1-1,WIDE2-1",
-		RetryMaxAttempts: 5,
+		RetryMaxAttempts: 4,
 		RetentionDays:    0,
 	}
 }
