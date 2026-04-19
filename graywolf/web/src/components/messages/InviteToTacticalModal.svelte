@@ -574,6 +574,9 @@
     height: 24px !important;
     line-height: 24px !important;
     padding: 0 2px !important;
+    /* chonky-ui's global input[type="text"] rule adds margin-bottom:1rem,
+       which inflated the autocomplete row by 14px inside the chip-area. */
+    margin: 0 !important;
     font-size: 13px !important;
   }
   .chip {
