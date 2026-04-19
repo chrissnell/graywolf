@@ -44,10 +44,8 @@ Reproduce with `./bench.sh`.
 - **Messages** - SMS-style APRS messaging with delivery status and unread badges
 
   - Direct messages with auto-ACK and retry
-  - Tactical callsigns (e.g. `NET`, `EOC`) for group nets
-  - Tactical invites via `!GW1 INVITE <TAC>` DM
+  - Tactical callsigns (e.g. `SLCTAC`, `AMIGOS`) for group nets
   - RF-first delivery with APRS-IS fallback
-  - Auto-split for long messages
 
 - **Software Modem** - Native Rust DSP, no external sound card tooling required
 
