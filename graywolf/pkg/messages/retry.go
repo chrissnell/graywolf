@@ -16,18 +16,17 @@ import (
 // entry is a target delay for the Nth attempt; ±10% jitter is applied
 // at scheduling time. When attempts exceed the ladder length the
 // final value is reused until the preferences.RetryMaxAttempts cap
-// fires.
+// fires. A single 30s entry yields constant 30s spacing between every
+// attempt — channel-friendly on shared 1200-baud APRS.
 var RetryBackoff = []time.Duration{
 	30 * time.Second,
-	60 * time.Second,
-	120 * time.Second,
-	300 * time.Second,
-	600 * time.Second,
 }
 
 // DefaultRetryMaxAttempts is the cap applied when MessagePreferences
-// has an unset (0) value. Matches the seeded default.
-const DefaultRetryMaxAttempts = 5
+// has an unset (0) value. Matches the seeded default. 4 attempts = 1
+// initial send + 3 retries at 30s intervals, total ~90s of RF activity
+// before the row fails.
+const DefaultRetryMaxAttempts = 4
 
 // RetryManagerConfig captures the retry loop's collaborators. All
 // fields except Logger, Clock, and Rand are required.

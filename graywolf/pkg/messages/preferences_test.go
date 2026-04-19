@@ -49,8 +49,8 @@ func TestPreferences_CurrentReturnsDefaultsBeforeLoad(t *testing.T) {
 	if cur.FallbackPolicy != FallbackPolicyISFallback {
 		t.Errorf("default FallbackPolicy = %q, want %q", cur.FallbackPolicy, FallbackPolicyISFallback)
 	}
-	if cur.RetryMaxAttempts != 5 {
-		t.Errorf("default RetryMaxAttempts = %d, want 5", cur.RetryMaxAttempts)
+	if cur.RetryMaxAttempts != 4 {
+		t.Errorf("default RetryMaxAttempts = %d, want 4", cur.RetryMaxAttempts)
 	}
 }
 

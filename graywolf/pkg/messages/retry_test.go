@@ -40,30 +40,31 @@ func buildRetry(t *testing.T, policy string) *retryRig {
 func TestRetry_BackoffLadder(t *testing.T) {
 	rig := buildRetry(t, FallbackPolicyRFOnly)
 	defer rig.close()
+	// Single-entry ladder: every attempt resolves to 30s ± 10% jitter.
 	// attempt 1 → 30s ± 10%
 	d := rig.mgr.backoffFor(1)
 	if d < 27*time.Second || d > 33*time.Second {
 		t.Errorf("attempt 1 backoff = %v, want 27-33s", d)
 	}
-	// attempt 5 → 600s ± 10%
-	d5 := rig.mgr.backoffFor(5)
-	if d5 < 540*time.Second || d5 > 660*time.Second {
-		t.Errorf("attempt 5 backoff = %v, want 540-660s", d5)
+	// attempt 3 (final retry before budget exhaustion) → still 30s ± 10%.
+	d3 := rig.mgr.backoffFor(3)
+	if d3 < 27*time.Second || d3 > 33*time.Second {
+		t.Errorf("attempt 3 backoff = %v, want 27-33s", d3)
 	}
-	// attempt beyond ladder reuses final entry.
+	// attempt beyond ladder reuses final entry — same 30s.
 	d99 := rig.mgr.backoffFor(99)
-	if d99 < 540*time.Second || d99 > 660*time.Second {
-		t.Errorf("attempt 99 backoff = %v, want 540-660s", d99)
+	if d99 < 27*time.Second || d99 > 33*time.Second {
+		t.Errorf("attempt 99 backoff = %v, want 27-33s", d99)
 	}
 }
 
 func TestRetry_JitterBounds(t *testing.T) {
 	rig := buildRetry(t, FallbackPolicyRFOnly)
 	defer rig.close()
-	base := 60 * time.Second
+	base := 30 * time.Second
 	// Sample many attempts; all should fall in ±10%.
 	for i := 0; i < 100; i++ {
-		d := rig.mgr.backoffFor(2) // 60s base
+		d := rig.mgr.backoffFor(2) // 30s base (single-entry ladder)
 		if d < time.Duration(float64(base)*0.9) || d > time.Duration(float64(base)*1.1) {
 			t.Errorf("sample %d: backoff %v out of bounds", i, d)
 		}

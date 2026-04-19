@@ -57,7 +57,13 @@ type migration struct {
 //	    from the struct tags, but the migration-list entry lets us
 //	    evolve the index shape independently and keeps the intent
 //	    centralized with the partial index above.
-//	6 — messages_kind_backfill: backfill legacy messages.kind rows to
+//	6 — messages_retry_max_attempts_default: rewrite any retry_max_attempts
+//	    row still carrying the old seeded default (5) to the new default
+//	    (4). Channel-friendlier APRS etiquette — 1 initial + 3 retries is
+//	    closer to mainstream client norms than the original 5 attempts.
+//	    Only touches rows equal to the old default so operators who
+//	    explicitly chose another value keep it.
+//	7 — messages_kind_backfill: backfill legacy messages.kind rows to
 //	    'text'. AutoMigrate adds the column with a DEFAULT clause, but
 //	    SQLite ALTER TABLE ADD COLUMN DEFAULT only applies to rows
 //	    inserted AFTER the ALTER — legacy rows end up with NULL. This
@@ -69,7 +75,8 @@ var schemaMigrations = []migration{
 	{version: 3, name: "drop_channel_tx_timing", phase: preAutoMigrate, run: migrateDropChannelTxTiming},
 	{version: 4, name: "messages_partial_retry_index", phase: postAutoMigrate, run: migrateMessagesPartialRetryIndex},
 	{version: 5, name: "messages_thread_rollup_index", phase: postAutoMigrate, run: migrateMessagesThreadRollupIndex},
-	{version: 6, name: "messages_kind_backfill", phase: postAutoMigrate, run: migrateMessagesKindBackfill},
+	{version: 6, name: "messages_retry_max_attempts_default", phase: postAutoMigrate, run: migrateMessagesRetryMaxAttemptsDefault},
+	{version: 7, name: "messages_kind_backfill", phase: postAutoMigrate, run: migrateMessagesKindBackfill},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -207,6 +214,16 @@ func migrateMessagesPartialRetryIndex(tx *gorm.DB) error {
 func migrateMessagesThreadRollupIndex(tx *gorm.DB) error {
 	return tx.Exec(
 		`CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_kind, thread_key, created_at)`,
+	).Error
+}
+
+// migrateMessagesRetryMaxAttemptsDefault lowers rows still carrying
+// the original seeded default (5) to the new default (4). Scoped to
+// the old value so anything the operator explicitly set (3, 7, etc.)
+// survives untouched. Idempotent.
+func migrateMessagesRetryMaxAttemptsDefault(tx *gorm.DB) error {
+	return tx.Exec(
+		`UPDATE message_preferences SET retry_max_attempts = 4 WHERE retry_max_attempts = 5`,
 	).Error
 }
 

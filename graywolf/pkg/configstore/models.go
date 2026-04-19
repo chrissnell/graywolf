@@ -451,7 +451,7 @@ type MessagePreferences struct {
 	ID               uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
 	FallbackPolicy   string    `gorm:"size:16;not null;default:'is_fallback'" json:"fallback_policy"` // rf_only | is_fallback | is_only | both
 	DefaultPath      string    `gorm:"size:64;not null;default:'WIDE1-1,WIDE2-1'" json:"default_path"`
-	RetryMaxAttempts uint32    `gorm:"not null;default:5" json:"retry_max_attempts"`
+	RetryMaxAttempts uint32    `gorm:"not null;default:4" json:"retry_max_attempts"`
 	RetentionDays    uint32    `gorm:"not null;default:0" json:"retention_days"` // 0 = forever
 	CreatedAt        time.Time `json:"-"`
 	UpdatedAt        time.Time `json:"-"`
