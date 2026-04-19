@@ -44,6 +44,7 @@
    *    onCommit?: (call: string) => void,
    *    disabled?: boolean,
    *    autofocus?: boolean,
+   *    excludeBots?: boolean,
    *  }}
    */
   let {
@@ -52,6 +53,7 @@
     onCommit,
     disabled = false,
     autofocus = false,
+    excludeBots = false,
   } = $props();
 
   let inputEl = $state(null);
@@ -126,7 +128,11 @@
     const q = (value || '').trim();
     try {
       const res = await autocompleteStations({ q, limit: 20 });
-      results = Array.isArray(res) ? res : [];
+      const arr = Array.isArray(res) ? res : [];
+      // In invite contexts the caller passes excludeBots — APRS
+      // services aren't valid invite targets (they don't subscribe
+      // to tactical chats), so drop them from the candidate list.
+      results = excludeBots ? arr.filter(r => r.source !== 'bot') : arr;
       // Initial highlight: pick the best station (non-bot) if any,
       // else the first row. Bots remain visible at the top of the
       // rendered list, but highlight defaults to stations so the

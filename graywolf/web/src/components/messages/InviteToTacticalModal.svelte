@@ -470,6 +470,7 @@
             placeholder={chips.length === 0 ? 'Callsign, tactical, or paste a list' : 'Add another…'}
             onCommit={onAutocompleteCommit}
             autofocus={true}
+            excludeBots={true}
           />
         </div>
       </div>
