@@ -93,6 +93,15 @@ input, select, textarea, button {
   min-height: 0;
 }
 
+/* Messages: when a thread is open on mobile, hide the sidebar bottom-nav
+   so the thread's compose bar can own the bottom edge. The class is
+   toggled by /routes/Messages.svelte on body at the <768 px breakpoint. */
+@media (max-width: 768px) {
+  body.messages-thread-open .sidebar { display: none; }
+  body.messages-thread-open .main-content { margin-bottom: 0; }
+  body.messages-thread-open .main-content.full-bleed { height: 100vh; }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
