@@ -237,9 +237,17 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 		// — until then the row is "tx_submitted" implicitly (attempts
 		// incremented, no SentAt, no NextRetryAt). Retryable=true for
 		// DM so the retry manager enrolls while we wait for an ack.
+		//
+		// Use ClearFailureReason (field-selective UPDATE) rather than
+		// Store.Update (whole-row Save). The TxHook can fire on a
+		// concurrent goroutine between our Submit returning and this
+		// write — if we Save'd the full in-memory row here, our
+		// stale SentAt=nil would clobber the hook's SentAt write and
+		// the row would appear permanently un-sent. Touching only
+		// failure_reason avoids the conflict.
 		row.FailureReason = ""
-		if err := s.cfg.Store.Update(ctx, row); err != nil {
-			s.logger.Warn("messages sender update after queue failed", "error", err, "id", row.ID)
+		if err := s.cfg.Store.ClearFailureReason(ctx, row.ID); err != nil {
+			s.logger.Warn("messages sender clear-reason after queue failed", "error", err, "id", row.ID)
 		}
 		return SendResult{Path: SendPathRF, Err: nil, Retryable: row.ThreadKind == ThreadKindDM}
 	}
@@ -513,6 +521,12 @@ func (s *Sender) onTxComplete(_ uint32, frame *ax25.Frame, src txgovernor.Submit
 	}
 
 	ctx := context.Background()
+	// Look up the row to learn ThreadKind for the event publish (and
+	// to decide whether to flip ack_state to "broadcast" for tactical).
+	// The actual write uses a field-selective UPDATE so it doesn't
+	// clobber concurrent writes — scheduleNext is racing us to set
+	// next_retry_at on this same row, and a whole-row Save on either
+	// side would overwrite the other's field.
 	row, err := s.cfg.Store.GetByID(ctx, pf.RowID)
 	if err != nil {
 		s.logger.Warn("messages sender tx-hook row lookup failed",
@@ -520,16 +534,14 @@ func (s *Sender) onTxComplete(_ uint32, frame *ax25.Frame, src txgovernor.Submit
 		return
 	}
 	now := s.clock.Now()
-	sent := now
-	row.SentAt = &sent
-	switch row.ThreadKind {
-	case ThreadKindDM:
-		// Stay in AckStateNone ("awaiting ack") — the retry
-		// manager and ack correlation take it from here.
-	case ThreadKindTactical:
-		row.AckState = AckStateBroadcast
+	ackState := ""
+	if row.ThreadKind == ThreadKindTactical {
+		// Tactical: terminal broadcast state. DM stays AckStateNone
+		// ("awaiting ack") — retry manager and ack correlation take it
+		// from here.
+		ackState = AckStateBroadcast
 	}
-	if err := s.cfg.Store.Update(ctx, row); err != nil {
+	if err := s.cfg.Store.UpdateSentAtAndAckState(ctx, row.ID, now, ackState); err != nil {
 		s.logger.Warn("messages sender tx-hook update failed",
 			"error", err, "id", row.ID)
 		return

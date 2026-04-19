@@ -365,11 +365,15 @@ func (r *RetryManager) fail(ctx context.Context, row *configstore.Message, reaso
 }
 
 // scheduleNext computes the next NextRetryAt per the backoff ladder
-// and persists it.
+// and persists it. Uses a field-selective UPDATE (only attempts +
+// next_retry_at) so the write can't clobber a concurrent TxHook write
+// to sent_at/ack_state on the same row — whole-row Save on either side
+// would race and lose the other's column.
 func (r *RetryManager) scheduleNext(ctx context.Context, row *configstore.Message) {
 	delay := r.backoffFor(int(row.Attempts))
-	row.NextRetryAt = timePtr(r.clock.Now().Add(delay))
-	if err := r.cfg.Store.Update(ctx, row); err != nil {
+	next := r.clock.Now().Add(delay)
+	row.NextRetryAt = &next
+	if err := r.cfg.Store.UpdateRetrySchedule(ctx, row.ID, int(row.Attempts), &next); err != nil {
 		r.logger.Warn("messages retry schedule update failed", "error", err, "id", row.ID)
 		return
 	}

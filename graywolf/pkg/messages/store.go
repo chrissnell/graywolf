@@ -292,6 +292,44 @@ func (s *Store) SoftDelete(ctx context.Context, id uint64) error {
 	return s.db.WithContext(ctx).Delete(&configstore.Message{}, id).Error
 }
 
+// ClearFailureReason writes an empty failure_reason column on the row
+// via a field-selective update — NOT a whole-row Save. Used by the
+// sender after a successful governor submit to clear any stale reason
+// from a prior attempt. Whole-row Save would race with concurrent
+// writes to the same row (e.g. the TxHook setting SentAt), clobbering
+// fields that happen not to be set on the sender's in-memory copy.
+// The field-selective update touches only failure_reason.
+func (s *Store) ClearFailureReason(ctx context.Context, id uint64) error {
+	return s.db.WithContext(ctx).Model(&configstore.Message{}).
+		Where("id = ?", id).Update("failure_reason", "").Error
+}
+
+// UpdateSentAtAndAckState writes only sent_at (and optionally
+// ack_state) via a field-selective update. Used by the TxHook body
+// so the post-TX timestamp flip doesn't race with scheduleNext's
+// next_retry_at write — each side touches disjoint columns. Pass
+// ackState="" to leave the column unchanged (DM happy path).
+func (s *Store) UpdateSentAtAndAckState(ctx context.Context, id uint64, sentAt time.Time, ackState string) error {
+	fields := map[string]any{"sent_at": sentAt}
+	if ackState != "" {
+		fields["ack_state"] = ackState
+	}
+	return s.db.WithContext(ctx).Model(&configstore.Message{}).
+		Where("id = ?", id).Updates(fields).Error
+}
+
+// UpdateRetrySchedule writes only attempts + next_retry_at via a
+// field-selective update. Pass nextRetryAt=nil to clear the
+// schedule (e.g. on soft-delete or ack). Avoids the whole-row Save
+// race with the TxHook path — see UpdateSentAtAndAckState.
+func (s *Store) UpdateRetrySchedule(ctx context.Context, id uint64, attempts int, nextRetryAt *time.Time) error {
+	return s.db.WithContext(ctx).Model(&configstore.Message{}).
+		Where("id = ?", id).Updates(map[string]any{
+			"attempts":      attempts,
+			"next_retry_at": nextRetryAt,
+		}).Error
+}
+
 // MarkRead clears Unread on the row.
 func (s *Store) MarkRead(ctx context.Context, id uint64) error {
 	return s.db.WithContext(ctx).Model(&configstore.Message{}).
