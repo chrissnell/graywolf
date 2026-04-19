@@ -284,8 +284,13 @@ fn main() {
         return;
     }
 
+    struct CfgRun {
+        cfg: Cfg,
+        events: Vec<(Vec<u8>, u64)>,
+    }
+
     let start = Instant::now();
-    let mut per_cfg: Vec<(Cfg, Vec<(Vec<u8>, u64)>, usize, usize)> = Vec::new();
+    let mut per_cfg: Vec<CfgRun> = Vec::new();
     for cfg in &cfgs {
         let t0 = Instant::now();
         let frames = run_cfg(cfg, &samples, sample_rate);
@@ -298,28 +303,19 @@ fn main() {
             "  {:6} raw={:5} unique={:4} events={:4}  ({:.2}s, {:.0}x realtime)",
             cfg.name, raw, unique_count, events.len(), elapsed, dur / elapsed
         );
-        per_cfg.push((cfg.clone(), events, raw, unique_count));
+        let _ = raw;
+        let _ = unique_count;
+        per_cfg.push(CfgRun { cfg: cfg.clone(), events });
     }
     let total_elapsed = start.elapsed().as_secs_f64();
 
-    // Cross-config event-level union.
-    let mut union_events: std::collections::HashMap<Vec<u8>, u64> =
-        std::collections::HashMap::new();
-    for (_, events, _, _) in &per_cfg {
-        for (content, off) in events {
-            union_events
-                .entry(content.clone())
-                .and_modify(|e| *e = (*e).min(*off))
-                .or_insert(*off);
-        }
-    }
     // Event-window dedup across configs: same content merged within window.
-    // Our per-config events are already within-config window-deduped, but two
-    // configs may emit the same content at slightly different offsets. Do a
-    // second pass keyed by content.
+    // Per-config events are already within-config window-deduped; flatten and
+    // sort by (content, offset) so we can collapse cross-config near-duplicates
+    // in one pass.
     let mut flat: Vec<(Vec<u8>, u64)> = Vec::new();
-    for (_, events, _, _) in &per_cfg {
-        flat.extend(events.iter().cloned());
+    for run in &per_cfg {
+        flat.extend(run.events.iter().cloned());
     }
     flat.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     let mut union_event_count = 0;
@@ -335,10 +331,10 @@ fn main() {
         }
     }
 
-    // Content-only union (identical to unique set union).
+    // Content-only union (identical to unique-content set union).
     let union_unique: HashSet<&Vec<u8>> = per_cfg
         .iter()
-        .flat_map(|(_, events, _, _)| events.iter().map(|(c, _)| c))
+        .flat_map(|run| run.events.iter().map(|(c, _)| c))
         .collect();
 
     eprintln!();
@@ -363,9 +359,9 @@ fn main() {
     eprintln!("=== Per-config unique-contribution (vs. other configs) ===");
     let all_sets: Vec<HashSet<Vec<u8>>> = per_cfg
         .iter()
-        .map(|(_, evs, _, _)| evs.iter().map(|(c, _)| c.clone()).collect())
+        .map(|run| run.events.iter().map(|(c, _)| c.clone()).collect())
         .collect();
-    for (i, (cfg, _, _, _)) in per_cfg.iter().enumerate() {
+    for (i, run) in per_cfg.iter().enumerate() {
         let others: HashSet<Vec<u8>> = all_sets
             .iter()
             .enumerate()
@@ -373,6 +369,6 @@ fn main() {
             .flat_map(|(_, s)| s.iter().cloned())
             .collect();
         let unique_to_me = all_sets[i].difference(&others).count();
-        eprintln!("  {:6} contributes {:3} uniquely", cfg.name, unique_to_me);
+        eprintln!("  {:6} contributes {:3} uniquely", run.cfg.name, unique_to_me);
     }
 }
