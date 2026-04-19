@@ -44,6 +44,13 @@ Building Graywolf (demod_bench)...
 
 - **Live Map** - Real-time APRS station map with trails, weather overlays, APRS-IS layer, and station popups with path and heard-via details
 
+- **Messages** - SMS-style APRS messaging with unread badges, delivery status, and APRS-IS fallback
+
+  - 1:1 direct messages with auto-ACK, retry, and reply-ack correlation
+  - Tactical callsigns (e.g. `NET`, `EOC`) for group nets — broadcast to every monitor, color-coded sender labels per bubble
+  - Soft-split for messages longer than 67 chars, RF-first with IS fallback
+  - Manage monitored tactical callsigns under *Messages → Manage tactical callsigns*
+
 - **Software Modem** - Native Rust DSP, no external sound card tooling required
 
   - AFSK 1200 baud (Bell 202)
