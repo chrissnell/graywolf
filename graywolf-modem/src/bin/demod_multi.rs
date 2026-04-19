@@ -28,6 +28,7 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::time::Instant;
 
 use graywolf_demod::demod_afsk::AfskDemodulator;
+use graywolf_demod::demod_afsk_multi::{MultiAfskDemodulator, MultiConfig};
 use graywolf_demod::hdlc::DecodedFrame;
 use graywolf_demod::types::*;
 
@@ -150,6 +151,43 @@ fn dedupe_to_events(mut frames: Vec<DecodedFrame>) -> Vec<(Vec<u8>, u64)> {
     out
 }
 
+/// Live cross-demod dedup through the MultiAfskDemodulator library primitive.
+/// Produces the leaderboard "events" number directly, as an integration test of
+/// the library API vs. the bench-mode offline dedup above.
+fn run_library_mode(cfgs: &[Cfg], samples: &[i16], sample_rate: u32, dur: f64) {
+    let multi_cfgs: Vec<MultiConfig> = cfgs
+        .iter()
+        .map(|c| MultiConfig {
+            profile: c.profile,
+            slicers: c.slicers,
+            hard_limit: c.hard_limit,
+        })
+        .collect();
+    let mut demod = MultiAfskDemodulator::new(
+        sample_rate,
+        DEFAULT_BAUD,
+        DEFAULT_MARK_FREQ,
+        DEFAULT_SPACE_FREQ,
+        &multi_cfgs,
+    );
+    let start = Instant::now();
+    for &s in samples {
+        demod.process_sample(s as i32);
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+    let frames = demod.take_frames();
+    let unique: HashSet<Vec<u8>> = frames.iter().map(|f| f.data.clone()).collect();
+    eprintln!();
+    eprintln!("=== MultiAfskDemodulator (live dedup) ===");
+    eprintln!("  events           : {}", frames.len());
+    eprintln!("  unique contents  : {}", unique.len());
+    eprintln!(
+        "  wall time        : {:.2}s  ({:.0}x realtime)",
+        elapsed,
+        dur / elapsed
+    );
+}
+
 fn run_cfg(cfg: &Cfg, samples: &[i16], sample_rate: u32) -> Vec<DecodedFrame> {
     let mut demod = AfskDemodulator::new(
         sample_rate,
@@ -175,13 +213,16 @@ fn run_cfg(cfg: &Cfg, samples: &[i16], sample_rate: u32) -> Vec<DecodedFrame> {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: demod-multi <audio-file> [cfg-list]");
+        eprintln!("Usage: demod-multi <audio-file> [cfg-list] [--library]");
         eprintln!();
         eprintln!("If no cfg-list is given, the default candidate set runs.");
         eprintln!("cfg-list syntax: comma-separated names from {{A1,A6,A9,A1HL,A6HL,A9HL,B1,B9,B1HL,B9HL}}");
+        eprintln!("--library       use MultiAfskDemodulator (live cross-demod dedup) instead of");
+        eprintln!("                running each config separately and deduping at the end.");
         std::process::exit(1);
     }
     let file = &args[1];
+    let use_library = args.iter().any(|a| a == "--library");
 
     // Default candidate set spans single-slicer, deep-multi-slicer, and HL.
     let all: Vec<Cfg> = vec![
@@ -197,11 +238,17 @@ fn main() {
         Cfg { name: "B9HL",  profile: AfskProfile::B, slicers: 9, hard_limit: true  },
     ];
 
-    let cfgs: Vec<Cfg> = if args.len() >= 3 {
-        let wanted: HashSet<&str> = args[2].split(',').collect();
-        let chosen: Vec<Cfg> = all.iter().filter(|c| wanted.contains(c.name)).cloned().collect();
+    // First non-flag arg after the filename is the cfg-list.
+    let cfg_arg = args.iter().skip(2).find(|a| !a.starts_with("--"));
+    let cfgs: Vec<Cfg> = if let Some(spec) = cfg_arg {
+        let wanted: HashSet<&str> = spec.split(',').collect();
+        let chosen: Vec<Cfg> = all
+            .iter()
+            .filter(|c| wanted.contains(c.name))
+            .cloned()
+            .collect();
         if chosen.is_empty() {
-            eprintln!("error: no configs matched {:?}", args[2]);
+            eprintln!("error: no configs matched {:?}", spec);
             std::process::exit(1);
         }
         chosen
@@ -224,12 +271,18 @@ fn main() {
 
     let dur = samples.len() as f64 / sample_rate as f64;
     eprintln!(
-        "{}: {:.1} s audio at {} sps, {} configs",
+        "{}: {:.1} s audio at {} sps, {} configs ({} mode)",
         file,
         dur,
         sample_rate,
-        cfgs.len()
+        cfgs.len(),
+        if use_library { "library" } else { "bench" }
     );
+
+    if use_library {
+        run_library_mode(&cfgs, &samples, sample_rate, dur);
+        return;
+    }
 
     let start = Instant::now();
     let mut per_cfg: Vec<(Cfg, Vec<(Vec<u8>, u64)>, usize, usize)> = Vec::new();
