@@ -24,7 +24,7 @@
   //                          shortcut cycles the same order the user
   //                          sees (not the unfiltered list).
 
-  import { Button, Icon, Input } from '@chrissnell/chonky-ui';
+  import { Button, Icon } from '@chrissnell/chonky-ui';
   import { messages } from '../../lib/messagesStore.svelte.js';
   import ConversationRow from './ConversationRow.svelte';
 
@@ -173,13 +173,13 @@
       <span class="search-icon" aria-hidden="true">
         <Icon name="search" size="sm" />
       </span>
-      <Input
+      <input
         type="text"
+        class="search-input"
         value={searchInput}
         placeholder="Search..."
         oninput={onSearchInput}
         aria-label="Search conversations"
-        class="search-input"
       />
     </div>
   </header>
@@ -273,13 +273,27 @@
   .search-icon {
     position: absolute;
     left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     display: inline-flex;
     color: var(--color-text-dim);
     pointer-events: none;
     z-index: 1;
   }
-  :global(.search .search-input input) {
-    padding-left: 28px;
+  .search-input {
+    width: 100%;
+    padding: 7px 8px 7px 28px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+  .search-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary-muted);
   }
 
   .rows {

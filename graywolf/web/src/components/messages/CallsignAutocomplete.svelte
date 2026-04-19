@@ -304,6 +304,8 @@
   .lead {
     position: absolute;
     left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     display: inline-flex;
     color: var(--color-text-dim);
     pointer-events: none;
