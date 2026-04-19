@@ -86,18 +86,30 @@
         case 'sent_is':
         case 'sent':     return { primary: { name: 'radio', label: 'Sent — awaiting ack' } };
         case 'acked':    return { primary: { name: 'check-check', label: 'Delivered — ack received' } };
+        // Retry budget exhausted with no ack and no explicit rej.
+        // APRS doesn't mandate acks — plenty of legitimate recipients
+        // (older TNCs, monitoring-only stations, operators AFK) simply
+        // don't send them. Render this state identically to a normal
+        // "sent" bubble — no alarm, no nag. If the operator wants to
+        // try again, right-click → Resend is still available via the
+        // context menu. No inline click-to-resend affordance.
+        case 'timeout':  return { primary: { name: 'check', label: 'Sent' } };
+        // Peer explicitly sent a rejNNN packet — they got the message
+        // and actively refused it. Red alarm is correct.
         case 'rejected': return { primary: { name: 'alert-circle', label: 'Rejected by recipient — click to resend' }, failed: true };
+        // Send-path failure (encode error, governor stopped mid-retry,
+        // etc.) — never reached the wire or never completed. Red alarm.
         case 'failed':   return { primary: { name: 'alert-circle', label: 'Send failed — click to resend' }, failed: true };
-        case 'timeout':  return { primary: { name: 'alert-circle', label: 'Retry budget exhausted — click to resend' }, failed: true };
         default:         return { primary: { name: 'clock', label: status || 'Unknown state' } };
       }
     }
     return null;
   });
 
-  // Resend is available on rejected/failed/timeout outbound DM rows.
-  // Tactical outbound doesn't reach those states (it terminates at
-  // `broadcast`), so this flag stays false for tactical regardless.
+  // Inline resend via the status icon is only offered for genuine
+  // failure states (explicit REJ from peer, or send-path error).
+  // Timeout is not a failure — operator can still right-click →
+  // Resend if they want, but we don't nag with an inline button.
   const canResend = $derived(
     isOut && !isTactical && !!statusInfo?.failed && !!onResend
   );
