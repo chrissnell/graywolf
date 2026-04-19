@@ -135,7 +135,7 @@ fn read_wav(path: &str) -> io::Result<(Vec<i16>, u32, u32)> {
 /// with the same content whose offsets are within SAMPLE_WINDOW of each
 /// other into the earliest-offset representative.
 fn dedupe_to_events(mut frames: Vec<DecodedFrame>) -> Vec<(Vec<u8>, u64)> {
-    frames.sort_by(|a, b| a.sample_offset.cmp(&b.sample_offset));
+    frames.sort_by_key(|f| f.sample_offset);
     // (content, offset) with a guard map keyed by content tracking last offset.
     let mut out: Vec<(Vec<u8>, u64)> = Vec::new();
     let mut last_offset: std::collections::HashMap<Vec<u8>, u64> =
