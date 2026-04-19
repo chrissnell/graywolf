@@ -97,6 +97,54 @@ func TestParseTelemetryMetaBITS(t *testing.T) {
 	}
 }
 
+// Some iGates (aprx, older javAPRSSrvr) strip trailing whitespace from
+// the APRS-IS line, leaving an addressee field shorter than the 9 chars
+// APRS101 §14.1 requires. Accept these so the Messages inbox isn't
+// starved of legitimate traffic that made it through such a relay.
+func TestParseMessageShortAddressee(t *testing.T) {
+	// ":NW5W-5 :testing 123{004" — seven bytes of addressee padding
+	// (six call chars + one space) as observed on a real gated packet.
+	info := []byte(":NW5W-5 :testing 123{004")
+	pkt, err := ParseInfo(info)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if pkt.Message == nil {
+		t.Fatalf("nil Message; type=%q", pkt.Type)
+	}
+	if pkt.Message.Addressee != "NW5W-5" {
+		t.Errorf("addressee %q, want %q", pkt.Message.Addressee, "NW5W-5")
+	}
+	if pkt.Message.Text != "testing 123" {
+		t.Errorf("text %q", pkt.Message.Text)
+	}
+	if pkt.Message.MessageID != "004" {
+		t.Errorf("id %q", pkt.Message.MessageID)
+	}
+}
+
+func TestParseMessageNoPadding(t *testing.T) {
+	// 9-char addressee with zero trailing space (exactly at the width
+	// limit): ":NOCALL-15:hi".
+	info := []byte(":NOCALL-15:hi")
+	pkt, err := ParseInfo(info)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if pkt.Message == nil || pkt.Message.Addressee != "NOCALL-15" || pkt.Message.Text != "hi" {
+		t.Errorf("got %+v", pkt.Message)
+	}
+}
+
+func TestParseMessageMalformedNoSeparator(t *testing.T) {
+	// No closing ':' within the addressee window — must still reject.
+	info := []byte(":NOCALL-15XY")
+	pkt, err := ParseInfo(info)
+	if err == nil {
+		t.Fatalf("expected error, got %+v", pkt.Message)
+	}
+}
+
 func TestEncodeMessageRoundTrip(t *testing.T) {
 	b, err := EncodeMessage("W1AW", "hi", "007")
 	if err != nil {

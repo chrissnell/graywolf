@@ -6,16 +6,37 @@ import (
 	"strings"
 )
 
-// parseMessage handles the ':' prefix: addressee (9 chars) + ':' + text
-// with optional {id ack/rej trailer.
+// parseMessage handles the ':' prefix: addressee (1..9 chars) + ':' +
+// text with optional {id ack/rej trailer.
 //
-// Wire format: ":AAAAAAAAA:text{id"  (addressee is exactly 9 chars, padded)
+// Wire format: ":AAAAAAAAA:text{id"  (addressee is 9 chars, space-padded
+// per APRS101 §14.1). Some iGates strip trailing whitespace on APRS-IS
+// uplink, producing a shorter addressee field. Accept any ':' closing
+// the addressee within the first 10 bytes of info so those packets still
+// route to Messages.
 func parseMessage(pkt *DecodedAPRSPacket, info []byte) error {
-	if len(info) < 11 || info[10] != ':' {
+	// info[0] == ':' is already verified by the dispatcher. Need at
+	// least ':A:' (addressee length 1, empty text body) to be a valid
+	// message shell.
+	if len(info) < 3 {
 		return errors.New("aprs: malformed message header")
 	}
-	addressee := strings.TrimRight(string(info[1:10]), " ")
-	rest := string(info[11:])
+	upper := 10
+	if upper >= len(info) {
+		upper = len(info) - 1
+	}
+	sep := -1
+	for i := 2; i <= upper; i++ {
+		if info[i] == ':' {
+			sep = i
+			break
+		}
+	}
+	if sep < 0 {
+		return errors.New("aprs: malformed message header")
+	}
+	addressee := strings.TrimRight(string(info[1:sep]), " ")
+	rest := string(info[sep+1:])
 	msg := &Message{Addressee: addressee}
 	// Trailing {id separator for message IDs. Reply-ack form
 	// (aprs.org/aprs11/replyacks.txt): "text{id}" (empty piggybacked

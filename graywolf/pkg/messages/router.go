@@ -777,12 +777,29 @@ func unwrapThirdParty(pkt *aprs.DecodedAPRSPacket) (string, *aprs.Message) {
 	}
 	innerSrc := header[:gt]
 	// The inner info field must itself be a message (":AAAA:text...").
-	// Anything else falls through with the original source intact.
-	if len(innerInfo) < 11 || innerInfo[0] != ':' || innerInfo[10] != ':' {
+	// Anything else falls through with the original source intact. Per
+	// APRS101 §14.1 the addressee is 9 chars, but tolerate the short
+	// forms some iGates produce by scanning for the closing ':' within
+	// the first 10 bytes.
+	if len(innerInfo) < 3 || innerInfo[0] != ':' {
 		return source, msg
 	}
-	addressee := strings.TrimRight(innerInfo[1:10], " ")
-	rest := innerInfo[11:]
+	innerUpper := 10
+	if innerUpper >= len(innerInfo) {
+		innerUpper = len(innerInfo) - 1
+	}
+	innerSep := -1
+	for i := 2; i <= innerUpper; i++ {
+		if innerInfo[i] == ':' {
+			innerSep = i
+			break
+		}
+	}
+	if innerSep < 0 {
+		return source, msg
+	}
+	addressee := strings.TrimRight(innerInfo[1:innerSep], " ")
+	rest := innerInfo[innerSep+1:]
 	// Reconstruct a minimal Message view. We reuse the outer flags
 	// where possible; the inner text is what matters for
 	// classification / auto-ACK. Reply-ack and ack/rej flags are
