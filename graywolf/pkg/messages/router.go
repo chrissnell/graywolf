@@ -72,7 +72,15 @@ const (
 	// DefaultRouterDedupWindow is the window over which
 	// (from_call, msg_id, text_hash) tuples are treated as duplicates
 	// at the router's pre-insert check.
-	DefaultRouterDedupWindow = 30 * time.Second
+	//
+	// 5 minutes comfortably covers APRS sender retry lifetimes: graywolf
+	// itself uses a 30s backoff × 4 attempts (~120s) and other clients
+	// retry for up to 10 minutes. A window at or below the sender's
+	// inter-attempt interval lets every retry slip through and persist
+	// as a duplicate row, because each miss extends the expiry by only
+	// one window. Keep this ≥ the longest realistic retry span so the
+	// auto-ACK path alone handles repeated copies (APRS101 §14.2).
+	DefaultRouterDedupWindow = 5 * time.Minute
 
 	// defaultRouterLogThrottle caps the drop-log rate.
 	defaultRouterLogThrottle = 10 * time.Second

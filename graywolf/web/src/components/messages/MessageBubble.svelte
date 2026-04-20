@@ -291,38 +291,100 @@
   data-msg-id={msg?.id}
   data-status={status}
 >
-  {#if isTactical && !isOut && showSenderLabel}
-    <div
-      class="sender-label"
-      style="background:{colors.bg};color:{colors.fg};border-color:{colors.stripe}"
-      aria-label={`From ${sender}`}
+  <!-- Meta lives to the LEFT of the bubble (for both in and out). The
+       reserved min-width prevents the bubble row from jumping when meta
+       fades in on pane hover. -->
+  <aside class="bubble-meta" aria-label="Message metadata">
+    <button
+      type="button"
+      class="ts-btn"
+      onclick={handleMetaClick}
+      aria-label="View message details"
+      data-testid="bubble-meta-open"
+      title="View details"
     >
-      <span class="monogram-mini">{monogram}</span>
-      <span class="sender-call">{sender}</span>
-    </div>
-  {/if}
+      <span class="ts">{timeOfDay(msg?.sent_at || msg?.received_at || msg?.created_at)}</span>
+    </button>
+    {#if sourceBadge}
+      <Badge variant={sourceBadge.variant} class="src-badge">{sourceBadge.label}</Badge>
+    {/if}
+    {#if fragMatch}
+      <span class="frag-tag">{fragMatch.n}/{fragMatch.total}</span>
+    {/if}
+    {#if statusInfo?.primary}
+      <Tooltip>
+        <Tooltip.Trigger class="status-tt">
+          {#if canResend}
+            <button
+              type="button"
+              class="status-ico status-btn failed"
+              aria-label={statusInfo.primary.label}
+              onclick={handleStatusClick}
+              data-testid="bubble-resend"
+            >
+              <Icon name={statusInfo.primary.name} size="sm" />
+            </button>
+          {:else}
+            <span
+              class="status-ico"
+              class:failed={!!statusInfo.failed}
+              aria-label={statusInfo.primary.label}
+            >
+              <Icon
+                name={statusInfo.primary.name}
+                size={statusInfo.failed ? 'sm' : 'xs'}
+              />
+            </span>
+          {/if}
+        </Tooltip.Trigger>
+        <Tooltip.Content>{statusInfo.primary.label}</Tooltip.Content>
+      </Tooltip>
+    {/if}
+    {#if statusInfo?.secondary}
+      <Tooltip>
+        <Tooltip.Trigger class="status-tt">
+          <span class="status-ico secondary" aria-label={statusInfo.secondary.label}>
+            <Icon name={statusInfo.secondary.name} size="xs" />
+          </span>
+        </Tooltip.Trigger>
+        <Tooltip.Content>{statusInfo.secondary.label}</Tooltip.Content>
+      </Tooltip>
+    {/if}
+  </aside>
 
-  <div
-    bind:this={bubbleEl}
-    class="bubble"
-    class:has-stripe={isTactical && !isOut}
-    style={isTactical && !isOut ? `--stripe-color:${colors.stripe}` : undefined}
-    role="group"
-    aria-label={isOut ? 'Your message' : `Message from ${sender}`}
-    oncontextmenu={handleContextMenu}
-    onpointerdown={onPointerDown}
-    onpointerup={onPointerUpOrCancel}
-    onpointercancel={onPointerUpOrCancel}
-  >
-    {#if isTactical && !isOut && showMonogramInStripe}
-      <span
-        class="stripe-monogram"
-        style="color:{colors.fg};background:{colors.stripe}"
-        aria-hidden="true"
-      >{monogram}</span>
+  <div class="bubble-column">
+    {#if isTactical && !isOut && showSenderLabel}
+      <div
+        class="sender-label"
+        style="background:{colors.bg};color:{colors.fg};border-color:{colors.stripe}"
+        aria-label={`From ${sender}`}
+      >
+        <span class="monogram-mini">{monogram}</span>
+        <span class="sender-call">{sender}</span>
+      </div>
     {/if}
 
-    {#if isInvite}
+    <div
+      bind:this={bubbleEl}
+      class="bubble"
+      class:has-stripe={isTactical && !isOut}
+      style={isTactical && !isOut ? `--stripe-color:${colors.stripe}` : undefined}
+      role="group"
+      aria-label={isOut ? 'Your message' : `Message from ${sender}`}
+      oncontextmenu={handleContextMenu}
+      onpointerdown={onPointerDown}
+      onpointerup={onPointerUpOrCancel}
+      onpointercancel={onPointerUpOrCancel}
+    >
+      {#if isTactical && !isOut && showMonogramInStripe}
+        <span
+          class="stripe-monogram"
+          style="color:{colors.fg};background:{colors.stripe}"
+          aria-hidden="true"
+        >{monogram}</span>
+      {/if}
+
+      {#if isInvite}
       {#if isThisIgnored}
         <p class="bubble-text invite-dismissed" data-testid="invite-dismissed">
           Invitation hidden.
@@ -425,62 +487,6 @@
     {:else}
       <p class="bubble-text">{bodyText}</p>
     {/if}
-    <div class="bubble-meta">
-      <button
-        type="button"
-        class="ts-btn"
-        onclick={handleMetaClick}
-        aria-label="View message details"
-        data-testid="bubble-meta-open"
-        title="View details"
-      >
-        <span class="ts">{timeOfDay(msg?.sent_at || msg?.received_at || msg?.created_at)}</span>
-      </button>
-      {#if fragMatch}
-        <span class="frag-tag">Part {fragMatch.n}/{fragMatch.total}</span>
-      {/if}
-      {#if sourceBadge}
-        <Badge variant={sourceBadge.variant} class="src-badge">{sourceBadge.label}</Badge>
-      {/if}
-      {#if statusInfo?.primary}
-        <Tooltip>
-          <Tooltip.Trigger class="status-tt">
-            {#if canResend}
-              <button
-                type="button"
-                class="status-ico status-btn failed"
-                aria-label={statusInfo.primary.label}
-                onclick={handleStatusClick}
-                data-testid="bubble-resend"
-              >
-                <Icon name={statusInfo.primary.name} size="sm" />
-              </button>
-            {:else}
-              <span
-                class="status-ico"
-                class:failed={!!statusInfo.failed}
-                aria-label={statusInfo.primary.label}
-              >
-                <Icon
-                  name={statusInfo.primary.name}
-                  size={statusInfo.failed ? 'sm' : 'xs'}
-                />
-              </span>
-            {/if}
-          </Tooltip.Trigger>
-          <Tooltip.Content>{statusInfo.primary.label}</Tooltip.Content>
-        </Tooltip>
-      {/if}
-      {#if statusInfo?.secondary}
-        <Tooltip>
-          <Tooltip.Trigger class="status-tt">
-            <span class="status-ico secondary" aria-label={statusInfo.secondary.label}>
-              <Icon name={statusInfo.secondary.name} size="xs" />
-            </span>
-          </Tooltip.Trigger>
-          <Tooltip.Content>{statusInfo.secondary.label}</Tooltip.Content>
-        </Tooltip>
-      {/if}
     </div>
   </div>
 
@@ -500,26 +506,30 @@
 <style>
   .bubble-wrap {
     display: flex;
+    flex-direction: row;
     align-items: flex-end;
-    gap: 6px;
+    gap: 8px;
     position: relative;
-    max-width: 78%;
+    max-width: 92%;
     margin: 2px 0;
   }
   .bubble-wrap.out {
     align-self: flex-end;
-    flex-direction: row-reverse;
   }
   .bubble-wrap.in {
     align-self: flex-start;
   }
-  .bubble-wrap.tactical.in {
+
+  /* Column holding sender-label (tactical incoming only) + bubble. Lives
+     to the right of the meta sidebar. */
+  .bubble-column {
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
-    width: fit-content;
+    min-width: 0;
   }
-  .bubble-wrap.tactical.in .bubble {
-    align-self: flex-start;
+  .bubble-wrap.out .bubble-column {
+    align-items: flex-end;
   }
 
   .sender-label {
@@ -602,19 +612,32 @@
     white-space: pre-wrap;
   }
 
+  /* Meta is a sidebar to the left of the bubble. Reserved min-width
+     keeps the bubble's horizontal position stable whether meta is
+     visible or hidden — no layout jump on hover. justify-content:
+     flex-end packs contents flush against the bubble so they read as
+     a coherent unit when revealed. */
   .bubble-meta {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 6px;
-    margin-top: 4px;
+    flex-shrink: 0;
+    min-width: 78px;
+    padding-bottom: 6px;
     opacity: 0;
     transition: opacity 0.15s;
     font-family: var(--font-mono);
   }
-  .bubble:hover .bubble-meta,
-  .bubble:focus-within .bubble-meta {
+
+  /* Reveal all bubbles' meta when the pointer enters the thread's
+     scroll pane (see MessageThread.svelte's .bubbles wrapper). Also
+     reveal on keyboard focus inside the pane for a11y. */
+  :global(.bubbles:hover) .bubble-meta,
+  :global(.bubbles:focus-within) .bubble-meta {
     opacity: 1;
   }
+
   @media (max-width: 767px) {
     .bubble-meta { opacity: 1; }
   }
