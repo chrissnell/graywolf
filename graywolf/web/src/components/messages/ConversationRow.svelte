@@ -107,7 +107,7 @@
     <div class="snippet-line">
       <span class="snippet" title={snippet}>{snippet || (isTactical ? 'No messages yet' : '')}</span>
       {#if unread > 0}
-        <span class="badge">
+        <span class="unread-badge">
           <NotificationBadge count={unread} />
         </span>
       {/if}
@@ -248,7 +248,10 @@
     color: var(--color-text);
     font-weight: 500;
   }
-  .badge {
+  /* Unique class (not `.badge`) — chonky-ui ships a global `.badge`
+     rule that adds border + padding, which leaks through Svelte's
+     scoped styles because we don't override those properties. */
+  .unread-badge {
     flex-shrink: 0;
     display: inline-flex;
   }
