@@ -977,9 +977,15 @@ definitions:
         type: integer
       channel:
         type: integer
+      mode:
+        type: string
       serial_device:
         type: string
       tcp_port:
+        type: integer
+      tnc_ingress_burst:
+        type: integer
+      tnc_ingress_rate_hz:
         type: integer
       type:
         type: string
@@ -992,9 +998,15 @@ definitions:
         type: integer
       id:
         type: integer
+      mode:
+        type: string
       serial_device:
         type: string
       tcp_port:
+        type: integer
+      tnc_ingress_burst:
+        type: integer
+      tnc_ingress_rate_hz:
         type: integer
       type:
         type: string

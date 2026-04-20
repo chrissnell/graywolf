@@ -1572,16 +1572,22 @@ export interface components {
         "dto.KissRequest": {
             baud_rate?: number;
             channel?: number;
+            mode?: string;
             serial_device?: string;
             tcp_port?: number;
+            tnc_ingress_burst?: number;
+            tnc_ingress_rate_hz?: number;
             type?: string;
         };
         "dto.KissResponse": {
             baud_rate?: number;
             channel?: number;
             id?: number;
+            mode?: string;
             serial_device?: string;
             tcp_port?: number;
+            tnc_ingress_burst?: number;
+            tnc_ingress_rate_hz?: number;
             type?: string;
         };
         "dto.MessageChange": {
