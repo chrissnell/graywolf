@@ -199,15 +199,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Windows binary for MSI
+      - name: Upload Windows binary for installer
         uses: actions/upload-artifact@v5
         with:
           name: windows-amd64-binary
           path: dist/graywolf_windows_amd64_v1/graywolf.exe
           retention-days: 1
 
-  msi:
-    name: Windows MSI Installer
+  installer:
+    name: Windows Installer
     runs-on: windows-latest
     needs: release
     steps:
@@ -226,25 +226,32 @@ jobs:
           name: rust-windows-amd64
           path: modem-bin
 
-      - name: Install WiX
-        run: dotnet tool install --global wix
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
 
-      - name: Build MSI
+      - name: Build installer
         shell: pwsh
         run: |
           $fullVersion = "${{ github.ref_name }}" -replace '^v', ''
-          # MSI versions must be numeric x.y.z — strip any pre-release suffix
-          $msiVersion = ($fullVersion -split '-')[0]
+          # VIProductVersion needs a 4-part numeric version; strip any pre-release suffix
+          $numeric = ($fullVersion -split '-')[0] + ".0"
           $binaryPath = (Resolve-Path "bin/graywolf.exe").Path
-          $modemPath = (Resolve-Path "modem-bin/graywolf-modem.exe").Path
-          $outFile = "graywolf_${fullVersion}_Windows_x86_64.msi"
-          wix build -acceptEula wix7 -d Version=$msiVersion -d BinaryPath=$binaryPath -d ModemPath=$modemPath -o $outFile packaging/wix/graywolf.wxs
+          $modemPath  = (Resolve-Path "modem-bin/graywolf-modem.exe").Path
+          $outFile    = "graywolf_${fullVersion}_Windows_x86_64.exe"
+          & "C:\Program Files (x86)\NSIS\makensis.exe" `
+            "/DAPP_VERSION=$fullVersion" `
+            "/DAPP_VERSION_NUMERIC=$numeric" `
+            "/DBINARY_PATH=$binaryPath" `
+            "/DMODEM_PATH=$modemPath" `
+            "/DOUTFILE=$outFile" `
+            packaging/nsis/graywolf.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
 
-      - name: Upload MSI to release
+      - name: Upload installer to release
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          gh release upload "${{ github.ref_name }}" "graywolf_${VERSION}_Windows_x86_64.msi" --clobber
+          gh release upload "${{ github.ref_name }}" "packaging/nsis/graywolf_${VERSION}_Windows_x86_64.exe" --clobber

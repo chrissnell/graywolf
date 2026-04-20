@@ -96,5 +96,5 @@ Reproduce with `./bench.sh`.
 
   - systemd service unit
   - Debian/Ubuntu (APT), Red Hat (RPM), and Arch (AUR) packages
-  - Windows installer (MSI)
+  - Windows installer (NSIS)
   - Runs on x86-64 and ARM (Raspberry Pi)
