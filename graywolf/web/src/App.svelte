@@ -151,11 +151,11 @@
   @media (max-width: 768px) {
     .main-content {
       margin-left: 0;
-      margin-bottom: 60px;
+      margin-top: calc(56px + env(safe-area-inset-top));
       padding: 16px;
     }
     .main-content.full-bleed {
-      height: calc(100vh - 60px);
+      height: calc(100vh - 56px - env(safe-area-inset-top));
     }
   }
 </style>

@@ -1,7 +1,8 @@
 <script>
+  import { untrack } from 'svelte';
   import { link } from 'svelte-spa-router';
   import { location } from 'svelte-spa-router';
-  import { Icon, NotificationBadge } from '@chrissnell/chonky-ui';
+  import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
   import { messages } from '../lib/messagesStore.svelte.js';
   import logoUrl from '../assets/graywolf.svg';
 
@@ -57,8 +58,102 @@
   // Reactive global unread signal — recomputes when any thread's
   // unreadCount / muted / archived flag changes.
   let unreadTotal = $derived(messages.unreadTotal);
+
+  // Drawer open state (mobile only). Closed on link click in onNavClick;
+  // an effect on currentPath below acts as a safety net for programmatic
+  // navigation (e.g., post-login redirects).
+  let menuOpen = $state(false);
+
+  // Safety net: if currentPath changes for any reason other than a click
+  // inside the drawer (e.g., post-login redirect), ensure the drawer is
+  // closed. The per-link onclick is the *primary* close path because it
+  // sequences close-then-navigate and lets bits-ui's PresenceManager play
+  // the 150ms exit cleanly. We `untrack` the menuOpen write so opening
+  // the drawer doesn't immediately re-run this effect and snap it shut.
+  $effect(() => {
+    currentPath; // track only currentPath
+    untrack(() => {
+      if (menuOpen) menuOpen = false;
+    });
+  });
+
+  function onNavClick() {
+    // Close before navigation fires. bits-ui keeps the drawer DOM mounted
+    // until getAnimations() settles, so the slide-out animation completes
+    // even after the route swaps.
+    menuOpen = false;
+  }
+
+  // Dashboard route match — exact only ('/'); avoid matching every sub-route.
+  let isDashboardActive = $derived(currentPath === '/');
+  // Messages route match — '/messages' or any '/messages/*' sub-route.
+  let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
 </script>
 
+{#snippet navItems()}
+  <ul class="nav-list dashboard-list">
+    {#each topItems as item}
+      <li>
+        <a
+          href={item.path}
+          use:link
+          class="nav-link dashboard-link"
+          class:active={currentPath === item.path}
+          aria-current={currentPath === item.path ? 'page' : undefined}
+          onclick={onNavClick}
+        >
+          <span class="nav-label">{item.label}</span>
+        </a>
+      </li>
+    {/each}
+  </ul>
+  {#each navGroups as group}
+    <div class="nav-group">
+      <h2 class="nav-group-label">{group.label}</h2>
+      <ul class="nav-list">
+        {#each group.items as item}
+          <li>
+            <a
+              href={item.path}
+              use:link
+              class="nav-link"
+              class:has-icon={item.icon}
+              class:active={currentPath === item.path || currentPath.startsWith(item.path + '/')}
+              aria-current={currentPath === item.path ? 'page' : undefined}
+              onclick={onNavClick}
+            >
+              {#if item.icon}
+                <span class="nav-icon" aria-hidden="true">
+                  <Icon name={item.icon} size="sm" />
+                </span>
+              {/if}
+              <span class="nav-label">{item.label}</span>
+              {#if item.badge}
+                <span class="nav-badge">
+                  <NotificationBadge count={unreadTotal} />
+                </span>
+              {/if}
+            </a>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/each}
+  <div class="nav-trailing">
+    <a
+      href="/about"
+      use:link
+      class="nav-link"
+      class:active={currentPath === '/about'}
+      aria-current={currentPath === '/about' ? 'page' : undefined}
+      onclick={onNavClick}
+    >
+      <span class="nav-label">About</span>
+    </a>
+  </div>
+{/snippet}
+
+<!-- Desktop sidebar (≥769px) -->
 <nav class="sidebar" aria-label="Main navigation">
   <div class="sidebar-header">
     <a href="/" use:link class="logo-link" aria-label="Dashboard">
@@ -67,65 +162,136 @@
     </a>
   </div>
   <div class="nav-scroll">
-    <ul class="nav-list dashboard-list">
-      {#each topItems as item}
-        <li>
-          <a
-            href={item.path}
-            use:link
-            class="nav-link dashboard-link"
-            class:active={currentPath === item.path}
-            aria-current={currentPath === item.path ? 'page' : undefined}
-          >
-            <span class="nav-label">{item.label}</span>
-          </a>
-        </li>
-      {/each}
-    </ul>
-    {#each navGroups as group}
-      <div class="nav-group">
-        <h2 class="nav-group-label">{group.label}</h2>
-        <ul class="nav-list">
-          {#each group.items as item}
-            <li>
-              <a
-                href={item.path}
-                use:link
-                class="nav-link"
-                class:has-icon={item.icon}
-                class:active={currentPath === item.path || currentPath.startsWith(item.path + '/')}
-                aria-current={currentPath === item.path ? 'page' : undefined}
-              >
-                {#if item.icon}
-                  <span class="nav-icon" aria-hidden="true">
-                    <Icon name={item.icon} size="sm" />
-                  </span>
-                {/if}
-                <span class="nav-label">{item.label}</span>
-                {#if item.badge}
-                  <span class="nav-badge">
-                    <NotificationBadge count={unreadTotal} />
-                  </span>
-                {/if}
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </div>
-    {/each}
-    <div class="nav-trailing">
-      <a
-        href="/about"
-        use:link
-        class="nav-link"
-        class:active={currentPath === '/about'}
-        aria-current={currentPath === '/about' ? 'page' : undefined}
-      >
-        <span class="nav-label">About</span>
-      </a>
-    </div>
+    {@render navItems()}
   </div>
 </nav>
+
+<!-- Mobile top app bar (≤768px) -->
+<header class="top-bar" aria-label="App bar">
+  <a href="/" use:link class="top-bar-brand" aria-label="Dashboard">
+    <img src={logoUrl} alt="" class="top-bar-logo" />
+    <span class="top-bar-wordmark">graywolf</span>
+  </a>
+
+  <a
+    href="/"
+    use:link
+    class="top-bar-action"
+    class:active={isDashboardActive}
+    aria-label="Dashboard"
+    aria-current={isDashboardActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <!-- Inline dashboard glyph: Chonky icon allowlist lacks layout-dashboard/home. -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="3" width="7" height="9" />
+        <rect x="14" y="3" width="7" height="5" />
+        <rect x="14" y="12" width="7" height="9" />
+        <rect x="3" y="16" width="7" height="5" />
+      </svg>
+    </span>
+  </a>
+
+  <a
+    href="/messages"
+    use:link
+    class="top-bar-action"
+    class:active={isMessagesActive}
+    aria-label={unreadTotal > 0 ? `Messages, ${unreadTotal} unread` : 'Messages'}
+    aria-current={isMessagesActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <Icon name="message-square" size={24} strokeWidth={1.75} />
+    </span>
+    <span class="top-bar-badge">
+      <NotificationBadge count={unreadTotal} />
+    </span>
+  </a>
+
+  <span class="top-bar-spacer"></span>
+
+  <button
+    type="button"
+    class="top-bar-action hamburger"
+    aria-label="Open menu"
+    aria-expanded={menuOpen}
+    aria-controls="graywolf-main-nav"
+    aria-haspopup="dialog"
+    onclick={() => (menuOpen = true)}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <!-- Inline hamburger glyph: Chonky icon allowlist lacks 'menu'. -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <line x1="4" y1="6" x2="20" y2="6" />
+        <line x1="4" y1="12" x2="20" y2="12" />
+        <line x1="4" y1="18" x2="20" y2="18" />
+      </svg>
+    </span>
+  </button>
+</header>
+
+<!-- Mobile drawer — opened by the hamburger above. -->
+<Drawer
+  bind:open={menuOpen}
+  anchor="left"
+  id="graywolf-main-nav"
+  aria-label="Main navigation"
+>
+  <Drawer.Header>
+    <a
+      href="/"
+      use:link
+      class="drawer-brand"
+      aria-label="Dashboard"
+      onclick={onNavClick}
+    >
+      <img src={logoUrl} alt="" class="drawer-brand-logo" />
+      <span class="drawer-brand-wordmark">graywolf</span>
+    </a>
+    <Drawer.Close aria-label="Close menu">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <line x1="6" y1="6" x2="18" y2="18" />
+        <line x1="18" y1="6" x2="6" y2="18" />
+      </svg>
+    </Drawer.Close>
+  </Drawer.Header>
+  <Drawer.Body>
+    <nav class="drawer-nav" aria-label="Main navigation">
+      {@render navItems()}
+    </nav>
+  </Drawer.Body>
+</Drawer>
 
 <style>
   .sidebar {
@@ -260,124 +426,140 @@
     padding-left: 13px;
   }
 
-  /* .nav-trailing pins About to the bottom of the desktop sidebar
-     (margin-top: auto pushes it past the last nav group), then
-     transforms into a regular mobile tab at ≤768px. */
+  /* .nav-trailing pins About to the bottom of the sidebar
+     (margin-top: auto pushes it past the last nav group). */
   .nav-trailing {
     margin-top: auto;
     border-top: 1px solid var(--border-color);
     padding: 6px 0;
   }
 
-@media (max-width: 768px) {
-    /* Mobile bottom-bar: one flat horizontally-scrolling row of tabs.
-       Every item — Dashboard through About — lives inside .nav-scroll
-       as a peer flex child. The nav-group wrappers become transparent
-       via display: contents so their <li> descendants hoist up to
-       .nav-scroll's flex row. */
+  /* ===== Top app bar (mobile only) ===== */
+
+  .top-bar {
+    /* Hidden on desktop; shown via @media below. */
+    display: none;
+  }
+
+  /* Drawer brand row (lives inside Drawer.Header on mobile only). */
+  .drawer-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+  }
+  .drawer-brand-logo {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+  }
+  .drawer-brand-wordmark {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+
+  .drawer-nav {
+    /* Reset list/spacing so the shared snippet renders cleanly inside the drawer. */
+    display: block;
+  }
+
+  @media (max-width: 768px) {
+    /* Desktop sidebar collapses on mobile; replaced by top bar + drawer. */
     .sidebar {
-      width: 100%;
-      height: 60px;
+      display: none;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
       position: fixed;
-      bottom: 0;
-      top: auto;
-      flex-direction: row;
-      border-right: none;
-      border-top: 1px solid var(--border-color);
-      overflow: hidden;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: calc(56px + env(safe-area-inset-top));
+      padding: env(safe-area-inset-top) 8px 0
+        max(8px, env(safe-area-inset-right));
+      padding-left: max(8px, env(safe-area-inset-left));
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      z-index: 100;
+      box-sizing: border-box;
     }
-    .sidebar-header {
-      display: none;
-    }
-    .nav-scroll {
-      flex: 1 1 auto;
+
+    .top-bar-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: var(--text-secondary);
+      padding: 0 8px;
+      height: 44px;
+      flex-shrink: 0;
       min-width: 0;
-      display: flex;
-      flex-direction: row;
-      align-items: stretch;
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding: 0;
-      scrollbar-width: none;  /* Firefox — hide horizontal scrollbar */
     }
-    .nav-scroll::-webkit-scrollbar {
-      display: none;
+    .top-bar-logo {
+      width: 32px;
+      height: 32px;
+      display: block;
+      flex-shrink: 0;
     }
-    .nav-group,
-    .dashboard-list,
-    .nav-trailing {
-      display: contents;
+    .top-bar-wordmark {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      white-space: nowrap;
     }
-    .nav-group-label {
-      display: none;
-    }
-    .nav-list {
-      display: contents;
-      padding: 0;
-    }
-    .nav-list li {
-      display: flex;
-    }
-    .nav-link,
-    .nav-link.has-icon,
-    .dashboard-link {
-      /* One tab rule — reset every desktop specificity path. */
-      flex-direction: column;
+
+    .top-bar-action {
+      position: relative;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 2px;
-      padding: 0 10px;
-      height: 60px;
-      min-width: 64px;
-      font-size: 10px;
-      font-weight: 500;
-      white-space: nowrap;
-      border-left: none;
-      position: relative;
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+      /* Reset button defaults */
+      padding: 0;
+      font: inherit;
     }
-    .nav-link.active,
-    .nav-link.has-icon.active,
-    .dashboard-link.active {
-      /* Top-border accent + surface background; no left-border. */
-      border-left: none;
-      border-top: 2px solid var(--accent);
-      padding-left: 10px;
+    .top-bar-action:hover,
+    .top-bar-action:focus-visible {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    .top-bar-action.active {
+      color: var(--accent);
       background: var(--bg-tertiary);
     }
-    .nav-icon {
-      width: 18px;
-      height: 18px;
-    }
-    /* Items without an icon get a spacer so labels align vertically
-       with icon'd items. */
-    .nav-link:not(.has-icon) .nav-label {
-      padding-top: 18px;
-    }
-    .nav-label {
-      white-space: nowrap;
-      line-height: 1;
-    }
-    /* Unread badge pinned to the top-right of its tab (Messages). */
-    .nav-badge {
-      position: absolute;
-      top: 6px;
-      right: 8px;
-      margin-left: 0;
-    }
-    /* Right-edge fade hints at horizontal scroll affordance. */
-    .sidebar::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      height: 100%;
-      width: 20px;
+    .top-bar-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
       pointer-events: none;
-      background: linear-gradient(
-        to right,
-        transparent,
-        var(--bg-secondary)
-      );
+    }
+    .top-bar-badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      pointer-events: none;
+    }
+
+    .top-bar-spacer {
+      flex: 1 1 auto;
     }
   }
 </style>
