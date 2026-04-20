@@ -16,13 +16,13 @@ import (
 type Metrics struct {
 	Registry *prometheus.Registry
 
-	RxFrames        *prometheus.CounterVec
-	DcdTransitions  *prometheus.CounterVec
-	DcdDropped      prometheus.Counter
-	ChildRestarts   prometheus.Counter
-	AudioLevel      *prometheus.GaugeVec
-	DcdActive       *prometheus.GaugeVec
-	ChildUp         prometheus.Gauge
+	RxFrames       *prometheus.CounterVec
+	DcdTransitions *prometheus.CounterVec
+	DcdDropped     prometheus.Counter
+	ChildRestarts  prometheus.Counter
+	AudioLevel     *prometheus.GaugeVec
+	DcdActive      *prometheus.GaugeVec
+	ChildUp        prometheus.Gauge
 
 	// Phase 2: protocol + tx governor metrics.
 	KissClientsActive *prometheus.GaugeVec // per interface name
@@ -36,15 +36,23 @@ type Metrics struct {
 	AprsOutDropped    prometheus.Counter
 
 	// digipeater, packet log, and beacon metrics.
-	DigipeaterPackets   prometheus.Counter
-	DigipeaterDeduped   prometheus.Counter
-	PacketlogEntries    prometheus.Gauge
-	BeaconPackets       *prometheus.CounterVec // label: "type"
-	BeaconFired         *prometheus.CounterVec // labels: "beacon_name", "result" ("sent" | "skipped_busy")
-	BeaconEncodeErrors  *prometheus.CounterVec // label: "beacon_name"
-	BeaconSubmitErrors  *prometheus.CounterVec // labels: "beacon_name", "reason"
-	SmartBeaconRate     *prometheus.GaugeVec   // label: "channel"
-	GpsParseErrors      *prometheus.CounterVec // label: "source" ("gpsd" | "nmea")
+	DigipeaterPackets  prometheus.Counter
+	DigipeaterDeduped  prometheus.Counter
+	PacketlogEntries   prometheus.Gauge
+	BeaconPackets      *prometheus.CounterVec // label: "type"
+	BeaconFired        *prometheus.CounterVec // labels: "beacon_name", "result" ("sent" | "skipped_busy")
+	BeaconEncodeErrors *prometheus.CounterVec // label: "beacon_name"
+	BeaconSubmitErrors *prometheus.CounterVec // labels: "beacon_name", "reason"
+	SmartBeaconRate    *prometheus.GaugeVec   // label: "channel"
+	GpsParseErrors     *prometheus.CounterVec // label: "source" ("gpsd" | "nmea")
+
+	// KISS modem/TNC-mode observability. Phase 5 of the KISS modem/TNC
+	// plan.
+	KissIngressFrames       *prometheus.CounterVec // labels: "interface_id", "mode"
+	KissTncRxDispatched     *prometheus.CounterVec // label: "interface_id"
+	KissTncIngressDropped   *prometheus.CounterVec // labels: "interface_id", "reason" ("rate_limit" | "queue_full")
+	KissBroadcastSuppressed *prometheus.CounterVec // labels: "interface_id", "reason" ("self_loop")
+	RxFanoutDropped         *prometheus.CounterVec // label: "producer" ("kiss_tnc"; "modem" is a blocking producer and never drops at the fanout)
 
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
@@ -158,6 +166,26 @@ func New() *Metrics {
 			Name: "graywolf_gps_parse_errors_total",
 			Help: "GPS messages that failed to parse and were dropped. Source 'gpsd' counts JSON lines from the gpsd reader; 'nmea' counts NMEA sentences from the serial/file reader.",
 		}, []string{"source"}),
+		KissIngressFrames: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_kiss_ingress_frames_total",
+			Help: "KISS data frames decoded successfully at the server, by interface DB id and mode ('modem' | 'tnc').",
+		}, []string{"interface_id", "mode"}),
+		KissTncRxDispatched: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_kiss_tnc_rx_dispatched_total",
+			Help: "TNC-mode KISS frames successfully injected into the shared RX fanout (survived rate-limit and per-interface queue).",
+		}, []string{"interface_id"}),
+		KissTncIngressDropped: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_kiss_tnc_ingress_dropped_total",
+			Help: "TNC-mode KISS frames dropped at ingress. Reason 'rate_limit' counts token-bucket denials; 'queue_full' counts overflows of the per-interface ingress queue.",
+		}, []string{"interface_id", "reason"}),
+		KissBroadcastSuppressed: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_kiss_broadcast_suppressed_total",
+			Help: "KISS broadcast recipients skipped. Reason 'self_loop' counts the originating TNC-mode interface being excluded from its own echo.",
+		}, []string{"interface_id", "reason"}),
+		RxFanoutDropped: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_rx_fanout_dropped_total",
+			Help: "Frames dropped at the shared RX fanout channel. Only the 'kiss_tnc' producer can drop here (non-blocking send); the 'modem' producer is a blocking send and never increments this counter.",
+		}, []string{"producer"}),
 		lastDcdTransitions: make(map[uint32]uint64),
 	}
 	reg.MustRegister(
@@ -186,6 +214,11 @@ func New() *Metrics {
 		m.BeaconSubmitErrors,
 		m.SmartBeaconRate,
 		m.GpsParseErrors,
+		m.KissIngressFrames,
+		m.KissTncRxDispatched,
+		m.KissTncIngressDropped,
+		m.KissBroadcastSuppressed,
+		m.RxFanoutDropped,
 	)
 	return m
 }
@@ -249,4 +282,24 @@ func (m *Metrics) SetChildUp(up bool) {
 	} else {
 		m.ChildUp.Set(0)
 	}
+}
+
+// ObserveKissIngressFrame increments the per-interface/per-mode ingress
+// frame counter. Called for every inbound KISS data frame that
+// successfully AX.25-decodes, regardless of whether the interface is in
+// Modem or TNC mode.
+func (m *Metrics) ObserveKissIngressFrame(ifaceID uint32, mode string) {
+	m.KissIngressFrames.WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10), mode).Inc()
+}
+
+// ObserveKissTncRxDispatched increments when a TNC-mode frame survives
+// rate-limit + queue and is enqueued onto the shared RX fanout.
+func (m *Metrics) ObserveKissTncRxDispatched(ifaceID uint32) {
+	m.KissTncRxDispatched.WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10)).Inc()
+}
+
+// ObserveKissBroadcastSuppressed increments when a KISS broadcast skips
+// the originating TNC interface (self-loop guard).
+func (m *Metrics) ObserveKissBroadcastSuppressed(ifaceID uint32) {
+	m.KissBroadcastSuppressed.WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10), "self_loop").Inc()
 }

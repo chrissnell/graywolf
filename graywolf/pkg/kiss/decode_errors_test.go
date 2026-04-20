@@ -34,3 +34,39 @@ func TestHandleFrame_OnDecodeErrorFires(t *testing.T) {
 		t.Errorf("after timing frame: decodeErrs = %d, want 1 (unchanged)", got)
 	}
 }
+
+// TestHandleFrame_OnFrameIngressFires drives handleFrame with a valid
+// UI frame and asserts OnFrameIngress is invoked exactly once with the
+// server's configured Mode. The hook must fire before dispatchDataFrame
+// so callers see every decoded frame regardless of mode-specific
+// dispatch outcomes (rate-limit drops, queue overflow, etc.).
+func TestHandleFrame_OnFrameIngressFires(t *testing.T) {
+	var ingressCalls atomic.Int64
+	var seenMode atomic.Value
+
+	srv := NewServer(ServerConfig{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Mode:   ModeTnc,
+		OnFrameIngress: func(mode Mode) {
+			ingressCalls.Add(1)
+			seenMode.Store(mode)
+		},
+	})
+
+	ax := kissUIFrameBytes(t, "hello")
+	srv.handleFrame(context.Background(), "127.0.0.1:1234", &Frame{Command: CmdDataFrame, Port: 0, Data: ax})
+
+	if got := ingressCalls.Load(); got != 1 {
+		t.Errorf("ingressCalls = %d, want 1", got)
+	}
+	if got := seenMode.Load(); got != ModeTnc {
+		t.Errorf("seenMode = %v, want %v", got, ModeTnc)
+	}
+
+	// A decode-failure data frame must NOT invoke OnFrameIngress —
+	// the hook is observation of successful decodes only.
+	srv.handleFrame(context.Background(), "127.0.0.1:1234", &Frame{Command: CmdDataFrame, Port: 0, Data: []byte{0x00}})
+	if got := ingressCalls.Load(); got != 1 {
+		t.Errorf("after bad frame: ingressCalls = %d, want 1 (unchanged)", got)
+	}
+}

@@ -129,7 +129,6 @@ func (s *Store) Migrate() error {
 	return nil
 }
 
-
 // ---------------------------------------------------------------------------
 // AudioDevice CRUD
 // ---------------------------------------------------------------------------
@@ -351,10 +350,45 @@ func (s *Store) GetKissInterface(ctx context.Context, id uint32) (*KissInterface
 	return &k, nil
 }
 func (s *Store) CreateKissInterface(ctx context.Context, k *KissInterface) error {
+	if err := normalizeKissInterface(k); err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Create(k).Error
 }
 func (s *Store) UpdateKissInterface(ctx context.Context, k *KissInterface) error {
+	if err := normalizeKissInterface(k); err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Save(k).Error
+}
+
+// normalizeKissInterface applies the "absent field" defaults and the
+// store-boundary validation for KissInterface. It exists so both
+// CreateKissInterface and UpdateKissInterface share a single source of
+// truth — the handler layer validates too, but the store-boundary check
+// is the backstop that keeps a bad row from ever reaching SQLite if a
+// future caller forgets the DTO path.
+//
+// An empty Mode is silently upgraded to KissModeModem so older clients
+// that don't know about the field keep working. Zero rate values are
+// treated as "unset" and replaced with the defaults documented on the
+// struct tags; the column's NOT NULL constraint would accept 0, but 0
+// would disable the Phase 3 token bucket entirely, which is almost
+// certainly not what the caller meant.
+func normalizeKissInterface(k *KissInterface) error {
+	if k.Mode == "" {
+		k.Mode = KissModeModem
+	}
+	if !ValidKissMode(k.Mode) {
+		return fmt.Errorf("kiss interface: invalid mode %q: must be %q or %q", k.Mode, KissModeModem, KissModeTnc)
+	}
+	if k.TncIngressRateHz == 0 {
+		k.TncIngressRateHz = DefaultTncIngressRateHz
+	}
+	if k.TncIngressBurst == 0 {
+		k.TncIngressBurst = DefaultTncIngressBurst
+	}
+	return nil
 }
 func (s *Store) DeleteKissInterface(ctx context.Context, id uint32) error {
 	return s.db.WithContext(ctx).Delete(&KissInterface{}, id).Error

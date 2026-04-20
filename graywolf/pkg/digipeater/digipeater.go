@@ -7,7 +7,7 @@
 //
 //	digi := digipeater.New(digipeater.Config{...})
 //	// on RX:
-//	digi.Handle(ctx, rxChannel, frame)
+//	digi.Handle(ctx, rxChannel, frame, ingress.Modem())
 //
 // Handle walks the path looking for the first unconsumed (H-bit clear)
 // entry that matches a rule and, if it finds one, submits a cloned
@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/internal/dedup"
@@ -185,7 +186,11 @@ func RulesFromStore(rows []configstore.DigipeaterRule) []Rule {
 // rule matches and Action is "repeat", a cloned+mutated frame is
 // submitted to the TX sink. The RX frame is never mutated. Returns
 // true if the frame was digipeated.
-func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.Frame) bool {
+//
+// src identifies where the frame entered graywolf. Phase 1 threads it
+// through without affecting behavior; later phases may use it to tighten
+// dedup or suppress self-feedback for KISS-TNC-sourced frames.
+func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.Frame, src ingress.Source) bool {
 	if frame == nil || !frame.IsUI() {
 		return false
 	}
@@ -431,4 +436,3 @@ func cloneFrame(f *ax25.Frame) *ax25.Frame {
 func addressEqual(a, b ax25.Address) bool {
 	return strings.EqualFold(a.Call, b.Call) && a.SSID == b.SSID
 }
-

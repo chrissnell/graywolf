@@ -129,3 +129,36 @@ func TestObservabilityCountersRegistered(t *testing.T) {
 		}
 	}
 }
+
+// TestKissTncObservabilityCounters pins the Phase 5 KISS modem/TNC
+// counter contract: every new counter surfaces in /metrics after at
+// least one label-touch, and the helper methods funnel increments
+// through the correct label combinations.
+func TestKissTncObservabilityCounters(t *testing.T) {
+	m := New()
+
+	// Drive every code path through the public helpers.
+	m.ObserveKissIngressFrame(7, "modem")
+	m.ObserveKissIngressFrame(7, "tnc")
+	m.ObserveKissIngressFrame(7, "tnc")
+	m.ObserveKissTncRxDispatched(7)
+	m.KissTncIngressDropped.WithLabelValues("7", "rate_limit").Add(3)
+	m.KissTncIngressDropped.WithLabelValues("7", "queue_full").Add(1)
+	m.ObserveKissBroadcastSuppressed(7)
+	m.RxFanoutDropped.WithLabelValues("kiss_tnc").Inc()
+
+	body := scrape(t, m)
+	for _, want := range []string{
+		`graywolf_kiss_ingress_frames_total{interface_id="7",mode="modem"} 1`,
+		`graywolf_kiss_ingress_frames_total{interface_id="7",mode="tnc"} 2`,
+		`graywolf_kiss_tnc_rx_dispatched_total{interface_id="7"} 1`,
+		`graywolf_kiss_tnc_ingress_dropped_total{interface_id="7",reason="rate_limit"} 3`,
+		`graywolf_kiss_tnc_ingress_dropped_total{interface_id="7",reason="queue_full"} 1`,
+		`graywolf_kiss_broadcast_suppressed_total{interface_id="7",reason="self_loop"} 1`,
+		`graywolf_rx_fanout_dropped_total{producer="kiss_tnc"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output missing %q\n---\n%s", want, body)
+		}
+	}
+}

@@ -416,6 +416,78 @@ func TestConfigTablesRoundTrip(t *testing.T) {
 	}
 }
 
+// TestCreateKissInterfaceModeDefaulting confirms the store-boundary
+// defense: an empty Mode is upgraded to KissModeModem, zero rate fields
+// are replaced with the documented defaults, and invalid Mode values
+// are rejected with a wrapped error before the row ever reaches SQLite.
+func TestCreateKissInterfaceModeDefaulting(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	t.Run("empty mode defaults to modem", func(t *testing.T) {
+		ki := &KissInterface{Name: "kiss-default", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8101", Channel: 1}
+		if err := s.CreateKissInterface(ctx, ki); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		got, err := s.GetKissInterface(ctx, ki.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Mode != KissModeModem {
+			t.Errorf("Mode = %q, want %q", got.Mode, KissModeModem)
+		}
+		if got.TncIngressRateHz != 50 || got.TncIngressBurst != 100 {
+			t.Errorf("rate defaults not applied: rate=%d burst=%d", got.TncIngressRateHz, got.TncIngressBurst)
+		}
+	})
+
+	t.Run("explicit tnc mode round-trips", func(t *testing.T) {
+		ki := &KissInterface{
+			Name: "kiss-tnc", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8102", Channel: 1,
+			Mode: KissModeTnc, TncIngressRateHz: 25, TncIngressBurst: 75,
+		}
+		if err := s.CreateKissInterface(ctx, ki); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		got, err := s.GetKissInterface(ctx, ki.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Mode != KissModeTnc || got.TncIngressRateHz != 25 || got.TncIngressBurst != 75 {
+			t.Errorf("round-trip lost fields: %+v", got)
+		}
+	})
+
+	t.Run("invalid mode is rejected", func(t *testing.T) {
+		ki := &KissInterface{Name: "kiss-bad", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8103", Channel: 1, Mode: "bogus"}
+		err := s.CreateKissInterface(ctx, ki)
+		if err == nil {
+			t.Fatal("expected error for invalid mode")
+		}
+	})
+
+	t.Run("update applies same defaults", func(t *testing.T) {
+		ki := &KissInterface{Name: "kiss-upd", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8104", Channel: 1, Mode: KissModeTnc}
+		if err := s.CreateKissInterface(ctx, ki); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		// Clear the rate fields and clear Mode to simulate a legacy update.
+		ki.Mode = ""
+		ki.TncIngressRateHz = 0
+		ki.TncIngressBurst = 0
+		if err := s.UpdateKissInterface(ctx, ki); err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		got, err := s.GetKissInterface(ctx, ki.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Mode != KissModeModem || got.TncIngressRateHz != 50 || got.TncIngressBurst != 100 {
+			t.Errorf("update did not re-apply defaults: %+v", got)
+		}
+	})
+}
+
 // TestBeaconUseGpsRoundTrip verifies that the use_gps column survives
 // AutoMigrate + Create + Read. Guards against accidental tag drift or a
 // dropped column on the Beacon model.

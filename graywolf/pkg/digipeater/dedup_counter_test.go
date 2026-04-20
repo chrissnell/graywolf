@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 )
 
@@ -42,7 +43,7 @@ func TestOnDedupFiresOnDedupHit(t *testing.T) {
 
 	// First copy must digipeat and must NOT fire OnDedup.
 	first := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "same")
-	if !d.Handle(context.Background(), 1, first) {
+	if !d.Handle(context.Background(), 1, first, ingress.Modem()) {
 		t.Fatal("first frame should digipeat")
 	}
 	if got := dedupCount.Load(); got != 0 {
@@ -51,7 +52,7 @@ func TestOnDedupFiresOnDedupHit(t *testing.T) {
 
 	// Second copy within the window must be suppressed; OnDedup fires.
 	second := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "same")
-	if d.Handle(context.Background(), 1, second) {
+	if d.Handle(context.Background(), 1, second, ingress.Modem()) {
 		t.Fatal("duplicate frame should be suppressed")
 	}
 	if got := dedupCount.Load(); got != 1 {
@@ -60,7 +61,7 @@ func TestOnDedupFiresOnDedupHit(t *testing.T) {
 
 	// Third copy still suppressed → count goes to 2.
 	third := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "same")
-	if d.Handle(context.Background(), 1, third) {
+	if d.Handle(context.Background(), 1, third, ingress.Modem()) {
 		t.Fatal("second duplicate should also be suppressed")
 	}
 	if got := dedupCount.Load(); got != 2 {

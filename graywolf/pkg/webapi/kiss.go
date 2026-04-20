@@ -161,11 +161,18 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 	if ch == 0 {
 		ch = 1
 	}
+	mode := kiss.Mode(ki.Mode)
+	if mode == "" {
+		mode = kiss.ModeModem
+	}
 	s.kissManager.Start(s.kissCtx, ki.ID, kiss.ServerConfig{
-		Name:       ki.Name,
-		ListenAddr: ki.ListenAddr,
-		Logger:     s.logger,
-		ChannelMap: map[uint8]uint32{0: ch},
-		Broadcast:  ki.Broadcast,
+		Name:             ki.Name,
+		ListenAddr:       ki.ListenAddr,
+		Logger:           s.logger,
+		ChannelMap:       map[uint8]uint32{0: ch},
+		Broadcast:        ki.Broadcast,
+		Mode:             mode,
+		TncIngressRateHz: ki.TncIngressRateHz,
+		TncIngressBurst:  ki.TncIngressBurst,
 	})
 }

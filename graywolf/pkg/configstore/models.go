@@ -78,9 +78,9 @@ type PttConfig struct {
 	Channel    *Channel  `gorm:"foreignKey:ChannelID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"-"`
 	Method     string    `gorm:"not null;default:'none'" json:"method"` // serial_rts|serial_dtr|gpio|cm108|none
 	Device     string    `json:"device_path"`
-	GpioPin    uint32    `json:"gpio_pin"`                                // CM108-only: 1-indexed HID GPIO pin (default 3)
-	GpioLine   uint32    `gorm:"not null;default:0" json:"gpio_line"`     // gpiochip method: 0-indexed line offset
-	Invert     bool      `gorm:"not null;default:false" json:"invert"`    // reverse polarity for rigs wired backwards
+	GpioPin    uint32    `json:"gpio_pin"`                             // CM108-only: 1-indexed HID GPIO pin (default 3)
+	GpioLine   uint32    `gorm:"not null;default:0" json:"gpio_line"`  // gpiochip method: 0-indexed line offset
+	Invert     bool      `gorm:"not null;default:false" json:"invert"` // reverse polarity for rigs wired backwards
 	SlotTimeMs uint32    `gorm:"not null;default:10" json:"slot_time_ms"`
 	Persist    uint32    `gorm:"not null;default:63" json:"persist"`
 	DwaitMs    uint32    `gorm:"not null;default:0" json:"dwait_ms"`
@@ -92,18 +92,58 @@ type PttConfig struct {
 // pkg/kiss corresponds to one row. InterfaceType is "tcp"|"serial"|
 // "bluetooth"; for serial/bluetooth the Device and BaudRate are used
 // and ListenAddr may be empty.
+//
+// Mode selects the per-interface routing policy:
+//   - KissModeModem (default): peer is an APRS app; frames it sends are
+//     queued for RF transmission.
+//   - KissModeTnc: peer is a hardware TNC supplying off-air RX; frames are
+//     fanned out to digi/igate/messages/station cache, not auto-submitted
+//     to TX. See .context/2026-04-19-kiss-modem-tnc-mode.md.
+//
+// TncIngressRateHz and TncIngressBurst configure the per-interface
+// token-bucket ingress cap consumed in TNC mode (wired in Phase 3). The
+// fields are stored and surfaced for every row regardless of mode so the
+// operator's choice survives a mode flip.
 type KissInterface struct {
-	ID            uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name          string    `gorm:"not null;uniqueIndex" json:"name"`
-	InterfaceType string    `gorm:"not null;default:'tcp'" json:"type"` // tcp|serial|bluetooth
-	ListenAddr    string    `json:"listen_addr"`                        // host:port for tcp
-	Device        string    `json:"serial_device"`                      // /dev/ttyUSB0 or bluetooth mac
-	BaudRate      uint32    `gorm:"default:9600" json:"baud_rate"`
-	Channel       uint32    `gorm:"not null;default:1" json:"channel"` // default radio channel for this interface
-	Broadcast     bool      `gorm:"not null;default:true" json:"broadcast"`
-	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt     time.Time `json:"-"`
-	UpdatedAt     time.Time `json:"-"`
+	ID               uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name             string    `gorm:"not null;uniqueIndex" json:"name"`
+	InterfaceType    string    `gorm:"not null;default:'tcp'" json:"type"` // tcp|serial|bluetooth
+	ListenAddr       string    `json:"listen_addr"`                        // host:port for tcp
+	Device           string    `json:"serial_device"`                      // /dev/ttyUSB0 or bluetooth mac
+	BaudRate         uint32    `gorm:"default:9600" json:"baud_rate"`
+	Channel          uint32    `gorm:"not null;default:1" json:"channel"` // default radio channel for this interface
+	Broadcast        bool      `gorm:"not null;default:true" json:"broadcast"`
+	Enabled          bool      `gorm:"not null;default:true" json:"enabled"`
+	Mode             string    `gorm:"not null;default:'modem'" json:"mode"`           // modem|tnc
+	TncIngressRateHz uint32    `gorm:"not null;default:50" json:"tnc_ingress_rate_hz"` // token-bucket refill, frames/sec
+	TncIngressBurst  uint32    `gorm:"not null;default:100" json:"tnc_ingress_burst"`  // token-bucket size
+	CreatedAt        time.Time `json:"-"`
+	UpdatedAt        time.Time `json:"-"`
+}
+
+// KISS interface mode values. Stored lowercase and matched exactly — see
+// ValidKissMode. The default for newly created rows is KissModeModem so
+// existing behavior is preserved byte-for-byte.
+const (
+	KissModeModem = "modem"
+	KissModeTnc   = "tnc"
+)
+
+// Defaults for KissInterface.TncIngressRateHz / TncIngressBurst. Kept in
+// sync with the GORM struct-tag defaults on KissInterface. Go callers
+// should reference these constants rather than hard-coding 50/100 so
+// the two sides of the model can't drift.
+const (
+	DefaultTncIngressRateHz uint32 = 50
+	DefaultTncIngressBurst  uint32 = 100
+)
+
+// ValidKissMode reports whether m is an accepted KissInterface.Mode
+// value. The match is case-sensitive and the empty string is rejected:
+// callers that want the "absent field" default to land on KissModeModem
+// must substitute it themselves before calling this helper.
+func ValidKissMode(m string) bool {
+	return m == KissModeModem || m == KissModeTnc
 }
 
 // AgwConfig is a singleton (id=1) row describing the AGWPE listener.
@@ -223,37 +263,37 @@ type GPSConfig struct {
 
 // Beacon is a scheduled beacon. Type selects the payload builder.
 type Beacon struct {
-	ID            uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Type          string    `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
-	Channel       uint32    `gorm:"not null;default:1" json:"channel"`
-	Callsign      string    `gorm:"not null" json:"callsign"`
-	Destination   string    `gorm:"not null;default:'APGRWO'" json:"destination"`
-	Path          string    `gorm:"not null;default:'WIDE1-1'" json:"path"`
-	UseGps        bool      `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
-	Latitude      float64   `json:"latitude"`
-	Longitude     float64   `json:"longitude"`
-	AltFt         float64   `json:"alt_ft"` // altitude in feet for position reports
-	Ambiguity     uint32    `gorm:"not null;default:0" json:"ambiguity"`
-	SymbolTable   string    `gorm:"not null;default:'/'" json:"symbol_table"`
-	Symbol        string    `gorm:"not null;default:'-'" json:"symbol"`
-	Overlay       string    `json:"overlay"`                                 // alternate symbol table overlay character
-	Compress      bool      `gorm:"not null;default:true" json:"compress"`   // use 13-byte base-91 compressed position encoding (APRS101 ch 9)
-	Messaging     bool      `gorm:"not null;default:false" json:"messaging"` // '=' instead of '!' prefix
-	Comment       string    `json:"comment"`
-	CommentCmd    string    `json:"comment_cmd"`                      // shell command whose stdout is appended as comment
-	CustomInfo    string    `json:"custom_info"`                      // raw info field override for Type=="custom"
-	ObjectName    string    `json:"object_name"`                      // for Type=="object"
-	Power         uint32    `gorm:"not null;default:0" json:"power"`  // watts for PHG
-	Height        uint32    `gorm:"not null;default:0" json:"height"` // feet HAAT for PHG
-	Gain          uint32    `gorm:"not null;default:0" json:"gain"`   // dBi for PHG
-	Dir           uint32    `gorm:"not null;default:0" json:"dir"`    // antenna direction 0..8 for PHG
-	Freq          string    `json:"freq"`                             // frequency string for freq info
-	Tone          string    `json:"tone"`                             // CTCSS/DCS tone
-	FreqOffset    string    `json:"freq_offset"`                      // repeater offset
-	DelaySeconds  uint32    `gorm:"not null;default:30" json:"delay_seconds"`
-	EverySeconds  uint32    `gorm:"not null;default:1800" json:"interval"`
-	SlotSeconds   int32     `gorm:"not null;default:-1" json:"slot_seconds"`
-	SmartBeacon bool `gorm:"not null;default:false" json:"smart_beacon"`
+	ID           uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
+	Type         string  `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
+	Channel      uint32  `gorm:"not null;default:1" json:"channel"`
+	Callsign     string  `gorm:"not null" json:"callsign"`
+	Destination  string  `gorm:"not null;default:'APGRWO'" json:"destination"`
+	Path         string  `gorm:"not null;default:'WIDE1-1'" json:"path"`
+	UseGps       bool    `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
+	Latitude     float64 `json:"latitude"`
+	Longitude    float64 `json:"longitude"`
+	AltFt        float64 `json:"alt_ft"` // altitude in feet for position reports
+	Ambiguity    uint32  `gorm:"not null;default:0" json:"ambiguity"`
+	SymbolTable  string  `gorm:"not null;default:'/'" json:"symbol_table"`
+	Symbol       string  `gorm:"not null;default:'-'" json:"symbol"`
+	Overlay      string  `json:"overlay"`                                 // alternate symbol table overlay character
+	Compress     bool    `gorm:"not null;default:true" json:"compress"`   // use 13-byte base-91 compressed position encoding (APRS101 ch 9)
+	Messaging    bool    `gorm:"not null;default:false" json:"messaging"` // '=' instead of '!' prefix
+	Comment      string  `json:"comment"`
+	CommentCmd   string  `json:"comment_cmd"`                      // shell command whose stdout is appended as comment
+	CustomInfo   string  `json:"custom_info"`                      // raw info field override for Type=="custom"
+	ObjectName   string  `json:"object_name"`                      // for Type=="object"
+	Power        uint32  `gorm:"not null;default:0" json:"power"`  // watts for PHG
+	Height       uint32  `gorm:"not null;default:0" json:"height"` // feet HAAT for PHG
+	Gain         uint32  `gorm:"not null;default:0" json:"gain"`   // dBi for PHG
+	Dir          uint32  `gorm:"not null;default:0" json:"dir"`    // antenna direction 0..8 for PHG
+	Freq         string  `json:"freq"`                             // frequency string for freq info
+	Tone         string  `json:"tone"`                             // CTCSS/DCS tone
+	FreqOffset   string  `json:"freq_offset"`                      // repeater offset
+	DelaySeconds uint32  `gorm:"not null;default:30" json:"delay_seconds"`
+	EverySeconds uint32  `gorm:"not null;default:1800" json:"interval"`
+	SlotSeconds  int32   `gorm:"not null;default:-1" json:"slot_seconds"`
+	SmartBeacon  bool    `gorm:"not null;default:false" json:"smart_beacon"`
 	// Deprecated: use the global configstore.SmartBeaconConfig instead.
 	// This column is no longer read as of 2026-04-18 (the SmartBeacon
 	// curve is now a global singleton, matching direwolf). The column
@@ -302,7 +342,7 @@ type Beacon struct {
 	// will be dropped in a future migration once all deployments have
 	// moved to the global config. See
 	// .context/2026-04-18-smart-beacon-implementation.md.
-	SbMinTurnTime uint32 `gorm:"default:5" json:"sb_min_turn_time"`
+	SbMinTurnTime uint32    `gorm:"default:5" json:"sb_min_turn_time"`
 	SendToAPRSIS  bool      `gorm:"column:send_to_aprs_is;not null;default:false" json:"send_to_aprs_is"`
 	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt     time.Time `json:"-"`
@@ -388,17 +428,17 @@ type Message struct {
 	ReceivedAt     *time.Time     `json:"received_at,omitempty"`
 	SentAt         *time.Time     `json:"sent_at,omitempty"`
 	AckedAt        *time.Time     `json:"acked_at,omitempty"`
-	AckState       string         `gorm:"size:16;not null;default:'none'" json:"ack_state"`       // none | acked | rejected | broadcast
-	Source         string         `gorm:"size:4;not null;default:''" json:"source"`               // rf | is (string form of aprs.Direction)
+	AckState       string         `gorm:"size:16;not null;default:'none'" json:"ack_state"` // none | acked | rejected | broadcast
+	Source         string         `gorm:"size:4;not null;default:''" json:"source"`         // rf | is (string form of aprs.Direction)
 	Channel        uint32         `gorm:"not null;default:0" json:"channel"`
-	Path           string         `gorm:"size:64" json:"path"`                                    // display path, e.g. "W1ABC*,WIDE1-1*"
-	Via            string         `gorm:"size:64" json:"via"`                                     // last used digipeater
-	RawTNC2        string         `gorm:"column:raw_tnc2;size:512" json:"raw_tnc2"`               // archival raw text
+	Path           string         `gorm:"size:64" json:"path"`                      // display path, e.g. "W1ABC*,WIDE1-1*"
+	Via            string         `gorm:"size:64" json:"via"`                       // last used digipeater
+	RawTNC2        string         `gorm:"column:raw_tnc2;size:512" json:"raw_tnc2"` // archival raw text
 	Unread         bool           `gorm:"not null;default:false;index:idx_msg_direction_unread,priority:2" json:"unread"`
 	Attempts       uint32         `gorm:"not null;default:0" json:"attempts"`
 	NextRetryAt    *time.Time     `json:"next_retry_at,omitempty"`
 	FailureReason  string         `gorm:"size:128" json:"failure_reason"`
-	ReplyAckID     string         `gorm:"size:5" json:"reply_ack_id"`                             // inbound: APRS11 reply-ack id we observed
+	ReplyAckID     string         `gorm:"size:5" json:"reply_ack_id"` // inbound: APRS11 reply-ack id we observed
 	IsAck          bool           `gorm:"not null;default:false" json:"is_ack"`
 	IsRej          bool           `gorm:"not null;default:false" json:"is_rej"`
 	IsBulletin     bool           `gorm:"not null;default:false" json:"is_bulletin"`
@@ -462,9 +502,9 @@ type MessagePreferences struct {
 // Callsign is normalized to uppercase via BeforeSave so any path in/out
 // is safe. See plan "Group chat via tactical callsigns" section.
 type TacticalCallsign struct {
-	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Callsign  string    `gorm:"size:9;not null;uniqueIndex" json:"callsign"` // 1-9 [A-Z0-9-], uppercase
-	Alias     string    `gorm:"size:64" json:"alias"`                        // optional free-text
+	ID       uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Callsign string `gorm:"size:9;not null;uniqueIndex" json:"callsign"` // 1-9 [A-Z0-9-], uppercase
+	Alias    string `gorm:"size:64" json:"alias"`                        // optional free-text
 	// Enabled: column does not declare default:true on purpose. The
 	// handler-level default ("Monitor now" toggle) runs before the
 	// insert, and a GORM default:true would silently override a caller

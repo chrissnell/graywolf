@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 )
@@ -57,7 +58,7 @@ func TestWIDEnNDecrementing(t *testing.T) {
 
 	// WIDE2-2 → should become WIDE2-1 (SSID decremented, not yet consumed).
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "test")
-	if !d.Handle(context.Background(), 1, rx) {
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("expected digi to repeat WIDE2-2")
 	}
 	cap := sink.Last()
@@ -85,7 +86,7 @@ func TestWIDE1_1Consumed(t *testing.T) {
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE1-1"}, "x")
-	if !d.Handle(context.Background(), 1, rx) {
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("expected repeat")
 	}
 	slot := sink.Last().Frame.Path[0]
@@ -102,7 +103,7 @@ func TestWIDE7_7Rejected(t *testing.T) {
 	}}
 	d, _ := newTestDigi(t, rules, "N0CAL")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE7-7"}, "x")
-	if d.Handle(context.Background(), 1, rx) {
+	if d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("WIDE7-7 should not be repeated with MaxHops=2")
 	}
 }
@@ -115,7 +116,7 @@ func TestPreemptiveDigiOnLocalCall(t *testing.T) {
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL-3")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"N0CAL-3", "WIDE2-2"}, "hi")
-	if !d.Handle(context.Background(), 1, rx) {
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("expected preemptive digi")
 	}
 	cap := sink.Last()
@@ -129,13 +130,13 @@ func TestDedupWindow(t *testing.T) {
 	rules := []Rule{{FromChannel: 1, ToChannel: 1, Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat"}}
 	d, sink := newTestDigi(t, rules, "N0CAL")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "same")
-	if !d.Handle(context.Background(), 1, rx) {
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("first handle should succeed")
 	}
 	// Same frame within window → deduped. Use a fresh identical copy
 	// because Handle stores the outgoing path as the dedup key.
 	rx2 := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "same")
-	if d.Handle(context.Background(), 1, rx2) {
+	if d.Handle(context.Background(), 1, rx2, ingress.Modem()) {
 		t.Fatalf("second identical frame should be deduped")
 	}
 	if d.Stats().Deduped == 0 {
@@ -144,7 +145,7 @@ func TestDedupWindow(t *testing.T) {
 	// After the window, the same frame is accepted again.
 	time.Sleep(600 * time.Millisecond)
 	rx3 := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "same")
-	if !d.Handle(context.Background(), 1, rx3) {
+	if !d.Handle(context.Background(), 1, rx3, ingress.Modem()) {
 		t.Fatalf("post-window frame should be accepted")
 	}
 	_ = sink
@@ -158,7 +159,7 @@ func TestCrossChannelDigi(t *testing.T) {
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "x")
-	if !d.Handle(context.Background(), 1, rx) {
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("expected cross-channel digi")
 	}
 	cap := sink.Last()
@@ -167,7 +168,7 @@ func TestCrossChannelDigi(t *testing.T) {
 	}
 	// RX on channel 2 with FromChannel=1 rule should not match.
 	rx2 := buildFrame(t, "W1AW", "APRS", []string{"WIDE2-2"}, "y")
-	if d.Handle(context.Background(), 2, rx2) {
+	if d.Handle(context.Background(), 2, rx2, ingress.Modem()) {
 		t.Fatalf("RX channel 2 should not match FromChannel=1 rule")
 	}
 }
@@ -177,7 +178,7 @@ func TestFullyConsumedFrameIgnored(t *testing.T) {
 	d, _ := newTestDigi(t, rules, "N0CAL")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE1*"}, "x")
 	// ParseAddress("WIDE1*") sets Repeated=true and SSID=0.
-	if d.Handle(context.Background(), 1, rx) {
+	if d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("fully-consumed frame should be ignored")
 	}
 }
@@ -186,7 +187,7 @@ func TestDoNotDigiOwnTransmissions(t *testing.T) {
 	rules := []Rule{{FromChannel: 1, ToChannel: 1, Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat"}}
 	d, _ := newTestDigi(t, rules, "N0CAL")
 	rx := buildFrame(t, "N0CAL", "APRS", []string{"WIDE2-2"}, "loopback")
-	if d.Handle(context.Background(), 1, rx) {
+	if d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("own source should not be digipeated")
 	}
 }
@@ -198,7 +199,7 @@ func TestDropAction(t *testing.T) {
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"RFONLY"}, "x")
-	if d.Handle(context.Background(), 1, rx) {
+	if d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("drop rule should not submit")
 	}
 	if sink.Last() != nil {
@@ -214,7 +215,7 @@ func TestTRACEInsertsMyCall(t *testing.T) {
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL-7")
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"TRACE2-2"}, "x")
-	if !d.Handle(context.Background(), 1, rx) {
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("trace should repeat")
 	}
 	cap := sink.Last()

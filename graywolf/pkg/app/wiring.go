@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/agw"
+	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/beacon"
@@ -229,6 +231,11 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		Sink:          a.gov,
 		Logger:        a.logger,
 		OnDecodeError: a.metrics.KissDecodeErrors.Inc,
+		OnFrameIngress: func(ifaceID uint32, mode kiss.Mode) {
+			a.metrics.ObserveKissIngressFrame(ifaceID, string(mode))
+		},
+		OnBroadcastSuppressed: a.metrics.ObserveKissBroadcastSuppressed,
+		RxIngress:             a.kissTncProduce,
 	})
 
 	// --- Digipeater ----------------------------------------------------
@@ -314,6 +321,13 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- APRS fan-out queue (consumed from the bridge component) -------
 	a.aprsQueue = make(chan *aprs.DecodedAPRSPacket, 256)
+
+	// --- RX fanout channel (shared by modem + KISS-TNC producers) ----
+	// Buffer sized to match aprsQueue: steady-state arrival rates are
+	// the same order of magnitude, and making it any smaller would
+	// regress modem backpressure because the modem path now goes
+	// through this channel first before reaching aprsQueue.
+	a.rxFanout = make(chan rxFanoutItem, 256)
 
 	// --- Auth store ----------------------------------------------------
 	authStore, err := webauth.NewAuthStore(a.store.DB())
@@ -878,6 +892,13 @@ func (a *App) backgroundStatsComponent() namedComponent {
 				t := time.NewTicker(2 * time.Second)
 				defer t.Stop()
 				var prev txgovernor.Stats
+				// KISS-TNC drop counters are cumulative at the source
+				// (Phase 3 accessors). Track last-seen values per
+				// interface + reason so we can translate cumulative
+				// snapshots into Prometheus counter deltas, matching
+				// the pattern used for the TX governor above.
+				lastKissRate := map[uint32]uint64{}
+				lastKissQueue := map[uint32]uint64{}
 				for {
 					select {
 					case <-ctx.Done():
@@ -900,6 +921,8 @@ func (a *App) backgroundStatsComponent() namedComponent {
 							}
 						}
 						prev = s
+
+						a.syncKissTncDropMetrics(ctx, lastKissRate, lastKissQueue)
 					}
 				}
 			}()
@@ -924,6 +947,39 @@ func (a *App) backgroundStatsComponent() namedComponent {
 	}
 }
 
+// syncKissTncDropMetrics polls Phase 3's per-interface cumulative drop
+// counters (rate-limit + per-interface queue overflow) and translates
+// any delta since the last tick into Prometheus counter increments.
+// Iterates configured interfaces from the store so hot-added or
+// hot-removed rows are picked up naturally between ticks; polling a
+// non-running or non-TNC interface returns zero and is a no-op.
+func (a *App) syncKissTncDropMetrics(ctx context.Context, lastRate, lastQueue map[uint32]uint64) {
+	ifaces, err := a.store.ListKissInterfaces(ctx)
+	if err != nil {
+		if a.logger != nil {
+			a.logger.Warn("kiss tnc drop metrics sync: list interfaces", "err", err)
+		}
+		return
+	}
+	for _, ki := range ifaces {
+		cur := a.KissTncDropped(ki.ID)
+		if cur > lastRate[ki.ID] {
+			a.metrics.KissTncIngressDropped.
+				WithLabelValues(strconv.FormatUint(uint64(ki.ID), 10), "rate_limit").
+				Add(float64(cur - lastRate[ki.ID]))
+		}
+		lastRate[ki.ID] = cur
+
+		curQ := a.KissTncQueueOverflow(ki.ID)
+		if curQ > lastQueue[ki.ID] {
+			a.metrics.KissTncIngressDropped.
+				WithLabelValues(strconv.FormatUint(uint64(ki.ID), 10), "queue_full").
+				Add(float64(curQ - lastQueue[ki.ID]))
+		}
+		lastQueue[ki.ID] = curQ
+	}
+}
+
 func (a *App) kissComponent() namedComponent {
 	return namedComponent{
 		name: "kiss",
@@ -938,12 +994,19 @@ func (a *App) kissComponent() namedComponent {
 					ch = 1
 				}
 				name := ki.Name
+				mode := kiss.Mode(ki.Mode)
+				if mode == "" {
+					mode = kiss.ModeModem
+				}
 				a.kissMgr.Start(ctx, ki.ID, kiss.ServerConfig{
-					Name:       name,
-					ListenAddr: ki.ListenAddr,
-					Logger:     a.logger,
-					ChannelMap: map[uint8]uint32{0: ch},
-					Broadcast:  ki.Broadcast,
+					Name:             name,
+					ListenAddr:       ki.ListenAddr,
+					Logger:           a.logger,
+					ChannelMap:       map[uint8]uint32{0: ch},
+					Broadcast:        ki.Broadcast,
+					Mode:             mode,
+					TncIngressRateHz: ki.TncIngressRateHz,
+					TncIngressBurst:  ki.TncIngressBurst,
 					OnClientChange: func(n int) {
 						a.metrics.SetKissClients(name, n)
 					},
@@ -1186,58 +1249,40 @@ func (a *App) bridgeComponent() namedComponent {
 				runAPRSFanOut(ctx, a.aprsQueue, aprsOut, igOut, msgOut)
 			}()
 
+			// Modem producer: reads bridge.Frames() and blocking-sends
+			// into rxFanout. Blocking send preserves today's demod
+			// backpressure: if the fanout consumer is slow, modem RX
+			// slows to match.
 			a.frameConsumerWG.Add(1)
 			go func() {
 				defer a.frameConsumerWG.Done()
-				// Closing aprsQueue unblocks the fan-out goroutine once
-				// the frame consumer exits, which happens when
-				// bridge.Frames() closes (i.e., bridge.Stop ran).
-				defer close(a.aprsQueue)
 				for rf := range a.bridge.Frames() {
 					if rf == nil {
 						continue
 					}
-					// KISS broadcast to all interfaces.
-					a.kissMgr.BroadcastFromChannel(rf.Channel, rf.Data)
-
-					f, err := ax25.Decode(rf.Data)
-					if err != nil {
-						// Undecoded frame — record raw only.
-						a.plog.Record(packetlog.Entry{
-							Channel:   rf.Channel,
-							Direction: packetlog.DirRX,
-							Source:    "modem",
-							Raw:       rf.Data,
-						})
-						continue
+					select {
+					case a.rxFanout <- rxFanoutItem{rf: rf, src: ingress.Modem()}:
+					case <-ctx.Done():
+						return
 					}
+				}
+			}()
 
-					e := packetlog.Entry{
-						Channel:   rf.Channel,
-						Direction: packetlog.DirRX,
-						Source:    "modem",
-						Raw:       rf.Data,
-						Display:   f.String(),
+			// Fanout consumer: dispatches each (rf, src) to subscribers.
+			// Closes aprsQueue on exit so the APRS fan-out goroutine can
+			// drain and return. See bridgeComponent.stop for the ordered
+			// teardown chain that makes close-on-exit safe.
+			a.rxFanoutWG.Add(1)
+			go func() {
+				defer a.rxFanoutWG.Done()
+				defer close(a.aprsQueue)
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case item := <-a.rxFanout:
+						a.dispatchRxFrame(ctx, item, aprsSubmit)
 					}
-
-					if f.IsUI() {
-						if srv := a.currentAgwServer(); srv != nil {
-							srv.BroadcastMonitoredUI(uint8(rf.Channel), f)
-						}
-						a.digi.Handle(ctx, rf.Channel, f)
-						if pkt, err := aprs.Parse(f); err == nil && pkt != nil {
-							pkt.Channel = int(rf.Channel)
-							pkt.Direction = aprs.DirectionRF
-							e.Type = string(pkt.Type)
-							e.Decoded = pkt
-							aprsSubmit.submit(pkt)
-							// RF-received station — cache for live map.
-							if entries := stationcache.ExtractEntry(pkt, "modem", "RX", rf.Channel); len(entries) > 0 {
-								a.stationCache.Update(entries)
-							}
-						}
-					}
-					a.plog.Record(e)
 				}
 			}()
 			return nil
@@ -1257,13 +1302,17 @@ func (a *App) bridgeComponent() namedComponent {
 				// stop if bridge.Frames() was already closed.
 			}
 
-			// 2. Frame consumer exits when bridge.Frames() closes,
-			//    which happens inside bridge.Stop. It then closes the
-			//    APRS queue.
-			if err := waitGroup(shutdownCtx, &a.frameConsumerWG, "frame consumer"); err != nil {
+			// 2. Modem producer exits when bridge.Frames() closes
+			//    (inside bridge.Stop) or when ctx cancels.
+			if err := waitGroup(shutdownCtx, &a.frameConsumerWG, "modem producer"); err != nil {
 				return err
 			}
-			// 3. Fan-out drains the APRS queue and exits.
+			// 3. RX fanout consumer exits on ctx.Done. It closes
+			//    aprsQueue on exit so the APRS fan-out can drain.
+			if err := waitGroup(shutdownCtx, &a.rxFanoutWG, "rx fanout"); err != nil {
+				return err
+			}
+			// 4. APRS fan-out drains aprsQueue and exits.
 			return waitGroup(shutdownCtx, &a.fanOutWG, "aprs fan-out")
 		},
 	}

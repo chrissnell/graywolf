@@ -6,14 +6,17 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/chrissnell/graywolf/pkg/agw"
+	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/igate"
+	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
@@ -24,6 +27,16 @@ import (
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/pkg/webauth"
 )
+
+// rxFanoutItem is one inbound RX frame + its ingress source, produced
+// by the modem bridge and any KISS-TNC interface, consumed by the
+// single fanout goroutine that dispatches to digi / broadcast / APRS /
+// station cache subscribers. Unexported: nothing outside pkg/app
+// legitimately constructs one.
+type rxFanoutItem struct {
+	rf  *pb.ReceivedFrame
+	src ingress.Source
+}
 
 // namedComponent is one entry in the App's ordered startup list. Each
 // component provides a start and a stop closure; the App invokes start
@@ -49,25 +62,25 @@ type App struct {
 	logger *slog.Logger
 
 	// --- Owned components (populated by wireServices) ------------------
-	store       *configstore.Store
-	authStore   *webauth.AuthStore
-	metrics     *metrics.Metrics
+	store        *configstore.Store
+	authStore    *webauth.AuthStore
+	metrics      *metrics.Metrics
 	plog         *packetlog.Log
 	stationCache *stationcache.PersistentCache
 	bridge       *modembridge.Bridge
-	gov         *txgovernor.Governor
+	gov          *txgovernor.Governor
 	// govHookUnregister releases the packetlog/stationcache TX hook on
 	// shutdown so later test runs in the same process don't accumulate
 	// stale hooks against a stopped governor.
 	govHookUnregister func()
-	kissMgr     *kiss.Manager
-	agwServer   *agw.Server // nil if AGW is disabled in config
+	kissMgr           *kiss.Manager
+	agwServer         *agw.Server // nil if AGW is disabled in config
 	// agwMu guards access to agwServer so a reload can swap in a new
 	// instance while the modem-bridge frame consumer is calling
 	// BroadcastMonitoredUI on the old one. Readers use currentAgw();
 	// the reload goroutine takes the write lock to stop the old server
 	// and install (or clear) a replacement.
-	agwMu sync.Mutex
+	agwMu       sync.Mutex
 	digi        *digipeater.Digipeater
 	gpsCache    *gps.MemCache
 	stationPos  *gps.StationPos
@@ -109,6 +122,27 @@ type App struct {
 	aprsQueue       chan *aprs.DecodedAPRSPacket
 	fanOutWG        sync.WaitGroup
 	frameConsumerWG sync.WaitGroup
+
+	// --- RX fanout (Phase 3: modem + KISS-TNC producers) ---------------
+	// rxFanout carries every inbound RX frame (modem-demodulated OR
+	// KISS-TNC ingested) alongside its ingress.Source so the single
+	// consumer goroutine can dispatch to subscribers with loop-safe
+	// source tagging. Modem-RX is a blocking producer (preserves
+	// existing demod backpressure); KISS-TNC is a non-blocking producer
+	// so a stuck fanout consumer drops off-air frames before it
+	// stalls hardware-TNC socket reads. Sized to match the APRS
+	// fan-out queue; the two have similar steady-state rates.
+	rxFanout chan rxFanoutItem
+	// rxFanoutDropped counts KISS-TNC producer drops at the shared
+	// fanout channel (non-blocking send failed because the consumer
+	// was behind). Modem-RX never increments this: its send is
+	// blocking by design.
+	rxFanoutDropped atomic.Uint64
+	// rxFanoutWG tracks the single fanout consumer goroutine. Separate
+	// from frameConsumerWG (which tracks the modem producer) so stop
+	// can sequence "close producers → consumer drains → aprsQueue closes"
+	// in the right order.
+	rxFanoutWG sync.WaitGroup
 
 	// --- Per-component goroutine tracking ------------------------------
 	// Each component that spawns its own goroutine(s) gets an isolated
@@ -160,6 +194,35 @@ func New(cfg Config, logger *slog.Logger) *App {
 // Config returns the App's resolved Config. Exposed for tests and for
 // the few places in wiring that need to read a value after construction.
 func (a *App) Config() Config { return a.cfg }
+
+// RxFanoutDropped returns the number of KISS-TNC inbound frames dropped
+// at the shared RX fanout channel because the single consumer was
+// behind (non-blocking send failed). Modem-RX never increments this —
+// its producer is a blocking send. Phase 5 wires this into a
+// Prometheus counter.
+func (a *App) RxFanoutDropped() uint64 { return a.rxFanoutDropped.Load() }
+
+// KissTncDropped returns the cumulative rate-limiter drop count for
+// the KISS interface with the given DB ID. Zero if the interface is
+// not running or the limiter is in unlimited mode. Phase 5 uses this
+// for the per-interface rate-limit counter.
+func (a *App) KissTncDropped(ifaceID uint32) uint64 {
+	if a.kissMgr == nil {
+		return 0
+	}
+	return a.kissMgr.Dropped(ifaceID)
+}
+
+// KissTncQueueOverflow returns the cumulative per-interface ingress
+// queue overflow count for the KISS interface with the given DB ID.
+// Zero if the interface is not running. Phase 5 uses this for the
+// per-interface queue-overflow counter.
+func (a *App) KissTncQueueOverflow(ifaceID uint32) uint64 {
+	if a.kissMgr == nil {
+		return 0
+	}
+	return a.kissMgr.QueueOverflow(ifaceID)
+}
 
 // Run brings every wired component online, blocks until ctx is done,
 // then tears everything back down with a derived shutdown context
