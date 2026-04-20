@@ -612,11 +612,8 @@
     white-space: pre-wrap;
   }
 
-  /* Meta is a sidebar to the left of the bubble. Reserved min-width
-     keeps the bubble's horizontal position stable whether meta is
-     visible or hidden — no layout jump on hover. justify-content:
-     flex-end packs contents flush against the bubble so they read as
-     a coherent unit when revealed. */
+  /* Meta sits to the LEFT of the bubble for both in/out, packed flush
+     against the bubble via justify-content: flex-end. */
   .bubble-meta {
     display: flex;
     align-items: center;
@@ -625,21 +622,25 @@
     flex-shrink: 0;
     min-width: 78px;
     padding-bottom: 6px;
-    opacity: 0;
-    transition: opacity 0.15s;
     font-family: var(--font-mono);
   }
 
-  /* Reveal all bubbles' meta when the pointer enters the thread's
-     scroll pane (see MessageThread.svelte's .bubbles wrapper). Also
-     reveal on keyboard focus inside the pane for a11y. */
-  :global(.bubbles:hover) .bubble-meta,
-  :global(.bubbles:focus-within) .bubble-meta {
-    opacity: 1;
+  /* bits-ui's Tooltip.Trigger renders a native <button>; strip the
+     browser default chrome so only the icon shows. */
+  :global(.status-tt) {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: default;
+    color: inherit;
+    font: inherit;
+    line-height: 0;
   }
-
-  @media (max-width: 767px) {
-    .bubble-meta { opacity: 1; }
+  :global(.status-tt:focus-visible) {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 
   .ts-btn {
@@ -696,14 +697,11 @@
     outline-offset: 1px;
   }
 
-  /* Failed outbound gets a subtle red border on the whole bubble plus
-     always-visible meta so the operator notices at a glance. */
+  /* Failed outbound gets a subtle red border on the whole bubble so
+     the operator notices at a glance. (Meta is always visible now.) */
   .bubble-wrap.failed .bubble {
     border-color: var(--color-danger);
     box-shadow: 0 0 0 1px var(--color-danger-muted) inset;
-  }
-  .bubble-wrap.failed .bubble-meta {
-    opacity: 1;
   }
 
   .reply-private {
