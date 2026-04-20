@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# Pre-commit guard against OpenAPI spec / TS API client drift.
+#
+# Regenerates graywolf/pkg/webapi/docs/gen/swagger.{json,yaml} and
+# graywolf/web/src/api/generated/api.d.ts into scratch dirs, diffs
+# against the committed copies, and fails the commit on drift. CI runs
+# the same gates (see Makefile: docs-check, api-client-check) so this
+# catches the failure locally instead of round-tripping through GitHub.
+#
+# Skips entirely when no staged files can affect the generated artifacts
+# (e.g. pure doc, config, or .context/ commits). Bypass with
+# `git commit --no-verify` for emergencies.
+
+set -eu
+
+# Staged files that could influence either generated artifact:
+#   *.go files anywhere — docs-check regenerates from Go source
+#   anything under graywolf/web/ — api-client-check regenerates the TS
+#     client, and web/scripts/generate-api.mjs could itself change
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+if ! printf '%s\n' "$staged" | grep -qE '\.go$|^graywolf/web/'; then
+    exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if ! make docs-check; then
+    echo ""
+    echo "pre-commit: OpenAPI spec is stale."
+    echo "  Fix:    make docs && git add graywolf/pkg/webapi/docs/gen"
+    echo "  Bypass: git commit --no-verify"
+    exit 1
+fi
+
+if ! make api-client-check; then
+    echo ""
+    echo "pre-commit: TypeScript API client is stale."
+    echo "  Fix:    make api-client && git add graywolf/web/src/api/generated"
+    echo "  Bypass: git commit --no-verify"
+    exit 1
+fi

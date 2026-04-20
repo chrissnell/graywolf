@@ -49,7 +49,7 @@ SWAGGER_UI_VENDOR := $(DOCS_HANDBOOK)/vendor/swagger-ui
 # api-client-check guards catch.
 GENERATED_SPEC_FILES := $(DOCS_GEN_DIR)/swagger.json $(DOCS_GEN_DIR)/swagger.yaml $(WEB_DIR)/src/api/generated/api.d.ts
 
-.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check
+.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check install-hooks
 
 all: release web
 	mkdir -p bin
@@ -296,3 +296,14 @@ api-client-check: $(NODE_STAMP)
 			exit 1; \
 		fi; \
 		echo "api-client-check: generated client matches committed copy."
+
+# --- Git hooks -----------------------------------------------------------
+#
+# `make install-hooks` points this clone's git at .githooks/, which holds
+# the version-tracked pre-commit guard for docs-check / api-client-check.
+# Run once per clone. Bypass a hook for a single commit with
+# `git commit --no-verify`.
+
+install-hooks:
+	git config core.hooksPath .githooks
+	@echo "hooks installed: $$(git config core.hooksPath)"
