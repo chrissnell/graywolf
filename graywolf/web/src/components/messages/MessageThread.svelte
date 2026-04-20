@@ -51,6 +51,18 @@
   const isTactical = $derived(thread?.kind === 'tactical');
   const threadId = $derived(thread?.threadId || '');
 
+  // Stable, unique key for {#each}. Persisted rows use their DB primary
+  // key (unique); optimistic bubbles use the client-generated msg_id
+  // (UUID). APRS msg_id alone is NOT unique across a thread — peers
+  // recycle the "001"..."999" counter, so two distinct rows from the
+  // same peer can legitimately share the same msg_id and a naive key
+  // would throw `each_key_duplicate` and blank the bubble list.
+  function bubbleKey(m, i) {
+    if (m?.id != null) return `id:${m.id}`;
+    if (m?.msg_id) return `mid:${m.msg_id}`;
+    return `i:${i}`;
+  }
+
   // --- Local messages state (per-thread, not part of global store).
   /** @type {Array<any>} */
   let msgs = $state([]);
@@ -384,7 +396,7 @@
           {/if}
         {:else}
           <div class="bubbles">
-            {#each allBubbles as m, i (m.msg_id || m.id || i)}
+            {#each allBubbles as m, i (bubbleKey(m, i))}
               {#if daySeps.has(i)}
                 <div class="day-sep" role="separator">
                   <span>{dayHeader(m.sent_at || m.received_at || m.created_at)}</span>
