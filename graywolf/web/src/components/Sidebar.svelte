@@ -86,6 +86,8 @@
 
   // Dashboard route match — exact only ('/'); avoid matching every sub-route.
   let isDashboardActive = $derived(currentPath === '/');
+  // Live Map route match — '/map' or any '/map/*' sub-route.
+  let isMapActive = $derived(currentPath === '/map' || currentPath.startsWith('/map/'));
   // Messages route match — '/messages' or any '/messages/*' sub-route.
   let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
 </script>
@@ -198,6 +200,35 @@
         <rect x="14" y="3" width="7" height="5" />
         <rect x="14" y="12" width="7" height="9" />
         <rect x="3" y="16" width="7" height="5" />
+      </svg>
+    </span>
+  </a>
+
+  <a
+    href="/map"
+    use:link
+    class="top-bar-action"
+    class:active={isMapActive}
+    aria-label="Live Map"
+    aria-current={isMapActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <!-- Inline globe glyph: Chonky icon allowlist lacks 'globe'. -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18" />
+        <path d="M12 3a14 14 0 0 1 0 18" />
+        <path d="M12 3a14 14 0 0 0 0 18" />
       </svg>
     </span>
   </a>
