@@ -51,6 +51,7 @@ type StatusChannel struct {
 	ModemType      string  `json:"modem_type"`
 	BitRate        uint32  `json:"bit_rate"`
 	RxFrames       uint64  `json:"rx_frames"`
+	RxBadFCS       uint64  `json:"rx_bad_fcs"`
 	TxFrames       uint64  `json:"tx_frames"`
 	DcdState       bool    `json:"dcd_state"`
 	AudioPeak      float32 `json:"audio_peak"`
@@ -106,6 +107,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if s.bridge != nil {
 			if stats, ok := s.bridge.GetChannelStats(uint32(ch.ID)); ok {
 				sc.RxFrames = stats.RxFrames
+				sc.RxBadFCS = stats.RxBadFCS
 				sc.TxFrames = stats.TxFrames
 				sc.DcdState = stats.DcdState
 				sc.AudioPeak = stats.AudioLevelPeak

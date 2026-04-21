@@ -184,6 +184,7 @@
         <div class="ch-stats">
           <span>RX: <strong>{ch.rx_frames || 0}</strong></span>
           <span>TX: <strong>{ch.tx_frames || 0}</strong></span>
+          <span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>
         </div>
 
         {#if channelBeacons.length > 0}
