@@ -65,11 +65,11 @@ func buildMessagePkt(t *testing.T, source, addressee, msgID string) *aprs.Decode
 
 func TestGating_LocalOrigin_SuppressesLocalMessage(t *testing.T) {
 	ring := newFakeLocalOrigin()
-	ring.Add("N0CALL", "042")
+	ring.Add("KE7XYZ", "042")
 
 	ig, err := New(Config{
 		Server:                     "127.0.0.1:1",
-		Callsign:                   "N0CALL",
+		StationCallsign:            "KE7XYZ",
 		LocalOrigin:                ring,
 		SuppressLocalMessageReGate: true,
 	})
@@ -81,7 +81,7 @@ func TestGating_LocalOrigin_SuppressesLocalMessage(t *testing.T) {
 	ig.connected = true
 	ig.mu.Unlock()
 
-	pkt := buildMessagePkt(t, "N0CALL", "W1ABC", "042")
+	pkt := buildMessagePkt(t, "KE7XYZ", "W1ABC", "042")
 	ig.gateRFToIS(pkt)
 
 	if ig.Status().Gated != 0 {
@@ -96,7 +96,7 @@ func TestGating_LocalOrigin_MissDoesNotSuppress(t *testing.T) {
 	ring := newFakeLocalOrigin() // empty
 	ig, err := New(Config{
 		Server:                     "127.0.0.1:1",
-		Callsign:                   "N0CALL",
+		StationCallsign:            "KE7XYZ",
 		LocalOrigin:                ring,
 		SuppressLocalMessageReGate: true,
 	})
@@ -107,7 +107,7 @@ func TestGating_LocalOrigin_MissDoesNotSuppress(t *testing.T) {
 	ig.connected = true
 	ig.mu.Unlock()
 
-	pkt := buildMessagePkt(t, "W5ABC", "N0CALL", "099")
+	pkt := buildMessagePkt(t, "W5ABC", "KE7XYZ", "099")
 	// The simulation path will log and increment Gated so we don't
 	// need a real APRS-IS client. Enable simulation mode explicitly.
 	ig.simulation.Store(true)
@@ -120,10 +120,10 @@ func TestGating_LocalOrigin_MissDoesNotSuppress(t *testing.T) {
 
 func TestGating_LocalOrigin_OptOut(t *testing.T) {
 	ring := newFakeLocalOrigin()
-	ring.Add("N0CALL", "042")
+	ring.Add("KE7XYZ", "042")
 	ig, err := New(Config{
 		Server:                     "127.0.0.1:1",
-		Callsign:                   "N0CALL",
+		StationCallsign:            "KE7XYZ",
 		LocalOrigin:                ring,
 		SuppressLocalMessageReGate: false, // opted out
 	})
@@ -135,7 +135,7 @@ func TestGating_LocalOrigin_OptOut(t *testing.T) {
 	ig.mu.Unlock()
 	ig.simulation.Store(true)
 
-	pkt := buildMessagePkt(t, "N0CALL", "W1ABC", "042")
+	pkt := buildMessagePkt(t, "KE7XYZ", "W1ABC", "042")
 	ig.gateRFToIS(pkt)
 	if ig.Status().Gated != 1 {
 		t.Errorf("opt-out should re-gate (Gated=%d, want 1)", ig.Status().Gated)
@@ -148,7 +148,7 @@ func TestGating_LocalOrigin_OptOut(t *testing.T) {
 func TestGating_LocalOrigin_NoRingNoCheck(t *testing.T) {
 	ig, err := New(Config{
 		Server:                     "127.0.0.1:1",
-		Callsign:                   "N0CALL",
+		StationCallsign:            "KE7XYZ",
 		LocalOrigin:                nil,
 		SuppressLocalMessageReGate: true,
 	})
@@ -159,7 +159,7 @@ func TestGating_LocalOrigin_NoRingNoCheck(t *testing.T) {
 	ig.connected = true
 	ig.mu.Unlock()
 	ig.simulation.Store(true)
-	pkt := buildMessagePkt(t, "N0CALL", "W1ABC", "042")
+	pkt := buildMessagePkt(t, "KE7XYZ", "W1ABC", "042")
 	// Should not panic despite nil ring + flag set.
 	ig.gateRFToIS(pkt)
 	if ig.Status().Gated != 1 {
@@ -169,10 +169,10 @@ func TestGating_LocalOrigin_NoRingNoCheck(t *testing.T) {
 
 func TestGating_LocalOrigin_NonMessagePacketIgnoresRing(t *testing.T) {
 	ring := newFakeLocalOrigin()
-	ring.Add("N0CALL", "042")
+	ring.Add("KE7XYZ", "042")
 	ig, err := New(Config{
 		Server:                     "127.0.0.1:1",
-		Callsign:                   "N0CALL",
+		StationCallsign:            "KE7XYZ",
 		LocalOrigin:                ring,
 		SuppressLocalMessageReGate: true,
 	})
@@ -181,7 +181,7 @@ func TestGating_LocalOrigin_NonMessagePacketIgnoresRing(t *testing.T) {
 	}
 	// Position packet — no Message, no MessageID.
 	pkt := &aprs.DecodedAPRSPacket{
-		Source: "N0CALL",
+		Source: "KE7XYZ",
 		Dest:   "APRS",
 		Type:   aprs.PacketPosition,
 		Raw:    []byte{0x02},

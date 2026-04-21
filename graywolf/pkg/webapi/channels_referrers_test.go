@@ -221,7 +221,7 @@ func TestIGateConfig_RejectsOrphanChannel(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"callsign":"N0CALL","passcode":"-1","rf_channel":9999,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"rf_channel":9999,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

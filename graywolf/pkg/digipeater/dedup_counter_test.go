@@ -29,7 +29,7 @@ func TestOnDedupFiresOnDedupHit(t *testing.T) {
 		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
 	}}
 	d, err := New(Config{
-		MyCall:       mustAddr(t, "N0CAL"),
+		MyCall:       "N0CAL",
 		DedupeWindow: 500 * time.Millisecond,
 		Rules:        rules,
 		Submit:       sink.Submit,

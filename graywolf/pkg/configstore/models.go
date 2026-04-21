@@ -116,18 +116,18 @@ type PttConfig struct {
 // fields are stored and surfaced for every row regardless of mode so the
 // operator's choice survives a mode flip.
 type KissInterface struct {
-	ID               uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name             string    `gorm:"not null;uniqueIndex" json:"name"`
-	InterfaceType    string    `gorm:"not null;default:'tcp'" json:"type"` // tcp|tcp-client|serial|bluetooth
-	ListenAddr       string    `json:"listen_addr"`                        // host:port for tcp (server-listen)
-	Device           string    `json:"serial_device"`                      // /dev/ttyUSB0 or bluetooth mac
-	BaudRate         uint32    `gorm:"default:9600" json:"baud_rate"`
-	Channel          uint32    `gorm:"not null;default:1" json:"channel"` // default radio channel for this interface
-	Broadcast        bool      `gorm:"not null;default:true" json:"broadcast"`
-	Enabled          bool      `gorm:"not null;default:true" json:"enabled"`
-	Mode             string    `gorm:"not null;default:'modem'" json:"mode"`           // modem|tnc
-	TncIngressRateHz uint32    `gorm:"not null;default:50" json:"tnc_ingress_rate_hz"` // token-bucket refill, frames/sec
-	TncIngressBurst  uint32    `gorm:"not null;default:100" json:"tnc_ingress_burst"`  // token-bucket size
+	ID               uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name             string `gorm:"not null;uniqueIndex" json:"name"`
+	InterfaceType    string `gorm:"not null;default:'tcp'" json:"type"` // tcp|tcp-client|serial|bluetooth
+	ListenAddr       string `json:"listen_addr"`                        // host:port for tcp (server-listen)
+	Device           string `json:"serial_device"`                      // /dev/ttyUSB0 or bluetooth mac
+	BaudRate         uint32 `gorm:"default:9600" json:"baud_rate"`
+	Channel          uint32 `gorm:"not null;default:1" json:"channel"` // default radio channel for this interface
+	Broadcast        bool   `gorm:"not null;default:true" json:"broadcast"`
+	Enabled          bool   `gorm:"not null;default:true" json:"enabled"`
+	Mode             string `gorm:"not null;default:'modem'" json:"mode"`           // modem|tnc
+	TncIngressRateHz uint32 `gorm:"not null;default:50" json:"tnc_ingress_rate_hz"` // token-bucket refill, frames/sec
+	TncIngressBurst  uint32 `gorm:"not null;default:100" json:"tnc_ingress_burst"`  // token-bucket size
 	// InterfaceType == "tcp-client" uses RemoteHost / RemotePort as the
 	// dial target and ReconnectInitMs / ReconnectMaxMs to size the
 	// supervisor's backoff schedule. ListenAddr is ignored on tcp-client
@@ -279,14 +279,16 @@ type DigipeaterRule struct {
 }
 
 // IGateConfig is a singleton (id=1) row for the iGate.
+//
+// Callsign and Passcode columns remain in the DB for forward-safety on
+// downgrade, but are no longer read/written by application code.
+// See .context/2026-04-21-centralized-station-callsign.md §D4.
 type IGateConfig struct {
 	ID              uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Enabled         bool      `gorm:"not null;default:false" json:"enabled"`
 	Server          string    `gorm:"not null;default:'rotate.aprs2.net'" json:"server"`
 	Port            uint32    `gorm:"not null;default:14580" json:"port"`
-	Callsign        string    `gorm:"not null;default:'N0CALL'" json:"callsign"`
-	Passcode        string    `gorm:"not null;default:'-1'" json:"passcode"` // string to tolerate "-1"
-	ServerFilter    string    `json:"server_filter"`                         // APRS-IS server-side filter expression
+	ServerFilter    string    `json:"server_filter"` // APRS-IS server-side filter expression
 	SimulationMode  bool      `gorm:"not null;default:false" json:"simulation_mode"`
 	GateRfToIs      bool      `gorm:"not null;default:true" json:"gate_rf_to_is"`
 	GateIsToRf      bool      `gorm:"not null;default:false" json:"gate_is_to_rf"`
@@ -310,6 +312,18 @@ type IGateRfFilter struct {
 	Action    string    `gorm:"not null;default:'allow'" json:"action"` // allow|deny
 	Priority  uint32    `gorm:"not null;default:100" json:"priority"`
 	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// StationConfig is a singleton (id=1) row holding the station-wide
+// APRS callsign. This is the single source of truth for the callsign
+// used by the iGate (APRS-IS login + passcode), the digipeater (unless
+// overridden), beacons (unless overridden), and APRS messaging. See
+// .context/2026-04-21-centralized-station-callsign.md.
+type StationConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Callsign  string    `gorm:"not null;default:''" json:"callsign"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 }

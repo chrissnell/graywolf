@@ -21,8 +21,11 @@ func mustAddr(t *testing.T, s string) ax25.Address {
 
 func newTestDigi(t *testing.T, rules []Rule, mycall string) (*Digipeater, *testtx.Recorder) {
 	sink := testtx.NewRecorder()
+	// MyCall is the per-digipeater override; StationCallsign is the
+	// shared fallback. Passing the test's callsign as MyCall exercises
+	// the override path, which is the intent of every test in this file.
 	d, err := New(Config{
-		MyCall:       mustAddr(t, mycall),
+		MyCall:       mycall,
 		DedupeWindow: 500 * time.Millisecond,
 		Rules:        rules,
 		Submit:       sink.Submit,

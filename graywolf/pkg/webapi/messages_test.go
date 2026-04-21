@@ -30,14 +30,14 @@ import (
 // Every method is individually overridable so each test controls only
 // the paths it exercises.
 type fakeMessagesSvc struct {
-	sendFn            func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
-	resendFn          func(ctx context.Context, id uint64) (messages.SendResult, error)
-	softDeleteFn      func(ctx context.Context, id uint64) error
-	markReadFn        func(ctx context.Context, id uint64) error
-	markUnreadFn      func(ctx context.Context, id uint64) error
-	reloadTacticalFn  func(ctx context.Context) error
-	reloadPrefsFn     func(ctx context.Context) error
-	hub               *messages.EventHub
+	sendFn           func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
+	resendFn         func(ctx context.Context, id uint64) (messages.SendResult, error)
+	softDeleteFn     func(ctx context.Context, id uint64) error
+	markReadFn       func(ctx context.Context, id uint64) error
+	markUnreadFn     func(ctx context.Context, id uint64) error
+	reloadTacticalFn func(ctx context.Context) error
+	reloadPrefsFn    func(ctx context.Context) error
+	hub              *messages.EventHub
 }
 
 func (f *fakeMessagesSvc) SendMessage(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
@@ -100,17 +100,19 @@ func newMessagesTestServer(t *testing.T, svc MessagesService) (*Server, *http.Se
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	// Seed an iGate config so resolveOurCall returns "N0CALL" by default.
+	// Seed an iGate config.
 	if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
-		Callsign:    "N0CALL",
-		Server:      "rotate.aprs2.net",
-		Port:        14580,
-		Passcode:    "-1",
-		TxChannel:   1,
-		RfChannel:   1,
-		MaxMsgHops:  2,
-		GateRfToIs:  true,
+		Server:     "rotate.aprs2.net",
+		Port:       14580,
+		TxChannel:  1,
+		RfChannel:  1,
+		MaxMsgHops: 2,
+		GateRfToIs: true,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	// resolveOurCall now reads StationConfig, not IGateConfig.
+	if err := store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "N0CALL"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -442,9 +444,14 @@ func TestSendMessage_InviteEndToEndPersistsRow(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
-		Callsign: "N0CALL", Server: "rotate.aprs2.net", Port: 14580,
-		Passcode: "-1", TxChannel: 1, RfChannel: 1, MaxMsgHops: 2, GateRfToIs: true,
+		Server: "rotate.aprs2.net", Port: 14580,
+		TxChannel: 1, RfChannel: 1, MaxMsgHops: 2, GateRfToIs: true,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	// Station callsign lives in its own singleton as of the centralized
+	// station-callsign work.
+	if err := store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "N0CALL"}); err != nil {
 		t.Fatal(err)
 	}
 	msgStore := messages.NewStore(store.DB())
@@ -939,10 +946,10 @@ func newFlushRecorder() *flushRecorder {
 	return &flushRecorder{header: http.Header{}, code: http.StatusOK}
 }
 
-func (r *flushRecorder) Header() http.Header       { return r.header }
-func (r *flushRecorder) WriteHeader(code int)      { r.code = code }
-func (r *flushRecorder) Flush()                    {}
-func (r *flushRecorder) Code() int                 { return r.code }
+func (r *flushRecorder) Header() http.Header  { return r.header }
+func (r *flushRecorder) WriteHeader(code int) { r.code = code }
+func (r *flushRecorder) Flush()               {}
+func (r *flushRecorder) Code() int            { return r.code }
 func (r *flushRecorder) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

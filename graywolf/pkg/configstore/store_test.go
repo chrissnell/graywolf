@@ -388,7 +388,11 @@ func TestConfigTablesRoundTrip(t *testing.T) {
 		t.Fatalf("digi rule list: %v len=%d", err, len(rs))
 	}
 
-	if err := s.UpsertIGateConfig(ctx, &IGateConfig{Enabled: true, Server: "rotate.aprs2.net", Port: 14580, Callsign: "N0CALL", Passcode: "-1"}); err != nil {
+	// Callsign and Passcode are no longer fields on IGateConfig — the
+	// station callsign lives in StationConfig (Phase 2 of the centralized
+	// station callsign plan). The columns remain in the schema for
+	// downgrade-safety but are zeroed on every upsert.
+	if err := s.UpsertIGateConfig(ctx, &IGateConfig{Enabled: true, Server: "rotate.aprs2.net", Port: 14580}); err != nil {
 		t.Fatalf("igate cfg: %v", err)
 	}
 	if err := s.CreateIGateRfFilter(ctx, &IGateRfFilter{Channel: 1, Type: "callsign", Pattern: "KK6*", Action: "allow", Priority: 100, Enabled: true}); err != nil {

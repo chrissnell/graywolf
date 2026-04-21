@@ -8,9 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/chrissnell/graywolf/pkg/callsign"
 )
 
 // APRS-IS keepalive parameters. After idleKeepalive with no traffic we
@@ -39,8 +42,13 @@ type lineSender interface {
 // client manages one APRS-IS TCP session: dial, login, read loop,
 // keepalive monitor. It is owned by Igate and runs under its context.
 type client struct {
-	cfg    Config
-	logger *slog.Logger
+	cfg Config
+	// stationCallsign is the resolved-at-construction station identifier
+	// used for login + partial-auth detection. It mirrors Igate.stationCallsign
+	// so the client reads the same canonical (trimmed + uppercased) value
+	// rather than the raw cfg.StationCallsign input.
+	stationCallsign string
+	logger          *slog.Logger
 
 	mu   sync.Mutex
 	conn net.Conn
@@ -52,13 +60,14 @@ type client struct {
 	onLost      func()
 }
 
-func newClient(cfg Config, logger *slog.Logger, onLine func(string), onConnected, onLost func()) *client {
+func newClient(cfg Config, stationCallsign string, logger *slog.Logger, onLine func(string), onConnected, onLost func()) *client {
 	return &client{
-		cfg:         cfg,
-		logger:      logger,
-		onLine:      onLine,
-		onConnected: onConnected,
-		onLost:      onLost,
+		cfg:             cfg,
+		stationCallsign: stationCallsign,
+		logger:          logger,
+		onLine:          onLine,
+		onConnected:     onConnected,
+		onLost:          onLost,
 	}
 }
 
@@ -97,18 +106,25 @@ func (c *client) run(ctx context.Context) error {
 		c.mu.Unlock()
 	}()
 
-	// Login handshake.
-	login := buildLogin(c.cfg.Callsign, c.cfg.Passcode, c.cfg.SoftwareName, c.cfg.SoftwareVersion, c.cfg.ServerFilter)
+	// Login handshake. Per D4 the passcode is an implementation detail
+	// computed from the station callsign at connect time — never stored
+	// on Config, never surfaced in the UI. APRSPasscode is a pure
+	// function of the base callsign (SSID-stripped), so it's stable for
+	// the lifetime of this session.
+	pass := strconv.Itoa(callsign.APRSPasscode(c.stationCallsign))
+	login := buildLogin(c.stationCallsign, pass, c.cfg.SoftwareName, c.cfg.SoftwareVersion, c.cfg.ServerFilter)
 	if err := c.writeLineLocked(login); err != nil {
 		return fmt.Errorf("write login: %w", err)
 	}
 	// APRS-IS servers reply with one or more "# ..." comment lines; at
 	// least one will contain "logresp CALL verified" or
-	// "logresp CALL unverified". We require the verified form when a
-	// non-"-1" passcode is configured; transmit-capable iGates must be
-	// verified. Read lines up to a short deadline.
+	// "logresp CALL unverified". Transmit-capable iGates must be
+	// verified; with the passcode always computed from the station
+	// callsign there is no "-1" read-only path any more — any
+	// "unverified" response is a hard reject. Read lines up to a short
+	// deadline.
 	reader := bufio.NewReader(conn)
-	if err := awaitLogin(reader, c.cfg.Callsign, c.cfg.Passcode); err != nil {
+	if err := awaitLogin(reader, c.stationCallsign, pass); err != nil {
 		return fmt.Errorf("login: %w", err)
 	}
 	c.mu.Lock()
@@ -162,7 +178,7 @@ func (c *client) run(ctx context.Context) error {
 			// Server comment / keepalive response. If we observe a
 			// "logresp ... unverified" *after* login succeeded, treat
 			// it as a partial auth drop and force reconnect.
-			if isUnverifiedLogResp(trimmed, c.cfg.Callsign) {
+			if isUnverifiedLogResp(trimmed, c.stationCallsign) {
 				if c.onLost != nil {
 					c.onLost()
 				}

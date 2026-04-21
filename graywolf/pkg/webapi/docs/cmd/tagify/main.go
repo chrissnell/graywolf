@@ -42,6 +42,7 @@ var tagOrder = []tagEntry{
 	{"ptt", "Push-to-talk device configuration."},
 	{"digipeater", "Digipeater configuration and rules."},
 	{"igate", "Igate configuration, filters, status, and simulation."},
+	{"station", "Station-wide callsign (APRS-IS login, messaging identity, default for beacons and digipeater)."},
 	{"gps", "GPS source configuration."},
 	{"position-log", "Position logging configuration."},
 	{"agw", "AGW TCP server configuration."},

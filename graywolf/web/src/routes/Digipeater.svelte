@@ -8,9 +8,11 @@
   import Modal from '../components/Modal.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import FormField from '../components/FormField.svelte';
+  import StationCallsignBanner from '../components/StationCallsignBanner.svelte';
   import ChannelListbox from '../lib/components/ChannelListbox.svelte';
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels, getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
   import { unboundWarning, SUMMARY_UNBOUND } from '../lib/channelBacking.js';
+  import { isStationCallsignMissing } from '../lib/callsign.js';
 
   const DEFAULT_DEDUPE_SECONDS = 30;
 
@@ -58,7 +60,26 @@
     my_call: '',
     dedupe_window_seconds: String(DEFAULT_DEDUPE_SECONDS),
   });
+
+  // Callsign override UI state (Phase 4B / plan D3). Decoupled from
+  // config.my_call so the text input is never blown away by a
+  // radio-group flip. `callsignMode` is derived from the stored
+  // my_call at load (empty → 'inherit', non-empty → 'override') and
+  // is the sole authority on what the save path sends:
+  //   inherit   → my_call: ""   (explicit clear on the *string DTO)
+  //   override  → my_call: <uppercased trimmed myCallInput>
+  // We never send `undefined` / omit the field (the nil-preserve
+  // semantic isn't surfaced from this page).
+  let callsignMode = $state('inherit'); // 'inherit' | 'override'
+  let myCallInput = $state('');
+
   let rules = $state([]);
+
+  // Station callsign (read-only on this page). Loaded on mount so the
+  // radio group can show "Station callsign: <value>" as helper text
+  // and the banner can render when the station callsign is unset.
+  let stationCallsign = $state('');
+  let stationCallsignMissing = $derived(isStationCallsignMissing(stationCallsign));
   // Subscribed from the shared channelsStore (D9). Any save that
   // changes a channel invalidates the store so backing state stays
   // in sync across tabs.
@@ -162,12 +183,32 @@
     // GET /digipeater always returns 200 with defaults on a fresh
     // install; the zero-value DTO produces enabled=false, my_call="",
     // dedupe_window_seconds=0 → fall back to DEFAULT_DEDUPE_SECONDS.
-    const data = await api.get('/digipeater');
+    // Station callsign is loaded in parallel; a failed load is treated
+    // as "missing" so the enable guard kicks in rather than letting
+    // the user hit a 400 on save.
+    const [data] = await Promise.all([
+      api.get('/digipeater'),
+      (async () => {
+        try {
+          const s = await api.get('/station/config');
+          stationCallsign = s?.callsign ?? '';
+        } catch {
+          stationCallsign = '';
+        }
+      })(),
+    ]);
+    const storedMyCall = data.my_call || '';
     config = {
       enabled: !!data.enabled,
-      my_call: data.my_call || '',
+      my_call: storedMyCall,
       dedupe_window_seconds: String(data.dedupe_window_seconds || DEFAULT_DEDUPE_SECONDS),
     };
+    // Derive the radio-group state from the loaded value: a stored
+    // empty string means "inherit from station callsign"; non-empty
+    // means the operator set an explicit override (and we want to
+    // round-trip it verbatim until they change it).
+    callsignMode = storedMyCall ? 'override' : 'inherit';
+    myCallInput = storedMyCall;
     rules = await api.get('/digipeater/rules') || [];
     startChannelsStore();
   });
@@ -179,18 +220,54 @@
       toasts.error('Dedupe window must be a positive integer');
       return;
     }
+    // Resolve the on-wire `my_call` from the radio-group state. The
+    // DTO field is `*string`: "" = inherit, non-empty = override. We
+    // never omit — see Phase 3B handoff's three-state pointer notes.
+    let myCallForSave;
+    if (callsignMode === 'override') {
+      const v = myCallInput.trim().toUpperCase();
+      if (!v) {
+        toasts.error('Enter a callsign for the override, or choose "Use station callsign"');
+        return;
+      }
+      myCallForSave = v;
+    } else {
+      myCallForSave = '';
+    }
     savingConfig = true;
     try {
       await api.put('/digipeater', {
         enabled: config.enabled,
-        my_call: config.my_call.trim(),
+        my_call: myCallForSave,
         dedupe_window_seconds: seconds,
       });
+      // Mirror the saved value back into the form so the input shows
+      // the canonicalized (trimmed / uppercased) string.
+      config.my_call = myCallForSave;
+      myCallInput = myCallForSave;
       toasts.success('Digipeater config saved');
     } catch (err) {
-      toasts.error(err.message);
+      // ApiError.message already pulls body.error, so the backend's
+      // "station callsign is not set..." string comes through verbatim.
+      toasts.error(err.message || 'Failed to save Digipeater config');
     } finally {
       savingConfig = false;
+    }
+  }
+
+  // Toggle guard (plan D7): block enabling while the station callsign
+  // is missing. Same pattern as iGate — preventDefault on the raw
+  // click/keydown short-circuits bits-ui's composed handler chain so
+  // the checked state never flips. Turning OFF is always allowed.
+  function handleEnableToggleClick(e) {
+    if (stationCallsignMissing && !config.enabled) {
+      e.preventDefault();
+    }
+  }
+  function handleEnableToggleKeydown(e) {
+    if (!stationCallsignMissing || config.enabled) return;
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
     }
   }
 
@@ -313,13 +390,48 @@
 
 <PageHeader title="Digipeater" subtitle="Digital repeater configuration and rules" />
 
+{#if stationCallsignMissing}
+  <StationCallsignBanner feature="Digipeater" id="digi-station-banner" />
+{/if}
+
 <Box title="Settings">
   <form onsubmit={saveConfig}>
-    <Toggle bind:checked={config.enabled} label="Enable Digipeater" />
+    <Toggle
+      bind:checked={config.enabled}
+      label="Enable Digipeater"
+      aria-disabled={stationCallsignMissing ? 'true' : undefined}
+      aria-describedby={stationCallsignMissing ? 'digi-station-banner' : undefined}
+      onclick={handleEnableToggleClick}
+      onkeydown={handleEnableToggleKeydown}
+    />
     <div style="margin-top: 12px;">
-      <FormField label="Callsign" id="digi-call"
+      <FormField label="Callsign" id="digi-call-mode"
         hint="The callsign this digipeater transmits under. Also used for preemptive digi when a packet's path explicitly names it.">
-        <Input id="digi-call" bind:value={config.my_call} placeholder="N0CALL-1" />
+        <RadioGroup bind:value={callsignMode}>
+          <div class="callsign-mode">
+            <Radio value="inherit" label="Use station callsign" />
+            <div class="callsign-mode-helper">
+              Station callsign:
+              <span class="callsign-mode-value" class:is-empty={!stationCallsign}>
+                {stationCallsign || '(not set)'}
+              </span>
+            </div>
+            <Radio value="override" label="Use a different callsign" />
+            {#if callsignMode === 'override'}
+              <div class="callsign-override-input">
+                <Input
+                  id="digi-call"
+                  class="callsign-input"
+                  bind:value={myCallInput}
+                  placeholder="e.g. MTNTOP-1"
+                  autocomplete="off"
+                  spellcheck={false}
+                  aria-label="Override callsign"
+                />
+              </div>
+            {/if}
+          </div>
+        </RadioGroup>
       </FormField>
       <FormField label="Dedupe window (seconds)" id="digi-dedup"
         hint="Identical frames heard within this window are dropped so the same packet isn't repeated twice. 30s is the APRS convention.">
@@ -465,5 +577,53 @@
     color: var(--text-primary);
     font-size: 13px;
     line-height: 1.45;
+  }
+
+  /* Phase 4B — radio-group layout for the station-callsign override
+     pattern. Stacks the two radios with the station-callsign helper
+     tucked under the "Use station callsign" option and the override
+     input revealed under the "Use a different callsign" option. */
+  .callsign-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .callsign-mode-helper {
+    margin: 0 0 4px 24px;
+    font-size: 12px;
+    color: var(--color-text-muted, var(--text-secondary, #888));
+  }
+  .callsign-mode-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .callsign-mode-value.is-empty {
+    font-family: inherit;
+    font-weight: normal;
+    font-style: italic;
+    color: var(--color-text-muted, var(--text-secondary, #888));
+  }
+  .callsign-override-input {
+    margin: 4px 0 0 24px;
+    max-width: 280px;
+  }
+  /* Visual uppercase for the override input; persisted value is
+     uppercased at save time. Chonky's Input forwards `class` onto the
+     underlying <input>, so :global is required to reach through
+     Svelte's scoped-CSS boundary (mirrors Callsign.svelte). */
+  :global(input.callsign-input) {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* aria-disabled Enable toggle mirror (plan D7): keep the control
+     focusable so screen readers can announce it along with the linked
+     banner, but visually signal the inert state. bits-ui renders the
+     Switch as <button role="switch">; :global reaches through the
+     Chonky wrapper. */
+  :global([role='switch'][aria-disabled='true']) {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

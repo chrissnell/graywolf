@@ -25,7 +25,7 @@ func TestPathBlocksGating(t *testing.T) {
 }
 
 func TestGateRFToISSkipsThirdParty(t *testing.T) {
-	ig, err := New(Config{Server: "127.0.0.1:1", Callsign: "N0CALL"})
+	ig, err := New(Config{Server: "127.0.0.1:1", StationCallsign: "KE7XYZ"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,12 +35,12 @@ func TestGateRFToISSkipsThirdParty(t *testing.T) {
 	ig.connected = true
 	ig.mu.Unlock()
 
-	raw := buildRawFrame(t, "W5ABC-7", "APRS", nil, "}N0CALL>APRS,TCPIP*:test")
+	raw := buildRawFrame(t, "W5ABC-7", "APRS", nil, "}KE7XYZ>APRS,TCPIP*:test")
 	pkt := &aprs.DecodedAPRSPacket{
 		Source:     "W5ABC-7",
 		Dest:       "APRS",
 		Raw:        raw,
-		ThirdParty: &aprs.DecodedAPRSPacket{Source: "N0CALL"},
+		ThirdParty: &aprs.DecodedAPRSPacket{Source: "KE7XYZ"},
 	}
 	ig.gateRFToIS(pkt)
 	if ig.Status().Gated != 0 {
@@ -49,7 +49,7 @@ func TestGateRFToISSkipsThirdParty(t *testing.T) {
 }
 
 func TestGateRFToISDroppedWhenDisconnected(t *testing.T) {
-	ig, err := New(Config{Server: "127.0.0.1:1", Callsign: "N0CALL"})
+	ig, err := New(Config{Server: "127.0.0.1:1", StationCallsign: "KE7XYZ"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -954,6 +954,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/station/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get station config */
+        get: operations["getStationConfig"];
+        /** Update station config */
+        put: operations["updateStationConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stations": {
         parameters: {
             query?: never;
@@ -1578,12 +1596,10 @@ export interface components {
             time?: string;
         };
         "dto.IGateConfigRequest": {
-            callsign?: string;
             enabled?: boolean;
             gate_is_to_rf?: boolean;
             gate_rf_to_is?: boolean;
             max_msg_hops?: number;
-            passcode?: string;
             port?: number;
             rf_channel?: number;
             server?: string;
@@ -1594,13 +1610,11 @@ export interface components {
             tx_channel?: number;
         };
         "dto.IGateConfigResponse": {
-            callsign?: string;
             enabled?: boolean;
             gate_is_to_rf?: boolean;
             gate_rf_to_is?: boolean;
             id?: number;
             max_msg_hops?: number;
-            passcode?: string;
             port?: number;
             rf_channel?: number;
             server?: string;
@@ -1956,6 +1970,13 @@ export interface components {
             last_heard?: string;
             /** @description "bot" | "cache" | "history" | "cache+history" */
             source?: string;
+        };
+        "dto.StationConfigRequest": {
+            callsign?: string;
+        };
+        "dto.StationConfigResponse": {
+            callsign?: string;
+            disabled?: string[];
         };
         "dto.TacticalCallsignRequest": {
             alias?: string;
@@ -5707,6 +5728,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["dto.SmartBeaconConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getStationConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.StationConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateStationConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Station config */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.StationConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.StationConfigResponse"];
                 };
             };
             /** @description Bad Request */

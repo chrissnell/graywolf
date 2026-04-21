@@ -7,35 +7,55 @@ import (
 )
 
 // DigipeaterConfigRequest is the body accepted by PUT /api/digipeater.
+//
+// MyCall is a per-station callsign override (see centralized
+// station-callsign plan, D2/D3). The request DTO uses *string so the
+// three meaningful states are expressible independently:
+//
+//   - nil         → field omitted; leave the stored value unchanged.
+//   - ""          → inherit from StationConfig at transmit time.
+//   - non-empty   → explicit override (e.g. "MTNTOP-1").
+//
+// The response DTO carries MyCall as plain string — an empty value in
+// the response means "inherits from station callsign". The override is
+// stored verbatim (no case normalization here; the operator's casing
+// is the source of truth for what they typed).
 type DigipeaterConfigRequest struct {
+	Enabled             bool    `json:"enabled"`
+	DedupeWindowSeconds uint32  `json:"dedupe_window_seconds"`
+	MyCall              *string `json:"my_call"`
+}
+
+func (r DigipeaterConfigRequest) Validate() error { return nil }
+
+// ApplyToModel merges the request fields onto an existing stored
+// DigipeaterConfig. Fields whose request representation is a pointer
+// only overwrite the target when the pointer is non-nil, preserving
+// "field omitted = leave unchanged" semantics on this PUT endpoint.
+// Other fields are written unconditionally (consistent with the
+// replace-style PUT pattern used elsewhere in webapi).
+func (r DigipeaterConfigRequest) ApplyToModel(existing configstore.DigipeaterConfig) configstore.DigipeaterConfig {
+	existing.Enabled = r.Enabled
+	existing.DedupeWindowSeconds = r.DedupeWindowSeconds
+	if r.MyCall != nil {
+		existing.MyCall = *r.MyCall
+	}
+	return existing
+}
+
+type DigipeaterConfigResponse struct {
+	ID                  uint32 `json:"id"`
 	Enabled             bool   `json:"enabled"`
 	DedupeWindowSeconds uint32 `json:"dedupe_window_seconds"`
 	MyCall              string `json:"my_call"`
 }
 
-func (r DigipeaterConfigRequest) Validate() error { return nil }
-
-func (r DigipeaterConfigRequest) ToModel() configstore.DigipeaterConfig {
-	return configstore.DigipeaterConfig{
-		Enabled:             r.Enabled,
-		DedupeWindowSeconds: r.DedupeWindowSeconds,
-		MyCall:              r.MyCall,
-	}
-}
-
-type DigipeaterConfigResponse struct {
-	ID uint32 `json:"id"`
-	DigipeaterConfigRequest
-}
-
 func DigipeaterConfigFromModel(m configstore.DigipeaterConfig) DigipeaterConfigResponse {
 	return DigipeaterConfigResponse{
-		ID: m.ID,
-		DigipeaterConfigRequest: DigipeaterConfigRequest{
-			Enabled:             m.Enabled,
-			DedupeWindowSeconds: m.DedupeWindowSeconds,
-			MyCall:              m.MyCall,
-		},
+		ID:                  m.ID,
+		Enabled:             m.Enabled,
+		DedupeWindowSeconds: m.DedupeWindowSeconds,
+		MyCall:              m.MyCall,
 	}
 }
 

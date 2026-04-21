@@ -35,11 +35,11 @@ const (
 // user_version before that COMMIT so the success gate is still
 // atomic.
 type migration struct {
-	version  int
-	name     string
-	phase    migrationPhase
-	selfTxn  bool
-	run      func(tx *gorm.DB) error
+	version int
+	name    string
+	phase   migrationPhase
+	selfTxn bool
+	run     func(tx *gorm.DB) error
 }
 
 // schemaMigrations is the append-only list of schema/data migrations
@@ -107,6 +107,16 @@ type migration struct {
 //	    (''/0/1000/300000) so existing non-tcp-client rows remain
 //	    harmless: only rows with interface_type='tcp-client' consult
 //	    these columns (Phase 4 of the KISS TCP-client plan).
+//	11 — igate_config_retain_callsign_passcode: ensure i_gate_configs
+//	    still has the callsign and passcode columns after the Phase 2
+//	    struct trim that moved the station callsign to StationConfig.
+//	    The columns stay in the schema for downgrade-safety (a rollback
+//	    to a pre-Phase-2 binary sees empty values rather than stale ones
+//	    because UpsertIGateConfig zeroes them on every write). On fresh
+//	    installs AutoMigrate builds the table from the Go struct without
+//	    these columns, so we re-add them here; on legacy installs they
+//	    already exist and the ADD COLUMN is guarded by a pragma probe.
+//	    See .context/2026-04-21-centralized-station-callsign.md §D4.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -118,6 +128,7 @@ var schemaMigrations = []migration{
 	{version: 8, name: "channels_nullable_input_device", phase: preAutoMigrate, selfTxn: true, run: migrateChannelsNullableInputDevice},
 	{version: 9, name: "kiss_interfaces_tx_flags", phase: preAutoMigrate, run: migrateKissInterfacesTxFlags},
 	{version: 10, name: "kiss_interfaces_tcp_client_fields", phase: preAutoMigrate, run: migrateKissInterfacesTcpClientFields},
+	{version: 11, name: "igate_config_retain_callsign_passcode", phase: postAutoMigrate, run: migrateIGateConfigRetainCallsignPasscode},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -285,7 +296,7 @@ func migrateMessagesRetryMaxAttemptsDefault(tx *gorm.DB) error {
 // and relying on the GORM tag to paper over that at read time is
 // exactly the "defensive render-time fallback" the plan forbids.
 //
-// UPDATE … WHERE kind IS NULL OR kind = '' is idempotent: once the
+// UPDATE … WHERE kind IS NULL OR kind = ” is idempotent: once the
 // column is fully populated, the statement is a no-op.
 func migrateMessagesKindBackfill(tx *gorm.DB) error {
 	return tx.Exec(
@@ -341,7 +352,7 @@ func migrateKissInterfacesTxFlags(tx *gorm.DB) error {
 // plan). All four columns are NOT NULL with explicit defaults so
 // existing rows end up with documented, harmless values:
 //
-//   - remote_host TEXT NOT NULL DEFAULT ''
+//   - remote_host TEXT NOT NULL DEFAULT ”
 //   - remote_port INTEGER NOT NULL DEFAULT 0
 //   - reconnect_init_ms INTEGER NOT NULL DEFAULT 1000
 //   - reconnect_max_ms INTEGER NOT NULL DEFAULT 300000
@@ -376,6 +387,52 @@ func migrateKissInterfacesTcpClientFields(tx *gorm.DB) error {
 	} {
 		var present int
 		if err := tx.Raw("SELECT COUNT(*) FROM pragma_table_info('kiss_interfaces') WHERE name=?", col.name).Scan(&present).Error; err != nil {
+			return fmt.Errorf("probe %s: %w", col.name, err)
+		}
+		if present > 0 {
+			continue
+		}
+		if err := tx.Exec(col.sql).Error; err != nil {
+			return fmt.Errorf("add %s: %w", col.name, err)
+		}
+	}
+	return nil
+}
+
+// migrateIGateConfigRetainCallsignPasscode re-adds the callsign and
+// passcode columns to i_gate_configs when they are missing. The columns
+// were dropped from the Go struct in Phase 2 of the station-callsign
+// centralization, but we keep them in the DB schema for downgrade-safety
+// (a pre-Phase-2 binary rolled back onto a post-Phase-2 database would
+// otherwise fail to read the column at all). UpsertIGateConfig zeroes
+// both columns on every write, so a downgraded binary sees empty values
+// and re-prompts rather than silently using stale data.
+//
+// Runs post-AutoMigrate because AutoMigrate creates i_gate_configs on a
+// fresh install from the Go struct, which no longer declares these
+// columns. On legacy installs the columns already exist and the guard
+// turns this into a no-op. Runs in the post phase (not pre) to avoid
+// racing AutoMigrate's CREATE TABLE on the first-ever boot.
+func migrateIGateConfigRetainCallsignPasscode(tx *gorm.DB) error {
+	var tableExists int
+	if err := tx.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='i_gate_configs'").Scan(&tableExists).Error; err != nil {
+		return fmt.Errorf("probe i_gate_configs: %w", err)
+	}
+	if tableExists == 0 {
+		// Cannot happen in practice — AutoMigrate runs before the
+		// postAutoMigrate phase and creates the table — but bail out
+		// cleanly rather than exploding on a future code path that
+		// might run this migration in isolation.
+		return nil
+	}
+	for _, col := range []struct {
+		name, sql string
+	}{
+		{"callsign", "ALTER TABLE i_gate_configs ADD COLUMN callsign TEXT NOT NULL DEFAULT ''"},
+		{"passcode", "ALTER TABLE i_gate_configs ADD COLUMN passcode TEXT NOT NULL DEFAULT ''"},
+	} {
+		var present int
+		if err := tx.Raw("SELECT COUNT(*) FROM pragma_table_info('i_gate_configs') WHERE name=?", col.name).Scan(&present).Error; err != nil {
 			return fmt.Errorf("probe %s: %w", col.name, err)
 		}
 		if present > 0 {

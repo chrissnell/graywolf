@@ -15,6 +15,7 @@
   import Igate from './routes/Igate.svelte';
   import Digipeater from './routes/Digipeater.svelte';
   import Beacons from './routes/Beacons.svelte';
+  import Callsign from './routes/Callsign.svelte';
   import Gps from './routes/Gps.svelte';
   import Simulation from './routes/Simulation.svelte';
   import PositionLog from './routes/PositionLog.svelte';
@@ -38,6 +39,7 @@
     '/igate': Igate,
     '/digipeater': Digipeater,
     '/beacons': Beacons,
+    '/callsign': Callsign,
     '/gps': Gps,
     '/simulation': Simulation,
     '/position-log': PositionLog,

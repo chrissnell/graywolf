@@ -37,18 +37,18 @@ func (s *stubGovernor) Submit(ctx context.Context, channel uint32, frame *ax25.F
 }
 
 // gateableLine is a TNC2-format APRS-IS line that will parse into a
-// directed-message packet addressed to N0CALL. Tests that use this
-// line call newTestIgate, which pre-seeds N0CALL in the heard-direct
+// directed-message packet addressed to KE7XYZ. Tests that use this
+// line call newTestIgate, which pre-seeds KE7XYZ in the heard-direct
 // tracker so the spec gate lets the message through. The existing
 // W5-prefix filter rule allows the source; together those match the
 // real two-stage gating path (spec first, user filter second).
-const gateableLine = "W5ABC-7>APRS,WIDE1-1::N0CALL   :hello{1"
+const gateableLine = "W5ABC-7>APRS,WIDE1-1::KE7XYZ   :hello{1"
 
 func newTestIgate(t *testing.T, gov txgovernor.TxSink) *Igate {
 	t.Helper()
 	ig, err := New(Config{
-		Server:   "127.0.0.1:1",
-		Callsign: "N0CALL",
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
@@ -58,8 +58,8 @@ func newTestIgate(t *testing.T, gov txgovernor.TxSink) *Igate {
 		t.Fatal(err)
 	}
 	// The IS->RF spec gate requires the addressee to have been heard
-	// directly on RF. Seed N0CALL so gateableLine survives the gate.
-	ig.heard.Record("N0CALL")
+	// directly on RF. Seed KE7XYZ so gateableLine survives the gate.
+	ig.heard.Record("KE7XYZ")
 	return ig
 }
 
@@ -219,11 +219,11 @@ func TestHandleISLineFanoutDropCounted(t *testing.T) {
 	})
 
 	// inputCh has capacity 64 and no consumer. Send 65 gateable
-	// message frames with distinct sources, all addressed to N0CALL
+	// message frames with distinct sources, all addressed to KE7XYZ
 	// (the heard-direct recipient newTestIgate seeds). The first 64
 	// fit in the buffer; the 65th must be counted as a fan-out drop.
 	for i := 0; i < 65; i++ {
-		line := makeGateableLine(byte('A' + i/26), byte('A'+i%26))
+		line := makeGateableLine(byte('A'+i/26), byte('A'+i%26))
 		ig.handleISLine(line)
 	}
 
@@ -234,10 +234,10 @@ func TestHandleISLineFanoutDropCounted(t *testing.T) {
 
 // makeGateableLine builds a TNC2 line whose source varies so each
 // call is distinct. All frames are directed-message packets addressed
-// to N0CALL (which newTestIgate pre-seeds as heard-direct) so they
+// to KE7XYZ (which newTestIgate pre-seeds as heard-direct) so they
 // survive the spec gate and reach the fan-out path.
 func makeGateableLine(a, b byte) string {
-	return "W5" + string([]byte{a, b}) + ">APRS,WIDE1-1::N0CALL   :hello{1"
+	return "W5" + string([]byte{a, b}) + ">APRS,WIDE1-1::KE7XYZ   :hello{1"
 }
 
 // TestIsRxHookCalledOnFilterAllow verifies that IsRxHook fires for
@@ -247,8 +247,8 @@ func TestIsRxHookCalledOnFilterAllow(t *testing.T) {
 	var hookCalls int32
 	var gotLine string
 	ig, err := New(Config{
-		Server:   "127.0.0.1:1",
-		Callsign: "N0CALL",
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
@@ -269,7 +269,7 @@ func TestIsRxHookCalledOnFilterAllow(t *testing.T) {
 	// need to seed the heard-direct tracker for this test — but
 	// seed it anyway so the full pipeline runs and any regression
 	// in the hook-ordering invariant is obvious.
-	ig.heard.Record("N0CALL")
+	ig.heard.Record("KE7XYZ")
 
 	ig.handleISLine(gateableLine)
 
@@ -288,8 +288,8 @@ func TestIsRxHookCalledOnFilterAllow(t *testing.T) {
 func TestIsRxHookFiresEvenWhenFilterRejects(t *testing.T) {
 	var hookCalls int32
 	ig, err := New(Config{
-		Server:   "127.0.0.1:1",
-		Callsign: "N0CALL",
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
@@ -319,8 +319,8 @@ func TestIsRxHookFiresEvenWhenFilterRejects(t *testing.T) {
 func TestIsRxHookFiresWithoutGovernor(t *testing.T) {
 	var hookCalls int32
 	ig, err := New(Config{
-		Server:   "127.0.0.1:1",
-		Callsign: "N0CALL",
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},

@@ -37,9 +37,9 @@ func buildRawFrame(t *testing.T, src, dest string, path []string, info string) [
 }
 
 func TestEncodeTNC2AppendsQAR(t *testing.T) {
-	raw := buildRawFrame(t, "N0CALL-1", "APRS", []string{"WIDE1-1", "WIDE2-1"}, "!3725.00N/12158.00W>Hello")
+	raw := buildRawFrame(t, "KE7XYZ-1", "APRS", []string{"WIDE1-1", "WIDE2-1"}, "!3725.00N/12158.00W>Hello")
 	pkt := &aprs.DecodedAPRSPacket{
-		Source: "N0CALL-1",
+		Source: "KE7XYZ-1",
 		Dest:   "APRS",
 		Path:   []string{"WIDE1-1", "WIDE2-1"},
 		Raw:    raw,
@@ -48,14 +48,14 @@ func TestEncodeTNC2AppendsQAR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "N0CALL-1>APRS,WIDE1-1,WIDE2-1,qAR,W5XYZ-10:!3725.00N/12158.00W>Hello"
+	want := "KE7XYZ-1>APRS,WIDE1-1,WIDE2-1,qAR,W5XYZ-10:!3725.00N/12158.00W>Hello"
 	if line != want {
 		t.Fatalf("encodeTNC2 mismatch:\n got: %s\nwant: %s", line, want)
 	}
 }
 
 func TestEncodeTNC2RejectsMissingInfo(t *testing.T) {
-	pkt := &aprs.DecodedAPRSPacket{Source: "N0CALL", Dest: "APRS"}
+	pkt := &aprs.DecodedAPRSPacket{Source: "KE7XYZ", Dest: "APRS"}
 	if _, err := encodeTNC2(pkt, "W5XYZ-10"); err == nil {
 		t.Fatal("expected error for packet with no Raw info")
 	}

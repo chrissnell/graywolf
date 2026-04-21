@@ -25,12 +25,15 @@ const (
 )
 
 // IGateConfigRequest is the body accepted by PUT /api/igate/config.
+//
+// Per the centralized station-callsign plan (D3, D4), the iGate login
+// callsign is StationConfig.Callsign and the APRS-IS passcode is a
+// computed implementation detail. Neither is part of this DTO; the
+// corresponding DB columns are retained for downgrade-safety only.
 type IGateConfigRequest struct {
 	Enabled         bool   `json:"enabled"`
 	Server          string `json:"server"`
 	Port            uint32 `json:"port"`
-	Callsign        string `json:"callsign"`
-	Passcode        string `json:"passcode"`
 	ServerFilter    string `json:"server_filter"`
 	SimulationMode  bool   `json:"simulation_mode"`
 	GateRfToIs      bool   `json:"gate_rf_to_is"`
@@ -49,8 +52,6 @@ func (r IGateConfigRequest) ToModel() configstore.IGateConfig {
 		Enabled:         r.Enabled,
 		Server:          r.Server,
 		Port:            r.Port,
-		Callsign:        r.Callsign,
-		Passcode:        r.Passcode,
 		ServerFilter:    r.ServerFilter,
 		SimulationMode:  r.SimulationMode,
 		GateRfToIs:      r.GateRfToIs,
@@ -103,8 +104,6 @@ func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
 			Enabled:         m.Enabled,
 			Server:          server,
 			Port:            port,
-			Callsign:        m.Callsign,
-			Passcode:        m.Passcode,
 			ServerFilter:    m.ServerFilter,
 			SimulationMode:  m.SimulationMode,
 			GateRfToIs:      m.GateRfToIs,

@@ -83,7 +83,6 @@ func seedChannelWithDependents(ctx context.Context, t *testing.T, s *Store) (chI
 	// the target channel (exercises both emit paths).
 	igc := &IGateConfig{
 		Enabled: false, Server: "rotate.aprs2.net", Port: 14580,
-		Callsign: "N0CALL", Passcode: "-1",
 		RfChannel: ch.ID, TxChannel: ch.ID, MaxMsgHops: 2,
 		SoftwareName: "graywolf", SoftwareVersion: "0.1",
 	}

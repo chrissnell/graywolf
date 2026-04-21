@@ -96,9 +96,12 @@ func newTestApp(t *testing.T) (*App, context.Context, context.CancelFunc) {
 // Either being false means fallback to the fixed Every interval.
 func TestBeaconConfigFromStore_SmartBeaconPrecedence(t *testing.T) {
 	b := configstore.Beacon{
-		Type:         "tracker",
-		Channel:      1,
-		Callsign:     "N0CALL",
+		Type:    "tracker",
+		Channel: 1,
+		// Non-N0CALL override so beaconConfigFromStore's resolve step
+		// succeeds and the test exercises the SmartBeacon precedence
+		// rule, not the N0CALL-guard path.
+		Callsign:     "KE7XYZ-9",
 		Destination:  "APGRWO",
 		Path:         "WIDE1-1",
 		SymbolTable:  "/",
@@ -119,17 +122,17 @@ func TestBeaconConfigFromStore_SmartBeaconPrecedence(t *testing.T) {
 	}
 
 	cases := []struct {
-		name           string
-		beaconSmart    bool
-		globalSmart    *configstore.SmartBeaconConfig
-		wantSmartSet   bool
-		wantFastSpeed  float64
-		wantFastRate   time.Duration
-		wantSlowSpeed  float64
-		wantSlowRate   time.Duration
-		wantTurnAngle  float64
-		wantTurnSlope  float64
-		wantTurnTime   time.Duration
+		name          string
+		beaconSmart   bool
+		globalSmart   *configstore.SmartBeaconConfig
+		wantSmartSet  bool
+		wantFastSpeed float64
+		wantFastRate  time.Duration
+		wantSlowSpeed float64
+		wantSlowRate  time.Duration
+		wantTurnAngle float64
+		wantTurnSlope float64
+		wantTurnTime  time.Duration
 	}{
 		{
 			name:         "both off",
@@ -156,17 +159,17 @@ func TestBeaconConfigFromStore_SmartBeaconPrecedence(t *testing.T) {
 			wantSmartSet: false,
 		},
 		{
-			name:           "both enabled",
-			beaconSmart:    true,
-			globalSmart:    smart,
-			wantSmartSet:   true,
-			wantFastSpeed:  100,
-			wantFastRate:   10 * time.Second,
-			wantSlowSpeed:  5,
-			wantSlowRate:   600 * time.Second,
-			wantTurnAngle:  30,
-			wantTurnSlope:  255,
-			wantTurnTime:   15 * time.Second,
+			name:          "both enabled",
+			beaconSmart:   true,
+			globalSmart:   smart,
+			wantSmartSet:  true,
+			wantFastSpeed: 100,
+			wantFastRate:  10 * time.Second,
+			wantSlowSpeed: 5,
+			wantSlowRate:  600 * time.Second,
+			wantTurnAngle: 30,
+			wantTurnSlope: 255,
+			wantTurnTime:  15 * time.Second,
 		},
 	}
 
@@ -174,7 +177,10 @@ func TestBeaconConfigFromStore_SmartBeaconPrecedence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b2 := b
 			b2.SmartBeacon = tc.beaconSmart
-			cfg, err := beaconConfigFromStore(b2, tc.globalSmart)
+			// Per-beacon callsign is seeded on b ("N0CALL") so the
+			// override wins over any station-callsign argument. Pass
+			// an empty station callsign to prove the override path.
+			cfg, err := beaconConfigFromStore(b2, tc.globalSmart, "")
 			if err != nil {
 				t.Fatalf("beaconConfigFromStore: %v", err)
 			}
@@ -232,11 +238,14 @@ func TestBeaconConfigFromStore_SmartBeaconPrecedence(t *testing.T) {
 func TestSmartBeaconReloadPipeline(t *testing.T) {
 	a, ctx, _ := newTestApp(t)
 
-	// Seed one beacon with SmartBeacon=true; no global row yet.
+	// Seed one beacon with SmartBeacon=true; no global row yet. The
+	// callsign is a full per-beacon override (non-N0CALL) so
+	// beaconConfigFromStore resolves cleanly without needing a
+	// StationConfig seeded in this test's fixture.
 	beaconRow := &configstore.Beacon{
 		Type:         "tracker",
 		Channel:      1,
-		Callsign:     "N0CALL",
+		Callsign:     "KE7XYZ-9",
 		Destination:  "APGRWO",
 		Path:         "WIDE1-1",
 		SymbolTable:  "/",

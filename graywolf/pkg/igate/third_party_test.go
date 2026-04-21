@@ -15,12 +15,12 @@ func TestWrapThirdPartyPositionPacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "N0CALL")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
-	if wrapped.Source.String() != "N0CALL" {
-		t.Fatalf("outer source = %q, want N0CALL", wrapped.Source.String())
+	if wrapped.Source.String() != "KE7XYZ" {
+		t.Fatalf("outer source = %q, want KE7XYZ", wrapped.Source.String())
 	}
 	if wrapped.Dest.String() != "APGWLF" {
 		t.Fatalf("outer dest = %q, want APGWLF", wrapped.Dest.String())
@@ -28,7 +28,7 @@ func TestWrapThirdPartyPositionPacket(t *testing.T) {
 	if len(wrapped.Path) != 0 {
 		t.Fatalf("outer path = %v, want empty", wrapped.Path)
 	}
-	want := "}W5ABC-7>APRS,WIDE1-1,TCPIP,N0CALL*:!3725.00N/12158.00W>hi"
+	want := "}W5ABC-7>APRS,WIDE1-1,TCPIP,KE7XYZ*:!3725.00N/12158.00W>hi"
 	if string(wrapped.Info) != want {
 		t.Fatalf("inner info mismatch:\n got: %s\nwant: %s", wrapped.Info, want)
 	}
@@ -38,15 +38,15 @@ func TestWrapThirdPartyPositionPacket(t *testing.T) {
 // directed-message payload verbatim. This is the primary traffic the
 // IS→RF path carries under the spec-compliant gating rules.
 func TestWrapThirdPartyMessagePacket(t *testing.T) {
-	inner, err := parseTNC2("W5ABC-7>APRS,WIDE1-1,qAR,T2TEXAS::N0CALL   :hello{1")
+	inner, err := parseTNC2("W5ABC-7>APRS,WIDE1-1,qAR,T2TEXAS::KE7XYZ   :hello{1")
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "N0CALL")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
-	want := "}W5ABC-7>APRS,WIDE1-1,TCPIP,N0CALL*::N0CALL   :hello{1"
+	want := "}W5ABC-7>APRS,WIDE1-1,TCPIP,KE7XYZ*::KE7XYZ   :hello{1"
 	if string(wrapped.Info) != want {
 		t.Fatalf("inner info mismatch:\n got: %s\nwant: %s", wrapped.Info, want)
 	}
@@ -69,12 +69,12 @@ func TestWrapThirdPartyPreservesBinaryInfo(t *testing.T) {
 	}
 	inner.Info = []byte{'h', 0x00, 'i'}
 
-	wrapped, err := wrapThirdParty(inner, "N0CALL")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
-	// Expect "}W5ABC>APRS,TCPIP,N0CALL*:" followed by 'h', 0x00, 'i'.
-	prefix := []byte("}W5ABC>APRS,TCPIP,N0CALL*:")
+	// Expect "}W5ABC>APRS,TCPIP,KE7XYZ*:" followed by 'h', 0x00, 'i'.
+	prefix := []byte("}W5ABC>APRS,TCPIP,KE7XYZ*:")
 	if !bytes.HasPrefix(wrapped.Info, prefix) {
 		t.Fatalf("prefix mismatch: got %q", wrapped.Info)
 	}
@@ -93,7 +93,7 @@ func TestWrapThirdPartyPreservesPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "N0CALL")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestWrapThirdPartyPreservesPath(t *testing.T) {
 
 // TestWrapThirdPartyRejectsNilFrame checks the guard clauses.
 func TestWrapThirdPartyRejectsNilFrame(t *testing.T) {
-	if _, err := wrapThirdParty(nil, "N0CALL"); err == nil {
+	if _, err := wrapThirdParty(nil, "KE7XYZ"); err == nil {
 		t.Fatal("expected error for nil inner frame")
 	}
 }

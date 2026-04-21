@@ -8,20 +8,33 @@
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import StationCallsignBanner from '../components/StationCallsignBanner.svelte';
   import ChannelListbox from '../lib/components/ChannelListbox.svelte';
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels, getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
   import { unboundWarning, SUMMARY_UNBOUND } from '../lib/channelBacking.js';
+  import { isStationCallsignMissing } from '../lib/callsign.js';
 
   let activeTab = $state('config');
 
-  // Config state — round-trip all API fields so saves don't clobber unshown ones
+  // Config state — round-trip all API fields so saves don't clobber
+  // unshown ones. `callsign` and `passcode` are intentionally absent:
+  // Phase 3B removed them from the iGate DTO, and the PUT decoder uses
+  // DisallowUnknownFields so sending them triggers a 400.
   let form = $state({
     enabled: true, server: 'rotate.aprs2.net', port: '14580',
-    callsign: '', passcode: '', server_filter: '', tx_channel: 0,
+    server_filter: '', tx_channel: 0,
     simulation_mode: false, gate_rf_to_is: true, gate_is_to_rf: false,
     rf_channel: 1, max_msg_hops: 2, software_name: 'graywolf', software_version: '0.1',
   });
   let loading = $state(false);
+
+  // Station callsign (read-only on this page). Loaded alongside the
+  // iGate config; failure is non-fatal — we treat a failed load as
+  // "missing" so the banner renders and the toggle is aria-disabled,
+  // rather than silently letting the user try to enable a feature that
+  // will 400 on save.
+  let stationCallsign = $state('');
+  let stationCallsignMissing = $derived(isStationCallsignMissing(stationCallsign));
   // Shared channelsStore — form.tx_channel is integer-valued (see
   // validation matrix above); the ChannelListbox honors that via
   // valueType="number".
@@ -187,48 +200,105 @@
     // Invalidate synchronously so the default-channel fallback below
     // sees a fresh list; then the poller keeps it current.
     await refreshChannels();
-    const data = await api.get('/igate/config');
-    const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
-    form = {
-      enabled: data.enabled ?? false,
-      server: data.server,
-      port: String(data.port),
-      callsign: data.callsign ?? '',
-      passcode: data.passcode ?? '',
-      server_filter: data.server_filter ?? '',
-      tx_channel: data.tx_channel || defaultCh,
-      simulation_mode: data.simulation_mode ?? false,
-      gate_rf_to_is: data.gate_rf_to_is ?? true,
-      gate_is_to_rf: data.gate_is_to_rf ?? false,
-      rf_channel: data.rf_channel,
-      max_msg_hops: data.max_msg_hops,
-      software_name: data.software_name,
-      software_version: data.software_version,
-    };
-    filters = await api.get('/igate/filters') || [];
+    // Load station callsign in parallel with the iGate config. A
+    // failed load is treated as "missing" so the banner renders — we
+    // don't want to lull the user into thinking the feature is
+    // enable-able when the next save would 400.
+    await Promise.all([
+      (async () => {
+        try {
+          const s = await api.get('/station/config');
+          stationCallsign = s?.callsign ?? '';
+        } catch {
+          stationCallsign = '';
+        }
+      })(),
+      (async () => {
+        const data = await api.get('/igate/config');
+        const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
+        form = {
+          enabled: data.enabled ?? false,
+          server: data.server,
+          port: String(data.port),
+          server_filter: data.server_filter ?? '',
+          tx_channel: data.tx_channel || defaultCh,
+          simulation_mode: data.simulation_mode ?? false,
+          gate_rf_to_is: data.gate_rf_to_is ?? true,
+          gate_is_to_rf: data.gate_is_to_rf ?? false,
+          rf_channel: data.rf_channel,
+          max_msg_hops: data.max_msg_hops,
+          software_name: data.software_name,
+          software_version: data.software_version,
+        };
+        filters = await api.get('/igate/filters') || [];
+      })(),
+    ]);
   });
 
   // Config handlers
   function validateConfig() {
-    if (form.enabled && !form.callsign.trim()) return false;
+    // Callsign-required validation moved to the backend per Phase 3B:
+    // enabling iGate without a station callsign returns HTTP 400 with
+    // a human-readable message that we surface verbatim. The UI's job
+    // is now to pre-empt that path via the aria-disabled toggle guard
+    // below (handleEnableToggleClick / handleEnableToggleKeydown).
     return true;
   }
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!validateConfig()) {
-      toasts.error('Callsign is required when iGate is enabled');
-      return;
-    }
+    if (!validateConfig()) return;
     loading = true;
     try {
-      await api.put('/igate/config', { ...form, port: parseInt(form.port), tx_channel: parseInt(form.tx_channel) });
+      // Build the save body explicitly — do NOT spread `form`. The
+      // iGate PUT decoder uses DisallowUnknownFields (Phase 3B), so an
+      // unexpected `callsign`/`passcode` key would return 400 even
+      // though both were removed from the form state above. Being
+      // explicit also makes future DTO drift a compile-time concern.
+      const body = {
+        enabled: form.enabled,
+        server: form.server,
+        port: parseInt(form.port),
+        server_filter: form.server_filter,
+        tx_channel: parseInt(form.tx_channel),
+        simulation_mode: form.simulation_mode,
+        gate_rf_to_is: form.gate_rf_to_is,
+        gate_is_to_rf: form.gate_is_to_rf,
+        rf_channel: form.rf_channel,
+        max_msg_hops: form.max_msg_hops,
+        software_name: form.software_name,
+        software_version: form.software_version,
+      };
+      await api.put('/igate/config', body);
       toasts.success('iGate config saved');
       refreshChannels();
     } catch (err) {
-      toasts.error(err.message);
+      // ApiError.message already prefers body.error (see lib/api.js),
+      // so the backend's "station callsign is not set..." string is
+      // surfaced verbatim when the enable-guard fires.
+      toasts.error(err.message || 'Failed to save iGate config');
     } finally {
       loading = false;
+    }
+  }
+
+  // Toggle guard: when the station callsign is missing, flipping the
+  // Enable toggle ON is blocked at the event boundary. Turning OFF is
+  // always allowed. We intercept `onclick` and `onkeydown` (Space /
+  // Enter) and call preventDefault, which short-circuits bits-ui's
+  // composed handler chain (see composeHandlers in svelte-toolbelt).
+  // Using aria-disabled (not the real `disabled` attribute) per the
+  // plan's D7 so the control stays keyboard-focusable and screen
+  // readers announce the linked banner via aria-describedby.
+  function handleEnableToggleClick(e) {
+    if (stationCallsignMissing && !form.enabled) {
+      e.preventDefault();
+    }
+  }
+  function handleEnableToggleKeydown(e) {
+    if (!stationCallsignMissing || form.enabled) return;
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
     }
   }
 
@@ -325,24 +395,38 @@
 <div class="tab-panel" class:hidden={activeTab !== 'config'}>
   <p class="tab-doc">
     Connection settings for the APRS-IS network. When enabled, graywolf logs in to an
-    APRS-IS server with your callsign and passcode and gates eligible RF-heard traffic
+    APRS-IS server using the station callsign and gates eligible RF-heard traffic
     up to the internet.
   </p>
+  {#if stationCallsignMissing}
+    <StationCallsignBanner feature="iGate" id="igate-station-banner" />
+  {/if}
   <Box>
     <form onsubmit={handleSave}>
-      <Toggle bind:checked={form.enabled} label="Enable iGate" />
+      <!-- Discoverability row: the iGate identity now lives on the
+           Station Callsign page. This row is purely informational so
+           users migrating from the old iGate form know where to look. -->
+      <div class="station-row">
+        <span class="station-row-label">Station callsign:</span>
+        <span class="station-row-value" class:is-empty={!stationCallsign}>
+          {stationCallsign || '(not set)'}
+        </span>
+        <a class="station-row-link" href="#/callsign">[Change]</a>
+      </div>
+      <Toggle
+        bind:checked={form.enabled}
+        label="Enable iGate"
+        aria-disabled={stationCallsignMissing ? 'true' : undefined}
+        aria-describedby={stationCallsignMissing ? 'igate-station-banner' : undefined}
+        onclick={handleEnableToggleClick}
+        onkeydown={handleEnableToggleKeydown}
+      />
       <div style="margin-top: 16px;">
         <FormField label="APRS-IS Server" id="ig-server">
           <Input id="ig-server" bind:value={form.server} placeholder="rotate.aprs2.net" />
         </FormField>
         <FormField label="Port" id="ig-port">
           <Input id="ig-port" bind:value={form.port} type="number" placeholder="14580" />
-        </FormField>
-        <FormField label="Callsign" id="ig-call">
-          <Input id="ig-call" bind:value={form.callsign} placeholder="N0CALL-10" />
-        </FormField>
-        <FormField label="Passcode" id="ig-pass">
-          <Input id="ig-pass" bind:value={form.passcode} type="password" placeholder="12345" />
         </FormField>
       </div>
       <div class="form-actions">
@@ -614,5 +698,52 @@
     color: var(--text-primary);
     font-size: 13px;
     line-height: 1.45;
+  }
+
+  /* Station-callsign discoverability row (Phase 4B). Read-only echo of
+     the current station callsign with a link to the page that owns it.
+     Sized to sit comfortably above the Enable toggle without dominating
+     the form. */
+  .station-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .station-row-label {
+    color: var(--color-text-muted, var(--text-secondary, #888));
+  }
+  .station-row-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 600;
+  }
+  .station-row-value.is-empty {
+    font-family: inherit;
+    font-weight: normal;
+    font-style: italic;
+    color: var(--color-text-muted, var(--text-secondary, #888));
+  }
+  .station-row-link {
+    color: var(--accent, #3b82f6);
+    text-decoration: none;
+  }
+  .station-row-link:hover,
+  .station-row-link:focus-visible {
+    text-decoration: underline;
+  }
+
+  /* When the station callsign is missing, the Enable toggle is
+     aria-disabled but NOT hard-disabled (plan D7 — hard `disabled`
+     removes the control from the focus order in some browsers and
+     screen readers can skip announcing it). Mirror that state visually
+     so sighted users understand the control is inert. Bits-ui sets the
+     aria attribute directly on the <button role="switch">; we target
+     it with :global so Svelte's scoped CSS reaches past the Chonky
+     wrapper. */
+  :global([role='switch'][aria-disabled='true']) {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

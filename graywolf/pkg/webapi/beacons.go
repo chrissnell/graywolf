@@ -116,7 +116,21 @@ func (s *Server) updateBeacon(w http.ResponseWriter, r *http.Request) {
 			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
 				return configstore.Beacon{}, validationError(err)
 			}
-			m := req.ToUpdate(id)
+			// Merge the request onto the existing row so a nil
+			// Callsign (field omitted) preserves the stored
+			// override value. Missing row → fall back to bare
+			// ToUpdate which populates the struct from the
+			// request, treating nil as "" (inherit).
+			existing, err := s.store.GetBeacon(ctx, id)
+			if err != nil {
+				return configstore.Beacon{}, err
+			}
+			var m configstore.Beacon
+			if existing != nil {
+				m = req.ApplyToUpdate(id, *existing)
+			} else {
+				m = req.ToUpdate(id)
+			}
 			if err := s.store.UpdateBeacon(ctx, &m); err != nil {
 				return configstore.Beacon{}, err
 			}

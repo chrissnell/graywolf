@@ -140,6 +140,7 @@ func (s *Store) Migrate() error {
 		&MessageCounter{},
 		&MessagePreferences{},
 		&TacticalCallsign{},
+		&StationConfig{},
 	); err != nil {
 		_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 		return err
@@ -158,6 +159,12 @@ func (s *Store) Migrate() error {
 	// Idempotent: no-op once the row exists.
 	if err := s.seedMessagePreferences(context.Background()); err != nil {
 		return fmt.Errorf("seed message preferences: %w", err)
+	}
+	// Seed the StationConfig singleton from legacy per-feature callsigns
+	// on first run. Idempotent: no-op once the row exists. See
+	// .context/2026-04-21-centralized-station-callsign.md §D5.
+	if err := s.seedStationConfig(context.Background()); err != nil {
+		return fmt.Errorf("seed station config: %w", err)
 	}
 	return nil
 }
@@ -1020,7 +1027,23 @@ func (s *Store) UpsertIGateConfig(ctx context.Context, c *IGateConfig) error {
 			c.ID = existing.ID
 		}
 	}
-	return s.db.WithContext(ctx).Save(c).Error
+	// The callsign and passcode columns remain in the schema for
+	// downgrade-safety (see models.go IGateConfig doc comment), but
+	// application code no longer uses them. Zero them on every upsert
+	// unconditionally so a rollback to a pre-Phase-2 binary sees an
+	// empty callsign/passcode and re-prompts the user rather than
+	// silently using stale values. Save + scrub run in one transaction
+	// so a crash between the two cannot leave a row with fresh config
+	// but stale callsign/passcode.
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(c).Error; err != nil {
+			return err
+		}
+		return tx.Model(&IGateConfig{}).Where("id = ?", c.ID).UpdateColumns(map[string]any{
+			"callsign": "",
+			"passcode": "",
+		}).Error
+	})
 }
 
 func (s *Store) ListIGateRfFilters(ctx context.Context) ([]IGateRfFilter, error) {

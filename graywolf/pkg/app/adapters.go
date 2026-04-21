@@ -8,6 +8,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/beacon"
+	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
@@ -59,6 +60,14 @@ func (o *beaconObserver) OnBeaconSkipped(beaconName string, reason string) {
 // Keeping the mapping explicit here surfaces parse errors per beacon
 // without taking out the whole scheduler on a single bad row.
 //
+// Callsign resolution: b.Callsign is the per-beacon override (empty
+// string means "inherit the station callsign"). stationCall is the
+// resolved station callsign looked up by the caller (typically via
+// store.ResolveStationCallsign). callsign.Resolve combines the two and
+// returns an error for empty/N0CALL — per D6 the caller skips this
+// beacon and keeps scheduling the others, so one bad override does not
+// kill the beacon pipeline.
+//
 // SmartBeacon precedence rule: the returned cfg.SmartBeacon is non-nil
 // only when BOTH b.SmartBeacon == true AND smart != nil && smart.Enabled
 // == true. Either being false means cfg.SmartBeacon = nil and this
@@ -69,10 +78,14 @@ func (o *beaconObserver) OnBeaconSkipped(beaconName string, reason string) {
 // consulted; the SmartBeacon curve is a global singleton
 // (configstore.SmartBeaconConfig). See
 // .context/2026-04-18-smart-beacon-implementation.md.
-func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconConfig) (beacon.Config, error) {
-	src, err := ax25.ParseAddress(b.Callsign)
+func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconConfig, stationCall string) (beacon.Config, error) {
+	resolved, err := callsign.Resolve(b.Callsign, stationCall)
 	if err != nil {
-		return beacon.Config{}, fmt.Errorf("parse callsign %q: %w", b.Callsign, err)
+		return beacon.Config{}, fmt.Errorf("resolve callsign (override %q, station %q): %w", b.Callsign, stationCall, err)
+	}
+	src, err := ax25.ParseAddress(resolved)
+	if err != nil {
+		return beacon.Config{}, fmt.Errorf("parse callsign %q: %w", resolved, err)
 	}
 	dest, err := ax25.ParseAddress(b.Destination)
 	if err != nil {

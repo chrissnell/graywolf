@@ -18,6 +18,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/beacon"
+	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
@@ -484,11 +485,25 @@ func (a *App) applyFlacOverride(ctx context.Context) error {
 
 // wireIGate constructs a.ig from configstore. A disabled or missing
 // iGate config leaves a.ig nil, which the igateComponent stop closure
-// handles via a nil-check.
+// handles via a nil-check. Per D7 the webapi layer refuses to save
+// Enabled=true without a station callsign set, so the resolve-below
+// should succeed in the happy path. If it doesn't (hand-edited DB,
+// migration anomaly), we log a warning and leave the iGate nil rather
+// than panicking — graceful degradation matches the rest of the wiring.
 func (a *App) wireIGate(ctx context.Context) error {
 	igCfg, err := a.store.GetIGateConfig(ctx)
 	if err != nil || igCfg == nil || !igCfg.Enabled {
 		return nil
+	}
+
+	stationCall, err := a.store.ResolveStationCallsign(ctx)
+	if err != nil {
+		if errors.Is(err, callsign.ErrCallsignEmpty) || errors.Is(err, callsign.ErrCallsignN0Call) {
+			a.logger.Warn("iGate will not start: station callsign unset or N0CALL — set it on the Station Callsign page",
+				"reason", err.Error())
+			return nil
+		}
+		return fmt.Errorf("resolve station callsign: %w", err)
 	}
 
 	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
@@ -521,8 +536,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 
 	ig, err := igate.New(igate.Config{
 		Server:          serverAddr,
-		Callsign:        igCfg.Callsign,
-		Passcode:        igCfg.Passcode,
+		StationCallsign: stationCall,
 		ServerFilter:    igCfg.ServerFilter,
 		SoftwareName:    igCfg.SoftwareName,
 		SoftwareVersion: igCfg.SoftwareVersion,
@@ -608,30 +622,40 @@ func (a *App) wireMessages(ctx context.Context) error {
 	a.messagesReload = make(chan struct{}, 1)
 
 	// OurCall closure: resolves the operator's primary callsign from
-	// the iGate config row. This mirrors the router's existing
-	// self-filter strategy (Phase 2) and the compose handler's
-	// loopback-guard path (Phase 4). A missing row returns "" which
-	// the Service's SendMessage rejects with an explicit error rather
-	// than silently generating self-addressed traffic.
+	// StationConfig. Per D8 messaging identity is always the station
+	// callsign — no per-feature override, no fallback. The closure is
+	// invoked on every router self-filter check, every auto-ACK, and
+	// every compose-handler loopback check, so it needs to re-read each
+	// time to pick up live StationConfig changes.
+	//
+	// Resolution errors (empty / N0CALL) collapse to "" here because the
+	// router + sender contract treats "" as "unset — refuse to source
+	// self-addressed traffic". A proper operator-facing error is surfaced
+	// at the compose path (see Service.SendMessage's OurCall=="" check).
 	ourCall := func() string {
-		c, _ := a.store.GetIGateConfig(context.Background())
-		if c == nil {
+		c, err := a.store.ResolveStationCallsign(context.Background())
+		if err != nil {
 			return ""
 		}
-		return c.Callsign
+		return c
 	}
 
-	// TxChannel / IGatePasscode are read from the iGate config when
-	// present so the sender picks the operator's preferred RF channel
-	// and short-circuits IS when running read-only. When no iGate row
-	// exists, defaults (TxChannel=1, Passcode="") apply.
-	var (
-		txChannel uint32
-		passcode  string
-	)
+	// TxChannel is read from the iGate config when present so the sender
+	// picks the operator's preferred RF channel. The IGatePasscode
+	// argument to messages.NewService is kept for its read-only-IS gate
+	// semantics (empty / "-1" → disable IS fallback): we compute the
+	// passcode at wire time from the resolved station callsign via
+	// callsign.APRSPasscode. When the station callsign is unset, we pass
+	// "" so the sender treats IS as read-only; this matches the pre-
+	// centralization behaviour where an unconfigured iGate row meant
+	// an empty passcode.
+	var txChannel uint32
 	if igCfg, _ := a.store.GetIGateConfig(ctx); igCfg != nil {
 		txChannel = igCfg.TxChannel
-		passcode = igCfg.Passcode
+	}
+	var passcode string
+	if stationCall, err := a.store.ResolveStationCallsign(ctx); err == nil {
+		passcode = strconv.Itoa(callsign.APRSPasscode(stationCall))
 	}
 
 	// iGate line-sender: only when the iGate is wired. A nil IGate in
@@ -1250,7 +1274,30 @@ func (a *App) digipeaterComponent() namedComponent {
 			a.digi.SetRules(nil)
 			return
 		}
-		mycall, _ := ax25.ParseAddress(cfg.MyCall)
+		// Resolve per-digipeater override against the station callsign.
+		// Per D7 the webapi layer refuses Enabled=true when the station
+		// callsign is unset, so the happy path always yields a usable
+		// value. If resolution fails (stale DB, migration race), disable
+		// the digipeater and log — the per-frame guard in pkg/digipeater
+		// would drop frames anyway, but refusing to flip Enabled=true is
+		// cleaner and avoids the WARN-per-frame flood.
+		stationCall, _ := a.store.ResolveStationCallsign(ctx)
+		resolved, err := callsign.Resolve(cfg.MyCall, stationCall)
+		if err != nil {
+			a.logger.Warn("digipeater will not be enabled: station callsign unset or N0CALL",
+				"override", cfg.MyCall, "err", err)
+			a.digi.SetEnabled(false)
+			a.digi.SetRules(nil)
+			return
+		}
+		mycall, err := ax25.ParseAddress(resolved)
+		if err != nil {
+			a.logger.Warn("digipeater mycall parse failed",
+				"value", resolved, "err", err)
+			a.digi.SetEnabled(false)
+			a.digi.SetRules(nil)
+			return
+		}
 		a.digi.SetMyCall(mycall)
 		a.digi.SetDedupeWindow(time.Duration(cfg.DedupeWindowSeconds) * time.Second)
 		rules, err := a.store.ListDigipeaterRules(ctx)
@@ -1377,9 +1424,16 @@ func (a *App) loadBeaconConfigs(ctx context.Context, source string) []beacon.Con
 		a.logger.Warn("smart-beacon load failed; falling back to disabled", "err", err)
 		smart = nil
 	}
+	// Resolve the station callsign once per reload. A resolution error
+	// (empty / N0CALL) is passed through as an empty string: per-beacon
+	// overrides that supply their own callsign still work; beacons
+	// relying on the station fallback fail with an error in
+	// beaconConfigFromStore and are skipped individually (D6 —
+	// "one bad beacon does not kill the scheduler").
+	stationCall, _ := a.store.ResolveStationCallsign(ctx)
 	var configs []beacon.Config
 	for _, b := range stored {
-		bc, err := beaconConfigFromStore(b, smart)
+		bc, err := beaconConfigFromStore(b, smart, stationCall)
 		if err != nil {
 			a.logger.Warn("beacon config", "id", b.ID, "err", err)
 			continue

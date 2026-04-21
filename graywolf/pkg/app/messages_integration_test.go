@@ -161,19 +161,19 @@ func (i *intIGateSender) SendLine(l string) error {
 
 // intTestContext bundles the wired-up integration harness.
 type intTestContext struct {
-	srv        *httptest.Server
-	client     *http.Client
-	store      *configstore.Store
-	msgStore   *messages.Store
-	msgSvc     *messages.Service
-	sink       *intTxSink
-	igs        *intIGateSender
-	ourCall    string
-	reloadCh   chan struct{}
-	apiSrv     *webapi.Server
+	srv      *httptest.Server
+	client   *http.Client
+	store    *configstore.Store
+	msgStore *messages.Store
+	msgSvc   *messages.Service
+	sink     *intTxSink
+	igs      *intIGateSender
+	ourCall  string
+	reloadCh chan struct{}
+	apiSrv   *webapi.Server
 	// drainerWG tracks the reload drainer goroutine started by
 	// setupIntegration so the cleanup path can wait it out.
-	drainerWG sync.WaitGroup
+	drainerWG     sync.WaitGroup
 	drainerCancel context.CancelFunc
 }
 
@@ -191,12 +191,17 @@ func setupIntegration(t *testing.T, ourCall string) (*intTestContext, func()) {
 	}
 
 	ctx := context.Background()
-	// Seed iGate config so resolveOurCall returns ourCall.
+	// Seed StationConfig so the webapi's resolveOurCall and the
+	// pkg/app OurCall closure both resolve to ourCall. Per D8, station
+	// callsign lives in StationConfig now — the IGateConfig row carries
+	// the transport-only fields (server, port, channels) and no longer
+	// carries the identity.
+	if err := store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: ourCall}); err != nil {
+		t.Fatalf("UpsertStationConfig: %v", err)
+	}
 	if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
-		Callsign:   ourCall,
 		Server:     "rotate.aprs2.net",
 		Port:       14580,
-		Passcode:   "-1",
 		TxChannel:  1,
 		RfChannel:  1,
 		MaxMsgHops: 2,
@@ -717,9 +722,15 @@ func TestMessagesIntegration(t *testing.T) {
 		defer store.Close()
 
 		ctx := context.Background()
+		// Seed StationConfig so OurCall resolves via the centralized
+		// station callsign, and a trimmed IGateConfig row so the
+		// sender's TxChannel lookup finds something reasonable.
+		if err := store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "N0CALL"}); err != nil {
+			t.Fatalf("UpsertStationConfig: %v", err)
+		}
 		if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
-			Callsign: "N0CALL", Server: "rotate.aprs2.net", Port: 14580,
-			Passcode: "-1", TxChannel: 1, RfChannel: 1, MaxMsgHops: 2,
+			Server: "rotate.aprs2.net", Port: 14580,
+			TxChannel: 1, RfChannel: 1, MaxMsgHops: 2,
 		}); err != nil {
 			t.Fatalf("UpsertIGateConfig: %v", err)
 		}
@@ -1057,4 +1068,3 @@ func TestMessagesIntegration(t *testing.T) {
 		}
 	})
 }
-

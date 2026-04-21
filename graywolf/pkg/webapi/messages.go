@@ -941,16 +941,17 @@ func (s *Server) getTacticalParticipants(w http.ResponseWriter, r *http.Request)
 
 // --- helpers -------------------------------------------------------------
 
-// resolveOurCall reads the operator's primary callsign from the iGate
-// config (the same source the router uses). Returns empty string if
-// the config hasn't been written yet.
+// resolveOurCall reads the operator's primary callsign from the
+// centralized StationConfig (the same source the iGate, digipeater,
+// and beacon paths now use). Returns the stored value verbatim,
+// preserving legacy loopback-guard semantics (an "N0CALL" station
+// config is still treated as the station's current identity by the
+// duplicate-destination check). An empty string means "no row yet".
+// DB errors are returned as-is.
 func (s *Server) resolveOurCall(ctx context.Context) (string, error) {
-	c, err := s.store.GetIGateConfig(ctx)
+	c, err := s.store.GetStationConfig(ctx)
 	if err != nil {
 		return "", err
-	}
-	if c == nil {
-		return "", nil
 	}
 	return c.Callsign, nil
 }

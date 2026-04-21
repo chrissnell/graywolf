@@ -37,16 +37,21 @@ func messagesWiringApp(t *testing.T, ourCall string) (*App, context.Context, con
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	// Seed an iGate config row so OurCall resolves correctly. The
-	// messages.Service reads Callsign lazily via the OurCall closure
-	// passed to NewService; without this row the closure returns "".
+	// Seed a StationConfig row so OurCall (resolved via
+	// StationConfig per D8) returns ourCall. The iGate row carries
+	// only transport/policy fields now — identity lives on
+	// StationConfig. The Service uses its own injected OurCall
+	// closure for this test, but seeding StationConfig matches the
+	// real wiring so downstream (e.g. handler-level resolveOurCall)
+	// sees the expected value.
 	seedCtx := context.Background()
+	if err := store.UpsertStationConfig(seedCtx, configstore.StationConfig{Callsign: ourCall}); err != nil {
+		t.Fatalf("UpsertStationConfig: %v", err)
+	}
 	if err := store.UpsertIGateConfig(seedCtx, &configstore.IGateConfig{
-		Enabled:  false,
-		Callsign: ourCall,
-		Server:   "rotate.aprs2.net",
-		Port:     14580,
-		Passcode: "-1", // read-only; blocks IS-only fallback
+		Enabled: false,
+		Server:  "rotate.aprs2.net",
+		Port:    14580,
 	}); err != nil {
 		t.Fatalf("UpsertIGateConfig: %v", err)
 	}

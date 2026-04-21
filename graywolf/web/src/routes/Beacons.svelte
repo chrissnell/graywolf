@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Toggle, Box, Radio, RadioGroup, Badge, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Toggle, Box, Radio, RadioGroup, Badge, Checkbox, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
@@ -47,6 +47,12 @@
     altError = '';
   }
 
+  // Station callsign loaded once on mount. When empty/unset, the
+  // placeholder reads "(not set)" and the list renders inherited rows
+  // with the muted fallback — operators can still author beacons; the
+  // backend runtime guard (D6) is what ultimately refuses to transmit.
+  let stationCallsign = $state('');
+
   let beacons = $state([]);
   // Channels come from the shared channelsStore (D9) so every picker
   // page sees coherent backing state. Legacy local `channels` array is
@@ -66,12 +72,29 @@
   let editing = $state(null);
   let deleteTarget = $state(null);
   let deleteOpen = $state(false);
+  // `callsign_override` drives the D3 compact checkbox pattern. It's
+  // UI-only state: on save it gates whether `callsign` is sent as the
+  // trimmed/uppercased override or as the empty "inherit" sentinel.
+  // Keeping it on `form` (rather than as a separate `$state`) means
+  // openEdit's Object.assign still covers the full form snapshot and
+  // we don't need a parallel lifecycle for the checkbox.
   let form = $state({
-    channel: '', callsign: '', destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
+    channel: '', callsign: '', callsign_override: false,
+    destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', send_to_aprs_is: false, enabled: true,
   });
+
+  let callsignError = $state('');
+  // Placeholder shown in the disabled input when "override" is unchecked.
+  // Mirrors the D3 copy: "Uses station callsign (KE7XYZ-9)" when loaded,
+  // "Uses station callsign (not set)" when StationConfig is empty.
+  let inheritedPlaceholder = $derived(
+    stationCallsign
+      ? `Uses station callsign (${stationCallsign})`
+      : 'Uses station callsign (not set)'
+  );
 
   // Unbound-channel warning (D17). Surfaces above the submit button
   // when the selected channel has no backend attached so the
@@ -129,6 +152,16 @@
       min_turn_angle: String(sb.min_turn_angle), turn_slope: String(sb.turn_slope),
       min_turn_time: String(sb.min_turn_time),
     };
+    // Station callsign drives the inherited-placeholder and the list's
+    // "inherited" rendering. Failure is non-fatal — the page stays
+    // usable, beacons are still authorable, and the placeholder just
+    // reads "(not set)".
+    try {
+      const st = await api.get('/station/config');
+      stationCallsign = (st && st.callsign) || '';
+    } catch {
+      stationCallsign = '';
+    }
   });
 
   function openCreate() {
@@ -139,6 +172,8 @@
     editing = null;
     form.channel = String(channels[0].id);
     form.callsign = '';
+    form.callsign_override = false;
+    callsignError = '';
     form.destination = 'APGRWO';
     form.path = 'WIDE1-1,WIDE2-1';
     form.symbol_table = '/';
@@ -159,10 +194,18 @@
 
   function openEdit(row) {
     editing = row;
+    // `row.callsign` from the API is always a plain string. Empty
+    // string means "inherits from StationConfig" (phase 2 migration
+    // normalized matching-call rows down to empty; all existing
+    // overrides are non-empty). This is the single source of truth for
+    // the checkbox's initial state.
+    const rowCall = row.callsign || '';
     // Mutate form in place (rather than reassigning) so nested bind:value
     // on the RadioGroup picks up the new value reliably.
     Object.assign(form, row, {
       channel: String(row.channel),
+      callsign: rowCall,
+      callsign_override: rowCall !== '',
       symbol_table: row.symbol_table || '/',
       symbol: row.symbol || '-',
       overlay: row.overlay || '',
@@ -174,11 +217,29 @@
     });
     altInput = altInputFromFeet(form.alt_ft);
     altError = '';
+    callsignError = '';
     modalOpen = true;
   }
 
   async function handleSave() {
-    if (!form.callsign.trim()) { toasts.error('Callsign required'); return; }
+    // D3 override semantics. Unchecked → always send empty string so
+    // the backend treats it as "inherit from StationConfig". Checked →
+    // require a non-empty value (can't override with nothing) and send
+    // the trimmed/uppercased value. Never send `undefined` — the form
+    // always makes the operator's intent explicit on the wire.
+    let callsignToSend;
+    if (form.callsign_override) {
+      const trimmed = form.callsign.trim();
+      if (!trimmed) {
+        callsignError = 'Enter an override callsign or uncheck the box';
+        toasts.error('Enter an override callsign or uncheck the box');
+        return;
+      }
+      callsignToSend = trimmed.toUpperCase();
+    } else {
+      callsignToSend = '';
+    }
+    callsignError = '';
     const channelId = parseInt(form.channel);
     if (!Number.isFinite(channelId) || channelId <= 0) {
       toasts.error('Channel required');
@@ -211,6 +272,7 @@
     }
     const data = {
       ...form,
+      callsign: callsignToSend,
       channel: channelId,
       use_gps: useGps,
       interval: parseInt(form.interval),
@@ -219,6 +281,7 @@
       alt_ft: altFt,
     };
     delete data.pos_source;
+    delete data.callsign_override;
     delete data.id;
     try {
       if (editing) {
@@ -258,7 +321,7 @@
   async function handleSendNow(row) {
     try {
       await api.post(`/beacons/${row.id}/send`, {});
-      toasts.success(`Beacon sent: ${row.callsign}`);
+      toasts.success(`Beacon sent: ${row.callsign || stationCallsign || '(unset)'}`);
     } catch (err) {
       toasts.error(err.message);
     }
@@ -308,7 +371,14 @@
                 <span class="symbol-swatch-overlay">{b.overlay}</span>
               {/if}
             </span>
-            <span class="beacon-callsign">{b.callsign}</span>
+            {#if b.callsign}
+              <span class="beacon-callsign">{b.callsign}</span>
+            {:else if stationCallsign}
+              <span class="beacon-callsign">{stationCallsign}</span>
+              <span class="beacon-callsign-inherited">(inherited)</span>
+            {:else}
+              <span class="beacon-callsign beacon-callsign-unset">(not set)</span>
+            {/if}
           </div>
           <div class="beacon-badges">
             <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
@@ -436,8 +506,20 @@
           channels={channels}
         />
       </FormField>
-      <FormField label="Callsign" id="bcn-call">
-        <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
+      <FormField label="Callsign" id="bcn-call" error={callsignError}>
+        <div class="callsign-row">
+          <Input
+            id="bcn-call"
+            bind:value={form.callsign}
+            placeholder={form.callsign_override ? 'N0CALL-9' : inheritedPlaceholder}
+            disabled={!form.callsign_override}
+            class="callsign-input"
+          />
+          <label class="callsign-override-label" for="bcn-call-override">
+            <Checkbox id="bcn-call-override" bind:checked={form.callsign_override} />
+            <span>Override station callsign</span>
+          </label>
+        </div>
       </FormField>
       <FormField label="Destination" id="bcn-dest"
         hint="APRS tocall identifying the originating software. Leave as APGRWO unless you know you need to change it.">
@@ -532,7 +614,7 @@
   <AlertDialog.Content>
     <AlertDialog.Title>Delete Beacon</AlertDialog.Title>
     <AlertDialog.Description>
-      Are you sure you want to delete the beacon for "{deleteTarget?.callsign}"? This cannot be undone.
+      Are you sure you want to delete the beacon for "{deleteTarget?.callsign || stationCallsign || '(unset)'}"? This cannot be undone.
     </AlertDialog.Description>
     <div class="modal-footer">
       <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
@@ -792,6 +874,45 @@
   .unit-active {
     background: var(--color-primary, #3b82f6);
     color: #fff;
+  }
+
+  /* D3 compact override pattern: input + checkbox on one row.
+     The input's wrapper stretches to fill remaining space so the
+     checkbox sits flush right. Typed text appears uppercase via
+     text-transform while the underlying value is normalized on save. */
+  .callsign-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .callsign-row :global(.input-wrapper) {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+  .callsign-row :global(.callsign-input) {
+    text-transform: uppercase;
+  }
+  .callsign-override-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary, var(--color-text-muted, #888));
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .beacon-callsign-inherited {
+    margin-left: 6px;
+    font-size: 12px;
+    font-style: italic;
+    color: var(--text-muted, var(--color-text-muted, #888));
+  }
+  .beacon-callsign-unset {
+    font-style: italic;
+    color: var(--text-muted, var(--color-text-muted, #888));
   }
 
   /* D17 — unbound-channel save warning. Non-blocking; matches the

@@ -923,8 +923,6 @@ definitions:
     type: object
   dto.IGateConfigRequest:
     properties:
-      callsign:
-        type: string
       enabled:
         type: boolean
       gate_is_to_rf:
@@ -933,8 +931,6 @@ definitions:
         type: boolean
       max_msg_hops:
         type: integer
-      passcode:
-        type: string
       port:
         type: integer
       rf_channel:
@@ -954,8 +950,6 @@ definitions:
     type: object
   dto.IGateConfigResponse:
     properties:
-      callsign:
-        type: string
       enabled:
         type: boolean
       gate_is_to_rf:
@@ -966,8 +960,6 @@ definitions:
         type: integer
       max_msg_hops:
         type: integer
-      passcode:
-        type: string
       port:
         type: integer
       rf_channel:
@@ -1467,6 +1459,20 @@ definitions:
       source:
         description: '"bot" | "cache" | "history" | "cache+history"'
         type: string
+    type: object
+  dto.StationConfigRequest:
+    properties:
+      callsign:
+        type: string
+    type: object
+  dto.StationConfigResponse:
+    properties:
+      callsign:
+        type: string
+      disabled:
+        items:
+          type: string
+        type: array
     type: object
   dto.TacticalCallsignRequest:
     properties:
@@ -2108,6 +2114,8 @@ tags:
     description: Digipeater configuration and rules.
   - name: igate
     description: Igate configuration, filters, status, and simulation.
+  - name: station
+    description: Station-wide callsign (APRS-IS login, messaging identity, default for beacons and digipeater).
   - name: gps
     description: GPS source configuration.
   - name: position-log
@@ -4544,6 +4552,56 @@ paths:
       summary: Update SmartBeacon configuration
       tags:
         - beacons
+  /station/config:
+    get:
+      operationId: getStationConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.StationConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get station config
+      tags:
+        - station
+    put:
+      consumes:
+        - application/json
+      operationId: updateStationConfig
+      parameters:
+        - description: Station config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.StationConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.StationConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update station config
+      tags:
+        - station
   /stations:
     get:
       operationId: listStations

@@ -53,14 +53,14 @@ type Server struct {
 	historyDBPath     string // read-only; set by -history-db flag
 	version           string // build-time version string returned by GET /api/version
 	igateStatusFn     func() igate.Status
-	gpsReload         chan struct{}                              // signalled when GPS config changes
-	beaconReload      chan struct{}                              // signalled when beacon config changes
-	digipeaterReload  chan struct{}                              // signalled when digipeater config/rules change
-	igateReload       chan struct{}                              // signalled when igate config/filters change
-	positionLogReload chan struct{}                              // signalled when position log config changes
-	agwReload         chan struct{}                              // signalled when AGW config changes
-	smartBeaconReload chan struct{}                              // signalled when smart-beacon singleton config changes
-	messagesReload    chan struct{}                              // signalled when messages preferences or tactical callsigns change
+	gpsReload         chan struct{} // signalled when GPS config changes
+	beaconReload      chan struct{} // signalled when beacon config changes
+	digipeaterReload  chan struct{} // signalled when digipeater config/rules change
+	igateReload       chan struct{} // signalled when igate config/filters change
+	positionLogReload chan struct{} // signalled when position log config changes
+	agwReload         chan struct{} // signalled when AGW config changes
+	smartBeaconReload chan struct{} // signalled when smart-beacon singleton config changes
+	messagesReload    chan struct{} // signalled when messages preferences or tactical callsigns change
 	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
 	// Nudged after any change that could alter the channel-backing
 	// map (kiss interface add/remove/mode/allow_tx flip, channel
@@ -74,9 +74,9 @@ type Server struct {
 	// so the webapi Server handlers must guard against a nil value and
 	// return 503 until SetMessagesService is called. See
 	// RegisterMessages / registerMessages.
-	messagesService  MessagesService
-	messagesStore    MessagesStore    // optional: defaults to messagesService.Store() via adapter
-	messagesBotDir   messages.BotDirectory
+	messagesService MessagesService
+	messagesStore   MessagesStore // optional: defaults to messagesService.Store() via adapter
+	messagesBotDir  messages.BotDirectory
 }
 
 // MessagesService is the narrow surface the webapi handlers consume
@@ -177,6 +177,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerAgw(mux)
 	s.registerIgateConfig(mux)
 	s.registerDigipeater(mux)
+	s.registerStationConfig(mux)
 	s.registerGps(mux)
 	s.registerPositionLog(mux)
 	s.registerSmartBeacon(mux)

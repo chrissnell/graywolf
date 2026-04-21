@@ -23,7 +23,7 @@ type mockServer struct {
 	login    string
 	lines    []string
 	conn     net.Conn
-	logresp  string // e.g. "# logresp N0CALL verified, server GWOLF"
+	logresp  string // e.g. "# logresp KE7XYZ verified, server GWOLF"
 	readyCh  chan struct{}
 	clientMu sync.Mutex
 }
@@ -100,14 +100,13 @@ func (m *mockServer) loginLine() string {
 }
 
 func TestIgateLoginAndRFToIS(t *testing.T) {
-	srv := newMockServer(t, "# logresp N0CALL verified, server MOCK")
+	srv := newMockServer(t, "# logresp KE7XYZ verified, server MOCK")
 	defer srv.close()
 	go srv.serve(t)
 
 	ig, err := New(Config{
 		Server:          srv.addr(),
-		Callsign:        "N0CALL",
-		Passcode:        "12345",
+		StationCallsign: "KE7XYZ",
 		ServerFilter:    "m/50",
 		SoftwareName:    "graywolf-test",
 		SoftwareVersion: "0.1",
@@ -129,7 +128,9 @@ func TestIgateLoginAndRFToIS(t *testing.T) {
 		t.Fatal("timeout waiting for login")
 	}
 	login := srv.loginLine()
-	if !strings.Contains(login, "user N0CALL pass 12345") {
+	// Passcode is computed from the station callsign at login time
+	// (APRSPasscode("KE7XYZ") == 22181). We no longer pass a passcode in.
+	if !strings.Contains(login, "user KE7XYZ pass 22181") {
 		t.Fatalf("unexpected login line: %q", login)
 	}
 	if !strings.Contains(login, "filter m/50") {
@@ -173,13 +174,13 @@ func TestIgateLoginAndRFToIS(t *testing.T) {
 	if len(sent) == 0 {
 		t.Fatal("server did not receive any RF->IS line")
 	}
-	if !strings.Contains(sent[0], "W5ABC-7>APRS,WIDE1-1,qAR,N0CALL") {
+	if !strings.Contains(sent[0], "W5ABC-7>APRS,WIDE1-1,qAR,KE7XYZ") {
 		t.Fatalf("unexpected line: %q", sent[0])
 	}
 }
 
 func TestIgateFiltersAndForwardsIStoRF(t *testing.T) {
-	srv := newMockServer(t, "# logresp N0CALL verified")
+	srv := newMockServer(t, "# logresp KE7XYZ verified")
 	defer srv.close()
 	go srv.serve(t)
 
@@ -187,9 +188,8 @@ func TestIgateFiltersAndForwardsIStoRF(t *testing.T) {
 	// based solely on filter rules. Use an in-memory Filter allowing
 	// everything from W5*.
 	ig, err := New(Config{
-		Server:   srv.addr(),
-		Callsign: "N0CALL",
-		Passcode: "12345",
+		Server:          srv.addr(),
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
 			{ID: 1, Priority: 10, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
@@ -227,14 +227,13 @@ func TestIgateFiltersAndForwardsIStoRF(t *testing.T) {
 func TestIgatePartialAuthDropTriggersReconnect(t *testing.T) {
 	// First server: verified logresp, then injects an unverified
 	// logresp comment to trigger reconnect.
-	srv := newMockServer(t, "# logresp N0CALL verified")
+	srv := newMockServer(t, "# logresp KE7XYZ verified")
 	defer srv.close()
 	go srv.serve(t)
 
 	ig, err := New(Config{
-		Server:   srv.addr(),
-		Callsign: "N0CALL",
-		Passcode: "12345",
+		Server:          srv.addr(),
+		StationCallsign: "KE7XYZ",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +248,7 @@ func TestIgatePartialAuthDropTriggersReconnect(t *testing.T) {
 	<-srv.readyCh
 
 	// Send a post-login unverified logresp; client should drop.
-	_ = srv.writeToClient("# logresp N0CALL unverified, server MOCK")
+	_ = srv.writeToClient("# logresp KE7XYZ unverified, server MOCK")
 
 	// Give the read loop a moment to process and flip to disconnected.
 	deadline := time.Now().Add(time.Second)
@@ -263,15 +262,14 @@ func TestIgatePartialAuthDropTriggersReconnect(t *testing.T) {
 }
 
 func TestIgateSimulationModeSkipsWrite(t *testing.T) {
-	srv := newMockServer(t, "# logresp N0CALL verified")
+	srv := newMockServer(t, "# logresp KE7XYZ verified")
 	defer srv.close()
 	go srv.serve(t)
 
 	ig, err := New(Config{
-		Server:         srv.addr(),
-		Callsign:       "N0CALL",
-		Passcode:       "12345",
-		SimulationMode: true,
+		Server:          srv.addr(),
+		StationCallsign: "KE7XYZ",
+		SimulationMode:  true,
 	})
 	if err != nil {
 		t.Fatal(err)

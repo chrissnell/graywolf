@@ -31,6 +31,7 @@
     {
       label: 'Settings',
       items: [
+        { path: '/callsign', label: 'Station Callsign' },
         { path: '/channels', label: 'Channels' },
         { path: '/audio-devices', label: 'Audio Devices' },
         { path: '/ptt', label: 'PTT' },

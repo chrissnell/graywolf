@@ -69,18 +69,26 @@ func TestBeaconCreate_PositionWithoutCoordsReturns400(t *testing.T) {
 	}
 }
 
-func TestBeaconCreate_MissingCallsignReturns400(t *testing.T) {
+// Per the centralized station-callsign plan (D2/D3), an empty or
+// omitted Callsign on a beacon is permitted and means "inherit from
+// StationConfig at transmit time". The old "callsign required" 400
+// check was dropped; the runtime guard refuses to transmit a beacon
+// whose resolved callsign is empty or N0CALL.
+func TestBeaconCreate_MissingCallsignInheritsStation(t *testing.T) {
 	srv, _ := newTestServer(t)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
+	// No callsign field; use position to hit the coord-required path so
+	// the request has enough non-trivial shape to be rejected for the
+	// right reason (missing coords) if it were rejected at all.
 	body := `{"type":"status","path":"WIDE1-1","symbol":">","interval":1800}`
 	req := httptest.NewRequest(http.MethodPost, "/api/beacons", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

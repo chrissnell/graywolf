@@ -68,8 +68,30 @@ func (s *Server) updateDigipeaterConfig(w http.ResponseWriter, r *http.Request) 
 		badRequest(w, err.Error())
 		return
 	}
-	m := req.ToModel()
-	if err := s.store.UpsertDigipeaterConfig(r.Context(), &m); err != nil {
+	ctx := r.Context()
+	// Enable-guard (centralized station-callsign plan D7 rule 1):
+	// reject any request that flips Enabled=true while the station
+	// callsign is empty or N0CALL. Saves with Enabled=false proceed.
+	if err := s.requireStationCallsignForEnable(ctx, req.Enabled); err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	// Merge the request onto the existing stored config so
+	// my_call=nil (field omitted) preserves the stored override
+	// rather than silently clearing it. See dto.DigipeaterConfigRequest
+	// contract: nil = leave unchanged, "" = inherit, non-empty =
+	// override.
+	existingPtr, err := s.store.GetDigipeaterConfig(ctx)
+	if err != nil {
+		s.internalError(w, r, "get digipeater config", err)
+		return
+	}
+	var existing configstore.DigipeaterConfig
+	if existingPtr != nil {
+		existing = *existingPtr
+	}
+	m := req.ApplyToModel(existing)
+	if err := s.store.UpsertDigipeaterConfig(ctx, &m); err != nil {
 		s.internalError(w, r, "upsert digipeater config", err)
 		return
 	}

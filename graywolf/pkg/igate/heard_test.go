@@ -22,18 +22,18 @@ func TestHeardDirectRecordAndLookup(t *testing.T) {
 }
 
 // TestHeardDirectBaseCallMatch verifies a message addressed to the
-// base callsign ("N0CALL") matches an earlier record of "N0CALL-1".
+// base callsign ("KE7XYZ") matches an earlier record of "KE7XYZ-1".
 // Addressees on the wire are frequently SSID-less even when the
 // station transmits with an SSID; the matcher must cover that case.
 func TestHeardDirectBaseCallMatch(t *testing.T) {
 	h := newHeardDirect()
 	base := time.Unix(1_700_000_000, 0)
 	h.now = func() time.Time { return base }
-	h.Record("N0CALL-1")
-	if !h.HeardWithin("N0CALL", time.Minute) {
+	h.Record("KE7XYZ-1")
+	if !h.HeardWithin("KE7XYZ", time.Minute) {
 		t.Fatal("base-call lookup should match SSID-qualified record")
 	}
-	if !h.HeardWithin("N0CALL-1", time.Minute) {
+	if !h.HeardWithin("KE7XYZ-1", time.Minute) {
 		t.Fatal("SSID-qualified lookup should still match")
 	}
 }
@@ -45,8 +45,8 @@ func TestHeardDirectReverseBaseMatch(t *testing.T) {
 	h := newHeardDirect()
 	base := time.Unix(1_700_000_000, 0)
 	h.now = func() time.Time { return base }
-	h.Record("N0CALL")
-	if !h.HeardWithin("N0CALL-7", time.Minute) {
+	h.Record("KE7XYZ")
+	if !h.HeardWithin("KE7XYZ-7", time.Minute) {
 		t.Fatal("SSID-qualified addressee should match base-call record")
 	}
 }

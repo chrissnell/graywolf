@@ -69,6 +69,17 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	// Enable-guard (centralized station-callsign plan D7 rule 1):
+	// reject any request that flips Enabled=true while the station
+	// callsign is empty or N0CALL. Saves with Enabled=false, and
+	// saves that leave Enabled unchanged at false, proceed. Runs
+	// before the channel-ref validation so the user sees the
+	// actionable error (set your callsign) rather than a channel FK
+	// failure they hit along the way.
+	if err := s.requireStationCallsignForEnable(ctx, req.Enabled); err != nil {
+		badRequest(w, err.Error())
+		return
+	}
 	// Cross-table: rf_channel and tx_channel are soft-FKs on
 	// configstore.Channel.ID. A non-zero value that doesn't resolve
 	// should land as a 400 before the upsert — the iGate singleton is

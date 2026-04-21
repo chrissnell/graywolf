@@ -93,7 +93,7 @@ const mockAgw = { tcp_port: 8000, monitor_port: 8002, enabled: true };
 
 const mockIgate = {
   enabled: true, server: 'rotate.aprs2.net', port: 14580,
-  callsign: 'N0CALL-10', passcode: '12345', server_filter: 'r/35.0/-106.0/100',
+  server_filter: 'r/35.0/-106.0/100',
 };
 
 const mockIgateFilters = [

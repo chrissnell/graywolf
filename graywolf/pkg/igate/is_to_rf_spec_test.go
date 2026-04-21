@@ -15,7 +15,7 @@ import (
 // cases (empty inputs, case/whitespace normalization, SSID asymmetry)
 // are pinned without going through the full handleISLine path.
 func TestSourceIsOwnSSID(t *testing.T) {
-	ig, err := New(Config{Server: "127.0.0.1:1", Callsign: "N0CALL-10"})
+	ig, err := New(Config{Server: "127.0.0.1:1", StationCallsign: "KE7XYZ-10"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,11 +24,11 @@ func TestSourceIsOwnSSID(t *testing.T) {
 		source string
 		want   bool
 	}{
-		{"different SSID of same base", "N0CALL-7", true},
-		{"base-call vs SSID-qualified iGate", "N0CALL", true},
-		{"exact match of iGate call rejected", "N0CALL-10", false},
-		{"case insensitive base match", "n0call-7", true},
-		{"leading/trailing whitespace tolerated", "  N0CALL-7  ", true},
+		{"different SSID of same base", "KE7XYZ-7", true},
+		{"base-call vs SSID-qualified iGate", "KE7XYZ", true},
+		{"exact match of iGate call rejected", "KE7XYZ-10", false},
+		{"case insensitive base match", "ke7xyz-7", true},
+		{"leading/trailing whitespace tolerated", "  KE7XYZ-7  ", true},
 		{"stranger base rejected", "W5ABC-7", false},
 		{"empty source rejected", "", false},
 		{"whitespace-only source rejected", "   ", false},
@@ -47,15 +47,15 @@ func TestSourceIsOwnSSID(t *testing.T) {
 // call is still "ours", and only the bare base call (which equals the
 // iGate's exact callsign) is rejected as a self-echo.
 func TestSourceIsOwnSSID_NoSSIDOnIgate(t *testing.T) {
-	ig, err := New(Config{Server: "127.0.0.1:1", Callsign: "N0CALL"})
+	ig, err := New(Config{Server: "127.0.0.1:1", StationCallsign: "KE7XYZ"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ig.sourceIsOwnSSID("N0CALL-7") {
-		t.Fatal("N0CALL-7 should be ours when iGate is plain N0CALL")
+	if !ig.sourceIsOwnSSID("KE7XYZ-7") {
+		t.Fatal("KE7XYZ-7 should be ours when iGate is plain KE7XYZ")
 	}
-	if ig.sourceIsOwnSSID("N0CALL") {
-		t.Fatal("bare N0CALL equals iGate's exact call and must be rejected")
+	if ig.sourceIsOwnSSID("KE7XYZ") {
+		t.Fatal("bare KE7XYZ equals iGate's exact call and must be rejected")
 	}
 }
 
@@ -66,8 +66,8 @@ func TestSourceIsOwnSSID_NoSSIDOnIgate(t *testing.T) {
 func newSpecTestIgate(t *testing.T, submits *int32) *Igate {
 	t.Helper()
 	ig, err := New(Config{
-		Server:   "127.0.0.1:1",
-		Callsign: "N0CALL",
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
@@ -92,9 +92,9 @@ func newSpecTestIgate(t *testing.T, submits *int32) *Igate {
 func TestISToRF_Spec_MessageToHeardAddresseePasses(t *testing.T) {
 	var submits int32
 	ig := newSpecTestIgate(t, &submits)
-	ig.heard.Record("N0CALL")
+	ig.heard.Record("KE7XYZ")
 
-	ig.handleISLine("W5ABC>APRS,WIDE1-1::N0CALL   :hello{1")
+	ig.handleISLine("W5ABC>APRS,WIDE1-1::KE7XYZ   :hello{1")
 
 	if got := atomic.LoadInt32(&submits); got != 1 {
 		t.Fatalf("expected 1 submit after spec gate, got %d", got)
@@ -105,16 +105,16 @@ func TestISToRF_Spec_MessageToHeardAddresseePasses(t *testing.T) {
 }
 
 // newSpecTestIgateOwnedFilter builds an iGate whose user filter allows
-// the operator's base callsign (N0CALL). Used by the non-message
+// the operator's base callsign (KE7XYZ). Used by the non-message
 // ownership tests so the filter itself never rejects a packet the
 // ownership rule admits.
 func newSpecTestIgateOwnedFilter(t *testing.T, submits *int32) *Igate {
 	t.Helper()
 	ig, err := New(Config{
-		Server:   "127.0.0.1:1",
-		Callsign: "N0CALL",
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
-			{ID: 1, Type: filters.TypePrefix, Pattern: "N0CALL", Action: filters.Allow},
+			{ID: 1, Type: filters.TypePrefix, Pattern: "KE7XYZ", Action: filters.Allow},
 		},
 		Governor: &stubGovernor{
 			fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
@@ -133,14 +133,14 @@ func newSpecTestIgateOwnedFilter(t *testing.T, submits *int32) *Igate {
 
 // TestISToRF_NonMessageFromOwnSSIDPasses covers the graywolf non-message
 // ownership rule: a position packet sourced from another SSID of the
-// operator's base callsign (N0CALL-7 while the iGate is N0CALL) is
+// operator's base callsign (KE7XYZ-7 while the iGate is KE7XYZ) is
 // eligible for IS→RF. This is the internet-connected-weather-station
 // use case: echo my own stuff onto local RF.
 func TestISToRF_NonMessageFromOwnSSIDPasses(t *testing.T) {
 	var submits int32
 	ig := newSpecTestIgateOwnedFilter(t, &submits)
 
-	ig.handleISLine("N0CALL-7>APRS,TCPIP*:!3725.00N/12158.00W>wx")
+	ig.handleISLine("KE7XYZ-7>APRS,TCPIP*:!3725.00N/12158.00W>wx")
 
 	if got := atomic.LoadInt32(&submits); got != 1 {
 		t.Fatalf("own-SSID non-message should reach Submit, got %d", got)
@@ -158,7 +158,7 @@ func TestISToRF_NonMessageFromExactOwnCallRejected(t *testing.T) {
 	var submits int32
 	ig := newSpecTestIgateOwnedFilter(t, &submits)
 
-	ig.handleISLine("N0CALL>APRS,TCPIP*:!3725.00N/12158.00W>self")
+	ig.handleISLine("KE7XYZ>APRS,TCPIP*:!3725.00N/12158.00W>self")
 
 	if got := atomic.LoadInt32(&submits); got != 0 {
 		t.Fatalf("self-sourced non-message should not reach Submit, got %d", got)
@@ -188,14 +188,14 @@ func TestISToRF_NonMessageFromStrangerRejected(t *testing.T) {
 
 // TestISToRF_NonMessageFilterStillApplies: a packet that passes the
 // ownership gate can still be rejected by the user filter. Here we
-// install an iGate whose filter only allows "W5" — an N0CALL-7 source
+// install an iGate whose filter only allows "W5" — an KE7XYZ-7 source
 // passes ownership but the filter drops it. Confirms the ownership and
 // filter layers are both in play.
 func TestISToRF_NonMessageFilterStillApplies(t *testing.T) {
 	var submits int32
 	ig := newSpecTestIgate(t, &submits)
 
-	ig.handleISLine("N0CALL-7>APRS,TCPIP*:!3725.00N/12158.00W>wx")
+	ig.handleISLine("KE7XYZ-7>APRS,TCPIP*:!3725.00N/12158.00W>wx")
 
 	if got := atomic.LoadInt32(&submits); got != 0 {
 		t.Fatalf("filter-rejected own-SSID packet should not reach Submit, got %d", got)
@@ -213,7 +213,7 @@ func TestISToRF_NonMessageLoopPrevented(t *testing.T) {
 	var submits int32
 	ig := newSpecTestIgateOwnedFilter(t, &submits)
 
-	ig.handleISLine("N0CALL-7>APRS,N0CALL*,WIDE1-1:!3725.00N/12158.00W>hi")
+	ig.handleISLine("KE7XYZ-7>APRS,KE7XYZ*,WIDE1-1:!3725.00N/12158.00W>hi")
 
 	if got := atomic.LoadInt32(&submits); got != 0 {
 		t.Fatalf("loop-prevention should drop own-SSID non-message too; got %d Submit calls", got)
@@ -265,9 +265,9 @@ func TestISToRF_Spec_NWSRejected(t *testing.T) {
 func TestISToRF_Spec_AddresseeNotHeardRejected(t *testing.T) {
 	var submits int32
 	ig := newSpecTestIgate(t, &submits)
-	// heard-direct empty — N0CALL has NOT been heard.
+	// heard-direct empty — KE7XYZ has NOT been heard.
 
-	ig.handleISLine("W5ABC>APRS,WIDE1-1::N0CALL   :hello{1")
+	ig.handleISLine("W5ABC>APRS,WIDE1-1::KE7XYZ   :hello{1")
 
 	if got := atomic.LoadInt32(&submits); got != 0 {
 		t.Fatalf("unheard-addressee message should not reach Submit, got %d", got)
@@ -283,10 +283,10 @@ func TestISToRF_Spec_AddresseeNotHeardRejected(t *testing.T) {
 func TestISToRF_Spec_LoopPreventionOwnCallInPath(t *testing.T) {
 	var submits int32
 	ig := newSpecTestIgate(t, &submits)
-	ig.heard.Record("N0CALL")
+	ig.heard.Record("KE7XYZ")
 
-	// Path contains N0CALL* (we already handled this packet) — must drop.
-	ig.handleISLine("W5ABC>APRS,N0CALL*,WIDE1-1::N0CALL   :hello{1")
+	// Path contains KE7XYZ* (we already handled this packet) — must drop.
+	ig.handleISLine("W5ABC>APRS,KE7XYZ*,WIDE1-1::KE7XYZ   :hello{1")
 
 	if got := atomic.LoadInt32(&submits); got != 0 {
 		t.Fatalf("loop-prevention should drop; got %d Submit calls", got)
@@ -316,13 +316,13 @@ func TestISToRF_Spec_EmptyAddresseeRejected(t *testing.T) {
 
 // TestISToRF_Spec_WrappedAsThirdParty verifies the frame handed to
 // Submit is the APRS third-party wrapper (outer source=our call,
-// dest=APGWLF, info begins "}origSrc>…,TCPIP,N0CALL*:").
+// dest=APGWLF, info begins "}origSrc>…,TCPIP,KE7XYZ*:").
 func TestISToRF_Spec_WrappedAsThirdParty(t *testing.T) {
 	var capturedSrc, capturedDst string
 	var capturedInfo []byte
 	ig, err := New(Config{
-		Server:   "127.0.0.1:1",
-		Callsign: "N0CALL",
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
 		Rules: []filters.Rule{
 			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
 		},
@@ -338,17 +338,17 @@ func TestISToRF_Spec_WrappedAsThirdParty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ig.heard.Record("N0CALL")
+	ig.heard.Record("KE7XYZ")
 
-	ig.handleISLine("W5ABC-7>APRS,WIDE1-1::N0CALL   :hi{1")
+	ig.handleISLine("W5ABC-7>APRS,WIDE1-1::KE7XYZ   :hi{1")
 
-	if capturedSrc != "N0CALL" {
-		t.Fatalf("outer source = %q, want N0CALL", capturedSrc)
+	if capturedSrc != "KE7XYZ" {
+		t.Fatalf("outer source = %q, want KE7XYZ", capturedSrc)
 	}
 	if capturedDst != "APGWLF" {
 		t.Fatalf("outer dest = %q, want APGWLF", capturedDst)
 	}
-	want := "}W5ABC-7>APRS,WIDE1-1,TCPIP,N0CALL*::N0CALL   :hi{1"
+	want := "}W5ABC-7>APRS,WIDE1-1,TCPIP,KE7XYZ*::KE7XYZ   :hi{1"
 	if string(capturedInfo) != want {
 		t.Fatalf("info mismatch:\n got: %s\nwant: %s", capturedInfo, want)
 	}
@@ -358,7 +358,7 @@ func TestISToRF_Spec_WrappedAsThirdParty(t *testing.T) {
 // every direct-RF arrival into the heard-direct tracker, even when the
 // packet itself is not gated up (e.g. because NOGATE is in the path).
 func TestGateRFToIS_RecordsHeardDirect(t *testing.T) {
-	ig, err := New(Config{Server: "127.0.0.1:1", Callsign: "N0CALL"})
+	ig, err := New(Config{Server: "127.0.0.1:1", StationCallsign: "KE7XYZ"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestGateRFToIS_RecordsHeardDirect(t *testing.T) {
 // does NOT register as heard-direct. Direct RF reception is the
 // precondition per the spec.
 func TestGateRFToIS_SkipsHeardDirectForRepeatedPath(t *testing.T) {
-	ig, err := New(Config{Server: "127.0.0.1:1", Callsign: "N0CALL"})
+	ig, err := New(Config{Server: "127.0.0.1:1", StationCallsign: "KE7XYZ"})
 	if err != nil {
 		t.Fatal(err)
 	}

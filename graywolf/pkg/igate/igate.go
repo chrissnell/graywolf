@@ -61,6 +61,7 @@ package igate
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"strings"
@@ -70,6 +71,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	"github.com/chrissnell/graywolf/pkg/internal/backoff"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
@@ -88,18 +90,21 @@ const igateSubmitTimeout = 2 * time.Second
 // submit is dropped, so a saturated governor cannot flood the logs.
 const submitDropLogInterval = 10 * time.Second
 
-
 // Config is the iGate's runtime configuration. Fields marked "required"
-// must be set before Start. The orchestrator will eventually source
-// most of these from configstore's igate_config row (owned by agent 4C).
+// must be set before Start. The orchestrator sources most of these from
+// configstore (igate_config row plus the StationConfig singleton for
+// StationCallsign).
 type Config struct {
 	// Server is the APRS-IS host:port (required). Typical values are
 	// "noam.aprs2.net:14580" or "rotate.aprs2.net:14580".
 	Server string
-	// Callsign is the iGate station identifier (required).
-	Callsign string
-	// Passcode is the APRS-IS login passcode ("-1" disables TX).
-	Passcode string
+	// StationCallsign is the resolved station identifier (required). The
+	// iGate has no per-station override (per design D3: iGate login
+	// identity and messaging identity are always the station callsign)
+	// so callers resolve via ResolveStationCallsign and pass the result
+	// in. The APRS-IS passcode is derived from this at login time via
+	// callsign.APRSPasscode — not carried on Config.
+	StationCallsign string
 	// ServerFilter is the APRS-IS filter string passed at login time
 	// (e.g. "m/100" for a 100km radius around the station).
 	ServerFilter string
@@ -169,6 +174,12 @@ type Igate struct {
 	cfg    Config
 	logger *slog.Logger
 
+	// stationCallsign is the resolved-at-construction station callsign.
+	// Held separately from cfg so that every downstream site (login,
+	// third-party wrap, loop prevention, Status) reads from one field
+	// and the cfg.StationCallsign field is only consulted at New() time.
+	stationCallsign string
+
 	filter atomic.Pointer[filters.Engine]
 	heard  *heardDirect
 
@@ -219,8 +230,14 @@ type sessCtxHolder struct{ ctx context.Context }
 
 // New constructs an Igate. Call Start to open the APRS-IS session.
 func New(cfg Config) (*Igate, error) {
-	if cfg.Callsign == "" {
-		return nil, errors.New("igate: Callsign required")
+	// iGate has no per-feature override — login identity IS the station
+	// callsign (D3). An empty override + empty/N0CALL station callsign
+	// is a refuse-to-start condition; the wiring layer will typically
+	// avoid constructing us in that case, but the defense here guarantees
+	// we never open an APRS-IS session under N0CALL.
+	stationCall, err := callsign.Resolve("", cfg.StationCallsign)
+	if err != nil {
+		return nil, fmt.Errorf("igate: station callsign: %w", err)
 	}
 	if cfg.Server == "" {
 		return nil, errors.New("igate: Server required")
@@ -234,11 +251,12 @@ func New(cfg Config) (*Igate, error) {
 		cfg.now = time.Now
 	}
 	ig := &Igate{
-		cfg:     cfg,
-		logger:  logger,
-		heard:   newHeardDirect(),
-		inputCh: make(chan *aprs.InboundPacket, 64),
-		done:    make(chan struct{}),
+		cfg:             cfg,
+		logger:          logger,
+		stationCallsign: stationCall,
+		heard:           newHeardDirect(),
+		inputCh:         make(chan *aprs.InboundPacket, 64),
+		done:            make(chan struct{}),
 	}
 	ig.filter.Store(filters.New(cfg.Rules))
 	ig.sessCtx.Store(&sessCtxHolder{ctx: context.Background()})
@@ -332,6 +350,7 @@ func (ig *Igate) supervise(ctx context.Context) {
 	})
 	ig.client = newClient(
 		ig.cfg,
+		ig.stationCallsign,
 		ig.logger,
 		ig.handleISLine,
 		func() { bo.Reset(); ig.onConnected() },
@@ -363,7 +382,7 @@ func (ig *Igate) onConnected() {
 	ig.lastConnected = ig.cfg.now()
 	ig.mu.Unlock()
 	ig.mConnectedGauge.Set(1)
-	ig.logger.Info("aprs-is connected", "server", ig.cfg.Server, "callsign", ig.cfg.Callsign)
+	ig.logger.Info("aprs-is connected", "server", ig.cfg.Server, "callsign", ig.stationCallsign)
 }
 
 func (ig *Igate) onLost() {
@@ -422,7 +441,7 @@ func (ig *Igate) handleISLine(line string) {
 	// the packet originated on the internet side (prevents re-gating
 	// loops and stops receivers from treating the original sender as
 	// an RF-local station).
-	wrapped, err := wrapThirdParty(frame, ig.cfg.Callsign)
+	wrapped, err := wrapThirdParty(frame, ig.stationCallsign)
 	if err != nil {
 		ig.logger.Debug("IS->RF drop: third-party wrap failed", "err", err)
 		return
@@ -511,7 +530,7 @@ func (ig *Igate) sourceIsOwnSSID(source string) bool {
 	if source == "" {
 		return false
 	}
-	me := strings.ToUpper(strings.TrimSpace(ig.cfg.Callsign))
+	me := strings.ToUpper(strings.TrimSpace(ig.stationCallsign))
 	if me == "" {
 		return false
 	}
@@ -534,7 +553,7 @@ func (ig *Igate) sourceIsOwnSSID(source string) bool {
 // IS→RF loop prevention: if we've already handled this packet, we
 // must not re-transmit it.
 func (ig *Igate) pathContainsSelf(path []string) bool {
-	me := strings.ToUpper(strings.TrimSpace(ig.cfg.Callsign))
+	me := strings.ToUpper(strings.TrimSpace(ig.stationCallsign))
 	if i := strings.IndexByte(me, '-'); i > 0 {
 		me = me[:i]
 	}
@@ -629,7 +648,7 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 		ig.mDroppedOffline.Inc()
 		return
 	}
-	line, err := encodeTNC2(pkt, ig.cfg.Callsign)
+	line, err := encodeTNC2(pkt, ig.stationCallsign)
 	if err != nil {
 		ig.logger.Debug("igate: encode tnc2 failed", "err", err)
 		return
@@ -727,7 +746,7 @@ func (ig *Igate) Status() Status {
 	return Status{
 		Connected:      ig.connected,
 		Server:         ig.cfg.Server,
-		Callsign:       ig.cfg.Callsign,
+		Callsign:       ig.stationCallsign,
 		SimulationMode: ig.simulation.Load(),
 		LastConnected:  ig.lastConnected,
 		Gated:          atomic.LoadUint64(&ig.statGated),

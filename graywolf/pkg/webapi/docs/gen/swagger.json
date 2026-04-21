@@ -43,6 +43,10 @@
             "description": "Igate configuration, filters, status, and simulation."
         },
         {
+            "name": "station",
+            "description": "Station-wide callsign (APRS-IS login, messaging identity, default for beacons and digipeater)."
+        },
+        {
             "name": "gps",
             "description": "GPS source configuration."
         },
@@ -3888,6 +3892,86 @@
                 }
             }
         },
+        "/station/config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "station"
+                ],
+                "summary": "Get station config",
+                "operationId": "getStationConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StationConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "station"
+                ],
+                "summary": "Update station config",
+                "operationId": "updateStationConfig",
+                "parameters": [
+                    {
+                        "description": "Station config",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.StationConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StationConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/stations": {
             "get": {
                 "security": [
@@ -5646,9 +5730,6 @@
         "dto.IGateConfigRequest": {
             "type": "object",
             "properties": {
-                "callsign": {
-                    "type": "string"
-                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -5660,9 +5741,6 @@
                 },
                 "max_msg_hops": {
                     "type": "integer"
-                },
-                "passcode": {
-                    "type": "string"
                 },
                 "port": {
                     "type": "integer"
@@ -5693,9 +5771,6 @@
         "dto.IGateConfigResponse": {
             "type": "object",
             "properties": {
-                "callsign": {
-                    "type": "string"
-                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -5710,9 +5785,6 @@
                 },
                 "max_msg_hops": {
                     "type": "integer"
-                },
-                "passcode": {
-                    "type": "string"
                 },
                 "port": {
                     "type": "integer"
@@ -6313,6 +6385,28 @@
                 "source": {
                     "description": "\"bot\" | \"cache\" | \"history\" | \"cache+history\"",
                     "type": "string"
+                }
+            }
+        },
+        "dto.StationConfigRequest": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.StationConfigResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "disabled": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

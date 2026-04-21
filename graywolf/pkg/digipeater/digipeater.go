@@ -18,6 +18,7 @@ package digipeater
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/internal/dedup"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
@@ -45,10 +47,19 @@ type Rule struct {
 
 // Config configures a Digipeater.
 type Config struct {
-	// MyCall is the local station callsign. Used for preemptive digi
-	// (if a path slot equals MyCall, it is consumed and the frame is
-	// repeated regardless of WIDEn-N rules) and for TRACEn-N insertion.
-	MyCall ax25.Address
+	// MyCall is the per-digipeater callsign override. Empty string means
+	// "inherit from StationCallsign". A non-empty value wins (e.g. a
+	// mountaintop digi running under MTNTOP-1 distinct from the operator's
+	// personal call). The resolved callsign is used for preemptive digi
+	// (if a path slot equals it, the frame is repeated regardless of
+	// WIDEn-N rules) and for TRACEn-N insertion.
+	MyCall string
+
+	// StationCallsign is the resolved station callsign fallback used when
+	// MyCall is empty. The wiring layer resolves this once per
+	// start/reload from StationConfig and hands it in; the digipeater
+	// package does not read configstore directly.
+	StationCallsign string
 
 	// DedupeWindow is the time window within which an identical frame
 	// will be dropped. Default 30s if zero.
@@ -97,7 +108,12 @@ type Digipeater struct {
 	stats Stats
 }
 
-// New builds a Digipeater.
+// New builds a Digipeater. Resolves cfg.MyCall (override) against
+// cfg.StationCallsign (fallback) via callsign.Resolve. An empty/N0CALL
+// result is not fatal at construction — the engine starts disabled and
+// Handle short-circuits when mycall is empty, so a freshly-wired
+// digipeater with no station callsign yet simply no-ops until a valid
+// callsign arrives via SetMyCall + SetEnabled on reload.
 func New(cfg Config) (*Digipeater, error) {
 	if cfg.Submit == nil {
 		return nil, errors.New("digipeater: Submit required")
@@ -108,13 +124,25 @@ func New(cfg Config) (*Digipeater, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	var myaddr ax25.Address
+	resolved, err := callsign.Resolve(cfg.MyCall, cfg.StationCallsign)
+	if err == nil {
+		myaddr, err = ax25.ParseAddress(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("digipeater: parse resolved callsign %q: %w", resolved, err)
+		}
+	}
+	// err != nil (empty/N0CALL) leaves myaddr zero; Handle's per-frame
+	// guard below drops frames with an empty mycall. This mirrors the
+	// plan's D6 runtime guard: refuse to source-address a digipeated
+	// frame when no valid callsign is configured.
 	return &Digipeater{
 		// Default off. Callers must SetEnabled(true) once the engine
 		// has been populated with rules / mycall / window from config.
 		// This avoids a brief window where a freshly-constructed engine
 		// could accept frames with empty rules and no callsign.
 		enabled: false,
-		mycall:  cfg.MyCall,
+		mycall:  myaddr,
 		rules:   append([]Rule(nil), cfg.Rules...),
 		submit:  cfg.Submit,
 		logger:  cfg.Logger.With("component", "digipeater"),
@@ -201,6 +229,21 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 	}
 	mycall := d.mycall
 	rules := d.rules
+	d.mu.Unlock()
+
+	// D6 runtime guard: never source-address a digipeated frame under an
+	// empty or N0CALL callsign. The config-time guard (enable requires a
+	// station callsign) prevents this in the happy path, but a bad state
+	// (hand-edited DB, stale wiring) must not leak our identity as
+	// N0CALL onto RF. Dropping with a WARN surfaces the misconfig.
+	if mycall.Call == "" || callsign.IsN0Call(mycall.String()) {
+		d.logger.Warn("digipeater: dropping frame — mycall is unset or N0CALL",
+			"source", frame.Source.String(),
+			"mycall", mycall.String())
+		return false
+	}
+
+	d.mu.Lock()
 	// Dedup key is computed from the RX frame including its path so
 	// two identical payloads heard via different geographic paths are
 	// kept distinct (collapsing them would eat a legitimate hop).

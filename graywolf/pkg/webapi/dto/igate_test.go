@@ -34,17 +34,12 @@ func TestIGateConfigFromModel_EmptyModelSeedsDefaults(t *testing.T) {
 		t.Errorf("TxChannel = %d, want %d", got.TxChannel, DefaultIGateTxChannel)
 	}
 
-	// Booleans and credential fields are intentionally NOT seeded: the
-	// UI needs to distinguish unset from explicit-empty, and callsign
-	// must come from the operator.
+	// Booleans intentionally stay zero-valued: the UI needs to
+	// distinguish unset from explicit-empty. Callsign and Passcode
+	// fields no longer exist on the DTO — the station callsign lives
+	// in StationConfig and the passcode is computed internally.
 	if got.Enabled {
 		t.Error("Enabled should stay zero-valued (false)")
-	}
-	if got.Callsign != "" {
-		t.Errorf("Callsign = %q, want empty", got.Callsign)
-	}
-	if got.Passcode != "" {
-		t.Errorf("Passcode = %q, want empty", got.Passcode)
 	}
 }
 
@@ -192,8 +187,6 @@ func TestIGateConfigFromModel_UserValuesWin(t *testing.T) {
 		Enabled:         true,
 		Server:          "noam.aprs2.net",
 		Port:            14581,
-		Callsign:        "W5XYZ-10",
-		Passcode:        "54321",
 		ServerFilter:    "r/35/-106/100",
 		RfChannel:       3,
 		MaxMsgHops:      4,
@@ -211,9 +204,6 @@ func TestIGateConfigFromModel_UserValuesWin(t *testing.T) {
 	}
 	if got.Port != 14581 {
 		t.Errorf("Port = %d, want 14581", got.Port)
-	}
-	if got.Callsign != "W5XYZ-10" {
-		t.Errorf("Callsign = %q, want W5XYZ-10", got.Callsign)
 	}
 	if got.RfChannel != 3 {
 		t.Errorf("RfChannel = %d, want 3", got.RfChannel)
