@@ -477,13 +477,13 @@
       <!-- Governor-TX opt-in (Phase 3 D4). Default unchecked — the
            operator must explicitly enable transmission via this
            interface to avoid surprise loops. -->
-      <FormField
-        label="Transmit from digipeater/beacon/iGate to this interface"
-        id="kiss-allow-tx"
-        hint="Only enable if you want graywolf's digipeater, beacon, and iGate to be able to transmit via this interface. Leave unchecked to use this as an RX-only TNC (safer; prevents loops)."
-      >
-        <Checkbox id="kiss-allow-tx" bind:checked={form.allow_tx_from_governor} />
-      </FormField>
+      <div class="field checkbox-field">
+        <label class="checkbox-row" for="kiss-allow-tx">
+          <Checkbox id="kiss-allow-tx" bind:checked={form.allow_tx_from_governor} />
+          <span>Allow digipeater/beacon/iGate to transmit on this interface</span>
+        </label>
+        <span class="field-warning">Do not enable this feature if your TNC is configured for digipeating or iGate mode: it will produce packet loops!</span>
+      </div>
       <!-- Per-interface ingress rate limiter. Only meaningful in TNC mode
            (Modem-mode ingest goes to the TxGovernor, not the RX fanout). -->
       <div class="advanced-section">
@@ -546,6 +546,24 @@
   }
 
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .checkbox-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .field-warning {
+    font-size: 12px;
+    color: var(--color-danger, #d32f2f);
+    line-height: 1.4;
+  }
   .advanced-section {
     margin-top: 8px;
     padding-top: 12px;
