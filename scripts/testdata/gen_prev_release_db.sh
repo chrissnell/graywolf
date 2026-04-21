@@ -1,46 +1,72 @@
 #!/usr/bin/env bash
 #
-# gen_pre_v0_11_db.sh — generate the committed pre-v0.11 configstore
-# fixture that TestMigrateFromPriorRelease loads.
+# gen_prev_release_db.sh — generate a configstore fixture DB from the
+# previous release of graywolf, for use by TestMigrateFromPriorRelease.
 #
-# Run this ONCE (or whenever the prior-release schema needs refreshing)
-# and commit the resulting DB file. The fixture is a binary artifact
-# checked into the repo so CI does not need a graywolf v0.10.11
-# checkout on every run.
+# The "previous release" is detected dynamically from the newest `v*`
+# tag reachable from HEAD. If HEAD itself carries a v* tag (i.e. you
+# are sitting on a release commit), the search falls back to the
+# parent commit so you get the version before the current one. This
+# means the generator stays correct across releases without any edits.
+#
+# The output file is intentionally generic (prev_release.db). The
+# fixture is NOT committed to git — it is regenerated on demand by CI
+# and optionally by developers running the migration test locally.
+# See graywolf/pkg/configstore/testdata/README.md.
 #
 # Usage:
-#   ./scripts/testdata/gen_pre_v0_11_db.sh [OUTPUT_PATH]
+#   ./scripts/testdata/gen_prev_release_db.sh [OUTPUT_PATH]
 #
-# Defaults to graywolf/pkg/configstore/testdata/channels_pre_v0_11.db
+# Defaults to graywolf/pkg/configstore/testdata/prev_release.db
 # relative to the repo root.
 #
 # Requirements:
-#   - git worktree support
+#   - git worktree support (full clone; shallow clones without tags
+#     will fail the tag lookup — see fetch-depth: 0 in .github/workflows)
 #   - go, make, curl, jq installed
-#   - working network access for the first-time go mod fetch of v0.10.11
+#   - Working network for the first-time module fetch of the previous
+#     release's Go dependencies.
 #
-# The script is idempotent: re-running it cleans up the previous
-# worktree + temp config dir and rebuilds from scratch.
+# Idempotent: re-running cleans up the previous worktree + temp config
+# dir and rebuilds from scratch.
 
 set -euo pipefail
 
-TAG="v0.10.11"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-DEFAULT_OUT="${REPO_ROOT}/graywolf/pkg/configstore/testdata/channels_pre_v0_11.db"
+DEFAULT_OUT="${REPO_ROOT}/graywolf/pkg/configstore/testdata/prev_release.db"
 OUT_PATH="${1:-$DEFAULT_OUT}"
-WORKTREE="/tmp/graywolf-${TAG}"
-CFG_DIR="$(mktemp -d -t graywolf-pre-v0-11-cfg.XXXXXX)"
 LISTEN_ADDR="127.0.0.1:${PORT:-38080}"
-BIN_PATH="${WORKTREE}/graywolf/bin/graywolf"
 
-log() { printf '[gen_pre_v0_11_db] %s\n' "$*" >&2; }
+log() { printf '[gen_prev_release_db] %s\n' "$*" >&2; }
+die() { log "ERROR: $*"; exit 1; }
+
+# --- 0. Discover the previous release tag ------------------------------
+
+# If HEAD itself is tagged v*, search starts from HEAD^ so we skip past
+# the current release. Otherwise HEAD is fine — git describe walks back
+# from there to the nearest v* tag.
+HEAD_V_TAG="$(git -C "$REPO_ROOT" tag --points-at HEAD | grep -E '^v[0-9]' | head -n1 || true)"
+if [[ -n "$HEAD_V_TAG" ]]; then
+  SEARCH_START="HEAD^"
+else
+  SEARCH_START="HEAD"
+fi
+
+if ! TAG="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 --match 'v[0-9]*' "$SEARCH_START" 2>/dev/null)"; then
+  die "no previous v* tag found reachable from ${SEARCH_START}. Is this a shallow clone? Ensure fetch-depth: 0 in CI."
+fi
+log "detected previous release tag: $TAG"
+
+WORKTREE="/tmp/graywolf-prev-release-${TAG}"
+CFG_DIR="$(mktemp -d -t graywolf-prev-release-cfg.XXXXXX)"
+BIN_PATH="${WORKTREE}/graywolf/bin/graywolf"
+GRAYWOLF_PID=""
 
 cleanup() {
   local code=$?
   if [[ -n "${GRAYWOLF_PID:-}" ]] && kill -0 "$GRAYWOLF_PID" 2>/dev/null; then
     log "stopping graywolf pid=$GRAYWOLF_PID"
     kill -TERM "$GRAYWOLF_PID" 2>/dev/null || true
-    # Give it up to 10s to flush SQLite
     for _ in $(seq 1 20); do
       sleep 0.5
       kill -0 "$GRAYWOLF_PID" 2>/dev/null || break
@@ -48,8 +74,6 @@ cleanup() {
     kill -KILL "$GRAYWOLF_PID" 2>/dev/null || true
   fi
   rm -rf "$CFG_DIR"
-  # Leave the worktree in place on failure so the operator can debug;
-  # remove on success.
   if [[ $code -eq 0 ]]; then
     git -C "$REPO_ROOT" worktree remove --force "$WORKTREE" 2>/dev/null || true
   else
@@ -58,7 +82,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- 1. Worktree ---------------------------------------------------------
+# --- 1. Worktree -------------------------------------------------------
 
 if [[ -d "$WORKTREE" ]]; then
   log "removing stale worktree $WORKTREE"
@@ -67,17 +91,17 @@ fi
 log "creating worktree at $WORKTREE from tag $TAG"
 git -C "$REPO_ROOT" worktree add "$WORKTREE" "$TAG"
 
-# --- 2. Build graywolf ---------------------------------------------------
+# --- 2. Build graywolf -------------------------------------------------
 
 log "building graywolf $TAG"
 (cd "$WORKTREE" && make build)
 if [[ ! -x "$BIN_PATH" ]]; then
-  # Some older tags used a different make target; fall back to direct go build.
+  # Older tags may use a different make target; fall back to direct go build.
   log "make build did not produce $BIN_PATH; falling back to go build"
   (cd "$WORKTREE/graywolf" && go build -o bin/graywolf ./cmd/graywolf)
 fi
 
-# --- 3. Run graywolf against throwaway config dir -----------------------
+# --- 3. Run graywolf against throwaway config dir ---------------------
 
 mkdir -p "$CFG_DIR"
 DB_PATH="$CFG_DIR/graywolf.db"
@@ -109,7 +133,7 @@ if ! kill -0 "$GRAYWOLF_PID" 2>/dev/null; then
   exit 1
 fi
 
-# --- 4. Seed representative config via REST API -------------------------
+# --- 4. Seed representative config via REST API -----------------------
 
 API="http://$LISTEN_ADDR/api"
 
@@ -193,24 +217,25 @@ for alias in WIDE TRACE; do
 done
 log "created 2 digipeater rules"
 
-# 1 igate config (singleton PUT).
-curl -sf -X PUT -H 'Content-Type: application/json' "$API/igate" -d '{
-  "enabled": true,
-  "server": "rotate.aprs2.net",
-  "port": 14580,
-  "callsign": "N0CALL",
-  "passcode": "-1",
-  "gate_rf_to_is": true,
-  "gate_is_to_rf": false,
-  "rf_channel": 1,
-  "max_msg_hops": 2,
-  "software_name": "graywolf",
-  "software_version": "0.10.11",
-  "tx_channel": 1
-}' >/dev/null
+# 1 igate config (singleton PUT). software_version pinned to the tag so
+# the fixture is self-documenting about which release produced it.
+curl -sf -X PUT -H 'Content-Type: application/json' "$API/igate" -d "{
+  \"enabled\": true,
+  \"server\": \"rotate.aprs2.net\",
+  \"port\": 14580,
+  \"callsign\": \"N0CALL\",
+  \"passcode\": \"-1\",
+  \"gate_rf_to_is\": true,
+  \"gate_is_to_rf\": false,
+  \"rf_channel\": 1,
+  \"max_msg_hops\": 2,
+  \"software_name\": \"graywolf\",
+  \"software_version\": \"${TAG#v}\",
+  \"tx_channel\": 1
+}" >/dev/null
 log "upserted igate config"
 
-# --- 5. Shutdown, copy, done -------------------------------------------
+# --- 5. Shutdown, copy, done ------------------------------------------
 
 log "sending SIGTERM and waiting for clean exit"
 kill -TERM "$GRAYWOLF_PID"
@@ -222,5 +247,4 @@ GRAYWOLF_PID=""  # suppress cleanup kill
 
 mkdir -p "$(dirname "$OUT_PATH")"
 cp "$DB_PATH" "$OUT_PATH"
-log "wrote fixture to $OUT_PATH ($(wc -c < "$OUT_PATH") bytes)"
-log "commit this file as a binary test fixture."
+log "wrote fixture from $TAG to $OUT_PATH ($(wc -c < "$OUT_PATH") bytes)"

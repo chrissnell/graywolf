@@ -527,16 +527,19 @@ func TestNullableInputDeviceMigration_DownRoundTrip(t *testing.T) {
 	})
 }
 
-// TestMigrateFromPriorRelease loads a committed prior-release fixture
-// database (generated once via scripts/testdata/gen_pre_v0_11_db.sh)
-// and runs the migration chain. Skipped when the fixture is absent so
-// fresh-clone builds don't fail on a missing binary artifact.
+// TestMigrateFromPriorRelease loads a prior-release fixture database
+// (generated on demand by scripts/testdata/gen_prev_release_db.sh) and
+// runs the migration chain. Skipped when the fixture is absent so
+// fresh-clone builds don't fail on a missing artifact.
 //
-// The fixture is a SQLite file produced by booting graywolf v0.10.11
-// against a throwaway config dir, creating a representative
-// configuration (3 channels, 2 KISS interfaces, 3 beacons, 2 digi
-// rules, 1 igate config) via the REST API, then SIGTERMing and
-// copying the resulting DB. See the script for exact steps.
+// The fixture is NOT committed to git. It's regenerated dynamically —
+// the generator detects the newest v* tag reachable from HEAD and
+// boots that binary against a throwaway config dir, seeding a
+// representative configuration (3 channels, 2 KISS interfaces, 3
+// beacons, 2 digi rules, 1 igate config) via the REST API, then
+// SIGTERMing and copying the resulting DB. CI runs the generator
+// before tests; locally the test is skip-if-missing until you run
+// the script manually.
 //
 // Assertions:
 //   - Open() succeeds.
@@ -547,11 +550,11 @@ func TestNullableInputDeviceMigration_DownRoundTrip(t *testing.T) {
 //   - A NULL-input row can be inserted after migration.
 //   - The input_device_id FK still rejects orphaned references.
 func TestMigrateFromPriorRelease(t *testing.T) {
-	fixture := filepath.Join("testdata", "channels_pre_v0_11.db")
+	fixture := filepath.Join("testdata", "prev_release.db")
 	info, err := os.Stat(fixture)
 	if err != nil {
 		if os.IsNotExist(err) {
-			t.Skipf("fixture not generated; run scripts/testdata/gen_pre_v0_11_db.sh first")
+			t.Skipf("fixture not generated; run scripts/testdata/gen_prev_release_db.sh first")
 		}
 		t.Fatalf("stat fixture: %v", err)
 	}

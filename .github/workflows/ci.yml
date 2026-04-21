@@ -18,9 +18,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # Full history + tags are required by
+          # scripts/testdata/gen_prev_release_db.sh, which walks
+          # `git describe --tags --match 'v*'` from HEAD to find the
+          # previous release fixture source.
+          fetch-depth: 0
 
-      - name: Install ALSA dev headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Install ALSA dev headers + jq
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev jq
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -59,6 +65,17 @@ jobs:
       - name: go vet
         working-directory: graywolf
         run: go vet ./...
+
+      # Regenerate the prior-release migration fixture so
+      # TestMigrateFromPriorRelease has real coverage on every run.
+      # Non-fatal: if the generator fails (e.g. previous release has a
+      # build break on current CI toolchain), the test skip path keeps
+      # CI green. Log the failure so we notice.
+      - name: Generate prior-release migration fixture
+        run: |
+          if ! ./scripts/testdata/gen_prev_release_db.sh; then
+            echo "::warning::gen_prev_release_db.sh failed; TestMigrateFromPriorRelease will skip"
+          fi
 
       - name: go test -race
         working-directory: graywolf

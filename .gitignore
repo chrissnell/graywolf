@@ -14,6 +14,15 @@ graywolf.db-wal
 graywolf-history.db
 graywolf-history.db-shm
 graywolf-history.db-wal
+
+# Dynamically regenerated migration fixture — produced by
+# scripts/testdata/gen_prev_release_db.sh, consumed by
+# TestMigrateFromPriorRelease. Never commit; see the README in
+# graywolf/pkg/configstore/testdata/.
+graywolf/pkg/configstore/testdata/*.db
+graywolf/pkg/configstore/testdata/*.db-shm
+graywolf/pkg/configstore/testdata/*.db-wal
+
 graywolf/web/dist/
 dist/
 rust-bin/
