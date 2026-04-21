@@ -25,6 +25,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
+	"github.com/chrissnell/graywolf/pkg/updatescheck"
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/pkg/webauth"
 )
@@ -101,6 +102,12 @@ type App struct {
 	ig          *igate.Igate // nil if iGate is disabled in config
 	apiSrv      *webapi.Server
 	httpSrv     *http.Server
+	// updatesChecker polls GitHub once a day for a newer release tag and
+	// caches the result. Owned here because the namedComponent start
+	// closure needs a handle to call Run on; also installed into apiSrv
+	// via SetUpdatesChecker so GET /api/updates/status can project its
+	// cached Snapshot.
+	updatesChecker *updatescheck.Checker
 
 	// Guards reloadIgate's no-op-skip. Owned by the single igateComponent
 	// reload goroutine, so no mutex is needed.
@@ -168,6 +175,7 @@ type App struct {
 	// defeating the ordered-teardown contract.
 	govWG               sync.WaitGroup
 	statsWG             sync.WaitGroup
+	updatesWG           sync.WaitGroup
 	kissWG              sync.WaitGroup
 	agwWG               sync.WaitGroup
 	agwReloadWG         sync.WaitGroup

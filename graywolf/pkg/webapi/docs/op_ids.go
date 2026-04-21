@@ -266,3 +266,11 @@ const (
 	OpListUnseenReleaseNotes = "listUnseenReleaseNotes"
 	OpAckReleaseNotes        = "ackReleaseNotes"
 )
+
+// Updates resource — /api/updates. Controls the daily GitHub update
+// check and exposes the latest known release status to the UI.
+const (
+	OpGetUpdatesConfig    = "getUpdatesConfig"
+	OpUpdateUpdatesConfig = "updateUpdatesConfig"
+	OpGetUpdatesStatus    = "getUpdatesStatus"
+)

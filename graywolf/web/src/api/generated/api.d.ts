@@ -1127,6 +1127,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/updates/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get updates check configuration */
+        get: operations["getUpdatesConfig"];
+        /** Update updates check configuration */
+        put: operations["updateUpdatesConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/updates/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get latest-release status */
+        get: operations["getUpdatesStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -1527,6 +1562,7 @@ export interface components {
             kiss_tnc?: components["schemas"]["dto.ChannelKissTncEntry"][];
             modem?: components["schemas"]["dto.ChannelModemBacking"];
             summary?: string;
+            tx?: components["schemas"]["dto.TxCapability"];
         };
         "dto.ChannelKissTncEntry": {
             allow_tx_from_governor?: boolean;
@@ -2078,6 +2114,10 @@ export interface components {
         "dto.TestToneResponse": {
             status?: string;
         };
+        "dto.TxCapability": {
+            capable?: boolean;
+            reason?: string;
+        };
         "dto.TxTimingRequest": {
             channel?: number;
             full_dup?: boolean;
@@ -2098,6 +2138,20 @@ export interface components {
             slot_ms?: number;
             tx_delay_ms?: number;
             tx_tail_ms?: number;
+        };
+        "dto.UpdatesConfigRequest": {
+            enabled?: boolean;
+        };
+        "dto.UpdatesConfigResponse": {
+            enabled?: boolean;
+        };
+        "dto.UpdatesStatusResponse": {
+            /** @description RFC3339, omitted if zero */
+            checked_at?: string;
+            current?: string;
+            latest?: string;
+            status?: string;
+            url?: string;
         };
         "gps.SerialPortInfo": {
             /** @description human-readable description */
@@ -2300,6 +2354,7 @@ export interface components {
             input_device_id?: number;
             modem_type?: string;
             name?: string;
+            rx_bad_fcs?: number;
             rx_frames?: number;
             tx_frames?: number;
         };
@@ -3458,7 +3513,10 @@ export interface operations {
     };
     updateChannel: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Force the update even if it would break existing TX referrers */
+                force?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Channel id */
@@ -3484,6 +3542,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.ChannelReferrersResponse"];
                 };
             };
             /** @description Internal Server Error */
@@ -6308,6 +6375,98 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getUpdatesConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.UpdatesConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateUpdatesConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Updates configuration */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.UpdatesConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.UpdatesConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getUpdatesStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.UpdatesStatusResponse"];
                 };
             };
         };

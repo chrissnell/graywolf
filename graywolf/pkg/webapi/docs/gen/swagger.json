@@ -79,6 +79,10 @@
             "description": "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."
         },
         {
+            "name": "updates",
+            "description": "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."
+        },
+        {
             "name": "auth",
             "description": "Session login, logout, and first-user setup."
         },
@@ -1228,6 +1232,12 @@
                         "required": true
                     },
                     {
+                        "type": "boolean",
+                        "description": "Force the update even if it would break existing TX referrers",
+                        "name": "force",
+                        "in": "query"
+                    },
+                    {
                         "description": "Channel definition",
                         "name": "body",
                         "in": "body",
@@ -1248,6 +1258,12 @@
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.ChannelReferrersResponse"
                         }
                     },
                     "500": {
@@ -4469,6 +4485,111 @@
                 }
             }
         },
+        "/updates/config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Get updates check configuration",
+                "operationId": "getUpdatesConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Update updates check configuration",
+                "operationId": "updateUpdatesConfig",
+                "parameters": [
+                    {
+                        "description": "Updates configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/updates/status": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Get latest-release status",
+                "operationId": "getUpdatesStatus",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/version": {
             "get": {
                 "produces": [
@@ -5494,6 +5615,9 @@
                 },
                 "summary": {
                     "type": "string"
+                },
+                "tx": {
+                    "$ref": "#/definitions/dto.TxCapability"
                 }
             }
         },
@@ -6633,6 +6757,17 @@
                 }
             }
         },
+        "dto.TxCapability": {
+            "type": "object",
+            "properties": {
+                "capable": {
+                    "type": "boolean"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.TxTimingRequest": {
             "type": "object",
             "properties": {
@@ -6691,6 +6826,43 @@
                 },
                 "tx_tail_ms": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.UpdatesConfigRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.UpdatesConfigResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.UpdatesStatusResponse": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "description": "RFC3339, omitted if zero",
+                    "type": "string"
+                },
+                "current": {
+                    "type": "string"
+                },
+                "latest": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },
@@ -7190,6 +7362,9 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "rx_bad_fcs": {
+                    "type": "integer"
                 },
                 "rx_frames": {
                     "type": "integer"

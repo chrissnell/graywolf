@@ -4,6 +4,7 @@
   import { location } from 'svelte-spa-router';
   import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
   import { messages } from '../lib/messagesStore.svelte.js';
+  import { updates } from '../lib/updatesStore.svelte.js';
   import logoUrl from '../assets/graywolf.svg';
 
   const topItems = [
@@ -59,6 +60,21 @@
   // Reactive global unread signal — recomputes when any thread's
   // unreadCount / muted / archived flag changes.
   let unreadTotal = $derived(messages.unreadTotal);
+
+  // Update-check signal — true when a newer GitHub release exists and
+  // the operator hasn't dismissed the banner. Drives both the About
+  // link's red dot here and the banner on the About tab; dismissing
+  // in one place clears the other automatically via updates.dismiss().
+  let hasUnseenUpdate = $derived(updates.hasUnseenUpdate);
+
+  // Sidebar is always-mounted in the authenticated shell, so this
+  // mount-time fetch is the single call that primes hasUnseenUpdate
+  // on every page load — the badge can appear on Dashboard/Map/etc.
+  // without the operator ever visiting About first. No reactive reads
+  // in the body, so this runs exactly once.
+  $effect(() => {
+    updates.fetchStatus();
+  });
 
   // Drawer open state (mobile only). Closed on link click in onNavClick;
   // an effect on currentPath below acts as a safety net for programmatic
@@ -149,9 +165,13 @@
       class="nav-link"
       class:active={currentPath === '/about'}
       aria-current={currentPath === '/about' ? 'page' : undefined}
+      aria-label={hasUnseenUpdate ? 'About, update available' : undefined}
       onclick={onNavClick}
     >
       <span class="nav-label">About</span>
+      <span class="nav-badge">
+        <NotificationBadge count={hasUnseenUpdate ? 1 : 0} label="Update available" />
+      </span>
     </a>
   </div>
 {/snippet}

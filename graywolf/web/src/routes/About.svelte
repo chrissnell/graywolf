@@ -1,7 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   import ReleaseNoteCard from '../components/ReleaseNoteCard.svelte';
+  import UpdateAvailableBanner from '../components/UpdateAvailableBanner.svelte';
   import { releaseNotes } from '../lib/releaseNotesStore.svelte.js';
+  import { updates } from '../lib/updatesStore.svelte.js';
 
   let version = $state('');
 
@@ -14,12 +16,31 @@
     // Re-runs every visit — cheap and keeps the list fresh if another
     // release lands while the tab is open.
     releaseNotes.fetchAll();
+    // Refresh update status. The sidebar also primes this on mount,
+    // but fetching here keeps About honest if the operator lands
+    // directly on /about in a new tab.
+    updates.fetchStatus();
   });
 </script>
 
 <div class="about-content">
-  <section class="whats-new" aria-labelledby="whats-new-heading">
-    <h2 id="whats-new-heading">What's new</h2>
+  <section class="about-section" aria-labelledby="install-heading">
+    <h2 id="install-heading" class="about-section-heading">This install</h2>
+    <p class="about-version">Graywolf v.{version}</p>
+    <p class="about-copyright">&copy; 2026 Chris Snell, NW5W</p>
+  </section>
+
+  <section class="about-section" aria-labelledby="updates-heading">
+    <h2 id="updates-heading" class="about-section-heading">Updates</h2>
+    {#if updates.status === 'pending'}
+      <p class="updates-pending">Checking for updates…</p>
+    {:else}
+      <UpdateAvailableBanner />
+    {/if}
+  </section>
+
+  <section class="about-section whats-new" aria-labelledby="whats-new-heading">
+    <h2 id="whats-new-heading" class="about-section-heading" tabindex="-1">What's new</h2>
 
     {#if releaseNotes.loading && releaseNotes.all.length === 0}
       <div class="skeleton-stack" aria-busy="true" aria-label="Loading release notes">
@@ -41,8 +62,6 @@
     {/if}
   </section>
 
-  <p class="about-version">Graywolf v.{version}</p>
-  <p class="about-copyright">&copy; 2026 Chris Snell, NW5W</p>
   <p class="about-license">
     Released under the
     <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" target="_blank" rel="noopener">
@@ -68,14 +87,32 @@
     max-width: 560px;
   }
 
-  .whats-new {
+  /* Shared section wrapper — "This install", "Updates", "What's new". */
+  .about-section {
     margin: 0 0 32px;
   }
-  .whats-new h2 {
+
+  /* Shared heading style across all three About sections (formerly
+     .whats-new h2 only). Kept the existing visual spec: 18px semibold,
+     primary text, 12px bottom margin. */
+  .about-section-heading {
     margin: 0 0 12px;
     font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
+  }
+  /* Remove the :focus outline ring on the programmatically-focused
+     "What's new" heading — it gets a tabindex="-1" purely so the
+     banner's dismiss handler can move focus here, not so keyboard
+     users Tab into it. Hide the ring to avoid a surprising visual. */
+  .about-section-heading:focus {
+    outline: none;
+  }
+
+  .updates-pending {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0;
   }
 
   .notes-list {
@@ -138,7 +175,7 @@
   .about-copyright {
     font-size: 14px;
     color: var(--text-secondary);
-    margin: 0 0 16px;
+    margin: 0;
   }
 
   .about-license {

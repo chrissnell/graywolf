@@ -35,6 +35,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/pttdevice"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
+	"github.com/chrissnell/graywolf/pkg/updatescheck"
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/pkg/webauth"
 	"github.com/chrissnell/graywolf/web"
@@ -416,6 +417,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		// new sends BEFORE governor goroutines wind down — see D15.
 		a.txBackendComponent(),
 		a.backgroundStatsComponent(),
+		a.updatesCheckComponent(),
 		a.kissComponent(),
 		a.digipeaterComponent(),
 		a.gpsComponent(),
@@ -811,6 +813,19 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	}
 	apiSrv.SetMessagesBotDirectory(messages.DefaultBotDirectory)
 
+	// Construct the GitHub-update checker and install it on the webapi
+	// server so GET /api/updates/status can project its cached Snapshot.
+	// The checker's Run goroutine is launched by updatesCheckComponent;
+	// the reload channel it selects on is owned by apiSrv and surfaced
+	// via UpdatesReloadCh(). See pkg/updatescheck and plan D4.
+	a.updatesChecker = updatescheck.NewChecker(
+		a.cfg.Version,
+		a.store,
+		updatescheck.DefaultBaseURL,
+		a.logger.With("component", "updatescheck"),
+	)
+	apiSrv.SetUpdatesChecker(a.updatesChecker)
+
 	// /api/version is public (the UI reads it before login to pick
 	// which screens to show). It is mounted on the outer mux so it
 	// bypasses RequireAuth. The handler itself lives in pkg/webapi.
@@ -1049,6 +1064,32 @@ func (a *App) backgroundStatsComponent() namedComponent {
 		},
 		stop: func(shutdownCtx context.Context) error {
 			return waitGroup(shutdownCtx, &a.statsWG, "background stats")
+		},
+	}
+}
+
+// updatesCheckComponent launches the daily GitHub release-tag poller.
+// The Checker is constructed in wireHTTP (it needs the webapi server's
+// reload channel); this component only owns the lifetime of its Run
+// goroutine. Run blocks until ctx is cancelled; on shutdown we wait on
+// updatesWG for the goroutine to actually exit.
+func (a *App) updatesCheckComponent() namedComponent {
+	return namedComponent{
+		name: "updates check",
+		start: func(ctx context.Context) error {
+			a.updatesWG.Add(1)
+			go func() {
+				defer a.updatesWG.Done()
+				// Run returns ctx.Err() on shutdown; the checker logs
+				// transient errors internally at debug level, so we
+				// deliberately discard the returned error here —
+				// ctx-cancellation is the expected exit path.
+				_ = a.updatesChecker.Run(ctx, a.apiSrv.UpdatesReloadCh())
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			return waitGroup(shutdownCtx, &a.updatesWG, "updates check")
 		},
 	}
 }

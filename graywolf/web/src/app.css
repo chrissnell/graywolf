@@ -50,6 +50,7 @@
   --text-error: var(--color-danger);
   --accent: var(--color-primary);
   --accent-hover: var(--color-primary-hover);
+  --accent-bg: var(--color-primary-muted);
   --success: var(--color-success);
   --error: var(--color-danger);
   --warning: var(--color-warning);

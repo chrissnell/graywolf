@@ -328,6 +328,17 @@ type StationConfig struct {
 	UpdatedAt time.Time `json:"-"`
 }
 
+// UpdatesConfig controls the daily GitHub update check. Singleton at
+// id=1, default Enabled=true. Disabling stops the ticker and causes
+// GET /api/updates/status to report status="disabled" regardless of
+// any cached result.
+type UpdatesConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
 // GPSConfig is a singleton (id=1) row for the GPS receiver.
 type GPSConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`

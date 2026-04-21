@@ -699,6 +699,8 @@ definitions:
         $ref: '#/definitions/dto.ChannelModemBacking'
       summary:
         type: string
+      tx:
+        $ref: '#/definitions/dto.TxCapability'
     type: object
   dto.ChannelKissTncEntry:
     properties:
@@ -1556,6 +1558,13 @@ definitions:
       status:
         type: string
     type: object
+  dto.TxCapability:
+    properties:
+      capable:
+        type: boolean
+      reason:
+        type: string
+    type: object
   dto.TxTimingRequest:
     properties:
       channel:
@@ -1595,6 +1604,30 @@ definitions:
         type: integer
       tx_tail_ms:
         type: integer
+    type: object
+  dto.UpdatesConfigRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  dto.UpdatesConfigResponse:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  dto.UpdatesStatusResponse:
+    properties:
+      checked_at:
+        description: RFC3339, omitted if zero
+        type: string
+      current:
+        type: string
+      latest:
+        type: string
+      status:
+        type: string
+      url:
+        type: string
     type: object
   gps.SerialPortInfo:
     properties:
@@ -1949,6 +1982,8 @@ definitions:
         type: string
       name:
         type: string
+      rx_bad_fcs:
+        type: integer
       rx_frames:
         type: integer
       tx_frames:
@@ -2169,6 +2204,8 @@ tags:
     description: 'APRS text messaging: DMs, tactical threads, preferences, and SSE events.'
   - name: release-notes
     description: Per-release user-facing news; drives the login-time popup and About-page 'What's new' section.
+  - name: updates
+    description: 'Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI.'
   - name: auth
     description: Session login, logout, and first-user setup.
   - name: version
@@ -2926,6 +2963,10 @@ paths:
           name: id
           required: true
           type: integer
+        - description: Force the update even if it would break existing TX referrers
+          in: query
+          name: force
+          type: boolean
         - description: Channel definition
           in: body
           name: body
@@ -2943,6 +2984,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webapi.ChannelReferrersResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -4951,6 +4996,71 @@ paths:
       summary: Update tx-timing record
       tags:
         - tx-timing
+  /updates/config:
+    get:
+      operationId: getUpdatesConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.UpdatesConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get updates check configuration
+      tags:
+        - updates
+    put:
+      consumes:
+        - application/json
+      operationId: updateUpdatesConfig
+      parameters:
+        - description: Updates configuration
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.UpdatesConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.UpdatesConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update updates check configuration
+      tags:
+        - updates
+  /updates/status:
+    get:
+      operationId: getUpdatesStatus
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.UpdatesStatusResponse'
+      security:
+        - CookieAuth: []
+      summary: Get latest-release status
+      tags:
+        - updates
   /version:
     get:
       operationId: getVersion

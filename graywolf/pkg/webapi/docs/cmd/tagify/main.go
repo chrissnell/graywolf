@@ -53,6 +53,7 @@ var tagOrder = []tagEntry{
 	{"position", "Current station position."},
 	{"messages", "APRS text messaging: DMs, tactical threads, preferences, and SSE events."},
 	{"release-notes", "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."},
+	{"updates", "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."},
 
 	// --- Admin / auth / health ------------------------------------------
 	{"auth", "Session login, logout, and first-user setup."},

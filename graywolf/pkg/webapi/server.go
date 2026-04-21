@@ -38,6 +38,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
+	"github.com/chrissnell/graywolf/pkg/updatescheck"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
@@ -61,6 +62,8 @@ type Server struct {
 	agwReload         chan struct{} // signalled when AGW config changes
 	smartBeaconReload chan struct{} // signalled when smart-beacon singleton config changes
 	messagesReload    chan struct{} // signalled when messages preferences or tactical callsigns change
+	updatesReloadCh   chan struct{} // signalled when the updates-check toggle flips so the checker re-evaluates immediately
+	updatesChecker    *updatescheck.Checker
 	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
 	// Nudged after any change that could alter the channel-backing
 	// map (kiss interface add/remove/mode/allow_tx flip, channel
@@ -131,14 +134,15 @@ func NewServer(cfg Config) (*Server, error) {
 		kissCtx = context.Background()
 	}
 	return &Server{
-		store:         cfg.Store,
-		bridge:        cfg.Bridge,
-		kissManager:   cfg.KissManager,
-		kissCtx:       kissCtx,
-		logger:        logger.With("component", "webapi"),
-		startedAt:     time.Now(),
-		historyDBPath: cfg.HistoryDBPath,
-		version:       cfg.Version,
+		store:           cfg.Store,
+		bridge:          cfg.Bridge,
+		kissManager:     cfg.KissManager,
+		kissCtx:         kissCtx,
+		logger:          logger.With("component", "webapi"),
+		startedAt:       time.Now(),
+		historyDBPath:   cfg.HistoryDBPath,
+		version:         cfg.Version,
+		updatesReloadCh: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -183,6 +187,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerSmartBeacon(mux)
 	s.registerMessages(mux)
 	s.registerTacticals(mux)
+	s.registerUpdates(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
@@ -287,6 +292,34 @@ func (s *Server) SetMessagesBotDirectory(dir messages.BotDirectory) { s.messages
 // SetIgateStatusFn installs the function used by /api/status to report
 // igate counters.
 func (s *Server) SetIgateStatusFn(fn func() igate.Status) { s.igateStatusFn = fn }
+
+// SetUpdatesChecker installs the updates checker post-construction.
+// Called by pkg/app wiring once the checker has been built with the
+// running version and configstore handle. Safe to call before the
+// server starts serving; not safe to call after. Until this is called,
+// GET /api/updates/status returns a synthesized "pending" response
+// rather than panicking.
+func (s *Server) SetUpdatesChecker(c *updatescheck.Checker) { s.updatesChecker = c }
+
+// UpdatesReloadCh exposes the updates reload channel to wiring so the
+// checker goroutine can receive on it. The channel itself is owned by
+// the Server (created in NewServer, buffer size 1) so its lifetime
+// matches the request handlers that send on it.
+func (s *Server) UpdatesReloadCh() <-chan struct{} { return s.updatesReloadCh }
+
+// signalUpdatesReload does a non-blocking send on updatesReloadCh.
+// Coalesces bursts via the size-1 buffer (see pkg/updatescheck D4 for
+// the coalescing invariant). Mirrors signalIgateReload /
+// signalDigipeaterReload.
+func (s *Server) signalUpdatesReload() {
+	if s.updatesReloadCh == nil {
+		return
+	}
+	select {
+	case s.updatesReloadCh <- struct{}{}:
+	default:
+	}
+}
 
 // --- misc helpers --------------------------------------------------------
 
