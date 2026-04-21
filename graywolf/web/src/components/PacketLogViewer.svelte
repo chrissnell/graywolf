@@ -35,11 +35,11 @@
   // Column definitions. ORDER IS LOAD-BEARING — first 3 are primary on mobile.
   // No `priority` field in Chonky 0.2.1; ordering is the only knob.
   const columns = [
-    { key: 'timestamp', label: 'Time',    width: '110px', class: 'pkt-c-time',           render: timeCell    },
-    { key: 'type',      label: 'Type',    width: '95px',  class: 'pkt-c-type',           render: typeCell    },
+    { key: 'timestamp', label: 'Time',    width: '130px', class: 'pkt-c-time',           render: timeCell    },
+    { key: 'type',      label: 'Type',    width: '105px', class: 'pkt-c-type',           render: typeCell    },
     { key: 'srcdst',    label: 'Src→Dst', width: '1fr',   class: 'pkt-c-srcdst',         render: srcDstCell  },
-    { key: 'channel',   label: 'Ch',      width: '40px',  class: 'pkt-c-channel', align: 'center', render: channelCell },
-    { key: 'distance',  label: 'Distance',width: '110px', class: 'pkt-c-distance', align: 'right', render: distanceCell },
+    { key: 'channel',   label: 'Ch',      width: '50px',  class: 'pkt-c-channel', align: 'center', render: channelCell },
+    { key: 'distance',  label: 'Distance',width: '120px', class: 'pkt-c-distance', align: 'right', render: distanceCell },
   ];
 </script>
 
@@ -152,6 +152,36 @@
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-all;
+  }
+
+  /* Desktop density override: chonky's grid defaults are terminal-tight,
+     which reads as cramped at desktop widths. Scoped to data-mode="grid" so
+     card mode (mobile) keeps chonky's compact defaults. */
+  :global(.log-viewer[data-mode='grid'] .log-grid) {
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+  :global(.log-viewer[data-mode='grid'] .log-grid-cell) {
+    padding: 0.4rem 0.75rem;
+    line-height: 1.4;
+  }
+  :global(.log-viewer[data-mode='grid'] .log-grid-header) {
+    padding: 0.5rem 0.75rem 0.35rem;
+    font-size: 0.7rem;
+  }
+  :global(.log-viewer[data-mode='grid'] .log-grid-footer) {
+    padding: 0 0.75rem 0.5rem;
+  }
+  :global(.log-viewer[data-mode='grid']) .pkt-raw {
+    font-size: 0.75rem;
+    line-height: 1.45;
+  }
+  :global(.log-viewer[data-mode='grid']) .pkt-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+  :global(.log-viewer[data-mode='grid']) .pkt-distance {
+    font-size: 0.8rem;
   }
 
   /* Direction-as-accent: paint a left border on each row/card driven by the
