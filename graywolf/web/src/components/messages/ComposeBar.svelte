@@ -4,8 +4,9 @@
   // Behavior:
   //   - Auto-grow textarea from 36 → 120 px.
   //   - Character counter: neutral until ≤ 10 remain → warning,
-  //     at ≤ 0 soft-splits into Part 2/2. Hard cap at 3 parts (201
-  //     chars) disables send.
+  //     at ≤ 0 soft-splits into Part 2/2. Multi-part slices reserve
+  //     6 chars for the "{N/M} " prefix, giving 61 chars per part.
+  //     Hard cap at 3 parts (183 chars) disables send.
   //   - Enter sends (and Ctrl/Cmd+Enter too). Shift+Enter inserts a
   //     newline. IME composition guards prevent sending mid-candidate.
   //   - iOS keyboard handling: `position: absolute` + manual
@@ -27,6 +28,10 @@
 
   const APRS_LIMIT = 67; // chars per APRS message body
   const MAX_PARTS = 3;
+  // Multi-part messages carry a "{N/M} " prefix (6 chars with single-digit
+  // N and M) so each slice must reserve room for it to stay under APRS_LIMIT.
+  const PART_PREFIX_LEN = 6;
+  const PART_SLICE = APRS_LIMIT - PART_PREFIX_LEN; // 61
 
   /** @type {{
    *    mode: 'compose' | 'thread',
@@ -62,7 +67,13 @@
   let banner = $state(null);
 
   const length = $derived((text || '').length);
-  const parts = $derived(Math.max(1, Math.ceil(length / APRS_LIMIT)));
+  // Single-part fits in APRS_LIMIT verbatim; multi-part uses the smaller
+  // PART_SLICE to leave room for the "{N/M} " prefix on each wire message.
+  const parts = $derived(
+    length === 0 ? 1
+    : length <= APRS_LIMIT ? 1
+    : Math.ceil(length / PART_SLICE)
+  );
   const over = $derived(parts > MAX_PARTS);
   const remaining = $derived(APRS_LIMIT - (length % APRS_LIMIT || APRS_LIMIT));
   const showPartBadge = $derived(parts > 1);
@@ -89,10 +100,11 @@
     sending = true;
     try {
       if (parts > 1) {
-        // Manually slice to fit the APRS 67-char window; prepend
-        // "{N/M} " as a human-readable hint (NOT an APRS-101 format).
+        // Slice into PART_SLICE-sized chunks so each tagged message
+        // (prefix + slice) stays within the APRS 67-char body cap.
+        // The "{N/M} " prefix is a human-readable hint, NOT APRS-101.
         for (let i = 0; i < parts; i++) {
-          const slice = body.slice(i * APRS_LIMIT, (i + 1) * APRS_LIMIT);
+          const slice = body.slice(i * PART_SLICE, (i + 1) * PART_SLICE);
           const tagged = `{${i + 1}/${parts}} ${slice}`;
           await onSend?.(tagged, target);
         }
@@ -252,7 +264,7 @@
     <div class="controls">
       <span class="counter" class:warn={remaining <= 10 && parts === 1} class:over>
         {#if over}
-          Too long — max {MAX_PARTS} parts ({MAX_PARTS * APRS_LIMIT} chars)
+          Too long — max {MAX_PARTS} parts ({MAX_PARTS * PART_SLICE} chars)
         {:else if showPartBadge}
           Part {parts}/{parts}
         {:else}
