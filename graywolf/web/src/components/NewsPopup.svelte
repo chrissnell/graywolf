@@ -167,7 +167,7 @@
     gap: 12px;
   }
 
-  .sr-only {
+  :global(.sr-only) {
     position: absolute;
     width: 1px;
     height: 1px;
