@@ -104,6 +104,22 @@ func (s *Store) Migrate() error {
 	if err := s.runMigrations(preAutoMigrate); err != nil {
 		return err
 	}
+	// Disable FK enforcement around AutoMigrate. glebarez/sqlite's
+	// Migrator wraps AlterColumn in RunWithoutForeignKey but NOT the
+	// CreateConstraint / DropConstraint paths that recreateTable also
+	// hits. Because recreateTable issues a raw `DROP TABLE <parent>`,
+	// any child row with ON DELETE CASCADE gets cascaded out while
+	// AutoMigrate is reconciling schema drift — which is what wiped
+	// ptt_configs on v0.11.0 upgrades when migration 8's multi-line FK
+	// declaration didn't match glebarez's single-line HasConstraint
+	// LIKE pattern. Toggling FK off at the call site defends against
+	// every recreateTable code path regardless of the upstream fix.
+	//
+	// Safety: runMigrations' own foreign_key_check already ran inside
+	// migration 8's transaction, so referential integrity is verified
+	// by the time we get here. AutoMigrate only reshapes schema; it
+	// never inserts orphan references.
+	_ = s.db.Exec("PRAGMA foreign_keys = OFF").Error
 	if err := s.db.AutoMigrate(
 		&AudioDevice{},
 		&Channel{},
@@ -125,8 +141,10 @@ func (s *Store) Migrate() error {
 		&MessagePreferences{},
 		&TacticalCallsign{},
 	); err != nil {
+		_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 		return err
 	}
+	_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 	if err := s.runMigrations(postAutoMigrate); err != nil {
 		return err
 	}

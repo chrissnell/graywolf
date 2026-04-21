@@ -478,30 +478,41 @@ func migrateChannelsNullableInputDevice(db *gorm.DB) error {
 	//    after this migration completes — the column-copy list
 	//    carries existing data forward; shape divergence on future
 	//    columns is reconciled by GORM.
-	createSQL := `CREATE TABLE channels_new (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		input_device_id INTEGER NULL,
-		input_channel INTEGER NOT NULL DEFAULT 0,
-		output_device_id INTEGER NOT NULL DEFAULT 0,
-		output_channel INTEGER NOT NULL DEFAULT 0,
-		modem_type TEXT NOT NULL DEFAULT 'afsk',
-		bit_rate INTEGER NOT NULL DEFAULT 1200,
-		mark_freq INTEGER NOT NULL DEFAULT 1200,
-		space_freq INTEGER NOT NULL DEFAULT 2200,
-		profile TEXT NOT NULL DEFAULT 'A',
-		num_slicers INTEGER NOT NULL DEFAULT 1,
-		fix_bits TEXT NOT NULL DEFAULT 'none',
-		fx25_encode NUMERIC NOT NULL DEFAULT 0,
-		il2p_encode NUMERIC NOT NULL DEFAULT 0,
-		num_decoders INTEGER NOT NULL DEFAULT 1,
-		decoder_offset INTEGER NOT NULL DEFAULT 0,
-		created_at DATETIME,
-		updated_at DATETIME,
-		CONSTRAINT fk_channels_input_device
-			FOREIGN KEY (input_device_id) REFERENCES audio_devices(id)
-			ON DELETE RESTRICT ON UPDATE RESTRICT
-	)`
+	//
+	//    The CONSTRAINT clause is on a single line on purpose:
+	//    glebarez/sqlite's Migrator.HasConstraint probes
+	//    sqlite_master.sql with LIKE patterns that assume the
+	//    constraint name and FOREIGN KEY keyword sit on the same
+	//    line separated by one space. A newline there makes
+	//    HasConstraint return false, so AutoMigrate decides the FK
+	//    is "missing" and calls CreateConstraint → recreateTable.
+	//    recreateTable in glebarez only wraps AlterColumn in
+	//    RunWithoutForeignKey — CreateConstraint is unwrapped, so
+	//    its DROP TABLE fires ON DELETE CASCADE on ptt_configs (and
+	//    any other child with a cascading FK to channels). Keep
+	//    this one line.
+	createSQL := `CREATE TABLE channels_new (` +
+		`id INTEGER PRIMARY KEY AUTOINCREMENT,` +
+		`name TEXT NOT NULL,` +
+		`input_device_id INTEGER NULL,` +
+		`input_channel INTEGER NOT NULL DEFAULT 0,` +
+		`output_device_id INTEGER NOT NULL DEFAULT 0,` +
+		`output_channel INTEGER NOT NULL DEFAULT 0,` +
+		`modem_type TEXT NOT NULL DEFAULT 'afsk',` +
+		`bit_rate INTEGER NOT NULL DEFAULT 1200,` +
+		`mark_freq INTEGER NOT NULL DEFAULT 1200,` +
+		`space_freq INTEGER NOT NULL DEFAULT 2200,` +
+		`profile TEXT NOT NULL DEFAULT 'A',` +
+		`num_slicers INTEGER NOT NULL DEFAULT 1,` +
+		`fix_bits TEXT NOT NULL DEFAULT 'none',` +
+		`fx25_encode NUMERIC NOT NULL DEFAULT 0,` +
+		`il2p_encode NUMERIC NOT NULL DEFAULT 0,` +
+		`num_decoders INTEGER NOT NULL DEFAULT 1,` +
+		`decoder_offset INTEGER NOT NULL DEFAULT 0,` +
+		`created_at DATETIME,` +
+		`updated_at DATETIME,` +
+		`CONSTRAINT fk_channels_input_device FOREIGN KEY (input_device_id) REFERENCES audio_devices(id) ON DELETE RESTRICT ON UPDATE RESTRICT` +
+		`)`
 	if err := db.Exec(createSQL).Error; err != nil {
 		return fmt.Errorf("create channels_new: %w", err)
 	}
@@ -674,30 +685,31 @@ func migrateChannelsNullableInputDeviceDown(db *gorm.DB) error {
 		}
 	}()
 
-	createSQL := `CREATE TABLE channels_old (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		input_device_id INTEGER NOT NULL,
-		input_channel INTEGER NOT NULL DEFAULT 0,
-		output_device_id INTEGER NOT NULL DEFAULT 0,
-		output_channel INTEGER NOT NULL DEFAULT 0,
-		modem_type TEXT NOT NULL DEFAULT 'afsk',
-		bit_rate INTEGER NOT NULL DEFAULT 1200,
-		mark_freq INTEGER NOT NULL DEFAULT 1200,
-		space_freq INTEGER NOT NULL DEFAULT 2200,
-		profile TEXT NOT NULL DEFAULT 'A',
-		num_slicers INTEGER NOT NULL DEFAULT 1,
-		fix_bits TEXT NOT NULL DEFAULT 'none',
-		fx25_encode NUMERIC NOT NULL DEFAULT 0,
-		il2p_encode NUMERIC NOT NULL DEFAULT 0,
-		num_decoders INTEGER NOT NULL DEFAULT 1,
-		decoder_offset INTEGER NOT NULL DEFAULT 0,
-		created_at DATETIME,
-		updated_at DATETIME,
-		CONSTRAINT fk_channels_input_device
-			FOREIGN KEY (input_device_id) REFERENCES audio_devices(id)
-			ON DELETE RESTRICT ON UPDATE RESTRICT
-	)`
+	// Single-line CONSTRAINT on purpose — see the matching comment in
+	// migrateChannelsNullableInputDevice for the glebarez/sqlite LIKE
+	// pattern that breaks on multi-line FK declarations.
+	createSQL := `CREATE TABLE channels_old (` +
+		`id INTEGER PRIMARY KEY AUTOINCREMENT,` +
+		`name TEXT NOT NULL,` +
+		`input_device_id INTEGER NOT NULL,` +
+		`input_channel INTEGER NOT NULL DEFAULT 0,` +
+		`output_device_id INTEGER NOT NULL DEFAULT 0,` +
+		`output_channel INTEGER NOT NULL DEFAULT 0,` +
+		`modem_type TEXT NOT NULL DEFAULT 'afsk',` +
+		`bit_rate INTEGER NOT NULL DEFAULT 1200,` +
+		`mark_freq INTEGER NOT NULL DEFAULT 1200,` +
+		`space_freq INTEGER NOT NULL DEFAULT 2200,` +
+		`profile TEXT NOT NULL DEFAULT 'A',` +
+		`num_slicers INTEGER NOT NULL DEFAULT 1,` +
+		`fix_bits TEXT NOT NULL DEFAULT 'none',` +
+		`fx25_encode NUMERIC NOT NULL DEFAULT 0,` +
+		`il2p_encode NUMERIC NOT NULL DEFAULT 0,` +
+		`num_decoders INTEGER NOT NULL DEFAULT 1,` +
+		`decoder_offset INTEGER NOT NULL DEFAULT 0,` +
+		`created_at DATETIME,` +
+		`updated_at DATETIME,` +
+		`CONSTRAINT fk_channels_input_device FOREIGN KEY (input_device_id) REFERENCES audio_devices(id) ON DELETE RESTRICT ON UPDATE RESTRICT` +
+		`)`
 	if err := db.Exec(createSQL).Error; err != nil {
 		return fmt.Errorf("create channels_old: %w", err)
 	}

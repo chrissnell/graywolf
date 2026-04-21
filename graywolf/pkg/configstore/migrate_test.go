@@ -475,6 +475,117 @@ PRAGMA user_version = 7;
 	}
 }
 
+// TestMigrationPreservesPttConfig guards against the specific cascade
+// that erased every ptt_configs row on v0.11.0 upgrades. Migration 8
+// used to create channels_new with a multi-line CONSTRAINT FOREIGN KEY
+// clause; glebarez/sqlite's Migrator.HasConstraint probes sqlite_master
+// with LIKE patterns that assume the constraint name and the FOREIGN
+// KEY keyword are on the same line, so the multi-line form looked
+// "missing". AutoMigrate then called CreateConstraint → recreateTable,
+// which runs DROP TABLE channels with FK enforcement on and cascade-
+// deletes every row in ptt_configs via its ON DELETE CASCADE FK.
+//
+// The test seeds a v0.10.11-shaped DB with one channel and its
+// ptt_configs row, opens via configstore.Open (runs the full migration
+// chain + AutoMigrate), and asserts the row survived with its method
+// intact. If the fix regresses, the row count drops to 0.
+func TestMigrationPreservesPttConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pre-v0.11-ptt.db")
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	_, err = raw.Exec(`
+CREATE TABLE audio_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  direction TEXT NOT NULL DEFAULT 'input',
+  source_type TEXT NOT NULL,
+  source_path TEXT,
+  sample_rate INTEGER NOT NULL DEFAULT 48000,
+  channels INTEGER NOT NULL DEFAULT 1,
+  format TEXT NOT NULL DEFAULT 's16le',
+  gain_db REAL NOT NULL DEFAULT 0,
+  created_at DATETIME,
+  updated_at DATETIME
+);
+CREATE TABLE channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  input_device_id INTEGER NOT NULL,
+  input_channel INTEGER NOT NULL DEFAULT 0,
+  output_device_id INTEGER NOT NULL DEFAULT 0,
+  output_channel INTEGER NOT NULL DEFAULT 0,
+  modem_type TEXT NOT NULL DEFAULT 'afsk',
+  bit_rate INTEGER NOT NULL DEFAULT 1200,
+  mark_freq INTEGER NOT NULL DEFAULT 1200,
+  space_freq INTEGER NOT NULL DEFAULT 2200,
+  profile TEXT NOT NULL DEFAULT 'A',
+  num_slicers INTEGER NOT NULL DEFAULT 1,
+  fix_bits TEXT NOT NULL DEFAULT 'none',
+  fx25_encode NUMERIC NOT NULL DEFAULT 0,
+  il2p_encode NUMERIC NOT NULL DEFAULT 0,
+  num_decoders INTEGER NOT NULL DEFAULT 1,
+  decoder_offset INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME,
+  updated_at DATETIME,
+  CONSTRAINT fk_channels_input_device FOREIGN KEY (input_device_id) REFERENCES audio_devices(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE TABLE ptt_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_id INTEGER NOT NULL,
+  method TEXT NOT NULL DEFAULT "none",
+  device TEXT,
+  gpio_pin INTEGER,
+  invert NUMERIC NOT NULL DEFAULT 0,
+  slot_time_ms INTEGER NOT NULL DEFAULT 10,
+  persist INTEGER NOT NULL DEFAULT 63,
+  dwait_ms INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME,
+  updated_at DATETIME,
+  gpio_line INTEGER NOT NULL DEFAULT 0,
+  CONSTRAINT fk_ptt_configs_channel FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX idx_ptt_configs_channel_id ON ptt_configs(channel_id);
+INSERT INTO audio_devices (id,name,direction,source_type,source_path,sample_rate,channels,format)
+  VALUES (5,'mic','input','soundcard','hw:0',48000,1,'s16le');
+INSERT INTO channels (id,name,input_device_id,output_device_id) VALUES (3,'VHF APRS',5,6);
+INSERT INTO ptt_configs (id,channel_id,method,device,gpio_pin,slot_time_ms,persist,dwait_ms,gpio_line)
+  VALUES (1,3,'cm108','/dev/hidraw0',3,10,63,0,0);
+PRAGMA user_version = 7;
+`)
+	raw.Close()
+	if err != nil {
+		t.Fatalf("seed pre-v0.11 schema: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open upgraded db: %v", err)
+	}
+	defer s.Close()
+
+	var count int
+	if err := s.DB().Raw("SELECT COUNT(*) FROM ptt_configs").Scan(&count).Error; err != nil {
+		t.Fatalf("count ptt_configs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("ptt_configs count = %d, want 1 (migration cascade-deleted the row)", count)
+	}
+
+	ptt, err := s.GetPttConfigForChannel(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("GetPttConfigForChannel(3): %v", err)
+	}
+	if ptt.Method != "cm108" {
+		t.Errorf("ptt.Method = %q, want %q (PTT method reset to default by cascade)", ptt.Method, "cm108")
+	}
+	if ptt.GpioPin != 3 {
+		t.Errorf("ptt.GpioPin = %d, want 3 (CM108 HID GPIO pin not preserved)", ptt.GpioPin)
+	}
+}
+
 // TestNullableInputDeviceMigration_DownRoundTrip exercises the
 // down-migration helper directly. On a DB with only non-NULL rows, the
 // down should succeed and re-add the NOT NULL constraint. On a DB
