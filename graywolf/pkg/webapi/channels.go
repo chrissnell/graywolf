@@ -2,12 +2,14 @@ package webapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 	"github.com/chrissnell/graywolf/pkg/webtypes"
+	"gorm.io/gorm"
 )
 
 // registerChannels installs the /api/channels route tree on mux using
@@ -128,6 +130,34 @@ func (s *Server) kissStatus() map[uint32]kiss.InterfaceStatus {
 	return s.kissManager.Status()
 }
 
+// resolveChannelTxCapability computes the current TxCapability for a
+// single channel id. Returns (cap, true, nil) when the channel exists,
+// (zero, false, nil) when the channel id is unknown (so callers can
+// fall through to the existing "channel N does not exist" error path),
+// and (zero, false, err) on store failure.
+//
+// Used by the beacon / iGate / digipeater POST+PUT validators, which
+// run AFTER dto.ValidateChannelRef and therefore already know the
+// channel exists in the common case; the (found==false) branch guards
+// against a racing delete between the two lookups.
+func (s *Server) resolveChannelTxCapability(ctx context.Context, channelID uint32) (dto.TxCapability, bool, error) {
+	ch, err := s.store.GetChannel(ctx, channelID)
+	if err != nil {
+		// gorm.ErrRecordNotFound → not-found path. Any other error is a
+		// real store failure — surface it so the handler can emit 500.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.TxCapability{}, false, nil
+		}
+		return dto.TxCapability{}, false, err
+	}
+	ifaces, err := s.store.ListKissInterfaces(ctx)
+	if err != nil {
+		return dto.TxCapability{}, false, err
+	}
+	b := computeChannelBacking(*ch, ifaces, s.kissStatus(), s.modemRunning())
+	return b.Tx, true, nil
+}
+
 // modemRunning reports whether the Rust modem subprocess is currently
 // running and exchanging heartbeats. False when the bridge is absent
 // (tests) so channels that carry an input device are still reported
@@ -207,6 +237,7 @@ func computeChannelBacking(
 	backing := dto.ChannelBacking{
 		Modem:   modem,
 		KissTnc: tncEntries,
+		Tx:      computeTxCapability(ch, tncEntries),
 	}
 	switch {
 	case hasModem:
@@ -230,6 +261,42 @@ func computeChannelBacking(
 	return backing
 }
 
+// computeTxCapability is the single source of truth for the
+// "can this channel TX?" question consumed by the server-side referrer
+// validator and by the frontend picker predicate. Pure function, derived
+// from the same channel + kiss fields computeChannelBacking already has
+// in hand.
+//
+// Decision order (single branch per plan D1 — the KISS short-circuit
+// first so a KISS-only channel with InputDeviceID == nil reports
+// Capable=true rather than "no input device configured"):
+//
+//	len(tncEntries) > 0        → Capable=true, Reason=""
+//	ch.InputDeviceID == nil    → Capable=false, Reason="no input device configured"
+//	ch.OutputDeviceID == 0     → Capable=false, Reason="no output device configured"
+//	else                       → Capable=true, Reason=""
+//
+// Note: this treats any configured TNC-mode KISS interface as a usable
+// TX path regardless of its live state. "Live state" is a runtime
+// property (is the listener accepting? is the tcp-client connected?) and
+// churns on a timescale shorter than the operator's config loop; we
+// don't want editing a beacon to be blocked because a KISS server hasn't
+// come up yet. The dispatcher's at-TX-time snapshot is the authoritative
+// "is this deliverable right now" gate; TxCapability is the "is this
+// configured correctly" gate.
+func computeTxCapability(ch configstore.Channel, tncEntries []dto.ChannelKissTncEntry) dto.TxCapability {
+	if len(tncEntries) > 0 {
+		return dto.TxCapability{Capable: true}
+	}
+	if ch.InputDeviceID == nil {
+		return dto.TxCapability{Capable: false, Reason: dto.TxReasonNoInputDevice}
+	}
+	if ch.OutputDeviceID == 0 {
+		return dto.TxCapability{Capable: false, Reason: dto.TxReasonNoOutputDevice}
+	}
+	return dto.TxCapability{Capable: true}
+}
+
 // isKissLive reports whether a KISS interface State string represents
 // a currently-live backend (one that can accept TX). Phase 1 treats
 // "listening" as live (server-listen accepts new clients even with
@@ -245,15 +312,27 @@ func isKissLive(state string) bool {
 // updateChannel replaces the channel with the given id using the
 // request body and returns the persisted record.
 //
+// Referrer guard: before committing the write, the handler computes the
+// would-be post-mutation TxCapability and collects any existing
+// referrers (beacons, iGate TX/RF channel, digipeater rules, KISS
+// interfaces, RF filters, tx-timings) that point at the channel. If
+// the channel was TX-capable before the edit but would no longer be
+// after, the handler responds with 409 Conflict + the referrer list
+// unless the request carries ?force=true. This mirrors the cascade-
+// delete flow (see deleteChannel) so the UI can reuse its confirm
+// dialog.
+//
 // @Summary  Update channel
 // @Tags     channels
 // @ID       updateChannel
 // @Accept   json
 // @Produce  json
-// @Param    id   path     int                true "Channel id"
-// @Param    body body     dto.ChannelRequest true "Channel definition"
+// @Param    id    path     int                true "Channel id"
+// @Param    force query    bool               false "Force the update even if it would break existing TX referrers"
+// @Param    body  body     dto.ChannelRequest true "Channel definition"
 // @Success  200  {object} dto.ChannelResponse
 // @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  409  {object} ChannelReferrersResponse
 // @Failure  500  {object} webtypes.ErrorResponse
 // @Security CookieAuth
 // @Router   /channels/{id} [put]
@@ -263,16 +342,70 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid id")
 		return
 	}
-	handleUpdate[dto.ChannelRequest](s, w, r, "update channel", id,
-		func(ctx context.Context, id uint32, req dto.ChannelRequest) (configstore.Channel, error) {
-			m := req.ToUpdate(id)
-			if err := s.store.UpdateChannel(ctx, &m); err != nil {
-				return configstore.Channel{}, err
+	req, err := decodeJSON[dto.ChannelRequest](r)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	if err := req.Validate(); err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	ctx := r.Context()
+	force := r.URL.Query().Get("force") == "true"
+
+	// Referrer guard: compute the TxCapability before and after the edit
+	// and compare. Only the "was capable, would no longer be" transition
+	// blocks — if the channel is already broken, the referrers are
+	// already broken and this edit doesn't make things worse.
+	if !force {
+		existing, gerr := s.store.GetChannel(ctx, id)
+		if gerr == nil && existing != nil {
+			ifaces, ierr := s.store.ListKissInterfaces(ctx)
+			if ierr != nil {
+				s.internalError(w, r, "update channel: list kiss interfaces", ierr)
+				return
 			}
-			s.notifyBridgeReload(ctx)
-			return m, nil
-		},
-		dto.ChannelFromModel)
+			statuses := s.kissStatus()
+			modemLive := s.modemRunning()
+
+			before := computeChannelBacking(*existing, ifaces, statuses, modemLive).Tx
+			after := computeChannelBacking(req.ToUpdate(id), ifaces, statuses, modemLive).Tx
+
+			if before.Capable && !after.Capable {
+				refs, rerr := s.store.ChannelReferrers(ctx, id)
+				if rerr != nil {
+					s.internalError(w, r, "update channel: channel referrers", rerr)
+					return
+				}
+				if len(refs.Items) > 0 {
+					writeJSON(w, http.StatusConflict, ChannelReferrersResponse{
+						Error:     "channel update would break existing TX referrers: " + after.Reason,
+						Referrers: refs.Items,
+					})
+					return
+				}
+			}
+		}
+		// If GetChannel returned an error here we fall through to the
+		// store.UpdateChannel call below, which will surface the
+		// nonexistent-row error through the usual 500 path. We prefer
+		// not to 404 here because the existing contract for this
+		// endpoint doesn't 404 on missing ids (GORM .Save() inserts
+		// when the PK is absent); staying consistent with that.
+	}
+
+	m := req.ToUpdate(id)
+	if err := s.store.UpdateChannel(ctx, &m); err != nil {
+		if v := isValidationErr(err); v != nil {
+			badRequest(w, v.Error())
+			return
+		}
+		s.internalError(w, r, "update channel", err)
+		return
+	}
+	s.notifyBridgeReload(ctx)
+	writeJSON(w, http.StatusOK, dto.ChannelFromModel(m))
 }
 
 // ChannelReferrersResponse is the body returned by
@@ -281,7 +414,7 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 // Error field is populated only on the 409 path so the wire shape stays
 // stable between the two endpoints.
 type ChannelReferrersResponse struct {
-	Error     string                `json:"error,omitempty"`
+	Error     string                 `json:"error,omitempty"`
 	Referrers []configstore.Referrer `json:"referrers"`
 }
 

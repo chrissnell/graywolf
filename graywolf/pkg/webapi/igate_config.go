@@ -93,6 +93,19 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err.Error())
 		return
 	}
+	// TX-capability gate (plan D2): the tx_channel must actually be able
+	// to transmit. rf_channel is RX-only from the iGate's perspective,
+	// so don't gate it on TX-capability. The check is skipped when the
+	// iGate as a whole is disabled (Enabled=false) — per plan D3, a
+	// disabled referrer on a broken channel is harmless and the goal is
+	// to block silently-broken *active* config, not to trap operators
+	// in a modal while they're turning things off.
+	if req.Enabled {
+		if err := s.requireTxCapableChannel(ctx, "tx_channel", req.TxChannel); err != nil {
+			badRequest(w, err.Error())
+			return
+		}
+	}
 	m := req.ToModel()
 	if err := s.store.UpsertIGateConfig(ctx, &m); err != nil {
 		s.internalError(w, r, "upsert igate config", err)

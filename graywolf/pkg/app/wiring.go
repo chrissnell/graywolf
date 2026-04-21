@@ -98,14 +98,18 @@ func (a *App) wireServices(ctx context.Context) error {
 	// Phase 5 orphan scan: one-shot bootstrap check for soft-FK
 	// references that don't resolve (channels were deleted before the
 	// cascade logic landed, or a SQL shell surgery left dangling IDs).
-	// Logged at warn with {table, orphan_count}; no deletion or
-	// cleanup. Operators remediate via the cascade-delete UI. A probe
-	// error here (table missing on a pristine DB before AutoMigrate)
-	// is swallowed per-table in CountOrphanChannelRefs and not fatal.
-	if orphans, err := a.store.CountOrphanChannelRefs(ctx); err == nil {
-		for table, n := range orphans {
-			a.logger.Warn("orphaned channel references at startup",
-				"table", table, "orphan_count", n)
+	// Logged at warn per referrer table with the offending row ids and
+	// the distinct missing channel ids, so operators can locate the
+	// broken referrers without clicking through every list page (plan
+	// D6). No deletion or cleanup happens here; remediation is the
+	// cascade-delete UI. A probe error here (table missing on a
+	// pristine DB before AutoMigrate) is swallowed per-table in
+	// ListOrphanChannelRefs and not fatal.
+	if orphans, err := a.store.ListOrphanChannelRefs(ctx); err == nil {
+		for _, entry := range orphans {
+			a.logger.Warn("orphaned "+entry.Token+" referrers",
+				"ids", entry.RowIDs,
+				"missing_channels", entry.MissingChannelIDs)
 		}
 	} else {
 		// Nonsense for the whole scan to fail at bootstrap, but surface

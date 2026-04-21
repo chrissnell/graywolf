@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -53,6 +54,9 @@ func (s *Server) createBeacon(w http.ResponseWriter, r *http.Request) {
 	handleCreate[dto.BeaconRequest](s, w, r, "create beacon",
 		func(ctx context.Context, req dto.BeaconRequest) (configstore.Beacon, error) {
 			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
+				return configstore.Beacon{}, validationError(err)
+			}
+			if err := s.requireTxCapableChannel(ctx, "channel", req.Channel); err != nil {
 				return configstore.Beacon{}, validationError(err)
 			}
 			m := req.ToModel()
@@ -114,6 +118,9 @@ func (s *Server) updateBeacon(w http.ResponseWriter, r *http.Request) {
 	handleUpdate[dto.BeaconRequest](s, w, r, "update beacon", id,
 		func(ctx context.Context, id uint32, req dto.BeaconRequest) (configstore.Beacon, error) {
 			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
+				return configstore.Beacon{}, validationError(err)
+			}
+			if err := s.requireTxCapableChannel(ctx, "channel", req.Channel); err != nil {
 				return configstore.Beacon{}, validationError(err)
 			}
 			// Merge the request onto the existing row so a nil
@@ -213,4 +220,38 @@ func (s *Server) signalBeaconReload() {
 	case s.beaconReload <- struct{}{}:
 	default:
 	}
+}
+
+// requireTxCapableChannel rejects referrer writes (beacons / iGate
+// TX channel / digipeater from+to channels) whose channel exists but
+// is not currently TX-capable. Runs AFTER dto.ValidateChannelRef so
+// the "channel N does not exist" error still wins for typos; this
+// handler-level check surfaces the different failure mode ("channel
+// exists but cannot TX") with a distinct, actionable message.
+//
+// A channelID of 0 is treated as "none" — same convention as
+// ValidateChannelRef. Soft-FK columns that use 0 as the unset
+// sentinel (IGateConfig.TxChannel etc.) pass through unchanged.
+//
+// The returned error is intended to be wrapped in validationError()
+// by the caller so handleCreate / handleUpdate surface it as a 400.
+func (s *Server) requireTxCapableChannel(ctx context.Context, fieldName string, channelID uint32) error {
+	if channelID == 0 {
+		return nil
+	}
+	tx, found, err := s.resolveChannelTxCapability(ctx, channelID)
+	if err != nil {
+		return fmt.Errorf("%s: look up channel %d: %w", fieldName, channelID, err)
+	}
+	if !found {
+		// Caller's ValidateChannelRef should have caught this; a race
+		// between the two lookups is the only way to land here. Emit
+		// the same error text ValidateChannelRef would so the UI's
+		// handling is consistent.
+		return fmt.Errorf("%s: channel %d does not exist", fieldName, channelID)
+	}
+	if !tx.Capable {
+		return fmt.Errorf("%s: channel %d is not TX-capable: %s", fieldName, channelID, tx.Reason)
+	}
+	return nil
 }

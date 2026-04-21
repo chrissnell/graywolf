@@ -12,7 +12,13 @@
   import ChannelListbox from '../lib/components/ChannelListbox.svelte';
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels } from '../lib/stores/channels.svelte.js';
   import { getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
-  import { unboundWarning, SUMMARY_UNBOUND } from '../lib/channelBacking.js';
+  import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
+  import {
+    channelRefStatus,
+    buildChannelsById,
+    STATUS_OK,
+    STATUS_DELETED,
+  } from '../lib/channelRefStatus.js';
   import {
     PRIMARY_TABLE, ALTERNATE_TABLE, SPRITE_URLS, CELL_PX,
     backgroundPosition, loadSymbols, describe,
@@ -60,6 +66,11 @@
   // channelName() and the modal channel-defaulting code paths keep
   // working without changes.
   let channels = $derived(channelsStore.list);
+  // Map<id, channel> for O(1) list-card lookups via channelRefStatus.
+  // Rebuilt on every channelsStore poll, which is the desired
+  // behaviour -- the pill tracks the last polled state (plan D4 /
+  // "Risks & non-goals").
+  let channelsById = $derived(buildChannelsById(channels));
   let smartBeacon = $state({
     enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
     min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
@@ -96,17 +107,54 @@
       : 'Uses station callsign (not set)'
   );
 
-  // Unbound-channel warning (D17). Surfaces above the submit button
-  // when the selected channel has no backend attached so the
-  // operator knows the beacon will be accepted but silent.
-  let selectedBackingSummary = $derived.by(() => {
-    const n = parseInt(form.channel, 10);
-    const c = lookupChannel(n);
-    return c?.backing?.summary;
-  });
+  // TX-capability block (Phase 2, plan D3). Replaces the old
+  // non-blocking amber unbound-warning: when the currently-selected
+  // channel cannot TX, we show a danger callout and disable Save --
+  // except when the operator is editing an existing row that is
+  // being saved as `enabled=false`, in which case a disabled beacon
+  // on a broken channel is harmless and we don't trap them in the
+  // modal.
   let selectedChannelObj = $derived.by(() => {
     const n = parseInt(form.channel, 10);
     return lookupChannel(n);
+  });
+  let txBlock = $derived.by(() => {
+    const c = selectedChannelObj;
+    if (!c) return null;
+    const cap = c.backing?.tx;
+    if (cap?.capable) return null;
+    return { reason: cap?.reason || TX_REASON_FALLBACK };
+  });
+  // Escape hatch: editing an existing beacon that is being saved
+  // disabled means the broken channel won't be used until the
+  // operator re-enables the row, so Save is allowed. For new rows
+  // (editing === null) or edits that keep the row active, Save is
+  // blocked.
+  let txBlockAllowsSave = $derived(
+    !!editing && form.enabled === false,
+  );
+  let saveBlocked = $derived(!!txBlock && !txBlockAllowsSave);
+  const TX_CALLOUT_ID = 'bcn-tx-callout';
+  let calloutEl = $state(null);
+  // Scroll the callout into view on modal open when it's already
+  // active, so the user sees the block before reaching Save. One-shot
+  // per modal-open transition; tracked via a local previous-open
+  // latch inside the effect so it fires on the false -> true edge.
+  let prevModalOpen = false;
+  $effect(() => {
+    // Only track `modalOpen` in the reactive closure so this effect
+    // fires exactly on the false -> true modal-open transition. The
+    // txBlock / calloutEl reads below happen inside an untracked
+    // microtask so they don't re-trigger the effect.
+    const isOpen = modalOpen;
+    if (isOpen && !prevModalOpen) {
+      queueMicrotask(() => {
+        if (txBlock && calloutEl && typeof calloutEl.scrollIntoView === 'function') {
+          calloutEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+    }
+    prevModalOpen = isOpen;
   });
   let savingSB = $state(false);
   let pickerOpen = $state(false);
@@ -359,6 +407,18 @@
 {:else}
   <div class="beacon-grid">
     {#each beacons as b}
+      {@const refStatus = channelRefStatus(b.channel, channelsById)}
+      {@const broken = refStatus.status !== STATUS_OK}
+      {@const pillAriaLabel = broken
+        ? (refStatus.status === STATUS_DELETED
+            ? `Channel #${b.channel} deleted`
+            : `${refStatus.channel?.name ?? `Channel #${b.channel}`} unreachable: ${refStatus.reason}`)
+        : `Channel ${refStatus.channel?.name ?? `#${b.channel}`}`}
+      {@const pillTitle = broken
+        ? (refStatus.status === STATUS_DELETED
+            ? `Channel #${b.channel} deleted`
+            : `Unreachable: ${refStatus.reason}`)
+        : ''}
       <div class="beacon-card">
         <div class="beacon-header">
           <div class="beacon-identity">
@@ -388,9 +448,24 @@
           </div>
         </div>
 
-        <div class="beacon-channel">
-          <span class="channel-label">Channel</span>
-          <span class="channel-value">{channelName(b.channel)}</span>
+        <div class="beacon-channel" class:broken>
+          <span
+            class="channel-label"
+            class:danger={broken}
+            aria-label={pillAriaLabel}
+            title={pillTitle}
+          >
+            {#if refStatus.status === STATUS_DELETED}
+              Channel deleted
+            {:else if broken}
+              Unreachable: {refStatus.reason}
+            {:else}
+              Channel
+            {/if}
+          </span>
+          {#if refStatus.status !== STATUS_DELETED}
+            <span class="channel-value">{channelName(b.channel)}</span>
+          {/if}
         </div>
 
         <div class="beacon-details">
@@ -504,6 +579,7 @@
           bind:value={form.channel}
           valueType="string"
           channels={channels}
+          capabilityFilter={txPredicate}
         />
       </FormField>
       <FormField label="Callsign" id="bcn-call" error={callsignError}>
@@ -591,14 +667,30 @@
       <Toggle bind:checked={form.send_to_aprs_is} label="Also send to APRS-IS" />
     </div>
   </div>
-  {#if selectedBackingSummary === SUMMARY_UNBOUND}
-    <div class="unbound-warning" role="note">
-      {unboundWarning(selectedChannelObj)}
+  {#if txBlock}
+    <div
+      bind:this={calloutEl}
+      id={TX_CALLOUT_ID}
+      class="tx-block-callout"
+      class:disabled-ok={txBlockAllowsSave}
+      role="alert"
+    >
+      <strong>Channel not TX-capable:</strong> {txBlock.reason}.
+      {#if txBlockAllowsSave}
+        Save allowed because this beacon is disabled.
+      {:else}
+        Pick a different channel or fix the channel's backend on the Channels page before saving.
+      {/if}
     </div>
   {/if}
   <div class="modal-actions">
     <Button onclick={() => modalOpen = false}>Cancel</Button>
-    <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
+    <Button
+      variant="primary"
+      onclick={handleSave}
+      disabled={saveBlocked}
+      aria-describedby={txBlock ? TX_CALLOUT_ID : undefined}
+    >{editing ? 'Save' : 'Create'}</Button>
   </div>
 </Modal>
 
@@ -694,6 +786,30 @@
     padding: 2px 6px;
     border-radius: 3px;
     flex-shrink: 0;
+  }
+  /* Danger variant of the channel-name-strip pill (Phase 3 / plan D4).
+     Swaps in when the referenced channel is either orphaned (not
+     present in channelsStore) or present-but-not-TX-capable. Uses the
+     same chonky-ui danger tokens as the Phase 2 form callouts so the
+     visual language is consistent across surfaces. The label text
+     itself carries the semantic meaning ("Unreachable" /
+     "Channel deleted") so colour alone is not doing the work --
+     WCAG 1.4.1. */
+  .channel-label.danger {
+    color: var(--color-danger, #f85149);
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.15));
+    /* The reason string can be long; let it wrap onto a second line
+       rather than overflow the strip, so sighted operators see the
+       cause inline without hovering. */
+    white-space: normal;
+    max-width: 100%;
+  }
+  /* When broken, the strip's background contrast with a danger pill
+     is distracting; drop the background so the pill reads as the
+     focal element. */
+  .beacon-channel.broken {
+    background: transparent;
+    align-items: flex-start;
   }
   .channel-value {
     font-size: 13px;
@@ -915,18 +1031,27 @@
     color: var(--text-muted, var(--color-text-muted, #888));
   }
 
-  /* D17 — unbound-channel save warning. Non-blocking; matches the
-     amber-bordered callout used elsewhere in the app so it reads as
-     a caution, not an error. */
-  .unbound-warning {
+  /* Phase 2 — TX-capability blocking callout. Replaces the prior
+     amber .unbound-warning. Uses the chonky-ui danger tokens
+     (--color-danger, --color-danger-muted) so it reads as "this is
+     a problem, not just a caution". role="alert" on the element
+     itself means screen readers announce it when it appears. When
+     the escape hatch applies (editing a disabled row), we soften
+     the visual treatment to amber so the operator understands Save
+     is still available. */
+  .tx-block-callout {
     margin: 12px 0 0 0;
     padding: 10px 12px;
-    border: 1px solid var(--color-warning, #d4a72c);
+    border: 1px solid var(--color-danger, #f85149);
     border-left-width: 4px;
     border-radius: 4px;
-    background: var(--color-warning-bg, rgba(212, 167, 44, 0.12));
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.12));
     color: var(--text-primary, inherit);
     font-size: 13px;
     line-height: 1.45;
+  }
+  .tx-block-callout.disabled-ok {
+    border-color: var(--color-warning, #d29922);
+    background: var(--color-warning-muted, rgba(210, 153, 34, 0.15));
   }
 </style>

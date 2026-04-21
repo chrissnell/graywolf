@@ -269,6 +269,148 @@ func TestKissInterface_RejectsOrphanChannel(t *testing.T) {
 	}
 }
 
+// TestUpdateChannel_409WhenMutationBreaksReferrers covers the Phase-1
+// channel-PUT referrer guard: mutating a TX-capable channel into a
+// non-TX-capable state while beacons / iGate / digi refer to it is
+// rejected with 409 + referrer list, and the channel row must be
+// unchanged after the rejection.
+func TestUpdateChannel_409WhenMutationBreaksReferrers(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+
+	// Seed channel id=1 is TX-capable (input + output devices).
+	// Seed a beacon on it so the channel has a real referrer.
+	if err := srv.store.CreateBeacon(ctx, &configstore.Beacon{
+		Channel: 1, Callsign: "REF", Type: "position", Enabled: true, EverySeconds: 1800,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now PUT the channel with OutputDeviceID=0 (input stays but output
+	// clears) so post-mutation TX-capability drops to false with
+	// "no output device configured".
+	body := `{
+		"name": "rx0",
+		"input_device_id": 1,
+		"output_device_id": 0,
+		"modem_type": "afsk",
+		"bit_rate": 1200,
+		"mark_freq": 1200,
+		"space_freq": 2200,
+		"profile": "A",
+		"num_slicers": 1,
+		"fix_bits": "none"
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/1", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp ChannelReferrersResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == "" {
+		t.Errorf("expected populated Error on 409, got empty")
+	}
+	if len(resp.Referrers) == 0 {
+		t.Errorf("expected referrers list, got empty")
+	}
+	// Channel row must be unchanged (OutputDeviceID still non-zero).
+	got, err := srv.store.GetChannel(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OutputDeviceID == 0 {
+		t.Errorf("expected OutputDeviceID unchanged, got 0 — mutation leaked despite 409")
+	}
+}
+
+// TestUpdateChannel_ForceBypassesReferrerGuard covers the ?force=true
+// escape hatch: the same mutation that returned 409 above succeeds
+// when the operator explicitly opts in. Consistent with how
+// ?cascade=true works on DELETE.
+func TestUpdateChannel_ForceBypassesReferrerGuard(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+
+	if err := srv.store.CreateBeacon(ctx, &configstore.Beacon{
+		Channel: 1, Callsign: "REF", Type: "position", Enabled: true, EverySeconds: 1800,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{
+		"name": "rx0",
+		"input_device_id": 1,
+		"output_device_id": 0,
+		"modem_type": "afsk",
+		"bit_rate": 1200,
+		"mark_freq": 1200,
+		"space_freq": 2200,
+		"profile": "A",
+		"num_slicers": 1,
+		"fix_bits": "none"
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/1?force=true", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with force=true, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got, err := srv.store.GetChannel(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OutputDeviceID != 0 {
+		t.Errorf("expected OutputDeviceID=0 after force update, got %d", got.OutputDeviceID)
+	}
+}
+
+// TestUpdateChannel_NoOpOnAlreadyBrokenChannel covers the guard's
+// transition semantics: if the channel was already non-TX-capable
+// before the edit (so referrers are already broken), a mutation that
+// keeps it non-TX-capable should not 409 — the channel is already in
+// the bad state.
+func TestUpdateChannel_NoOpOnAlreadyBrokenChannel(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+
+	// Start by forcing the seed channel into a non-TX-capable state via
+	// ?force=true so the "before" state is already broken. This also
+	// seeds a beacon on it to stand in for a referrer.
+	if err := srv.store.CreateBeacon(ctx, &configstore.Beacon{
+		Channel: 1, Callsign: "REF", Type: "position", Enabled: true, EverySeconds: 1800,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	setup := `{"name":"rx0","input_device_id":1,"output_device_id":0,"modem_type":"afsk","bit_rate":1200,"mark_freq":1200,"space_freq":2200,"profile":"A","num_slicers":1,"fix_bits":"none"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/1?force=true", strings.NewReader(setup))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup PUT failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Now PUT again (still broken) — no ?force=true. Should succeed
+	// because the transition is "broken -> broken", not "capable -> broken".
+	req2 := httptest.NewRequest(http.MethodPut, "/api/channels/1", strings.NewReader(setup))
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for broken->broken edit, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+}
+
 // TestIGateFilter_RejectsOrphanChannel covers the POST /api/igate/filters
 // handler path.
 func TestIGateFilter_RejectsOrphanChannel(t *testing.T) {

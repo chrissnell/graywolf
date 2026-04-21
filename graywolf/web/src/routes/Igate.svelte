@@ -11,7 +11,13 @@
   import StationCallsignBanner from '../components/StationCallsignBanner.svelte';
   import ChannelListbox from '../lib/components/ChannelListbox.svelte';
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels, getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
-  import { unboundWarning, SUMMARY_UNBOUND } from '../lib/channelBacking.js';
+  import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
+  import {
+    channelRefStatus,
+    buildChannelsById,
+    STATUS_OK,
+    STATUS_DELETED,
+  } from '../lib/channelRefStatus.js';
   import { isStationCallsignMissing } from '../lib/callsign.js';
 
   let activeTab = $state('config');
@@ -39,11 +45,50 @@
   // validation matrix above); the ChannelListbox honors that via
   // valueType="number".
   let channels = $derived(channelsStore.list);
-  // D17 — unbound save warning for the iGate TX channel picker.
+  // Map<id, channel> powering the list-card-style TX-channel pill on
+  // the Connection tab (plan D4). Rebuilt per poll; lag is acceptable
+  // per plan "Risks & non-goals".
+  let channelsById = $derived(buildChannelsById(channels));
+  // Summary-pill status for the saved TX channel. Surfaced on the
+  // Connection tab (not the filters tab -- Phase 2 already covers
+  // that via the picker + callout). A broken pill here makes the
+  // problem visible without forcing operators to switch tabs.
+  let txChannelRefStatus = $derived(channelRefStatus(form.tx_channel, channelsById));
+  let txChannelBroken = $derived(txChannelRefStatus.status !== STATUS_OK);
+  // TX-capability block (Phase 2, plan D3). Replaces the prior
+  // amber unbound warning: when the selected TX channel is not
+  // TX-capable, show a danger callout and disable Save. The escape
+  // hatch for iGate is the master `Enabled` toggle -- if the
+  // iGate is being saved with enabled=false, the broken TX channel
+  // is harmless and Save is allowed.
   let selectedTxChannel = $derived(lookupChannel(form.tx_channel));
-  let txUnbound = $derived(
-    selectedTxChannel?.backing?.summary === SUMMARY_UNBOUND,
-  );
+  let txBlock = $derived.by(() => {
+    const c = selectedTxChannel;
+    if (!c) return null;
+    const cap = c.backing?.tx;
+    if (cap?.capable) return null;
+    return { reason: cap?.reason || TX_REASON_FALLBACK };
+  });
+  let txBlockAllowsSave = $derived(form.enabled === false);
+  let saveBlocked = $derived(!!txBlock && !txBlockAllowsSave);
+  const TX_CALLOUT_ID = 'igate-tx-callout';
+  let calloutEl = $state(null);
+  // Scroll the callout into view on the filters-tab activation edge
+  // when txBlock is already present, so operators landing on the tab
+  // from a link don't miss the block. One-shot per tab-activation
+  // transition via a local latch.
+  let prevFiltersActive = false;
+  $effect(() => {
+    const active = activeTab === 'filters';
+    if (active && !prevFiltersActive) {
+      queueMicrotask(() => {
+        if (txBlock && calloutEl && typeof calloutEl.scrollIntoView === 'function') {
+          calloutEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+    }
+    prevFiltersActive = active;
+  });
 
   // Filters state
   let filters = $state([]);
@@ -413,6 +458,50 @@
         </span>
         <a class="station-row-link" href="#/callsign">[Change]</a>
       </div>
+      <!-- TX-channel summary pill (Phase 3 / plan D4). Surfaces the
+           broken state of the saved tx_channel on the Connection tab
+           so operators see the problem without switching to the
+           filters tab. OK state renders the blue "TX channel" info
+           pill; orphan or unreachable state swaps to the danger
+           variant. aria-label carries the numeric FK for the
+           deleted case so screen readers announce which channel is
+           missing -- sighted users see "Channel deleted" without the
+           integer. -->
+      {#if form.tx_channel != null}
+        {@const s = txChannelRefStatus}
+        {@const txName = s.channel?.name}
+        {@const pillAriaLabel = txChannelBroken
+          ? (s.status === STATUS_DELETED
+              ? `Channel #${form.tx_channel} deleted`
+              : `${txName ?? `Channel #${form.tx_channel}`} unreachable: ${s.reason}`)
+          : `TX channel ${txName ?? `#${form.tx_channel}`}`}
+        {@const pillTitle = txChannelBroken
+          ? (s.status === STATUS_DELETED
+              ? `Channel #${form.tx_channel} deleted`
+              : `Unreachable: ${s.reason}`)
+          : ''}
+        <div class="tx-channel-row" class:broken={txChannelBroken}>
+          <span
+            class="tx-channel-pill"
+            class:danger={txChannelBroken}
+            aria-label={pillAriaLabel}
+            title={pillTitle}
+          >
+            {#if s.status === STATUS_DELETED}
+              Channel deleted
+            {:else if txChannelBroken}
+              Unreachable: {s.reason}
+            {:else}
+              TX channel
+            {/if}
+          </span>
+          {#if s.status !== STATUS_DELETED}
+            <span class="tx-channel-value">
+              {txName ?? `Channel #${form.tx_channel}`}
+            </span>
+          {/if}
+        </div>
+      {/if}
       <Toggle
         bind:checked={form.enabled}
         label="Enable iGate"
@@ -464,16 +553,33 @@
             valueType="number"
             channels={channels}
             ariaLabelledBy={describedBy}
+            capabilityFilter={txPredicate}
           />
         {/snippet}
       </FormField>
-      {#if txUnbound && selectedTxChannel}
-        <div class="unbound-warning" role="note">
-          {unboundWarning(selectedTxChannel)}
+      {#if txBlock}
+        <div
+          bind:this={calloutEl}
+          id={TX_CALLOUT_ID}
+          class="tx-block-callout"
+          class:disabled-ok={txBlockAllowsSave}
+          role="alert"
+        >
+          <strong>TX channel not TX-capable:</strong> {txBlock.reason}.
+          {#if txBlockAllowsSave}
+            Save allowed because the iGate is disabled.
+          {:else}
+            Pick a different channel or fix the channel's backend on the Channels page before saving.
+          {/if}
         </div>
       {/if}
       <div class="form-actions">
-        <Button variant="primary" type="submit" disabled={loading}>
+        <Button
+          variant="primary"
+          type="submit"
+          disabled={loading || saveBlocked}
+          aria-describedby={txBlock ? TX_CALLOUT_ID : undefined}
+        >
           {loading ? 'Saving...' : 'Save'}
         </Button>
       </div>
@@ -718,17 +824,27 @@
     border-radius: 3px;
   }
 
-  /* D17 — unbound-channel save warning on the TX channel picker. */
-  .unbound-warning {
+  /* Phase 2 — TX-capability blocking callout on the TX channel
+     picker. Replaces the prior amber .unbound-warning. Uses chonky-ui
+     danger tokens so the "you cannot save this" state is visually
+     distinct from the amber cautions elsewhere on the page. When the
+     iGate is being saved as disabled (escape hatch), downshift to the
+     amber tokens so operators understand the save is actually
+     allowed despite the channel being broken. */
+  .tx-block-callout {
     margin: 12px 0;
     padding: 10px 12px;
-    border: 1px solid var(--color-warning, #d4a72c);
+    border: 1px solid var(--color-danger, #f85149);
     border-left-width: 4px;
     border-radius: 4px;
-    background: var(--color-warning-bg, rgba(212, 167, 44, 0.12));
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.15));
     color: var(--text-primary);
     font-size: 13px;
     line-height: 1.45;
+  }
+  .tx-block-callout.disabled-ok {
+    border-color: var(--color-warning, #d29922);
+    background: var(--color-warning-muted, rgba(210, 153, 34, 0.15));
   }
 
   /* Station-callsign discoverability row (Phase 4B). Read-only echo of
@@ -763,6 +879,43 @@
   .station-row-link:hover,
   .station-row-link:focus-visible {
     text-decoration: underline;
+  }
+
+  /* TX-channel summary pill on the Connection tab (Phase 3 / plan D4).
+     Shapes itself like the .station-row above so the two sit in a
+     consistent info strip, then swaps to chonky-ui danger tokens
+     when the referenced channel is orphaned or not TX-capable. */
+  .tx-channel-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: var(--text-primary);
+    flex-wrap: wrap;
+  }
+  .tx-channel-pill {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--color-info);
+    background: var(--color-info-muted);
+    padding: 2px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .tx-channel-pill.danger {
+    color: var(--color-danger, #f85149);
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.15));
+    white-space: normal;
+  }
+  .tx-channel-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* When the station callsign is missing, the Enable toggle is

@@ -137,6 +137,22 @@ func (s *Server) createDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 			if err := dto.ValidateChannelRef(ctx, s.store, "to_channel", req.ToChannel); err != nil {
 				return configstore.DigipeaterRule{}, validationError(err)
 			}
+			// TX-capability gate (plan D2): both from_channel and
+			// to_channel must be TX-capable — a digipeater rule without
+			// a usable to_channel silently drops every matched frame,
+			// and from_channel needs TX too because a same-channel
+			// rule loops back out the same modem. Gate runs only when
+			// the rule is enabled so operators can stage broken rules
+			// under Enabled=false while they reshape their channel
+			// config (plan D3 escape hatch).
+			if req.Enabled {
+				if err := s.requireTxCapableChannel(ctx, "from_channel", req.FromChannel); err != nil {
+					return configstore.DigipeaterRule{}, validationError(err)
+				}
+				if err := s.requireTxCapableChannel(ctx, "to_channel", req.ToChannel); err != nil {
+					return configstore.DigipeaterRule{}, validationError(err)
+				}
+			}
 			m := req.ToModel()
 			if err := s.store.CreateDigipeaterRule(ctx, &m); err != nil {
 				return configstore.DigipeaterRule{}, err
@@ -175,6 +191,22 @@ func (s *Server) updateDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := dto.ValidateChannelRef(ctx, s.store, "to_channel", req.ToChannel); err != nil {
 				return configstore.DigipeaterRule{}, validationError(err)
+			}
+			// TX-capability gate (plan D2): both from_channel and
+			// to_channel must be TX-capable — a digipeater rule without
+			// a usable to_channel silently drops every matched frame,
+			// and from_channel needs TX too because a same-channel
+			// rule loops back out the same modem. Gate runs only when
+			// the rule is enabled so operators can stage broken rules
+			// under Enabled=false while they reshape their channel
+			// config (plan D3 escape hatch).
+			if req.Enabled {
+				if err := s.requireTxCapableChannel(ctx, "from_channel", req.FromChannel); err != nil {
+					return configstore.DigipeaterRule{}, validationError(err)
+				}
+				if err := s.requireTxCapableChannel(ctx, "to_channel", req.ToChannel); err != nil {
+					return configstore.DigipeaterRule{}, validationError(err)
+				}
 			}
 			m := req.ToUpdate(id)
 			if err := s.store.UpdateDigipeaterRule(ctx, &m); err != nil {

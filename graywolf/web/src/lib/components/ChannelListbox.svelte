@@ -25,6 +25,13 @@
   //   - disabled: match the underlying form-control disabled rules.
   //   - ariaLabel / ariaLabelledBy: fall-through accessibility hooks.
   //   - onChange: optional callback fired after selection.
+  //   - capabilityFilter: (channel) => { ok, reason } predicate that
+  //     disables (does not hide) options that fail the check. Phase 2
+  //     uses this with `txPredicate` so non-TX-capable channels show
+  //     up in the list — the operator editing an existing broken row
+  //     needs to see their previous choice and why it's invalid — but
+  //     can't be selected, are skipped in keyboard nav, and are
+  //     excluded from typeahead. Default: always-ok.
   //
   // The listbox is controlled: parent owns `value`, we call bindable.
 
@@ -41,6 +48,7 @@
     ariaLabelledBy = undefined,
     placeholder = 'Select a channel',
     onChange = undefined,
+    capabilityFilter = () => ({ ok: true, reason: '' }),
   } = $props();
 
   // Coerce value for comparison. Native handling: accept both string
@@ -61,6 +69,49 @@
   let triggerEl = $state(null);
   let listEl = $state(null);
 
+  // Precompute the capability verdict per option so every consumer
+  // (render, nav, typeahead, commit, aria) reads the same verdict —
+  // no drift, no re-evaluating in each code path.
+  let capability = $derived(
+    channels.map((c) => {
+      const v = capabilityFilter(c) || { ok: true, reason: '' };
+      return { ok: !!v.ok, reason: v.reason || '' };
+    }),
+  );
+
+  function isEnabled(idx) {
+    return !!capability[idx]?.ok;
+  }
+
+  // Step the active row in `dir` (±1) skipping disabled options.
+  // Returns the next enabled index in that direction, or `fromIdx`
+  // unchanged if every option ahead is disabled (so the caret doesn't
+  // wrap past the ends and doesn't jump into a dead cell).
+  function stepIdx(fromIdx, dir) {
+    if (channels.length === 0) return fromIdx;
+    let i = fromIdx + dir;
+    while (i >= 0 && i < channels.length) {
+      if (isEnabled(i)) return i;
+      i += dir;
+    }
+    return fromIdx;
+  }
+
+  // First / last enabled index for Home / End. Falls back to the
+  // current activeIdx if every option is disabled.
+  function firstEnabledIdx() {
+    for (let i = 0; i < channels.length; i += 1) {
+      if (isEnabled(i)) return i;
+    }
+    return activeIdx;
+  }
+  function lastEnabledIdx() {
+    for (let i = channels.length - 1; i >= 0; i -= 1) {
+      if (isEnabled(i)) return i;
+    }
+    return activeIdx;
+  }
+
   // Typeahead buffer.
   let typeBuf = $state('');
   let typeTimer = null;
@@ -70,9 +121,11 @@
     typeTimer = setTimeout(() => {
       typeBuf = '';
     }, 500);
-    // Find first option whose name starts with the buffer.
-    const idx = channels.findIndex((c) =>
-      (c.name || '').toLowerCase().startsWith(typeBuf),
+    // Find first enabled option whose name starts with the buffer.
+    // Disabled options are excluded: typeahead should land the user
+    // on something they can actually commit.
+    const idx = channels.findIndex(
+      (c, i) => isEnabled(i) && (c.name || '').toLowerCase().startsWith(typeBuf),
     );
     if (idx !== -1) {
       activeIdx = idx;
@@ -92,8 +145,15 @@
   function openList() {
     if (disabled) return;
     open = true;
-    // Start focus on the currently selected row, or the first row.
-    activeIdx = currentIdx >= 0 ? currentIdx : 0;
+    // Start focus on the currently selected row if it's enabled,
+    // otherwise the first enabled row, otherwise the first row (so
+    // the caret is somewhere even if every option is broken).
+    if (currentIdx >= 0 && isEnabled(currentIdx)) {
+      activeIdx = currentIdx;
+    } else {
+      const f = firstEnabledIdx();
+      activeIdx = f >= 0 ? f : (channels.length > 0 ? 0 : -1);
+    }
     // Scroll into view after the popup mounts.
     queueMicrotask(scrollActiveIntoView);
   }
@@ -107,6 +167,10 @@
   function commit(idx) {
     const c = channels[idx];
     if (!c) return;
+    // Disabled options cannot be committed. No state change, no
+    // onchange fire — just bail. The trigger stays open so the user
+    // can pick a different row.
+    if (!isEnabled(idx)) return;
     value = emitValue(c.id);
     onChange?.(c);
     closeList({ focusTrigger: true });
@@ -141,22 +205,22 @@
     switch (ev.key) {
       case 'ArrowDown':
         ev.preventDefault();
-        activeIdx = Math.min(channels.length - 1, activeIdx + 1);
+        activeIdx = stepIdx(activeIdx, 1);
         scrollActiveIntoView();
         break;
       case 'ArrowUp':
         ev.preventDefault();
-        activeIdx = Math.max(0, activeIdx - 1);
+        activeIdx = stepIdx(activeIdx, -1);
         scrollActiveIntoView();
         break;
       case 'Home':
         ev.preventDefault();
-        activeIdx = 0;
+        activeIdx = firstEnabledIdx();
         scrollActiveIntoView();
         break;
       case 'End':
         ev.preventDefault();
-        activeIdx = channels.length - 1;
+        activeIdx = lastEnabledIdx();
         scrollActiveIntoView();
         break;
       case 'Enter':
@@ -205,6 +269,20 @@
   let activeDescendant = $derived(
     open && activeIdx >= 0 ? optionId(activeIdx) : undefined,
   );
+
+  // Build a per-option aria-label that includes the reason when the
+  // option is disabled so screen readers announce e.g. "Channel 3,
+  // VHF, no output device configured, unavailable" via
+  // aria-activedescendant during keyboard nav.
+  function optionAriaLabel(c, idx) {
+    const base = rowAriaLabel(c);
+    const cap = capability[idx];
+    if (cap && !cap.ok) {
+      const r = cap.reason ? cap.reason + ', ' : '';
+      return `${base}, ${r}unavailable`;
+    }
+    return base;
+  }
 </script>
 
 <div class="channel-listbox" class:disabled>
@@ -243,7 +321,7 @@
       onkeydown={onListKey}
     >
       {#if channels.length === 0}
-        <li class="empty" role="option" aria-disabled="true">
+        <li class="empty" role="option" aria-selected="false" aria-disabled="true">
           No channels configured
         </li>
       {:else}
@@ -260,13 +338,24 @@
             class="option"
             class:active={activeIdx === idx}
             class:selected={currentIdx === idx}
+            class:unavailable={!capability[idx]?.ok}
             role="option"
             aria-selected={currentIdx === idx}
-            aria-label={rowAriaLabel(c)}
-            onmouseenter={() => (activeIdx = idx)}
+            aria-disabled={!capability[idx]?.ok ? 'true' : undefined}
+            aria-label={optionAriaLabel(c, idx)}
+            onmouseenter={() => {
+              // Honour the skip-in-nav rule on mouse hover too, so
+              // arrow-key position doesn't teleport to a disabled row
+              // on accidental mouse movement.
+              if (isEnabled(idx)) activeIdx = idx;
+            }}
             onclick={() => commit(idx)}
           >
-            <ChannelOption channel={c} />
+            <ChannelOption
+              channel={c}
+              unavailable={!capability[idx]?.ok}
+              unavailableReason={capability[idx]?.reason ?? ''}
+            />
           </li>
         {/each}
       {/if}
@@ -337,6 +426,21 @@
   }
   .option.selected {
     background: var(--color-info-muted, rgba(70, 130, 255, 0.12));
+  }
+  /* Disabled-but-visible option styling. Matches chonky-ui's
+     .listbox-item[aria-disabled="true"] token (opacity 0.4,
+     cursor not-allowed) — but override the .option :hover /
+     .option.active background so the row doesn't flash highlighted
+     when the mouse drifts over it. The operator needs to see that
+     the row is there (and why it's unselectable) without being
+     invited to click it. */
+  .option.unavailable {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .option.unavailable:hover,
+  .option.unavailable.active {
+    background: transparent;
   }
   .empty {
     padding: 10px 12px;

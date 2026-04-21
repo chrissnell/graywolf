@@ -45,6 +45,25 @@
   let deleteNameMatches = $derived(
     deleteTarget != null && deleteNameInput.trim() === deleteTarget.name
   );
+
+  // Phase 3 -- channel PUT 409 confirm-and-force flow. Mirrors the
+  // stage-1 impact dialog above: show the list of referrers that
+  // would break if the mutation proceeded, let the operator cancel
+  // or confirm, and on confirm retry the PUT with ?force=true
+  // (same wire convention as ?cascade=true on DELETE).
+  //
+  // No typed-name gate here. A PUT that breaks referrers is
+  // recoverable (the operator can edit again). A DELETE is not --
+  // that's why the delete flow carries the stronger gate. The
+  // referrer list itself is the confirmation surface.
+  let putConfirmOpen = $state(false);
+  let putReferrers = $state([]);
+  let putPendingPayload = $state(null);
+  let putPendingId = $state(null);
+  let putServerError = $state('');
+  let putInFlight = $state(false);
+  let putGroups = $derived(groupReferrers(putReferrers));
+  let putTotal = $derived(totalReferrers(putReferrers));
   // channel_type is a UI-only enum that drives the segmented picker
   // (D11). It is NOT serialized; the wire shape is still
   // input_device_id (nullable). 'modem' keeps all existing behavior;
@@ -215,10 +234,23 @@
   async function handleSave() {
     if (!validate()) return;
     const data = buildPayload();
+    await persistSave(data, { force: false });
+  }
+
+  // persistSave runs the actual PUT/POST + follow-up tx-timing save.
+  // Factored out of handleSave so the Phase 3 409-force retry path
+  // can reuse it without duplicating the tx-timing / modal-close /
+  // reload dance. `force` adds ?force=true to the PUT query when
+  // true; backend treats that as "I know this breaks referrers,
+  // proceed anyway" (Phase 1 handoff).
+  async function persistSave(data, { force }) {
     try {
       let channelId;
       if (editing) {
-        await api.put(`/channels/${editing.id}`, data);
+        const path = force
+          ? `/channels/${editing.id}?force=true`
+          : `/channels/${editing.id}`;
+        await api.put(path, data);
         channelId = editing.id;
         toasts.success('Channel updated');
       } else {
@@ -243,8 +275,63 @@
       modalOpen = false;
       await Promise.all([loadChannels(), loadTxTimings()]);
     } catch (err) {
+      // Phase 3 -- PUT 409 with referrers means the mutation would
+      // break active config. Reuse the DELETE-cascade referrer-
+      // grouping UI (channelReferrers.js) for consistency; the only
+      // difference is the copy and the action (force vs cascade).
+      // POST / non-409 paths fall through to the toast.
+      if (
+        editing &&
+        !force &&
+        err instanceof ApiError &&
+        err.status === 409 &&
+        Array.isArray(err.body?.referrers)
+      ) {
+        putReferrers = err.body.referrers;
+        putPendingPayload = data;
+        putPendingId = editing.id;
+        putServerError = err.body?.error || err.message || '';
+        putConfirmOpen = true;
+        return;
+      }
       toasts.error(err.message);
     }
+  }
+
+  // Called from the confirm dialog's Action button when the
+  // operator acknowledges the referrer list and chooses to proceed.
+  async function confirmForcePut() {
+    if (!putPendingPayload || !putPendingId) return;
+    const data = putPendingPayload;
+    putInFlight = true;
+    try {
+      // editing can get cleared by other code paths; re-affirm it
+      // from the id we captured when the 409 landed so the retry
+      // routes to the correct row.
+      const targetId = putPendingId;
+      if (editing?.id !== targetId) {
+        editing = channels.find((c) => c.id === targetId) || editing;
+      }
+      await persistSave(data, { force: true });
+    } finally {
+      putInFlight = false;
+      putConfirmOpen = false;
+      putReferrers = [];
+      putPendingPayload = null;
+      putPendingId = null;
+      putServerError = '';
+    }
+  }
+
+  // Cancel path: drop the pending payload and leave the edit modal
+  // as-is. The operator's form state is preserved so they can
+  // adjust the channel config and try again.
+  function cancelForcePut() {
+    putConfirmOpen = false;
+    putReferrers = [];
+    putPendingPayload = null;
+    putPendingId = null;
+    putServerError = '';
   }
 
   // D11: edit-time type conversion is modeled as delete + create.
@@ -671,6 +758,49 @@
   </AlertDialog.Content>
 </AlertDialog>
 
+<!-- Phase 3 -- channel PUT 409 "force" confirmation. Mirrors the
+     stage-1 delete impact dialog above (same AlertDialog shape, same
+     groupReferrers() rendering) but the Action retries the PUT with
+     ?force=true instead of cascading a delete. No typed-name gate:
+     a broken-referrer PUT is recoverable by editing again. -->
+<AlertDialog bind:open={putConfirmOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>Update channel and break references?</AlertDialog.Title>
+    <AlertDialog.Description>
+      This channel update would break the following active config.
+      {#if putServerError}
+        <span class="put-error-reason">Reason: {putServerError}</span>
+      {/if}
+    </AlertDialog.Description>
+    <ul class="referrer-groups">
+      {#each putGroups as g (g.type)}
+        <li>
+          <strong>{g.items.length} {g.label}</strong>{#if g.items.some((i) => i.name)}:
+            <span class="referrer-items">
+              {#each g.items as item, idx (item.id)}{idx > 0 ? ', ' : ''}{item.name || `#${item.id}`}{/each}
+            </span>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+    <p class="put-force-note">
+      Saving will apply the change anyway. The referrers listed above
+      will remain in the database but may fail to transmit until you
+      fix them on their respective pages.
+    </p>
+    <div class="modal-footer">
+      <AlertDialog.Cancel onclick={cancelForcePut}>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action
+        class="danger-action"
+        onclick={confirmForcePut}
+        disabled={putInFlight}
+      >
+        Save channel and break {putTotal} reference{putTotal === 1 ? '' : 's'}
+      </AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
+
 <!-- Convert-type confirmation (D11).
      Conversion is a delete + create, not an in-place rewrite, because
      the backend validator forbids mutating a channel's backing shape
@@ -1056,5 +1186,22 @@
   :global(.secondary-action) {
     background: var(--bg-tertiary) !important;
     color: var(--text-primary) !important;
+  }
+
+  /* Phase 3 -- channel PUT 409 confirm dialog copy. Inline "Reason:"
+     clause reflects the server's concrete explanation (e.g. "no
+     output device configured") so the operator sees why the
+     mutation breaks referrers without guessing. */
+  .put-error-reason {
+    display: block;
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--color-danger, #f85149);
+  }
+  .put-force-note {
+    margin: 12px 1.5rem 0 1.5rem;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
   }
 </style>

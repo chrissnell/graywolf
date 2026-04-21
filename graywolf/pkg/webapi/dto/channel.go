@@ -120,12 +120,52 @@ type ChannelResponse struct {
 //
 // Health is one of "live" (≥1 backend instance is up), "down" (backends
 // exist but all are down), or "unbound" (no backend configured).
+//
+// Tx is the channel's TX-capability signal used by the beacon / iGate /
+// digipeater picker predicate and by the server-side referrer validator.
+// It is derived from the same underlying fields as Summary + Health but
+// answers a different question: "can a frame submitted on this channel
+// actually be transmitted?" See TxCapability's contract for the
+// single-branch decision rule and the Reason invariant.
 type ChannelBacking struct {
 	Modem   ChannelModemBacking   `json:"modem"`
 	KissTnc []ChannelKissTncEntry `json:"kiss_tnc"`
 	Summary string                `json:"summary"`
 	Health  string                `json:"health"`
+	Tx      TxCapability          `json:"tx"`
 }
+
+// TxCapability reports whether a channel can currently transmit.
+//
+// Capable is true when the channel has at least one usable TX path:
+//   - ≥ 1 TNC-mode KissInterface attached (the KISS path short-circuits
+//     first, so a KISS-only channel with InputDeviceID == nil still
+//     reports Capable=true, not "no input device configured"), OR
+//   - a modem backing with both InputDeviceID != nil AND
+//     OutputDeviceID != 0 (the zero-sentinel on OutputDeviceID marks
+//     RX-only modem configs; those cannot TX even though
+//     Backing.Summary is "modem").
+//
+// Reason is a short human-legible explanation of why Capable is false
+// (e.g. "no input device configured", "no output device configured").
+//
+// Contract: Reason is the empty string if and only if Capable == true.
+// Callers may rely on this invariant — don't overload Reason with a
+// hint when Capable is true, and don't leave Reason empty when Capable
+// is false. The reason strings are stable wire values (consumed by the
+// UI picker's disabled-option secondary text and the server-side 400
+// body on referrer writes), so treat them as API surface.
+type TxCapability struct {
+	Capable bool   `json:"capable"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// TX-capability reason strings. Exported so tests and the validator
+// callers can assert against them without re-stringing the literal.
+const (
+	TxReasonNoInputDevice  = "no input device configured"
+	TxReasonNoOutputDevice = "no output device configured"
+)
 
 // ChannelModemBacking reports whether an audio modem currently serves
 // this channel. Active is true when the channel has a bound input audio

@@ -638,6 +638,87 @@ func (s *Store) CountOrphanChannelRefs(ctx context.Context) (map[string]int, err
 	return out, nil
 }
 
+// OrphanChannelRefRows describes one table's set of rows whose
+// channel soft-FK column points at a non-existent channel id. Used by
+// the bootstrap audit in pkg/app/wiring.go to emit a per-table WARN
+// line listing the affected row ids plus the distinct missing channel
+// ids, so operators can locate the referrers without clicking through
+// every list page.
+type OrphanChannelRefRows struct {
+	// Token mirrors one of the ReferrerType* constants above so callers
+	// can key their log field consistently with the 409 response body.
+	Token string
+	// RowIDs is the set of row primary keys that have a dangling ref.
+	RowIDs []uint32
+	// MissingChannelIDs is the deduplicated set of channel ids those
+	// rows point at but that no longer exist. May have fewer entries
+	// than RowIDs when several rows share the same missing channel.
+	MissingChannelIDs []uint32
+}
+
+// ListOrphanChannelRefs returns, per referrer table, the set of row
+// ids whose channel soft-FK does not resolve, plus the distinct set of
+// missing channel ids referenced. One query per table, same LEFT-JOIN /
+// NOT-IN pattern as CountOrphanChannelRefs but returning the ids
+// instead of just the count.
+//
+// An empty slice return means "no orphans anywhere". Per-table probe
+// errors are swallowed (e.g. table missing on a fresh DB before
+// AutoMigrate) so the overall scan never fails startup.
+func (s *Store) ListOrphanChannelRefs(ctx context.Context) ([]OrphanChannelRefRows, error) {
+	db := s.db.WithContext(ctx)
+
+	type idRow struct {
+		ID      uint32
+		Channel uint32
+	}
+	gather := func(table, idCol, predicate string) ([]idRow, error) {
+		sql := "SELECT " + idCol + " AS id, " + predicate + " AS channel FROM " + table +
+			" WHERE " + predicate + " != 0 AND " + predicate + " NOT IN (SELECT id FROM channels)"
+		var rows []idRow
+		if err := db.Raw(sql).Scan(&rows).Error; err != nil {
+			return nil, fmt.Errorf("orphan list %s.%s: %w", table, predicate, err)
+		}
+		return rows, nil
+	}
+
+	specs := []struct {
+		token, table, idCol, predicate string
+	}{
+		{ReferrerTypeBeacon, "beacons", "id", "channel"},
+		{ReferrerTypeDigipeaterRuleFrom, "digipeater_rules", "id", "from_channel"},
+		{ReferrerTypeDigipeaterRuleTo, "digipeater_rules", "id", "to_channel"},
+		{ReferrerTypeKissInterface, "kiss_interfaces", "id", "channel"},
+		{ReferrerTypeIGateConfigRf, "i_gate_configs", "id", "rf_channel"},
+		{ReferrerTypeIGateConfigTx, "i_gate_configs", "id", "tx_channel"},
+		{ReferrerTypeIGateRfFilter, "i_gate_rf_filters", "id", "channel"},
+		{ReferrerTypeTxTiming, "tx_timings", "id", "channel"},
+	}
+	var out []OrphanChannelRefRows
+	for _, sp := range specs {
+		rows, err := gather(sp.table, sp.idCol, sp.predicate)
+		if err != nil {
+			// Pristine DB / missing table — skip silently, matching
+			// CountOrphanChannelRefs behaviour.
+			continue
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		entry := OrphanChannelRefRows{Token: sp.token}
+		seen := make(map[uint32]struct{}, len(rows))
+		for _, r := range rows {
+			entry.RowIDs = append(entry.RowIDs, r.ID)
+			if _, ok := seen[r.Channel]; !ok {
+				seen[r.Channel] = struct{}{}
+				entry.MissingChannelIDs = append(entry.MissingChannelIDs, r.Channel)
+			}
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
 // ---------------------------------------------------------------------------
 // PttConfig CRUD
 // ---------------------------------------------------------------------------

@@ -11,7 +11,13 @@
   import StationCallsignBanner from '../components/StationCallsignBanner.svelte';
   import ChannelListbox from '../lib/components/ChannelListbox.svelte';
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels, getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
-  import { unboundWarning, SUMMARY_UNBOUND } from '../lib/channelBacking.js';
+  import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
+  import {
+    channelRefStatus,
+    buildChannelsById,
+    STATUS_OK,
+    STATUS_DELETED,
+  } from '../lib/channelRefStatus.js';
   import { isStationCallsignMissing } from '../lib/callsign.js';
 
   const DEFAULT_DEDUPE_SECONDS = 30;
@@ -84,6 +90,11 @@
   // changes a channel invalidates the store so backing state stays
   // in sync across tabs.
   let channels = $derived(channelsStore.list);
+  // Map<id, channel> powering the rule-list pill treatment (plan D4).
+  // Each rule row has from_channel and to_channel soft-FKs; we check
+  // each independently so a half-broken bridge rule highlights only
+  // the broken end.
+  let channelsById = $derived(buildChannelsById(channels));
   let modalOpen = $state(false);
   let editing = $state(null);
 
@@ -113,21 +124,59 @@
   let toCh = $derived(lookupChannel(parseInt(form.to_channel, 10)));
   // Backing-diff inline warning: when bridging from one backing kind
   // to another, make the routing implication explicit (D10).
+  // Independent of TX-capability: preserved verbatim.
   let bridgeBackingDiff = $derived.by(() => {
     if (form.rule_type !== 'bridge') return null;
     if (!fromCh?.backing || !toCh?.backing) return null;
     if (fromCh.backing.summary === toCh.backing.summary) return null;
     return `Bridging from ${fromCh.backing.summary} to ${toCh.backing.summary}: frames crossing this rule will change backend.`;
   });
-  // Unbound save warning (D17): shown when either endpoint is
-  // unbound (bridge) or the from_channel is unbound (same).
-  let unboundTarget = $derived.by(() => {
+  // TX-capability block (Phase 2, plan D3). Replaces the prior
+  // non-blocking unbound warning. Keys off the worst of the two
+  // endpoints: if either from_channel or to_channel is not
+  // TX-capable, we block Save. For "same-channel" rules there's
+  // effectively one endpoint (from == to); we surface the
+  // from_channel's reason. Both endpoints are implicit TX paths in
+  // a digipeater rule -- if from is broken the engine can't receive,
+  // if to is broken the engine can't transmit.
+  let txBlockTarget = $derived.by(() => {
+    const fromCap = fromCh?.backing?.tx;
+    const toCap = toCh?.backing?.tx;
     if (form.rule_type === 'bridge') {
-      if (toCh?.backing?.summary === SUMMARY_UNBOUND) return toCh;
-      if (fromCh?.backing?.summary === SUMMARY_UNBOUND) return fromCh;
+      if (fromCh && fromCap && !fromCap.capable) {
+        return { channel: fromCh, field: 'from_channel', reason: fromCap.reason || TX_REASON_FALLBACK };
+      }
+      if (toCh && toCap && !toCap.capable) {
+        return { channel: toCh, field: 'to_channel', reason: toCap.reason || TX_REASON_FALLBACK };
+      }
       return null;
     }
-    return fromCh?.backing?.summary === SUMMARY_UNBOUND ? fromCh : null;
+    if (fromCh && fromCap && !fromCap.capable) {
+      return { channel: fromCh, field: 'channel', reason: fromCap.reason || TX_REASON_FALLBACK };
+    }
+    return null;
+  });
+  let txBlock = $derived(txBlockTarget ? { reason: txBlockTarget.reason, field: txBlockTarget.field } : null);
+  // Escape hatch: the rule's own `enabled` flag. A disabled rule is
+  // harmless (the engine won't apply it), so Save is allowed even
+  // on a broken channel.
+  let txBlockAllowsSave = $derived(form.enabled === false);
+  let saveBlocked = $derived(!!txBlock && !txBlockAllowsSave);
+  const TX_CALLOUT_ID = 'digi-tx-callout';
+  let calloutEl = $state(null);
+  // Scroll the callout into view on modal open when it's already
+  // active, so the user sees the block before reaching Save.
+  let prevModalOpen = false;
+  $effect(() => {
+    const isOpen = modalOpen;
+    if (isOpen && !prevModalOpen) {
+      queueMicrotask(() => {
+        if (txBlock && calloutEl && typeof calloutEl.scrollIntoView === 'function') {
+          calloutEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+    }
+    prevModalOpen = isOpen;
   });
 
   function channelName(id) {
@@ -163,6 +212,10 @@
   let displayRules = $derived(
     rules.map(r => ({
       ...r,
+      // `channel_label` is the raw string fallback used when the
+      // custom cell snippet below is not in play (shouldn't happen,
+      // but DataTable reads this key for default rendering). The
+      // pill treatment lives in the `channelCell` snippet.
       channel_label: channelName(r.from_channel),
       preset_label: describePreset(r),
       action_label: r.action === 'drop' ? 'Drop' : 'Repeat',
@@ -456,8 +509,63 @@
       station, or <em>Wide-area digi</em> for a true mountaintop site.
     </div>
   {/if}
-  <DataTable {columns} rows={displayRules} onEdit={openEdit} onDelete={handleDelete} />
+  <DataTable
+    {columns}
+    rows={displayRules}
+    onEdit={openEdit}
+    onDelete={handleDelete}
+    cells={{ channel_label: channelCell }}
+  />
 </div>
+
+{#snippet channelCell(_value, row)}
+  {@const isBridge = row.to_channel && row.to_channel !== row.from_channel}
+  {@const fromStatus = channelRefStatus(row.from_channel, channelsById)}
+  {@const toStatus = isBridge ? channelRefStatus(row.to_channel, channelsById) : null}
+  <span class="rule-channel-cell">
+    {@render channelPill(row.from_channel, fromStatus, isBridge ? 'From' : 'Channel')}
+    {#if isBridge}
+      <span class="rule-channel-arrow" aria-hidden="true">&rarr;</span>
+      {@render channelPill(row.to_channel, toStatus, 'To')}
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet channelPill(channelId, status, scope)}
+  {@const broken = status.status !== STATUS_OK}
+  {@const deleted = status.status === STATUS_DELETED}
+  {@const displayName = status.channel?.name ?? `Channel #${channelId}`}
+  {@const ariaLabel = broken
+    ? (deleted
+        ? `${scope} channel #${channelId} deleted`
+        : `${scope} channel ${displayName} unreachable: ${status.reason}`)
+    : `${scope} channel ${displayName}`}
+  {@const title = broken
+    ? (deleted
+        ? `Channel #${channelId} deleted`
+        : `Unreachable: ${status.reason}`)
+    : ''}
+  <span class="rule-channel-pill-wrap" aria-label={ariaLabel} {title}>
+    <span
+      class="rule-channel-pill"
+      class:danger={broken}
+      aria-hidden="true"
+    >
+      {#if deleted}
+        Deleted
+      {:else if broken}
+        Unreachable
+      {:else}
+        {scope}
+      {/if}
+    </span>
+    {#if !deleted}
+      <span class="rule-channel-name" class:danger={broken}>
+        {displayName}
+      </span>
+    {/if}
+  </span>
+{/snippet}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Rule' : 'New Rule'}>
     <FormField label="Rule type" id="rule-type"
@@ -476,6 +584,7 @@
         bind:value={form.from_channel}
         valueType="string"
         channels={channels}
+        capabilityFilter={txPredicate}
       />
     </FormField>
     {#if form.rule_type === 'bridge'}
@@ -486,6 +595,7 @@
           bind:value={form.to_channel}
           valueType="string"
           channels={channels}
+          capabilityFilter={txPredicate}
         />
       </FormField>
       {#if bridgeBackingDiff}
@@ -512,12 +622,34 @@
       </FormField>
     {/if}
     <Toggle bind:checked={form.enabled} label="Enabled" />
-    {#if unboundTarget}
-      <div class="unbound-warning" role="note">{unboundWarning(unboundTarget)}</div>
+    {#if txBlock}
+      <div
+        bind:this={calloutEl}
+        id={TX_CALLOUT_ID}
+        class="tx-block-callout"
+        class:disabled-ok={txBlockAllowsSave}
+        role="alert"
+      >
+        <strong>
+          {#if txBlock.field === 'to_channel'}To channel{:else if txBlock.field === 'from_channel'}From channel{:else}Channel{/if}
+          not TX-capable:
+        </strong>
+        {txBlock.reason}.
+        {#if txBlockAllowsSave}
+          Save allowed because this rule is disabled.
+        {:else}
+          Pick a different channel or fix the channel's backend on the Channels page before saving.
+        {/if}
+      </div>
     {/if}
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
-      <Button variant="primary" onclick={handleSaveRule}>{editing ? 'Save' : 'Create'}</Button>
+      <Button
+        variant="primary"
+        onclick={handleSaveRule}
+        disabled={saveBlocked}
+        aria-describedby={txBlock ? TX_CALLOUT_ID : undefined}
+      >{editing ? 'Save' : 'Create'}</Button>
     </div>
 </Modal>
 
@@ -565,18 +697,26 @@
     line-height: 1.45;
   }
 
-  /* D17 — unbound-channel save warning, matching the amber callout
-     pattern used in Beacons/iGate. */
-  .unbound-warning {
+  /* Phase 2 — TX-capability blocking callout. Replaces the prior
+     amber unbound warning. Uses chonky-ui danger tokens so it reads
+     as "you cannot save this" (vs. the bridge-diff info callout,
+     which is a neutral note). When the rule is being saved as
+     disabled (escape hatch) we downshift to amber so the operator
+     sees Save is still available. */
+  .tx-block-callout {
     margin: 12px 0 0 0;
     padding: 10px 12px;
-    border: 1px solid var(--color-warning, #d4a72c);
+    border: 1px solid var(--color-danger, #f85149);
     border-left-width: 4px;
     border-radius: 4px;
-    background: var(--color-warning-bg, rgba(212, 167, 44, 0.12));
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.15));
     color: var(--text-primary);
     font-size: 13px;
     line-height: 1.45;
+  }
+  .tx-block-callout.disabled-ok {
+    border-color: var(--color-warning, #d29922);
+    background: var(--color-warning-muted, rgba(210, 153, 34, 0.15));
   }
 
   /* Phase 4B — radio-group layout for the station-callsign override
@@ -625,5 +765,52 @@
   :global([role='switch'][aria-disabled='true']) {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+
+  /* Rule-list Channel column pill treatment (Phase 3 / plan D4). On
+     bridge rules, from_channel and to_channel are evaluated
+     independently so a half-broken rule surfaces only the broken end
+     in danger tokens. Same tokens as beacons / iGate for consistency. */
+  .rule-channel-cell {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .rule-channel-pill-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .rule-channel-arrow {
+    color: var(--color-text-muted, #888);
+    font-weight: 700;
+  }
+  .rule-channel-pill {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--color-info);
+    background: var(--color-info-muted);
+    padding: 2px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .rule-channel-pill.danger {
+    color: var(--color-danger, #f85149);
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.15));
+  }
+  .rule-channel-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .rule-channel-name.danger {
+    color: var(--color-danger, #f85149);
   }
 </style>

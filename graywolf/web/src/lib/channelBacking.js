@@ -6,11 +6,11 @@
 // Design decisions: D7 (computed backing object), D8 (3 distinct
 // glyphs + text), D17 (unbound-channel warning copy).
 
-// Unicode glyphs chosen for shape distinctness (WCAG 1.4.1 — not
+// Unicode glyphs chosen for shape distinctness (WCAG 1.4.1 -- not
 // colour alone). Filled circle / hollow circle / em-dash.
-export const GLYPH_LIVE = '\u25CF'; //  ●
-export const GLYPH_DOWN = '\u25CB'; //  ○
-export const GLYPH_UNBOUND = '\u2014'; //  —
+export const GLYPH_LIVE = '●'; //  ●
+export const GLYPH_DOWN = '○'; //  ○
+export const GLYPH_UNBOUND = '—'; //  —
 
 export const HEALTH_LIVE = 'live';
 export const HEALTH_DOWN = 'down';
@@ -18,10 +18,9 @@ export const HEALTH_UNBOUND = 'unbound';
 
 export const SUMMARY_MODEM = 'modem';
 export const SUMMARY_KISS_TNC = 'kiss-tnc';
-export const SUMMARY_UNBOUND = 'unbound';
 
 // Map each health value to its glyph and short user-facing text. The
-// text always renders alongside the glyph (D8) — glyph-only would
+// text always renders alongside the glyph (D8) -- glyph-only would
 // fail a screen-reader sweep.
 export function healthGlyph(health) {
   switch (health) {
@@ -85,13 +84,43 @@ export function tooltipText(backing) {
   return errs.join('; ');
 }
 
-// Unbound-channel warning copy (D17). Non-blocking — forms render
-// this above the submit button when summary === 'unbound'.
-export function unboundWarning(ch) {
-  const id = ch?.id ?? '?';
-  return (
-    `\u26A0 Channel ${id} has no backend. This beacon will be ` +
-    `accepted but will not transmit until a modem or KISS-TNC is ` +
-    `attached.`
-  );
+// TX-capability reason wire constants. Mirror of
+// dto.TxReasonNoInputDevice / dto.TxReasonNoOutputDevice on the Go
+// side (pkg/webapi/dto/channel.go) so the Svelte callout text can
+// match, localize, or test against named tokens without
+// string-matching the backend verbatim. If either string changes on
+// one side, the other MUST be updated in the same commit.
+// Must match dto.TxReasonNoInputDevice.
+export const TX_REASON_NO_INPUT_DEVICE = 'no input device configured';
+// Must match dto.TxReasonNoOutputDevice.
+export const TX_REASON_NO_OUTPUT_DEVICE = 'no output device configured';
+
+// Fallback reason used when the server declared a channel !tx.capable
+// but supplied an empty reason string (contract violation per Phase 1,
+// but we still render something useful). Consumed by both the form
+// callout paths and channelRefStatus.js so the two surfaces stay in
+// sync.
+export const TX_REASON_FALLBACK = 'not TX-capable';
+
+// capabilityFilter predicate for ChannelListbox. Matches the shape
+// `(channel) => { ok: boolean, reason: string }` documented in
+// plan D3. The authoritative source is `channel.backing.tx.capable`
+// -- do not recompute from `modem` / `kiss_tnc` fields directly.
+// When `capable` is true the contract (Phase 1) guarantees `reason`
+// is empty; we still coerce to '' defensively so callers can safely
+// render it.
+export function txPredicate(channel) {
+  const tx = channel?.backing?.tx;
+  return {
+    ok: Boolean(tx?.capable),
+    reason: tx?.reason ?? '',
+  };
+}
+
+// Convenience boolean form of txPredicate, for list-card rendering
+// that just needs "is this channel safe to transmit on right now?"
+// without the reason string. Phase 3 uses this on the
+// beacon/iGate/digi list surfaces.
+export function isTxCapable(channel) {
+  return Boolean(channel?.backing?.tx?.capable);
 }

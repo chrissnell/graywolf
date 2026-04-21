@@ -30,8 +30,20 @@ func newTestServer(t *testing.T) (*Server, *modembridge.Bridge) {
 	if err := store.CreateAudioDevice(ctx, dev); err != nil {
 		t.Fatal(err)
 	}
+	// Seed channel is TX-capable (both input + output audio device
+	// configured) so the webapi tests that create beacons / iGate / digi
+	// referrers against it pass the Phase-1 TX-capability gate. A
+	// separate output device is required because validateChannel
+	// enforces device direction=output on OutputDeviceID.
+	outDev := &configstore.AudioDevice{
+		Name: "test-out", Direction: "output", SourceType: "null", SourcePath: "/tmp/out.raw",
+		SampleRate: 44100, Channels: 1, Format: "s16le",
+	}
+	if err := store.CreateAudioDevice(ctx, outDev); err != nil {
+		t.Fatal(err)
+	}
 	ch := &configstore.Channel{
-		Name: "rx0", InputDeviceID: configstore.U32Ptr(dev.ID),
+		Name: "rx0", InputDeviceID: configstore.U32Ptr(dev.ID), OutputDeviceID: outDev.ID,
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
@@ -121,7 +133,10 @@ func TestAudioDevicesEndpoint(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&devices); err != nil {
 		t.Fatal(err)
 	}
-	if len(devices) != 1 || devices[0].Name != "test" {
+	// The test fixture seeds two devices: "test" (input) and "test-out"
+	// (output) so the seed channel can be TX-capable for beacon /
+	// iGate / digipeater referrer tests.
+	if len(devices) != 2 || devices[0].Name != "test" || devices[1].Name != "test-out" {
 		t.Errorf("unexpected devices: %+v", devices)
 	}
 }

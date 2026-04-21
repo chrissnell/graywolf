@@ -16,6 +16,14 @@
   //     the Channels page card and the picker trigger's selected-
   //     value display. 'trigger-compact' is a tighter single-line
   //     form used inside a listbox trigger button.
+  //   - unavailable: when true, the option renders the provided
+  //     unavailableReason in place of the summary/health detail line
+  //     so the operator sees *why* they can't pick this row (e.g.
+  //     "no output device configured"). Aria is handled by the
+  //     parent <li aria-disabled="true">; this component only owns
+  //     the visible text.
+  //   - unavailableReason: the reason string from the capability
+  //     predicate. Ignored when `unavailable` is false.
   //
   // Pulse: when the channel's backing.health changes while the
   // component is mounted, a short (~800ms) CSS pulse is applied so
@@ -31,7 +39,12 @@
     HEALTH_DOWN,
   } from '../channelBacking.js';
 
-  let { channel, variant = 'option' } = $props();
+  let {
+    channel,
+    variant = 'option',
+    unavailable = false,
+    unavailableReason = '',
+  } = $props();
 
   // Track the previous health value so a transition triggers a
   // one-shot pulse via a CSS class toggled off by a timer. prevHealth
@@ -64,28 +77,36 @@
     if (h === HEALTH_DOWN) return 'down';
     return 'unbound';
   });
+
+  // When `unavailable` is true, the detail line shows the reason
+  // instead of the summary · health pair. Empty-string fallback so
+  // the slot doesn't render "undefined" if a caller forgot the
+  // reason.
+  let detailLine = $derived(
+    unavailable ? (unavailableReason || 'Unavailable') : `${sum} · ${text}`,
+  );
 </script>
 
 {#if variant === 'summary'}
-  <span class="row summary {healthClass}" class:pulse aria-label={aria} title={tip}>
+  <span class="row summary {healthClass}" class:pulse class:unavailable aria-label={aria} title={tip}>
     <span class="glyph {healthClass}" aria-hidden="true">{glyph}</span>
     <span class="summary-line">
       <span class="name">Channel {channel?.id} — {channel?.name}</span>
-      <span class="detail">{sum} · {text}</span>
+      <span class="detail">{detailLine}</span>
     </span>
   </span>
 {:else if variant === 'trigger-compact'}
-  <span class="row compact {healthClass}" class:pulse aria-label={aria} title={tip}>
+  <span class="row compact {healthClass}" class:pulse class:unavailable aria-label={aria} title={tip}>
     <span class="glyph {healthClass}" aria-hidden="true">{glyph}</span>
     <span class="name">{channel?.name ?? `Channel ${channel?.id ?? '?'}`}</span>
-    <span class="detail-compact">({sum} · {text})</span>
+    <span class="detail-compact">({detailLine})</span>
   </span>
 {:else}
-  <span class="row option {healthClass}" class:pulse aria-label={aria} title={tip}>
+  <span class="row option {healthClass}" class:pulse class:unavailable aria-label={aria} title={tip}>
     <span class="glyph {healthClass}" aria-hidden="true">{glyph}</span>
     <span class="two-line">
       <span class="name">Channel {channel?.id} — {channel?.name}</span>
-      <span class="detail">{sum} · {text}</span>
+      <span class="detail">{detailLine}</span>
     </span>
   </span>
 {/if}
@@ -165,5 +186,18 @@
   }
   .row.compact {
     gap: 6px;
+  }
+  /* When the option fails the capability predicate, tint the detail
+     line with the danger colour so the reason reads as "this is why
+     you can't pick me" rather than just a normal sub-label. The
+     parent <li aria-disabled="true"> already dims the row via the
+     chonky .listbox-item[aria-disabled] token (opacity 0.4) — we
+     just colour-shift the reason text inside that dimmed stack.
+     The detail-compact variant inside a trigger button also gets
+     this treatment so a previously-selected-but-now-broken channel
+     is readable in the closed trigger. */
+  .row.unavailable .detail,
+  .row.unavailable .detail-compact {
+    color: var(--color-danger, #f85149);
   }
 </style>
