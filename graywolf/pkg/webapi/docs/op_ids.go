@@ -25,12 +25,13 @@ package docs
 
 // Channels resource — /api/channels (Phase 1 reference migration).
 const (
-	OpListChannels    = "listChannels"
-	OpCreateChannel   = "createChannel"
-	OpGetChannel      = "getChannel"
-	OpUpdateChannel   = "updateChannel"
-	OpDeleteChannel   = "deleteChannel"
-	OpGetChannelStats = "getChannelStats"
+	OpListChannels        = "listChannels"
+	OpCreateChannel       = "createChannel"
+	OpGetChannel          = "getChannel"
+	OpUpdateChannel       = "updateChannel"
+	OpDeleteChannel       = "deleteChannel"
+	OpGetChannelStats     = "getChannelStats"
+	OpGetChannelReferrers = "getChannelReferrers"
 )
 
 // Beacons resource — /api/beacons (Phase 2).
@@ -73,11 +74,12 @@ const (
 
 // KISS interfaces resource — /api/kiss (Phase 2).
 const (
-	OpListKiss   = "listKiss"
-	OpCreateKiss = "createKiss"
-	OpGetKiss    = "getKiss"
-	OpUpdateKiss = "updateKiss"
-	OpDeleteKiss = "deleteKiss"
+	OpListKiss      = "listKiss"
+	OpCreateKiss    = "createKiss"
+	OpGetKiss       = "getKiss"
+	OpUpdateKiss    = "updateKiss"
+	OpDeleteKiss    = "deleteKiss"
+	OpReconnectKiss = "reconnectKiss"
 )
 
 // Tx-timing resource — /api/tx-timing (Phase 2). Keyed by channel id,
