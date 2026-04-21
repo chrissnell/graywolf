@@ -210,6 +210,10 @@ impl Demod9600 {
         std::mem::take(&mut self.decoded_frames)
     }
 
+    pub fn take_bad_fcs(&mut self) -> u64 {
+        self.hdlc.take_bad_fcs()
+    }
+
     pub fn data_detect(&self) -> bool {
         self.data_detect
     }

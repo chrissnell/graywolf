@@ -709,6 +709,14 @@ impl AfskDemodulator {
         std::mem::take(&mut self.decoded_frames)
     }
 
+    /// Sum of bad-FCS events across every slicer since the last call.
+    /// Each slicer decodes the same bit stream differently, so a single
+    /// corrupted transmission may bump this by up to num_slicers.
+    #[must_use]
+    pub fn take_bad_fcs(&mut self) -> u64 {
+        self.hdlc.iter_mut().map(|d| d.take_bad_fcs()).sum()
+    }
+
     /// Number of decoded frames accumulated so far.
     #[must_use]
     pub fn frame_count(&self) -> usize {

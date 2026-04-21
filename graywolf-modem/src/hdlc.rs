@@ -299,6 +299,13 @@ pub struct HdlcDecoder {
 
     /// Maximum bit error correction level.
     fix_bits: RetryType,
+
+    /// Count of frame-shaped candidates (closing flag after at least
+    /// MIN_FRAME_LEN octets) that failed FCS validation, including the
+    /// bit-flip retry strategies. Drained via `take_bad_fcs` for status
+    /// reporting. Not incremented for short-buffer or abort cases —
+    /// only for plausible-looking frames that did not CRC.
+    bad_fcs: u64,
 }
 
 impl Default for HdlcDecoder {
@@ -327,7 +334,15 @@ impl HdlcDecoder {
             rrbb: RawBitBuffer::new(chan, subchan, slice, is_scrambled, 0, 0),
             eas: EasState::default(),
             fix_bits: RetryType::None,
+            bad_fcs: 0,
         }
+    }
+
+    /// Drain the bad-FCS counter accumulated since the last call. Called
+    /// by the modem status-reporting path to aggregate per-channel CRC
+    /// failure counts.
+    pub fn take_bad_fcs(&mut self) -> u64 {
+        std::mem::take(&mut self.bad_fcs)
     }
 
     /// Set the maximum retry/fix-bits level for CRC error recovery.
@@ -402,7 +417,13 @@ impl HdlcDecoder {
                 };
                 self.rrbb.speed_error = speed_error;
 
-                self.try_decode()
+                let decoded = self.try_decode();
+                if decoded.is_none() {
+                    // Frame-shaped candidate that survived neither the
+                    // direct FCS check nor any configured retry strategy.
+                    self.bad_fcs = self.bad_fcs.saturating_add(1);
+                }
+                decoded
             } else {
                 // Start of new frame — reset PLL measurement
                 *pll_nudge_total = 0;

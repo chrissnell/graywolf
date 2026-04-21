@@ -288,4 +288,56 @@ mod tests {
              not actually broken, test premise invalid"
         );
     }
+
+    #[test]
+    fn bad_fcs_counter_fires_when_frame_body_is_corrupted() {
+        // Pins the bad-FCS metric: flipping one bit inside an otherwise
+        // well-formed frame must (a) prevent the frame from decoding and
+        // (b) bump the decoder's bad_fcs counter. Default fix_bits=None
+        // so single-bit retry repair is off — the corrupted frame is
+        // genuinely unrecoverable.
+        // Real AX.25 frame: 7-byte dest addr + 7-byte src addr + control
+        // + PID + info. Frame body must exceed MIN_FRAME_LEN (17 octets
+        // incl. FCS) or the decoder never even attempts FCS validation.
+        let frame = vec![
+            0x82, 0xa0, 0xa4, 0xa6, 0x40, 0x40, 0x60, // dest
+            0x96, 0x84, 0x62, 0xa4, 0x84, 0x62, 0x61, // src
+            0x03, 0xf0,                                // control + PID
+            b'h', b'i',                                // info
+        ];
+        let preamble_flags = 8;
+        let mut bits = encode(&frame, preamble_flags, 4);
+
+        // Flip one bit well inside the frame body, past the preamble flags
+        // and before the FCS/closing-flag region. Bit 80 into the frame
+        // body lands inside the source-address octets, far from anything
+        // that could synthesize a flag or abort pattern.
+        let flip_idx = preamble_flags * 8 + 80;
+        assert!(flip_idx < bits.len(), "test premise: flip index inside frame body");
+        bits[flip_idx] ^= 1;
+
+        let mut decoder = HdlcDecoder::new(0, 0, 0, false);
+        let mut nudge: i64 = 0;
+        let mut symbols: i32 = 0;
+        let mut decoded = Vec::new();
+        for &b in &bits {
+            if let Some(f) = decoder.process_bit(b != 0, &mut nudge, &mut symbols) {
+                decoded.push(f.data);
+            }
+        }
+
+        assert!(
+            !decoded.iter().any(|f| f == &frame),
+            "corrupted frame must not decode — test premise invalid"
+        );
+        assert!(
+            decoder.take_bad_fcs() >= 1,
+            "decoder must count at least one bad-FCS event"
+        );
+        assert_eq!(
+            decoder.take_bad_fcs(),
+            0,
+            "take_bad_fcs must drain to zero on the second call"
+        );
+    }
 }

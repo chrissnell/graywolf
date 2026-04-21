@@ -230,6 +230,14 @@ impl MultiAfskDemodulator {
         std::mem::take(&mut self.out)
     }
 
+    /// Sum of bad-FCS events across every contained demod configuration.
+    /// One RF event may bump this by (num_configs * num_slicers) since
+    /// each inner decoder attempts its own decode independently, and
+    /// unlike successful frames the ensemble does not dedup failures.
+    pub fn take_bad_fcs(&mut self) -> u64 {
+        self.demods.iter_mut().map(|d| d.take_bad_fcs()).sum()
+    }
+
     /// Total deduped frames currently buffered (not yet drained).
     pub fn frame_count(&self) -> usize {
         self.out.len()
