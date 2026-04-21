@@ -156,8 +156,30 @@ func ackReleaseNotes(srv *Server, version string, auth *webauth.AuthStore) http.
 			return
 		}
 		// Explicitly NOT parsing the body. Any content the client
-		// sends is ignored; the server uses its own version string.
-		if err := auth.SetLastSeenReleaseVersion(r.Context(), user.ID, version); err != nil {
+		// sends is ignored; ack stays server-authoritative.
+		//
+		// Ack to max(buildVersion, highest note version in the binary).
+		// Writing the running build alone leaves a forward-dated note
+		// (authored at vN+1 but shipping in vN) perpetually unseen:
+		// Compare(vN+1, vN) > 0, so on every page load Unseen re-emits
+		// the note and the popup reappears even after the user clicks
+		// Got It. Taking the max means ack covers every note currently
+		// embedded in this binary, while staying server-authoritative
+		// (no client input). Future releases that add a newer note
+		// (vN+2) correctly re-surface it — LastSeenReleaseVersion of
+		// vN+1 is still < vN+2.
+		ackVersion := version
+		if notes, lerr := currentLoader().all(); lerr == nil {
+			for _, n := range notes {
+				if releasenotes.Compare(n.Version, ackVersion) > 0 {
+					ackVersion = n.Version
+				}
+			}
+		}
+		// If the loader failed we fall back to the running build
+		// version — worst case is today's behaviour (a forward-dated
+		// note resurfaces), not broken.
+		if err := auth.SetLastSeenReleaseVersion(r.Context(), user.ID, ackVersion); err != nil {
 			srv.internalError(w, r, "ackReleaseNotes", err)
 			return
 		}

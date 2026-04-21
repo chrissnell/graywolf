@@ -241,6 +241,47 @@ func TestAckReleaseNotes_Idempotent(t *testing.T) {
 	}
 }
 
+// TestAckReleaseNotes_ForwardDatedNote asserts that ack writes the
+// highest note version in the binary, not just the running build.
+// Regression guard for the "popup reappears on every reload" bug: the
+// operator authored a note at 0.11.0 while the binary was still on
+// 0.10.11, and the old ack-the-build-version behavior left that note
+// perpetually > LastSeenReleaseVersion.
+func TestAckReleaseNotes_ForwardDatedNote(t *testing.T) {
+	h := newReleaseNotesHarness(t, "0.10.11")
+	restore := withLoader(seedLoader([]releasenotes.Note{
+		{SchemaVersion: 1, Version: "0.11.0", Date: "2026-04-21", Style: "cta", Title: "T", Body: "<p>b</p>"},
+		{SchemaVersion: 1, Version: "0.10.11", Date: "2026-04-18", Style: "info", Title: "U", Body: "<p>b</p>"},
+	}))
+	defer restore()
+
+	rec := h.do(http.MethodPost, "/api/release-notes/ack", "", true)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got, err := h.authStore.GetLastSeenReleaseVersion(context.Background(), h.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Must be the forward-dated note's version, not the build version.
+	if got != "0.11.0" {
+		t.Fatalf("want 0.11.0 (highest note in binary), got %q", got)
+	}
+
+	// Follow-up: unseen should now be empty.
+	rec = h.do(http.MethodGet, "/api/release-notes/unseen", "", true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unseen: want 200, got %d", rec.Code)
+	}
+	var resp dto.ReleaseNotesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Notes) != 0 {
+		t.Fatalf("after ack, unseen must be empty; got %+v", resp.Notes)
+	}
+}
+
 func TestReleaseNotes_ParseErrorSurfacesAs500(t *testing.T) {
 	h := newReleaseNotesHarness(t, "0.11.0")
 	restore := withLoader(releaseNotesLoader{
