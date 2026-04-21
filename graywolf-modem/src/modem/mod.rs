@@ -167,11 +167,14 @@ pub struct Modem {
     // IPC thread.
     tx_worker: tx_worker::TxWorker,
 
-    // Metrics
-    rx_frames: u64,
-    tx_frames: u64,
-    rx_bad_fcs: u64,
-    dcd_transitions: u64,
+    // Per-channel counters. Previously these were process-wide u64s and
+    // emit_status attributed the totals to the first configured channel
+    // only, so multi-channel dashboards showed all activity on CH0 and
+    // zero on the rest.
+    rx_frames: HashMap<u32, u64>,
+    tx_frames: HashMap<u32, u64>,
+    rx_bad_fcs: HashMap<u32, u64>,
+    dcd_transitions: HashMap<u32, u64>,
     last_status_tx: Instant,
     last_level_tx: HashMap<u32, Instant>,
 }
@@ -191,10 +194,10 @@ impl Modem {
             output_devices: HashMap::new(),
             active_devices: HashMap::new(),
             tx_worker,
-            rx_frames: 0,
-            tx_frames: 0,
-            rx_bad_fcs: 0,
-            dcd_transitions: 0,
+            rx_frames: HashMap::new(),
+            tx_frames: HashMap::new(),
+            rx_bad_fcs: HashMap::new(),
+            dcd_transitions: HashMap::new(),
             last_status_tx: Instant::now(),
             last_level_tx: HashMap::new(),
         })
@@ -575,8 +578,21 @@ impl Modem {
                                 all_frames.extend(take_demod_frames(extra));
                             }
 
+                            // Drain bad-FCS counts from every decoder this
+                            // channel owns (primary + any extra demods) and
+                            // fold into the per-channel counter. Must run
+                            // every pump tick so the counter tracks decoder
+                            // state rather than drifting.
+                            let mut bad = take_demod_bad_fcs(&mut chan_pipe.demod);
+                            for extra in &mut chan_pipe.extra_demods {
+                                bad = bad.saturating_add(take_demod_bad_fcs(extra));
+                            }
+                            if bad > 0 {
+                                *self.rx_bad_fcs.entry(chan_pipe.channel_id).or_default() += bad;
+                            }
+
                             for f in all_frames {
-                                self.rx_frames += 1;
+                                *self.rx_frames.entry(chan_pipe.channel_id).or_default() += 1;
                                 let msg = IpcMessage::received_frame(build_received(&f));
                                 if let Err(e) = self.handle.send(&msg) {
                                     eprintln!("graywolf-modem: ipc send failed: {}", e);
@@ -592,7 +608,7 @@ impl Modem {
                                 0,
                             );
                             for c in dcd_changes {
-                                self.dcd_transitions += 1;
+                                *self.dcd_transitions.entry(chan_pipe.channel_id).or_default() += 1;
                                 let msg = IpcMessage::dcd_change(DcdChange {
                                     channel: c.chan as u32,
                                     subchan: c.subchan as u32,
@@ -665,34 +681,75 @@ impl Modem {
     }
 
     fn emit_status(&mut self, final_: bool) {
-        // Emit status for the first configured channel (or channel 0)
-        let (mark, space, peak, dcd_state, channel) =
-            if let Some(pipe) = self.active_devices.values().next() {
-                if let Some(cp) = pipe.channels.first() {
-                    (cp.latest_mark, cp.latest_space, cp.latest_peak,
-                     cp.prev_dcd_any, cp.channel_id)
-                } else {
-                    (0.0, 0.0, 0.0, false, 0)
-                }
-            } else {
-                (0.0, 0.0, 0.0, false,
-                 self.channel_configs.keys().next().copied().unwrap_or(0))
-            };
+        // One StatusUpdate per configured channel so the dashboard can show
+        // correct per-channel RX/TX counters in multi-channel setups. Audio
+        // levels are read from the matching ChannelPipeline if the device
+        // is active, else zero.
+        let mut channels: Vec<u32> = self.channel_configs.keys().copied().collect();
+        channels.sort();
 
-        let s = StatusUpdate {
-            channel,
-            rx_frames: self.rx_frames,
-            rx_bad_fcs: self.rx_bad_fcs,
-            tx_frames: self.tx_frames,
-            dcd_transitions: self.dcd_transitions,
-            audio_level_mark: mark,
-            audio_level_space: space,
-            audio_level_peak: peak,
-            dcd_state,
-            shutdown_complete: final_,
-            timestamp_ns: now_ns(),
-        };
-        let _ = self.handle.send(&IpcMessage::status_update(s));
+        // Prune counters for channels that no longer exist in config so the
+        // maps can't drift out of sync if a future RemoveChannel path lands.
+        // No-op today (channels are never removed) but keeps the invariant
+        // local to emit_status rather than scattered across call sites.
+        let live: HashSet<u32> = self.channel_configs.keys().copied().collect();
+        self.rx_frames.retain(|k, _| live.contains(k));
+        self.tx_frames.retain(|k, _| live.contains(k));
+        self.rx_bad_fcs.retain(|k, _| live.contains(k));
+        self.dcd_transitions.retain(|k, _| live.contains(k));
+
+        if channels.is_empty() {
+            // Preserve the shutdown handshake when no channels are
+            // configured: the peer waits for a StatusUpdate with
+            // shutdown_complete=true before half-closing the socket.
+            if final_ {
+                let s = StatusUpdate {
+                    channel: 0,
+                    rx_frames: 0,
+                    rx_bad_fcs: 0,
+                    tx_frames: 0,
+                    dcd_transitions: 0,
+                    audio_level_mark: 0.0,
+                    audio_level_space: 0.0,
+                    audio_level_peak: 0.0,
+                    dcd_state: false,
+                    shutdown_complete: true,
+                    timestamp_ns: now_ns(),
+                };
+                let _ = self.handle.send(&IpcMessage::status_update(s));
+            }
+            return;
+        }
+
+        let last_idx = channels.len() - 1;
+        for (i, ch) in channels.iter().enumerate() {
+            let (mark, space, peak, dcd_state) = self.channel_audio_state(*ch);
+            let s = StatusUpdate {
+                channel: *ch,
+                rx_frames: self.rx_frames.get(ch).copied().unwrap_or(0),
+                rx_bad_fcs: self.rx_bad_fcs.get(ch).copied().unwrap_or(0),
+                tx_frames: self.tx_frames.get(ch).copied().unwrap_or(0),
+                dcd_transitions: self.dcd_transitions.get(ch).copied().unwrap_or(0),
+                audio_level_mark: mark,
+                audio_level_space: space,
+                audio_level_peak: peak,
+                dcd_state,
+                shutdown_complete: final_ && i == last_idx,
+                timestamp_ns: now_ns(),
+            };
+            let _ = self.handle.send(&IpcMessage::status_update(s));
+        }
+    }
+
+    fn channel_audio_state(&self, channel: u32) -> (f32, f32, f32, bool) {
+        for pipe in self.active_devices.values() {
+            for cp in &pipe.channels {
+                if cp.channel_id == channel {
+                    return (cp.latest_mark, cp.latest_space, cp.latest_peak, cp.prev_dcd_any);
+                }
+            }
+        }
+        (0.0, 0.0, 0.0, false)
     }
 
     fn graceful_shutdown(&mut self) {
@@ -859,7 +916,7 @@ impl Modem {
             eprintln!("graywolf-modem: TransmitFrame: {}", e);
             return;
         }
-        self.tx_frames += 1;
+        *self.tx_frames.entry(tf.channel).or_default() += 1;
     }
 }
 
@@ -973,6 +1030,15 @@ fn take_demod_frames(demod: &mut ChannelDemod) -> Vec<DecodedFrame> {
         ChannelDemod::AfskMulti(d) => d.take_frames(),
         ChannelDemod::Psk(d) => d.take_frames(),
         ChannelDemod::Baseband9600(d) => d.take_frames(),
+    }
+}
+
+fn take_demod_bad_fcs(demod: &mut ChannelDemod) -> u64 {
+    match demod {
+        ChannelDemod::Afsk(d) => d.take_bad_fcs(),
+        ChannelDemod::AfskMulti(d) => d.take_bad_fcs(),
+        ChannelDemod::Psk(d) => d.take_bad_fcs(),
+        ChannelDemod::Baseband9600(d) => d.take_bad_fcs(),
     }
 }
 
@@ -1731,6 +1797,7 @@ mod tests {
                 txdelay_override_ms: 0,
                 txtail_override_ms: 0,
                 priority: 0,
+                frame_id: 0,
             })),
         };
         let should_exit = modem.handle_ipc(msg);
@@ -1758,6 +1825,7 @@ mod tests {
                 txdelay_override_ms: 0,
                 txtail_override_ms: 0,
                 priority: 0,
+                frame_id: 0,
             })),
         };
         let should_exit = modem.handle_ipc(msg);
@@ -1876,5 +1944,68 @@ mod tests {
             0,
             "unknown method should not silently register a NonePtt driver"
         );
+    }
+
+    #[test]
+    fn emit_status_fans_out_one_message_per_configured_channel() {
+        // Pins the multi-channel attribution fix: before, all counters
+        // were summed onto the first configured channel. Now emit_status
+        // must produce exactly one StatusUpdate per configured channel,
+        // each carrying that channel's own counters, with the shutdown
+        // flag riding only on the last message when final_ is true.
+        use crate::ipc::framing::read_frame;
+
+        let (handle, mut peer) = IpcHandle::test_pair();
+        peer.set_read_timeout(Some(std::time::Duration::from_secs(1)))
+            .expect("set_read_timeout");
+        let (_ipc_tx, ipc_rx) = std::sync::mpsc::channel::<IpcInbound>();
+        let mut modem = Modem::new(handle, ipc_rx).expect("Modem::new");
+
+        modem.channel_configs.insert(
+            1,
+            ChannelConfig { channel: 1, ..ChannelConfig::default() },
+        );
+        modem.channel_configs.insert(
+            2,
+            ChannelConfig { channel: 2, ..ChannelConfig::default() },
+        );
+
+        modem.rx_frames.insert(1, 10);
+        modem.rx_frames.insert(2, 20);
+        modem.tx_frames.insert(1, 3);
+        modem.tx_frames.insert(2, 7);
+        modem.dcd_transitions.insert(1, 5);
+        modem.dcd_transitions.insert(2, 9);
+        // Stale counter for a channel no longer in config — the prune in
+        // emit_status should drop it before sending.
+        modem.rx_frames.insert(99, 42);
+
+        modem.emit_status(true);
+
+        let mut statuses = Vec::new();
+        while let Ok(Some(msg)) = read_frame(&mut peer) {
+            if let Some(Payload::StatusUpdate(s)) = msg.payload {
+                statuses.push(s);
+                if statuses.len() == 2 {
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(statuses.len(), 2, "expected one StatusUpdate per channel");
+
+        let s1 = statuses.iter().find(|s| s.channel == 1).expect("channel 1 status");
+        assert_eq!(s1.rx_frames, 10);
+        assert_eq!(s1.tx_frames, 3);
+        assert_eq!(s1.dcd_transitions, 5);
+        assert!(!s1.shutdown_complete, "shutdown_complete must only ride on the last channel");
+
+        let s2 = statuses.iter().find(|s| s.channel == 2).expect("channel 2 status");
+        assert_eq!(s2.rx_frames, 20);
+        assert_eq!(s2.tx_frames, 7);
+        assert_eq!(s2.dcd_transitions, 9);
+        assert!(s2.shutdown_complete, "final=true + sorted channels: last message carries the flag");
+
+        assert!(!modem.rx_frames.contains_key(&99), "stale counter for removed channel must be pruned");
     }
 }
