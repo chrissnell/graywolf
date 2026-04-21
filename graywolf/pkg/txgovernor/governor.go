@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
@@ -190,6 +191,16 @@ type Governor struct {
 	// without holding the lock.
 	hooks      []txHookEntry
 	nextHookID uint64
+	// nextFrameID monotonically assigns per-frame correlation IDs
+	// stamped onto pb.TransmitFrame.FrameId at send time. Starts at 1
+	// (zero means "unstamped" for backward compatibility). Atomic so
+	// Submit / processOne callers don't need to hold g.mu.
+	nextFrameID atomic.Uint64
+	// skipCSMA, when non-nil, is consulted per frame to decide whether
+	// the channel should bypass the p-persistence / slot-time / DCD
+	// wait (D3.4). KISS-only channels have no carrier to sense. nil =
+	// never skip (default for tests / partial wirings).
+	skipCSMA func(channel uint32) bool
 }
 
 // AddTxHook registers h to be invoked after every successful frame
@@ -229,6 +240,19 @@ func (g *Governor) AddTxHook(h TxHook) (id uint64, unregister func()) {
 		})
 	}
 	return id, unregister
+}
+
+// SetSkipCSMA installs a predicate consulted per frame to decide
+// whether the p-persistence / slot-time / DCD wait should be
+// bypassed for a channel. Wired by the txbackend dispatcher so
+// KISS-only channels short-circuit CSMA (no carrier on TCP). Safe
+// to call from startup; not expected to change after wiring.
+//
+// Passing nil restores the default "never skip" behaviour.
+func (g *Governor) SetSkipCSMA(fn func(channel uint32) bool) {
+	g.mu.Lock()
+	g.skipCSMA = fn
+	g.mu.Unlock()
 }
 
 // SetChannelTiming installs or replaces the timing parameters for one
@@ -396,17 +420,25 @@ func (g *Governor) processOne(ctx context.Context) {
 	top.rateLimitCounted = false
 	timing := g.cfg.timingFor(top.channel)
 	channelBusy := g.dcd[top.channel]
+	// D3.4: KISS-only channels have no carrier to sense. The dispatcher
+	// precomputes this per channel into the snapshot; we consult it
+	// here under the lock before the p-persistence roll to collapse
+	// the CSMA/DCD branch into "always clear" for those channels.
+	skipCSMA := g.skipCSMA != nil && g.skipCSMA(top.channel)
+	if skipCSMA {
+		channelBusy = false
+	}
 	// p-persistence roll is done under g.mu because *math/rand.Rand is
 	// not safe for concurrent use. Today processOne runs from a single
 	// goroutine, but taking the lock here makes the invariant explicit.
 	var persistDefer bool
-	if !timing.FullDup && !channelBusy {
+	if !skipCSMA && !timing.FullDup && !channelBusy {
 		roll := byte(g.cfg.RandSource.Intn(256))
 		persistDefer = roll > timing.Persist
 	}
 	g.mu.Unlock()
 
-	if channelBusy && !timing.FullDup {
+	if channelBusy && !timing.FullDup && !skipCSMA {
 		// Wait up to one slot and retry on the next tick / DCD event.
 		return
 	}
@@ -426,6 +458,10 @@ func (g *Governor) processOne(ctx context.Context) {
 	}
 	heap.Pop(&g.q)
 	g.recordSendLocked(top.channel, time.Now())
+	// Sent++ is incremented once per frame, regardless of how many
+	// backends the dispatcher ends up fanning out to (see D3.1). It
+	// is a submission counter, not an airtime counter — per-backend
+	// outcomes live on graywolf_tx_backend_submits_total instead.
 	g.stats.Sent++
 	g.mu.Unlock()
 
@@ -434,10 +470,16 @@ func (g *Governor) processOne(ctx context.Context) {
 		g.logger.Warn("encode frame", "err", err)
 		return
 	}
+	// Stamp a monotonic FrameID so the dispatcher and every backend
+	// can log a correlation ID across the TX path. Starts at 1 (zero
+	// means "unstamped" for backward compatibility with pre-Phase-3
+	// modems; the field itself was added to proto in Phase 3).
+	frameID := g.nextFrameID.Add(1)
 	tf := &pb.TransmitFrame{
 		Channel:  top.channel,
 		Data:     raw,
 		Priority: uint32(top.priority),
+		FrameId:  frameID,
 		// TxdelayOverrideMs/TxtailOverrideMs left at 0: the Rust
 		// modem uses the ConfigurePtt values (hot-reloaded by the
 		// bridge) as channel defaults. Per-frame overrides are

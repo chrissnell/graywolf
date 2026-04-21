@@ -31,7 +31,7 @@ func newTestServer(t *testing.T) (*Server, *modembridge.Bridge) {
 		t.Fatal(err)
 	}
 	ch := &configstore.Channel{
-		Name: "rx0", InputDeviceID: dev.ID,
+		Name: "rx0", InputDeviceID: configstore.U32Ptr(dev.ID),
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}

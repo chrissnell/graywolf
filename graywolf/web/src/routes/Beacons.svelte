@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Toggle, Box, Radio, RadioGroup, Badge, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Toggle, Box, Radio, RadioGroup, Badge, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
@@ -9,6 +9,10 @@
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
   import SymbolPicker from '../components/SymbolPicker.svelte';
+  import ChannelListbox from '../lib/components/ChannelListbox.svelte';
+  import { channelsStore, start as startChannelsStore, invalidate as refreshChannels } from '../lib/stores/channels.svelte.js';
+  import { getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
+  import { unboundWarning, SUMMARY_UNBOUND } from '../lib/channelBacking.js';
   import {
     PRIMARY_TABLE, ALTERNATE_TABLE, SPRITE_URLS, CELL_PX,
     backgroundPosition, loadSymbols, describe,
@@ -44,7 +48,12 @@
   }
 
   let beacons = $state([]);
-  let channels = $state([]);
+  // Channels come from the shared channelsStore (D9) so every picker
+  // page sees coherent backing state. Legacy local `channels` array is
+  // retained only as a $derived view on top of the store so
+  // channelName() and the modal channel-defaulting code paths keep
+  // working without changes.
+  let channels = $derived(channelsStore.list);
   let smartBeacon = $state({
     enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
     min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
@@ -64,13 +73,18 @@
     comment: '', interval: '600', send_to_aprs_is: false, enabled: true,
   });
 
-  // Channels rendered as Select options. Label shows name + id so an
-  // operator with two channels called "VHF APRS" can still tell them
-  // apart, and the value is stringified for the Select component's
-  // bind:value (we parseInt on save).
-  let channelOptions = $derived(
-    channels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
-  );
+  // Unbound-channel warning (D17). Surfaces above the submit button
+  // when the selected channel has no backend attached so the
+  // operator knows the beacon will be accepted but silent.
+  let selectedBackingSummary = $derived.by(() => {
+    const n = parseInt(form.channel, 10);
+    const c = lookupChannel(n);
+    return c?.backing?.summary;
+  });
+  let selectedChannelObj = $derived.by(() => {
+    const n = parseInt(form.channel, 10);
+    return lookupChannel(n);
+  });
   let savingSB = $state(false);
   let pickerOpen = $state(false);
   let symbolMeta = $state(null);
@@ -100,9 +114,13 @@
     return `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`;
   }
 
+  // Kick the shared channels store (idempotent — safe if another
+  // page already started it). The store's poller + focus listener
+  // now owns channel freshness; this page just subscribes.
+  startChannelsStore();
+
   onMount(async () => {
     beacons = await api.get('/beacons') || [];
-    channels = await api.get('/channels') || [];
     const sb = await api.get('/smart-beacon');
     if (sb) smartBeacon = {
       enabled: sb.enabled,
@@ -212,6 +230,7 @@
       }
       modalOpen = false;
       beacons = await api.get('/beacons') || [];
+      refreshChannels();
     } catch (err) {
       toasts.error(err.message);
     }
@@ -410,7 +429,12 @@
       </div>
       <FormField label="Channel" id="bcn-channel"
         hint="Radio channel this beacon transmits on. Defined on the Channels page.">
-        <Select id="bcn-channel" bind:value={form.channel} options={channelOptions} />
+        <ChannelListbox
+          id="bcn-channel"
+          bind:value={form.channel}
+          valueType="string"
+          channels={channels}
+        />
       </FormField>
       <FormField label="Callsign" id="bcn-call">
         <Input id="bcn-call" bind:value={form.callsign} placeholder="N0CALL-9" />
@@ -485,6 +509,11 @@
       <Toggle bind:checked={form.send_to_aprs_is} label="Also send to APRS-IS" />
     </div>
   </div>
+  {#if selectedBackingSummary === SUMMARY_UNBOUND}
+    <div class="unbound-warning" role="note">
+      {unboundWarning(selectedChannelObj)}
+    </div>
+  {/if}
   <div class="modal-actions">
     <Button onclick={() => modalOpen = false}>Cancel</Button>
     <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
@@ -763,5 +792,20 @@
   .unit-active {
     background: var(--color-primary, #3b82f6);
     color: #fff;
+  }
+
+  /* D17 — unbound-channel save warning. Non-blocking; matches the
+     amber-bordered callout used elsewhere in the app so it reads as
+     a caution, not an error. */
+  .unbound-warning {
+    margin: 12px 0 0 0;
+    padding: 10px 12px;
+    border: 1px solid var(--color-warning, #d4a72c);
+    border-left-width: 4px;
+    border-radius: 4px;
+    background: var(--color-warning-bg, rgba(212, 167, 44, 0.12));
+    color: var(--text-primary, inherit);
+    font-size: 13px;
+    line-height: 1.45;
   }
 </style>

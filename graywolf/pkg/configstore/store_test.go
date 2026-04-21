@@ -2,6 +2,7 @@ package configstore
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -78,7 +79,7 @@ func TestChannelAndPtt(t *testing.T) {
 	}
 	ch := &Channel{
 		Name:          "rx1",
-		InputDeviceID: dev.ID,
+		InputDeviceID: U32Ptr(dev.ID),
 		ModemType:     "afsk",
 		BitRate:       1200,
 		MarkFreq:      1200,
@@ -124,7 +125,7 @@ func TestChannelValidation_InvalidDeviceID(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	ch := &Channel{
-		Name: "bad", InputDeviceID: 999, ModemType: "afsk",
+		Name: "bad", InputDeviceID: U32Ptr(999), ModemType: "afsk",
 		BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
@@ -142,7 +143,7 @@ func TestChannelValidation_InputChannelOutOfRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	ch := &Channel{
-		Name: "bad", InputDeviceID: dev.ID, InputChannel: 1, // mono device, channel 1 is out of range
+		Name: "bad", InputDeviceID: U32Ptr(dev.ID), InputChannel: 1, // mono device, channel 1 is out of range
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
@@ -161,7 +162,7 @@ func TestChannelValidation_StereoDeviceAcceptsBothChannels(t *testing.T) {
 	}
 	for _, ac := range []uint32{0, 1} {
 		ch := &Channel{
-			Name: "ch", InputDeviceID: dev.ID, InputChannel: ac,
+			Name: "ch", InputDeviceID: U32Ptr(dev.ID), InputChannel: ac,
 			ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 			Profile: "A", NumSlicers: 1, FixBits: "none",
 		}
@@ -185,7 +186,7 @@ func TestChannelValidation_DirectionEnforcement(t *testing.T) {
 
 	// Input device must have direction=input
 	ch := &Channel{
-		Name: "bad", InputDeviceID: outDev.ID,
+		Name: "bad", InputDeviceID: U32Ptr(outDev.ID),
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
@@ -195,7 +196,7 @@ func TestChannelValidation_DirectionEnforcement(t *testing.T) {
 
 	// Output device must have direction=output
 	ch2 := &Channel{
-		Name: "bad2", InputDeviceID: inDev.ID, OutputDeviceID: inDev.ID,
+		Name: "bad2", InputDeviceID: U32Ptr(inDev.ID), OutputDeviceID: inDev.ID,
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
@@ -205,7 +206,7 @@ func TestChannelValidation_DirectionEnforcement(t *testing.T) {
 
 	// RX-only (OutputDeviceID=0) is valid
 	ch3 := &Channel{
-		Name: "rxonly", InputDeviceID: inDev.ID, OutputDeviceID: 0,
+		Name: "rxonly", InputDeviceID: U32Ptr(inDev.ID), OutputDeviceID: 0,
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
@@ -244,7 +245,7 @@ func TestDeleteAudioDeviceChecked_RefsRefusesWithoutCascade(t *testing.T) {
 	if err := s.CreateAudioDevice(ctx, inDev); err != nil {
 		t.Fatal(err)
 	}
-	ch := &Channel{Name: "ch1", InputDeviceID: inDev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
+	ch := &Channel{Name: "ch1", InputDeviceID: U32Ptr(inDev.ID), ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
 	if err := s.CreateChannel(ctx, ch); err != nil {
 		t.Fatal(err)
 	}
@@ -279,8 +280,8 @@ func TestDeleteAudioDeviceChecked_CascadeDeletesRefs(t *testing.T) {
 	if err := s.CreateAudioDevice(ctx, outDev); err != nil {
 		t.Fatal(err)
 	}
-	ch1 := &Channel{Name: "ch1", InputDeviceID: inDev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
-	ch2 := &Channel{Name: "ch2", InputDeviceID: inDev.ID, OutputDeviceID: outDev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
+	ch1 := &Channel{Name: "ch1", InputDeviceID: U32Ptr(inDev.ID), ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
+	ch2 := &Channel{Name: "ch2", InputDeviceID: U32Ptr(inDev.ID), OutputDeviceID: outDev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
 	if err := s.CreateChannel(ctx, ch1); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +320,7 @@ func TestFX25IL2PConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	ch := &Channel{
-		Name: "rx0", InputDeviceID: dev.ID,
+		Name: "rx0", InputDeviceID: U32Ptr(dev.ID),
 		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		Profile: "A", NumSlicers: 1, FixBits: "none",
 	}
@@ -488,6 +489,83 @@ func TestCreateKissInterfaceModeDefaulting(t *testing.T) {
 	})
 }
 
+// TestChannel_NullableInputDeviceRoundTrip verifies that Phase 2's
+// *uint32 InputDeviceID survives Create + Read + Update without
+// getting coerced to zero.
+func TestChannel_NullableInputDeviceRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	t.Run("nil input: kiss-only create and read", func(t *testing.T) {
+		ch := &Channel{Name: "kiss-only", InputDeviceID: nil, ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1, FixBits: "none"}
+		if err := s.CreateChannel(ctx, ch); err != nil {
+			t.Fatalf("CreateChannel(kiss-only): %v", err)
+		}
+		got, err := s.GetChannel(ctx, ch.ID)
+		if err != nil {
+			t.Fatalf("GetChannel: %v", err)
+		}
+		if got.InputDeviceID != nil {
+			t.Errorf("expected nil InputDeviceID, got %v", got.InputDeviceID)
+		}
+	})
+
+	t.Run("kiss-only rejects non-zero output device", func(t *testing.T) {
+		ch := &Channel{Name: "bad", InputDeviceID: nil, OutputDeviceID: 5,
+			ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+			Profile: "A", NumSlicers: 1, FixBits: "none"}
+		if err := s.CreateChannel(ctx, ch); err == nil {
+			t.Fatal("expected error for kiss-only channel with OutputDeviceID != 0")
+		}
+	})
+
+	t.Run("explicit modem channel round-trips", func(t *testing.T) {
+		dev := &AudioDevice{Name: "mic", Direction: "input", SourceType: "soundcard", SourcePath: "hw:0",
+			SampleRate: 48000, Channels: 1, Format: "s16le"}
+		if err := s.CreateAudioDevice(ctx, dev); err != nil {
+			t.Fatal(err)
+		}
+		ch := &Channel{Name: "modem", InputDeviceID: U32Ptr(dev.ID), ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1, FixBits: "none"}
+		if err := s.CreateChannel(ctx, ch); err != nil {
+			t.Fatalf("CreateChannel(modem): %v", err)
+		}
+		got, err := s.GetChannel(ctx, ch.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.InputDeviceID == nil || *got.InputDeviceID != dev.ID {
+			t.Errorf("expected *uint32(%d), got %v", dev.ID, got.InputDeviceID)
+		}
+	})
+
+	t.Run("modem channel can be converted to kiss-only", func(t *testing.T) {
+		dev := &AudioDevice{Name: "mic2", Direction: "input", SourceType: "soundcard", SourcePath: "hw:1",
+			SampleRate: 48000, Channels: 1, Format: "s16le"}
+		if err := s.CreateAudioDevice(ctx, dev); err != nil {
+			t.Fatal(err)
+		}
+		ch := &Channel{Name: "convertible", InputDeviceID: U32Ptr(dev.ID), ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1, FixBits: "none"}
+		if err := s.CreateChannel(ctx, ch); err != nil {
+			t.Fatal(err)
+		}
+		ch.InputDeviceID = nil
+		ch.OutputDeviceID = 0
+		if err := s.UpdateChannel(ctx, ch); err != nil {
+			t.Fatalf("UpdateChannel(convert to kiss-only): %v", err)
+		}
+		got, err := s.GetChannel(ctx, ch.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.InputDeviceID != nil {
+			t.Errorf("after convert, expected nil InputDeviceID, got %v", got.InputDeviceID)
+		}
+	})
+}
+
 // TestBeaconUseGpsRoundTrip verifies that the use_gps column survives
 // AutoMigrate + Create + Read. Guards against accidental tag drift or a
 // dropped column on the Beacon model.
@@ -533,4 +611,111 @@ func TestBeaconUseGpsRoundTrip(t *testing.T) {
 	if got.Latitude != 37.5 || got.Longitude != -122.0 {
 		t.Errorf("lat/lon not persisted: %+v", got)
 	}
+}
+
+// TestChannelKissInterfaceMutualExclusivity exercises the Phase 3 D3
+// rule: a modem-backed channel cannot also have a KISS-TNC interface
+// with AllowTxFromGovernor=true attached to it (dual-backend would
+// double-transmit every frame).
+func TestChannelKissInterfaceMutualExclusivity(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	// Set up an input audio device + modem-backed channel + TNC-mode
+	// KISS interface NOT (yet) opted into TX. This is the baseline —
+	// the validator should accept it.
+	dev := &AudioDevice{Name: "Mic", Direction: "input", SourceType: "soundcard", Channels: 1}
+	if err := s.CreateAudioDevice(ctx, dev); err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	ch := &Channel{
+		Name:          "rf-vhf",
+		InputDeviceID: U32Ptr(dev.ID),
+		ModemType:     "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := s.CreateChannel(ctx, ch); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	ki := &KissInterface{
+		Name: "tnc-passive", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8201",
+		Channel: ch.ID, Mode: KissModeTnc, AllowTxFromGovernor: false,
+	}
+	if err := s.CreateKissInterface(ctx, ki); err != nil {
+		t.Fatalf("create passive tnc: %v", err)
+	}
+
+	// 1. Flipping AllowTxFromGovernor on while the channel has a
+	// bound input device must be rejected.
+	t.Run("update kiss_interface to allow tx on modem channel is rejected", func(t *testing.T) {
+		ki.AllowTxFromGovernor = true
+		err := s.UpdateKissInterface(ctx, ki)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "audio input device") {
+			t.Errorf("err=%v, want mention of audio input device", err)
+		}
+		// Revert so the other subtests start clean.
+		ki.AllowTxFromGovernor = false
+		if err := s.UpdateKissInterface(ctx, ki); err != nil {
+			t.Fatalf("revert: %v", err)
+		}
+	})
+
+	// 2. Creating a fresh TNC interface with allow_tx_from_governor
+	// targeting the modem channel is rejected.
+	t.Run("create kiss_interface with allow tx on modem channel is rejected", func(t *testing.T) {
+		dup := &KissInterface{
+			Name: "tnc-active", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8202",
+			Channel: ch.ID, Mode: KissModeTnc, AllowTxFromGovernor: true,
+		}
+		err := s.CreateKissInterface(ctx, dup)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	// 3. Opposite direction: start with a KISS-only channel + TNC
+	// interface with allow tx, then try to add an input audio device
+	// to the channel.
+	t.Run("attach audio input to channel with active tnc is rejected", func(t *testing.T) {
+		kissOnlyCh := &Channel{
+			Name: "kiss-only", InputDeviceID: nil,
+			ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+			Profile: "A", NumSlicers: 1, FixBits: "none",
+		}
+		if err := s.CreateChannel(ctx, kissOnlyCh); err != nil {
+			t.Fatalf("create kiss-only channel: %v", err)
+		}
+		activeKi := &KissInterface{
+			Name: "tnc-live", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8203",
+			Channel: kissOnlyCh.ID, Mode: KissModeTnc, AllowTxFromGovernor: true,
+		}
+		if err := s.CreateKissInterface(ctx, activeKi); err != nil {
+			t.Fatalf("create active tnc on kiss-only channel: %v", err)
+		}
+
+		// Now add an input device → expect rejection.
+		kissOnlyCh.InputDeviceID = U32Ptr(dev.ID)
+		err := s.UpdateChannel(ctx, kissOnlyCh)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "allow_tx_from_governor") {
+			t.Errorf("err=%v, want mention of allow_tx_from_governor", err)
+		}
+	})
+
+	// 4. Passive TNC (AllowTxFromGovernor=false) on a modem-backed
+	// channel is always fine — this is pure RX.
+	t.Run("passive tnc on modem channel is always accepted", func(t *testing.T) {
+		passive := &KissInterface{
+			Name: "tnc-rx", InterfaceType: "tcp", ListenAddr: "127.0.0.1:8204",
+			Channel: ch.ID, Mode: KissModeTnc, AllowTxFromGovernor: false,
+		}
+		if err := s.CreateKissInterface(ctx, passive); err != nil {
+			t.Fatalf("create passive tnc: %v", err)
+		}
+	})
 }

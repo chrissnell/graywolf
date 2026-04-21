@@ -27,16 +27,18 @@ type AudioDevice struct {
 	UpdatedAt  time.Time `json:"-"`
 }
 
-// Channel is a logical radio channel tied to an audio device.
+// Channel is a logical radio channel optionally tied to an audio device.
 //
 // Foreign-key policy:
-//   - InputDeviceID is a hard FK to AudioDevice.ID with OnDelete:RESTRICT:
-//     channels must have an input device, so deleting a device that
-//     still has referencing channels fails at the SQL layer unless the
-//     caller goes through DeleteAudioDeviceChecked(cascade=true), which
-//     removes the channels first. The RESTRICT constraint is the
-//     backstop if anything tries to delete an audio device by other
-//     means.
+//   - InputDeviceID is a *pointer-typed soft FK* to AudioDevice.ID:
+//     a nil value means "KISS-only channel — no modem, no audio".
+//     When non-nil, the value must reference an existing input-direction
+//     device (enforced at the application layer in validateChannel).
+//     Phase 2 migrated the column from NOT NULL to NULL to allow
+//     channels that are serviced only by a KISS TNC interface.
+//     DeleteAudioDeviceChecked still walks both input and output
+//     references to refuse / cascade a device delete that would
+//     orphan channels.
 //   - OutputDeviceID is a *soft* FK, not enforced by SQLite. The column
 //     is a plain uint32 where 0 means "RX-only" (no output device).
 //     SQLite FK constraints treat any non-NULL value as a reference, so
@@ -45,10 +47,19 @@ type AudioDevice struct {
 //     gain. The relation is validated at the application layer in
 //     validateChannel, and DeleteAudioDeviceChecked walks both input
 //     and output references.
+//
+// When InputDeviceID is nil, ModemType / BitRate / MarkFreq / SpaceFreq /
+// Profile / NumSlicers / FixBits / FX25Encode / IL2PEncode / NumDecoders
+// / DecoderOffset are stored unchanged but effectively unused: the modem
+// subprocess is never told about the channel (see
+// pkg/modembridge/session.go pushConfiguration, which skips nil-input
+// channels). They round-trip through the UI so a future Convert flow
+// can flip a channel back to modem-backed without losing the operator's
+// last known values.
 type Channel struct {
 	ID             uint32       `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name           string       `gorm:"not null" json:"name"`
-	InputDeviceID  uint32       `gorm:"not null;index" json:"input_device_id"`
+	InputDeviceID  *uint32      `gorm:"index" json:"input_device_id"`
 	InputDevice    *AudioDevice `gorm:"foreignKey:InputDeviceID;references:ID;constraint:OnDelete:RESTRICT,OnUpdate:RESTRICT" json:"-"`
 	InputChannel   uint32       `gorm:"not null;default:0" json:"input_channel"`          // 0=left/mono, 1=right
 	OutputDeviceID uint32       `gorm:"not null;default:0;index" json:"output_device_id"` // 0=RX-only; soft FK, see type comment
@@ -107,8 +118,8 @@ type PttConfig struct {
 type KissInterface struct {
 	ID               uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name             string    `gorm:"not null;uniqueIndex" json:"name"`
-	InterfaceType    string    `gorm:"not null;default:'tcp'" json:"type"` // tcp|serial|bluetooth
-	ListenAddr       string    `json:"listen_addr"`                        // host:port for tcp
+	InterfaceType    string    `gorm:"not null;default:'tcp'" json:"type"` // tcp|tcp-client|serial|bluetooth
+	ListenAddr       string    `json:"listen_addr"`                        // host:port for tcp (server-listen)
 	Device           string    `json:"serial_device"`                      // /dev/ttyUSB0 or bluetooth mac
 	BaudRate         uint32    `gorm:"default:9600" json:"baud_rate"`
 	Channel          uint32    `gorm:"not null;default:1" json:"channel"` // default radio channel for this interface
@@ -117,8 +128,32 @@ type KissInterface struct {
 	Mode             string    `gorm:"not null;default:'modem'" json:"mode"`           // modem|tnc
 	TncIngressRateHz uint32    `gorm:"not null;default:50" json:"tnc_ingress_rate_hz"` // token-bucket refill, frames/sec
 	TncIngressBurst  uint32    `gorm:"not null;default:100" json:"tnc_ingress_burst"`  // token-bucket size
-	CreatedAt        time.Time `json:"-"`
-	UpdatedAt        time.Time `json:"-"`
+	// InterfaceType == "tcp-client" uses RemoteHost / RemotePort as the
+	// dial target and ReconnectInitMs / ReconnectMaxMs to size the
+	// supervisor's backoff schedule. ListenAddr is ignored on tcp-client
+	// rows. Unused / zero on all other interface types; see Phase 4 in
+	// .context/2026-04-20-kiss-tcp-client-and-channel-backing.md.
+	RemoteHost      string `gorm:"column:remote_host;not null;default:''" json:"remote_host"`
+	RemotePort      uint16 `gorm:"column:remote_port;not null;default:0" json:"remote_port"`
+	ReconnectInitMs uint32 `gorm:"column:reconnect_init_ms;not null;default:1000" json:"reconnect_init_ms"`
+	ReconnectMaxMs  uint32 `gorm:"column:reconnect_max_ms;not null;default:300000" json:"reconnect_max_ms"`
+	// AllowTxFromGovernor: when true (and Mode == KissModeTnc), this
+	// interface is registered as a KissTnc TX backend and the
+	// dispatcher fan-outs governor-scheduled frames (beacon / digi /
+	// iGate IS→RF / KISS / AGW submissions) for this channel to it.
+	// Default false so existing TNC-mode rows that users configured
+	// before Phase 3 do NOT silently start transmitting. Phase 4 sets
+	// the DTO default to true for newly-created tcp-client rows only.
+	// Modem-mode rows ignore this flag entirely (they TX via Submit,
+	// they don't receive TX from the governor).
+	AllowTxFromGovernor bool `gorm:"column:allow_tx_from_governor;not null;default:false" json:"allow_tx_from_governor"`
+	// NeedsReconfig is set to true when a referential cascade (Phase 5)
+	// nulls this row's Channel. Phase 3 merely declares the column so
+	// the shape is stable before the cascade logic lands; no code reads
+	// it yet.
+	NeedsReconfig bool      `gorm:"column:needs_reconfig;not null;default:false" json:"needs_reconfig"`
+	CreatedAt     time.Time `json:"-"`
+	UpdatedAt     time.Time `json:"-"`
 }
 
 // KISS interface mode values. Stored lowercase and matched exactly — see
@@ -145,6 +180,37 @@ const (
 func ValidKissMode(m string) bool {
 	return m == KissModeModem || m == KissModeTnc
 }
+
+// KISS interface transport types. Kept lowercase and matched exactly
+// via ValidKissInterfaceType. "tcp" is the server-listen (inbound)
+// transport — graywolf binds ListenAddr and accepts multiple clients.
+// "tcp-client" is the outbound dial (Phase 4) — graywolf connects to a
+// remote KISS TNC at RemoteHost:RemotePort and maintains a single
+// supervised connection with exponential backoff + jitter.
+const (
+	KissTypeTCP       = "tcp"
+	KissTypeTCPClient = "tcp-client"
+	KissTypeSerial    = "serial"
+	KissTypeBluetooth = "bluetooth"
+)
+
+// ValidKissInterfaceType reports whether t is an accepted
+// KissInterface.InterfaceType value. "tcp-client" was added in Phase 4
+// of the KISS TCP-client + channel-backing plan.
+func ValidKissInterfaceType(t string) bool {
+	switch t {
+	case KissTypeTCP, KissTypeTCPClient, KissTypeSerial, KissTypeBluetooth:
+		return true
+	}
+	return false
+}
+
+// U32Ptr returns a pointer to a copy of v. Small helper for call sites
+// (tests, DTO mappers, fixtures) that need to set Channel.InputDeviceID
+// — a *uint32 after the Phase 2 nullable migration — from a literal or
+// a uint32 local. Keeps the common case a one-liner without the
+// "declare local, take address" dance.
+func U32Ptr(v uint32) *uint32 { return &v }
 
 // AgwConfig is a singleton (id=1) row describing the AGWPE listener.
 type AgwConfig struct {

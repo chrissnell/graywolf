@@ -289,6 +289,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/{id}/referrers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List referrers of a channel */
+        get: operations["getChannelReferrers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/{id}/stats": {
         parameters: {
             query?: never;
@@ -538,6 +555,23 @@ export interface paths {
         post?: never;
         /** Delete KISS interface */
         delete: operations["deleteKiss"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kiss/{id}/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconnect a KISS tcp-client interface now */
+        post: operations["reconnectKiss"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1254,6 +1288,11 @@ export interface components {
             /** @description mph (1-minute sustained) */
             windSpeed?: number;
         };
+        "configstore.Referrer": {
+            id?: number;
+            name?: string;
+            type?: string;
+        };
         "dto.AcceptInviteRequest": {
             /**
              * @description Callsign is the tactical label to subscribe to. Required. Must
@@ -1414,6 +1453,24 @@ export interface components {
             /** @description "sent" */
             status?: string;
         };
+        "dto.ChannelBacking": {
+            health?: string;
+            kiss_tnc?: components["schemas"]["dto.ChannelKissTncEntry"][];
+            modem?: components["schemas"]["dto.ChannelModemBacking"];
+            summary?: string;
+        };
+        "dto.ChannelKissTncEntry": {
+            allow_tx_from_governor?: boolean;
+            interface_id?: number;
+            interface_name?: string;
+            last_error?: string;
+            retry_at_unix_ms?: number;
+            state?: string;
+        };
+        "dto.ChannelModemBacking": {
+            active?: boolean;
+            reason?: string;
+        };
         "dto.ChannelRequest": {
             bit_rate?: number;
             decoder_offset?: number;
@@ -1433,6 +1490,7 @@ export interface components {
             space_freq?: number;
         };
         "dto.ChannelResponse": {
+            backing?: components["schemas"]["dto.ChannelBacking"];
             bit_rate?: number;
             decoder_offset?: number;
             fix_bits?: string;
@@ -1570,9 +1628,29 @@ export interface components {
             type?: string;
         };
         "dto.KissRequest": {
+            /**
+             * @description AllowTxFromGovernor opts this TNC-mode interface in to receive
+             *     frames from the TX governor (beacon / digipeater / iGate /
+             *     KISS / AGW submissions). Only meaningful when Mode == "tnc";
+             *     the validator rejects true with any other mode. Default false
+             *     on migrated rows so existing TNC servers do not silently start
+             *     transmitting; Phase 4 sets the DTO default to true for newly
+             *     created tcp-client rows.
+             */
+            allow_tx_from_governor?: boolean;
             baud_rate?: number;
             channel?: number;
             mode?: string;
+            reconnect_init_ms?: number;
+            reconnect_max_ms?: number;
+            /**
+             * @description Tcp-client fields (Phase 4): RemoteHost:RemotePort is the dial
+             *     target; ReconnectInitMs / ReconnectMaxMs size the supervisor's
+             *     exponential-backoff reconnect schedule. Unused / zero for
+             *     Type != "tcp-client".
+             */
+            remote_host?: string;
+            remote_port?: number;
             serial_device?: string;
             tcp_port?: number;
             tnc_ingress_burst?: number;
@@ -1580,11 +1658,32 @@ export interface components {
             type?: string;
         };
         "dto.KissResponse": {
+            allow_tx_from_governor?: boolean;
+            backoff_seconds?: number;
             baud_rate?: number;
             channel?: number;
+            connected_since?: number;
             id?: number;
+            last_error?: string;
             mode?: string;
+            needs_reconfig?: boolean;
+            peer_addr?: string;
+            reconnect_count?: number;
+            reconnect_init_ms?: number;
+            reconnect_max_ms?: number;
+            /** @description Tcp-client fields (Phase 4). Zero-valued for non-tcp-client rows. */
+            remote_host?: string;
+            remote_port?: number;
+            retry_at_unix_ms?: number;
             serial_device?: string;
+            /**
+             * @description Per-interface runtime status (Phase 4). Surfaced verbatim from
+             *     kiss.Manager.Status(); zero-valued when the row is not running
+             *     or when the manager has nothing to report. Omitted from the
+             *     wire when the interface is not tcp-client (State == "" +
+             *     omitempty).
+             */
+            state?: string;
             tcp_port?: number;
             tnc_ingress_burst?: number;
             tnc_ingress_rate_hz?: number;
@@ -2010,6 +2109,10 @@ export interface components {
              *     UART, or a previously-running graywolf process).
              */
             used?: boolean;
+        };
+        "webapi.ChannelReferrersResponse": {
+            error?: string;
+            referrers?: components["schemas"]["configstore.Referrer"][];
         };
         "webapi.IgateSimulationResponse": {
             simulation_mode?: boolean;
@@ -3300,7 +3403,10 @@ export interface operations {
     };
     deleteChannel: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Cascade per-table deletes / nulls; 409 without it when referrers exist */
+                cascade?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Channel id */
@@ -3326,6 +3432,24 @@ export interface operations {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webapi.ChannelReferrersResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -3333,6 +3457,56 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getChannelReferrers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.ChannelReferrersResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };
@@ -4197,6 +4371,54 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    reconnectKiss: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description KISS interface id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

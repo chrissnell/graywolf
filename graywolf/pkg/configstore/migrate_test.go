@@ -3,6 +3,7 @@ package configstore
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -101,7 +102,7 @@ func TestForeignKeyEnforcement_InputDevice(t *testing.T) {
 	if err := s.CreateAudioDevice(ctx, dev); err != nil {
 		t.Fatal(err)
 	}
-	ch := &Channel{Name: "ch", InputDeviceID: dev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
+	ch := &Channel{Name: "ch", InputDeviceID: U32Ptr(dev.ID), ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
 	if err := s.CreateChannel(ctx, ch); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestForeignKeyCascade_PttConfig(t *testing.T) {
 	if err := s.CreateAudioDevice(ctx, dev); err != nil {
 		t.Fatal(err)
 	}
-	ch := &Channel{Name: "ch", InputDeviceID: dev.ID, ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
+	ch := &Channel{Name: "ch", InputDeviceID: U32Ptr(dev.ID), ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1}
 	if err := s.CreateChannel(ctx, ch); err != nil {
 		t.Fatal(err)
 	}
@@ -342,8 +343,8 @@ INSERT INTO channels (id,name,audio_device_id,audio_channel)
 	if err != nil {
 		t.Fatalf("GetChannel(42): %v", err)
 	}
-	if ch.InputDeviceID != 7 {
-		t.Errorf("InputDeviceID = %d, want 7", ch.InputDeviceID)
+	if ch.InputDeviceID == nil || *ch.InputDeviceID != 7 {
+		t.Errorf("InputDeviceID = %v, want *uint32(7)", ch.InputDeviceID)
 	}
 	if ch.InputChannel != 1 {
 		t.Errorf("InputChannel = %d, want 1", ch.InputChannel)
@@ -358,4 +359,286 @@ INSERT INTO channels (id,name,audio_device_id,audio_channel)
 	if version < 2 {
 		t.Errorf("user_version = %d, want >= 2 after legacy upgrade", version)
 	}
+}
+
+// TestNullableInputDeviceMigration builds a pre-version-8 channels
+// table with input_device_id declared NOT NULL, populates it with
+// a representative row, stamps PRAGMA user_version = 7, and then
+// re-opens under the current binary. After Open, the column must
+// permit NULL (verified by inserting a NULL row directly via SQL),
+// the existing row must survive with its value intact, and the
+// foreign-key constraint on input_device_id -> audio_devices(id)
+// must still reject orphaned references.
+//
+// This is the synthetic equivalent of the prior-release fixture
+// test below. They complement each other: this test exercises the
+// migration against an exactly-known shape; TestMigrateFromPriorRelease
+// exercises it against a real binary's output.
+func TestNullableInputDeviceMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pre-v0.11.db")
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	_, err = raw.Exec(`
+CREATE TABLE audio_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  direction TEXT NOT NULL DEFAULT 'input',
+  source_type TEXT NOT NULL,
+  source_path TEXT,
+  sample_rate INTEGER NOT NULL DEFAULT 48000,
+  channels INTEGER NOT NULL DEFAULT 1,
+  format TEXT NOT NULL DEFAULT 's16le',
+  gain_db REAL NOT NULL DEFAULT 0,
+  created_at DATETIME,
+  updated_at DATETIME
+);
+CREATE TABLE channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  input_device_id INTEGER NOT NULL,
+  input_channel INTEGER NOT NULL DEFAULT 0,
+  output_device_id INTEGER NOT NULL DEFAULT 0,
+  output_channel INTEGER NOT NULL DEFAULT 0,
+  modem_type TEXT NOT NULL DEFAULT 'afsk',
+  bit_rate INTEGER NOT NULL DEFAULT 1200,
+  mark_freq INTEGER NOT NULL DEFAULT 1200,
+  space_freq INTEGER NOT NULL DEFAULT 2200,
+  profile TEXT NOT NULL DEFAULT 'A',
+  num_slicers INTEGER NOT NULL DEFAULT 1,
+  fix_bits TEXT NOT NULL DEFAULT 'none',
+  fx25_encode NUMERIC NOT NULL DEFAULT 0,
+  il2p_encode NUMERIC NOT NULL DEFAULT 0,
+  num_decoders INTEGER NOT NULL DEFAULT 1,
+  decoder_offset INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME,
+  updated_at DATETIME,
+  FOREIGN KEY (input_device_id) REFERENCES audio_devices(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+INSERT INTO audio_devices (id,name,direction,source_type,source_path,sample_rate,channels,format)
+  VALUES (1,'mic','input','soundcard','hw:0',48000,1,'s16le');
+INSERT INTO channels (id,name,input_device_id) VALUES (1,'VHF',1);
+PRAGMA user_version = 7;
+`)
+	raw.Close()
+	if err != nil {
+		t.Fatalf("seed pre-v0.11 schema: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open upgraded db: %v", err)
+	}
+	defer s.Close()
+
+	// user_version must have advanced to at least 8.
+	var version int
+	s.DB().Raw("PRAGMA user_version").Scan(&version)
+	if version < 8 {
+		t.Errorf("user_version = %d, want >= 8 after nullable migration", version)
+	}
+
+	// The surviving row must have carried its input_device_id
+	// value across the rebuild.
+	ctx := context.Background()
+	ch, err := s.GetChannel(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetChannel(1): %v", err)
+	}
+	if ch.InputDeviceID == nil || *ch.InputDeviceID != 1 {
+		t.Errorf("post-migration InputDeviceID = %v, want *uint32(1)", ch.InputDeviceID)
+	}
+
+	// A NULL insert must succeed now (previously NOT NULL).
+	kiss := &Channel{Name: "kiss-only", InputDeviceID: nil, ModemType: "afsk",
+		BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A",
+		NumSlicers: 1, FixBits: "none"}
+	if err := s.CreateChannel(ctx, kiss); err != nil {
+		t.Fatalf("kiss-only insert after migration: %v", err)
+	}
+	got, err := s.GetChannel(ctx, kiss.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.InputDeviceID != nil {
+		t.Errorf("kiss-only row read-back: expected nil InputDeviceID, got %v", got.InputDeviceID)
+	}
+
+	// FK is still enforced: an orphan reference must be rejected.
+	orphan := &Channel{Name: "orphan", InputDeviceID: U32Ptr(99999), ModemType: "afsk",
+		BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A",
+		NumSlicers: 1, FixBits: "none"}
+	if err := s.CreateChannel(ctx, orphan); err == nil {
+		t.Error("expected FK rejection for orphaned input_device_id, got nil")
+	}
+}
+
+// TestNullableInputDeviceMigration_DownRoundTrip exercises the
+// down-migration helper directly. On a DB with only non-NULL rows, the
+// down should succeed and re-add the NOT NULL constraint. On a DB
+// with a NULL row, the down must abort rather than lose data.
+func TestNullableInputDeviceMigration_DownRoundTrip(t *testing.T) {
+	t.Run("down succeeds when all rows are non-null", func(t *testing.T) {
+		s := newTestStore(t)
+		ctx := context.Background()
+		dev := &AudioDevice{Name: "mic", Direction: "input", SourceType: "soundcard", SourcePath: "hw:0",
+			SampleRate: 48000, Channels: 1, Format: "s16le"}
+		if err := s.CreateAudioDevice(ctx, dev); err != nil {
+			t.Fatal(err)
+		}
+		ch := &Channel{Name: "c", InputDeviceID: U32Ptr(dev.ID), ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1, FixBits: "none"}
+		if err := s.CreateChannel(ctx, ch); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := migrateChannelsNullableInputDeviceDown(s.DB()); err != nil {
+			t.Fatalf("down-migration: %v", err)
+		}
+
+		var version int
+		s.DB().Raw("PRAGMA user_version").Scan(&version)
+		if version != 7 {
+			t.Errorf("after down, user_version = %d, want 7", version)
+		}
+
+		// The NOT NULL constraint is back: a direct SQL NULL insert
+		// must now fail.
+		err := s.DB().Exec(`INSERT INTO channels (name, input_device_id) VALUES ('bad', NULL)`).Error
+		if err == nil {
+			t.Error("expected NOT NULL rejection after down-migration, got nil")
+		}
+	})
+
+	t.Run("down aborts when rows carry NULL", func(t *testing.T) {
+		s := newTestStore(t)
+		ctx := context.Background()
+		ch := &Channel{Name: "kiss", InputDeviceID: nil, ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A", NumSlicers: 1, FixBits: "none"}
+		if err := s.CreateChannel(ctx, ch); err != nil {
+			t.Fatal(err)
+		}
+		err := migrateChannelsNullableInputDeviceDown(s.DB())
+		if err == nil {
+			t.Fatal("expected down-migration to abort on NULL rows, got nil")
+		}
+	})
+}
+
+// TestMigrateFromPriorRelease loads a committed prior-release fixture
+// database (generated once via scripts/testdata/gen_pre_v0_11_db.sh)
+// and runs the migration chain. Skipped when the fixture is absent so
+// fresh-clone builds don't fail on a missing binary artifact.
+//
+// The fixture is a SQLite file produced by booting graywolf v0.10.11
+// against a throwaway config dir, creating a representative
+// configuration (3 channels, 2 KISS interfaces, 3 beacons, 2 digi
+// rules, 1 igate config) via the REST API, then SIGTERMing and
+// copying the resulting DB. See the script for exact steps.
+//
+// Assertions:
+//   - Open() succeeds.
+//   - user_version advances to the current highest migration.
+//   - Row counts in channels / kiss_interfaces / beacons /
+//     digipeater_rules are preserved.
+//   - input_device_id values on existing rows survive the rebuild.
+//   - A NULL-input row can be inserted after migration.
+//   - The input_device_id FK still rejects orphaned references.
+func TestMigrateFromPriorRelease(t *testing.T) {
+	fixture := filepath.Join("testdata", "channels_pre_v0_11.db")
+	info, err := os.Stat(fixture)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("fixture not generated; run scripts/testdata/gen_pre_v0_11_db.sh first")
+		}
+		t.Fatalf("stat fixture: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Skipf("fixture %s is empty", fixture)
+	}
+
+	// Work on a copy so repeated runs see an untouched fixture.
+	tmp := filepath.Join(t.TempDir(), "fixture.db")
+	src, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err := os.WriteFile(tmp, src, 0o644); err != nil {
+		t.Fatalf("write fixture copy: %v", err)
+	}
+
+	// Row counts before migration.
+	pre, err := sql.Open("sqlite", tmp)
+	if err != nil {
+		t.Fatalf("open pre: %v", err)
+	}
+	preCounts := tableCounts(t, pre, []string{"channels", "kiss_interfaces", "beacons", "digipeater_rules"})
+	_ = pre.Close()
+
+	s, err := Open(tmp)
+	if err != nil {
+		t.Fatalf("Open upgraded fixture: %v", err)
+	}
+	defer s.Close()
+
+	var version int
+	s.DB().Raw("PRAGMA user_version").Scan(&version)
+	if want := highestMigrationVersion(t); version < want {
+		t.Errorf("user_version = %d, want >= %d after fixture upgrade", version, want)
+	}
+
+	// Row counts after migration: every table we probed must be
+	// unchanged. Future migrations that legitimately add rows will
+	// need to loosen this check.
+	postCounts := tableCountsFromGorm(t, s, []string{"channels", "kiss_interfaces", "beacons", "digipeater_rules"})
+	for table, pc := range preCounts {
+		if got := postCounts[table]; got != pc {
+			t.Errorf("%s row count changed: pre=%d post=%d", table, pc, got)
+		}
+	}
+
+	// Direct NULL insert via SQL to confirm the column is truly
+	// nullable post-migration (bypassing the validator).
+	if err := s.DB().Exec(`INSERT INTO channels (name, input_device_id, modem_type, bit_rate, mark_freq, space_freq, profile, num_slicers, fix_bits)
+			VALUES ('post-migration-kiss', NULL, 'afsk', 1200, 1200, 2200, 'A', 1, 'none')`).Error; err != nil {
+		t.Errorf("direct NULL insert after migration: %v", err)
+	}
+
+	// FK still enforces: orphan insert must fail. We pick an id
+	// guaranteed not to exist.
+	err = s.DB().Exec(`INSERT INTO channels (name, input_device_id, modem_type, bit_rate, mark_freq, space_freq, profile, num_slicers, fix_bits)
+			VALUES ('orphan', 99999, 'afsk', 1200, 1200, 2200, 'A', 1, 'none')`).Error
+	if err == nil {
+		t.Error("expected FK rejection for orphaned input_device_id, got nil")
+	}
+}
+
+func tableCounts(t *testing.T, db *sql.DB, tables []string) map[string]int {
+	t.Helper()
+	out := make(map[string]int, len(tables))
+	for _, name := range tables {
+		var n int
+		// Ignore "no such table" — some fixtures may predate a
+		// particular table; we simply don't compare that entry.
+		if err := db.QueryRow("SELECT COUNT(*) FROM " + name).Scan(&n); err != nil {
+			continue
+		}
+		out[name] = n
+	}
+	return out
+}
+
+func tableCountsFromGorm(t *testing.T, s *Store, tables []string) map[string]int {
+	t.Helper()
+	out := make(map[string]int, len(tables))
+	for _, name := range tables {
+		var n int
+		if err := s.DB().Raw("SELECT COUNT(*) FROM " + name).Scan(&n).Error; err != nil {
+			continue
+		}
+		out[name] = n
+	}
+	return out
 }

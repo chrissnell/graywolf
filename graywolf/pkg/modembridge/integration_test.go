@@ -92,7 +92,7 @@ func TestFlacRoundTrip(t *testing.T) {
 	}
 	ch := &configstore.Channel{
 		Name:          "rx0",
-		InputDeviceID: dev.ID,
+		InputDeviceID: configstore.U32Ptr(dev.ID),
 		ModemType:     "afsk",
 		BitRate:       1200,
 		MarkFreq:      1200,

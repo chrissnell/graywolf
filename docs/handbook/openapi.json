@@ -1268,6 +1268,12 @@
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Cascade per-table deletes / nulls; 409 without it when referrers exist",
+                        "name": "cascade",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1276,6 +1282,70 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.ChannelReferrersResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/channels/{id}/referrers": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "summary": "List referrers of a channel",
+                "operationId": "getChannelReferrers",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Channel id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.ChannelReferrersResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -2292,6 +2362,52 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/kiss/{id}/reconnect": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "Reconnect a KISS tcp-client interface now",
+                "operationId": "reconnectKiss",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "KISS interface id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -4737,6 +4853,20 @@
                 }
             }
         },
+        "configstore.Referrer": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.AcceptInviteRequest": {
             "type": "object",
             "required": [
@@ -5157,6 +5287,60 @@
                 }
             }
         },
+        "dto.ChannelBacking": {
+            "type": "object",
+            "properties": {
+                "health": {
+                    "type": "string"
+                },
+                "kiss_tnc": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ChannelKissTncEntry"
+                    }
+                },
+                "modem": {
+                    "$ref": "#/definitions/dto.ChannelModemBacking"
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ChannelKissTncEntry": {
+            "type": "object",
+            "properties": {
+                "allow_tx_from_governor": {
+                    "type": "boolean"
+                },
+                "interface_id": {
+                    "type": "integer"
+                },
+                "interface_name": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "retry_at_unix_ms": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ChannelModemBacking": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ChannelRequest": {
             "type": "object",
             "properties": {
@@ -5213,6 +5397,9 @@
         "dto.ChannelResponse": {
             "type": "object",
             "properties": {
+                "backing": {
+                    "$ref": "#/definitions/dto.ChannelBacking"
+                },
                 "bit_rate": {
                     "type": "integer"
                 },
@@ -5605,16 +5792,42 @@
         "dto.KissRequest": {
             "type": "object",
             "properties": {
+                "allow_tx_from_governor": {
+                    "description": "AllowTxFromGovernor opts this TNC-mode interface in to receive\nframes from the TX governor (beacon / digipeater / iGate /\nKISS / AGW submissions). Only meaningful when Mode == \"tnc\";\nthe validator rejects true with any other mode. Default false\non migrated rows so existing TNC servers do not silently start\ntransmitting; Phase 4 sets the DTO default to true for newly\ncreated tcp-client rows.",
+                    "type": "boolean"
+                },
                 "baud_rate": {
                     "type": "integer"
                 },
                 "channel": {
                     "type": "integer"
                 },
+                "mode": {
+                    "type": "string"
+                },
+                "reconnect_init_ms": {
+                    "type": "integer"
+                },
+                "reconnect_max_ms": {
+                    "type": "integer"
+                },
+                "remote_host": {
+                    "description": "Tcp-client fields (Phase 4): RemoteHost:RemotePort is the dial\ntarget; ReconnectInitMs / ReconnectMaxMs size the supervisor's\nexponential-backoff reconnect schedule. Unused / zero for\nType != \"tcp-client\".",
+                    "type": "string"
+                },
+                "remote_port": {
+                    "type": "integer"
+                },
                 "serial_device": {
                     "type": "string"
                 },
                 "tcp_port": {
+                    "type": "integer"
+                },
+                "tnc_ingress_burst": {
+                    "type": "integer"
+                },
+                "tnc_ingress_rate_hz": {
                     "type": "integer"
                 },
                 "type": {
@@ -5625,19 +5838,69 @@
         "dto.KissResponse": {
             "type": "object",
             "properties": {
+                "allow_tx_from_governor": {
+                    "type": "boolean"
+                },
+                "backoff_seconds": {
+                    "type": "integer"
+                },
                 "baud_rate": {
                     "type": "integer"
                 },
                 "channel": {
                     "type": "integer"
                 },
+                "connected_since": {
+                    "type": "integer"
+                },
                 "id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "needs_reconfig": {
+                    "type": "boolean"
+                },
+                "peer_addr": {
+                    "type": "string"
+                },
+                "reconnect_count": {
+                    "type": "integer"
+                },
+                "reconnect_init_ms": {
+                    "type": "integer"
+                },
+                "reconnect_max_ms": {
+                    "type": "integer"
+                },
+                "remote_host": {
+                    "description": "Tcp-client fields (Phase 4). Zero-valued for non-tcp-client rows.",
+                    "type": "string"
+                },
+                "remote_port": {
+                    "type": "integer"
+                },
+                "retry_at_unix_ms": {
                     "type": "integer"
                 },
                 "serial_device": {
                     "type": "string"
                 },
+                "state": {
+                    "description": "Per-interface runtime status (Phase 4). Surfaced verbatim from\nkiss.Manager.Status(); zero-valued when the row is not running\nor when the manager has nothing to report. Omitted from the\nwire when the interface is not tcp-client (State == \"\" +\nomitempty).",
+                    "type": "string"
+                },
                 "tcp_port": {
+                    "type": "integer"
+                },
+                "tnc_ingress_burst": {
+                    "type": "integer"
+                },
+                "tnc_ingress_rate_hz": {
                     "type": "integer"
                 },
                 "type": {
@@ -6432,6 +6695,20 @@
                 "used": {
                     "description": "Used is true when another driver has claimed this line (e.g. SPI, I2C,\nUART, or a previously-running graywolf process).",
                     "type": "boolean"
+                }
+            }
+        },
+        "webapi.ChannelReferrersResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "referrers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/configstore.Referrer"
+                    }
                 }
             }
         },

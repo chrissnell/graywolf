@@ -976,8 +976,13 @@ type TransmitFrame struct {
 	TxdelayOverrideMs uint32                 `protobuf:"varint,3,opt,name=txdelay_override_ms,json=txdelayOverrideMs,proto3" json:"txdelay_override_ms,omitempty"` // 0 = use configured default
 	TxtailOverrideMs  uint32                 `protobuf:"varint,4,opt,name=txtail_override_ms,json=txtailOverrideMs,proto3" json:"txtail_override_ms,omitempty"`
 	Priority          uint32                 `protobuf:"varint,5,opt,name=priority,proto3" json:"priority,omitempty"` // higher = sooner
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Monotonic correlation ID stamped at txgovernor.Governor.Submit (starts
+	// at 1; zero = unstamped). Propagated through the dispatcher and every
+	// TX backend for log correlation across partial-failure fan-outs.
+	// Backward-compatible: older modems simply ignore the field.
+	FrameId       uint64 `protobuf:"varint,6,opt,name=frame_id,json=frameId,proto3" json:"frame_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TransmitFrame) Reset() {
@@ -1045,6 +1050,13 @@ func (x *TransmitFrame) GetPriority() uint32 {
 	return 0
 }
 
+func (x *TransmitFrame) GetFrameId() uint64 {
+	if x != nil {
+		return x.FrameId
+	}
+	return 0
+}
+
 // Configure a logical radio channel's demodulator parameters.
 type ConfigureChannel struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -1067,11 +1079,17 @@ type ConfigureChannel struct {
 	OutputDeviceId uint32                 `protobuf:"varint,17,opt,name=output_device_id,json=outputDeviceId,proto3" json:"output_device_id,omitempty"` // output audio device, 0 = RX-only
 	OutputChannel  uint32                 `protobuf:"varint,18,opt,name=output_channel,json=outputChannel,proto3" json:"output_channel,omitempty"`      // output stereo select
 	// Multi-demodulator ensemble preset for AFSK. Overrides `profile` and
-	// `num_slicers` when non-empty. Known values:
+	// `num_slicers` when it resolves to a multi-demod preset. Known values:
 	//
-	//	""        — single demodulator, respects `profile` and `num_slicers`
-	//	"dual"    — RECOMMENDED_2DEMOD: A9 + A9HL (Profile A with + without HL)
-	//	"triple"  — RECOMMENDED_3DEMOD: A9 + A9HL + B9
+	//	""        — default, treated as "triple" (recommended for all new
+	//	            installs; matches or beats Direwolf -P AD+ on the
+	//	            WA8LMF reference tracks, costs ~1.6% of one CPU core)
+	//	"triple"  — RECOMMENDED_3DEMOD: Profile A ×9 slicers + A ×9 with
+	//	            hard-limiter + Profile B ×9 slicers
+	//	"dual"    — RECOMMENDED_2DEMOD: Profile A ×9 with and without HL
+	//	"single"  — explicit legacy single-demodulator path; respects
+	//	            `profile` and `num_slicers`. Use when you need the
+	//	            lowest possible CPU or want to reproduce old behavior.
 	//
 	// When a preset is active, output frames are deduped across the ensemble
 	// using a 3-symbol time window (matching Direwolf's dedup semantics).
@@ -1245,14 +1263,18 @@ func (x *ConfigureChannel) GetDemodEnsemble() string {
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
 type ConfigureAudio struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId      uint32                 `protobuf:"varint,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	DeviceName    string                 `protobuf:"bytes,2,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"` // cpal device name, "stdin", or file path
-	SampleRate    uint32                 `protobuf:"varint,3,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"`
-	Channels      uint32                 `protobuf:"varint,4,opt,name=channels,proto3" json:"channels,omitempty"`                      // 1=mono, 2=stereo
-	SourceType    string                 `protobuf:"bytes,5,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"` // "soundcard" | "stdin" | "flac" | "sdr_udp"
-	Format        string                 `protobuf:"bytes,6,opt,name=format,proto3" json:"format,omitempty"`                           // "s16le" | "f32" etc. (source-specific)
-	GainDb        float32                `protobuf:"fixed32,7,opt,name=gain_db,json=gainDb,proto3" json:"gain_db,omitempty"`           // software gain in dB (-60 to +12), 0 = unity
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId   uint32                 `protobuf:"varint,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DeviceName string                 `protobuf:"bytes,2,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"` // cpal device name, "stdin", or file path
+	SampleRate uint32                 `protobuf:"varint,3,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"`
+	Channels   uint32                 `protobuf:"varint,4,opt,name=channels,proto3" json:"channels,omitempty"`                      // 1=mono, 2=stereo
+	SourceType string                 `protobuf:"bytes,5,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"` // "soundcard" | "stdin" | "flac" | "flac_fast" | "sdr_udp"
+	// ("flac_fast" drives the FLAC decoder as
+	//
+	//	fast as possible with no realtime pacing,
+	//	intended for benchmarking / offline runs.)
+	Format        string  `protobuf:"bytes,6,opt,name=format,proto3" json:"format,omitempty"`                 // "s16le" | "f32" etc. (source-specific)
+	GainDb        float32 `protobuf:"fixed32,7,opt,name=gain_db,json=gainDb,proto3" json:"gain_db,omitempty"` // software gain in dB (-60 to +12), 0 = unity
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2166,13 +2188,14 @@ const file_graywolf_proto_rawDesc = "" +
 	"\n" +
 	"is_default\x18\a \x01(\bR\tisDefault\x12 \n" +
 	"\vdescription\x18\b \x01(\tR\vdescription\x12 \n" +
-	"\vrecommended\x18\t \x01(\bR\vrecommended\"\xb7\x01\n" +
+	"\vrecommended\x18\t \x01(\bR\vrecommended\"\xd2\x01\n" +
 	"\rTransmitFrame\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12.\n" +
 	"\x13txdelay_override_ms\x18\x03 \x01(\rR\x11txdelayOverrideMs\x12,\n" +
 	"\x12txtail_override_ms\x18\x04 \x01(\rR\x10txtailOverrideMs\x12\x1a\n" +
-	"\bpriority\x18\x05 \x01(\rR\bpriority\"\x84\x05\n" +
+	"\bpriority\x18\x05 \x01(\rR\bpriority\x12\x19\n" +
+	"\bframe_id\x18\x06 \x01(\x04R\aframeId\"\x84\x05\n" +
 	"\x10ConfigureChannel\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\rR\bdeviceId\x12#\n" +

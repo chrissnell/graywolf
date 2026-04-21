@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
@@ -96,6 +97,13 @@ type ServerConfig struct {
 	// Clock is the rate-limiter's time source. nil selects wall time.
 	// Tests inject a fake clock to exercise burst/refill determinism.
 	Clock Clock
+	// AllowTxFromGovernor mirrors KissInterface.AllowTxFromGovernor. When
+	// true AND Mode == ModeTnc, the manager wires a per-instance tx
+	// queue used by Manager.TransmitOnChannel to fan governor-scheduled
+	// frames out to this interface. Informational on the server itself
+	// (the server does not consult it directly); the manager reads it
+	// to decide whether to construct the queue.
+	AllowTxFromGovernor bool
 }
 
 // Server is a multi-client KISS TCP server. A single Server instance
@@ -391,6 +399,16 @@ func (s *Server) channelFor(port uint8) uint32 {
 	return 1
 }
 
+// firstChannel returns the first channel in ChannelMap, or 1 as a
+// fallback. Used by Manager.Start to bind the per-instance tx queue
+// to the interface's primary channel.
+func (cfg ServerConfig) firstChannel() uint32 {
+	for _, ch := range cfg.ChannelMap {
+		return ch
+	}
+	return 1
+}
+
 func (s *Server) addClient(c *clientConn) {
 	s.mu.Lock()
 	s.clients[c] = struct{}{}
@@ -433,6 +451,73 @@ func (s *Server) Broadcast(port uint8, axBytes []byte) {
 			s.logger.Debug("kiss broadcast write failed", "err", err)
 		}
 	}
+}
+
+// TxBroadcast is the TX-from-governor write path. Unlike the RX-fanout
+// Broadcast methods above, this does NOT consult cfg.Broadcast (that
+// flag controls RX echo back to KISS clients, not governor-originated
+// TX). It writes the supplied AX.25 frame wrapped in KISS data framing
+// to every connected client. The port byte is derived from the
+// ChannelMap entry matching channel, falling back to port 0.
+//
+// Per-connection writes use a socket deadline of deadline when the
+// underlying writer is a net.Conn, purely as a hung-peer guard so one
+// stuck client cannot stall the per-instance queue's writer goroutine.
+// Slow-but-working links are not punished: the deadline is generous
+// (10s by default — see instanceTxSocketDeadline).
+//
+// Returns the number of successful writes. Zero means no client
+// accepted the frame; the per-instance queue's writer goroutine uses
+// this in the Phase 4 tcp-client supervisor to decide when to
+// transition into "down" state. Server-listen mode treats zero-writes
+// as non-fatal (clients may reconnect).
+func (s *Server) TxBroadcast(channel uint32, axBytes []byte, deadline time.Duration) int {
+	port := uint8(0)
+	found := false
+	for p, ch := range s.cfg.ChannelMap {
+		if ch == channel {
+			port = p
+			found = true
+			break
+		}
+	}
+	if !found && len(s.cfg.ChannelMap) > 0 {
+		return 0
+	}
+	raw := Encode(port, axBytes)
+
+	s.mu.Lock()
+	clients := make([]*clientConn, 0, len(s.clients))
+	for c := range s.clients {
+		clients = append(clients, c)
+	}
+	s.mu.Unlock()
+
+	ok := 0
+	for _, c := range clients {
+		c.mu.Lock()
+		if deadline > 0 {
+			if setter, isConn := c.w.(interface {
+				SetWriteDeadline(time.Time) error
+			}); isConn {
+				_ = setter.SetWriteDeadline(time.Now().Add(deadline))
+				defer func(conn interface {
+					SetWriteDeadline(time.Time) error
+				}) {
+					_ = conn.SetWriteDeadline(time.Time{})
+				}(setter)
+			}
+		}
+		_, err := c.w.Write(raw)
+		c.mu.Unlock()
+		if err != nil {
+			s.logger.Debug("kiss tx broadcast write failed",
+				"channel", channel, "err", err)
+			continue
+		}
+		ok++
+	}
+	return ok
 }
 
 // BroadcastFromChannel honors the interface's Broadcast flag and the

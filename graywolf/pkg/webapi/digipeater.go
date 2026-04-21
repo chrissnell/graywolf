@@ -109,6 +109,12 @@ func (s *Server) listDigipeaterRules(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 	handleCreate[dto.DigipeaterRuleRequest](s, w, r, "create digipeater rule",
 		func(ctx context.Context, req dto.DigipeaterRuleRequest) (configstore.DigipeaterRule, error) {
+			if err := dto.ValidateChannelRef(ctx, s.store, "from_channel", req.FromChannel); err != nil {
+				return configstore.DigipeaterRule{}, validationError(err)
+			}
+			if err := dto.ValidateChannelRef(ctx, s.store, "to_channel", req.ToChannel); err != nil {
+				return configstore.DigipeaterRule{}, validationError(err)
+			}
 			m := req.ToModel()
 			if err := s.store.CreateDigipeaterRule(ctx, &m); err != nil {
 				return configstore.DigipeaterRule{}, err
@@ -142,6 +148,12 @@ func (s *Server) updateDigipeaterRule(w http.ResponseWriter, r *http.Request) {
 	}
 	handleUpdate[dto.DigipeaterRuleRequest](s, w, r, "update digipeater rule", id,
 		func(ctx context.Context, id uint32, req dto.DigipeaterRuleRequest) (configstore.DigipeaterRule, error) {
+			if err := dto.ValidateChannelRef(ctx, s.store, "from_channel", req.FromChannel); err != nil {
+				return configstore.DigipeaterRule{}, validationError(err)
+			}
+			if err := dto.ValidateChannelRef(ctx, s.store, "to_channel", req.ToChannel); err != nil {
+				return configstore.DigipeaterRule{}, validationError(err)
+			}
 			m := req.ToUpdate(id)
 			if err := s.store.UpdateDigipeaterRule(ctx, &m); err != nil {
 				return configstore.DigipeaterRule{}, err

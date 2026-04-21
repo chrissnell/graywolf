@@ -158,9 +158,17 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 	}
 
 	// Collect device IDs referenced by at least one channel.
+	// Channels with InputDeviceID == nil are KISS-TNC-only — no audio
+	// modem was ever configured for them, so the Rust modem never
+	// needs to open a device for them. Skip them here so we never
+	// emit ConfigureAudio / ConfigureChannel for a channel that has
+	// no audio to configure. See D6 in
+	// .context/2026-04-20-kiss-tcp-client-and-channel-backing.md.
 	usedDevices := make(map[uint32]bool)
 	for _, ch := range channels {
-		usedDevices[ch.InputDeviceID] = true
+		if ch.InputDeviceID != nil {
+			usedDevices[*ch.InputDeviceID] = true
+		}
 		if ch.OutputDeviceID != 0 {
 			usedDevices[ch.OutputDeviceID] = true
 		}
@@ -186,12 +194,25 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 	}
 
 	// Emit one ConfigureChannel + ConfigurePtt per channel.
+	// `configured` tracks whether at least one audio-backed channel
+	// was emitted — a KISS-only deployment has len(channels) > 0 but
+	// zero ConfigureChannel messages, and in that case the caller
+	// must NOT emit StartAudio.
+	configured := 0
 	for _, ch := range channels {
+		// KISS-TNC-only channels are not served by the modem
+		// subprocess. The TX dispatcher (Phase 3) will route their
+		// frames to the KISS manager instead. Skip them entirely so
+		// the Rust side never sees a channel it can't serve.
+		if ch.InputDeviceID == nil {
+			continue
+		}
+		configured++
 		cmsg := &pb.IpcMessage{Payload: &pb.IpcMessage_ConfigureChannel{ConfigureChannel: &pb.ConfigureChannel{
 			Channel:        ch.ID,
-			DeviceId:       ch.InputDeviceID, // backward compat
-			AudioChannel:   ch.InputChannel,  // backward compat
-			InputDeviceId:  ch.InputDeviceID,
+			DeviceId:       *ch.InputDeviceID, // backward compat
+			AudioChannel:   ch.InputChannel,   // backward compat
+			InputDeviceId:  *ch.InputDeviceID,
 			InputChannel:   ch.InputChannel,
 			OutputDeviceId: ch.OutputDeviceID,
 			OutputChannel:  ch.OutputChannel,
@@ -261,6 +282,10 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 		if err := send(pmsg); err != nil {
 			return false, err
 		}
+	}
+	if configured == 0 {
+		b.logger.Info("only kiss-only channels configured, skipping audio setup")
+		return false, nil
 	}
 	return true, nil
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
@@ -100,6 +102,138 @@ func TestChannelsList_ReturnsSeededRow(t *testing.T) {
 	}
 	if len(resp) == 0 || resp[0].Name != "rx0" {
 		t.Errorf("unexpected list: %+v", resp)
+	}
+}
+
+// TestChannelsList_BackingModem covers the modem-backed branch: a
+// channel with an audio input device reports summary=modem. Without a
+// live bridge subprocess the health is "down" (bridge.IsRunning() is
+// false in the in-memory test harness). This also exercises the
+// response structure so the UI sees a non-nil Backing object.
+func TestChannelsList_BackingModem(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []dto.ChannelResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp) == 0 {
+		t.Fatalf("expected at least one channel")
+	}
+	ch := resp[0]
+	if ch.Backing == nil {
+		t.Fatalf("expected backing object, got nil")
+	}
+	if ch.Backing.Summary != dto.ChannelBackingSummaryModem {
+		t.Errorf("expected summary=modem, got %q", ch.Backing.Summary)
+	}
+	if ch.Backing.Health != dto.ChannelBackingHealthDown {
+		t.Errorf("expected health=down (no live bridge), got %q", ch.Backing.Health)
+	}
+	if ch.Backing.Modem.Active {
+		t.Errorf("expected modem.active=false, got true")
+	}
+	if len(ch.Backing.KissTnc) != 0 {
+		t.Errorf("expected empty kiss_tnc, got %+v", ch.Backing.KissTnc)
+	}
+}
+
+// TestComputeChannelBacking_Unbound covers the fall-through branch:
+// a channel with no input device + no TNC interface reports
+// summary=unbound and health=unbound. Phase 2 flipped
+// InputDeviceID to *uint32; the nil form is now the canonical
+// "KISS-only / no backing" marker.
+func TestComputeChannelBacking_Unbound(t *testing.T) {
+	ch := configstore.Channel{ID: 99, Name: "unbound-ch", InputDeviceID: nil}
+	b := computeChannelBacking(ch, nil, nil, false)
+	if b.Summary != dto.ChannelBackingSummaryUnbound {
+		t.Errorf("summary=%q", b.Summary)
+	}
+	if b.Health != dto.ChannelBackingHealthUnbound {
+		t.Errorf("health=%q", b.Health)
+	}
+	if b.Modem.Active {
+		t.Errorf("modem.active should be false")
+	}
+	if b.Modem.Reason == "" {
+		t.Errorf("expected reason on unbound modem")
+	}
+}
+
+// TestChannelsList_BackingKissTnc exercises the kiss-tnc branch
+// directly at the pure-function level so the test doesn't need to
+// stand up the KISS manager with a real listener. A channel with no
+// modem + a TNC-mode KISS interface attached should report
+// summary=kiss-tnc; health follows the live-state map.
+func TestComputeChannelBacking_KissTnc(t *testing.T) {
+	ch := configstore.Channel{ID: 11, Name: "LoRa"}
+	ifaces := []configstore.KissInterface{
+		{ID: 3, Name: "loramod", Channel: 11, Mode: configstore.KissModeTnc},
+	}
+
+	// live case
+	statuses := map[uint32]kiss.InterfaceStatus{
+		3: {State: kiss.StateListening},
+	}
+	b := computeChannelBacking(ch, ifaces, statuses, false)
+	if b.Summary != dto.ChannelBackingSummaryKissTnc {
+		t.Errorf("expected summary=kiss-tnc, got %q", b.Summary)
+	}
+	if b.Health != dto.ChannelBackingHealthLive {
+		t.Errorf("expected health=live, got %q", b.Health)
+	}
+	if len(b.KissTnc) != 1 || b.KissTnc[0].InterfaceName != "loramod" {
+		t.Errorf("unexpected kiss_tnc entries: %+v", b.KissTnc)
+	}
+
+	// down case: interface exists in config but not running
+	b = computeChannelBacking(ch, ifaces, map[uint32]kiss.InterfaceStatus{}, false)
+	if b.Summary != dto.ChannelBackingSummaryKissTnc {
+		t.Errorf("expected summary=kiss-tnc, got %q", b.Summary)
+	}
+	if b.Health != dto.ChannelBackingHealthDown {
+		t.Errorf("expected health=down, got %q", b.Health)
+	}
+	if b.KissTnc[0].State != kiss.StateStopped {
+		t.Errorf("expected state=stopped, got %q", b.KissTnc[0].State)
+	}
+
+	// modem-mode interface on a channel must NOT be reported under kiss_tnc
+	ifaces[0].Mode = configstore.KissModeModem
+	b = computeChannelBacking(ch, ifaces, statuses, false)
+	if b.Summary != dto.ChannelBackingSummaryUnbound {
+		t.Errorf("modem-mode kiss interface should not count as backing, got summary=%q", b.Summary)
+	}
+	if len(b.KissTnc) != 0 {
+		t.Errorf("expected empty kiss_tnc, got %+v", b.KissTnc)
+	}
+}
+
+// TestComputeChannelBacking_ModemLive covers the happy path where the
+// bridge is reported as running: health should be live and modem.active
+// true.
+func TestComputeChannelBacking_ModemLive(t *testing.T) {
+	ch := configstore.Channel{ID: 1, Name: "VHF", InputDeviceID: configstore.U32Ptr(5)}
+	b := computeChannelBacking(ch, nil, nil, true)
+	if b.Summary != dto.ChannelBackingSummaryModem {
+		t.Errorf("summary=%q", b.Summary)
+	}
+	if b.Health != dto.ChannelBackingHealthLive {
+		t.Errorf("health=%q", b.Health)
+	}
+	if !b.Modem.Active {
+		t.Errorf("modem.active=false")
+	}
+	if b.Modem.Reason != "" {
+		t.Errorf("modem.reason=%q, want empty", b.Modem.Reason)
 	}
 }
 

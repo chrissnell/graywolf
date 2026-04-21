@@ -11,6 +11,42 @@ import (
 	"gorm.io/gorm"
 )
 
+// validationErr is a sentinel-wrapper used by cross-table validation
+// callers (e.g. ValidateChannelRef) to signal that a returned error
+// should be surfaced as an HTTP 400 rather than the default 500 the
+// generic handlers use for store errors. Detected via errors.As /
+// errors.Is in handleCreate / handleUpdate and unwrapped for the body.
+//
+// Kept unexported — callers use validationError(err) to wrap and
+// isValidationErr(err) to detect.
+type validationErr struct{ err error }
+
+func (v validationErr) Error() string { return v.err.Error() }
+func (v validationErr) Unwrap() error { return v.err }
+
+// validationError wraps err as a handler-level validation failure so
+// handleCreate / handleUpdate turn it into a 400 response. Callers pass
+// the original error; the wrapper stores it verbatim and surfaces the
+// underlying message in the body. Returns the zero-value validationErr
+// as an error interface so caller code reads as a one-liner.
+func validationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return validationErr{err: err}
+}
+
+// isValidationErr unwraps err looking for a validationErr; returns the
+// underlying error on hit, nil on miss. Used by handleCreate /
+// handleUpdate to route 400 vs 500.
+func isValidationErr(err error) error {
+	var v validationErr
+	if errors.As(err, &v) {
+		return v.err
+	}
+	return nil
+}
+
 // decodeJSON reads a JSON request body into T and rejects any unknown
 // fields. Handlers route every request decode through this helper so
 // the API contract fails loudly when a client sends a misspelled or
@@ -97,6 +133,10 @@ func handleCreate[TReq dto.Validator, TModel any, TResp any](
 	}
 	m, err := create(r.Context(), req)
 	if err != nil {
+		if v := isValidationErr(err); v != nil {
+			badRequest(w, v.Error())
+			return
+		}
 		s.internalError(w, r, op, err)
 		return
 	}
@@ -126,6 +166,10 @@ func handleUpdate[TReq dto.Validator, TModel any, TResp any](
 	}
 	m, err := update(r.Context(), id, req)
 	if err != nil {
+		if v := isValidationErr(err); v != nil {
+			badRequest(w, v.Error())
+			return
+		}
 		s.internalError(w, r, op, err)
 		return
 	}

@@ -3,6 +3,21 @@
 
 const MOCK_DELAY = 200;
 
+// ApiError carries the structured body from a non-2xx response so
+// callers that need richer context than `err.message` (e.g. the
+// Phase 5 channel-delete 409 with a referrers list) can read it
+// without an extra fetch. Non-409 paths still present as plain
+// Error-compatible objects since they only carry {error} strings.
+export class ApiError extends Error {
+  constructor(status, body) {
+    const message = (body && body.error) || `HTTP ${status}`;
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body || null;
+  }
+}
+
 async function request(method, path, body = null) {
   const opts = {
     method,
@@ -24,11 +39,11 @@ async function request(method, path, body = null) {
   }
   if (res.status === 401) {
     window.location.hash = '#/login';
-    throw new Error('Unauthorized');
+    throw new ApiError(401, { error: 'Unauthorized' });
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+    const errBody = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(res.status, errBody);
   }
   if (res.status === 204) return null;
   return res.json();

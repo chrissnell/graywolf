@@ -59,7 +59,7 @@ func seedStore(t *testing.T) *configstore.Store {
 	}
 	ch := &configstore.Channel{
 		Name:          "rx1",
-		InputDeviceID: dev.ID,
+		InputDeviceID: configstore.U32Ptr(dev.ID),
 		ModemType:     "afsk",
 		BitRate:       1200,
 		MarkFreq:      1200,
@@ -350,6 +350,96 @@ func TestStatusUpdatePopulatesCache(t *testing.T) {
 		t.Fatal("session did not return")
 	}
 	<-done
+}
+
+// TestPushConfiguration_SkipsKissOnlyChannels verifies that a KISS-TNC-
+// only channel (InputDeviceID == nil after Phase 2) is excluded from
+// the ConfigureAudio / ConfigureChannel / ConfigurePtt stream emitted
+// to the Rust modem. A deployment with a mix of modem-backed and
+// KISS-only channels must configure only the modem-backed subset;
+// a deployment with nothing *but* KISS-only channels must not emit
+// StartAudio at all.
+func TestPushConfiguration_SkipsKissOnlyChannels(t *testing.T) {
+	t.Run("mixed: modem + kiss-only skips the kiss row", func(t *testing.T) {
+		store := seedStore(t)
+		defer store.Close()
+		ctx := context.Background()
+
+		// Add a second channel with nil input (kiss-only).
+		kiss := &configstore.Channel{
+			Name: "kiss-only", InputDeviceID: nil, ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A",
+			NumSlicers: 1, FixBits: "none",
+		}
+		if err := store.CreateChannel(ctx, kiss); err != nil {
+			t.Fatalf("create kiss-only: %v", err)
+		}
+
+		b := New(Config{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		var sent []*pb.IpcMessage
+		send := func(msg *pb.IpcMessage) error {
+			sent = append(sent, msg)
+			return nil
+		}
+		configured, err := b.pushConfiguration(ctx, send)
+		if err != nil {
+			t.Fatalf("pushConfiguration: %v", err)
+		}
+		if !configured {
+			t.Fatal("expected configured=true (modem channel exists)")
+		}
+		// Count ConfigureChannel messages; must be exactly one
+		// (the modem-backed rx1, not the kiss-only).
+		chCount := 0
+		for _, m := range sent {
+			if cc, ok := m.GetPayload().(*pb.IpcMessage_ConfigureChannel); ok {
+				chCount++
+				if cc.ConfigureChannel.Channel == kiss.ID {
+					t.Errorf("kiss-only channel %d should not have been configured", kiss.ID)
+				}
+			}
+		}
+		if chCount != 1 {
+			t.Errorf("expected 1 ConfigureChannel, got %d", chCount)
+		}
+	})
+
+	t.Run("kiss-only only: pushConfiguration returns false", func(t *testing.T) {
+		store, err := configstore.OpenMemory()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		ctx := context.Background()
+		kiss := &configstore.Channel{
+			Name: "kiss-only", InputDeviceID: nil, ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A",
+			NumSlicers: 1, FixBits: "none",
+		}
+		if err := store.CreateChannel(ctx, kiss); err != nil {
+			t.Fatal(err)
+		}
+		b := New(Config{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		var sent []*pb.IpcMessage
+		configured, err := b.pushConfiguration(ctx, func(msg *pb.IpcMessage) error {
+			sent = append(sent, msg)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("pushConfiguration: %v", err)
+		}
+		if configured {
+			t.Errorf("expected configured=false for kiss-only deployment, got true")
+		}
+		for _, m := range sent {
+			switch m.GetPayload().(type) {
+			case *pb.IpcMessage_ConfigureAudio,
+				*pb.IpcMessage_ConfigureChannel,
+				*pb.IpcMessage_ConfigurePtt:
+				t.Errorf("unexpected %T emitted for kiss-only deployment", m.GetPayload())
+			}
+		}
+	})
 }
 
 func TestStateTransitions(t *testing.T) {

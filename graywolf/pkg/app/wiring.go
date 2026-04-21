@@ -14,6 +14,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/agw"
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
+	"github.com/chrissnell/graywolf/pkg/app/txbackend"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/beacon"
@@ -84,6 +85,30 @@ func (a *App) wireServices(ctx context.Context) error {
 		return fmt.Errorf("open configstore: %w", err)
 	}
 	a.store = store
+	// Log the SQLite runtime version so ops can confirm the database
+	// binary satisfies the minimum version required by our migrations
+	// (≥ 3.25 for ALTER TABLE RENAME COLUMN + the 12-step rebuild
+	// added in migration 8). Empty string means the probe failed,
+	// which we log verbatim rather than treating as fatal.
+	a.logger.Info("sqlite runtime", "version", a.store.SQLiteVersion())
+
+	// Phase 5 orphan scan: one-shot bootstrap check for soft-FK
+	// references that don't resolve (channels were deleted before the
+	// cascade logic landed, or a SQL shell surgery left dangling IDs).
+	// Logged at warn with {table, orphan_count}; no deletion or
+	// cleanup. Operators remediate via the cascade-delete UI. A probe
+	// error here (table missing on a pristine DB before AutoMigrate)
+	// is swallowed per-table in CountOrphanChannelRefs and not fatal.
+	if orphans, err := a.store.CountOrphanChannelRefs(ctx); err == nil {
+		for table, n := range orphans {
+			a.logger.Warn("orphaned channel references at startup",
+				"table", table, "orphan_count", n)
+		}
+	} else {
+		// Nonsense for the whole scan to fail at bootstrap, but surface
+		// it rather than silently swallow.
+		a.logger.Warn("orphan channel-ref scan failed", "err", err)
+	}
 
 	if err := a.wireServicesInner(ctx); err != nil {
 		_ = a.store.Close()
@@ -158,13 +183,23 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		Logger:     a.logger,
 	})
 
-	// --- TX governor ---------------------------------------------------
+	// --- TX backend dispatcher (Phase 3) -------------------------------
+	//
+	// Replaces the pre-Phase-3 direct-to-modem Sender. The dispatcher
+	// resolves every governor-scheduled frame to zero-or-more backends
+	// (ModemBackend and/or one KissTncBackend per eligible KissInterface
+	// row) and fans out; see pkg/app/txbackend for the fanout contract.
+	// The kiss manager doesn't exist yet at this point in the wiring
+	// order — we attach it to the snapshot builder via closure capture
+	// and the first snapshot is rebuilt once the manager starts.
+	a.txDispatcher = txbackend.New(txbackend.Config{
+		Metrics: a.metrics, // *metrics.Metrics satisfies the txbackend.Metrics interface.
+		Logger:  a.logger,
+	})
+	a.txBackendReload = make(chan struct{}, 1)
+
 	txSender := func(tf *pb.TransmitFrame) error {
-		if err := a.bridge.SendTransmitFrame(tf); err != nil {
-			return err
-		}
-		a.metrics.ObserveTxFrame(tf.Channel)
-		return nil
+		return a.txDispatcher.Send(tf)
 	}
 
 	// Load per-channel timing and rate limits from configstore. A store
@@ -196,6 +231,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		Channels:      channelTimings,
 		Logger:        a.logger,
 	})
+	// D3.4: governor consults the dispatcher's per-channel CSMA-skip
+	// flag to bypass p-persistence / slot-time / DCD waits for
+	// KISS-only channels.
+	a.gov.SetSkipCSMA(a.txDispatcher.SkipCSMA)
 
 	// TX hook: record transmitted frames into the packet log and
 	// update the station cache for beacon transmissions.
@@ -236,6 +275,23 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		},
 		OnBroadcastSuppressed: a.metrics.ObserveKissBroadcastSuppressed,
 		RxIngress:             a.kissTncProduce,
+		OnTxQueueDepth:        a.metrics.SetKissInstanceTxQueueDepth,
+		// OnTxQueueDrop surfaces per-instance tx drops to the Phase 4
+		// tcp-client counter (graywolf_kiss_client_tx_drops_total).
+		// The dispatcher also records backend_busy / backend_down
+		// outcomes with instance labels — that's the preferred
+		// cardinality (per channel × backend). This counter is kept
+		// on purpose so operators can split tcp-client health from
+		// server-listen health at the interface grain, which the
+		// dispatcher's per-instance instance label already mixes
+		// into the same series when the queues are fanned out.
+		OnTxQueueDrop: a.metrics.ObserveKissClientTxDrop,
+		OnClientStateChange: func(ifaceID uint32, name string, st kiss.InterfaceStatus) {
+			connected := st.State == kiss.StateConnected
+			a.metrics.SetKissClientConnected(ifaceID, name, connected)
+			a.metrics.SetKissClientBackoffSeconds(ifaceID, st.BackoffSeconds)
+		},
+		OnClientReconnect: a.metrics.ObserveKissClientReconnect,
 	})
 
 	// --- Digipeater ----------------------------------------------------
@@ -350,6 +406,13 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.metricsComponent(),
 		a.stationCacheComponent(),
 		a.governorComponent(),
+		// Phase 3: the TX dispatcher's watcher goroutine is wired just
+		// after the governor. Start order: governor spawns Run (which
+		// will call into the dispatcher's Send); dispatcher starts
+		// watcher so the initial snapshot is present before the first
+		// frame flows. Stop order (reverse): dispatcher stops accepting
+		// new sends BEFORE governor goroutines wind down — see D15.
+		a.txBackendComponent(),
 		a.backgroundStatsComponent(),
 		a.kissComponent(),
 		a.digipeaterComponent(),
@@ -408,7 +471,7 @@ func (a *App) applyFlacOverride(ctx context.Context) error {
 	chs, _ := a.store.ListChannels(ctx)
 	if len(chs) == 0 {
 		ch := &configstore.Channel{
-			Name: "FLAC Test", InputDeviceID: devs[0].ID,
+			Name: "FLAC Test", InputDeviceID: configstore.U32Ptr(devs[0].ID),
 			ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
 		}
 		if err := a.store.CreateChannel(ctx, ch); err != nil {
@@ -685,6 +748,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	apiSrv.SetBeaconSendNow(a.beaconSched.SendNow)
 	apiSrv.SetDigipeaterReload(a.digipeaterReload)
 	apiSrv.SetAgwReload(a.agwReload)
+	apiSrv.SetTxBackendReload(a.txBackendReload)
 	a.positionLogReload = make(chan struct{}, 1)
 	apiSrv.SetPositionLogReload(a.positionLogReload)
 
@@ -986,7 +1050,7 @@ func (a *App) kissComponent() namedComponent {
 		start: func(ctx context.Context) error {
 			kissIfaces, _ := a.store.ListKissInterfaces(ctx)
 			for _, ki := range kissIfaces {
-				if !ki.Enabled || ki.InterfaceType != "tcp" || ki.ListenAddr == "" {
+				if !ki.Enabled {
 					continue
 				}
 				ch := ki.Channel
@@ -998,29 +1062,184 @@ func (a *App) kissComponent() namedComponent {
 				if mode == "" {
 					mode = kiss.ModeModem
 				}
+				switch ki.InterfaceType {
+				case configstore.KissTypeTCPClient:
+					if ki.RemoteHost == "" || ki.RemotePort == 0 {
+						continue
+					}
+					a.kissMgr.StartClient(ctx, ki.ID, kiss.ClientConfig{
+						Name:                name,
+						RemoteHost:          ki.RemoteHost,
+						RemotePort:          ki.RemotePort,
+						ReconnectInitMs:     ki.ReconnectInitMs,
+						ReconnectMaxMs:      ki.ReconnectMaxMs,
+						Logger:              a.logger,
+						ChannelMap:          map[uint8]uint32{0: ch},
+						Mode:                mode,
+						TncIngressRateHz:    ki.TncIngressRateHz,
+						TncIngressBurst:     ki.TncIngressBurst,
+						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						OnReload:            a.notifyTxBackendReload,
+					})
+					continue
+				case configstore.KissTypeTCP:
+					if ki.ListenAddr == "" {
+						continue
+					}
+				default:
+					// serial / bluetooth not wired through the
+					// manager today; skip.
+					continue
+				}
 				a.kissMgr.Start(ctx, ki.ID, kiss.ServerConfig{
-					Name:             name,
-					ListenAddr:       ki.ListenAddr,
-					Logger:           a.logger,
-					ChannelMap:       map[uint8]uint32{0: ch},
-					Broadcast:        ki.Broadcast,
-					Mode:             mode,
-					TncIngressRateHz: ki.TncIngressRateHz,
-					TncIngressBurst:  ki.TncIngressBurst,
+					Name:                name,
+					ListenAddr:          ki.ListenAddr,
+					Logger:              a.logger,
+					ChannelMap:          map[uint8]uint32{0: ch},
+					Broadcast:           ki.Broadcast,
+					Mode:                mode,
+					TncIngressRateHz:    ki.TncIngressRateHz,
+					TncIngressBurst:     ki.TncIngressBurst,
+					AllowTxFromGovernor: ki.AllowTxFromGovernor,
 					OnClientChange: func(n int) {
 						a.metrics.SetKissClients(name, n)
 					},
 				})
 			}
+			// Nudge the TX dispatcher to rebuild its snapshot now that
+			// kiss.Manager has running interfaces (including tx queues
+			// for AllowTxFromGovernor rows). Non-blocking — the
+			// watcher goroutine coalesces bursts.
+			a.notifyTxBackendReload()
 			return nil
 		},
 		stop: func(shutdownCtx context.Context) error {
-			// kiss.Manager's goroutines are cancelled by the ctx passed
-			// to Start; there is no explicit Stop. Nothing to wait on
-			// here that is not already covered by other components.
+			// D15 step 4: cancel every running server and wait for its
+			// per-instance tx queue writer to exit. Manager.StopAll is
+			// idempotent; see pkg/kiss/manager.go.
+			a.kissMgr.StopAll()
 			return nil
 		},
 	}
+}
+
+// notifyTxBackendReload pokes the dispatcher's watcher goroutine to
+// rebuild the registry snapshot. Non-blocking; the watcher coalesces
+// bursts into a single rebuild.
+func (a *App) notifyTxBackendReload() {
+	if a.txBackendReload == nil {
+		return
+	}
+	select {
+	case a.txBackendReload <- struct{}{}:
+	default:
+	}
+}
+
+// txBackendComponent owns the dispatcher's rebuild watcher goroutine.
+// Lifecycle is independent of the governor / modem: the watcher just
+// recomputes the snapshot when the caller signals a config change.
+// Shutdown ordering (D15):
+//
+//  1. governor.Drain via governorComponent's own stop already ran by
+//     the time this stop is called (component order: governor starts
+//     first, stops last after kiss / bridge).
+//  2. StopAccepting flips the dispatcher-closed bit so any late
+//     governor callback returns ErrStopped rather than fanning out
+//     to backends whose Close was queued.
+//  3. The watcher exits on ctx cancellation; WaitWatcher blocks
+//     until it is truly gone.
+//
+// The watcher's build closure captures a.store, a.kissMgr, and
+// a.bridge by reference — all three are already wired by the time
+// this component's start runs (wireServicesInner order), and they
+// remain valid across the watcher's lifetime (kiss.Manager is
+// stopped AFTER the governor, and the dispatcher's Send hot path
+// already stops accepting by then).
+func (a *App) txBackendComponent() namedComponent {
+	return namedComponent{
+		name: "tx dispatcher",
+		start: func(ctx context.Context) error {
+			build := a.buildTxBackendSnapshot
+			a.txDispatcher.StartWatcher(ctx, a.txBackendReload, build)
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			// Dispatcher accepts no more sends from here on. Governor's
+			// own drain already ran (see governorComponent.stop), and
+			// the kissComponent below us tore down per-instance queues.
+			a.txDispatcher.StopAccepting()
+			done := make(chan struct{})
+			go func() { a.txDispatcher.WaitWatcher(); close(done) }()
+			select {
+			case <-done:
+				return nil
+			case <-shutdownCtx.Done():
+				return fmt.Errorf("tx dispatcher watcher: shutdown timed out")
+			}
+		},
+	}
+}
+
+// buildTxBackendSnapshot is the builder closure the dispatcher's
+// watcher invokes on every rebuild. Pure function from the live
+// configstore + running kiss manager + modem bridge state; no
+// caching. Called from the watcher goroutine, so there is no
+// overlapping concurrent invocation — the dispatcher's atomic
+// Publish handles reader visibility on its own.
+func (a *App) buildTxBackendSnapshot() *txbackend.Snapshot {
+	ctx := context.Background()
+
+	// Modem side: attach a ModemBackend to every channel with a bound
+	// input audio device. The bridge's subprocess may or may not be
+	// running; the backend forwards via bridge.SendTransmitFrame which
+	// returns an error (surfaced as outcome=err) if no IPC session is
+	// live. Registering the backend regardless keeps the snapshot a
+	// pure config projection: health is a separate runtime concern.
+	var modemChannels []uint32
+	if chs, err := a.store.ListChannels(ctx); err == nil {
+		for _, c := range chs {
+			if c.InputDeviceID != nil {
+				modemChannels = append(modemChannels, c.ID)
+			}
+		}
+	}
+	var modem *txbackend.ModemBackend
+	if a.bridge != nil {
+		modem = txbackend.NewModemBackend(a.bridge, modemChannels)
+	}
+
+	// KISS-TNC side: one backend per eligible interface row. The
+	// registry stays populated even when an interface's supervisor is
+	// down (see D3.3) — Enqueue surfaces ErrBackendDown in that case,
+	// which the dispatcher records per-instance.
+	var kissBackends []*txbackend.KissTncBackend
+	if ifaces, err := a.store.ListKissInterfaces(ctx); err == nil {
+		for _, ki := range ifaces {
+			if !ki.Enabled {
+				continue
+			}
+			if ki.Mode != configstore.KissModeTnc {
+				continue
+			}
+			if !ki.AllowTxFromGovernor {
+				continue
+			}
+			if ki.Channel == 0 {
+				continue
+			}
+			q := a.kissMgr.InstanceQueueFor(ki.ID)
+			if q == nil {
+				// Interface configured but not started yet, or Mode flip
+				// without restart. The next kiss reload will signal us
+				// again and we'll pick it up.
+				continue
+			}
+			kissBackends = append(kissBackends, txbackend.NewKissTncBackend(q, ki.ID, ki.Channel))
+		}
+	}
+
+	return txbackend.BuildSnapshot(modem, modemChannels, kissBackends)
 }
 
 func (a *App) digipeaterComponent() namedComponent {

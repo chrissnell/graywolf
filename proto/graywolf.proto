@@ -127,6 +127,11 @@ message TransmitFrame {
   uint32 txdelay_override_ms = 3;  // 0 = use configured default
   uint32 txtail_override_ms = 4;
   uint32 priority = 5;          // higher = sooner
+  // Monotonic correlation ID stamped at txgovernor.Governor.Submit (starts
+  // at 1; zero = unstamped). Propagated through the dispatcher and every
+  // TX backend for log correlation across partial-failure fan-outs.
+  // Backward-compatible: older modems simply ignore the field.
+  uint64 frame_id = 6;
 }
 
 // Configure a logical radio channel's demodulator parameters.

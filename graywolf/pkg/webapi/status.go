@@ -91,11 +91,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, ch := range channels {
 		sc := StatusChannel{
-			ID:            ch.ID,
-			Name:          ch.Name,
-			ModemType:     ch.ModemType,
-			BitRate:       ch.BitRate,
-			InputDeviceID: ch.InputDeviceID,
+			ID:        ch.ID,
+			Name:      ch.Name,
+			ModemType: ch.ModemType,
+			BitRate:   ch.BitRate,
+		}
+		// KISS-only channels carry InputDeviceID == nil (Phase 2).
+		// Keep the wire field as 0 in that case so existing
+		// dashboard clients treat the row as "no audio device" — the
+		// device-level meters below are skipped for the same reason.
+		if ch.InputDeviceID != nil {
+			sc.InputDeviceID = *ch.InputDeviceID
 		}
 		if s.bridge != nil {
 			if stats, ok := s.bridge.GetChannelStats(uint32(ch.ID)); ok {
@@ -105,8 +111,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				sc.AudioPeak = stats.AudioLevelPeak
 			}
 		}
-		if deviceLevels != nil {
-			if dl, ok := deviceLevels[ch.InputDeviceID]; ok {
+		if deviceLevels != nil && ch.InputDeviceID != nil {
+			if dl, ok := deviceLevels[*ch.InputDeviceID]; ok {
 				sc.DevicePeakDBFS = dl.PeakDBFS
 				sc.DeviceRmsDBFS = dl.RmsDBFS
 				sc.DeviceClipping = dl.Clipping

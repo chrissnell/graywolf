@@ -52,6 +52,9 @@ func (s *Server) listTxTiming(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createTxTiming(w http.ResponseWriter, r *http.Request) {
 	handleCreate[dto.TxTimingRequest](s, w, r, "upsert tx timing",
 		func(ctx context.Context, req dto.TxTimingRequest) (configstore.TxTiming, error) {
+			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
+				return configstore.TxTiming{}, validationError(err)
+			}
 			m := req.ToModel()
 			if err := s.store.UpsertTxTiming(ctx, &m); err != nil {
 				return configstore.TxTiming{}, err
@@ -110,6 +113,12 @@ func (s *Server) updateTxTiming(w http.ResponseWriter, r *http.Request) {
 	}
 	handleUpdate[dto.TxTimingRequest](s, w, r, "upsert tx timing", id,
 		func(ctx context.Context, channel uint32, req dto.TxTimingRequest) (configstore.TxTiming, error) {
+			// Channel id comes from the URL path, not the body — validate
+			// the URL-bound value so updating per-channel timing for a
+			// nonexistent channel lands as a 400.
+			if err := dto.ValidateChannelRef(ctx, s.store, "channel", channel); err != nil {
+				return configstore.TxTiming{}, validationError(err)
+			}
 			m := req.ToUpdate(channel)
 			if err := s.store.UpsertTxTiming(ctx, &m); err != nil {
 				return configstore.TxTiming{}, err

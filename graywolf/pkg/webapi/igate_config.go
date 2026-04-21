@@ -68,8 +68,22 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err.Error())
 		return
 	}
+	ctx := r.Context()
+	// Cross-table: rf_channel and tx_channel are soft-FKs on
+	// configstore.Channel.ID. A non-zero value that doesn't resolve
+	// should land as a 400 before the upsert — the iGate singleton is
+	// always writable (UpsertIGateConfig never rejects), so this is
+	// the only gate on orphan refs.
+	if err := dto.ValidateChannelRef(ctx, s.store, "rf_channel", req.RfChannel); err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	if err := dto.ValidateChannelRef(ctx, s.store, "tx_channel", req.TxChannel); err != nil {
+		badRequest(w, err.Error())
+		return
+	}
 	m := req.ToModel()
-	if err := s.store.UpsertIGateConfig(r.Context(), &m); err != nil {
+	if err := s.store.UpsertIGateConfig(ctx, &m); err != nil {
 		s.internalError(w, r, "upsert igate config", err)
 		return
 	}
@@ -121,6 +135,9 @@ func (s *Server) listIgateFilters(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createIgateFilter(w http.ResponseWriter, r *http.Request) {
 	handleCreate[dto.IGateRfFilterRequest](s, w, r, "create igate rf filter",
 		func(ctx context.Context, req dto.IGateRfFilterRequest) (configstore.IGateRfFilter, error) {
+			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
+				return configstore.IGateRfFilter{}, validationError(err)
+			}
 			m := req.ToModel()
 			if err := s.store.CreateIGateRfFilter(ctx, &m); err != nil {
 				return configstore.IGateRfFilter{}, err
@@ -154,6 +171,9 @@ func (s *Server) updateIgateFilter(w http.ResponseWriter, r *http.Request) {
 	}
 	handleUpdate[dto.IGateRfFilterRequest](s, w, r, "update igate rf filter", id,
 		func(ctx context.Context, id uint32, req dto.IGateRfFilterRequest) (configstore.IGateRfFilter, error) {
+			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
+				return configstore.IGateRfFilter{}, validationError(err)
+			}
 			m := req.ToUpdate(id)
 			if err := s.store.UpdateIGateRfFilter(ctx, &m); err != nil {
 				return configstore.IGateRfFilter{}, err

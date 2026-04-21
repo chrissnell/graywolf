@@ -8,6 +8,9 @@
   import DataTable from '../components/DataTable.svelte';
   import Modal from '../components/Modal.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import ChannelListbox from '../lib/components/ChannelListbox.svelte';
+  import { channelsStore, start as startChannelsStore, invalidate as refreshChannels, getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
+  import { unboundWarning, SUMMARY_UNBOUND } from '../lib/channelBacking.js';
 
   let activeTab = $state('config');
 
@@ -19,7 +22,15 @@
     rf_channel: 1, max_msg_hops: 2, software_name: 'graywolf', software_version: '0.1',
   });
   let loading = $state(false);
-  let channels = $state([]);
+  // Shared channelsStore — form.tx_channel is integer-valued (see
+  // validation matrix above); the ChannelListbox honors that via
+  // valueType="number".
+  let channels = $derived(channelsStore.list);
+  // D17 — unbound save warning for the iGate TX channel picker.
+  let selectedTxChannel = $derived(lookupChannel(form.tx_channel));
+  let txUnbound = $derived(
+    selectedTxChannel?.backing?.summary === SUMMARY_UNBOUND,
+  );
 
   // Filters state
   let filters = $state([]);
@@ -172,11 +183,11 @@
     // because the server can't distinguish "unset" from "explicit
     // false", and tx_channel falls back to the first available channel
     // since the default only makes sense relative to the live list.
-    const [data, chList] = await Promise.all([
-      api.get('/igate/config'),
-      api.get('/channels'),
-    ]);
-    channels = chList || [];
+    startChannelsStore();
+    // Invalidate synchronously so the default-channel fallback below
+    // sees a fresh list; then the poller keeps it current.
+    await refreshChannels();
+    const data = await api.get('/igate/config');
     const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
     form = {
       enabled: data.enabled ?? false,
@@ -213,6 +224,7 @@
     try {
       await api.put('/igate/config', { ...form, port: parseInt(form.port), tx_channel: parseInt(form.tx_channel) });
       toasts.success('iGate config saved');
+      refreshChannels();
     } catch (err) {
       toasts.error(err.message);
     } finally {
@@ -358,9 +370,20 @@
       </FormField>
       <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
         {#snippet children(describedBy)}
-          <Select id="ig-txch" bind:value={form.tx_channel} options={channels.map(c => ({ value: c.id, label: `${c.id} — ${c.name}` }))} aria-describedby={describedBy} />
+          <ChannelListbox
+            id="ig-txch"
+            bind:value={form.tx_channel}
+            valueType="number"
+            channels={channels}
+            ariaLabelledBy={describedBy}
+          />
         {/snippet}
       </FormField>
+      {#if txUnbound && selectedTxChannel}
+        <div class="unbound-warning" role="note">
+          {unboundWarning(selectedTxChannel)}
+        </div>
+      {/if}
       <div class="form-actions">
         <Button variant="primary" type="submit" disabled={loading}>
           {loading ? 'Saving...' : 'Save'}
@@ -578,5 +601,18 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     color: var(--text-primary);
+  }
+
+  /* D17 — unbound-channel save warning on the TX channel picker. */
+  .unbound-warning {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border: 1px solid var(--color-warning, #d4a72c);
+    border-left-width: 4px;
+    border-radius: 4px;
+    background: var(--color-warning-bg, rgba(212, 167, 44, 0.12));
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.45;
   }
 </style>

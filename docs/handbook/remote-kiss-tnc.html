@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Remote KISS TNC &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Remote KISS TNC</h1>
+    <p class="subtitle">Treat a remote KISS server (LoRa digi, AGWPE, another graywolf, or any TNC speaking KISS-over-TCP) as a full graywolf channel &mdash; beacon into it, digipeat across it, iGate from it.</p>
+
+    <h2>Overview</h2>
+
+    <p>
+      A <em>remote KISS TNC</em> is any device on your network that
+      exposes a KISS-over-TCP server: the most common example is a LoRa
+      APRS digipeater running the KISS server alongside its packet
+      radio, but anything that speaks KISS-over-TCP qualifies (Direwolf
+      in <code>NCHANNEL</code> mode, a second graywolf instance running
+      a KISS server, an AGWPE-speaking TNC with a KISS translator, or a
+      bespoke microcontroller project). Graywolf can <em>dial</em> that
+      server as a client and stay connected across reconnects, treating
+      the link as a first-class radio channel.
+    </p>
+
+    <p>
+      Why do it? The canonical reason is <strong>bridging</strong>: you
+      run a VHF APRS station on 144.39&nbsp;MHz and want traffic heard
+      on the VHF radio to cross-gate onto a local LoRa APRS network
+      (and vice versa), so APRS coverage extends across bands and
+      physical networks without a second radio. Other uses: split a
+      station's RF front end across two hosts, share one iGate uplink
+      across multiple packet radios, or let a mobile digipeater
+      backhaul to a fixed station over IP when in range of Wi-Fi.
+    </p>
+
+    <p>
+      When graywolf connects to a remote KISS TNC, the link behaves
+      exactly like an audio-backed channel: received frames flow into
+      the packet log, digipeater rules, iGate, and the dashboard;
+      beacons scheduled on that channel transmit out the TNC link; and
+      digipeater rules can bridge between the remote link and your RF
+      channels. The only thing absent is the software modem &mdash;
+      there is no carrier to sense, no PTT to key, and no audio device
+      to attach.
+    </p>
+
+    <h2>Worked Example: Bridging VHF APRS to a LoRa APRS Digipeater</h2>
+
+    <p>
+      This example mirrors the classic Direwolf <code>NCHANNEL</code>
+      setup: graywolf runs a VHF APRS station on channel 1 (audio
+      modem) and extends coverage onto a local LoRa APRS network by
+      dialing the LoRa digipeater's KISS server on channel 11. A
+      cross-channel digipeater rule cross-gates traffic between the
+      two.
+    </p>
+
+    <h3>Step 1 &mdash; Create a KISS-only channel</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Radio &rarr; Channels</strong> in the web UI.</li>
+      <li>Click <strong>+ Add Channel</strong>.</li>
+      <li>In the channel-type segmented control at the top of the
+        form, choose <strong>KISS-TNC only</strong>. The audio device,
+        modem type, and TX timing fields disappear &mdash; a KISS-only
+        channel is a logical routing lane, not a modulated radio
+        channel.</li>
+      <li>Name it <code>LoRa</code> (or whatever describes the remote
+        network). Give it a channel number that doesn't collide with
+        your existing RF channels; <code>11</code> is a common choice
+        for a first KISS-only channel.</li>
+      <li>Click <strong>Save</strong>. The channel appears on the
+        list with a <strong>KISS-TNC only</strong> badge. Its backing
+        will show <strong>&mdash; Unbound</strong> until you attach a
+        KISS interface in the next step.</li>
+    </ol>
+
+    <div class="callout info">
+      <span class="callout-icon">i</span>
+      <div class="callout-body">
+        <p>
+          No RF modulation happens on a KISS-only channel. Do not set
+          its modem type, bit rate, or TX timing &mdash; those fields
+          are hidden for a reason. The channel is a pointer the
+          digipeater, beacon, and iGate subsystems use to route frames;
+          the actual transmission happens out the KISS interface
+          attached to it.
+        </p>
+      </div>
+    </div>
+
+    <h3>Step 2 &mdash; Create a tcp-client KISS interface</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Interfaces &rarr; KISS TNC</strong>.</li>
+      <li>Click <strong>+ Add Interface</strong>.</li>
+      <li>Choose <strong>Interface Type: TCP Client</strong>. (The
+        existing <strong>TCP</strong> option is a server that accepts
+        inbound clients &mdash; that's not what you want here.)</li>
+      <li>Set <strong>Remote Host</strong> and <strong>Remote
+        Port</strong> to your LoRa digipeater's KISS server. For
+        example: <code>192.168.1.238</code> and <code>8001</code>.</li>
+      <li>In the <strong>Channel</strong> picker, select the KISS-only
+        channel you just created (<strong>&mdash; Unbound</strong>
+        &rarr; will become <strong>&#x25CF; Live</strong> once the dial
+        succeeds).</li>
+      <li>Set <strong>Mode</strong> to <strong>TNC</strong>. In TNC
+        mode the interface is treated as a radio, not a software
+        client.</li>
+      <li>Check the box labeled <strong>Transmit from
+        digipeater / beacon / iGate to this interface</strong>. This
+        is the opt-in flag (<code>allow_tx_from_governor</code>) that
+        lets graywolf's TX pipeline route frames to the remote TNC.
+        Without this checkbox, the interface only receives.</li>
+      <li><em>(Optional)</em> Expand <strong>Advanced</strong> to tune
+        the reconnect initial / maximum backoff in milliseconds.
+        Defaults are 1 second initial, 5 minutes maximum; the 0.25
+        jitter fraction is fixed.</li>
+      <li>Click <strong>Save</strong>. Graywolf dials immediately; the
+        row's status badge cycles
+        <strong>Connecting</strong> &rarr; <strong>Connected</strong>
+        if the peer is reachable. The KISS-only channel's backing on
+        the Channels page flips to <strong>&#x25CF; Live</strong>.</li>
+    </ol>
+
+    <div class="callout warn">
+      <span class="callout-icon">!</span>
+      <div class="callout-body">
+        <p>
+          <strong>Transmit opt-in is off by default</strong> on existing
+          TNC-mode server interfaces (that is, rows that existed before
+          the remote-TNC feature landed). Upgrading does not silently
+          enable TX on any interface. Newly-created tcp-client rows
+          default the checkbox <em>on</em>, because the typical intent
+          of dialing a remote TNC is to make it a full participant.
+        </p>
+      </div>
+    </div>
+
+    <h3>Step 3 &mdash; Add a cross-channel digipeater rule</h3>
+
+    <ol class="steps">
+      <li>Open <strong>APRS &rarr; Digipeater</strong>.</li>
+      <li>Click <strong>+ Add Rule</strong>.</li>
+      <li>Under the rule-type radio group at the top of the form, choose
+        <strong>Bridge to another channel</strong>. This reveals the
+        <strong>To Channel</strong> picker. (The default,
+        <strong>Repeat on same channel</strong>, is the common
+        single-radio digipeater case and hides the second picker.)</li>
+      <li>Set <strong>From Channel</strong> to your VHF channel (for
+        example channel <code>1</code>). Set <strong>To Channel</strong>
+        to your KISS-only channel (<code>11</code>).</li>
+      <li>Fill in the alias, alias type, max hops, and priority as you
+        would for any digi rule. For a first bridge experiment,
+        <code>alias=WIDE</code> / <code>alias_type=widen</code> /
+        <code>max_hops=1</code> is a safe starting point.</li>
+      <li>If the two channels' backings differ in kind (audio modem
+        &rarr; KISS-TNC, or vice versa), graywolf shows an inline
+        <strong>backing-diff</strong> notice under the pickers. That
+        notice is informational &mdash; it is not blocking the save.
+        It exists so you explicitly notice that frames are about to
+        cross physical networks.</li>
+      <li>Click <strong>Save</strong>. Packets meeting the alias on
+        channel 1 now re-emit onto channel 11 (the LoRa TNC link);
+        packets received via the LoRa TNC on channel 11 cross-gate to
+        channel 1 if you add the mirror-direction rule too.</li>
+    </ol>
+
+    <h3>Step 4 &mdash; (Optional) Beacon an object onto the LoRa channel</h3>
+
+    <p>
+      To inject APRS objects (repeaters, events, the classic
+      dog-shaped &ldquo;woofwoof&rdquo; object) onto the LoRa network
+      without any RF transmission, create a beacon that targets the
+      KISS-only channel directly:
+    </p>
+
+    <ol class="steps">
+      <li>Open <strong>APRS &rarr; Beacons</strong>.</li>
+      <li>Click <strong>+ Add Beacon</strong>.</li>
+      <li>Set <strong>Channel</strong> to your KISS-only channel
+        (<code>11</code>).</li>
+      <li>Author the beacon as normal (position, status, or object).
+        Configure the comment, SSID, interval, and so on.</li>
+      <li>Save. On the beacon's next interval tick, the frame flows
+        through graywolf's TX governor, hits the per-channel
+        dispatcher, and is delivered out the tcp-client to the LoRa
+        digi.</li>
+    </ol>
+
+    <h2>Understanding Channel Backing</h2>
+
+    <p>
+      Every channel picker across the UI (Beacons, Digipeater, iGate,
+      KISS) renders each channel with a backing glyph and a short
+      label so you can tell at a glance where a frame will be routed:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Glyph</th><th>Text</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>&#x25CF;</code></td>
+              <td>Live</td>
+              <td>Channel has a backend (audio modem or KISS-TNC) and
+                it is currently up. Frames will transmit.</td>
+            </tr>
+            <tr>
+              <td><code>&#x25CB;</code></td>
+              <td>Backend down</td>
+              <td>Channel has a backend configured but the backend is
+                not currently running &mdash; for example, a tcp-client
+                is in reconnect backoff, or the modem child has
+                crashed. Frames submitted now will drop with a
+                <code>backend_down</code> metric increment.</td>
+            </tr>
+            <tr>
+              <td><code>&mdash;</code></td>
+              <td>Unbound</td>
+              <td>Channel has no backend configured at all. The
+                channel exists only in the database; a submit is
+                accepted by the governor but dropped by the dispatcher
+                with a <code>no_backend</code> metric increment. A
+                save warning appears on beacon / digi / iGate forms
+                that pick an unbound channel.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Backing kinds are <strong>modem</strong> (audio input device is
+      attached), <strong>kiss-tnc</strong> (at least one KISS interface
+      in TNC mode with the TX-opt-in flag is attached), and
+      <strong>unbound</strong> (neither). A channel may have exactly
+      one kind at a time; attaching an audio device to a channel
+      already serviced by a TNC interface (or vice versa) is rejected
+      at the API with a 400 and a message describing the conflict. A
+      kiss-tnc channel may have <em>multiple</em> TNC interfaces
+      attached &mdash; each one receives every TX frame, which is how
+      you would peer two remote TNCs on the same logical channel.
+    </p>
+
+    <h2>Reconnect Behavior</h2>
+
+    <p>
+      The tcp-client's supervisor dials the remote host once. When
+      that connection drops (peer closes the socket, network partition,
+      EOF on read), the supervisor waits <code>reconnect_init_ms</code>
+      &plusmn;25% jitter and dials again. Each subsequent failure
+      doubles the wait, capped at <code>reconnect_max_ms</code>. On a
+      successful dial the backoff resets.
+    </p>
+
+    <p>
+      On the KISS TNC page, the status column for each interface is a
+      <strong>focusable button</strong>. Click it (or Tab to it and
+      press Enter) and an inline detail row expands showing:
+    </p>
+
+    <ul>
+      <li><strong>Peer address</strong> &mdash; resolved
+        <code>host:port</code> of the current connection attempt.</li>
+      <li><strong>Connected since</strong> &mdash; timestamp of the
+        most recent successful dial.</li>
+      <li><strong>Last error</strong> &mdash; the connection error
+        from the most recent failed attempt, or empty if currently
+        connected.</li>
+      <li><strong>Reconnect count</strong> &mdash; cumulative dial
+        successes since the process started. The very first connect
+        shows <code>1</code>.</li>
+      <li><strong>Current backoff</strong> &mdash; seconds remaining
+        before the next dial attempt. Coarse-bucketed to
+        <code>~1m</code> / <code>~3m</code> / etc. above 30&nbsp;s;
+        second-precise below 30&nbsp;s.</li>
+      <li><strong>Retry now</strong> &mdash; a button that cancels the
+        current backoff wait and re-dials immediately. Use this when
+        you know the peer is back up (you just restarted the LoRa
+        digipeater, for example) and you don't want to wait out the
+        remaining backoff.</li>
+    </ul>
+
+    <p>
+      The Retry-now button POSTs to <code>/api/kiss/{id}/reconnect</code>.
+      That endpoint returns <code>200</code> on success, <code>404</code>
+      if the interface was deleted, <code>409</code> if the row exists
+      but isn't a tcp-client (nothing to retry), or <code>503</code>
+      if the KISS manager is not yet running.
+    </p>
+
+    <h2>Cross-Channel Digipeater Safety</h2>
+
+    <p>
+      Cross-channel digipeating can create <strong>loops</strong>. The
+      classic hazard: you bridge VHF &harr; LoRa in both directions,
+      and both networks are within earshot of each other (two radios
+      sharing the same site, or two digipeaters with overlapping
+      coverage). A frame arrives on VHF, cross-gates to LoRa, is heard
+      by a LoRa node that re-transmits, cross-gates back to VHF, and
+      the loop continues until the path is filled.
+    </p>
+
+    <p>
+      Graywolf's standard digipeater dedup (callsign + payload sliding
+      window, used-bit tracking in the AX.25 path, and priority-ordered
+      rules) is your loop protection. It is the same mechanism that
+      keeps same-channel WIDEn-N repeats from storming. The defaults
+      (30&nbsp;s dedup window, <code>max_hops=2</code>) are adequate
+      for most home deployments. For bridged deployments, <strong>keep
+      your digi rules conservative</strong>: a single WIDE1-1
+      fill-in-class rule on each side is safer than wide-area
+      WIDE2-N. Review the <a href="digipeater.html">Digipeater page</a>
+      for dedup-window and alias tuning.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">!</span>
+      <div class="callout-body">
+        <p>
+          If you hear your own transmissions loop back after a bridge
+          rule goes live, kill the offending rule first, then diagnose.
+          Common causes: (1) the two channels actually share the same
+          RF medium (they shouldn't), (2) the dedup window is too short
+          for the bridge path's end-to-end latency, or (3) a third-party
+          digi upstream is re-injecting.
+        </p>
+      </div>
+    </div>
+
+    <h2>Referential Integrity: What Happens When You Delete a Channel</h2>
+
+    <p>
+      Deleting a channel that is referenced by beacons, digipeater
+      rules, KISS interfaces, or the iGate is a destructive operation,
+      and graywolf guards it with a two-step dialog.
+    </p>
+
+    <ol>
+      <li>
+        <strong>Click Delete</strong> on the channel's card. Graywolf
+        queries <code>GET /api/channels/{id}/referrers</code> for the
+        full list of rows that reference this channel.
+      </li>
+      <li>
+        <strong>Impact dialog</strong>. If any references exist, a
+        dialog opens listing them grouped by type: how many beacons,
+        how many digi rules (same-channel vs. bridge), how many KISS
+        interfaces, whether the iGate singleton's RF or TX channel
+        points here, and so on. Each item shows its name or a short
+        label. The primary button is Cancel; a secondary button
+        <strong>Remove references&hellip;</strong> advances to the
+        second dialog.
+      </li>
+      <li>
+        <strong>Typed-name confirmation</strong>. The second dialog
+        requires you to type the channel's name exactly before the red
+        Delete button enables. The button caption adapts to
+        <strong>Delete channel</strong> (no references) or
+        <strong>Delete channel and N references</strong> (with
+        cascades). Unreferenced channels still go through this typed
+        gate &mdash; it's consistent across every delete.
+      </li>
+      <li>
+        <strong>Cascade</strong>. On confirm the delete runs in a
+        single database transaction:
+        <ul>
+          <li>Beacons on this channel &mdash; deleted.</li>
+          <li>Digipeater rules From this channel &mdash; deleted.</li>
+          <li>Digipeater rules To this channel (bridge rules with
+            From &ne; To) &mdash; deleted.</li>
+          <li>iGate RF filters on this channel &mdash; deleted.</li>
+          <li>iGate singleton's <code>rf_channel</code> /
+            <code>tx_channel</code> &mdash; cleared to null. The
+            singleton row survives.</li>
+          <li>KISS interfaces with <code>Channel == id</code> &mdash;
+            channel cleared to zero and <code>needs_reconfig</code>
+            set to <code>true</code>. The interface appears on the
+            KISS page with a yellow banner until you edit it and
+            reassign a valid channel.</li>
+          <li>TX timing rows &mdash; deleted.</li>
+          <li>PTT config rows &mdash; handled by an existing hard
+            foreign-key cascade, unchanged.</li>
+        </ul>
+      </li>
+    </ol>
+
+    <p>
+      If another session adds a new reference between the impact
+      dialog and the delete click, the server returns <code>409
+      Conflict</code> with the updated referrer list and the dialog
+      reopens with a review-and-try-again message. No silent cascade
+      of newly-appeared references.
+    </p>
+
+    <h3>Startup Orphan Warnings</h3>
+
+    <p>
+      On startup graywolf scans every table with a soft channel foreign
+      key for rows that reference a channel ID that no longer exists.
+      For each affected table the log emits one warn-level line:
+    </p>
+
+    <pre><code>graywolf orphaned channel references at startup table=beacon orphan_count=2</code></pre>
+
+    <p>
+      This is non-fatal &mdash; graywolf boots normally. To fix,
+      open the offending page (Beacons, Digipeater, etc.) and edit
+      each affected row to point at a valid channel, or delete the
+      row. Future releases may offer a one-click cleanup; today the
+      warning is informational so you know the database contains
+      pre-existing drift, most commonly left over from a pre-v0.11
+      install where delete-without-cascade was the default.
+    </p>
+
+    <h2>Troubleshooting</h2>
+
+    <h3>My tcp-client never connects</h3>
+
+    <p>
+      Check, in order:
+    </p>
+
+    <ol>
+      <li>Is <strong>Remote Host</strong> reachable from the machine
+        running graywolf? <code>ping</code> / <code>nc -zv host
+        port</code> from the graywolf host is the quickest test.</li>
+      <li>Is the remote TNC actually listening on the configured port?
+        Run <code>ss -tlnp</code> or <code>netstat -an</code> on the
+        remote host and look for a <code>LISTEN</code> on that port.
+        For Direwolf, check its config for
+        <code>NCHANNEL</code>/<code>KISSPORT</code>. For a LoRa
+        digipeater, consult its documentation &mdash; the KISS port
+        is often configurable and off by default.</li>
+      <li>Is a firewall in the way? Check the peer's host firewall
+        (<code>iptables</code>, <code>ufw</code>,
+        <code>firewalld</code>) and any network-level firewalls or
+        NAT rules on the path.</li>
+      <li>Open the KISS interface's status detail on the graywolf
+        KISS page. <strong>Last error</strong> shows the
+        <code>net.OpError</code> from the most recent dial attempt
+        (<code>connection refused</code>,
+        <code>no route to host</code>, <code>i/o timeout</code>) &mdash;
+        that pinpoints the layer.</li>
+      <li>The Prometheus metric
+        <code>graywolf_kiss_client_connected{interface_id="N"}</code>
+        is <code>0</code> while down and <code>1</code> while up, and
+        <code>graywolf_kiss_client_reconnects_total</code> advances on
+        every successful dial. A flat-at-zero
+        <code>connected</code> gauge plus a stuck-at-zero reconnect
+        counter means graywolf has <em>never</em> successfully dialed
+        this peer.</li>
+    </ol>
+
+    <h3>My beacon on the KISS-only channel doesn't transmit</h3>
+
+    <p>
+      Likely causes:
+    </p>
+
+    <ul>
+      <li><strong>Transmit checkbox is off.</strong> Open the KISS
+        interface, confirm Mode is <code>TNC</code> and the
+        <strong>Transmit from digipeater / beacon / iGate to this
+        interface</strong> box is checked. Without it, the interface
+        is registered as an RX-only backing for the channel and TX is
+        dropped at the dispatcher.</li>
+      <li><strong>The tcp-client is in backoff.</strong> The status
+        badge on the KISS page will show <strong>Reconnecting</strong>
+        with a countdown. The beacon submit records a
+        <code>backend_down</code> metric increment but no frame goes
+        out.</li>
+      <li><strong>The channel is unbound.</strong> If you created the
+        channel but never attached a KISS interface to it, the
+        channel's backing is <strong>&mdash; Unbound</strong> and no
+        frame goes anywhere. The Beacons form also surfaces a save-time
+        warning when you pick an unbound channel.</li>
+      <li>Check <code>graywolf_tx_backend_submits_total</code> in
+        Prometheus &mdash; the <code>outcome</code> label tells you
+        whether the frame was accepted, dropped because the queue was
+        full (<code>backend_busy</code>), dropped because the link was
+        down (<code>backend_down</code>), or failed with an opaque
+        transport error (<code>err</code>).</li>
+    </ul>
+
+    <h3>I see a warning about dual backend</h3>
+
+    <p>
+      Graywolf forbids a channel from having both a modem and a TNC
+      interface transmit to it. If you see a validation error like
+      <em>&ldquo;channel N has both an audio input device and a
+      TNC-mode KISS interface with TX opt-in; the combination is
+      not allowed&rdquo;</em>, pick one:
+    </p>
+
+    <ul>
+      <li>Remove the audio input device from the channel (make it a
+        KISS-only channel), or</li>
+      <li>Uncheck <strong>Transmit from digipeater / beacon / iGate
+        to this interface</strong> on the KISS interface. The
+        interface still receives, but TX goes via the modem.</li>
+    </ul>
+
+    <p>
+      The reason: doubling a TX frame (once out the modem, once out
+      the KISS TNC) is almost always a misconfiguration. If you have a
+      real use case for redundant dual delivery, open an issue &mdash;
+      explicit dual-backend may land in a future release with careful
+      loop protection.
+    </p>
+
+    <h3>The KISS interface is connected but no frames arrive</h3>
+
+    <p>
+      Confirm the remote TNC is actually delivering frames on the
+      right KISS port index. KISS-over-TCP lets one connection
+      multiplex up to 16 logical ports; graywolf's tcp-client maps
+      KISS port <code>0</code> to the configured Channel by default.
+      If your remote TNC sends on a different port index, the frames
+      will be received but dispatched to the wrong channel (which, in
+      a typical setup with one KISS-only channel, is no channel at
+      all). Check the remote TNC's documentation for how to configure
+      its KISS port assignment.
+    </p>
+
+    <h2>Observability</h2>
+
+    <p>
+      The Remote KISS TNC feature adds several Prometheus metrics, all
+      exposed on the standard <code>/metrics</code> endpoint:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Labels</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>graywolf_kiss_client_connected</code></td>
+              <td><code>interface_id</code>, <code>name</code></td>
+              <td>Gauge. 1 when the tcp-client is connected to its
+                peer, 0 otherwise.</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_kiss_client_reconnects_total</code></td>
+              <td><code>interface_id</code></td>
+              <td>Counter. Cumulative successful dials. A stuck
+                counter with <code>connected=0</code> means the peer
+                is unreachable.</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_kiss_client_backoff_seconds</code></td>
+              <td><code>interface_id</code></td>
+              <td>Gauge. Current backoff wait in seconds. Zero when
+                connected.</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_kiss_client_tx_drops_total</code></td>
+              <td><code>interface_id</code>, <code>reason</code></td>
+              <td>Counter. Frames dropped at the per-instance tx
+                queue. <code>reason=busy</code> = queue full,
+                <code>reason=down</code> = supervisor in backoff.</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_kiss_instance_tx_queue_depth</code></td>
+              <td><code>interface_id</code></td>
+              <td>Gauge. Current depth of the per-interface tx queue.
+                Sustained values near 16 (the queue size) indicate a
+                slow peer.</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_tx_backend_submits_total</code></td>
+              <td><code>channel</code>, <code>backend</code>,
+                <code>instance</code>, <code>outcome</code></td>
+              <td>Counter. Every TX frame per backend instance, with
+                outcome <code>ok</code> /
+                <code>backend_busy</code> / <code>backend_down</code>
+                / <code>err</code>.</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_tx_no_backend_total</code></td>
+              <td><code>channel</code></td>
+              <td>Counter. Frames submitted to a channel with no
+                registered backend. Should stay at zero in a healthy
+                config &mdash; a non-zero value is worth alerting
+                on.</td>
+            </tr>
+            <tr>
+              <td><code>graywolf_tx_backend_duration_seconds</code></td>
+              <td><code>channel</code>, <code>backend</code></td>
+              <td>Histogram. Per-instance Backend.Submit latency.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      A ready-to-import Grafana dashboard with panels for all of the
+      above ships in
+      <code>packaging/grafana/remote-kiss-tnc.json</code>. Load it into
+      Grafana via Dashboards &rarr; New &rarr; Import and point it at
+      your Prometheus data source.
+    </p>
+
+    <h2>Related Pages</h2>
+
+    <ul>
+      <li><a href="kiss.html">KISS TNC</a> &mdash; server-listen KISS
+        interfaces, the other half of the KISS story.</li>
+      <li><a href="channels.html">Radio Channels</a> &mdash; channel
+        types, backing, and TX timing.</li>
+      <li><a href="digipeater.html">Digipeater</a> &mdash; rule
+        authoring, dedup, alias types.</li>
+      <li><a href="monitoring.html">Monitoring</a> &mdash; the
+        Prometheus metrics endpoint and other observability surfaces.</li>
+    </ul>
+
+    <nav class="page-nav">
+      <a href="kiss.html">
+        <span class="label">Previous</span>
+        KISS TNC
+      </a>
+      <a href="agwpe.html" class="next">
+        <span class="label">Next</span>
+        AGWPE
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

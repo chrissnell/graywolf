@@ -52,6 +52,9 @@ func (s *Server) listBeacons(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createBeacon(w http.ResponseWriter, r *http.Request) {
 	handleCreate[dto.BeaconRequest](s, w, r, "create beacon",
 		func(ctx context.Context, req dto.BeaconRequest) (configstore.Beacon, error) {
+			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
+				return configstore.Beacon{}, validationError(err)
+			}
 			m := req.ToModel()
 			if err := s.store.CreateBeacon(ctx, &m); err != nil {
 				return configstore.Beacon{}, err
@@ -110,6 +113,9 @@ func (s *Server) updateBeacon(w http.ResponseWriter, r *http.Request) {
 	}
 	handleUpdate[dto.BeaconRequest](s, w, r, "update beacon", id,
 		func(ctx context.Context, id uint32, req dto.BeaconRequest) (configstore.Beacon, error) {
+			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
+				return configstore.Beacon{}, validationError(err)
+			}
 			m := req.ToUpdate(id)
 			if err := s.store.UpdateBeacon(ctx, &m); err != nil {
 				return configstore.Beacon{}, err

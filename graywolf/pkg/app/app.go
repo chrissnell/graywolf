@@ -10,6 +10,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/agw"
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
+	"github.com/chrissnell/graywolf/pkg/app/txbackend"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -74,6 +75,17 @@ type App struct {
 	// stale hooks against a stopped governor.
 	govHookUnregister func()
 	kissMgr           *kiss.Manager
+	// txDispatcher fans TX frames out to the correct backend(s) per
+	// channel (Phase 3). Constructed during wireServices; the
+	// governor's Sender calls into dispatcher.Send.
+	txDispatcher *txbackend.Dispatcher
+	// txBackendReload is the 1-capacity coalescing channel the
+	// dispatcher's watcher goroutine listens on. Sends go here from
+	// KISS config changes (interface add/remove/mode flip/allow_tx
+	// flip) AND from notifyBridgeReload paths (channel add/remove /
+	// device change). The watcher rebuilds the snapshot on each
+	// received signal.
+	txBackendReload chan struct{}
 	agwServer         *agw.Server // nil if AGW is disabled in config
 	// agwMu guards access to agwServer so a reload can swap in a new
 	// instance while the modem-bridge frame consumer is calling

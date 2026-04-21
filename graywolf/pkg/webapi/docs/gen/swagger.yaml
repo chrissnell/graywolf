@@ -390,6 +390,15 @@ definitions:
         description: mph (1-minute sustained)
         type: number
     type: object
+  configstore.Referrer:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      type:
+        type: string
+    type: object
   dto.AcceptInviteRequest:
     properties:
       callsign:
@@ -678,6 +687,41 @@ definitions:
         description: '"sent"'
         type: string
     type: object
+  dto.ChannelBacking:
+    properties:
+      health:
+        type: string
+      kiss_tnc:
+        items:
+          $ref: '#/definitions/dto.ChannelKissTncEntry'
+        type: array
+      modem:
+        $ref: '#/definitions/dto.ChannelModemBacking'
+      summary:
+        type: string
+    type: object
+  dto.ChannelKissTncEntry:
+    properties:
+      allow_tx_from_governor:
+        type: boolean
+      interface_id:
+        type: integer
+      interface_name:
+        type: string
+      last_error:
+        type: string
+      retry_at_unix_ms:
+        type: integer
+      state:
+        type: string
+    type: object
+  dto.ChannelModemBacking:
+    properties:
+      active:
+        type: boolean
+      reason:
+        type: string
+    type: object
   dto.ChannelRequest:
     properties:
       bit_rate:
@@ -715,6 +759,8 @@ definitions:
     type: object
   dto.ChannelResponse:
     properties:
+      backing:
+        $ref: '#/definitions/dto.ChannelBacking'
       bit_rate:
         type: integer
       decoder_offset:
@@ -973,12 +1019,35 @@ definitions:
     type: object
   dto.KissRequest:
     properties:
+      allow_tx_from_governor:
+        description: |-
+          AllowTxFromGovernor opts this TNC-mode interface in to receive
+          frames from the TX governor (beacon / digipeater / iGate /
+          KISS / AGW submissions). Only meaningful when Mode == "tnc";
+          the validator rejects true with any other mode. Default false
+          on migrated rows so existing TNC servers do not silently start
+          transmitting; Phase 4 sets the DTO default to true for newly
+          created tcp-client rows.
+        type: boolean
       baud_rate:
         type: integer
       channel:
         type: integer
       mode:
         type: string
+      reconnect_init_ms:
+        type: integer
+      reconnect_max_ms:
+        type: integer
+      remote_host:
+        description: |-
+          Tcp-client fields (Phase 4): RemoteHost:RemotePort is the dial
+          target; ReconnectInitMs / ReconnectMaxMs size the supervisor's
+          exponential-backoff reconnect schedule. Unused / zero for
+          Type != "tcp-client".
+        type: string
+      remote_port:
+        type: integer
       serial_device:
         type: string
       tcp_port:
@@ -992,15 +1061,48 @@ definitions:
     type: object
   dto.KissResponse:
     properties:
+      allow_tx_from_governor:
+        type: boolean
+      backoff_seconds:
+        type: integer
       baud_rate:
         type: integer
       channel:
         type: integer
+      connected_since:
+        type: integer
       id:
         type: integer
+      last_error:
+        type: string
       mode:
         type: string
+      needs_reconfig:
+        type: boolean
+      peer_addr:
+        type: string
+      reconnect_count:
+        type: integer
+      reconnect_init_ms:
+        type: integer
+      reconnect_max_ms:
+        type: integer
+      remote_host:
+        description: Tcp-client fields (Phase 4). Zero-valued for non-tcp-client rows.
+        type: string
+      remote_port:
+        type: integer
+      retry_at_unix_ms:
+        type: integer
       serial_device:
+        type: string
+      state:
+        description: |-
+          Per-interface runtime status (Phase 4). Surfaced verbatim from
+          kiss.Manager.Status(); zero-valued when the row is not running
+          or when the manager has nothing to report. Omitted from the
+          wire when the interface is not tcp-client (State == "" +
+          omitempty).
         type: string
       tcp_port:
         type: integer
@@ -1633,6 +1735,15 @@ definitions:
           Used is true when another driver has claimed this line (e.g. SPI, I2C,
           UART, or a previously-running graywolf process).
         type: boolean
+    type: object
+  webapi.ChannelReferrersResponse:
+    properties:
+      error:
+        type: string
+      referrers:
+        items:
+          $ref: '#/definitions/configstore.Referrer'
+        type: array
     type: object
   webapi.IgateSimulationResponse:
     properties:
@@ -2702,6 +2813,10 @@ paths:
           name: id
           required: true
           type: integer
+        - description: Cascade per-table deletes / nulls; 409 without it when referrers exist
+          in: query
+          name: cascade
+          type: boolean
       responses:
         "204":
           description: No Content
@@ -2709,6 +2824,14 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webapi.ChannelReferrersResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2780,6 +2903,39 @@ paths:
       security:
         - CookieAuth: []
       summary: Update channel
+      tags:
+        - channels
+  /channels/{id}/referrers:
+    get:
+      operationId: getChannelReferrers
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.ChannelReferrersResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List referrers of a channel
       tags:
         - channels
   /channels/{id}/stats:
@@ -3420,6 +3576,35 @@ paths:
       security:
         - CookieAuth: []
       summary: Update KISS interface
+      tags:
+        - kiss
+  /kiss/{id}/reconnect:
+    post:
+      operationId: reconnectKiss
+      parameters:
+        - description: KISS interface id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Reconnect a KISS tcp-client interface now
       tags:
         - kiss
   /messages:

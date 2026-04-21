@@ -9,6 +9,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/warthog618/go-gpiocdev v0.9.1
 	go.bug.st/serial v1.6.4
+	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.49.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1

@@ -61,7 +61,13 @@ type Server struct {
 	agwReload         chan struct{}                              // signalled when AGW config changes
 	smartBeaconReload chan struct{}                              // signalled when smart-beacon singleton config changes
 	messagesReload    chan struct{}                              // signalled when messages preferences or tactical callsigns change
-	beaconSendNow     func(ctx context.Context, id uint32) error // triggers an immediate beacon send
+	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
+	// Nudged after any change that could alter the channel-backing
+	// map (kiss interface add/remove/mode/allow_tx flip, channel
+	// add/remove, audio device add/remove). Buffered size 1 +
+	// non-blocking send coalesces bursts.
+	txBackendReload chan struct{}
+	beaconSendNow   func(ctx context.Context, id uint32) error // triggers an immediate beacon send
 
 	// messages-service is late-bound: it exists only after the Phase 5
 	// app wiring has constructed the configstore + txgovernor + igate,
@@ -226,6 +232,24 @@ func (s *Server) SetAgwReload(ch chan struct{}) { s.agwReload = ch }
 // 1 + coalesced non-blocking sends keep rapid edits from stacking.
 func (s *Server) SetSmartBeaconReload(ch chan struct{}) { s.smartBeaconReload = ch }
 
+// SetTxBackendReload installs the channel the Phase 3 dispatcher's
+// watcher drains. Nudged by handlers (and by notifyBridgeReload) on
+// every config change that might alter channel-backing membership so
+// the dispatcher's atomic snapshot re-publishes.
+func (s *Server) SetTxBackendReload(ch chan struct{}) { s.txBackendReload = ch }
+
+// notifyTxBackendReload does a non-blocking send on txBackendReload.
+// Coalesces bursts into a single rebuild; safe to call from any handler.
+func (s *Server) notifyTxBackendReload() {
+	if s.txBackendReload == nil {
+		return
+	}
+	select {
+	case s.txBackendReload <- struct{}{}:
+	default:
+	}
+}
+
 // SetMessagesReload installs the channel signalled after a successful
 // messages preferences or tactical-callsign mutation. Wiring (pkg/app)
 // drains this channel and calls Service.ReloadPreferences +
@@ -289,8 +313,11 @@ func (s *Server) notifyBridgeForChannel(ctx context.Context, _ uint32) {
 	s.notifyBridgeReload(ctx)
 }
 
-// notifyBridgeReload triggers a single full bridge reload.
+// notifyBridgeReload triggers a single full bridge reload. Also kicks
+// the Phase 3 TX dispatcher so the channel→backend snapshot rebuilds
+// with any channel / device changes that preceded this reload.
 func (s *Server) notifyBridgeReload(ctx context.Context) {
+	s.notifyTxBackendReload()
 	if s.bridge == nil {
 		return
 	}

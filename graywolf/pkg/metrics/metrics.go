@@ -5,6 +5,7 @@ package metrics
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -53,6 +54,29 @@ type Metrics struct {
 	KissTncIngressDropped   *prometheus.CounterVec // labels: "interface_id", "reason" ("rate_limit" | "queue_full")
 	KissBroadcastSuppressed *prometheus.CounterVec // labels: "interface_id", "reason" ("self_loop")
 	RxFanoutDropped         *prometheus.CounterVec // label: "producer" ("kiss_tnc"; "modem" is a blocking producer and never drops at the fanout)
+
+	// Phase 3 (KISS TCP-client / channel-backing plan): TX backend
+	// dispatcher observability. Labels:
+	//   TxBackendSubmits: channel, backend ("modem" | "kiss"),
+	//                     instance (e.g. "modem", "kiss-3"),
+	//                     outcome ("ok" | "err" | "backend_busy" | "backend_down")
+	//   TxNoBackend:      channel
+	//   TxBackendDuration: channel, backend
+	//   KissInstanceTxQueueDepth: interface_id (gauge)
+	TxBackendSubmits         *prometheus.CounterVec
+	TxNoBackend              *prometheus.CounterVec
+	TxBackendDuration        *prometheus.HistogramVec
+	KissInstanceTxQueueDepth *prometheus.GaugeVec
+
+	// Phase 4: KISS tcp-client supervisor observability.
+	//   KissClientConnected: gauge per interface (1 = connected, 0 = not)
+	//   KissClientReconnects: counter per interface (cumulative dials since process start)
+	//   KissClientBackoffSeconds: gauge per interface (current backoff delay in seconds)
+	//   KissClientTxDrops: counter per interface × reason ("busy" | "down")
+	KissClientConnected      *prometheus.GaugeVec
+	KissClientReconnects     *prometheus.CounterVec
+	KissClientBackoffSeconds *prometheus.GaugeVec
+	KissClientTxDrops        *prometheus.CounterVec
 
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
@@ -186,6 +210,39 @@ func New() *Metrics {
 			Name: "graywolf_rx_fanout_dropped_total",
 			Help: "Frames dropped at the shared RX fanout channel. Only the 'kiss_tnc' producer can drop here (non-blocking send); the 'modem' producer is a blocking send and never increments this counter.",
 		}, []string{"producer"}),
+		TxBackendSubmits: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_tx_backend_submits_total",
+			Help: "TX frames fanned out by the backend dispatcher, per instance. Outcome is 'ok' (accepted), 'backend_busy' (queue full, back-pressure), 'backend_down' (transport disconnected), or 'err' (opaque transport error).",
+		}, []string{"channel", "backend", "instance", "outcome"}),
+		TxNoBackend: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_tx_no_backend_total",
+			Help: "TX frames dropped by the dispatcher because no backend was registered for the frame's channel.",
+		}, []string{"channel"}),
+		TxBackendDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "graywolf_tx_backend_duration_seconds",
+			Help:    "Per-instance latency of Backend.Submit calls, seconds.",
+			Buckets: prometheus.ExponentialBuckets(0.0001, 4, 10), // 100µs..~26s
+		}, []string{"channel", "backend"}),
+		KissInstanceTxQueueDepth: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "graywolf_kiss_instance_tx_queue_depth",
+			Help: "Current depth of a KISS-TNC interface's per-instance tx queue (Phase 3 D20). Non-zero indicates backlog.",
+		}, []string{"interface_id"}),
+		KissClientConnected: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "graywolf_kiss_client_connected",
+			Help: "1 when the KISS tcp-client supervisor's dialed connection is live, 0 otherwise.",
+		}, []string{"interface_id", "name"}),
+		KissClientReconnects: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_kiss_client_reconnects_total",
+			Help: "Cumulative successful dials performed by the KISS tcp-client supervisor since process start.",
+		}, []string{"interface_id"}),
+		KissClientBackoffSeconds: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "graywolf_kiss_client_backoff_seconds",
+			Help: "Current backoff delay in seconds for the KISS tcp-client supervisor while waiting to re-dial. Zero when connected or not in backoff.",
+		}, []string{"interface_id"}),
+		KissClientTxDrops: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_kiss_client_tx_drops_total",
+			Help: "TX frames dropped at the tcp-client's per-instance queue. Reason 'busy' = queue full; 'down' = supervisor in backoff.",
+		}, []string{"interface_id", "reason"}),
 		lastDcdTransitions: make(map[uint32]uint64),
 	}
 	reg.MustRegister(
@@ -219,6 +276,14 @@ func New() *Metrics {
 		m.KissTncIngressDropped,
 		m.KissBroadcastSuppressed,
 		m.RxFanoutDropped,
+		m.TxBackendSubmits,
+		m.TxNoBackend,
+		m.TxBackendDuration,
+		m.KissInstanceTxQueueDepth,
+		m.KissClientConnected,
+		m.KissClientReconnects,
+		m.KissClientBackoffSeconds,
+		m.KissClientTxDrops,
 	)
 	return m
 }
@@ -302,4 +367,66 @@ func (m *Metrics) ObserveKissTncRxDispatched(ifaceID uint32) {
 // the originating TNC interface (self-loop guard).
 func (m *Metrics) ObserveKissBroadcastSuppressed(ifaceID uint32) {
 	m.KissBroadcastSuppressed.WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10), "self_loop").Inc()
+}
+
+// ObserveTxBackendSubmit records one per-instance fan-out outcome from
+// the Phase 3 TX dispatcher. d is the Submit duration used by the
+// companion histogram.
+func (m *Metrics) ObserveTxBackendSubmit(channel uint32, backend, instance, outcome string, d time.Duration) {
+	chLbl := strconv.FormatUint(uint64(channel), 10)
+	m.TxBackendSubmits.WithLabelValues(chLbl, backend, instance, outcome).Inc()
+	m.TxBackendDuration.WithLabelValues(chLbl, backend).Observe(d.Seconds())
+}
+
+// ObserveTxNoBackend increments when the dispatcher drops a frame
+// because the channel has no registered backend.
+func (m *Metrics) ObserveTxNoBackend(channel uint32) {
+	m.TxNoBackend.WithLabelValues(strconv.FormatUint(uint64(channel), 10)).Inc()
+}
+
+// SetKissInstanceTxQueueDepth sets the per-interface tx queue depth
+// gauge. Wired in from kiss.Manager via OnTxQueueDepth.
+func (m *Metrics) SetKissInstanceTxQueueDepth(ifaceID uint32, depth int32) {
+	m.KissInstanceTxQueueDepth.
+		WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10)).
+		Set(float64(depth))
+}
+
+// SetKissClientConnected sets the per-interface tcp-client connected
+// gauge. 1 means "live dialed connection"; 0 means "not connected"
+// (includes backoff, connecting, disconnected, stopped).
+func (m *Metrics) SetKissClientConnected(ifaceID uint32, name string, connected bool) {
+	v := 0.0
+	if connected {
+		v = 1
+	}
+	m.KissClientConnected.WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10), name).Set(v)
+}
+
+// ObserveKissClientReconnect increments the per-interface tcp-client
+// reconnect counter. Called once per successful dial by the wiring
+// layer's OnReload handler (which observes supervisor state transitions).
+func (m *Metrics) ObserveKissClientReconnect(ifaceID uint32) {
+	m.KissClientReconnects.WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10)).Inc()
+}
+
+// SetKissClientBackoffSeconds sets the current backoff delay gauge.
+// Consumed by the UI via /api/kiss, but also surfaced to Prometheus
+// so alerting can catch stuck-in-backoff supervisors independently.
+func (m *Metrics) SetKissClientBackoffSeconds(ifaceID uint32, secs uint32) {
+	m.KissClientBackoffSeconds.
+		WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10)).
+		Set(float64(secs))
+}
+
+// ObserveKissClientTxDrop increments the per-interface tx-drop
+// counter. reason is "busy" (queue full) or "down" (supervisor in
+// backoff / not connected). Wired via kiss.Manager.OnTxQueueDrop —
+// tcp-client instances share the same queue plumbing as server-listen
+// instances, so this counter is a strict superset of the Phase 3
+// queue's drop events.
+func (m *Metrics) ObserveKissClientTxDrop(ifaceID uint32, reason string) {
+	m.KissClientTxDrops.
+		WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10), reason).
+		Inc()
 }
