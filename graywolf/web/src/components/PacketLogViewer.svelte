@@ -49,7 +49,7 @@
 
 {#snippet typeCell(_value, entry)}
   {#if entry.type}
-    <span class="pkt-badge pkt-b-type">{entry.type}</span>
+    <span class="pkt-badge pkt-b-type" data-type={entry.type}>{entry.type}</span>
   {:else}
     <span class="pkt-dim">—</span>
   {/if}
@@ -141,6 +141,56 @@
     background: var(--color-surface-raised);
     color: var(--color-text-muted);
     font-weight: 500;
+  }
+
+  /* Per-type badge colors. Backgrounds are 15%-alpha tints of the palette
+     so they sit quietly; text is a saturated hue for legibility. Each type
+     gets its own hue to make the Type column scannable at a glance. */
+  .pkt-b-type[data-type='position'] {
+    background: rgba(88, 166, 255, 0.15);
+    color: #79c0ff;
+  }
+  .pkt-b-type[data-type='weather'] {
+    background: rgba(63, 185, 80, 0.15);
+    color: #56d364;
+  }
+  .pkt-b-type[data-type='telemetry'] {
+    background: rgba(210, 153, 34, 0.18);
+    color: #e3b341;
+  }
+  .pkt-b-type[data-type='message'] {
+    background: rgba(57, 208, 219, 0.15);
+    color: #39d0db;
+  }
+  .pkt-b-type[data-type='object'] {
+    background: rgba(188, 140, 255, 0.15);
+    color: #bc8cff;
+  }
+  .pkt-b-type[data-type='item'] {
+    background: rgba(126, 231, 135, 0.15);
+    color: #7ee787;
+  }
+  .pkt-b-type[data-type='mic-e'] {
+    background: rgba(247, 120, 186, 0.15);
+    color: #f778ba;
+  }
+  .pkt-b-type[data-type='status'] {
+    background: rgba(139, 148, 158, 0.15);
+    color: #c9d1d9;
+  }
+  .pkt-b-type[data-type='capabilities'] {
+    background: rgba(210, 168, 255, 0.15);
+    color: #d2a8ff;
+  }
+  .pkt-b-type[data-type='df-report'],
+  .pkt-b-type[data-type='query'] {
+    background: rgba(255, 166, 87, 0.15);
+    color: #ffa657;
+  }
+  .pkt-b-type[data-type='third-party'],
+  .pkt-b-type[data-type='unknown'] {
+    background: rgba(110, 118, 129, 0.15);
+    color: var(--color-text-dim);
   }
 
   /* Footer raw-packet line: wraps inside container, never forces overflow. */
