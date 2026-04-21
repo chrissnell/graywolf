@@ -102,6 +102,10 @@ type App struct {
 	apiSrv      *webapi.Server
 	httpSrv     *http.Server
 
+	// Guards reloadIgate's no-op-skip. Owned by the single igateComponent
+	// reload goroutine, so no mutex is needed.
+	lastAppliedIgateFilter string
+
 	// --- Messages service --------------------------------------------------
 	// msgSvc owns the inbound Router + outbound Sender + RetryManager for
 	// APRS text messaging. Its Router is registered with the APRS fan-out

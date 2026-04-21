@@ -452,6 +452,10 @@
           <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" aria-describedby={describedBy} />
         {/snippet}
       </FormField>
+      <p class="field-note">
+        Enabled <a href="#/messages/tactical">tactical</a> callsigns are automatically
+        appended as <code>g/</code> clauses — you don't need to add them here.
+      </p>
       <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
         {#snippet children(describedBy)}
           <ChannelListbox
@@ -685,6 +689,33 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     color: var(--text-primary);
+  }
+
+  /* Supplemental note rendered beneath a FormField when the hint itself
+     can't carry markup (e.g. inline links). Visually matches the muted
+     `.field-hint` style inside FormField.svelte so the two read as one
+     block to the user. Sits flush under the field (no extra top margin)
+     and keeps the 12px muted look. */
+  .field-note {
+    margin: -8px 0 12px;
+    font-size: 12px;
+    color: var(--color-text-muted, #888);
+    line-height: 1.4;
+  }
+  .field-note a {
+    color: var(--accent, #3b82f6);
+    text-decoration: none;
+  }
+  .field-note a:hover,
+  .field-note a:focus-visible {
+    text-decoration: underline;
+  }
+  .field-note code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    padding: 1px 4px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 3px;
   }
 
   /* D17 — unbound-channel save warning on the TX channel picker. */

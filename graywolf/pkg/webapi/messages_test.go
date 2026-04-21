@@ -999,6 +999,47 @@ func TestSetMessagesReload_NonBlockingSignal(t *testing.T) {
 	_ = mux // mux above is unused for this test
 }
 
+// TestSignalTacticalChanged_FansOutBothSignals confirms the dual-signal
+// helper populates both the messages and igate reload channels in a
+// single call, and that repeated calls coalesce into at most one
+// pending signal per channel (best-effort, non-blocking).
+func TestSignalTacticalChanged_FansOutBothSignals(t *testing.T) {
+	srv, _, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
+	msgCh := make(chan struct{}, 1)
+	igCh := make(chan struct{}, 1)
+	srv.SetMessagesReload(msgCh)
+	srv.SetIgateReload(igCh)
+
+	srv.signalTacticalChanged()
+
+	select {
+	case <-msgCh:
+	default:
+		t.Fatal("expected messages reload signal")
+	}
+	select {
+	case <-igCh:
+	default:
+		t.Fatal("expected igate reload signal")
+	}
+
+	// Two back-to-back calls with no drain in between must coalesce: at
+	// most one pending signal per channel, neither send must block.
+	srv.signalTacticalChanged()
+	srv.signalTacticalChanged()
+	if len(msgCh) != 1 {
+		t.Fatalf("messages channel coalescing broken: len=%d, want 1", len(msgCh))
+	}
+	if len(igCh) != 1 {
+		t.Fatalf("igate channel coalescing broken: len=%d, want 1", len(igCh))
+	}
+	<-msgCh
+	<-igCh
+	if len(msgCh) != 0 || len(igCh) != 0 {
+		t.Fatalf("leftover signals after drain: msg=%d ig=%d", len(msgCh), len(igCh))
+	}
+}
+
 // --- guardrail — sanity check that the route table is wired -----------
 
 func TestMessagesRoutes_Registered(t *testing.T) {

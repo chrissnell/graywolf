@@ -87,6 +87,19 @@ func (s *Server) signalMessagesReload() {
 	}
 }
 
+// signalTacticalChanged fans a tactical-mutation event out to both the
+// message router (tactical set refresh) and the iGate (server-login
+// filter recompose — enabled tacticals are appended as g/ clauses).
+// Every tactical CRUD path in this package must call exactly this
+// helper; skipping one half of the pair would desync the two consumers.
+// Both underlying sends are buffered-1 non-blocking coalescing — a
+// drop is safe because each consumer reads current tactical state
+// fresh on its next reload (pull model), so signals are best-effort.
+func (s *Server) signalTacticalChanged() {
+	s.signalMessagesReload()
+	s.signalIgateReload()
+}
+
 // --- List / get ----------------------------------------------------------
 
 // listMessages returns a paginated slice of messages matching the
@@ -756,7 +769,7 @@ func (s *Server) createTacticalCallsign(w http.ResponseWriter, r *http.Request) 
 			s.logger.Warn("reload tactical callsigns", "err", err)
 		}
 	}
-	s.signalMessagesReload()
+	s.signalTacticalChanged()
 	writeJSON(w, http.StatusCreated, dto.TacticalCallsignFromModel(model))
 }
 
@@ -832,7 +845,9 @@ func (s *Server) updateTacticalCallsign(w http.ResponseWriter, r *http.Request) 
 			s.logger.Warn("reload tactical callsigns", "err", err)
 		}
 	}
-	s.signalMessagesReload()
+	// Covers update (non-callsign field), rename, enable toggle, and
+	// disable toggle — all four land in this single PUT handler.
+	s.signalTacticalChanged()
 	writeJSON(w, http.StatusOK, dto.TacticalCallsignFromModel(model))
 }
 
@@ -874,7 +889,7 @@ func (s *Server) deleteTacticalCallsign(w http.ResponseWriter, r *http.Request) 
 			s.logger.Warn("reload tactical callsigns", "err", err)
 		}
 	}
-	s.signalMessagesReload()
+	s.signalTacticalChanged()
 	w.WriteHeader(http.StatusNoContent)
 }
 

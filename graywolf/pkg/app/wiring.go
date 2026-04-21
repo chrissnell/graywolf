@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -534,10 +535,20 @@ func (a *App) wireIGate(ctx context.Context) error {
 		}
 	}
 
+	// Compose the APRS-IS server filter via the single entry point so
+	// enabled tactical callsigns are auto-appended as g/ clauses. Any
+	// raw read of igCfg.ServerFilter outside buildIgateFilter is
+	// guarded by an enforcement test.
+	composedFilter, err := buildIgateFilter(ctx, a.store)
+	if err != nil {
+		return fmt.Errorf("compose igate server filter: %w", err)
+	}
+	a.lastAppliedIgateFilter = composedFilter
+
 	ig, err := igate.New(igate.Config{
 		Server:          serverAddr,
 		StationCallsign: stationCall,
-		ServerFilter:    igCfg.ServerFilter,
+		ServerFilter:    composedFilter,
 		SoftwareName:    igCfg.SoftwareName,
 		SoftwareVersion: igCfg.SoftwareVersion,
 		Rules:           rules,
@@ -1736,15 +1747,13 @@ func (a *App) igateComponent() namedComponent {
 	}
 }
 
-// reloadIgate re-reads igate config and filters from the database and
-// pushes them into the running igate via Reconfigure.
+// reloadIgate re-reads igate config, rf filters, and tactical callsigns
+// from the database and pushes them into the running igate. When the
+// composed filter is unchanged we still call Reconfigure (so rule and
+// governor changes on the same signal propagate) but skip the metric
+// and debug log; Reconfigure's own filter-changed check prevents the
+// reconnect.
 func (a *App) reloadIgate(ctx context.Context) {
-	igCfg, err := a.store.GetIGateConfig(ctx)
-	if err != nil || igCfg == nil {
-		a.logger.Warn("igate reload: failed to read config", "err", err)
-		return
-	}
-
 	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
 	rules := make([]filters.Rule, 0, len(rfFilters))
 	for _, f := range rfFilters {
@@ -1764,7 +1773,60 @@ func (a *App) reloadIgate(ctx context.Context) {
 	if len(rules) > 0 {
 		gov = a.gov
 	}
-	a.ig.Reconfigure(igCfg.ServerFilter, rules, gov)
+
+	composed, err := buildIgateFilter(ctx, a.store)
+	if err != nil {
+		a.logger.Warn("igate reload: compose server filter", "err", err)
+		return
+	}
+
+	if composed == a.lastAppliedIgateFilter {
+		a.ig.Reconfigure(composed, rules, gov)
+		return
+	}
+
+	a.logger.Debug("igate filter recomposed, reconnecting",
+		"filter", composed,
+		"previous", a.lastAppliedIgateFilter)
+	a.ig.Reconfigure(composed, rules, gov)
+	a.lastAppliedIgateFilter = composed
+	if a.metrics != nil {
+		a.metrics.IgateFilterRecompositions.Inc()
+	}
+}
+
+// buildIgateFilter is the single entry point for constructing the
+// APRS-IS login filter. It reads the operator's base ServerFilter and
+// appends g/ clauses for each enabled tactical callsign. Tacticals are
+// sorted so the composed string is deterministic across DB orderings
+// (keeps reloadIgate's no-op-skip stable). Sentinel substitution for
+// an empty composed filter stays in igate/client.go; don't duplicate
+// it here. The filter_enforcement_test asserts no other caller in
+// pkg/app reads igCfg.ServerFilter directly.
+func buildIgateFilter(ctx context.Context, store *configstore.Store) (string, error) {
+	igCfg, err := store.GetIGateConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read igate config: %w", err)
+	}
+	base := ""
+	if igCfg != nil {
+		base = igCfg.ServerFilter
+	}
+
+	tacRows, err := store.ListEnabledTacticalCallsigns(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list enabled tactical callsigns: %w", err)
+	}
+	tacticals := make([]string, 0, len(tacRows))
+	for _, t := range tacRows {
+		if t.Callsign == "" {
+			continue
+		}
+		tacticals = append(tacticals, strings.ToUpper(t.Callsign))
+	}
+	sort.Strings(tacticals)
+
+	return igate.ComposeServerFilter(base, tacticals), nil
 }
 
 // messagesComponent owns the messages.Service lifecycle: Start registers

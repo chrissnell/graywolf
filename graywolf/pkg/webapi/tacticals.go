@@ -159,7 +159,10 @@ func (s *Server) acceptTacticalInvite(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("reload tactical callsigns after accept", "err", err)
 		}
 	}
-	s.signalMessagesReload()
+	// Accept-invite either creates a fresh enabled row or re-enables a
+	// disabled one — either way the enabled-tactical set changed, so
+	// fan out to both consumers (router + iGate filter).
+	s.signalTacticalChanged()
 
 	// Emit a message.updated SSE event so other tabs / the sender
 	// view re-render the invite bubble with its new accepted state.

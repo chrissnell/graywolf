@@ -78,6 +78,14 @@ type Metrics struct {
 	KissClientBackoffSeconds *prometheus.GaugeVec
 	KissClientTxDrops        *prometheus.CounterVec
 
+	// IgateFilterRecompositions counts each successful recompose-and-apply
+	// cycle in the iGate reload path — i.e. a tactical mutation (or
+	// iGate config save) produced a composed filter that differed from
+	// the last-applied value and was pushed into the running client.
+	// Cycles that compose the same filter as before do not increment
+	// (no reconnect triggered).
+	IgateFilterRecompositions prometheus.Counter
+
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
 	// deltas. (Rx frame counts come directly from ObserveReceivedFrame so we
@@ -243,6 +251,10 @@ func New() *Metrics {
 			Name: "graywolf_kiss_client_tx_drops_total",
 			Help: "TX frames dropped at the tcp-client's per-instance queue. Reason 'busy' = queue full; 'down' = supervisor in backoff.",
 		}, []string{"interface_id", "reason"}),
+		IgateFilterRecompositions: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_igate_filter_recompositions_total",
+			Help: "Reloads where the composed APRS-IS server filter differed from the last-applied value and was pushed to the iGate client. Reloads that only changed RF rules or the governor without altering the filter do not increment.",
+		}),
 		lastDcdTransitions: make(map[uint32]uint64),
 	}
 	reg.MustRegister(
@@ -284,6 +296,7 @@ func New() *Metrics {
 		m.KissClientReconnects,
 		m.KissClientBackoffSeconds,
 		m.KissClientTxDrops,
+		m.IgateFilterRecompositions,
 	)
 	return m
 }
