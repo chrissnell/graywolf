@@ -181,6 +181,14 @@ const (
 	OpListStations = "listStations"
 )
 
+// Station config — /api/station/config. Singleton holding the station
+// callsign (D1 of the centralized-station-callsign plan). Distinct from
+// the /api/stations resource above, which lists received APRS stations.
+const (
+	OpGetStationConfig    = "getStationConfig"
+	OpUpdateStationConfig = "updateStationConfig"
+)
+
 // Version — /api/version. The handler lives in pkg/webapi/version.go
 // and is installed via webapi.RegisterVersion; wiring.go mounts it on
 // the outer (public) mux.
