@@ -11,7 +11,7 @@
   date: "2026-04-21"
   style: cta
   schema_version: 1
-  title: "Station Callsign replaces per-feature callsigns"
+  title: "Station Callsign centralizes callsign configuration"
   body: |
     This version introduces a **Station Callsign**, which is used by
     the iGate, Digipeater, Beacons, and Messenger by default. You can
