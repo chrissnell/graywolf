@@ -61,6 +61,7 @@
         <button class="tab active" data-target="tab-deb">Debian / Ubuntu</button>
         <button class="tab" data-target="tab-rpm">RHEL / Fedora</button>
         <button class="tab" data-target="tab-arch">Arch Linux</button>
+        <button class="tab" data-target="tab-windows">Windows</button>
         <button class="tab" data-target="tab-docker">Docker</button>
         <button class="tab" data-target="tab-source">Build from Source</button>
       </div>
@@ -148,6 +149,84 @@ makepkg -si</code></pre>
         <h2>Start the Service</h2>
 
 <pre><code>sudo systemctl enable --now graywolf-aprs</code></pre>
+
+      </div>
+
+      <!-- ── Windows ── -->
+      <div class="tab-panel" id="tab-windows">
+
+        <h2>Run the Installer</h2>
+
+        <p>
+          Download the Windows installer
+          (<code>graywolf_&lt;version&gt;_Windows_x86_64.exe</code>) from the
+          <a href="https://github.com/chrissnell/graywolf/releases">GitHub Releases</a>
+          page and run it. Administrator rights are required so the installer
+          can write to <code>C:\Program Files</code> and register an
+          Add/Remove Programs entry. 64-bit Windows only.
+        </p>
+
+        <p>The installer places:</p>
+
+        <ul>
+          <li><code>graywolf.exe</code> and <code>graywolf-modem.exe</code> under <code>C:\Program Files\Graywolf\</code></li>
+          <li>The SQLite databases under <code>C:\ProgramData\Graywolf\</code> (preserved across upgrades)</li>
+          <li>A Start Menu shortcut that launches graywolf with the correct flags</li>
+        </ul>
+
+        <h2>Start Graywolf</h2>
+
+        <p>
+          Launch <strong>Graywolf</strong> from the Start Menu. A console
+          window opens and the web UI binds to
+          <code>127.0.0.1:8080</code>.
+        </p>
+
+        <div class="callout info">
+          <span class="callout-icon">&#9432;</span>
+          <div class="callout-body">
+            <p>
+              <code>graywolf.exe</code> is a console application, not a
+              Windows service. Closing the console window stops graywolf.
+              See <em>Running as a Service</em> below to run it in the
+              background at boot.
+            </p>
+          </div>
+        </div>
+
+        <h2>Running as a Service (optional)</h2>
+
+        <p>
+          To run graywolf in the background and start it at boot, wrap it
+          with <a href="https://nssm.cc/">NSSM</a>:
+        </p>
+
+<pre><code>choco install nssm
+
+nssm install Graywolf "C:\Program Files\Graywolf\graywolf.exe" `
+  -config "C:\ProgramData\Graywolf\graywolf.db" `
+  -history-db "C:\ProgramData\Graywolf\graywolf-history.db" `
+  -modem "C:\Program Files\Graywolf\graywolf-modem.exe" `
+  -http 127.0.0.1:8080
+
+nssm set Graywolf Start SERVICE_AUTO_START
+nssm start Graywolf</code></pre>
+
+        <p>
+          Full instructions, including <code>sc.exe</code> as an
+          alternative, live in
+          <a href="https://github.com/chrissnell/graywolf/blob/main/packaging/nsis/RUNNING-AS-A-SERVICE.md">packaging/nsis/RUNNING-AS-A-SERVICE.md</a>.
+        </p>
+
+        <h2>Setting the Admin Password</h2>
+
+        <p>
+          Open a command prompt (or PowerShell) and run:
+        </p>
+
+<pre><code>"C:\Program Files\Graywolf\graywolf.exe" ^
+  -config "C:\ProgramData\Graywolf\graywolf.db" ^
+  auth set-password --user admin</code></pre>
 
       </div>
 
