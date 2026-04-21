@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import { api } from '../lib/api.js';
+  import ReleaseNoteCard from '../components/ReleaseNoteCard.svelte';
+  import { releaseNotes } from '../lib/releaseNotesStore.svelte.js';
 
   let version = $state('');
 
@@ -9,10 +10,37 @@
       const d = await fetch('/api/version').then(r => r.json());
       version = d.version || '';
     } catch {}
+    // Pull the full changelog for the What's new list below.
+    // Re-runs every visit — cheap and keeps the list fresh if another
+    // release lands while the tab is open.
+    releaseNotes.fetchAll();
   });
 </script>
 
 <div class="about-content">
+  <section class="whats-new" aria-labelledby="whats-new-heading">
+    <h2 id="whats-new-heading">What's new</h2>
+
+    {#if releaseNotes.loading && releaseNotes.all.length === 0}
+      <div class="skeleton-stack" aria-busy="true" aria-label="Loading release notes">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+    {:else if releaseNotes.error}
+      <div class="notes-error" role="alert">
+        Couldn't load release notes. Try refreshing.
+      </div>
+    {:else if releaseNotes.all.length === 0}
+      <p class="notes-empty">No release notes yet.</p>
+    {:else}
+      <div class="notes-list">
+        {#each releaseNotes.all as note (note.version)}
+          <ReleaseNoteCard {note} compact={true} />
+        {/each}
+      </div>
+    {/if}
+  </section>
+
   <p class="about-version">Graywolf v.{version}</p>
   <p class="about-copyright">&copy; 2026 Chris Snell, NW5W</p>
   <p class="about-license">
@@ -38,6 +66,67 @@
 <style>
   .about-content {
     max-width: 560px;
+  }
+
+  .whats-new {
+    margin: 0 0 32px;
+  }
+  .whats-new h2 {
+    margin: 0 0 12px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .skeleton-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .skeleton-card {
+    height: 64px;
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    position: relative;
+    overflow: hidden;
+  }
+  .skeleton-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--text-muted) 12%, transparent) 50%,
+      transparent 100%
+    );
+    animation: skeleton-shimmer 1.4s infinite linear;
+  }
+  @keyframes skeleton-shimmer {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
+
+  .notes-error {
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+  }
+
+  .notes-empty {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
   }
 
   .about-version {
@@ -88,5 +177,11 @@
 
   .about-quote cite a {
     color: var(--accent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-card::after {
+      animation: none;
+    }
   }
 </style>

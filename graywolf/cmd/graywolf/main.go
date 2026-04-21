@@ -40,7 +40,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "auth":
-			if err := authcli.Run(os.Args[2:], logger); err != nil {
+			if err := authcli.Run(os.Args[2:], logger, Version); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}

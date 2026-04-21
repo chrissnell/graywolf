@@ -1310,6 +1310,43 @@ definitions:
       slot_time_ms:
         type: integer
     type: object
+  dto.ReleaseNoteDTO:
+    properties:
+      body:
+        description: pre-sanitized HTML
+        type: string
+      date:
+        description: ISO YYYY-MM-DD
+        type: string
+      schema_version:
+        type: integer
+      style:
+        description: '"info" | "cta"'
+        type: string
+      title:
+        type: string
+      version:
+        type: string
+    type: object
+  dto.ReleaseNotesResponse:
+    properties:
+      current:
+        type: string
+      last_seen:
+        description: |-
+          LastSeen is the authenticated caller's last acknowledged release
+          version at the moment the request was served. Empty on the
+          /api/release-notes endpoint (caller-agnostic) and on /unseen for
+          a user who has never acked. The frontend uses this to render a
+          "Since your last visit · vA → vB" subtitle in the news popup.
+        type: string
+      notes:
+        items:
+          $ref: '#/definitions/dto.ReleaseNoteDTO'
+        type: array
+      schema_version:
+        type: integer
+    type: object
   dto.SendMessageRequest:
     properties:
       channel:
@@ -2130,6 +2167,8 @@ tags:
     description: Current station position.
   - name: messages
     description: 'APRS text messaging: DMs, tactical threads, preferences, and SSE events.'
+  - name: release-notes
+    description: Per-release user-facing news; drives the login-time popup and About-page 'What's new' section.
   - name: auth
     description: Session login, logout, and first-user setup.
   - name: version
@@ -4494,6 +4533,69 @@ paths:
       summary: Test rigctld connection
       tags:
         - ptt
+  /release-notes:
+    get:
+      operationId: listReleaseNotes
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ReleaseNotesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List all release notes
+      tags:
+        - release-notes
+  /release-notes/ack:
+    post:
+      operationId: ackReleaseNotes
+      produces:
+        - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Acknowledge every release note through the current build
+      tags:
+        - release-notes
+  /release-notes/unseen:
+    get:
+      operationId: listUnseenReleaseNotes
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ReleaseNotesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List unseen release notes for the caller
+      tags:
+        - release-notes
   /smart-beacon:
     get:
       description: |-

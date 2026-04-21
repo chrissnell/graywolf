@@ -254,3 +254,15 @@ const (
 	OpUpdatePttConfig    = "updatePttConfig"
 	OpDeletePttConfig    = "deletePttConfig"
 )
+
+// Release notes — /api/release-notes (popup + About-page "What's new").
+//
+// Three endpoints, all RequireAuth-gated. The ack endpoint takes no
+// body: it unilaterally writes the server's running build version to
+// the caller's LastSeenReleaseVersion. See pkg/webapi/release_notes.go
+// and the Release News Popup design note in .context/.
+const (
+	OpListReleaseNotes       = "listReleaseNotes"
+	OpListUnseenReleaseNotes = "listUnseenReleaseNotes"
+	OpAckReleaseNotes        = "ackReleaseNotes"
+)

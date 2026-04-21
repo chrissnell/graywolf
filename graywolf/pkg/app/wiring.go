@@ -814,6 +814,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Secure:        secure,
 		Logger:        a.logger,
 		SessionMaxAge: a.cfg.SessionMaxAge,
+		BuildVersion:  a.cfg.Version,
 	}
 	mux.HandleFunc("POST /api/auth/login", authHandlers.HandleLogin)
 	mux.HandleFunc("POST /api/auth/logout", authHandlers.HandleLogout)
@@ -838,6 +839,12 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	if a.msgStore != nil {
 		webapi.RegisterStationsAutocomplete(apiSrv, apiMux, a.msgStore, a.stationCache)
 	}
+	// Release notes live on apiMux (auth-required). Caller identity
+	// (for the ack write and unseen filter) comes from the session
+	// middleware via webauth.AuthenticatedUser; the version string
+	// seeds the response envelope's `current` field and is what the
+	// ack handler writes to LastSeenReleaseVersion.
+	webapi.RegisterReleaseNotes(apiSrv, apiMux, a.cfg.Version, a.authStore)
 
 	mux.Handle("/api/", webauth.RequireAuth(a.authStore)(apiMux))
 	mux.Handle("/", web.SPAHandler())

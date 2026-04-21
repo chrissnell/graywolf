@@ -22,6 +22,11 @@ type Handlers struct {
 	// lifetime used for newly-issued session cookies. Zero means use the
 	// package default (defaultSessionMaxAge).
 	SessionMaxAge time.Duration
+	// BuildVersion is the running binary's version string (as reported
+	// by GET /api/version). Seeded into new users' LastSeenReleaseVersion
+	// so freshly created accounts don't receive the backlog of
+	// release-note popups. Empty string is permitted (tests, CLIs).
+	BuildVersion string
 }
 
 // logger returns the configured logger or slog.Default() if none was set.
@@ -250,7 +255,7 @@ func (h *Handlers) CreateFirstUser(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
-	if _, err := h.Auth.CreateFirstUser(r.Context(), req.Username, hash); err != nil {
+	if _, err := h.Auth.CreateFirstUser(r.Context(), req.Username, hash, h.BuildVersion); err != nil {
 		if errors.Is(err, ErrSetupAlreadyComplete) {
 			jsonError(w, http.StatusForbidden, "setup already completed")
 			return

@@ -3,7 +3,9 @@
   import Router, { location } from 'svelte-spa-router';
   import { Toaster } from '@chrissnell/chonky-ui';
   import Sidebar from './components/Sidebar.svelte';
+  import NewsPopup from './components/NewsPopup.svelte';
   import { start as startMessagesTransport } from './lib/messagesTransport.js';
+  import { releaseNotes } from './lib/releaseNotesStore.svelte.js';
 
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
@@ -90,6 +92,10 @@
     if (authChecked && !isLoginPage && !messagesTransportStarted) {
       messagesTransportStarted = true;
       startMessagesTransport();
+      // Pull release notes the user hasn't acknowledged yet. App.svelte
+      // mounts <NewsPopup> only when unseen.length > 0, so an empty
+      // response is a silent no-op.
+      releaseNotes.fetchUnseen();
     }
   });
 </script>
@@ -110,6 +116,9 @@
       </footer>
     </main>
   </div>
+  {#if releaseNotes.unseen.length > 0}
+    <NewsPopup />
+  {/if}
 {/if}
 
 <style>

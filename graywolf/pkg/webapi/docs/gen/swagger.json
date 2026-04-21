@@ -75,6 +75,10 @@
             "description": "APRS text messaging: DMs, tactical threads, preferences, and SSE events."
         },
         {
+            "name": "release-notes",
+            "description": "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."
+        },
+        {
             "name": "auth",
             "description": "Session login, logout, and first-user setup."
         },
@@ -3810,6 +3814,108 @@
                 }
             }
         },
+        "/release-notes": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "release-notes"
+                ],
+                "summary": "List all release notes",
+                "operationId": "listReleaseNotes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ReleaseNotesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/release-notes/ack": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "release-notes"
+                ],
+                "summary": "Acknowledge every release note through the current build",
+                "operationId": "ackReleaseNotes",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/release-notes/unseen": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "release-notes"
+                ],
+                "summary": "List unseen release notes for the caller",
+                "operationId": "listUnseenReleaseNotes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ReleaseNotesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/smart-beacon": {
             "get": {
                 "security": [
@@ -6254,6 +6360,53 @@
                     "type": "integer"
                 },
                 "slot_time_ms": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.ReleaseNoteDTO": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "description": "pre-sanitized HTML",
+                    "type": "string"
+                },
+                "date": {
+                    "description": "ISO YYYY-MM-DD",
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "style": {
+                    "description": "\"info\" | \"cta\"",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ReleaseNotesResponse": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "description": "LastSeen is the authenticated caller's last acknowledged release\nversion at the moment the request was served. Empty on the\n/api/release-notes endpoint (caller-agnostic) and on /unseen for\na user who has never acked. The frontend uses this to render a\n\"Since your last visit · vA → vB\" subtitle in the news popup.",
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ReleaseNoteDTO"
+                    }
+                },
+                "schema_version": {
                     "type": "integer"
                 }
             }

@@ -155,9 +155,14 @@ version:
 	@echo "v$(VERSION)-$(FULL_COMMIT)"
 
 bump-minor:
-	@$(MAKE) --no-print-directory api-client
 	@echo "Current version: $(VERSION)"
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.0", $$1, $$2+1}'))
+	@grep -qE '^-[[:space:]]+version:[[:space:]]+"?$(NEW)"?[[:space:]]*$$' graywolf/pkg/releasenotes/notes.yaml || { \
+	  echo "error: no release note for v$(NEW) in graywolf/pkg/releasenotes/notes.yaml"; \
+	  echo "       author the entry first (see CLAUDE.md release workflow)."; \
+	  exit 1; \
+	}
+	@$(MAKE) --no-print-directory api-client
 	@echo "$(NEW)" > VERSION
 	@sed -i.bak 's/^version = ".*"/version = "$(NEW)"/' $(MODEM_DIR)/Cargo.toml && rm $(MODEM_DIR)/Cargo.toml.bak
 	@sed -i.bak 's/^pkgver=.*/pkgver=$(NEW)/' packaging/aur/PKGBUILD && rm packaging/aur/PKGBUILD.bak
@@ -166,15 +171,20 @@ bump-minor:
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock graywolf/pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
 
 bump-point:
-	@$(MAKE) --no-print-directory api-client
 	@echo "Current version: $(VERSION)"
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'))
+	@grep -qE '^-[[:space:]]+version:[[:space:]]+"?$(NEW)"?[[:space:]]*$$' graywolf/pkg/releasenotes/notes.yaml || { \
+	  echo "error: no release note for v$(NEW) in graywolf/pkg/releasenotes/notes.yaml"; \
+	  echo "       author the entry first (see CLAUDE.md release workflow)."; \
+	  exit 1; \
+	}
+	@$(MAKE) --no-print-directory api-client
 	@echo "$(NEW)" > VERSION
 	@sed -i.bak 's/^version = ".*"/version = "$(NEW)"/' $(MODEM_DIR)/Cargo.toml && rm $(MODEM_DIR)/Cargo.toml.bak
 	@sed -i.bak 's/^pkgver=.*/pkgver=$(NEW)/' packaging/aur/PKGBUILD && rm packaging/aur/PKGBUILD.bak
@@ -183,7 +193,7 @@ bump-point:
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock graywolf/pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"

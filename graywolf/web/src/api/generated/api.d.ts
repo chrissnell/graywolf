@@ -926,6 +926,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/release-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List all release notes */
+        get: operations["listReleaseNotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/release-notes/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge every release note through the current build */
+        post: operations["ackReleaseNotes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/release-notes/unseen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List unseen release notes for the caller */
+        get: operations["listUnseenReleaseNotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/smart-beacon": {
         parameters: {
             query?: never;
@@ -1830,6 +1881,30 @@ export interface components {
             method?: string;
             persist?: number;
             slot_time_ms?: number;
+        };
+        "dto.ReleaseNoteDTO": {
+            /** @description pre-sanitized HTML */
+            body?: string;
+            /** @description ISO YYYY-MM-DD */
+            date?: string;
+            schema_version?: number;
+            /** @description "info" | "cta" */
+            style?: string;
+            title?: string;
+            version?: string;
+        };
+        "dto.ReleaseNotesResponse": {
+            current?: string;
+            /**
+             * @description LastSeen is the authenticated caller's last acknowledged release
+             *     version at the moment the request was served. Empty on the
+             *     /api/release-notes endpoint (caller-agnostic) and on /unseen for
+             *     a user who has never acked. The frontend uses this to render a
+             *     "Since your last visit · vA → vB" subtitle in the news popup.
+             */
+            last_seen?: string;
+            notes?: components["schemas"]["dto.ReleaseNoteDTO"][];
+            schema_version?: number;
         };
         "dto.SendMessageRequest": {
             /** @description Channel overrides the configured TX channel. Nil = use default. */
@@ -5674,6 +5749,109 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listReleaseNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ReleaseNotesResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    ackReleaseNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listUnseenReleaseNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ReleaseNotesResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

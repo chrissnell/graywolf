@@ -117,6 +117,11 @@ func TestAuthGate_EveryRoute(t *testing.T) {
 		// /api/ is public except the explicit exceptions below.
 		{http.MethodGet, "/api/health", ""},
 		{http.MethodGet, "/api/status", ""},
+
+		// Release notes (popup + About page "What's new").
+		{http.MethodGet, "/api/release-notes", ""},
+		{http.MethodGet, "/api/release-notes/unseen", ""},
+		{http.MethodPost, "/api/release-notes/ack", ""},
 	}
 
 	// Walk the table twice: once with no cookie (expect 401) and once
@@ -281,6 +286,7 @@ func newAuthGateServer(t *testing.T) *authGateServer {
 	// Protected routes live on an inner mux wrapped with RequireAuth.
 	apiMux := http.NewServeMux()
 	apiSrv.RegisterRoutes(apiMux)
+	RegisterReleaseNotes(apiSrv, apiMux, "test", authStore)
 
 	outer.Handle("/api/", webauth.RequireAuth(authStore)(apiMux))
 
@@ -341,7 +347,7 @@ func seedUserAndSession(t *testing.T, auth *webauth.AuthStore) string {
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	user, err := auth.CreateFirstUser(ctx, "admin", hash)
+	user, err := auth.CreateFirstUser(ctx, "admin", hash, "")
 	if err != nil {
 		t.Fatalf("CreateFirstUser: %v", err)
 	}

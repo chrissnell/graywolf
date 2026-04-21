@@ -14,12 +14,22 @@ import (
 var ErrSetupAlreadyComplete = errors.New("webauth: setup already complete")
 
 // WebUser is a credential record for the web UI.
+//
+// LastSeenReleaseVersion is the high-water mark of release-notes
+// acknowledgement. Empty string (the default for AutoMigrate'd
+// existing rows) is treated by releasenotes.Compare as less than any
+// real version, so an existing user on first login after upgrade sees
+// the full backlog. New users (created via CreateFirstUser /
+// CreateUser) are seeded with the running build version so they
+// don't get the backlog. Gorm size:20 leaves headroom for
+// "999.999.999" (the longest strict x.y.z we'd ever emit).
 type WebUser struct {
-	ID           uint32 `gorm:"primaryKey;autoIncrement"`
-	Username     string `gorm:"uniqueIndex;not null"`
-	PasswordHash string `gorm:"not null"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                     uint32 `gorm:"primaryKey;autoIncrement"`
+	Username               string `gorm:"uniqueIndex;not null"`
+	PasswordHash           string `gorm:"not null"`
+	LastSeenReleaseVersion string `gorm:"size:20"`
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 // WebSession ties a bearer token to a user with an expiry.
@@ -48,8 +58,13 @@ func NewAuthStore(db *gorm.DB) (*AuthStore, error) {
 	return s, nil
 }
 
-func (s *AuthStore) CreateUser(ctx context.Context, username, passwordHash string) (*WebUser, error) {
-	u := &WebUser{Username: username, PasswordHash: passwordHash}
+// CreateUser inserts a new user and seeds LastSeenReleaseVersion to
+// buildVersion so the user does not see the release-notes backlog on
+// first login. An empty buildVersion is permitted (a CLI utility or
+// test with no build-time version plumbed through) but the user will
+// see every note on first login.
+func (s *AuthStore) CreateUser(ctx context.Context, username, passwordHash, buildVersion string) (*WebUser, error) {
+	u := &WebUser{Username: username, PasswordHash: passwordHash, LastSeenReleaseVersion: buildVersion}
 	if err := s.db.WithContext(ctx).Create(u).Error; err != nil {
 		return nil, err
 	}
@@ -60,11 +75,15 @@ func (s *AuthStore) CreateUser(ctx context.Context, username, passwordHash strin
 // ErrSetupAlreadyComplete if any user already exists. Safe under concurrent
 // requests.
 //
+// buildVersion seeds LastSeenReleaseVersion so the first user does not
+// see the release-notes backlog — they just installed, everything is
+// "current" by definition.
+//
 // Relies on SQLite serializable writers; if we move to a concurrent DB this
 // needs a different strategy (e.g. an explicit advisory lock or an INSERT
 // guarded by a WHERE NOT EXISTS subquery).
-func (s *AuthStore) CreateFirstUser(ctx context.Context, username, passwordHash string) (*WebUser, error) {
-	u := &WebUser{Username: username, PasswordHash: passwordHash}
+func (s *AuthStore) CreateFirstUser(ctx context.Context, username, passwordHash, buildVersion string) (*WebUser, error) {
+	u := &WebUser{Username: username, PasswordHash: passwordHash, LastSeenReleaseVersion: buildVersion}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&WebUser{}).Count(&count).Error; err != nil {
@@ -79,6 +98,36 @@ func (s *AuthStore) CreateFirstUser(ctx context.Context, username, passwordHash 
 		return nil, err
 	}
 	return u, nil
+}
+
+// SetLastSeenReleaseVersion records that the user has acknowledged
+// every release note up to and including version. Idempotent.
+// Returns an error if no row matched (stale session whose user was
+// deleted) so the caller's 204 response doesn't lie about the write.
+func (s *AuthStore) SetLastSeenReleaseVersion(ctx context.Context, userID uint32, version string) error {
+	tx := s.db.WithContext(ctx).
+		Model(&WebUser{}).
+		Where("id = ?", userID).
+		Update("last_seen_release_version", version)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return fmt.Errorf("webauth: user id %d not found", userID)
+	}
+	return nil
+}
+
+// GetLastSeenReleaseVersion returns the stored high-water mark for the
+// given user. Empty string is the zero-value default.
+func (s *AuthStore) GetLastSeenReleaseVersion(ctx context.Context, userID uint32) (string, error) {
+	var u WebUser
+	if err := s.db.WithContext(ctx).
+		Select("last_seen_release_version").
+		First(&u, userID).Error; err != nil {
+		return "", err
+	}
+	return u.LastSeenReleaseVersion, nil
 }
 
 func (s *AuthStore) GetUserByUsername(ctx context.Context, username string) (*WebUser, error) {

@@ -1,0 +1,29 @@
+# Authoritative list of user-facing release notes. Newest first.
+# Plain English only — no package names, no API paths, no internals.
+# style: info   — informational ("new feature", "improvement")
+# style: cta    — call-to-action (operator must do something)
+# link:  optional hash route the body references via [text](link) markdown;
+#        renderer only accepts internal #/... routes.
+
+- version: "0.11.0"
+  date: "2026-04-21"
+  style: cta
+  schema_version: 1
+  title: "Station Callsign replaces per-feature callsigns"
+  body: |
+    This version introduces a **Station Callsign**, which is used by
+    the iGate, Digipeater, Beacons, and Messenger by default. You can
+    override this callsign — or use an additional callsign — for the
+    Digipeater and Beacons.
+
+    Please visit the [Station Callsigns](#/callsign) tab to verify
+    that your desired callsign is set.
+
+- version: "0.10.11"
+  date: "2026-04-18"
+  style: info
+  schema_version: 1
+  title: "APRS Messaging"
+  body: |
+    Graywolf can now send and receive APRS text messages. Try it out
+    on the [Messages](#/messages) tab.

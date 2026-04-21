@@ -21,10 +21,13 @@ import (
 )
 
 // Run dispatches one of the three auth subcommands. args is the
-// slice after "graywolf auth", i.e. os.Args[2:]. Errors are returned
-// rather than printed/os.Exit'd so the calling shim controls the
-// exit code in one place.
-func Run(args []string, logger *slog.Logger) error {
+// slice after "graywolf auth", i.e. os.Args[2:]. buildVersion is the
+// linker-injected main.Version — plumbed through so CLI-created users
+// get seeded with the running build version for LastSeenReleaseVersion
+// and don't see the release-notes backlog on first login. Errors are
+// returned rather than printed/os.Exit'd so the calling shim controls
+// the exit code in one place.
+func Run(args []string, logger *slog.Logger, buildVersion string) error {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -37,7 +40,7 @@ func Run(args []string, logger *slog.Logger) error {
 
 	switch sub {
 	case "set-password":
-		return runSetPassword(rest)
+		return runSetPassword(rest, buildVersion)
 	case "list-users":
 		return runListUsers(rest)
 	case "delete-user":
@@ -71,7 +74,7 @@ func newAuthFlagSet(name string) (*flag.FlagSet, *string) {
 	return fs, dbPath
 }
 
-func runSetPassword(args []string) error {
+func runSetPassword(args []string, buildVersion string) error {
 	// The old handler stripped --user out manually so it could coexist
 	// with the -config flag parser. Preserve that behavior: pull --user
 	// out of args, then parse the remainder with a normal FlagSet.
@@ -122,7 +125,10 @@ func runSetPassword(args []string) error {
 	ctx := context.Background()
 	existing, err := authStore.GetUserByUsername(ctx, user)
 	if err != nil {
-		if _, err := authStore.CreateUser(ctx, user, hash); err != nil {
+		// Seed LastSeenReleaseVersion to the running build so a
+		// CLI-provisioned user doesn't see the full release-notes
+		// backlog on first login.
+		if _, err := authStore.CreateUser(ctx, user, hash, buildVersion); err != nil {
 			return err
 		}
 		fmt.Printf("Created user %s\n", user)

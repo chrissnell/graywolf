@@ -75,7 +75,7 @@ func TestUserCRUD(t *testing.T) {
 	s := testAuthStore(t)
 	ctx := context.Background()
 
-	u, err := s.CreateUser(ctx, "admin", "hash123")
+	u, err := s.CreateUser(ctx, "admin", "hash123", "0.11.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestSessionLifecycle(t *testing.T) {
 	s := testAuthStore(t)
 	ctx := context.Background()
 
-	u, _ := s.CreateUser(ctx, "admin", "hash")
+	u, _ := s.CreateUser(ctx, "admin", "hash", "")
 	_, err := s.CreateSession(ctx, u.ID, "tok123", time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestDeleteExpiredSessions(t *testing.T) {
 	s := testAuthStore(t)
 	ctx := context.Background()
 
-	u, _ := s.CreateUser(ctx, "admin", "hash")
+	u, _ := s.CreateUser(ctx, "admin", "hash", "")
 	s.CreateSession(ctx, u.ID, "valid", time.Now().Add(time.Hour))
 	s.CreateSession(ctx, u.ID, "exp1", time.Now().Add(-time.Hour))
 	s.CreateSession(ctx, u.ID, "exp2", time.Now().Add(-2*time.Hour))
@@ -172,7 +172,7 @@ func TestMiddleware(t *testing.T) {
 	s := testAuthStore(t)
 	ctx := context.Background()
 
-	u, _ := s.CreateUser(ctx, "admin", "hash")
+	u, _ := s.CreateUser(ctx, "admin", "hash", "")
 	s.CreateSession(ctx, u.ID, "valid-token", time.Now().Add(time.Hour))
 
 	protected := RequireAuth(s)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,7 +239,7 @@ func TestLoginLogout(t *testing.T) {
 	h := &Handlers{Auth: s}
 
 	hash, _ := HashPassword("correct")
-	s.CreateUser(ctx, "admin", hash)
+	s.CreateUser(ctx, "admin", hash, "")
 
 	// Wrong password → 401
 	body, _ := json.Marshal(loginRequest{Username: "admin", Password: "wrong"})
@@ -296,7 +296,7 @@ func TestStoreHonorsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := s.CreateUser(ctx, "admin", "hash")
+	_, err := s.CreateUser(ctx, "admin", "hash", "")
 	if err == nil {
 		t.Fatal("expected error from cancelled context, got nil")
 	}
@@ -334,7 +334,7 @@ func TestCreateFirstUserConcurrent(t *testing.T) {
 			defer wg.Done()
 			<-start
 			username := "admin" + string(rune('0'+i))
-			_, err := s.CreateFirstUser(context.Background(), username, "hash")
+			_, err := s.CreateFirstUser(context.Background(), username, "hash", "")
 			switch {
 			case err == nil:
 				successes.Add(1)
@@ -377,7 +377,7 @@ func TestCreateFirstUserErrorSanitization(t *testing.T) {
 	h := &Handlers{Auth: s}
 
 	// Seed one user directly so the setup endpoint sees a populated DB.
-	if _, err := s.CreateUser(context.Background(), "existing", "hash"); err != nil {
+	if _, err := s.CreateUser(context.Background(), "existing", "hash", ""); err != nil {
 		t.Fatal(err)
 	}
 

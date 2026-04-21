@@ -52,6 +52,7 @@ var tagOrder = []tagEntry{
 	{"stations", "Station registry derived from received packets."},
 	{"position", "Current station position."},
 	{"messages", "APRS text messaging: DMs, tactical threads, preferences, and SSE events."},
+	{"release-notes", "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."},
 
 	// --- Admin / auth / health ------------------------------------------
 	{"auth", "Session login, logout, and first-user setup."},
