@@ -448,16 +448,6 @@
   {/if}
   <Box>
     <form onsubmit={handleSave}>
-      <!-- Discoverability row: the iGate identity now lives on the
-           Station Callsign page. This row is purely informational so
-           users migrating from the old iGate form know where to look. -->
-      <div class="station-row">
-        <span class="station-row-label">Station callsign:</span>
-        <span class="station-row-value" class:is-empty={!stationCallsign}>
-          {stationCallsign || '(not set)'}
-        </span>
-        <a class="station-row-link" href="#/callsign">[Change]</a>
-      </div>
       <!-- TX-channel summary pill (Phase 3 / plan D4). Surfaces the
            broken state of the saved tx_channel on the Connection tab
            so operators see the problem without switching to the
@@ -845,40 +835,6 @@
   .tx-block-callout.disabled-ok {
     border-color: var(--color-warning, #d29922);
     background: var(--color-warning-muted, rgba(210, 153, 34, 0.15));
-  }
-
-  /* Station-callsign discoverability row (Phase 4B). Read-only echo of
-     the current station callsign with a link to the page that owns it.
-     Sized to sit comfortably above the Enable toggle without dominating
-     the form. */
-  .station-row {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin: 0 0 14px;
-    font-size: 13px;
-    color: var(--text-primary);
-  }
-  .station-row-label {
-    color: var(--color-text-muted, var(--text-secondary, #888));
-  }
-  .station-row-value {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-weight: 600;
-  }
-  .station-row-value.is-empty {
-    font-family: inherit;
-    font-weight: normal;
-    font-style: italic;
-    color: var(--color-text-muted, var(--text-secondary, #888));
-  }
-  .station-row-link {
-    color: var(--accent, #3b82f6);
-    text-decoration: none;
-  }
-  .station-row-link:hover,
-  .station-row-link:focus-visible {
-    text-decoration: underline;
   }
 
   /* TX-channel summary pill on the Connection tab (Phase 3 / plan D4).
