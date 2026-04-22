@@ -34,6 +34,8 @@
     <h2 id="updates-heading" class="about-section-heading">Updates</h2>
     {#if updates.status === 'pending'}
       <p class="updates-pending">Checking for updates…</p>
+    {:else if updates.status === 'current'}
+      <p class="updates-current">You're on the latest version.</p>
     {:else}
       <UpdateAvailableBanner />
     {/if}
@@ -109,7 +111,8 @@
     outline: none;
   }
 
-  .updates-pending {
+  .updates-pending,
+  .updates-current {
     font-size: 13px;
     color: var(--text-muted);
     margin: 0;
