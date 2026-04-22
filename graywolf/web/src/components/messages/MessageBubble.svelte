@@ -9,10 +9,13 @@
   //                         tactical cluster AND on "label repeat"
   //                         bubbles (every 5th in a long cluster).
   //                         Parent owns the break conditions.
-  //   - showMonogramInStripe — parallel to showSenderLabel; monogram
-  //                         is drawn inside the 2 px left stripe on
-  //                         bubble 1 + label-repeat bubbles (not
-  //                         every bubble — would be visually loud).
+  //   - showAvatar        — parallel to showSenderLabel; render the
+  //                         sender's monogram avatar circle in the
+  //                         left avatar slot on bubble 1 + label-repeat
+  //                         bubbles. Other bubbles in the cluster get
+  //                         an empty (but width-reserved) slot so the
+  //                         left edge of every bubble in the cluster
+  //                         stays aligned.
   //   - onMetaClick       — open meta drawer for this bubble
   //   - onReplyPrivate    — inline reply-privately action (tactical
   //                         incoming only)
@@ -41,7 +44,7 @@
    *    msg: any,
    *    isTactical?: boolean,
    *    showSenderLabel?: boolean,
-   *    showMonogramInStripe?: boolean,
+   *    showAvatar?: boolean,
    *    onMetaClick?: (msg: any) => void,
    *    onReplyPrivate?: (fromCall: string) => void,
    *    onContextMenu?: (x: number, y: number, msg: any) => void,
@@ -53,7 +56,7 @@
     msg,
     isTactical = false,
     showSenderLabel = false,
-    showMonogramInStripe = false,
+    showAvatar = false,
     onMetaClick,
     onReplyPrivate,
     onContextMenu,
@@ -352,15 +355,27 @@
     {/if}
   </aside>
 
+  {#if isTactical && !isOut}
+    <div class="avatar-slot" aria-hidden={!showAvatar}>
+      {#if showAvatar}
+        <span
+          class="avatar"
+          style="background:{colors.stripe};color:{colors.avatarFg}"
+          aria-label={`From ${sender}`}
+          title={sender}
+        >{monogram}</span>
+      {/if}
+    </div>
+  {/if}
+
   <div class="bubble-column">
     {#if isTactical && !isOut && showSenderLabel}
       <div
         class="sender-label"
-        style="background:{colors.bg};color:{colors.fg};border-color:{colors.stripe}"
+        style="color:{colors.stripe}"
         aria-label={`From ${sender}`}
       >
-        <span class="monogram-mini">{monogram}</span>
-        <span class="sender-call">{sender}</span>
+        {sender}
       </div>
     {/if}
 
@@ -376,14 +391,6 @@
       onpointerup={onPointerUpOrCancel}
       onpointercancel={onPointerUpOrCancel}
     >
-      {#if isTactical && !isOut && showMonogramInStripe}
-        <span
-          class="stripe-monogram"
-          style="color:{colors.fg};background:{colors.stripe}"
-          aria-hidden="true"
-        >{monogram}</span>
-      {/if}
-
       {#if isInvite}
       {#if isThisIgnored}
         <p class="bubble-text invite-dismissed" data-testid="invite-dismissed">
@@ -532,32 +539,48 @@
     align-items: flex-end;
   }
 
+  /* Sender callsign sits above the first bubble of an incoming
+     tactical cluster. Plain bold colored text (in the sender's stripe
+     color) — no pill background, which made the prior design read as
+     blue-on-blue / teal-on-teal in light mode. */
   .sender-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin: 0 0 2px 6px;
-    padding: 1px 8px 1px 2px;
+    display: inline-block;
+    margin: 0 0 3px 4px;
     font-size: 11px;
     font-family: var(--font-mono);
-    border: 1px solid;
-    border-radius: 999px;
-    font-weight: 600;
+    font-weight: 700;
+    letter-spacing: 0.4px;
   }
-  .monogram-mini {
+
+  /* Avatar slot is a fixed-width column to the left of the bubble for
+     tactical incoming messages. Width is reserved on every bubble in a
+     cluster so the bubble left edges line up; only the cluster head
+     (and the every-5th repeat) actually paints the avatar. */
+  .avatar-slot {
+    width: 30px;
+    flex-shrink: 0;
+    align-self: flex-end;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    /* Bottom-align with bubble baseline (bubble has 7 px bottom pad). */
+    padding-bottom: 1px;
+  }
+  .avatar {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 30px;
+    height: 30px;
     border-radius: 999px;
-    background: var(--color-bg);
-    font-size: 9px;
-    font-weight: 700;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 800;
     letter-spacing: 0.5px;
-  }
-  .sender-call {
-    letter-spacing: 0.3px;
+    /* Subtle ring to lift the circle off both light and dark surfaces
+       without depending on the page background. */
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    user-select: none;
   }
 
   .bubble {
@@ -584,22 +607,6 @@
   .bubble.has-stripe {
     border-left: 2px solid var(--stripe-color, var(--color-primary));
     padding-left: 14px;
-  }
-
-  .stripe-monogram {
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 0 0 8px 0;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    pointer-events: none;
   }
 
   .bubble-text {

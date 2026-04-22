@@ -149,13 +149,13 @@
         clusterSender = inc ? sender : '';
         clusterCount = inc ? 1 : 0;
         const showLabel = inc && isTactical; // first in cluster
-        info.set(i, { showSenderLabel: !!showLabel, showMonogramInStripe: !!showLabel });
+        info.set(i, { showSenderLabel: !!showLabel, showAvatar: !!showLabel });
       } else {
         clusterCount++;
         // Repeat label every 5 bubbles: indexes 5, 10, 15 inside cluster
         // (cluster is 1-indexed: 1st was the first, so 5th = count 5)
         const repeat = clusterCount % 5 === 0;
-        info.set(i, { showSenderLabel: repeat, showMonogramInStripe: repeat });
+        info.set(i, { showSenderLabel: repeat, showAvatar: repeat });
       }
       lastTs = t;
       lastDay = thisDay;
@@ -402,12 +402,12 @@
                   <span>{dayHeader(m.sent_at || m.received_at || m.created_at)}</span>
                 </div>
               {/if}
-              {@const info = clusterInfo.get(i) || { showSenderLabel: false, showMonogramInStripe: false }}
+              {@const info = clusterInfo.get(i) || { showSenderLabel: false, showAvatar: false }}
               <MessageBubble
                 msg={m}
                 {isTactical}
                 showSenderLabel={info.showSenderLabel}
-                showMonogramInStripe={info.showMonogramInStripe}
+                showAvatar={info.showAvatar}
                 onMetaClick={openMeta}
                 onReplyPrivate={replyPrivately}
                 onContextMenu={openMenu}
