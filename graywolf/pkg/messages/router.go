@@ -604,8 +604,12 @@ func (r *Router) correlateReplyAck(ctx context.Context, peerCall, replyAckID str
 	}
 }
 
-// sendAutoAck builds and submits an auto-ACK for an inbound DM. If
-// the inbound arrived on IS, the ack is also mirrored to APRS-IS.
+// sendAutoAck builds and submits an auto-ACK for an inbound DM. The
+// ack follows the path the message arrived on: RF inbound acks over
+// RF (on the receiving channel), IS inbound acks over APRS-IS only.
+// Mirroring an IS-sourced ack onto RF would waste local airtime on a
+// channel the correspondent cannot hear, since IS peers are by
+// definition not RF-reachable from our station.
 func (r *Router) sendAutoAck(
 	ctx context.Context,
 	pkt *aprs.DecodedAPRSPacket,
@@ -617,6 +621,19 @@ func (r *Router) sendAutoAck(
 	ourCall := r.cfg.OurCall()
 	if ourCall == "" {
 		r.logger.Debug("messages router skipping auto-ACK: our_call empty")
+		return
+	}
+	if pkt.Direction == aprs.DirectionIS {
+		if r.cfg.IGateSender == nil {
+			return
+		}
+		line := buildAckTNC2(ourCall, peerCall, msgID)
+		if err := r.cfg.IGateSender.SendLine(line); err != nil {
+			r.logger.Debug("messages router auto-ACK IS mirror failed",
+				"error", err, "peer", peerCall, "msgid", msgID)
+			return
+		}
+		r.mAutoAckSent.Inc()
 		return
 	}
 	frame, err := buildAckFrame(ourCall, peerCall, msgID)
@@ -637,20 +654,9 @@ func (r *Router) sendAutoAck(
 	if err := r.cfg.TxSink.Submit(ctx, ch, frame, src); err != nil {
 		r.logger.Warn("messages router auto-ACK submit failed",
 			"error", err, "peer", peerCall, "msgid", msgID)
-	} else {
-		r.mAutoAckSent.Inc()
+		return
 	}
-	// Mirror via APRS-IS if the inbound arrived on IS and the
-	// operator runs an iGate. SendLine returns an error when the
-	// iGate is not connected; surface as Debug — losing the mirror
-	// does not invalidate the RF ack.
-	if pkt.Direction == aprs.DirectionIS && r.cfg.IGateSender != nil {
-		line := buildAckTNC2(ourCall, peerCall, msgID)
-		if err := r.cfg.IGateSender.SendLine(line); err != nil {
-			r.logger.Debug("messages router auto-ACK IS mirror failed",
-				"error", err, "peer", peerCall, "msgid", msgID)
-		}
-	}
+	r.mAutoAckSent.Inc()
 }
 
 // buildAckFrame constructs a ready-to-submit ax25.Frame carrying the

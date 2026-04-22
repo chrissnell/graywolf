@@ -735,15 +735,22 @@ func TestRouterCaseInsensitiveAddresseeMatchForOurCall(t *testing.T) {
 	}, "persisted with case-insensitive our_call")
 }
 
-func TestRouterISInboundMirrorsToIGate(t *testing.T) {
+func TestRouterISInboundAcksOverIGateOnly(t *testing.T) {
 	r, _, sink, igs, _, _, cleanup := buildRouter(t, "N0CALL", nil)
 	defer cleanup()
 
 	pkt := makeMessagePacket(t, "W1ABC", "N0CALL", "from is", "001", aprs.DirectionIS)
 	_ = r.SendPacket(context.Background(), pkt)
 	waitFor(t, time.Second, func() bool {
-		return len(sink.list()) == 1 && len(igs.list()) == 1
-	}, "IS mirror")
+		return len(igs.list()) == 1
+	}, "IS ack")
+
+	// IS-sourced messages must NOT emit an RF ack — the correspondent
+	// is by definition not RF-reachable from our station, and blasting
+	// the default channel wastes local airtime.
+	if got := len(sink.list()); got != 0 {
+		t.Fatalf("IS auto-ACK must not submit to RF, got %d submits", got)
+	}
 
 	// Validate the TNC-2 line shape.
 	line := igs.list()[0]
