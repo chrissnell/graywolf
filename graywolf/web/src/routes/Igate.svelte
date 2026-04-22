@@ -542,75 +542,85 @@
       </div>
     </form>
   </Box>
-  <h3 class="section-heading">APRS-IS &rarr; RF Gating</h3>
-  <p class="section-doc">
-    First matching rule wins; if none match, the packet is not transmitted.
-    These rules only affect RF transmission — they do not hide stations from the map.
-  </p>
-  <Box>
-    <form onsubmit={handleSave}>
-      <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
-        {#snippet children(describedBy)}
-          <ChannelListbox
-            id="ig-txch"
-            bind:value={form.tx_channel}
-            valueType="number"
-            channels={channels}
-            ariaLabelledBy={describedBy}
-            capabilityFilter={txPredicate}
-          />
-        {/snippet}
-      </FormField>
-      {#if txBlock}
-        <div
-          bind:this={calloutEl}
-          id={TX_CALLOUT_ID}
-          class="tx-block-callout"
-          class:disabled-ok={txBlockAllowsSave}
-          role="alert"
-        >
-          <strong>TX channel not TX-capable:</strong> {txBlock.reason}.
-          {#if txBlockAllowsSave}
-            Save allowed because the iGate is disabled.
-          {:else}
-            Pick a different channel or fix the channel's backend on the Channels page before saving.
-          {/if}
-        </div>
-      {/if}
-      <div class="form-actions">
-        <Button
-          variant="primary"
-          type="submit"
-          disabled={loading || saveBlocked}
-          aria-describedby={txBlock ? TX_CALLOUT_ID : undefined}
-        >
-          {loading ? 'Saving...' : 'Save'}
-        </Button>
+  <section class="gating-section" aria-labelledby="gating-heading">
+    <h3 id="gating-heading" class="section-heading">APRS-IS &rarr; RF Gating</h3>
+
+    <div class="rf-danger-panel" role="note">
+      <div class="rf-danger-icon" aria-hidden="true">
+        <Icon name="alert-circle" size="md" />
       </div>
-    </form>
-  </Box>
-  <div class="rf-danger-panel" role="note">
-    <div class="rf-danger-icon" aria-hidden="true">
-      <Icon name="alert-circle" size="md" />
+      <div class="rf-danger-body">
+        <strong>This panel transmits packets on the air.</strong>
+        Broad patterns — short prefixes like <code>K</code> or <code>W5</code>, or
+        broad wildcards like <code>B*</code> — can flood your local APRS frequency
+        with gated traffic. Use the most specific rule you can, pair it with a
+        tight server filter above, and test in simulation mode first.
+      </div>
     </div>
-    <div class="rf-danger-body">
-      <strong>This panel transmits packets on the air.</strong>
-      Broad patterns — short prefixes like <code>K</code> or <code>W5</code>, or
-      broad wildcards like <code>B*</code> — can flood your local APRS frequency
-      with gated traffic. Use the most specific rule you can, pair it with a
-      tight server filter above, and test in simulation mode first.
+
+    <Box>
+      <form onsubmit={handleSave}>
+        <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
+          {#snippet children(describedBy)}
+            <ChannelListbox
+              id="ig-txch"
+              bind:value={form.tx_channel}
+              valueType="number"
+              channels={channels}
+              ariaLabelledBy={describedBy}
+              capabilityFilter={txPredicate}
+            />
+          {/snippet}
+        </FormField>
+        {#if txBlock}
+          <div
+            bind:this={calloutEl}
+            id={TX_CALLOUT_ID}
+            class="tx-block-callout"
+            class:disabled-ok={txBlockAllowsSave}
+            role="alert"
+          >
+            <strong>TX channel not TX-capable:</strong> {txBlock.reason}.
+            {#if txBlockAllowsSave}
+              Save allowed because the iGate is disabled.
+            {:else}
+              Pick a different channel or fix the channel's backend on the Channels page before saving.
+            {/if}
+          </div>
+        {/if}
+        <div class="form-actions">
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={loading || saveBlocked}
+            aria-describedby={txBlock ? TX_CALLOUT_ID : undefined}
+          >
+            {loading ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      </form>
+    </Box>
+
+    <div class="rules-subheader">
+      <div class="rules-subheader-text">
+        <h4 class="rules-title">Rules</h4>
+        <p class="rules-subtitle">
+          First matching rule wins; if none match, the packet is not transmitted.
+          These rules only affect RF transmission — they do not hide stations from the map.
+        </p>
+      </div>
+      <div class="rules-subheader-actions">
+        <Button variant="primary" onclick={openCreate}>+ Add Rule</Button>
+      </div>
     </div>
-  </div>
-  <div class="filters-header">
-    <Button variant="primary" onclick={openCreate}>+ Add Rule</Button>
-  </div>
-  <DataTable
-    {columns}
-    rows={filters}
-    onEdit={openEdit}
-    onDelete={handleDelete}
-    cells={{ pattern: patternCell }}
-  />
+    <DataTable
+      {columns}
+      rows={filters}
+      onEdit={openEdit}
+      onDelete={handleDelete}
+      cells={{ pattern: patternCell }}
+    />
+  </section>
 </div>
 
 {#snippet patternCell(value, _row)}
@@ -710,18 +720,44 @@
     color: var(--accent);
     border-bottom-color: var(--accent);
   }
+  .gating-section {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+  }
   .section-heading {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.2px;
+    margin: 0 0 14px;
+  }
+  .rules-subheader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 24px 0 12px;
+  }
+  .rules-subheader-text {
+    min-width: 0;
+    max-width: 640px;
+  }
+  .rules-title {
     font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 20px 0 8px;
+    margin: 0 0 4px;
   }
-  .section-doc {
+  .rules-subtitle {
     font-size: 13px;
     color: var(--text-secondary);
     line-height: 1.5;
-    margin: 0 0 12px;
-    max-width: 720px;
+    margin: 0;
+  }
+  .rules-subheader-actions {
+    flex: 0 0 auto;
   }
   /* Section-level warning that the rules below transmit on RF. Matches
      the amber look used in Digipeater.svelte's no-rules-warning so the
@@ -756,11 +792,6 @@
     padding: 1px 4px;
     background: rgba(0, 0, 0, 0.08);
     border-radius: 3px;
-  }
-  .filters-header {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 12px;
   }
   .tab-panel.hidden { display: none; }
   .tab-doc {
