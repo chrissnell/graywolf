@@ -100,7 +100,7 @@ pub(crate) fn validate_stream_config(
 /// pick the smallest supported channel count that works at the given sample
 /// rate. This lets callers always request mono while gracefully handling
 /// stereo-only devices (common with USB sound cards like SignaLink).
-fn negotiate_channels<F, I>(
+pub(crate) fn negotiate_channels<F, I>(
     device: &Device,
     sample_rate: u32,
     preferred: u16,

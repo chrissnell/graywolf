@@ -1658,17 +1658,26 @@ fn play_test_tone_blocking(
     };
 
     let sample_rate = if req.sample_rate > 0 { req.sample_rate } else { 48000 };
-    let channels = req.channels.max(1) as u16;
-
-    if let Ok(configs) = device.supported_output_configs() {
-        if let Err(e) = audio::soundcard::validate_stream_config(configs, sample_rate, channels, "output") {
+    // Fall back to the device's smallest supported channel count when the
+    // configured count isn't available (e.g. stereo-only USB sound cards
+    // when the operator picked mono). The tone is written identically to
+    // every channel in the frame, so stereo output is in-phase mono.
+    let channels = match audio::soundcard::negotiate_channels(
+        &device,
+        sample_rate,
+        req.channels.max(1) as u16,
+        "output",
+        |d| d.supported_output_configs(),
+    ) {
+        Ok(c) => c,
+        Err(e) => {
             return TestToneResult {
                 request_id: req.request_id,
                 success: false,
                 error: e,
             };
         }
-    }
+    };
 
     let config = cpal::StreamConfig {
         channels,
