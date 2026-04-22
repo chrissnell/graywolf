@@ -327,13 +327,14 @@
     align-items: center;
     gap: 6px;
     margin: 2px 8px 6px;
-    padding: 6px 8px;
+    padding: 9px 10px;
     background: transparent;
     border: 1px dashed var(--color-border);
     border-radius: var(--radius);
     color: var(--color-text-muted);
     font-family: var(--font-mono);
     font-size: 12px;
+    font-weight: 700;
     cursor: pointer;
     transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
