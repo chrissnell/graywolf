@@ -7,6 +7,26 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.11.2"
+  date: "2026-04-21"
+  style: info
+  schema_version: 1
+  title: "Leave tactical group chats from the thread header"
+  body: |
+    You can now leave a tactical group chat directly from the chat
+    header. Click Leave Chat, confirm, and your station stops
+    monitoring that tactical -- the conversation drops off your
+    [Messages](#/messages) inbox and your APRS-IS subscription is
+    updated so you no longer receive traffic for it. Message history
+    for that tactical is preserved on the server as a read-only
+    archive.
+
+    Also in this release: the conversations list is always sectioned
+    (Tactical, then Direct Messages), the Manage Tactical Chats
+    button lives at the top of the list and is easier to spot, and
+    tactical sender avatars and labels are easier to read at a
+    glance.
+
 - version: "0.11.1"
   date: "2026-04-21"
   style: info
