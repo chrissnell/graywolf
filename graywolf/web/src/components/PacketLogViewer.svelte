@@ -36,7 +36,7 @@
   // No `priority` field in Chonky 0.2.1; ordering is the only knob.
   const columns = [
     { key: 'timestamp', label: 'Time',    width: '130px', class: 'pkt-c-time',           render: timeCell    },
-    { key: 'type',      label: 'Type',    width: '105px', class: 'pkt-c-type',           render: typeCell    },
+    { key: 'type',      label: 'Type',    width: '180px', class: 'pkt-c-type',           render: typeCell    },
     { key: 'srcdst',    label: 'Src→Dst', width: '1fr',   class: 'pkt-c-srcdst',         render: srcDstCell  },
     { key: 'channel',   label: 'Ch',      width: '50px',  class: 'pkt-c-channel', align: 'center', render: channelCell },
     { key: 'distance',  label: 'Distance',width: '120px', class: 'pkt-c-distance', align: 'right', render: distanceCell },
@@ -151,14 +151,16 @@
     font-weight: 500;
   }
 
-  /* Stack the Type and Origin badges vertically inside a single cell.
-     Origin is secondary metadata (where the packet came from in graywolf's
-     own pipeline: beacon, digipeater, iGate) and sits beneath Type. */
+  /* Lay the Type + Origin badges side-by-side in a single row so every
+     row stays the same height. The cell is sized wide enough that neither
+     badge needs to wrap in practice; nowrap prevents wrapping even when
+     content edges out (rare). */
   .pkt-type-stack {
     display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
   }
 
   .pkt-b-origin {
