@@ -33,6 +33,27 @@
   const PART_PREFIX_LEN = 6;
   const PART_SLICE = APRS_LIMIT - PART_PREFIX_LEN; // 61
 
+  // Split `body` into chunks of at most `maxLen` chars, preferring
+  // whitespace boundaries so words don't get chopped across parts.
+  // Falls back to a hard cut when a single token already exceeds
+  // maxLen with no whitespace to break on. Caller is expected to
+  // pass pre-trimmed text whose length exceeds `maxLen`.
+  function splitOnWhitespace(body, maxLen) {
+    const out = [];
+    let rest = body;
+    while (rest.length > maxLen) {
+      let cut = -1;
+      for (let i = maxLen; i > 0; i--) {
+        if (/\s/.test(rest[i])) { cut = i; break; }
+      }
+      if (cut === -1) cut = maxLen; // unbreakable word — hard cut fallback
+      out.push(rest.slice(0, cut).replace(/\s+$/, ''));
+      rest = rest.slice(cut).replace(/^\s+/, '');
+    }
+    if (rest.length > 0) out.push(rest);
+    return out;
+  }
+
   /** @type {{
    *    mode: 'compose' | 'thread',
    *    isTactical?: boolean,
@@ -69,11 +90,14 @@
   const length = $derived((text || '').length);
   // Single-part fits in APRS_LIMIT verbatim; multi-part uses the smaller
   // PART_SLICE to leave room for the "{N/M} " prefix on each wire message.
-  const parts = $derived(
-    length === 0 ? 1
-    : length <= APRS_LIMIT ? 1
-    : Math.ceil(length / PART_SLICE)
-  );
+  // Split on whitespace so we never chop a word across two parts.
+  const partsList = $derived.by(() => {
+    const trimmed = (text || '').trim();
+    if (trimmed.length === 0) return [];
+    if (trimmed.length <= APRS_LIMIT) return [trimmed];
+    return splitOnWhitespace(trimmed, PART_SLICE);
+  });
+  const parts = $derived(Math.max(1, partsList.length));
   const over = $derived(parts > MAX_PARTS);
   const remaining = $derived(APRS_LIMIT - (length % APRS_LIMIT || APRS_LIMIT));
   const showPartBadge = $derived(parts > 1);
@@ -99,13 +123,12 @@
     }
     sending = true;
     try {
-      if (parts > 1) {
-        // Slice into PART_SLICE-sized chunks so each tagged message
-        // (prefix + slice) stays within the APRS 67-char body cap.
-        // The "{N/M} " prefix is a human-readable hint, NOT APRS-101.
-        for (let i = 0; i < parts; i++) {
-          const slice = body.slice(i * PART_SLICE, (i + 1) * PART_SLICE);
-          const tagged = `{${i + 1}/${parts}} ${slice}`;
+      if (partsList.length > 1) {
+        // Each slice is already whitespace-aligned to fit PART_SLICE
+        // (= APRS_LIMIT - "{N/M} " prefix width). The "{N/M} " prefix
+        // is a human-readable hint, NOT APRS-101.
+        for (let i = 0; i < partsList.length; i++) {
+          const tagged = `{${i + 1}/${partsList.length}} ${partsList[i]}`;
           await onSend?.(tagged, target);
         }
       } else {
@@ -264,7 +287,7 @@
     <div class="controls">
       <span class="counter" class:warn={remaining <= 10 && parts === 1} class:over>
         {#if over}
-          Too long — max {MAX_PARTS} parts ({MAX_PARTS * PART_SLICE} chars)
+          Too long — more than {MAX_PARTS} parts
         {:else if showPartBadge}
           Part {parts}/{parts}
         {:else}
