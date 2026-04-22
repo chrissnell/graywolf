@@ -7,6 +7,27 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.11.1"
+  date: "2026-04-21"
+  style: info
+  schema_version: 1
+  title: "Messages gated in from APRS-IS now reach your chat"
+  body: |
+    Direct messages addressed to your callsign, and tactical messages
+    addressed to one of your enabled tactical callsigns, that arrive
+    over APRS-IS now show up on the [Messages](#/messages) tab.
+    Previously Graywolf only classified messages heard over RF --
+    anything delivered to you through the internet was silently
+    dropped on the floor.
+
+    This matters most for tactical chats where the sender is out of
+    RF range and reaches you through APRS-IS.
+
+    Also in this release: trying to send a message when no Station
+    Callsign is configured now returns a clear error pointing you at
+    [Station Callsigns](#/callsign), instead of a generic server
+    error.
+
 - version: "0.11.0"
   date: "2026-04-21"
   style: cta
