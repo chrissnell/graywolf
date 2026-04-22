@@ -589,25 +589,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 				a.stationCache.Update(entries)
 			}
 		},
-		IsRxHook: func(pkt *aprs.DecodedAPRSPacket, line string) {
-			if pkt == nil {
-				return
-			}
-			a.plog.Record(packetlog.Entry{
-				Channel:   uint32(pkt.Channel),
-				Direction: packetlog.DirRX,
-				Source:    "igate-is",
-				Raw:       pkt.Raw,
-				Display:   line,
-				Type:      string(pkt.Type),
-				Decoded:   pkt,
-				Notes:     "is-rx",
-			})
-			// Station received from APRS-IS — cache as via=is.
-			if entries := stationcache.ExtractEntry(pkt, "igate-is", "RX", uint32(pkt.Channel)); len(entries) > 0 {
-				a.stationCache.Update(entries)
-			}
-		},
+		IsRxHook: a.onIGateIsRxPacket,
 	})
 	if err != nil {
 		// Matches the old main.go behavior: init failure is logged but
@@ -618,6 +600,40 @@ func (a *App) wireIGate(ctx context.Context) error {
 	a.ig = ig
 	a.igateReload = make(chan struct{}, 1)
 	return nil
+}
+
+// onIGateIsRxPacket is the IsRxHook body for the iGate: it records the
+// IS-received packet into the packet log, updates the station cache,
+// and fans the packet into the messages router so inbound messages
+// addressed to our call or an enabled tactical callsign are
+// classified, persisted, and (for DMs) auto-ACKed back over IS.
+//
+// The messages router is the reason this hook fires unconditionally —
+// IS→RF gating (which rejects anything not heard-direct on RF) would
+// otherwise drop tactical-addressed traffic on the floor before the
+// messaging pipeline ever saw it. Router.SendPacket is non-blocking
+// and drops silently until messagesComponent.start flips running=true,
+// so hook fires before Service.Start are safely discarded.
+func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
+	if pkt == nil {
+		return
+	}
+	a.plog.Record(packetlog.Entry{
+		Channel:   uint32(pkt.Channel),
+		Direction: packetlog.DirRX,
+		Source:    "igate-is",
+		Raw:       pkt.Raw,
+		Display:   line,
+		Type:      string(pkt.Type),
+		Decoded:   pkt,
+		Notes:     "is-rx",
+	})
+	if entries := stationcache.ExtractEntry(pkt, "igate-is", "RX", uint32(pkt.Channel)); len(entries) > 0 {
+		a.stationCache.Update(entries)
+	}
+	if a.msgSvc != nil {
+		_ = a.msgSvc.Router().SendPacket(context.Background(), pkt)
+	}
 }
 
 // wireMessages constructs the messages.Service that owns the APRS

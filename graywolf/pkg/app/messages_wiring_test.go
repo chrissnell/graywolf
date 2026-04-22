@@ -15,6 +15,8 @@ import (
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
+	"github.com/chrissnell/graywolf/pkg/packetlog"
+	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
@@ -78,6 +80,8 @@ func messagesWiringApp(t *testing.T, ourCall string) (*App, context.Context, con
 		gov:            gov,
 		msgLocalRing:   messages.NewLocalTxRing(messages.DefaultLocalTxRingSize, messages.DefaultLocalTxRingTTL),
 		messagesReload: make(chan struct{}, 1),
+		plog:           packetlog.New(packetlog.Config{Capacity: 128}),
+		stationCache:   stationcache.NewPersistentCache(logger),
 	}
 	a.msgStore = messages.NewStore(store.DB())
 
@@ -273,4 +277,117 @@ func makeInboundDM(t *testing.T, source, addressee, text, msgID string) *aprs.De
 	}
 	pkt.Direction = aprs.DirectionRF
 	return pkt
+}
+
+// TestIGateIsRxHook_FeedsMessagesRouter verifies that the IsRxHook body
+// (onIGateIsRxPacket) forwards APRS-IS-received message packets into
+// the messages router, so inbound traffic addressed to our call (DM)
+// and to an enabled tactical callsign is classified and persisted.
+//
+// Regression guard: before this wiring existed the hook only recorded
+// to the packet log and station cache, and the router — which is only
+// bound into the RF fan-out — never saw IS-sourced traffic. Tactical
+// messages gated onto APRS-IS by a remote iGate (the common case for
+// operators without local RF coverage of the sender) were silently
+// dropped. See handleISLine in pkg/igate/igate.go for the full ingress
+// path.
+func TestIGateIsRxHook_FeedsMessagesRouter(t *testing.T) {
+	const ourCall = "N0CALL"
+	a, ctx, cancel := messagesWiringApp(t, ourCall)
+	defer cancel()
+
+	// Enable a tactical callsign and force the Service to reload its
+	// TacticalSet so the router's classifier recognizes it.
+	if err := a.store.CreateTacticalCallsign(ctx, &configstore.TacticalCallsign{
+		Callsign: "GRAYWOLF",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("CreateTacticalCallsign: %v", err)
+	}
+	if err := a.msgSvc.ReloadTacticalCallsigns(ctx); err != nil {
+		t.Fatalf("ReloadTacticalCallsigns: %v", err)
+	}
+
+	// Build two IS-sourced packets: one addressed to our call (DM),
+	// one to the tactical GRAYWOLF. The handleISLine path in igate
+	// stamps Direction=DirectionIS; replicate that here so the router
+	// sees the same provenance the production hook delivers.
+	dm := makeInboundDM(t, "W1ABC-9", ourCall, "is-dm-hello", "042")
+	dm.Direction = aprs.DirectionIS
+	tac := makeInboundDM(t, "KF8EBB-1", "GRAYWOLF", "is-tactical-hello", "")
+	tac.Direction = aprs.DirectionIS
+
+	a.onIGateIsRxPacket(dm, "W1ABC-9>APGRWO,qAR,K1AAA::N0CALL   :is-dm-hello{042")
+	a.onIGateIsRxPacket(tac, "KF8EBB-1>APGRWO,qAR,K8GI-5::GRAYWOLF :is-tactical-hello")
+
+	// Router is async — poll the store for both rows.
+	deadline := time.Now().Add(2 * time.Second)
+	var rows []configstore.Message
+	for time.Now().Before(deadline) {
+		rs, _, err := a.msgStore.List(ctx, messages.Filter{})
+		if err != nil {
+			t.Fatalf("Store.List: %v", err)
+		}
+		rows = rs
+		if len(rows) >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows persisted (DM + tactical), got %d", len(rows))
+	}
+
+	var gotDM, gotTactical bool
+	for _, r := range rows {
+		if r.Direction != "in" {
+			t.Errorf("row %d: Direction = %q, want in", r.ID, r.Direction)
+		}
+		if r.Source != string(aprs.DirectionIS) {
+			t.Errorf("row %d: Source = %q, want %q", r.ID, r.Source, aprs.DirectionIS)
+		}
+		switch r.ThreadKind {
+		case messages.ThreadKindDM:
+			gotDM = true
+			if r.FromCall != "W1ABC-9" {
+				t.Errorf("DM FromCall = %q, want W1ABC-9", r.FromCall)
+			}
+			if r.ThreadKey != "W1ABC-9" {
+				t.Errorf("DM ThreadKey = %q, want W1ABC-9", r.ThreadKey)
+			}
+		case messages.ThreadKindTactical:
+			gotTactical = true
+			if r.FromCall != "KF8EBB-1" {
+				t.Errorf("tactical FromCall = %q, want KF8EBB-1", r.FromCall)
+			}
+			if r.ThreadKey != "GRAYWOLF" {
+				t.Errorf("tactical ThreadKey = %q, want GRAYWOLF", r.ThreadKey)
+			}
+		default:
+			t.Errorf("row %d: unexpected ThreadKind %q", r.ID, r.ThreadKind)
+		}
+	}
+	if !gotDM {
+		t.Error("no DM row classified from IS-sourced hook fire")
+	}
+	if !gotTactical {
+		t.Error("no tactical row classified from IS-sourced hook fire")
+	}
+}
+
+// TestIGateIsRxHook_NoRouterSafe verifies onIGateIsRxPacket does not
+// panic when a.msgSvc is nil — the production wireIGate closure ran
+// before wireMessages for years, and defending against that ordering
+// drift keeps the hook safe even if the service construction fails.
+func TestIGateIsRxHook_NoRouterSafe(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	a := &App{
+		logger:       logger,
+		plog:         packetlog.New(packetlog.Config{Capacity: 16}),
+		stationCache: stationcache.NewPersistentCache(logger),
+		// msgSvc intentionally left nil.
+	}
+	pkt := makeInboundDM(t, "W1ABC-9", "N0CALL", "no-svc", "001")
+	pkt.Direction = aprs.DirectionIS
+	a.onIGateIsRxPacket(pkt, "W1ABC-9>APGRWO,qAR,K1AAA::N0CALL   :no-svc{001")
 }
