@@ -7,6 +7,16 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.11.3"
+  date: "2026-04-21"
+  style: info
+  schema_version: 1
+  title: "Fix: Digipeater not matching rules"
+  body: |
+    Fixes a bug where the [Digipeater](#/digipeater) would silently
+    ignore your rules on some channels. If your station had gone
+    quiet, upgrading should bring it back.
+
 - version: "0.11.2"
   date: "2026-04-21"
   style: info
