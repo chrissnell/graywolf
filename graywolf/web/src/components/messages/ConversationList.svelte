@@ -10,10 +10,13 @@
   //     in v2; DO NOT add a fourth axis here without revisiting the
   //     UX.
   //   - a throttled search input
-  //   - list rendering, with a "Tactical" section header above
-  //     tactical threads when the `All` filter is active AND at
-  //     least one tactical thread exists
-  //   - the "Manage tactical callsigns →" footer link
+  //   - list rendering, always split into a "Tactical" section
+  //     (heading + Manage button + tactical threads) and a "Direct
+  //     Messages" section (heading + DM threads). The Tactical heading
+  //     and Manage button are always rendered so the management entry
+  //     point is discoverable even when the operator has no tactical
+  //     chats yet. The DMs section is hidden when the active filter
+  //     is "Groups" (it would always be empty).
   //
   // Emits:
   //   - onSelect(thread)  — row clicked / keyboard-activated
@@ -111,29 +114,26 @@
     });
   });
 
-  // Group into Tactical / DM buckets ONLY when the All filter is
-  // active and at least one tactical exists; otherwise flat list.
-  const sections = $derived.by(() => {
+  // Always split into Tactical / DM buckets. The Tactical section
+  // header + Manage button render even when there are zero tactical
+  // threads — that's the entry point for creating one. The DMs
+  // section is only rendered when the current filter can include DMs.
+  const buckets = $derived.by(() => {
     const tacticals = [];
     const dms = [];
     for (const t of filteredThreads) {
       (t.kind === 'tactical' ? tacticals : dms).push(t);
     }
-    const sep = filter === 'all' && tacticals.length > 0;
-    if (sep) {
-      return [
-        { heading: 'Tactical', items: tacticals },
-        { heading: '', items: dms },
-      ];
-    }
-    return [{ heading: '', items: filteredThreads }];
+    return { tacticals, dms };
   });
+  const showDmsSection = $derived(filter !== 'groups');
 
   // Keep the parent's visible-order mirror in sync so Ctrl/Cmd+↑↓
   // cycles the same list the user sees.
   $effect(() => {
     const arr = [];
-    for (const s of sections) for (const t of s.items) arr.push(t);
+    for (const t of buckets.tacticals) arr.push(t);
+    if (showDmsSection) for (const t of buckets.dms) arr.push(t);
     visibleThreads = arr;
   });
 
@@ -182,20 +182,31 @@
   </header>
 
   <div class="rows" role="group" aria-label="Thread list">
-    {#if filteredThreads.length === 0}
-      <div class="empty" role="status">
-        {#if q || filter !== 'all'}
-          No matches.
-        {:else}
-          No conversations yet.
-        {/if}
-      </div>
-    {:else}
-      {#each sections as section (section.heading || 'flat')}
-        {#if section.heading}
-          <h3 class="section-heading">{section.heading}</h3>
-        {/if}
-        {#each section.items as thread (thread.threadId)}
+    <div class="rows-section" aria-labelledby="sec-tactical">
+      <h3 class="section-heading" id="sec-tactical">Tactical</h3>
+      <button
+        type="button"
+        class="section-manage"
+        onclick={() => onManageTactical?.()}
+        data-testid="manage-tactical"
+      >
+        <Icon name="radio-tower" size="sm" />
+        <span>Manage Tactical Chats</span>
+      </button>
+      {#each buckets.tacticals as thread (thread.threadId)}
+        <ConversationRow
+          {thread}
+          active={thread.threadId === activeThreadId}
+          onclick={handleSelect}
+          registerRef={(el) => registerRow(thread.threadId, el)}
+        />
+      {/each}
+    </div>
+
+    {#if showDmsSection}
+      <div class="rows-section" aria-labelledby="sec-dms">
+        <h3 class="section-heading" id="sec-dms">Direct Messages</h3>
+        {#each buckets.dms as thread (thread.threadId)}
           <ConversationRow
             {thread}
             active={thread.threadId === activeThreadId}
@@ -203,16 +214,18 @@
             registerRef={(el) => registerRow(thread.threadId, el)}
           />
         {/each}
-      {/each}
+        {#if buckets.dms.length === 0}
+          <div class="section-empty" role="status">
+            {#if q || filter !== 'all'}
+              No matches.
+            {:else}
+              No direct messages yet.
+            {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
   </div>
-
-  <footer class="list-footer">
-    <button type="button" class="manage" onclick={() => onManageTactical?.()} data-testid="manage-tactical">
-      <Icon name="radio-tower" size="sm" />
-      <span>Manage tactical callsigns →</span>
-    </button>
-  </footer>
 </section>
 
 <style>
@@ -288,6 +301,16 @@
     min-height: 0;
   }
 
+  .rows-section {
+    display: flex;
+    flex-direction: column;
+  }
+  .rows-section + .rows-section {
+    margin-top: 6px;
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 4px;
+  }
+
   .section-heading {
     font-size: 10px;
     font-weight: 700;
@@ -297,39 +320,37 @@
     padding: 10px 14px 4px;
     margin: 0;
     background: var(--color-surface);
-    position: sticky;
-    top: 0;
-    z-index: 1;
   }
 
-  .empty {
-    padding: 24px 12px;
-    text-align: center;
-    font-size: 12px;
-    color: var(--color-text-muted);
-  }
-
-  .list-footer {
-    border-top: 1px solid var(--color-border);
-    padding: 8px 12px;
-    flex-shrink: 0;
-  }
-  .manage {
-    width: 100%;
-    background: transparent;
-    border: none;
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    padding: 6px 4px;
+  .section-manage {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    cursor: pointer;
+    margin: 2px 8px 6px;
+    padding: 6px 8px;
+    background: transparent;
+    border: 1px dashed var(--color-border);
     border-radius: var(--radius);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
-  .manage:hover {
+  .section-manage:hover {
     background: var(--color-surface-raised);
     color: var(--color-text);
+    border-color: var(--color-primary);
+  }
+  .section-manage:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .section-empty {
+    padding: 12px 14px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--color-text-muted);
   }
 </style>
