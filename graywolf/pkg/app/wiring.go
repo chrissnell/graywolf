@@ -258,15 +258,28 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		if raw, err := frame.Encode(); err == nil {
 			e.Raw = raw
 		}
+
+		// Decode the APRS payload so TX entries carry the same Type /
+		// Decoded fields as the RX path (rxfanout.go). This is what
+		// gives beacons and digipeated packets a Type badge and
+		// point-to-point distance in the log viewer.
+		var pkt *aprs.DecodedAPRSPacket
+		if frame.IsUI() {
+			if p, err := aprs.Parse(frame); err == nil && p != nil {
+				p.Channel = int(channel)
+				p.Direction = aprs.DirectionRF
+				e.Type = string(p.Type)
+				e.Decoded = p
+				pkt = p
+			}
+		}
+
 		plog.Record(e)
 
 		// Feed our own beacon position into the station cache.
-		if source.Kind == "beacon" && frame.IsUI() {
-			if pkt, err := aprs.Parse(frame); err == nil && pkt != nil {
-				pkt.Channel = int(channel)
-				if entries := stationcache.ExtractEntry(pkt, "beacon", "TX", channel); len(entries) > 0 {
-					sc.Update(entries)
-				}
+		if source.Kind == "beacon" && pkt != nil {
+			if entries := stationcache.ExtractEntry(pkt, "beacon", "TX", channel); len(entries) > 0 {
+				sc.Update(entries)
 			}
 		}
 	})
@@ -308,13 +321,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		Logger:       a.logger,
 		OnPacket: func(note string, fromChan, toChan uint32, f *ax25.Frame) {
 			a.metrics.DigipeaterPackets.Inc()
-			a.plog.Record(packetlog.Entry{
-				Channel:   toChan,
-				Direction: packetlog.DirTX,
-				Source:    "digipeater",
-				Display:   f.String(),
-				Notes:     note,
-			})
+			// Packet-log recording lives in the governor TX hook above;
+			// that site fires when the frame actually hits the air and
+			// already carries Type + Decoded after the APRS-decode there.
+			// Recording here too would duplicate every digipeated entry.
 			// Update station cache with digipeated station positions.
 			if f.IsUI() {
 				if pkt, err := aprs.Parse(f); err == nil && pkt != nil {

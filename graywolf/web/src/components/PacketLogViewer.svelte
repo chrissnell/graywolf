@@ -48,8 +48,16 @@
 {/snippet}
 
 {#snippet typeCell(_value, entry)}
-  {#if entry.type}
-    <span class="pkt-badge pkt-b-type" data-type={entry.type}>{entry.type}</span>
+  {@const origin = originTag(entry)}
+  {#if entry.type || origin}
+    <div class="pkt-type-stack">
+      {#if entry.type}
+        <span class="pkt-badge pkt-b-type" data-type={entry.type}>{entry.type}</span>
+      {/if}
+      {#if origin}
+        <span class="pkt-badge pkt-b-origin" data-origin={origin.cls}>{origin.label}</span>
+      {/if}
+    </div>
   {:else}
     <span class="pkt-dim">—</span>
   {/if}
@@ -141,6 +149,31 @@
     background: var(--color-surface-raised);
     color: var(--color-text-muted);
     font-weight: 500;
+  }
+
+  /* Stack the Type and Origin badges vertically inside a single cell.
+     Origin is secondary metadata (where the packet came from in graywolf's
+     own pipeline: beacon, digipeater, iGate) and sits beneath Type. */
+  .pkt-type-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .pkt-b-origin {
+    font-size: 9px;
+    padding: 1px 5px;
+    background: rgba(139, 148, 158, 0.12);
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+  .pkt-b-origin[data-origin='bcn']   { background: rgba(255, 166, 87, 0.15);  color: #ffa657; }
+  .pkt-b-origin[data-origin='digi']  { background: rgba(165, 214, 255, 0.15); color: #a5d6ff; }
+  .pkt-b-origin[data-origin='igate'],
+  .pkt-b-origin[data-origin='igate-is2rf'],
+  .pkt-b-origin[data-origin='igate-rf2is'] {
+    background: rgba(210, 168, 255, 0.15); color: #d2a8ff;
   }
 
   /* Per-type badge colors. Backgrounds are 15%-alpha tints of the palette
