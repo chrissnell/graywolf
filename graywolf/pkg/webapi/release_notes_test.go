@@ -194,8 +194,20 @@ func TestUnseenReleaseNotes_FiltersByLastSeen(t *testing.T) {
 	}
 }
 
+// ackNotesFixture is the fixed notes slice these tests seed into the
+// loader so ack's max(build, highest-note) computation is independent
+// of whatever real versions happen to be in notes.yaml at commit time.
+// Without this, every `make bump-point` that adds a new note would
+// break the three Ack tests below.
+var ackNotesFixture = []releasenotes.Note{
+	{SchemaVersion: 1, Version: "0.11.0", Date: "2026-04-21", Style: "cta", Title: "T", Body: "<p>b</p>"},
+	{SchemaVersion: 1, Version: "0.10.11", Date: "2026-04-18", Style: "info", Title: "U", Body: "<p>b</p>"},
+}
+
 func TestAckReleaseNotes_WritesServerVersion(t *testing.T) {
 	h := newReleaseNotesHarness(t, "0.11.0")
+	restore := withLoader(seedLoader(ackNotesFixture))
+	defer restore()
 
 	rec := h.do(http.MethodPost, "/api/release-notes/ack", "", true)
 	if rec.Code != http.StatusNoContent {
@@ -212,6 +224,8 @@ func TestAckReleaseNotes_WritesServerVersion(t *testing.T) {
 
 func TestAckReleaseNotes_IgnoresRequestBody(t *testing.T) {
 	h := newReleaseNotesHarness(t, "0.11.0")
+	restore := withLoader(seedLoader(ackNotesFixture))
+	defer restore()
 
 	// Client tries to spoof a higher version. Handler must ignore
 	// the body and write the server's 0.11.0.
@@ -228,6 +242,8 @@ func TestAckReleaseNotes_IgnoresRequestBody(t *testing.T) {
 
 func TestAckReleaseNotes_Idempotent(t *testing.T) {
 	h := newReleaseNotesHarness(t, "0.11.0")
+	restore := withLoader(seedLoader(ackNotesFixture))
+	defer restore()
 
 	for i := 0; i < 3; i++ {
 		rec := h.do(http.MethodPost, "/api/release-notes/ack", "", true)
