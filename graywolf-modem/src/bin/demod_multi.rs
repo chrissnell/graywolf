@@ -171,6 +171,7 @@ fn run_library_mode(cfgs: &[Cfg], samples: &[i16], sample_rate: u32, dur: f64) {
         DEFAULT_BAUD,
         DEFAULT_MARK_FREQ,
         DEFAULT_SPACE_FREQ,
+        0,
         &multi_cfgs,
     );
     let start = Instant::now();

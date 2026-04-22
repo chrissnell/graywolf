@@ -60,6 +60,7 @@
 //!
 //! let mut demod = MultiAfskDemodulator::new(
 //!     44100, 1200, 1200, 2200,
+//!     0,
 //!     &[
 //!         MultiConfig { profile: AfskProfile::A, slicers: 9, hard_limit: false },
 //!         MultiConfig { profile: AfskProfile::A, slicers: 9, hard_limit: true  },
@@ -149,6 +150,11 @@ pub struct MultiAfskDemodulator {
 impl MultiAfskDemodulator {
     /// Create a new multi-demodulator. `configs` must be non-empty.
     ///
+    /// `chan` is the radio channel ID that will be stamped onto every
+    /// `DecodedFrame` this ensemble emits so downstream consumers can tell
+    /// frames apart across channels. Each sub-demod uses its index as the
+    /// subchan.
+    ///
     /// # Panics
     ///
     /// Panics if `configs` is empty.
@@ -157,6 +163,7 @@ impl MultiAfskDemodulator {
         baud: u32,
         mark_freq: u32,
         space_freq: u32,
+        chan: usize,
         configs: &[MultiConfig],
     ) -> Self {
         assert!(!configs.is_empty(), "MultiAfskDemodulator needs at least one config");
@@ -170,7 +177,7 @@ impl MultiAfskDemodulator {
                     mark_freq,
                     space_freq,
                     c.profile,
-                    0,
+                    chan,
                     i,
                 );
                 if c.slicers > 1 {
@@ -198,6 +205,12 @@ impl MultiAfskDemodulator {
     /// How many demodulator configurations this instance is running.
     pub fn num_configs(&self) -> usize {
         self.demods.len()
+    }
+
+    /// The `(chan, subchan)` pair assigned to sub-demod `i`. Every sub-demod
+    /// carries the ensemble's channel id; subchan is the sub-demod's index.
+    pub fn sub_chan_subchan(&self, i: usize) -> (usize, usize) {
+        self.demods[i].chan_subchan()
     }
 
     /// Feed one audio sample through every contained demodulator. Any
@@ -266,6 +279,7 @@ mod tests {
             DEFAULT_BAUD,
             DEFAULT_MARK_FREQ,
             DEFAULT_SPACE_FREQ,
+            0,
             &cfg,
         );
         assert_eq!(m.num_configs(), 1);
@@ -280,8 +294,34 @@ mod tests {
             DEFAULT_BAUD,
             DEFAULT_MARK_FREQ,
             DEFAULT_SPACE_FREQ,
+            0,
             &[],
         );
+    }
+
+    #[test]
+    fn stamps_chan_on_every_subdemod() {
+        // Regression guard: MultiAfskDemodulator::new() previously hardcoded
+        // chan=0 on its sub-demods, so DecodedFrames emitted by the ensemble
+        // were tagged channel 0 regardless of the real radio channel. The Go
+        // digipeater matches rules by FromChannel, so any rule targeting a
+        // non-zero channel silently never fired.
+        let cfg = [
+            MultiConfig { profile: AfskProfile::A, slicers: 1, hard_limit: false },
+            MultiConfig { profile: AfskProfile::A, slicers: 1, hard_limit: true  },
+            MultiConfig { profile: AfskProfile::B, slicers: 1, hard_limit: false },
+        ];
+        let m = MultiAfskDemodulator::new(
+            DEFAULT_SAMPLES_PER_SEC,
+            DEFAULT_BAUD,
+            DEFAULT_MARK_FREQ,
+            DEFAULT_SPACE_FREQ,
+            7,
+            &cfg,
+        );
+        assert_eq!(m.sub_chan_subchan(0), (7, 0));
+        assert_eq!(m.sub_chan_subchan(1), (7, 1));
+        assert_eq!(m.sub_chan_subchan(2), (7, 2));
     }
 
     #[test]
@@ -295,6 +335,7 @@ mod tests {
             DEFAULT_BAUD,
             DEFAULT_MARK_FREQ,
             DEFAULT_SPACE_FREQ,
+            0,
             &cfg,
         );
         for _ in 0..DEFAULT_SAMPLES_PER_SEC {

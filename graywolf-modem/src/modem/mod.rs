@@ -987,6 +987,7 @@ fn create_demod(ccfg: &ChannelConfig, sample_rate: u32) -> ChannelDemod {
                     };
                     let multi = MultiAfskDemodulator::new(
                         sample_rate, ccfg.baud, ccfg.mark_freq, ccfg.space_freq,
+                        ccfg.channel as usize,
                         preset,
                     );
                     // Note: fix_bits is intentionally not plumbed through the
