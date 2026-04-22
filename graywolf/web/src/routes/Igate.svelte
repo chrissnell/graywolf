@@ -520,9 +520,9 @@
 <div class="tab-panel" class:hidden={activeTab !== 'filters'}>
   <p class="tab-doc">
     Two independent controls: the <strong>server filter</strong> tells the APRS-IS
-    server which packets to send you, and the <strong>IS → RF transmit rules</strong>
+    server which packets to send you, and the <strong>APRS-IS → RF gating rules</strong>
     decide which of those packets get re-transmitted on RF. Every packet the server
-    sends you appears on the live map regardless of the transmit rules.
+    sends you appears on the live map regardless of the gating rules.
   </p>
   <Box>
     <form onsubmit={handleSave}>
@@ -535,6 +535,20 @@
         Enabled <a href="#/messages/tactical">tactical</a> callsigns are automatically
         appended as <code>g/</code> clauses — you don't need to add them here.
       </p>
+      <div class="form-actions">
+        <Button variant="primary" type="submit" disabled={loading}>
+          {loading ? 'Saving...' : 'Save'}
+        </Button>
+      </div>
+    </form>
+  </Box>
+  <h3 class="section-heading">APRS-IS &rarr; RF Gating</h3>
+  <p class="section-doc">
+    First matching rule wins; if none match, the packet is not transmitted.
+    These rules only affect RF transmission — they do not hide stations from the map.
+  </p>
+  <Box>
+    <form onsubmit={handleSave}>
       <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets.">
         {#snippet children(describedBy)}
           <ChannelListbox
@@ -575,11 +589,6 @@
       </div>
     </form>
   </Box>
-  <h3 class="section-heading">IS → RF Transmit Rules</h3>
-  <p class="section-doc">
-    First matching rule wins; if none match, the packet is not transmitted.
-    These rules only affect RF transmission — they do not hide stations from the map.
-  </p>
   <div class="rf-danger-panel" role="note">
     <div class="rf-danger-icon" aria-hidden="true">
       <Icon name="alert-circle" size="md" />
