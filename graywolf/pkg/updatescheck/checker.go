@@ -42,7 +42,7 @@ const defaultStartupDelay = 10 * time.Second
 
 // defaultTickInterval is the cadence between daily evaluate() calls
 // after the startup tick has fired (D3).
-const defaultTickInterval = 24 * time.Hour
+const defaultTickInterval = 10 * time.Minute
 
 // defaultHTTPTimeout caps the single GitHub round-trip. Referenced in
 // the in-flight-across-toggle-off doc comment below — when the toggle
