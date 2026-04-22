@@ -260,6 +260,10 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "resolve our call", err)
 		return
 	}
+	if strings.TrimSpace(ourCall) == "" {
+		badRequest(w, "station callsign is not configured; set it in Settings → Station")
+		return
+	}
 	to := strings.ToUpper(strings.TrimSpace(req.To))
 	if baseCall(to) != "" && baseCall(ourCall) != "" && baseCall(to) == baseCall(ourCall) {
 		badRequest(w, "cannot send a message to our own callsign")

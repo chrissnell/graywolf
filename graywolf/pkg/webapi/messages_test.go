@@ -329,6 +329,28 @@ func TestSendMessage_LoopbackGuard(t *testing.T) {
 	}
 }
 
+func TestSendMessage_MissingStationCallsign(t *testing.T) {
+	svc := &fakeMessagesSvc{
+		sendFn: func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
+			t.Error("service SendMessage must NOT be called when station callsign is unset")
+			return nil, nil
+		},
+	}
+	srv, mux, _ := newMessagesTestServer(t, svc)
+	// Clear the seeded callsign so resolveOurCall returns "".
+	if err := srv.store.UpsertStationConfig(context.Background(), configstore.StationConfig{Callsign: ""}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"to":"W1ABC","text":"hi"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSendMessage_UnknownField(t *testing.T) {
 	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
 	body := `{"to":"W1ABC","text":"hi","unknown":"yes"}`
