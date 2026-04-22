@@ -6,10 +6,15 @@
   // Back chevron is rendered on mobile (<768 px) so the user can pop
   // back to the conversation list.
 
-  import { Icon, Toggle, Tooltip } from '@chrissnell/chonky-ui';
+  import { AlertDialog, Icon, Toggle, Tooltip } from '@chrissnell/chonky-ui';
+  import { push } from 'svelte-spa-router';
   import ParticipantChips from './ParticipantChips.svelte';
   import InviteToTacticalModal from './InviteToTacticalModal.svelte';
   import { relativeLong } from './time.js';
+  import { messages as store } from '../../lib/messagesStore.svelte.js';
+  import { deleteTactical } from '../../api/messages.js';
+  import { refreshNow } from '../../lib/messagesTransport.js';
+  import { toasts } from '../../lib/stores.js';
 
   /** @type {{
    *    thread: any,
@@ -44,6 +49,46 @@
 
   function handleMute(checked) {
     onMuteToggle?.(!checked);
+  }
+
+  // --- Leave chat ---------------------------------------------------
+  // Unsubscribes the operator from the tactical (DELETE
+  // /messages/tactical/{id}). Historical message rows persist on the
+  // server but the conversation row falls out of the next /conversations
+  // rollup; we trigger that refresh explicitly so the list updates
+  // without waiting for the periodic poll.
+  let leaveOpen = $state(false);
+  let leaving = $state(false);
+
+  function openLeave() {
+    leaveOpen = true;
+  }
+  async function runLeave() {
+    if (leaving) return;
+    const entry = store.tacticals.get(tacticalKey);
+    if (!entry?.id) {
+      toasts.error(`Could not find tactical record for ${tacticalKey}`);
+      leaveOpen = false;
+      return;
+    }
+    leaving = true;
+    try {
+      await deleteTactical(entry.id);
+      store.tacticals.delete(tacticalKey);
+      // Drop the conversation immediately so the row vanishes from the
+      // list before the rollup completes. The server-side rollup will
+      // confirm on the next refresh.
+      const threadId = `tactical:${tacticalKey}`;
+      store.conversations.delete(threadId);
+      refreshNow();
+      toasts.success(`Left ${tacticalKey}`);
+      leaveOpen = false;
+      push('/messages');
+    } catch (e) {
+      toasts.error(e?.message || `Couldn't leave ${tacticalKey}`);
+    } finally {
+      leaving = false;
+    }
   }
 </script>
 
@@ -82,13 +127,28 @@
           <Tooltip.Trigger>
             <button
               type="button"
+              class="leave-btn"
+              onclick={openLeave}
+              aria-label={`Leave ${tacticalKey}`}
+              data-testid="thread-leave-btn"
+            >
+              <Icon name="log-out" size="md" />
+              <span class="action-label">Leave Chat</span>
+            </button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>Leave chat</Tooltip.Content>
+        </Tooltip>
+        <Tooltip>
+          <Tooltip.Trigger>
+            <button
+              type="button"
               class="invite-btn"
               onclick={openInvite}
               aria-label={`Invite stations to ${tacticalKey}`}
               data-testid="thread-invite-btn"
             >
               <Icon name="users" size="md" />
-              <span class="invite-label">Invite Users</span>
+              <span class="action-label">Invite Users</span>
             </button>
           </Tooltip.Trigger>
           <Tooltip.Content>Invite</Tooltip.Content>
@@ -109,6 +169,29 @@
     bind:open={inviteOpen}
     onClose={closeInvite}
   />
+
+  <AlertDialog bind:open={leaveOpen}>
+    <AlertDialog.Content>
+      <AlertDialog.Title>Leave {tacticalKey}?</AlertDialog.Title>
+      <AlertDialog.Description>
+        You'll stop seeing messages on <strong>{tacticalKey}</strong> and
+        the conversation will be removed from your messages list.
+        Existing message history is preserved on the server and other
+        members are not notified.
+      </AlertDialog.Description>
+      <div class="alert-footer">
+        <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+        <AlertDialog.Action
+          class="danger-action"
+          onclick={runLeave}
+          disabled={leaving}
+          data-testid="thread-leave-confirm"
+        >
+          {leaving ? 'Leaving…' : 'Leave Chat'}
+        </AlertDialog.Action>
+      </div>
+    </AlertDialog.Content>
+  </AlertDialog>
 {/if}
 
 <style>
@@ -196,7 +279,8 @@
     display: inline-flex;
     align-items: center;
   }
-  .invite-btn {
+  .invite-btn,
+  .leave-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -213,7 +297,7 @@
     font: inherit;
     line-height: 1;
   }
-  .invite-label {
+  .action-label {
     font-size: 0.875rem;
     white-space: nowrap;
   }
@@ -225,6 +309,31 @@
   .invite-btn:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+  }
+  .leave-btn:hover {
+    background: var(--color-danger-muted);
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+  }
+  .leave-btn:focus-visible {
+    outline: 2px solid var(--color-danger);
+    outline-offset: 2px;
+  }
+
+  .alert-footer {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding: 1rem 1.5rem 1.25rem;
+  }
+  :global(.danger-action) {
+    background: var(--color-danger) !important;
+    color: white !important;
+    border-color: var(--color-danger) !important;
+  }
+  :global(.danger-action:disabled) {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
   .chips {
     padding-left: 34px;
