@@ -142,6 +142,7 @@ func (s *Store) Migrate() error {
 		&TacticalCallsign{},
 		&StationConfig{},
 		&UpdatesConfig{},
+		&UnitsConfig{},
 	); err != nil {
 		_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 		return err

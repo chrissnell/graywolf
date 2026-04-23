@@ -1605,6 +1605,16 @@ definitions:
       tx_tail_ms:
         type: integer
     type: object
+  dto.UnitsConfigRequest:
+    properties:
+      system:
+        type: string
+    type: object
+  dto.UnitsConfigResponse:
+    properties:
+      system:
+        type: string
+    type: object
   dto.UpdatesConfigRequest:
     properties:
       enabled:
@@ -2206,6 +2216,8 @@ tags:
     description: Per-release user-facing news; drives the login-time popup and About-page 'What's new' section.
   - name: updates
     description: 'Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI.'
+  - name: preferences
+    description: Operator display preferences stored server-side (units, etc.).
   - name: auth
     description: Session login, logout, and first-user setup.
   - name: version
@@ -4334,6 +4346,56 @@ paths:
       summary: Update position log config
       tags:
         - position-log
+  /preferences/units:
+    get:
+      operationId: getUnitsConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.UnitsConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get units preference
+      tags:
+        - preferences
+    put:
+      consumes:
+        - application/json
+      operationId: updateUnitsConfig
+      parameters:
+        - description: Units preference
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.UnitsConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.UnitsConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update units preference
+      tags:
+        - preferences
   /ptt:
     get:
       operationId: listPttConfigs

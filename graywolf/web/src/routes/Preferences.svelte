@@ -5,23 +5,22 @@
   import { updates } from '../lib/updatesStore.svelte.js';
   import PageHeader from '../components/PageHeader.svelte';
 
-  let metric = $state(unitsState.isMetric);
-
-  $effect(() => {
-    unitsState.system = metric ? 'metric' : 'imperial';
-  });
-
   onMount(() => {
     updates.fetchConfig();
+    unitsState.fetchConfig();
   });
 </script>
 
 <PageHeader title="Preferences" subtitle="Display and formatting options" />
 
 <Box title="Units">
-  <Toggle bind:checked={metric} label="Use metric units" />
+  <Toggle
+    checked={unitsState.isMetric}
+    onCheckedChange={(v) => unitsState.setSystem(v ? 'metric' : 'imperial')}
+    label="Use metric units"
+  />
   <p class="unit-hint">
-    {#if metric}
+    {#if unitsState.isMetric}
       Altitude in meters, distance in m/km, speed in km/h.
     {:else}
       Altitude in feet, distance in ft/mi, speed in mph.

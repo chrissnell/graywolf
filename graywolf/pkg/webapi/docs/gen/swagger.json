@@ -83,6 +83,10 @@
             "description": "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."
         },
         {
+            "name": "preferences",
+            "description": "Operator display preferences stored server-side (units, etc.)."
+        },
+        {
             "name": "auth",
             "description": "Session login, logout, and first-user setup."
         },
@@ -3425,6 +3429,86 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.PositionLogResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/preferences/units": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Get units preference",
+                "operationId": "getUnitsConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UnitsConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Update units preference",
+                "operationId": "updateUnitsConfig",
+                "parameters": [
+                    {
+                        "description": "Units preference",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UnitsConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UnitsConfigResponse"
                         }
                     },
                     "400": {
@@ -6826,6 +6910,22 @@
                 },
                 "tx_tail_ms": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.UnitsConfigRequest": {
+            "type": "object",
+            "properties": {
+                "system": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UnitsConfigResponse": {
+            "type": "object",
+            "properties": {
+                "system": {
+                    "type": "string"
                 }
             }
         },

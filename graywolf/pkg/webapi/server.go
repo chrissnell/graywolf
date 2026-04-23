@@ -188,6 +188,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerMessages(mux)
 	s.registerTacticals(mux)
 	s.registerUpdates(mux)
+	s.registerUnits(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)

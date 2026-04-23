@@ -339,6 +339,17 @@ type UpdatesConfig struct {
 	UpdatedAt time.Time `json:"-"`
 }
 
+// UnitsConfig stores the operator's preferred measurement system for
+// display. Singleton at id=1, default System="imperial". Valid values
+// are "imperial" and "metric"; unknown values fall back to imperial
+// on read (see GetUnitsConfig).
+type UnitsConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	System    string    `gorm:"not null;default:'imperial'" json:"system"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
 // GPSConfig is a singleton (id=1) row for the GPS receiver.
 type GPSConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`

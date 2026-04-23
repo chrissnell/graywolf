@@ -6,6 +6,7 @@
   import NewsPopup from './components/NewsPopup.svelte';
   import { start as startMessagesTransport } from './lib/messagesTransport.js';
   import { releaseNotes } from './lib/releaseNotesStore.svelte.js';
+  import { unitsState } from './lib/settings/units-store.svelte.js';
 
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
@@ -96,6 +97,9 @@
       // mounts <NewsPopup> only when unseen.length > 0, so an empty
       // response is a silent no-op.
       releaseNotes.fetchUnseen();
+      // Pull the persisted units preference so every page formats
+      // distances/altitudes/speeds the way the operator last saved.
+      unitsState.fetchConfig();
     }
   });
 </script>

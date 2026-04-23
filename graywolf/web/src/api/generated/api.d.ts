@@ -821,6 +821,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preferences/units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get units preference */
+        get: operations["getUnitsConfig"];
+        /** Update units preference */
+        put: operations["updateUnitsConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ptt": {
         parameters: {
             query?: never;
@@ -2138,6 +2156,12 @@ export interface components {
             slot_ms?: number;
             tx_delay_ms?: number;
             tx_tail_ms?: number;
+        };
+        "dto.UnitsConfigRequest": {
+            system?: string;
+        };
+        "dto.UnitsConfigResponse": {
+            system?: string;
         };
         "dto.UpdatesConfigRequest": {
             enabled?: boolean;
@@ -5468,6 +5492,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["dto.PositionLogResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getUnitsConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.UnitsConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateUnitsConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Units preference */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.UnitsConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.UnitsConfigResponse"];
                 };
             };
             /** @description Bad Request */
