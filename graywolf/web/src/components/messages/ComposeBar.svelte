@@ -124,9 +124,18 @@
     return splitOnWhitespace(trimmed, PART_SLICE);
   });
   const parts = $derived(Math.max(1, partsList.length));
-  // Send is blocked when the body cannot fit in MAX_PARTS wire frames. The
-  // threshold scales naturally with APRS_LIMIT via PART_SLICE and MAX_PARTS.
-  const over = $derived(parts > MAX_PARTS);
+  // Effective composable ceiling — what the operator is actually bumping
+  // against when `over` fires:
+  //   Default mode: limited by MAX_PARTS * PART_SLICE (3 * 61 = 183 chars),
+  //                 the whitespace-aligned multi-part budget.
+  //   Long mode:    limited by APRS_LIMIT (200 chars), matching the
+  //                 server-side sender gate.
+  // Kept as a single derivation so the `over` check and the "Too long (N max)"
+  // counter copy stay in sync.
+  const EFFECTIVE_MAX = $derived(
+    LONG_MODE ? APRS_LIMIT : MAX_PARTS * PART_SLICE
+  );
+  const over = $derived(length > EFFECTIVE_MAX);
   // Per-frame "chars remaining" for the single-part view. For multi-part
   // drafts we show "Part N/M" instead, so this only matters at length <= APRS_LIMIT.
   const remaining = $derived(APRS_LIMIT - (length % APRS_LIMIT || APRS_LIMIT));
@@ -145,11 +154,11 @@
   // string is the only thing AT/SR hears for this element.
   const counterAnnouncement = $derived(
     counterOver
-      ? `Over radio limit, ${APRS_LIMIT} maximum.`
+      ? `Too long, ${EFFECTIVE_MAX} maximum.`
       : showPartBadge
         ? `Message will split into ${parts} parts.`
         : counterWarn
-          ? 'Approaching radio character limit.'
+          ? 'Approaching character limit.'
           : ''
   );
   // Truncate-risk banner: only meaningful when long mode is active AND the
@@ -399,7 +408,7 @@
         class:over={counterOver}
       >
         {#if counterOver}
-          Over radio limit ({APRS_LIMIT} max)
+          Too long ({EFFECTIVE_MAX} max)
         {:else if showPartBadge}
           Part {parts}/{parts}
         {:else}
