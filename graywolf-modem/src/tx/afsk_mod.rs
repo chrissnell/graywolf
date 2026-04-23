@@ -1,4 +1,4 @@
-//! Bell 202 AFSK modulator.
+//! AFSK modulator.
 //!
 //! Turns a stream of NRZI line-state bits into mono `i16` audio via a
 //! phase-continuous fixed-point numerically-controlled oscillator driving a
@@ -6,14 +6,12 @@
 //! low-pass filter, no pulse shaping — the phase continuity alone keeps the
 //! spectrum clean enough to ship.
 //!
-//! Mark tone (1200 Hz) carries line-state `1`, space (2200 Hz) carries `0`.
-//! Baud rate is fixed at 1200 since this modulator only targets Bell 202.
+//! Mark tone carries line-state `1`, space tone carries `0`. Baud rate and
+//! tone pair are runtime parameters so the same NCO serves Bell 202 (1200
+//! baud, 1200/2200 Hz) VHF APRS and HF APRS (300 baud, 1600/1800 Hz
+//! Bell 103 variants), among others — whatever ConfigureChannel specifies.
 
 use super::TxError;
-
-const BAUD: u32 = 1200;
-const MARK_FREQ: u32 = 1200;
-const SPACE_FREQ: u32 = 2200;
 
 const SINE_TABLE_LEN: usize = 256;
 
@@ -22,20 +20,26 @@ const SINE_TABLE_LEN: usize = 256;
 const TARGET_AMPLITUDE: i16 = 16_384;
 
 /// Modulate a stream of NRZI line-state bits into mono i16 audio at
-/// `sample_rate` Hz.
+/// `sample_rate` Hz using the specified AFSK parameters.
 ///
 /// Each element of `bits` is a single bit (`0` or `1`). A `1` is emitted as
-/// the mark tone (1200 Hz), a `0` as the space tone (2200 Hz). The oscillator
-/// phase is carried across bit boundaries so there are no discontinuities at
-/// symbol transitions.
+/// `mark_freq` Hz, a `0` as `space_freq` Hz. The oscillator phase is carried
+/// across bit boundaries so there are no discontinuities at symbol
+/// transitions.
 ///
 /// The output length is `bits.len() * sample_rate / baud`, give or take one
 /// sample per bit of fractional rounding — it is exact when `sample_rate`
-/// is an integer multiple of 1200 (as it is at 24000, 48000, and 96000).
+/// is an integer multiple of `baud`.
 ///
-/// Returns [`TxError::InvalidSampleRate`] if `sample_rate` is zero.
-pub fn modulate(bits: &[u8], sample_rate: u32) -> Result<Vec<i16>, TxError> {
-    if sample_rate == 0 {
+/// Returns [`TxError::InvalidSampleRate`] if `sample_rate` or `baud` is zero.
+pub fn modulate(
+    bits: &[u8],
+    sample_rate: u32,
+    baud: u32,
+    mark_freq: u32,
+    space_freq: u32,
+) -> Result<Vec<i16>, TxError> {
+    if sample_rate == 0 || baud == 0 {
         return Err(TxError::InvalidSampleRate);
     }
 
@@ -43,8 +47,8 @@ pub fn modulate(bits: &[u8], sample_rate: u32) -> Result<Vec<i16>, TxError> {
 
     // Phase increment per sample for each tone. TICKS_PER_CYCLE = 2^32 so
     // the top byte of the accumulator is a direct 256-entry table index.
-    let mark_delta = (((MARK_FREQ as u64) << 32) / sample_rate as u64) as u32;
-    let space_delta = (((SPACE_FREQ as u64) << 32) / sample_rate as u64) as u32;
+    let mark_delta = (((mark_freq as u64) << 32) / sample_rate as u64) as u32;
+    let space_delta = (((space_freq as u64) << 32) / sample_rate as u64) as u32;
 
     // Fractional-samples-per-bit accumulator. `samples_per_bit_q32` is
     // (sample_rate << 32) / baud, so adding it once per bit spills the
@@ -52,11 +56,11 @@ pub fn modulate(bits: &[u8], sample_rate: u32) -> Result<Vec<i16>, TxError> {
     // below. At 48000/1200 this is exactly `40 << 32`, so each bit emits
     // exactly 40 samples; at 44100/1200 it averages 36.75 samples per bit
     // by alternating 36 and 37 across the stream.
-    let samples_per_bit_q32: u64 = ((sample_rate as u64) << 32) / BAUD as u64;
+    let samples_per_bit_q32: u64 = ((sample_rate as u64) << 32) / baud as u64;
 
     let mut phase: u32 = 0;
     let mut frac: u64 = 0;
-    let samples_per_bit_approx = (sample_rate as usize).div_ceil(BAUD as usize) + 1;
+    let samples_per_bit_approx = (sample_rate as usize).div_ceil(baud as usize) + 1;
     let mut out = Vec::with_capacity(bits.len() * samples_per_bit_approx);
 
     for &bit in bits {
@@ -107,9 +111,16 @@ mod tests {
         s_prev * s_prev + s_prev2 * s_prev2 - coeff * s_prev * s_prev2
     }
 
+    // Canonical Bell 202 parameters for tests that exercise the
+    // original 1200/1200/2200 code path. Kept as a local constant so
+    // future callers reading these tests immediately see which params
+    // are under test.
+    const BELL202: (u32, u32, u32) = (1200, 1200, 2200);
+
     #[test]
     fn one_hundred_zero_bits_at_48k_yields_exactly_four_thousand_samples() {
-        let samples = modulate(&[0; 100], 48_000).unwrap();
+        let (b, m, s) = BELL202;
+        let samples = modulate(&[0; 100], 48_000, b, m, s).unwrap();
         assert_eq!(samples.len(), 4000);
     }
 
@@ -121,7 +132,8 @@ mod tests {
         // exercises the fractional path; at 48 kHz the accumulator is
         // degenerate (exactly 40 samples per bit) and wouldn't catch a
         // rounding bug.
-        let samples = modulate(&[0; 100], 44_100).unwrap();
+        let (b, m, s) = BELL202;
+        let samples = modulate(&[0; 100], 44_100, b, m, s).unwrap();
         assert_eq!(samples.len(), 3675);
 
         // Sanity check that the tone still lands on 2200 Hz after going
@@ -129,7 +141,7 @@ mod tests {
         // exactly 441 samples, and 441 places both 1200 and 2200 on
         // integer Goertzel bins (12 and 22 respectively), so the ratio
         // isn't muddied by scalloping.
-        let short = modulate(&[0; 12], 44_100).unwrap();
+        let short = modulate(&[0; 12], 44_100, b, m, s).unwrap();
         assert_eq!(short.len(), 441);
         let p_space = goertzel_power(&short, 2200.0, 44_100.0);
         let p_mark = goertzel_power(&short, 1200.0, 44_100.0);
@@ -142,15 +154,25 @@ mod tests {
 
     #[test]
     fn zero_sample_rate_returns_invalid_sample_rate_error() {
+        let (b, m, s) = BELL202;
         assert_eq!(
-            modulate(&[0; 8], 0).unwrap_err(),
+            modulate(&[0; 8], 0, b, m, s).unwrap_err(),
+            TxError::InvalidSampleRate
+        );
+    }
+
+    #[test]
+    fn zero_baud_returns_invalid_sample_rate_error() {
+        assert_eq!(
+            modulate(&[0; 8], 48_000, 0, 1200, 2200).unwrap_err(),
             TxError::InvalidSampleRate
         );
     }
 
     #[test]
     fn pure_space_tone_has_no_dc_bias() {
-        let samples = modulate(&[0; 100], 48_000).unwrap();
+        let (b, m, s) = BELL202;
+        let samples = modulate(&[0; 100], 48_000, b, m, s).unwrap();
         let sum: i64 = samples.iter().map(|&s| s as i64).sum();
         let bound = (samples.len() as i64) * (TARGET_AMPLITUDE as i64) / 100;
         assert!(
@@ -163,7 +185,8 @@ mod tests {
 
     #[test]
     fn peak_amplitude_is_within_five_percent_of_target() {
-        let samples = modulate(&[0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1], 48_000).unwrap();
+        let (b, m, s) = BELL202;
+        let samples = modulate(&[0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1], 48_000, b, m, s).unwrap();
         let peak = samples
             .iter()
             .map(|&s| s.unsigned_abs() as i32)
@@ -185,7 +208,8 @@ mod tests {
         // phase-continuous NCO plus 256-entry sine table comfortably
         // clears this bar; if a future refactor drops shaping or
         // quantises the phase accumulator it'll show up here first.
-        let samples = modulate(&[0; 240], 48_000).unwrap();
+        let (b, m, s) = BELL202;
+        let samples = modulate(&[0; 240], 48_000, b, m, s).unwrap();
         let p_space = goertzel_power(&samples, 2200.0, 48_000.0);
         let p_mark = goertzel_power(&samples, 1200.0, 48_000.0);
         let p_off1 = goertzel_power(&samples, 800.0, 48_000.0);
@@ -202,7 +226,8 @@ mod tests {
 
     #[test]
     fn pure_mark_tone_concentrates_energy_at_1200_hz() {
-        let samples = modulate(&[1; 240], 48_000).unwrap();
+        let (b, m, s) = BELL202;
+        let samples = modulate(&[1; 240], 48_000, b, m, s).unwrap();
         let p_mark = goertzel_power(&samples, 1200.0, 48_000.0);
         let p_space = goertzel_power(&samples, 2200.0, 48_000.0);
         let p_off1 = goertzel_power(&samples, 400.0, 48_000.0);
@@ -225,7 +250,8 @@ mod tests {
         // entries are TARGET_AMPLITUDE scaled, so the step bound is
         // TARGET_AMPLITUDE * sin(2π * 2200/48000) ≈ 4625. Allow 2x for
         // table quantisation.
-        let samples = modulate(&[1, 0, 1, 0, 1, 0, 1, 0], 48_000).unwrap();
+        let (b, m, s) = BELL202;
+        let samples = modulate(&[1, 0, 1, 0, 1, 0, 1, 0], 48_000, b, m, s).unwrap();
         let max_allowed = (TARGET_AMPLITUDE as f64
             * (2.0 * std::f64::consts::PI * 2200.0 / 48_000.0).sin()
             * 2.0) as i32;
@@ -238,5 +264,37 @@ mod tests {
                 max_allowed
             );
         }
+    }
+
+    #[test]
+    fn hf_aprs_300_baud_emits_configured_tones() {
+        // HF APRS runs Bell 103-style tones at 300 baud; typical pairs
+        // are 1600/1800 Hz or 2110/2310 Hz depending on crossover
+        // convention. Verify energy lands on the requested tones and
+        // the bit duration matches the requested baud.
+        const MARK: u32 = 1600;
+        const SPACE: u32 = 1800;
+        let samples = modulate(&[0; 300], 48_000, 300, MARK, SPACE).unwrap();
+        // 300 bits * (48000/300) = 48000 samples.
+        assert_eq!(samples.len(), 48_000);
+
+        let p_space = goertzel_power(&samples, SPACE as f32, 48_000.0);
+        let p_mark = goertzel_power(&samples, MARK as f32, 48_000.0);
+        assert!(
+            p_space > p_mark * 100.0,
+            "300-baud space/mark ratio too low: {} vs {}",
+            p_space,
+            p_mark
+        );
+
+        let marks = modulate(&[1; 300], 48_000, 300, MARK, SPACE).unwrap();
+        let p_mark = goertzel_power(&marks, MARK as f32, 48_000.0);
+        let p_space = goertzel_power(&marks, SPACE as f32, 48_000.0);
+        assert!(
+            p_mark > p_space * 100.0,
+            "300-baud mark/space ratio too low: {} vs {}",
+            p_mark,
+            p_space
+        );
     }
 }

@@ -840,14 +840,24 @@ impl Modem {
         let txdelay_ms = effective_ms(tf.txdelay_override_ms, ptt_cfg.map(|p| p.txdelay_ms), 300);
         let txtail_ms = effective_ms(tf.txtail_override_ms, ptt_cfg.map(|p| p.txtail_ms), 100);
 
-        let mut samples =
-            match crate::tx::build_samples(&tf.data, txdelay_ms, txtail_ms, acfg.sample_rate) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("graywolf-modem: TransmitFrame: build_samples failed: {}", e);
-                    return;
-                }
-            };
+        // AFSK params come from ChannelConfig so TX matches RX on every
+        // channel — HF APRS at 300 baud was previously encoded as 1200
+        // baud Bell 202 because these values were ignored. See issue #22.
+        let mut samples = match crate::tx::build_samples(
+            &tf.data,
+            txdelay_ms,
+            txtail_ms,
+            acfg.sample_rate,
+            ccfg.baud,
+            ccfg.mark_freq,
+            ccfg.space_freq,
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("graywolf-modem: TransmitFrame: build_samples failed: {}", e);
+                return;
+            }
+        };
 
         // Apply output device gain to TX audio
         let mut clipping = false;
