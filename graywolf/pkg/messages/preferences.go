@@ -79,6 +79,40 @@ func (p *Preferences) Current() *configstore.MessagePreferences {
 	return v
 }
 
+// DefaultMaxMessageText is the APRS101 addressee-line cap applied
+// when no override is set. Mirrored here (rather than imported from
+// pkg/webapi/dto) because pkg/messages must not depend on the webapi
+// layer. Any change to this constant must be kept in sync with
+// dto.MaxMessageText — the load-path test asserts the two agree.
+const DefaultMaxMessageText = 67
+
+// MaxMessageTextCeiling is the hard upper bound accepted for the
+// override. Kept in sync with dto.MaxMessageTextUnsafe. See the sender
+// gate test that asserts a body over this ceiling is rejected even
+// when the override requests it.
+const MaxMessageTextCeiling = 200
+
+// EffectiveMaxMessageText returns the per-message body cap the sender
+// must enforce given the current preferences. Semantics:
+//   - Override == 0 (default, including pre-upgrade rows) → 67.
+//   - Override in [68, 200]                              → override.
+//   - Any out-of-range value (corrupt DB, forward-incompatible
+//     migration) normalizes to 67 so a bad row cannot relax the gate.
+func (p *Preferences) EffectiveMaxMessageText() int {
+	cur := p.Current()
+	if cur == nil {
+		return DefaultMaxMessageText
+	}
+	ov := cur.MaxMessageTextOverride
+	if ov == 0 {
+		return DefaultMaxMessageText
+	}
+	if ov <= DefaultMaxMessageText || ov > MaxMessageTextCeiling {
+		return DefaultMaxMessageText
+	}
+	return int(ov)
+}
+
 // defaultPrefs returns a MessagePreferences populated with the
 // seed values Phase 1 writes on first migrate.
 func defaultPrefs() *configstore.MessagePreferences {

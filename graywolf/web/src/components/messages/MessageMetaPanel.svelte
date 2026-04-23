@@ -109,6 +109,12 @@
         {#if msg.failure_reason}
           <dt>Failure</dt><dd class="mono err">{msg.failure_reason}</dd>
         {/if}
+        {#if msg.direction === 'out' && msg.extended}
+          <dt>Length</dt>
+          <dd title="Longer than 67 chars — some receivers may truncate.">
+            Extended ({(msg.text || '').length} chars)
+          </dd>
+        {/if}
       </dl>
       <div class="raw-block">
         <div class="raw-head">

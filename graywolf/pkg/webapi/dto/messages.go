@@ -118,12 +118,29 @@ func ValidateAddressee(to string) error {
 	return nil
 }
 
-// MaxMessageText is the APRS101 per-message body cap. The router and
-// sender enforce this; REST rejects it early so the client sees 400
-// instead of a silent truncation.
+// MaxMessageText is the APRS101 per-message body cap applied to
+// addressee-line direct messages (":ADDRESSEE9:text{id}"). Bulletins,
+// status beacons, positions, and weather frames have their own length
+// conventions and are not affected by this constant. REST uses this
+// value as early-reject feedback so the web UI sees a 400 instead of
+// a silent truncation; the authoritative gate lives on the sender
+// path (pkg/messages.Sender) and consults MessagePreferences for
+// whether an operator-set override relaxes it up to MaxMessageTextUnsafe.
 const MaxMessageText = 67
 
-// ValidateMessageText rejects empty or over-long bodies.
+// MaxMessageTextUnsafe is the hard upper ceiling when an operator
+// opts in to long messages via MessagePreferences.MaxMessageTextOverride.
+// 200 bytes leaves safe headroom under the AX.25 info-field limit
+// (~256 bytes) for the addressee framing (":ADDRESSEE9:") and the
+// msgid tail ("{NNN"). Applies to addressee-line direct messages only;
+// bulletins/status/position frames are unaffected.
+const MaxMessageTextUnsafe = 200
+
+// ValidateMessageText rejects empty or over-long bodies against the
+// conservative default cap. REST callers see this 400 first; the
+// sender path re-checks against the effective cap (per MessagePreferences)
+// so non-REST callers (APRS-IS inbound routing, bot-initiated sends,
+// retry resend) share the same policy.
 func ValidateMessageText(text string) error {
 	if text == "" {
 		return fmt.Errorf("text is required")
@@ -224,6 +241,12 @@ type MessageResponse struct {
 	// state — that comes from the live TacticalSet cache. Kept so
 	// operators can see when/if an invite was acted on.
 	InviteAcceptedAt *time.Time `json:"invite_accepted_at,omitempty"`
+	// Extended is true when the transmitted body exceeded the default
+	// MaxMessageText (67). The UI renders an "extended" badge on these
+	// rows so operators can correlate if recipients report missing or
+	// truncated messages. Derived from len(Text) > MaxMessageText; no
+	// dedicated column.
+	Extended bool `json:"extended,omitempty"`
 }
 
 // MessageFromModel renders one row into its DTO. Channel is surfaced
@@ -259,6 +282,7 @@ func MessageFromModel(m configstore.Message) MessageResponse {
 		Kind:             m.Kind,
 		InviteTactical:   m.InviteTactical,
 		InviteAcceptedAt: nilUTC(m.InviteAcceptedAt),
+		Extended:         len(m.Text) > MaxMessageText,
 	}
 	if m.Channel != 0 {
 		c := m.Channel
@@ -360,6 +384,14 @@ type MessagePreferencesRequest struct {
 	DefaultPath      string `json:"default_path"`
 	RetryMaxAttempts uint32 `json:"retry_max_attempts"`
 	RetentionDays    uint32 `json:"retention_days"`
+	// MaxMessageTextOverride raises the default 67-char addressee-line
+	// direct-message cap. 0 (or field absent) means "use the default";
+	// any positive value must fall in [MaxMessageText+1, MaxMessageTextUnsafe]
+	// (68..200). Applies to addressee-line DMs only — bulletins, status
+	// beacons, and position/weather frames are unaffected. The server
+	// rejects out-of-range values with 400 rather than silently clamping
+	// so operators see a clear error.
+	MaxMessageTextOverride uint32 `json:"max_message_text_override,omitempty"`
 }
 
 // Validate clamps FallbackPolicy to the canonical enum and enforces
@@ -379,6 +411,13 @@ func (r MessagePreferencesRequest) Validate() error {
 	if r.RetryMaxAttempts > 100 {
 		return fmt.Errorf("retry_max_attempts %d exceeds sanity cap (100)", r.RetryMaxAttempts)
 	}
+	// max_message_text_override: 0 = default; else must be in (MaxMessageText, MaxMessageTextUnsafe].
+	if r.MaxMessageTextOverride != 0 {
+		if r.MaxMessageTextOverride <= MaxMessageText || r.MaxMessageTextOverride > MaxMessageTextUnsafe {
+			return fmt.Errorf("max_message_text_override %d out of range (use 0 for default, or %d..%d)",
+				r.MaxMessageTextOverride, MaxMessageText+1, MaxMessageTextUnsafe)
+		}
+	}
 	return nil
 }
 
@@ -389,10 +428,11 @@ func (r MessagePreferencesRequest) ToModel() configstore.MessagePreferences {
 		policy = messages.FallbackPolicyISFallback
 	}
 	return configstore.MessagePreferences{
-		FallbackPolicy:   policy,
-		DefaultPath:      r.DefaultPath,
-		RetryMaxAttempts: r.RetryMaxAttempts,
-		RetentionDays:    r.RetentionDays,
+		FallbackPolicy:         policy,
+		DefaultPath:            r.DefaultPath,
+		RetryMaxAttempts:       r.RetryMaxAttempts,
+		RetentionDays:          r.RetentionDays,
+		MaxMessageTextOverride: r.MaxMessageTextOverride,
 	}
 }
 
@@ -402,6 +442,12 @@ type MessagePreferencesResponse struct {
 	DefaultPath      string `json:"default_path"`
 	RetryMaxAttempts uint32 `json:"retry_max_attempts"`
 	RetentionDays    uint32 `json:"retention_days"`
+	// MaxMessageTextOverride mirrors the request field on read. 0
+	// means "default enforce 67" — older servers that have never been
+	// upgraded return 0 here, which is also what a fresh singleton with
+	// no override set returns. Positive values fall in
+	// (MaxMessageText, MaxMessageTextUnsafe].
+	MaxMessageTextOverride uint32 `json:"max_message_text_override"`
 }
 
 // MessagePreferencesFromModel renders one row. Applies policy
@@ -417,11 +463,19 @@ func MessagePreferencesFromModel(m configstore.MessagePreferences) MessagePrefer
 	if retry == 0 {
 		retry = messages.DefaultRetryMaxAttempts
 	}
+	// Override: propagate the raw value. 0 means "default", which the
+	// UI renders as "long messages off". Defensive clamp on read so a
+	// hand-edited DB can't surface a nonsensical value to the client.
+	override := m.MaxMessageTextOverride
+	if override != 0 && (override <= MaxMessageText || override > MaxMessageTextUnsafe) {
+		override = 0
+	}
 	return MessagePreferencesResponse{
-		FallbackPolicy:   policy,
-		DefaultPath:      path,
-		RetryMaxAttempts: retry,
-		RetentionDays:    m.RetentionDays,
+		FallbackPolicy:         policy,
+		DefaultPath:            path,
+		RetryMaxAttempts:       retry,
+		RetentionDays:          m.RetentionDays,
+		MaxMessageTextOverride: override,
 	}
 }
 

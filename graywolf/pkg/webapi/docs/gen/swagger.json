@@ -6331,6 +6331,10 @@
                 "fallback_policy": {
                     "type": "string"
                 },
+                "max_message_text_override": {
+                    "description": "MaxMessageTextOverride raises the default 67-char addressee-line\ndirect-message cap. 0 (or field absent) means \"use the default\";\nany positive value must fall in [MaxMessageText+1, MaxMessageTextUnsafe]\n(68..200). Applies to addressee-line DMs only — bulletins, status\nbeacons, and position/weather frames are unaffected. The server\nrejects out-of-range values with 400 rather than silently clamping\nso operators see a clear error.",
+                    "type": "integer"
+                },
                 "retention_days": {
                     "type": "integer"
                 },
@@ -6347,6 +6351,10 @@
                 },
                 "fallback_policy": {
                     "type": "string"
+                },
+                "max_message_text_override": {
+                    "description": "MaxMessageTextOverride mirrors the request field on read. 0\nmeans \"default enforce 67\" — older servers that have never been\nupgraded return 0 here, which is also what a fresh singleton with\nno override set returns. Positive values fall in\n(MaxMessageText, MaxMessageTextUnsafe].",
+                    "type": "integer"
                 },
                 "retention_days": {
                     "type": "integer"
@@ -6374,6 +6382,10 @@
                 "direction": {
                     "description": "\"in\" | \"out\"",
                     "type": "string"
+                },
+                "extended": {
+                    "description": "Extended is true when the transmitted body exceeded the default\nMaxMessageText (67). The UI renders an \"extended\" badge on these\nrows so operators can correlate if recipients report missing or\ntruncated messages. Derived from len(Text) \u003e MaxMessageText; no\ndedicated column.",
+                    "type": "boolean"
                 },
                 "failure_reason": {
                     "type": "string"

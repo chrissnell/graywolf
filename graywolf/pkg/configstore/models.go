@@ -595,8 +595,17 @@ type MessagePreferences struct {
 	DefaultPath      string    `gorm:"size:64;not null;default:'WIDE1-1,WIDE2-1'" json:"default_path"`
 	RetryMaxAttempts uint32    `gorm:"not null;default:4" json:"retry_max_attempts"`
 	RetentionDays    uint32    `gorm:"not null;default:0" json:"retention_days"` // 0 = forever
-	CreatedAt        time.Time `json:"-"`
-	UpdatedAt        time.Time `json:"-"`
+	// MaxMessageTextOverride raises the default 67-char cap on
+	// addressee-line direct messages up to 200. 0 (the column default,
+	// and the value seen on pre-upgrade rows after GORM AutoMigrate
+	// adds the column) means "use the default 67". Valid non-zero
+	// values fall in [68, 200]; the webapi DTO validator rejects
+	// anything outside that range. Applies to addressee-line DMs only:
+	// bulletins, status beacons, and position/weather frames are
+	// unaffected.
+	MaxMessageTextOverride uint32    `gorm:"not null;default:0" json:"max_message_text_override"`
+	CreatedAt              time.Time `json:"-"`
+	UpdatedAt              time.Time `json:"-"`
 }
 
 // TacticalCallsign is one monitored tactical addressee label. Operators

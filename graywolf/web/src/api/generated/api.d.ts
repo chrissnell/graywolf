@@ -1820,12 +1820,30 @@ export interface components {
         "dto.MessagePreferencesRequest": {
             default_path?: string;
             fallback_policy?: string;
+            /**
+             * @description MaxMessageTextOverride raises the default 67-char addressee-line
+             *     direct-message cap. 0 (or field absent) means "use the default";
+             *     any positive value must fall in [MaxMessageText+1, MaxMessageTextUnsafe]
+             *     (68..200). Applies to addressee-line DMs only — bulletins, status
+             *     beacons, and position/weather frames are unaffected. The server
+             *     rejects out-of-range values with 400 rather than silently clamping
+             *     so operators see a clear error.
+             */
+            max_message_text_override?: number;
             retention_days?: number;
             retry_max_attempts?: number;
         };
         "dto.MessagePreferencesResponse": {
             default_path?: string;
             fallback_policy?: string;
+            /**
+             * @description MaxMessageTextOverride mirrors the request field on read. 0
+             *     means "default enforce 67" — older servers that have never been
+             *     upgraded return 0 here, which is also what a fresh singleton with
+             *     no override set returns. Positive values fall in
+             *     (MaxMessageText, MaxMessageTextUnsafe].
+             */
+            max_message_text_override?: number;
             retention_days?: number;
             retry_max_attempts?: number;
         };
@@ -1836,6 +1854,14 @@ export interface components {
             created_at?: string;
             /** @description "in" | "out" */
             direction?: string;
+            /**
+             * @description Extended is true when the transmitted body exceeded the default
+             *     MaxMessageText (67). The UI renders an "extended" badge on these
+             *     rows so operators can correlate if recipients report missing or
+             *     truncated messages. Derived from len(Text) > MaxMessageText; no
+             *     dedicated column.
+             */
+            extended?: boolean;
             failure_reason?: string;
             from_call?: string;
             id?: number;

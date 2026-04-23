@@ -50,6 +50,15 @@ type SendResult struct {
 // sleep, not a backoff step.
 const ShortRetryDelay = 5 * time.Second
 
+// ErrMessageTextTooLong is returned by Sender.Send when the row's Text
+// exceeds the effective per-message cap from MessagePreferences. The
+// sender is the authoritative gate — REST DTO validation is early-
+// reject feedback, but this error catches APRS-IS routed, bot-
+// originated, and retry-resend paths that don't pass through the
+// webapi validator. Non-retryable: mutating the body requires a new
+// compose.
+var ErrMessageTextTooLong = errors.New("messages: text exceeds effective length cap")
+
 // SenderClock abstracts time for deterministic tests. Mirrors
 // RouterClock semantics so a single fakeClock drives all of messages.
 type SenderClock interface {
@@ -176,6 +185,18 @@ func (s *Sender) Send(ctx context.Context, row *configstore.Message) SendResult 
 	}
 	if row.MsgID == "" && row.ThreadKind == ThreadKindDM {
 		return SendResult{Err: errors.New("messages: DM outbound requires msg_id")}
+	}
+
+	// Authoritative length gate. Applies to every outbound addressee-
+	// line frame (DM + tactical) regardless of entry point — REST
+	// compose, retry manager, operator resend, and any future bot or
+	// IS-routed path share this check. The DTO validator handles early-
+	// reject for REST; this gate catches the rest so the 67/200 policy
+	// is enforced in exactly one place.
+	if maxText := s.cfg.Preferences.EffectiveMaxMessageText(); len(row.Text) > maxText {
+		row.FailureReason = truncReason(fmt.Sprintf("text exceeds %d-char cap (got %d)", maxText, len(row.Text)))
+		_ = s.cfg.Store.Update(ctx, row)
+		return SendResult{Err: fmt.Errorf("%w: %d > %d", ErrMessageTextTooLong, len(row.Text), maxText), Retryable: false}
 	}
 
 	policy := NormalizeFallbackPolicy(s.cfg.Preferences.Current().FallbackPolicy)

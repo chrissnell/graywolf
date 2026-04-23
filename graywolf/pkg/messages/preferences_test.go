@@ -114,6 +114,57 @@ func TestPreferences_LoadNilRowUsesDefaults(t *testing.T) {
 	}
 }
 
+// TestPreferences_EffectiveMaxMessageText covers the sender-consulted
+// helper. The zero/unset case, the normal-use-case range, and the
+// defensive out-of-range normalization are all in one place so a future
+// change to the cap constants can re-anchor against this table.
+func TestPreferences_EffectiveMaxMessageText(t *testing.T) {
+	cases := []struct {
+		name     string
+		override uint32
+		want     int
+	}{
+		{"zero_uses_default", 0, DefaultMaxMessageText},
+		{"below_default_rejected", 50, DefaultMaxMessageText},
+		{"at_default_rejected", 67, DefaultMaxMessageText},
+		{"just_above_default", 68, 68},
+		{"typical_long", 150, 150},
+		{"at_ceiling", 200, 200},
+		{"above_ceiling", 201, DefaultMaxMessageText},
+		{"far_above_ceiling", 1000, DefaultMaxMessageText},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := &fakePrefsReader{
+				value: &configstore.MessagePreferences{
+					FallbackPolicy:         FallbackPolicyISFallback,
+					MaxMessageTextOverride: c.override,
+				},
+			}
+			p := NewPreferences(r)
+			if _, err := p.Load(context.Background()); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := p.EffectiveMaxMessageText(); got != c.want {
+				t.Errorf("EffectiveMaxMessageText(override=%d) = %d, want %d",
+					c.override, got, c.want)
+			}
+		})
+	}
+}
+
+// TestPreferences_EffectiveMaxMessageText_NilPreferences guards the
+// belt-and-suspenders path — a nil receiver should never blow up the
+// sender. The constructor-returned pointer is always non-nil, but
+// defensive coverage here means a future refactor can't silently
+// introduce a nil deref in the hot send path.
+func TestPreferences_EffectiveMaxMessageText_NilPreferences(t *testing.T) {
+	var p *Preferences
+	if got := p.EffectiveMaxMessageText(); got != DefaultMaxMessageText {
+		t.Errorf("nil Preferences cap = %d, want %d", got, DefaultMaxMessageText)
+	}
+}
+
 func TestNormalizeFallbackPolicy(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{FallbackPolicyRFOnly, FallbackPolicyRFOnly},

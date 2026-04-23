@@ -30,11 +30,6 @@ func (b *fakeBridge) IsRunning() bool {
 	defer b.mu.Unlock()
 	return b.running
 }
-func (b *fakeBridge) setRunning(v bool) {
-	b.mu.Lock()
-	b.running = v
-	b.mu.Unlock()
-}
 
 // configurableTxSink adds an err-setter to the existing fakeTxSink so
 // tests can toggle the return code between calls. A per-call error
@@ -481,5 +476,132 @@ func TestSender_ISFallback_QueueFullStaysOnRF(t *testing.T) {
 	}
 	if len(rig.igate.list()) != 0 {
 		t.Errorf("IS lines = %d, want 0 (queue-full should not fallback)", len(rig.igate.list()))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Length gate — authoritative enforcement on the sender path. Exercises the
+// promise that every outbound path (REST compose, retry, resend) is covered
+// by one check rather than relying on the DTO validator.
+// ---------------------------------------------------------------------------
+
+// setOverride mutates the rig's cached preferences in place so the
+// sender's next Send observes the requested override. Mirrors the
+// configstore-write + prefs.Load the real app does on a PUT, but
+// skips the DB roundtrip so the test stays focused on the sender's
+// own gate behavior.
+func setOverride(t *testing.T, rig *senderRig, override uint32) {
+	t.Helper()
+	prefs, err := rig.cs.GetMessagePreferences(context.Background())
+	if err != nil {
+		t.Fatalf("GetMessagePreferences: %v", err)
+	}
+	if prefs == nil {
+		prefs = &configstore.MessagePreferences{}
+	}
+	prefs.MaxMessageTextOverride = override
+	if err := rig.cs.UpsertMessagePreferences(context.Background(), prefs); err != nil {
+		t.Fatalf("UpsertMessagePreferences: %v", err)
+	}
+	if _, err := rig.prefs.Load(context.Background()); err != nil {
+		t.Fatalf("prefs reload: %v", err)
+	}
+}
+
+func TestSender_LengthGate_DefaultCap_RejectsOver67(t *testing.T) {
+	rig := buildSender(t, FallbackPolicyRFOnly, true)
+	defer rig.close()
+
+	// 68-char body — one over the default cap.
+	body := strings.Repeat("x", 68)
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", body)
+
+	res := rig.sender.Send(context.Background(), row)
+	if !errors.Is(res.Err, ErrMessageTextTooLong) {
+		t.Fatalf("Err = %v, want ErrMessageTextTooLong", res.Err)
+	}
+	if res.Retryable {
+		t.Error("oversize body must not be retryable")
+	}
+	// Nothing should have been submitted to the governor or to IS.
+	if got := rig.sink.list(); len(got) != 0 {
+		t.Errorf("submitted frames = %d, want 0", len(got))
+	}
+	// Row's FailureReason surfaces the cap.
+	reloaded, _ := rig.store.GetByID(context.Background(), row.ID)
+	if !strings.Contains(reloaded.FailureReason, "67-char cap") {
+		t.Errorf("FailureReason = %q, want 67-char cap mention", reloaded.FailureReason)
+	}
+}
+
+func TestSender_LengthGate_OverrideRaisesCap(t *testing.T) {
+	rig := buildSender(t, FallbackPolicyRFOnly, true)
+	defer rig.close()
+
+	// Operator opts in to long messages.
+	setOverride(t, rig, 200)
+
+	// 120-char body — well under the override, well over the default.
+	body := strings.Repeat("y", 120)
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", body)
+
+	res := rig.sender.Send(context.Background(), row)
+	if res.Err != nil {
+		t.Fatalf("Send err with override=200: %v", res.Err)
+	}
+	if got := rig.sink.list(); len(got) != 1 {
+		t.Errorf("submitted frames = %d, want 1 (override should permit)", len(got))
+	}
+}
+
+func TestSender_LengthGate_OverrideCeiling_StillRejectsOverflow(t *testing.T) {
+	rig := buildSender(t, FallbackPolicyRFOnly, true)
+	defer rig.close()
+	setOverride(t, rig, 200)
+
+	// 201 chars — beyond the hard ceiling even with override on.
+	body := strings.Repeat("z", 201)
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", body)
+
+	res := rig.sender.Send(context.Background(), row)
+	if !errors.Is(res.Err, ErrMessageTextTooLong) {
+		t.Fatalf("Err = %v, want ErrMessageTextTooLong", res.Err)
+	}
+	if got := rig.sink.list(); len(got) != 0 {
+		t.Errorf("submitted frames = %d, want 0 past ceiling", len(got))
+	}
+}
+
+func TestSender_LengthGate_AppliesToISOnlyPath(t *testing.T) {
+	// Non-REST path coverage: IS-only policy bypasses RF entirely, so
+	// the length check must live BEFORE the policy branch to catch it.
+	rig := buildSender(t, FallbackPolicyISOnly, true)
+	defer rig.close()
+
+	body := strings.Repeat("q", 100)
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", body)
+
+	res := rig.sender.Send(context.Background(), row)
+	if !errors.Is(res.Err, ErrMessageTextTooLong) {
+		t.Fatalf("Err = %v, want ErrMessageTextTooLong", res.Err)
+	}
+	if len(rig.igate.list()) != 0 {
+		t.Errorf("IS lines = %d, want 0 (gate must fire before IS send)", len(rig.igate.list()))
+	}
+}
+
+func TestSender_LengthGate_BoundaryExactlyAtDefault_Accepted(t *testing.T) {
+	rig := buildSender(t, FallbackPolicyRFOnly, true)
+	defer rig.close()
+
+	body := strings.Repeat("b", 67) // exactly at the default cap
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", body)
+
+	res := rig.sender.Send(context.Background(), row)
+	if res.Err != nil {
+		t.Fatalf("Send err at 67 chars: %v", res.Err)
+	}
+	if got := rig.sink.list(); len(got) != 1 {
+		t.Errorf("submitted frames = %d, want 1 at boundary", len(got))
 	}
 }

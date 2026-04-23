@@ -139,6 +139,13 @@
     return { variant: 'default', label: source };
   });
 
+  // Extended-length badge: DTO-derived flag set true when body > 67 chars
+  // (the default APRS message cap). Shown on outbound rows only — the plan
+  // frames this as an operator signal for "did my contact receive it all?",
+  // which has no equivalent meaning for inbound (the receiver already got
+  // the full frame if it's in the list).
+  const showExtendedBadge = $derived(isOut && msg?.extended === true);
+
   let bubbleEl = $state(null);
   $effect(() => {
     registerRef?.(bubbleEl);
@@ -310,6 +317,15 @@
     </button>
     {#if sourceBadge}
       <Badge variant={sourceBadge.variant} class="src-badge">{sourceBadge.label}</Badge>
+    {/if}
+    {#if showExtendedBadge}
+      <Badge
+        variant="info"
+        class="src-badge ext-badge"
+        title="Longer than 67 chars — some receivers may truncate."
+        aria-label="Extended: longer than 67 chars, some receivers may truncate."
+        data-testid="bubble-ext-badge"
+      >extended</Badge>
     {/if}
     {#if fragMatch}
       <span class="frag-tag">{fragMatch.n}/{fragMatch.total}</span>

@@ -28,6 +28,7 @@
   import EmptyStates from '../components/messages/EmptyStates.svelte';
   import { messages as store } from '../lib/messagesStore.svelte.js';
   import { sendMessage } from '../api/messages.js';
+  import { DEFAULT_MAX_MESSAGE_TEXT } from '../lib/settings/messages-preferences-store.svelte.js';
   import { refreshNow } from '../lib/messagesTransport.js';
   import { toasts } from '../lib/stores.js';
 
@@ -203,6 +204,11 @@
       created_at: nowIso,
       status: 'pending',
       source: '',
+      // Mirror the backend DTO derivation (len(text) > default cap) so
+      // the outbound "extended" badge renders on the optimistic bubble
+      // too — the server echo would set this anyway, but computing
+      // it locally avoids a flicker-in on long sends.
+      extended: (text?.length || 0) > DEFAULT_MAX_MESSAGE_TEXT,
     };
     store.addPendingSend(clientId, optimistic);
 

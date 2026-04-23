@@ -250,12 +250,98 @@ func TestMessagePreferencesRequestValidate(t *testing.T) {
 		{"empty_policy_allowed", MessagePreferencesRequest{RetryMaxAttempts: 5}, false},
 		{"bad_policy", MessagePreferencesRequest{FallbackPolicy: "nope"}, true},
 		{"retry_cap", MessagePreferencesRequest{FallbackPolicy: "rf_only", RetryMaxAttempts: 9999}, true},
+		// max_message_text_override: 0 is fine (default); below-default
+		// and above-ceiling are rejected; in-range is accepted.
+		{"override_zero_ok", MessagePreferencesRequest{MaxMessageTextOverride: 0}, false},
+		{"override_at_default_rejected", MessagePreferencesRequest{MaxMessageTextOverride: 67}, true},
+		{"override_just_above_default_ok", MessagePreferencesRequest{MaxMessageTextOverride: 68}, false},
+		{"override_typical_ok", MessagePreferencesRequest{MaxMessageTextOverride: 150}, false},
+		{"override_at_ceiling_ok", MessagePreferencesRequest{MaxMessageTextOverride: 200}, false},
+		{"override_above_ceiling_rejected", MessagePreferencesRequest{MaxMessageTextOverride: 201}, true},
+		{"override_one_rejected", MessagePreferencesRequest{MaxMessageTextOverride: 1}, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.req.Validate()
 			if (err != nil) != tc.wantErr {
 				t.Errorf("Validate() err=%v, wantErr=%v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestMessagePreferencesFromModel_NormalizesOverride asserts a stored
+// out-of-range override (hand-edited DB or forward-incompatible row)
+// surfaces to the UI as 0 (default), not as the corrupt value.
+func TestMessagePreferencesFromModel_NormalizesOverride(t *testing.T) {
+	cases := []struct {
+		name     string
+		stored   uint32
+		wantResp uint32
+	}{
+		{"zero", 0, 0},
+		{"valid_mid", 150, 150},
+		{"valid_ceiling", 200, 200},
+		{"below_default_normalized", 10, 0},
+		{"at_default_normalized", 67, 0},
+		{"above_ceiling_normalized", 500, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resp := MessagePreferencesFromModel(configstore.MessagePreferences{
+				MaxMessageTextOverride: c.stored,
+			})
+			if resp.MaxMessageTextOverride != c.wantResp {
+				t.Errorf("stored=%d → response=%d, want %d",
+					c.stored, resp.MaxMessageTextOverride, c.wantResp)
+			}
+		})
+	}
+}
+
+// TestMaxMessageTextConstants_AgreeWithSender guards the dual
+// declarations in dto (MaxMessageText / MaxMessageTextUnsafe) and
+// messages (DefaultMaxMessageText / MaxMessageTextCeiling). The two
+// layers can't share a constant without pkg/messages depending on the
+// webapi layer (or vice versa), so the next best thing is an
+// assertion that nothing has drifted.
+func TestMaxMessageTextConstants_AgreeWithSender(t *testing.T) {
+	if MaxMessageText != messages.DefaultMaxMessageText {
+		t.Errorf("dto.MaxMessageText=%d != messages.DefaultMaxMessageText=%d",
+			MaxMessageText, messages.DefaultMaxMessageText)
+	}
+	if MaxMessageTextUnsafe != messages.MaxMessageTextCeiling {
+		t.Errorf("dto.MaxMessageTextUnsafe=%d != messages.MaxMessageTextCeiling=%d",
+			MaxMessageTextUnsafe, messages.MaxMessageTextCeiling)
+	}
+}
+
+// TestMessageFromModel_ExtendedFlag confirms the badge signal fires
+// iff the stored body length exceeds the default 67-char cap.
+func TestMessageFromModel_ExtendedFlag(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"short_body", "hi", false},
+		{"exactly_default", "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01234", false}, // 67
+		{"one_over_default", "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz012345", true}, // 68
+		{"long_extended", "this is a deliberately long message that exceeds the APRS 67-char default", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if len(c.text) > 67 != c.want {
+				t.Fatalf("test-case self-check failed: len=%d want-extended=%v", len(c.text), c.want)
+			}
+			resp := MessageFromModel(configstore.Message{
+				Direction:  "out",
+				ThreadKind: messages.ThreadKindDM,
+				Text:       c.text,
+				AckState:   messages.AckStateNone,
+			})
+			if resp.Extended != c.want {
+				t.Errorf("Extended for len=%d = %v, want %v", len(c.text), resp.Extended, c.want)
 			}
 		})
 	}
