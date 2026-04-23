@@ -109,9 +109,6 @@
   let containerEl = $state(null);
   let sending = $state(false);
   let banner = $state(null);
-  // Truncate-risk banner visibility (long mode + draft > 67 chars).
-  // Session-scoped dismissal via sessionStorage.
-  let truncateBannerDismissed = $state(false);
 
   const length = $derived((text || '').length);
   // Single-part fits in APRS_LIMIT verbatim; multi-part uses the smaller
@@ -136,9 +133,9 @@
     LONG_MODE ? APRS_LIMIT : MAX_PARTS * PART_SLICE
   );
   const over = $derived(length > EFFECTIVE_MAX);
-  // Per-frame "chars remaining" for the single-part view. For multi-part
-  // drafts we show "Part N/M" instead, so this only matters at length <= APRS_LIMIT.
-  const remaining = $derived(APRS_LIMIT - (length % APRS_LIMIT || APRS_LIMIT));
+  // Chars left until the single-frame cap. Negative past the cap, but
+  // `showPartBadge` / `counterOver` take over well before that's visible.
+  const remaining = $derived(APRS_LIMIT - length);
   const showPartBadge = $derived(parts > 1);
   // Counter colour ramp:
   //   - warning at <= 20 remaining in the current (single) frame, so
@@ -146,7 +143,9 @@
   //   - danger once `over` is true (body cannot fit in MAX_PARTS frames
   //     and send is blocked). Multi-part sends stay neutral — they're
   //     valid APRS and send fine.
-  const counterWarn = $derived(!over && !showPartBadge && remaining <= 20 && length > 0);
+  const counterWarn = $derived(
+    !over && !showPartBadge && length > 0 && remaining <= 10
+  );
   const counterOver = $derived(over);
   // Screen-reader announcement — only changes on threshold transitions
   // (not on every keystroke), to avoid a per-character flood through the
@@ -161,19 +160,9 @@
           ? 'Approaching character limit.'
           : ''
   );
-  // Truncate-risk banner: only meaningful when long mode is active AND the
-  // current draft already passes the 67-char legacy-receiver threshold.
-  const showTruncateBanner = $derived(
-    LONG_MODE &&
-    length > DEFAULT_MAX_MESSAGE_TEXT &&
-    !truncateBannerDismissed,
-  );
 
   const pillId = 'compose-to-' + Math.random().toString(36).slice(2, 8);
   const bannerStorageKey = $derived(tacticalKey ? `msg.broadcastBanner.${tacticalKey}` : '');
-  // Stable session key — one dismissal covers the whole tab session across
-  // thread/compose remounts. Re-appears in a fresh tab.
-  const TRUNCATE_BANNER_KEY = 'compose.truncateWarningDismissed';
 
   function autoGrow() {
     if (!textareaEl) return;
@@ -240,14 +229,6 @@
     }
   }
 
-  function dismissTruncateBanner() {
-    truncateBannerDismissed = true;
-    try { sessionStorage.setItem(TRUNCATE_BANNER_KEY, '1'); } catch { /* ignore */ }
-    // Return focus to the textarea so the user's editing flow isn't
-    // interrupted by the close action.
-    textareaEl?.focus({ preventScroll: true });
-  }
-
   onMount(() => {
     autoGrow();
     if (autoFocus && textareaEl) {
@@ -258,13 +239,6 @@
     // this session. Safe to call on every mount — the store just re-GETs,
     // and the default unloaded state (APRS_LIMIT = 67) is already safe.
     messagesPreferencesState.fetchPreferences();
-
-    // Truncate-risk banner: restore session-scoped dismissal.
-    try {
-      truncateBannerDismissed = sessionStorage.getItem(TRUNCATE_BANNER_KEY) === '1';
-    } catch {
-      truncateBannerDismissed = false;
-    }
 
     // Per-session banner suppression, plus "suppress if empty thread"
     // (the empty state itself conveys the broadcast semantic).
@@ -332,24 +306,6 @@
     </div>
   {/if}
 
-  {#if showTruncateBanner}
-    <div class="banner" role="note" data-testid="truncate-banner">
-      <Icon name="alert-circle" size="sm" />
-      <span class="banner-text">
-        This is longer than 67 chars. Older radios and some iGates may truncate it.
-      </span>
-      <button
-        type="button"
-        class="banner-dismiss"
-        onclick={dismissTruncateBanner}
-        aria-label="Dismiss"
-        data-testid="truncate-banner-dismiss"
-      >
-        <Icon name="x" size="sm" />
-      </button>
-    </div>
-  {/if}
-
   {#if mode === 'compose' && !isTactical}
     <div class="to-row">
       <label class="to-label" for="compose-to-input">To</label>
@@ -396,10 +352,11 @@
       {#if messagesPreferencesState.allowLong}
         <span
           class="long-mode-pill"
-          aria-label="Long-message mode active. Splits up to 200 chars across parts; some receivers may truncate."
+          title="Long mode active. Messages up to 200 chars; some receivers may truncate."
+          aria-label="Long mode active"
           data-testid="long-mode-pill"
         >
-          Long mode
+          long
         </span>
       {/if}
       <span
@@ -412,7 +369,7 @@
         {:else if showPartBadge}
           Part {parts}/{parts}
         {:else}
-          {remaining}
+          {length}/{APRS_LIMIT}
         {/if}
       </span>
       <span class="sr-only" role="status" aria-live="polite">{counterAnnouncement}</span>
@@ -508,20 +465,20 @@
   .pill-call { font-weight: 700; letter-spacing: 0.5px; }
   .pill-alias { opacity: 0.7; }
 
-  /* Long-mode pill mirrors `.to-pill` geometry but uses warning tint
-     (amber family) rather than primary — a soft heads-up that the
-     composer is in advanced mode, not an error state. */
+  /* Quiet "long" chip next to the counter — just enough signal that the
+     operator can see the composer is in advanced mode, without competing
+     with the primary-tinted send button. Intentionally neutral (no amber)
+     because long mode is a deliberate user choice, not a warning state. */
   .long-mode-pill {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
-    background: var(--color-warning-muted);
-    color: var(--color-warning);
-    border: 1px solid var(--color-warning);
-    border-radius: 999px;
+    padding: 1px 6px;
+    background: transparent;
+    color: var(--color-text-dim);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
     font-size: 10px;
     font-family: var(--font-mono);
-    font-weight: 700;
     letter-spacing: 0.5px;
     text-transform: uppercase;
     white-space: nowrap;
@@ -563,8 +520,9 @@
     font-size: 11px;
     color: var(--color-text-dim);
     font-family: var(--font-mono);
-    min-width: 32px;
+    min-width: 52px;
     text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .counter.warn { color: var(--color-warning); }
   .counter.over { color: var(--color-danger); }
