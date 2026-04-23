@@ -167,7 +167,9 @@
   function autoGrow() {
     if (!textareaEl) return;
     textareaEl.style.height = 'auto';
-    const h = Math.min(120, Math.max(36, textareaEl.scrollHeight));
+    // 180px ≈ 8 lines at 14px/1.4 line-height — comfortably shows a
+    // full 200-char long-mode message without clipping the last line.
+    const h = Math.min(180, Math.max(36, textareaEl.scrollHeight));
     textareaEl.style.height = `${h}px`;
   }
 
@@ -348,41 +350,45 @@
       data-testid="compose-textarea"
       value={text}
     ></textarea>
-    <div class="controls">
-      {#if messagesPreferencesState.allowLong}
-        <span
-          class="long-mode-pill"
-          title="Long mode active. Messages up to 200 chars; some receivers may truncate."
-          aria-label="Long mode active"
-          data-testid="long-mode-pill"
-        >
-          long
-        </span>
-      {/if}
-      <span
-        class="counter"
-        class:warn={counterWarn}
-        class:over={counterOver}
-      >
-        {#if counterOver}
-          Too long ({EFFECTIVE_MAX} max)
-        {:else if showPartBadge}
-          Part {parts}/{parts}
-        {:else}
-          {length}/{APRS_LIMIT}
+    <div class="toolbar">
+      <div class="toolbar-left">
+        {#if messagesPreferencesState.allowLong}
+          <span
+            class="long-mode-pill"
+            title="Long mode active. Messages up to 200 chars; some receivers may truncate."
+            aria-label="Long mode active"
+            data-testid="long-mode-pill"
+          >
+            long
+          </span>
         {/if}
-      </span>
-      <span class="sr-only" role="status" aria-live="polite">{counterAnnouncement}</span>
-      <button
-        type="button"
-        class="send"
-        onclick={send}
-        disabled={over || sending || (text || '').trim().length === 0}
-        aria-label="Send message"
-        data-testid="compose-send"
-      >
-        <Icon name={isTactical ? 'radio-tower' : 'send'} size="sm" />
-      </button>
+        <span
+          class="counter"
+          class:warn={counterWarn}
+          class:over={counterOver}
+        >
+          {#if counterOver}
+            Too long ({EFFECTIVE_MAX} max)
+          {:else if showPartBadge}
+            Part {parts}/{parts}
+          {:else}
+            {length}/{APRS_LIMIT}
+          {/if}
+        </span>
+        <span class="sr-only" role="status" aria-live="polite">{counterAnnouncement}</span>
+      </div>
+      <div class="toolbar-right">
+        <button
+          type="button"
+          class="send"
+          onclick={send}
+          disabled={over || sending || (text || '').trim().length === 0}
+          aria-label="Send message"
+          data-testid="compose-send"
+        >
+          <Icon name={isTactical ? 'radio-tower' : 'send'} size="sm" />
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -484,15 +490,22 @@
     white-space: nowrap;
   }
 
+  /* Stack layout: textarea on its own row (full width), toolbar below.
+     This replaces the former horizontal flex where the controls column
+     visually clipped the textarea's right-edge focus ring. */
   .input-row {
     display: flex;
-    align-items: flex-end;
+    flex-direction: column;
     gap: 8px;
   }
   .textarea {
-    flex: 1 1 auto;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
     min-height: 36px;
-    max-height: 120px;
+    /* Raised from 120px so a 200-char long-mode message (≈6-8 wrapped
+       lines at 14px/1.4) fits without cropping the last line. */
+    max-height: 180px;
     resize: none;
     padding: 8px 10px;
     background: var(--color-bg);
@@ -510,19 +523,35 @@
     border-color: var(--color-primary);
     box-shadow: 0 0 0 2px var(--color-primary-muted);
   }
-  .controls {
+
+  /* Below-textarea toolbar: [long pill] [counter] on the left,
+     [send] right-aligned and vertically centered. Same structure
+     in embedded (modal) and non-embedded (thread) modes. */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 36px;
+  }
+  .toolbar-left {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding-bottom: 4px;
+    min-width: 0;
+  }
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
   }
   .counter {
     font-size: 11px;
     color: var(--color-text-dim);
     font-family: var(--font-mono);
-    min-width: 52px;
-    text-align: right;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .counter.warn { color: var(--color-warning); }
   .counter.over { color: var(--color-danger); }
