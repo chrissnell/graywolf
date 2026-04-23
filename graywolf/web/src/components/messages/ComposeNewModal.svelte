@@ -92,10 +92,4 @@
     text-transform: uppercase;
     color: var(--color-text-dim);
   }
-  :global(.modal-body .compose) {
-    position: relative;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 8px;
-  }
 </style>

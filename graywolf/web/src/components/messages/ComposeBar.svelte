@@ -144,7 +144,7 @@
   //     and send is blocked). Multi-part sends stay neutral — they're
   //     valid APRS and send fine.
   const counterWarn = $derived(
-    !over && !showPartBadge && length > 0 && remaining <= 10
+    !over && !showPartBadge && remaining > 0 && remaining <= 10
   );
   const counterOver = $derived(over);
   // Screen-reader announcement — only changes on threshold transitions
@@ -471,20 +471,14 @@
   .pill-call { font-weight: 700; letter-spacing: 0.5px; }
   .pill-alias { opacity: 0.7; }
 
-  /* Quiet "long" chip next to the counter — just enough signal that the
-     operator can see the composer is in advanced mode, without competing
-     with the primary-tinted send button. Intentionally neutral (no amber)
-     because long mode is a deliberate user choice, not a warning state. */
+  /* Quiet "long" marker next to the counter. Just dim small-caps text —
+     no chip, no border — so it reads as metadata on the same baseline as
+     the counter rather than yet another box the eye has to parse. */
   .long-mode-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px 6px;
-    background: transparent;
     color: var(--color-text-dim);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    font-size: 10px;
+    font-size: 11px;
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.5px;
     text-transform: uppercase;
     white-space: nowrap;
