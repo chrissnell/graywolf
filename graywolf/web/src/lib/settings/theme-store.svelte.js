@@ -28,10 +28,15 @@ function applyDOM(v) {
 }
 
 export const themeState = (() => {
-  let theme = $state(readStored());
+  // Read once, then seed the rune. Applying the DOM from `initial`
+  // (not from `theme`) sidesteps Svelte 5's state_referenced_locally
+  // warning: the rune is there for reactive reads elsewhere in the
+  // app, but the one-shot startup apply doesn't need to go through it.
+  const initial = readStored();
+  let theme = $state(initial);
   // Re-apply so runtime state and the DOM attribute are guaranteed to
   // agree. The boot script already set it, but this is cheap.
-  applyDOM(theme);
+  applyDOM(initial);
 
   async function fetchConfig() {
     try {
