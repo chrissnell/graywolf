@@ -1,0 +1,30 @@
+{
+  "default": "graywolf",
+  "themes": [
+    {
+      "id": "graywolf",
+      "name": "Graywolf",
+      "description": "Dark with blue accents. The original graywolf palette."
+    },
+    {
+      "id": "graywolf-night",
+      "name": "Graywolf Night",
+      "description": "Deeper dark with muted blue. Easier on the eyes for overnight nets."
+    },
+    {
+      "id": "grayscale",
+      "name": "Grayscale",
+      "description": "Light, monochrome. No chromatic accents."
+    },
+    {
+      "id": "grayscale-night",
+      "name": "Grayscale Night",
+      "description": "Dark, monochrome. No chromatic accents."
+    },
+    {
+      "id": "chonky",
+      "name": "Chonky",
+      "description": "Light with orange primary and green accent. Matches the chonky-ui docs site."
+    }
+  ]
+}

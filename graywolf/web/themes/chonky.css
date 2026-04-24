@@ -1,0 +1,38 @@
+/*
+ * Chonky — light with orange primary and green accent. Matches the
+ * chrissnell.com/styles/chonky documentation site.
+ */
+[data-theme="chonky"] {
+  --color-bg: #ffffff;
+  --color-surface: #f8f8f8;
+  --color-surface-raised: #f0f0f0;
+  --color-border: #dddddd;
+  --color-border-subtle: #eeeeee;
+  --color-text: #111111;
+  --color-text-muted: #666666;
+  --color-text-dim: #999999;
+  --color-accent: #215e21;
+  --color-primary: #ffaa00;
+  --color-primary-hover: #ffbb33;
+  --color-primary-muted: rgba(255, 170, 0, 0.12);
+  --color-primary-fg: #000000;
+  --color-danger: #c41010;
+  --color-danger-hover: #d42020;
+  --color-danger-muted: rgba(214, 2, 2, 0.12);
+  --color-danger-fg: #ffffff;
+  --color-success: #215e21;
+  --color-success-fill: #215e21;
+  --color-success-muted: rgba(33, 94, 33, 0.15);
+  --color-success-fg: #ffffff;
+  --color-warning: #ffaa00;
+  --color-warning-muted: rgba(255, 170, 0, 0.15);
+  --color-warning-fg: #000000;
+  --color-info: #1a6e94;
+  --color-info-muted: rgba(35, 134, 176, 0.15);
+  --color-info-fg: #ffffff;
+  --color-btn-bg: #f0f0f0;
+  --color-btn-bg-hover: #e4e4e4;
+  --color-btn-border: #cccccc;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 2px;
+}

@@ -1,0 +1,38 @@
+/*
+ * Graywolf Night — deeper dark, more muted blue. For long overnight
+ * nets.
+ */
+[data-theme="graywolf-night"] {
+  --color-bg: #05080c;
+  --color-surface: #0b0f14;
+  --color-surface-raised: #121821;
+  --color-border: #1e2630;
+  --color-border-subtle: #121821;
+  --color-text: #b8c5d1;
+  --color-text-muted: #5c6a7a;
+  --color-text-dim: #3d4754;
+  --color-accent: #3a7bc8;
+  --color-primary: #3a7bc8;
+  --color-primary-hover: #5092d9;
+  --color-primary-muted: rgba(58, 123, 200, 0.15);
+  --color-primary-fg: #05080c;
+  --color-danger: #c93a3a;
+  --color-danger-hover: #d94e4e;
+  --color-danger-muted: rgba(201, 58, 58, 0.15);
+  --color-danger-fg: #ffffff;
+  --color-success: #2f8f3f;
+  --color-success-fill: #2f8f3f;
+  --color-success-muted: rgba(47, 143, 63, 0.15);
+  --color-success-fg: #ffffff;
+  --color-warning: #b8851a;
+  --color-warning-muted: rgba(184, 133, 26, 0.15);
+  --color-warning-fg: #000000;
+  --color-info: #3a7bc8;
+  --color-info-muted: rgba(58, 123, 200, 0.15);
+  --color-info-fg: #ffffff;
+  --color-btn-bg: #121821;
+  --color-btn-bg-hover: #1e2630;
+  --color-btn-border: #1e2630;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 6px;
+}
