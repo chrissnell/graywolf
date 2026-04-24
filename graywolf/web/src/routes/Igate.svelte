@@ -304,8 +304,13 @@
     // Server-filter syntax is client-side pre-flight only: the backend
     // is authoritative (see IGateConfigRequest.Validate), but rejecting
     // here avoids a roundtrip and keeps the inline field error honest
-    // with the Save blocked state.
+    // with the Save blocked state. Saving from the Connection tab posts
+    // the whole form (including server_filter), so if the user is there
+    // when the filter is broken, the toast flashes without any visible
+    // field context — switch to the tab that holds the offending input
+    // so the persistent FormField error is on screen alongside it.
     if (serverFilterError) {
+      activeTab = 'filters';
       toasts.error(serverFilterError);
       return false;
     }
