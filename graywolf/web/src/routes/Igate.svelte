@@ -40,7 +40,15 @@
   // rather than silently letting the user try to enable a feature that
   // will 400 on save.
   let stationCallsign = $state('');
-  let stationCallsignMissing = $derived(isStationCallsignMissing(stationCallsign));
+  // Gate the "callsign unset" banner on the initial /station/config
+  // fetch completing. Without this, the derived predicate reads the
+  // initial empty-string state on first render, the banner paints,
+  // then the fetch resolves and the banner disappears — a jarring
+  // flash that operators mistake for a real (but transient) alarm.
+  let stationCallsignLoaded = $state(false);
+  let stationCallsignMissing = $derived(
+    stationCallsignLoaded && isStationCallsignMissing(stationCallsign)
+  );
   // Shared channelsStore — form.tx_channel is integer-valued (see
   // validation matrix above); the ChannelListbox honors that via
   // valueType="number".
@@ -269,6 +277,8 @@
           stationCallsign = s?.callsign ?? '';
         } catch {
           stationCallsign = '';
+        } finally {
+          stationCallsignLoaded = true;
         }
       })(),
       (async () => {
