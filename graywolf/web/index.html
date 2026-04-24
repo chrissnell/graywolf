@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,6 +11,22 @@
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <title>graywolf</title>
     <link rel="stylesheet" href="/fonts/inconsolata/inconsolata.css" />
+    <script>
+      // Apply the stored theme before any CSS paints so the first
+      // frame is rendered with the right palette. The regex matches
+      // configstore.IsValidTheme (^[a-z0-9-]{1,64}$); we deliberately
+      // don't list the shipped ids here so adding/removing a theme
+      // never requires touching this file.
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme');
+          var ok = typeof stored === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(stored);
+          document.documentElement.setAttribute('data-theme', ok ? stored : 'graywolf');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'graywolf');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
