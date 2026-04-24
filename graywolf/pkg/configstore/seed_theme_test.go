@@ -2,6 +2,7 @@ package configstore
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -73,11 +74,19 @@ func TestUpsertThemeConfig_RejectsMalformedID(t *testing.T) {
 		"has space",            // space
 		"path/traversal",       // slash
 		"../etc",               // traversal
-		"a" + string(make([]byte, 64)), // >64 chars
+		strings.Repeat("a", 65), // exactly 65 chars: length violation
 	} {
 		if err := s.UpsertThemeConfig(ctx, ThemeConfig{ThemeID: bad}); err == nil {
 			t.Errorf("expected error for malformed id %q", bad)
 		}
+	}
+
+	// Positive boundary: exactly 64 chars must be accepted so the
+	// regex's 1..64 inclusive bound is pinned by a test, not just by
+	// reading the pattern. Paired with the 65-char rejection above.
+	good := strings.Repeat("a", 64)
+	if err := s.UpsertThemeConfig(ctx, ThemeConfig{ThemeID: good}); err != nil {
+		t.Errorf("expected 64-char id %q to be accepted, got %v", good, err)
 	}
 }
 
@@ -98,5 +107,31 @@ func TestGetThemeConfig_AllowsUnknownButWellFormedIDs(t *testing.T) {
 	}
 	if got.ThemeID != "field-day-2026" {
 		t.Errorf("ThemeID = %q, want %q (server stores verbatim)", got.ThemeID, "field-day-2026")
+	}
+}
+
+func TestGetThemeConfig_NormalizesMalformedStoredValue(t *testing.T) {
+	// Bypass the Upsert validation so we can exercise the read-side
+	// fallback: if a malformed id sneaks into the DB (hand-edit, forward-
+	// incompatible value), GetThemeConfig must return the default while
+	// preserving the row's ID so a later Upsert updates in place instead
+	// of creating a second row.
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	if err := s.DB().Model(&ThemeConfig{}).Create(map[string]any{
+		"theme_id": "BAD_VALUE!!",
+	}).Error; err != nil {
+		t.Fatalf("seed invalid row: %v", err)
+	}
+	got, err := s.GetThemeConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetThemeConfig: %v", err)
+	}
+	if got.ThemeID != "graywolf" {
+		t.Errorf("ThemeID = %q, want %q (normalized)", got.ThemeID, "graywolf")
+	}
+	if got.ID == 0 {
+		t.Errorf("expected row ID preserved (singleton invariant), got 0")
 	}
 }

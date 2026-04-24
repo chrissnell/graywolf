@@ -353,7 +353,8 @@ type UnitsConfig struct {
 // ThemeConfig stores the operator's preferred UI color theme.
 // Singleton at id=1, default ThemeID="graywolf". The set of shipped
 // themes lives in graywolf/web/themes/themes.json; ids are validated
-// by regex at the API layer (^[a-z0-9-]{1,64}$) rather than by a
+// by regex (^[a-z0-9][a-z0-9-]{0,63}$) — see IsValidTheme in
+// seed_theme.go — rather than by a
 // hardcoded list so new themes don't require backend changes.
 type ThemeConfig struct {
 	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
