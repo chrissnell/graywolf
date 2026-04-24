@@ -29,3 +29,6 @@ rust-bin/
 rust-artifacts/
 graywolf-modem-amd64
 graywolf-modem-arm64
+
+# Git worktrees created by superpowers skill for isolated branch work.
+.worktrees/
