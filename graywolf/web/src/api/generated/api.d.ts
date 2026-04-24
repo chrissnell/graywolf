@@ -838,6 +838,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preferences/theme": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get theme preference */
+        get: operations["getThemeConfig"];
+        /** Update theme preference */
+        put: operations["updateThemeConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/preferences/units": {
         parameters: {
             query?: never;
@@ -2174,6 +2192,12 @@ export interface components {
         };
         "dto.TestToneResponse": {
             status?: string;
+        };
+        "dto.ThemeConfigRequest": {
+            id?: string;
+        };
+        "dto.ThemeConfigResponse": {
+            id?: string;
         };
         "dto.TxCapability": {
             capable?: boolean;
@@ -5585,6 +5609,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["dto.PositionLogResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getThemeConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ThemeConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateThemeConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Theme preference */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.ThemeConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ThemeConfigResponse"];
                 };
             };
             /** @description Bad Request */

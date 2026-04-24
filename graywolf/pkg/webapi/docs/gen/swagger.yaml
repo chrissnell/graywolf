@@ -1584,6 +1584,16 @@ definitions:
       status:
         type: string
     type: object
+  dto.ThemeConfigRequest:
+    properties:
+      id:
+        type: string
+    type: object
+  dto.ThemeConfigResponse:
+    properties:
+      id:
+        type: string
+    type: object
   dto.TxCapability:
     properties:
       capable:
@@ -4406,6 +4416,56 @@ paths:
       summary: Update position log config
       tags:
         - position-log
+  /preferences/theme:
+    get:
+      operationId: getThemeConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ThemeConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get theme preference
+      tags:
+        - preferences
+    put:
+      consumes:
+        - application/json
+      operationId: updateThemeConfig
+      parameters:
+        - description: Theme preference
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ThemeConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ThemeConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update theme preference
+      tags:
+        - preferences
   /preferences/units:
     get:
       operationId: getUnitsConfig
