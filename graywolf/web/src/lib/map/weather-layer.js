@@ -5,6 +5,9 @@
 // response includes weather data (via include=weather query param).
 
 import L from 'leaflet';
+import { unitsState } from '../settings/units-store.svelte.js';
+
+const KMH_PER_MPH = 1.60934;
 
 export class WeatherLayer {
   constructor(map) {
@@ -56,10 +59,15 @@ export class WeatherLayer {
   }
 
   _formatLabel(wx) {
+    const metric = unitsState.isMetric;
     const parts = [];
-    if (wx.temp_f != null) parts.push(`${Math.round(wx.temp_f)}\u00B0F`);
+    if (wx.temp_f != null) {
+      const t = metric ? (wx.temp_f - 32) * 5 / 9 : wx.temp_f;
+      parts.push(`${Math.round(t)}°${metric ? 'C' : 'F'}`);
+    }
     if (wx.wind_mph != null) {
-      let wind = `${Math.round(wx.wind_mph)}mph`;
+      const s = metric ? wx.wind_mph * KMH_PER_MPH : wx.wind_mph;
+      let wind = `${Math.round(s)}${metric ? 'km/h' : 'mph'}`;
       if (wx.wind_dir != null) wind = `${wind} ${_cardinal(wx.wind_dir)}`;
       parts.push(wind);
     }
