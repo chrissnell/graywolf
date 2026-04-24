@@ -374,7 +374,7 @@ type MapsConfig struct {
 	Source       string    `gorm:"not null;default:'osm'" json:"source"`
 	Callsign     string    `gorm:"not null;default:''" json:"callsign"`
 	Token        string    `gorm:"not null;default:''" json:"-"`
-	RegisteredAt time.Time `json:"registered_at,omitempty"`
+	RegisteredAt time.Time `json:"registered_at"`
 	CreatedAt    time.Time `json:"-"`
 	UpdatedAt    time.Time `json:"-"`
 }
