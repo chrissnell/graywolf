@@ -307,7 +307,10 @@ func TestSendMessage_BadAddressee(t *testing.T) {
 
 func TestSendMessage_TextTooLong(t *testing.T) {
 	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
-	text := strings.Repeat("x", 68)
+	// DTO only short-circuits over the hard AX.25 ceiling (200); the
+	// default 67-char cap is enforced on the sender path where the
+	// per-operator long-mode preference is consulted.
+	text := strings.Repeat("x", 201)
 	body := fmt.Sprintf(`{"to":"W1ABC","text":"%s"}`, text)
 	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
 	rec := httptest.NewRecorder()
