@@ -214,20 +214,41 @@
   let confirmOpen = $state(false);
   let deleting = $state(false);
 
-  // Resolve which thread IDs the Delete pill targets right now.
+  // Resolve the concrete delete targets {threadId, kind, key} right now.
   // Selection has priority; if nothing is checked, fall back to the
   // currently open thread so the pill still does something useful when
   // the user is reading a single conversation.
-  const deleteTargetIds = $derived.by(() => {
+  //
+  // Each target carries its own kind+key instead of forcing runDelete
+  // to look the Thread object up in `messages.conversations`. That matters
+  // when (a) the active thread is synthesized (deep link to a brand-new
+  // peer that the rollup hasn't listed yet) or (b) the conversations map
+  // has been briefly cleared by a poll between click and confirm. In both
+  // cases we can still extract kind+key from the threadId itself and
+  // issue the DELETE correctly.
+  function parseThreadId(id) {
+    if (!id) return null;
+    const ix = id.indexOf(':');
+    if (ix < 0) return null;
+    const kind = id.slice(0, ix);
+    const key = id.slice(ix + 1);
+    if ((kind !== 'dm' && kind !== 'tactical') || !key) return null;
+    return { threadId: id, kind, key };
+  }
+
+  const deleteTargets = $derived.by(() => {
     if (messages.selectedThreadIds.size > 0) {
-      return [...messages.selectedThreadIds];
+      const out = [];
+      for (const id of messages.selectedThreadIds) {
+        const t = parseThreadId(id);
+        if (t) out.push(t);
+      }
+      return out;
     }
-    if (activeThreadId && messages.conversations.has(activeThreadId)) {
-      return [activeThreadId];
-    }
-    return [];
+    const t = parseThreadId(activeThreadId);
+    return t ? [t] : [];
   });
-  const canDelete = $derived(deleteTargetIds.length > 0);
+  const canDelete = $derived(deleteTargets.length > 0);
 
   function openDeleteConfirm() {
     if (!canDelete) return;
@@ -241,14 +262,12 @@
   async function runDelete() {
     if (deleting) return;
     deleting = true;
-    const ids = deleteTargetIds;
+    const targets = deleteTargets;
     let okCount = 0;
     const failures = [];
     let needNav = false;
     try {
-      for (const threadId of ids) {
-        const thread = messages.conversations.get(threadId);
-        if (!thread) continue;
+      for (const { threadId, kind, key } of targets) {
         try {
           // Order matters: wipe server-side messages FIRST, then
           // unsubscribe from the tactical. If the server drops the
@@ -256,12 +275,12 @@
           // subscribed and the row stays visible for a retry — reverse
           // order would leave them unsubscribed with stale history
           // they can no longer delete from the UI.
-          await deleteMessageThread(thread.kind, thread.key);
-          if (thread.kind === 'tactical') {
-            const entry = messages.tacticals.get(thread.key);
+          await deleteMessageThread(kind, key);
+          if (kind === 'tactical') {
+            const entry = messages.tacticals.get(key);
             if (entry?.id) {
               await deleteTactical(entry.id);
-              messages.tacticals.delete(thread.key);
+              messages.tacticals.delete(key);
             }
           }
           messages.conversations.delete(threadId);
@@ -272,7 +291,7 @@
           }
           okCount++;
         } catch (e) {
-          failures.push(`${thread.key}: ${e?.message ?? e ?? 'failed'}`);
+          failures.push(`${key}: ${e?.message ?? e ?? 'failed'}`);
         }
       }
     } finally {
@@ -292,13 +311,9 @@
   // the same target set as runDelete so the dialog can never describe
   // one thing while the action does another.
   const confirmSummary = $derived.by(() => {
-    const threads = deleteTargetIds
-      .map((id) => messages.conversations.get(id))
-      .filter(Boolean);
-    const n = threads.length;
-    const tacticals = threads.filter((t) => t.kind === 'tactical');
-    const tacticalCount = tacticals.length;
-    return { n, tacticalCount, single: n === 1 ? threads[0] : null };
+    const n = deleteTargets.length;
+    const tacticalCount = deleteTargets.filter((t) => t.kind === 'tactical').length;
+    return { n, tacticalCount, single: n === 1 ? deleteTargets[0] : null };
   });
 </script>
 
@@ -346,16 +361,16 @@
         onclick={openDeleteConfirm}
         disabled={!canDelete || deleting}
         aria-label={
-          deleteTargetIds.length > 1
-            ? `Delete ${deleteTargetIds.length} selected conversations`
+          deleteTargets.length > 1
+            ? `Delete ${deleteTargets.length} selected conversations`
             : 'Delete conversation'
         }
         title={
-          deleteTargetIds.length === 0
+          deleteTargets.length === 0
             ? 'Open or select a conversation to delete'
-            : deleteTargetIds.length === 1
+            : deleteTargets.length === 1
               ? 'Delete this conversation'
-              : `Delete ${deleteTargetIds.length} selected`
+              : `Delete ${deleteTargets.length} selected`
         }
         data-testid="bulk-delete-btn"
       >

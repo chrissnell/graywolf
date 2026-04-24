@@ -503,6 +503,21 @@ func TestSoftDeleteByThread(t *testing.T) {
 		t.Errorf("tactical row sharing the key should survive: %v", err)
 	}
 
+	// The inbox UI relies on ConversationRollup dropping the whole thread
+	// after all its rows are soft-deleted; if a wiped-but-still-reported
+	// row leaks through, the sidebar would show a ghost conversation
+	// whose right pane is empty — looks like "unselected but not
+	// deleted" to an operator.
+	summaries, err := store.ConversationRollup(ctx, 100)
+	if err != nil {
+		t.Fatalf("ConversationRollup: %v", err)
+	}
+	for _, s := range summaries {
+		if s.ThreadKind == ThreadKindDM && s.ThreadKey == "W1ABC" {
+			t.Errorf("rollup still lists deleted thread dm:W1ABC: %+v", s)
+		}
+	}
+
 	// No-op on empty thread or thread with no rows.
 	ids2, err := store.SoftDeleteByThread(ctx, ThreadKindDM, "W1ABC")
 	if err != nil {
