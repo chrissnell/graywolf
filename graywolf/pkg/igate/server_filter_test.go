@@ -196,6 +196,40 @@ func TestComposeServerFilter_ChunkingByByteBudget(t *testing.T) {
 	}
 }
 
+// TestComposeServerFilter_NeverEmitsPipe guards against the composer
+// ever introducing a `|` byte into the resulting filter string. APRS-IS
+// filter clauses are whitespace-separated OR'd tokens and a pipe is not
+// valid syntax (some T2 servers silently drop the whole filter when
+// they see one). The DTO layer rejects `|` from operator-supplied
+// ServerFilter, but this test nails the invariant at the composer to
+// catch any future change that tries to join clauses with a pipe.
+func TestComposeServerFilter_NeverEmitsPipe(t *testing.T) {
+	cases := []struct {
+		name      string
+		base      string
+		tacticals []string
+	}{
+		{"empty", "", nil},
+		{"tacticals_only", "", []string{"ALPHA", "BRAVO", "CHARLIE"}},
+		{"base_and_tacticals", "r/35/-106/100", []string{"ALPHA", "BRAVO"}},
+		{"many_tacticals_forcing_chunking", "", func() []string {
+			out := make([]string, 0, 120)
+			for i := range 120 {
+				out = append(out, fmt.Sprintf("T%07d", i))
+			}
+			return out
+		}()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ComposeServerFilter(tc.base, tc.tacticals)
+			if strings.ContainsRune(got, '|') {
+				t.Fatalf("ComposeServerFilter emitted a `|` byte: %q", got)
+			}
+		})
+	}
+}
+
 // TestComposeServerFilter_SingleOverlongCallStillEmitted ensures a
 // single callsign that is longer than the budget still gets its own
 // clause rather than silently dropped. (In practice the configstore

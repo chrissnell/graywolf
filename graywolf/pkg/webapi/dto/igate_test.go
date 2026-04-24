@@ -43,6 +43,37 @@ func TestIGateConfigFromModel_EmptyModelSeedsDefaults(t *testing.T) {
 	}
 }
 
+// TestIGateConfigRequestValidate_RejectsPipeInServerFilter guards the
+// DTO-layer reject of `|` in ServerFilter. APRS-IS filters use
+// whitespace between clauses; a pipe is not valid syntax and some T2
+// servers silently drop the whole filter when they see one, which
+// degrades to "iGate receiving everything" with no on-box symptom.
+func TestIGateConfigRequestValidate_RejectsPipeInServerFilter(t *testing.T) {
+	tests := []struct {
+		name    string
+		filter  string
+		wantErr bool
+	}{
+		{"empty_filter_ok", "", false},
+		{"clean_range_filter_ok", "r/35/-106/100", false},
+		{"space_separated_ok", "g/NW5W/NW5W-* b/NW5W-12/GRAYWOLF", false},
+		{"pipe_separator_rejected", "g/NW5W/NW5W-* | b/NW5W-12/GRAYWOLF", true},
+		{"bare_pipe_rejected", "|", true},
+		{"pipe_in_arg_rejected", "g/A|B", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := IGateConfigRequest{ServerFilter: tc.filter}.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatalf("Validate(%q) = nil, want error", tc.filter)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("Validate(%q) = %v, want nil", tc.filter, err)
+			}
+		})
+	}
+}
+
 // TestIGateRfFilterRequestValidate covers the wildcard-safety rules
 // enforced on POST /api/igate/filters and PUT /api/igate/filters/{id}.
 // Both paths route through IGateRfFilterRequest.Validate() via the

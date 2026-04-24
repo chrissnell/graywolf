@@ -32,8 +32,8 @@ export function originTag(pkt) {
     case 'igate':
       if (notes === 'is2rf') return { label: 'iGate IS\u2192RF', cls: 'igate-is2rf' };
       if (notes === 'rf2is') return { label: 'iGate RF\u2192IS', cls: 'igate-rf2is' };
-      return { label: 'iGate', cls: 'igate' };
-    case 'igate-is': return { label: 'iGate', cls: 'igate' };
+      return { label: 'iGate IS RX', cls: 'igate' };
+    case 'igate-is': return { label: 'iGate IS RX', cls: 'igate' };
     default: return null;
   }
 }

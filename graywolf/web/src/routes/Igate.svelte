@@ -90,6 +90,19 @@
     prevFiltersActive = active;
   });
 
+  // APRS-IS server-filter syntax guard. A `|` is not a valid clause
+  // separator (filters are whitespace-separated OR'd tokens, per
+  // https://www.aprs-is.net/javAPRSFilter.aspx) and some T2 servers
+  // silently drop the whole filter when they see one — which presents
+  // as "iGate is receiving everything" with no on-box symptom. The
+  // backend DTO also rejects this at save time; mirroring client-side
+  // gives immediate inline feedback and keeps the save button honest.
+  let serverFilterError = $derived(
+    form.server_filter && form.server_filter.includes('|')
+      ? 'The `|` character is not valid APRS-IS filter syntax. Separate clauses with spaces.'
+      : ''
+  );
+
   // Filters state
   let filters = $state([]);
   let modalOpen = $state(false);
@@ -287,6 +300,15 @@
     // a human-readable message that we surface verbatim. The UI's job
     // is now to pre-empt that path via the aria-disabled toggle guard
     // below (handleEnableToggleClick / handleEnableToggleKeydown).
+    //
+    // Server-filter syntax is client-side pre-flight only: the backend
+    // is authoritative (see IGateConfigRequest.Validate), but rejecting
+    // here avoids a roundtrip and keeps the inline field error honest
+    // with the Save blocked state.
+    if (serverFilterError) {
+      toasts.error(serverFilterError);
+      return false;
+    }
     return true;
   }
 
@@ -526,11 +548,17 @@
   </p>
   <Box>
     <form onsubmit={handleSave}>
-      <FormField label="APRS-IS Server Filter" id="ig-filter" hint="Sent to the APRS-IS server at login to control what it forwards to you (e.g. r/35.0/-106.0/100 for a 100 km radius). Everything the server sends — including packets rejected by the transmit rules below — is shown on the live map. If empty, no packets are received.">
+      <FormField label="APRS-IS Server Filter" id="ig-filter" error={serverFilterError} hint="Sent to the APRS-IS server at login to control what it forwards to you (e.g. r/35.0/-106.0/100 for a 100 km radius). Everything the server sends — including packets rejected by the transmit rules below — is shown on the live map. If empty, no packets are received.">
         {#snippet children(describedBy)}
           <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" aria-describedby={describedBy} />
         {/snippet}
       </FormField>
+      <p class="field-note">
+        Filter syntax reference:
+        <a href="https://www.aprs-is.net/javAPRSFilter.aspx" target="_blank" rel="noopener noreferrer">
+          aprs-is.net/javAPRSFilter.aspx
+        </a>. Clauses are separated by spaces; <code>|</code> is not valid.
+      </p>
       <p class="field-note">
         Enabled <a href="#/messages/tactical">tactical</a> callsigns are automatically
         appended as <code>g/</code> clauses — you don't need to add them here.

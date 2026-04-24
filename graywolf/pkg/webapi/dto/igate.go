@@ -45,7 +45,20 @@ type IGateConfigRequest struct {
 	TxChannel       uint32 `json:"tx_channel"`
 }
 
-func (r IGateConfigRequest) Validate() error { return nil }
+// Validate enforces syntax rules on fields the handler can't re-check
+// cheaply. Today that means rejecting `|` in ServerFilter: APRS-IS
+// filter expressions are space-separated OR'd clauses (see
+// https://www.aprs-is.net/javAPRSFilter.aspx) — a pipe is not a valid
+// separator. Some T2 servers silently drop the whole filter when they
+// see one, which turns into "the iGate is receiving every packet on
+// the network" without any on-box symptom. Reject at save time so the
+// UI can surface the error before we ever log in.
+func (r IGateConfigRequest) Validate() error {
+	if strings.ContainsRune(r.ServerFilter, '|') {
+		return fmt.Errorf("server_filter: `|` is not a valid APRS-IS filter separator; use spaces between clauses (see https://www.aprs-is.net/javAPRSFilter.aspx)")
+	}
+	return nil
+}
 
 func (r IGateConfigRequest) ToModel() configstore.IGateConfig {
 	return configstore.IGateConfig{
