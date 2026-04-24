@@ -1,0 +1,46 @@
+/*
+ * Grayscale -- light, monochrome. No chromatic accents. All packet-log
+ * badges use one neutral dark fill with white text; the badge LABEL
+ * (position, weather, etc.) remains the scanning cue rather than hue.
+ */
+:root[data-theme="grayscale"] {
+  --color-bg: #ffffff;
+  --color-surface: #f5f5f5;
+  --color-surface-raised: #e8e8e8;
+  --color-border: #d0d0d0;
+  --color-border-subtle: #e8e8e8;
+  --color-text: #111111;
+  --color-text-muted: #555555;
+  --color-text-dim: #888888;
+  --color-accent: #333333;
+  --color-primary: #333333;
+  --color-primary-hover: #111111;
+  --color-primary-muted: rgba(0, 0, 0, 0.08);
+  --color-primary-fg: #ffffff;
+  --color-danger: #333333;
+  --color-danger-hover: #111111;
+  --color-danger-muted: rgba(0, 0, 0, 0.08);
+  --color-danger-fg: #ffffff;
+  --color-success: #333333;
+  --color-success-fill: #333333;
+  --color-success-muted: rgba(0, 0, 0, 0.08);
+  --color-success-fg: #ffffff;
+  --color-warning: #333333;
+  --color-warning-muted: rgba(0, 0, 0, 0.08);
+  --color-warning-fg: #ffffff;
+  --color-info: #333333;
+  --color-info-muted: rgba(0, 0, 0, 0.08);
+  --color-info-fg: #ffffff;
+  --color-btn-bg: #e8e8e8;
+  --color-btn-bg-hover: #d8d8d8;
+  --color-btn-border: #c0c0c0;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 2px;
+}
+
+/* Single-tone packet and origin badges. */
+:root[data-theme="grayscale"] .pkt-b-type[data-type],
+:root[data-theme="grayscale"] .pkt-b-origin[data-origin] {
+  background: #555555;
+  color: #ffffff;
+}

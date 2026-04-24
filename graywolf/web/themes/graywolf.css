@@ -1,0 +1,76 @@
+/*
+ * Graywolf -- the default light palette. Chonky-ui's signature orange
+ * primary + green accent on light surfaces. Badges (both chonky-ui
+ * <Badge> variants and the packet-log type/origin chips) are rendered
+ * as solid saturated pills with white text so each label reads clearly
+ * against any surface.
+ */
+:root[data-theme="graywolf"] {
+  --color-bg: #ffffff;
+  --color-surface: #f8f8f8;
+  --color-surface-raised: #f0f0f0;
+  --color-border: #dddddd;
+  --color-border-subtle: #eeeeee;
+  --color-text: #111111;
+  --color-text-muted: #666666;
+  --color-text-dim: #999999;
+  --color-accent: #215e21;
+  --color-primary: #ffaa00;
+  --color-primary-hover: #ffbb33;
+  --color-primary-muted: rgba(255, 170, 0, 0.12);
+  --color-primary-fg: #000000;
+  --color-danger: #c41010;
+  --color-danger-hover: #d42020;
+  --color-danger-muted: rgba(214, 2, 2, 0.12);
+  --color-danger-fg: #ffffff;
+  --color-success: #215e21;
+  --color-success-fill: #215e21;
+  --color-success-muted: rgba(33, 94, 33, 0.15);
+  --color-success-fg: #ffffff;
+  --color-warning: #d66e00;
+  --color-warning-muted: rgba(214, 110, 0, 0.15);
+  --color-warning-fg: #ffffff;
+  --color-info: #1a6e94;
+  --color-info-muted: rgba(26, 110, 148, 0.15);
+  --color-info-fg: #ffffff;
+  --color-btn-bg: #f0f0f0;
+  --color-btn-bg-hover: #e4e4e4;
+  --color-btn-border: #cccccc;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 2px;
+}
+
+/* chonky-ui <Badge variant="..."> overrides: chonky-ui's defaults are
+   outlined with colored text; this theme fills them for the solid
+   pill look. Selector matches chonky-ui's .badge / .badge-<variant>
+   classes emitted by its Badge.svelte component. */
+:root[data-theme="graywolf"] .badge {
+  border-color: transparent;
+}
+:root[data-theme="graywolf"] .badge-success { background: var(--color-success); color: #ffffff; border-color: var(--color-success); }
+:root[data-theme="graywolf"] .badge-warning { background: var(--color-warning); color: #ffffff; border-color: var(--color-warning); }
+:root[data-theme="graywolf"] .badge-danger  { background: var(--color-danger);  color: #ffffff; border-color: var(--color-danger); }
+:root[data-theme="graywolf"] .badge-info    { background: var(--color-info);    color: #ffffff; border-color: var(--color-info); }
+
+/* Packet-log type badges: solid saturated background + white text.
+   Distinct hue per APRS packet type for at-a-glance scanning. */
+:root[data-theme="graywolf"] .pkt-b-type[data-type='position']     { background: #1e7ec3; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='weather']      { background: #2d8a2d; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='telemetry']    { background: #c48a10; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='message']      { background: #0a8c9a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='object']       { background: #6e3dab; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='item']         { background: #4a9f4a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='mic-e']        { background: #c4378a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='status']       { background: #5c6b7a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='capabilities'] { background: #8a4cbe; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='df-report'],
+:root[data-theme="graywolf"] .pkt-b-type[data-type='query']        { background: #d66e00; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='third-party'],
+:root[data-theme="graywolf"] .pkt-b-type[data-type='unknown']      { background: #757575; color: #ffffff; }
+
+/* Origin badges (bcn / digi / igate): solid + white. */
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='bcn']          { background: #d66e00; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='digi']         { background: #1e7ec3; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='igate'],
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='igate-is2rf'],
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='igate-rf2is'] { background: #8a4cbe; color: #ffffff; }

@@ -350,6 +350,19 @@ type UnitsConfig struct {
 	UpdatedAt time.Time `json:"-"`
 }
 
+// ThemeConfig stores the operator's preferred UI color theme.
+// Singleton at id=1, default ThemeID="graywolf". The set of shipped
+// themes lives in graywolf/web/themes/themes.json; ids are validated
+// by regex (^[a-z0-9][a-z0-9-]{0,63}$) — see IsValidTheme in
+// seed_theme.go — rather than by a
+// hardcoded list so new themes don't require backend changes.
+type ThemeConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	ThemeID   string    `gorm:"not null;default:'graywolf'" json:"theme_id"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
 // GPSConfig is a singleton (id=1) row for the GPS receiver.
 type GPSConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`

@@ -283,3 +283,13 @@ const (
 	OpGetUnitsConfig    = "getUnitsConfig"
 	OpUpdateUnitsConfig = "updateUnitsConfig"
 )
+
+// Theme preference — singleton at /api/preferences/theme. Same GET +
+// PUT shape as the other display-preference endpoints. The shipped
+// set of themes is defined client-side in
+// graywolf/web/themes/themes.json; the server validates ids by regex
+// only so PR contributors can add themes without touching Go.
+const (
+	OpGetThemeConfig    = "getThemeConfig"
+	OpUpdateThemeConfig = "updateThemeConfig"
+)

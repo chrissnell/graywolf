@@ -1,3 +1,9 @@
+// Auto-import every theme stylesheet in graywolf/web/themes/. Each
+// file scopes its declarations under [data-theme="<id>"]; Vite
+// inlines them all so the final bundle contains every shipped theme.
+// Dropping a new .css file in that directory is enough to register it.
+import.meta.glob('../themes/*.css', { eager: true });
+
 // Polyfill crypto.randomUUID for non-secure contexts (plain HTTP on LAN).
 if (typeof crypto !== 'undefined' && !crypto.randomUUID) {
   crypto.randomUUID = function () {

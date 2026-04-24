@@ -1,0 +1,45 @@
+/*
+ * Grayscale Night -- dark, monochrome. Single neutral badge tone
+ * matches the theme's no-chromatic-accents discipline.
+ */
+:root[data-theme="grayscale-night"] {
+  --color-bg: #000000;
+  --color-surface: #0c0c0c;
+  --color-surface-raised: #1a1a1a;
+  --color-border: #2a2a2a;
+  --color-border-subtle: #1a1a1a;
+  --color-text: #e0e0e0;
+  --color-text-muted: #888888;
+  --color-text-dim: #555555;
+  --color-accent: #cccccc;
+  --color-primary: #cccccc;
+  --color-primary-hover: #ffffff;
+  --color-primary-muted: rgba(255, 255, 255, 0.08);
+  --color-primary-fg: #000000;
+  --color-danger: #cccccc;
+  --color-danger-hover: #ffffff;
+  --color-danger-muted: rgba(255, 255, 255, 0.08);
+  --color-danger-fg: #000000;
+  --color-success: #cccccc;
+  --color-success-fill: #cccccc;
+  --color-success-muted: rgba(255, 255, 255, 0.08);
+  --color-success-fg: #000000;
+  --color-warning: #cccccc;
+  --color-warning-muted: rgba(255, 255, 255, 0.08);
+  --color-warning-fg: #000000;
+  --color-info: #cccccc;
+  --color-info-muted: rgba(255, 255, 255, 0.08);
+  --color-info-fg: #000000;
+  --color-btn-bg: #1a1a1a;
+  --color-btn-bg-hover: #2a2a2a;
+  --color-btn-border: #2a2a2a;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 2px;
+}
+
+/* Single-tone packet and origin badges. */
+:root[data-theme="grayscale-night"] .pkt-b-type[data-type],
+:root[data-theme="grayscale-night"] .pkt-b-origin[data-origin] {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e0e0e0;
+}

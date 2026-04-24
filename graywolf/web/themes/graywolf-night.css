@@ -1,0 +1,61 @@
+/*
+ * Graywolf Night -- dark variant of the default palette. Orange primary
+ * is kept for brand continuity on dark backgrounds; packet-log badges
+ * use muted-tint backgrounds with bright text, a pattern that reads
+ * well against dark surfaces.
+ */
+:root[data-theme="graywolf-night"] {
+  --color-bg: #0a0a0a;
+  --color-surface: #141414;
+  --color-surface-raised: #1e1e1e;
+  --color-border: #2a2a2a;
+  --color-border-subtle: #1e1e1e;
+  --color-text: #e0e0e0;
+  --color-text-muted: #888888;
+  --color-text-dim: #5a5a5a;
+  --color-accent: #4fa74f;
+  --color-primary: #ffaa00;
+  --color-primary-hover: #ffbb33;
+  --color-primary-muted: rgba(255, 170, 0, 0.18);
+  --color-primary-fg: #0a0a0a;
+  --color-danger: #e24444;
+  --color-danger-hover: #f05858;
+  --color-danger-muted: rgba(226, 68, 68, 0.18);
+  --color-danger-fg: #ffffff;
+  --color-success: #4fa74f;
+  --color-success-fill: #4fa74f;
+  --color-success-muted: rgba(79, 167, 79, 0.18);
+  --color-success-fg: #0a0a0a;
+  --color-warning: #e3b341;
+  --color-warning-muted: rgba(227, 179, 65, 0.18);
+  --color-warning-fg: #0a0a0a;
+  --color-info: #4ca8d8;
+  --color-info-muted: rgba(76, 168, 216, 0.18);
+  --color-info-fg: #0a0a0a;
+  --color-btn-bg: #1e1e1e;
+  --color-btn-bg-hover: #2a2a2a;
+  --color-btn-border: #2a2a2a;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 6px;
+}
+
+/* Packet-log badges: muted tint backgrounds + bright text. */
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='position']     { background: rgba(88, 166, 255, 0.15);  color: #79c0ff; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='weather']      { background: rgba(63, 185, 80, 0.15);   color: #56d364; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='telemetry']    { background: rgba(210, 153, 34, 0.18);  color: #e3b341; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='message']      { background: rgba(57, 208, 219, 0.15);  color: #39d0db; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='object']       { background: rgba(188, 140, 255, 0.15); color: #bc8cff; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='item']         { background: rgba(126, 231, 135, 0.15); color: #7ee787; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='mic-e']        { background: rgba(247, 120, 186, 0.15); color: #f778ba; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='status']       { background: rgba(139, 148, 158, 0.15); color: #c9d1d9; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='capabilities'] { background: rgba(210, 168, 255, 0.15); color: #d2a8ff; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='df-report'],
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='query']        { background: rgba(255, 166, 87, 0.15);  color: #ffa657; }
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='third-party'],
+:root[data-theme="graywolf-night"] .pkt-b-type[data-type='unknown']      { background: rgba(110, 118, 129, 0.15); color: #8b949e; }
+
+:root[data-theme="graywolf-night"] .pkt-b-origin[data-origin='bcn']          { background: rgba(255, 166, 87, 0.15);  color: #ffa657; }
+:root[data-theme="graywolf-night"] .pkt-b-origin[data-origin='digi']         { background: rgba(165, 214, 255, 0.15); color: #a5d6ff; }
+:root[data-theme="graywolf-night"] .pkt-b-origin[data-origin='igate'],
+:root[data-theme="graywolf-night"] .pkt-b-origin[data-origin='igate-is2rf'],
+:root[data-theme="graywolf-night"] .pkt-b-origin[data-origin='igate-rf2is'] { background: rgba(210, 168, 255, 0.15); color: #d2a8ff; }

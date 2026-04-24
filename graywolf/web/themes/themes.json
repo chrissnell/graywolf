@@ -1,0 +1,25 @@
+{
+  "default": "graywolf",
+  "themes": [
+    {
+      "id": "graywolf",
+      "name": "Graywolf",
+      "description": "The default light palette. Orange primary, green accent, strong solid badges."
+    },
+    {
+      "id": "graywolf-night",
+      "name": "Graywolf Night",
+      "description": "Dark variant of the default palette. Easier on the eyes after sunset."
+    },
+    {
+      "id": "grayscale",
+      "name": "Grayscale",
+      "description": "Light, monochrome. No chromatic accents."
+    },
+    {
+      "id": "grayscale-night",
+      "name": "Grayscale Night",
+      "description": "Dark, monochrome. No chromatic accents."
+    }
+  ]
+}
