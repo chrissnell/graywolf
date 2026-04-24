@@ -4,7 +4,7 @@
     {
       "id": "graywolf",
       "name": "Graywolf",
-      "description": "The default light palette. Orange primary with green accent."
+      "description": "The default light palette. Orange primary, green accent, strong solid badges."
     },
     {
       "id": "graywolf-night",
@@ -20,11 +20,6 @@
       "id": "grayscale-night",
       "name": "Grayscale Night",
       "description": "Dark, monochrome. No chromatic accents."
-    },
-    {
-      "id": "chonky",
-      "name": "Chonky",
-      "description": "Same light palette as Graywolf but with strong, solid, white-text badges."
     }
   ]
 }
