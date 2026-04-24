@@ -117,6 +117,7 @@
     class="row-btn"
     aria-current={active ? 'true' : undefined}
     aria-label={ariaLabel}
+    aria-pressed={selectionMode ? selected : undefined}
     onclick={handleClick}
     onkeydown={handleKey}
   >
@@ -259,13 +260,22 @@
     accent-color: var(--color-primary);
   }
   .row.select-mode .lead-icon,
-  .row:hover .lead-icon {
+  .row:hover .lead-icon,
+  .row:focus-within .lead-icon {
     opacity: 0;
   }
   .row.select-mode .lead-checkbox,
-  .row:hover .lead-checkbox {
+  .row:hover .lead-checkbox,
+  .row:focus-within .lead-checkbox {
     opacity: 1;
     pointer-events: auto;
+  }
+  /* Touch devices have no :hover — always reveal the checkbox so users
+     can still pick individual rows without being forced through the
+     master checkbox first. */
+  @media (hover: none) {
+    .lead-icon { opacity: 0; }
+    .lead-checkbox { opacity: 1; pointer-events: auto; }
   }
 
   .body {

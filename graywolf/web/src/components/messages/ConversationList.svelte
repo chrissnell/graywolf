@@ -244,31 +244,42 @@
     const ids = deleteTargetIds;
     let okCount = 0;
     const failures = [];
-    for (const threadId of ids) {
-      const thread = messages.conversations.get(threadId);
-      if (!thread) continue;
-      try {
-        if (thread.kind === 'tactical') {
-          const entry = messages.tacticals.get(thread.key);
-          if (entry?.id) {
-            await deleteTactical(entry.id);
-            messages.tacticals.delete(thread.key);
+    let needNav = false;
+    try {
+      for (const threadId of ids) {
+        const thread = messages.conversations.get(threadId);
+        if (!thread) continue;
+        try {
+          // Order matters: wipe server-side messages FIRST, then
+          // unsubscribe from the tactical. If the server drops the
+          // thread request (network blip, 500) the user stays
+          // subscribed and the row stays visible for a retry — reverse
+          // order would leave them unsubscribed with stale history
+          // they can no longer delete from the UI.
+          await deleteMessageThread(thread.kind, thread.key);
+          if (thread.kind === 'tactical') {
+            const entry = messages.tacticals.get(thread.key);
+            if (entry?.id) {
+              await deleteTactical(entry.id);
+              messages.tacticals.delete(thread.key);
+            }
           }
+          messages.conversations.delete(threadId);
+          messages.selectedThreadIds.delete(threadId);
+          if (messages.activeThreadId === threadId) {
+            messages.setActiveThread(null);
+            needNav = true;
+          }
+          okCount++;
+        } catch (e) {
+          failures.push(`${thread.key}: ${e?.message ?? e ?? 'failed'}`);
         }
-        await deleteMessageThread(thread.kind, thread.key);
-        messages.conversations.delete(threadId);
-        messages.selectedThreadIds.delete(threadId);
-        if (messages.activeThreadId === threadId) {
-          messages.setActiveThread(null);
-          push('/messages');
-        }
-        okCount++;
-      } catch (e) {
-        failures.push(`${thread.key}: ${e?.message || 'failed'}`);
       }
+    } finally {
+      deleting = false;
+      confirmOpen = false;
     }
-    deleting = false;
-    confirmOpen = false;
+    if (needNav) push('/messages');
     refreshNow();
     if (okCount > 0) {
       toasts.success(okCount === 1 ? 'Conversation deleted' : `${okCount} conversations deleted`);
