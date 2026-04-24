@@ -274,3 +274,11 @@ const (
 	OpUpdateUpdatesConfig = "updateUpdatesConfig"
 	OpGetUpdatesStatus    = "getUpdatesStatus"
 )
+
+// Units preference — singleton at /api/preferences/units. Same GET +
+// PUT shape as the other display-preference endpoints; persists the
+// operator's metric-vs-imperial choice server-side.
+const (
+	OpGetUnitsConfig    = "getUnitsConfig"
+	OpUpdateUnitsConfig = "updateUnitsConfig"
+)
