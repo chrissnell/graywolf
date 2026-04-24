@@ -22,7 +22,7 @@
 // reactivity on set/delete/clear, which is what we need for the
 // unread-total getter to recompute when individual threads change.
 
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 /**
  * @typedef {object} Thread
@@ -47,6 +47,10 @@ class MessagesStore {
   tacticals = new SvelteMap();
   // clientId -> optimistic outbound row (awaiting server reconciliation)
   pendingByClientId = new SvelteMap();
+  // threadId set selected by the inbox bulk-delete UI. Reactive so the
+  // toolbar count + per-row checkbox state both stay in sync without
+  // prop plumbing.
+  selectedThreadIds = new SvelteSet();
   // id -> MessageResponse (sparse). Populated by upsertMessage for every
   // persisted row the transport hands us. The invite modal subscribes to
   // this map to drive per-chip ack state without spinning up its own
@@ -228,7 +232,10 @@ class MessagesStore {
     // composes (pendingByClientId) regardless — they haven't been
     // persisted yet.
     for (const threadId of this.conversations.keys()) {
-      if (!seen.has(threadId)) this.conversations.delete(threadId);
+      if (!seen.has(threadId)) {
+        this.conversations.delete(threadId);
+        this.selectedThreadIds.delete(threadId);
+      }
     }
   }
 
@@ -260,6 +267,25 @@ class MessagesStore {
     const t = this.conversations.get(threadId);
     if (!t) return;
     this.conversations.set(threadId, { ...t, muted: !!muted });
+  }
+
+  // --- Selection (inbox bulk-delete) --------------------------------
+
+  toggleSelected(threadId, on) {
+    if (!threadId) return;
+    if (on) this.selectedThreadIds.add(threadId);
+    else this.selectedThreadIds.delete(threadId);
+  }
+
+  /** Replace the selection set with the given thread IDs (or empty). */
+  setSelection(threadIds) {
+    this.selectedThreadIds.clear();
+    if (!threadIds) return;
+    for (const id of threadIds) this.selectedThreadIds.add(id);
+  }
+
+  clearSelection() {
+    this.selectedThreadIds.clear();
   }
 }
 

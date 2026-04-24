@@ -90,6 +90,7 @@ type MessagesService interface {
 	SendMessage(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
 	Resend(ctx context.Context, id uint64) (messages.SendResult, error)
 	SoftDelete(ctx context.Context, id uint64) error
+	SoftDeleteThread(ctx context.Context, kind, key string) (int, error)
 	MarkRead(ctx context.Context, id uint64) error
 	MarkUnread(ctx context.Context, id uint64) error
 	ReloadTacticalCallsigns(ctx context.Context) error

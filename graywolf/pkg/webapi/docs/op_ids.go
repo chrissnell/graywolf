@@ -220,6 +220,7 @@ const (
 	OpGetMessage              = "getMessage"
 	OpSendMessage             = "sendMessage"
 	OpDeleteMessage           = "deleteMessage"
+	OpDeleteMessageThread     = "deleteMessageThread"
 	OpMarkMessageRead         = "markMessageRead"
 	OpMarkMessageUnread       = "markMessageUnread"
 	OpResendMessage           = "resendMessage"

@@ -465,6 +465,31 @@ func (s *Service) SoftDelete(ctx context.Context, id uint64) error {
 	return nil
 }
 
+// SoftDeleteThread soft-deletes every message belonging to (kind, key).
+// Cancels each row's pending retry and emits one EventMessageDeleted
+// per deleted row so SSE subscribers can prune the UI without a full
+// rollup refetch. Returns the number of rows deleted (zero is not an
+// error — empty thread is a no-op).
+func (s *Service) SoftDeleteThread(ctx context.Context, kind, key string) (int, error) {
+	ids, err := s.cfg.Store.SoftDeleteByThread(ctx, kind, key)
+	if err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if err := s.retry.CancelRetry(ctx, id); err != nil {
+			s.logger.Debug("messages SoftDeleteThread cancel-retry failed",
+				"error", err, "id", id)
+		}
+		s.hub.Publish(Event{
+			Type:       EventMessageDeleted,
+			MessageID:  id,
+			ThreadKind: kind,
+			ThreadKey:  key,
+		})
+	}
+	return len(ids), nil
+}
+
 // MarkRead / MarkUnread proxy to the store for REST handlers.
 func (s *Service) MarkRead(ctx context.Context, id uint64) error {
 	return s.cfg.Store.MarkRead(ctx, id)

@@ -30,14 +30,15 @@ import (
 // Every method is individually overridable so each test controls only
 // the paths it exercises.
 type fakeMessagesSvc struct {
-	sendFn           func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
-	resendFn         func(ctx context.Context, id uint64) (messages.SendResult, error)
-	softDeleteFn     func(ctx context.Context, id uint64) error
-	markReadFn       func(ctx context.Context, id uint64) error
-	markUnreadFn     func(ctx context.Context, id uint64) error
-	reloadTacticalFn func(ctx context.Context) error
-	reloadPrefsFn    func(ctx context.Context) error
-	hub              *messages.EventHub
+	sendFn             func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
+	resendFn           func(ctx context.Context, id uint64) (messages.SendResult, error)
+	softDeleteFn       func(ctx context.Context, id uint64) error
+	softDeleteThreadFn func(ctx context.Context, kind, key string) (int, error)
+	markReadFn         func(ctx context.Context, id uint64) error
+	markUnreadFn       func(ctx context.Context, id uint64) error
+	reloadTacticalFn   func(ctx context.Context) error
+	reloadPrefsFn      func(ctx context.Context) error
+	hub                *messages.EventHub
 }
 
 func (f *fakeMessagesSvc) SendMessage(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
@@ -57,6 +58,12 @@ func (f *fakeMessagesSvc) SoftDelete(ctx context.Context, id uint64) error {
 		return f.softDeleteFn(ctx, id)
 	}
 	return nil
+}
+func (f *fakeMessagesSvc) SoftDeleteThread(ctx context.Context, kind, key string) (int, error) {
+	if f.softDeleteThreadFn != nil {
+		return f.softDeleteThreadFn(ctx, kind, key)
+	}
+	return 0, nil
 }
 func (f *fakeMessagesSvc) MarkRead(ctx context.Context, id uint64) error {
 	if f.markReadFn != nil {
@@ -594,6 +601,62 @@ func TestDeleteMessage_NotFound(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestDeleteMessageThread_204(t *testing.T) {
+	type call struct {
+		kind, key string
+	}
+	calls := make(chan call, 1)
+	svc := &fakeMessagesSvc{
+		softDeleteThreadFn: func(ctx context.Context, kind, key string) (int, error) {
+			calls <- call{kind, key}
+			return 3, nil
+		},
+	}
+	_, mux, _ := newMessagesTestServer(t, svc)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/messages/threads/dm/W1ABC", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case c := <-calls:
+		if c.kind != messages.ThreadKindDM || c.key != "W1ABC" {
+			t.Errorf("unexpected call: %+v", c)
+		}
+	case <-time.After(time.Second):
+		t.Error("SoftDeleteThread not called")
+	}
+}
+
+func TestDeleteMessageThread_BadKind(t *testing.T) {
+	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
+	req := httptest.NewRequest(http.MethodDelete, "/api/messages/threads/bogus/W1ABC", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteMessageThread_EmptyThreadStillNoContent(t *testing.T) {
+	// SoftDeleteThread returning (0, nil) is not an error — empty thread
+	// is a valid no-op so the client can idempotently retry.
+	svc := &fakeMessagesSvc{
+		softDeleteThreadFn: func(ctx context.Context, kind, key string) (int, error) {
+			return 0, nil
+		},
+	}
+	_, mux, _ := newMessagesTestServer(t, svc)
+	req := httptest.NewRequest(http.MethodDelete, "/api/messages/threads/tactical/SAR", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

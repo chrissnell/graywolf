@@ -4261,6 +4261,40 @@ paths:
       summary: Tactical thread participants
       tags:
         - messages
+  /messages/threads/{kind}/{key}:
+    delete:
+      operationId: deleteMessageThread
+      parameters:
+        - description: Thread kind (dm | tactical)
+          in: path
+          name: kind
+          required: true
+          type: string
+        - description: Thread key (peer callsign for DM, tactical label for tactical)
+          in: path
+          name: key
+          required: true
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete message thread
+      tags:
+        - messages
   /packets:
     get:
       operationId: listPackets

@@ -93,6 +93,16 @@ export function deleteMessage(id) {
 }
 
 /**
+ * DELETE /api/messages/threads/{kind}/{key} — soft-deletes every
+ * message in a thread (204). Used by the inbox bulk-delete UI.
+ * @param {string} kind  'dm' | 'tactical'
+ * @param {string} key   peer callsign (DM) or tactical label
+ */
+export function deleteMessageThread(kind, key) {
+  return api.delete(`/messages/threads/${encodeURIComponent(kind)}/${encodeURIComponent(key)}`);
+}
+
+/**
  * POST /api/messages/{id}/read — 204.
  * @param {number} id
  */

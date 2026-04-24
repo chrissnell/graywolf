@@ -302,6 +302,39 @@ func (s *Store) SoftDelete(ctx context.Context, id uint64) error {
 	return s.db.WithContext(ctx).Delete(&configstore.Message{}, id).Error
 }
 
+// SoftDeleteByThread soft-deletes every non-deleted message belonging
+// to the given (kind, key) pair and returns the IDs of the rows that
+// were tombstoned. Caller is responsible for cancelling per-row retries
+// and emitting deletion events. Empty kind or key is a no-op.
+//
+// The ID list and the UPDATE happen in a single transaction so a
+// concurrent insert into the same thread doesn't get hidden behind the
+// snapshot — either it lands before the SELECT (and gets deleted) or
+// after (and stays alive).
+func (s *Store) SoftDeleteByThread(ctx context.Context, kind, key string) ([]uint64, error) {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	key = strings.ToUpper(strings.TrimSpace(key))
+	if kind == "" || key == "" {
+		return nil, nil
+	}
+	var ids []uint64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&configstore.Message{}).
+			Where("thread_kind = ? AND thread_key = ?", kind, key).
+			Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		return tx.Where("id IN ?", ids).Delete(&configstore.Message{}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 // ClearFailureReason writes an empty failure_reason column on the row
 // via a field-selective update — NOT a whole-row Save. Used by the
 // sender after a successful governor submit to clear any stale reason

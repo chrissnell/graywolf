@@ -28,7 +28,7 @@
   import { dayHeader, dayKey } from './time.js';
   import { messages as store } from '../../lib/messagesStore.svelte.js';
   import {
-    listMessages, markRead, markUnread, deleteMessage, resendMessage,
+    listMessages, markRead, markUnread, resendMessage,
   } from '../../api/messages.js';
   import { refreshNow } from '../../lib/messagesTransport.js';
 
@@ -330,14 +330,6 @@
     refreshNow();
     fetchThread();
   }
-  async function onDelete()    {
-    if (menuMsg?.id != null) {
-      await deleteMessage(menuMsg.id).catch(() => {});
-      refreshNow();
-      fetchThread();
-    }
-  }
-
   // --- Meta drawer wiring.
   let metaOpen = $state(false);
   /** @type {any} */
@@ -456,7 +448,6 @@
     {onCopyCall}
     {onMarkUnread}
     {onResend}
-    {onDelete}
     onReplyPrivate={replyPrivately}
   />
   <MessageMetaPanel bind:open={metaOpen} msg={metaMsg} />

@@ -43,6 +43,7 @@ func (s *Server) registerMessages(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/messages/tactical/{key}/participants", s.getTacticalParticipants)
 	mux.HandleFunc("GET /api/messages/{id}", s.getMessage)
 	mux.HandleFunc("DELETE /api/messages/{id}", s.deleteMessage)
+	mux.HandleFunc("DELETE /api/messages/threads/{kind}/{key}", s.deleteMessageThread)
 	mux.HandleFunc("POST /api/messages/{id}/read", s.markMessageRead)
 	mux.HandleFunc("POST /api/messages/{id}/unread", s.markMessageUnread)
 	mux.HandleFunc("POST /api/messages/{id}/resend", s.resendMessage)
@@ -336,6 +337,49 @@ func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := svc.SoftDelete(r.Context(), id); err != nil {
 		s.internalError(w, r, "delete message", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteMessageThread soft-deletes every message in a thread keyed by
+// (kind, key). Used by the inbox bulk-delete UI: the client checks one
+// or more conversations and the toolbar Delete button hits this
+// endpoint once per selected thread.
+//
+// Returns 204 even when the thread has no rows so the client can
+// idempotently retry — useful when an SSE delete races the click.
+//
+// @Summary  Delete message thread
+// @Tags     messages
+// @ID       deleteMessageThread
+// @Param    kind path string true "Thread kind (dm | tactical)"
+// @Param    key  path string true "Thread key (peer callsign for DM, tactical label for tactical)"
+// @Success  204  "No Content"
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Failure  503  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /messages/threads/{kind}/{key} [delete]
+func (s *Server) deleteMessageThread(w http.ResponseWriter, r *http.Request) {
+	svc, ok := s.requireMessagesSvc(w)
+	if !ok {
+		return
+	}
+	kind := strings.ToLower(strings.TrimSpace(r.PathValue("kind")))
+	key := strings.ToUpper(strings.TrimSpace(r.PathValue("key")))
+	switch kind {
+	case messages.ThreadKindDM, messages.ThreadKindTactical:
+	default:
+		badRequest(w, "kind must be dm or tactical")
+		return
+	}
+	if key == "" {
+		badRequest(w, "key is required")
+		return
+	}
+	if _, err := svc.SoftDeleteThread(r.Context(), kind, key); err != nil {
+		s.internalError(w, r, "delete message thread", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

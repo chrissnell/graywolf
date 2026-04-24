@@ -458,6 +458,68 @@ func TestSoftDeleteAndUnscopedFind(t *testing.T) {
 	}
 }
 
+func TestSoftDeleteByThread(t *testing.T) {
+	ctx := context.Background()
+	store, _ := newTestStore(t)
+
+	// Two DM messages with peer W1ABC, one DM with peer N0XYZ, and
+	// one tactical row that shares the W1ABC label as its key — the
+	// thread tuple (kind, key) should keep them separate.
+	in1 := seedMsg("in", "K0ABC", "W1ABC", "K0ABC", "hi", "001")
+	in2 := seedMsg("in", "K0ABC", "W1ABC", "K0ABC", "again", "002")
+	in3 := seedMsg("in", "K0ABC", "N0XYZ", "K0ABC", "ignore me", "003")
+	tac := seedMsg("in", "K0ABC", "W1ABC", "EOC", "tactical", "004")
+	tac.ThreadKind = ThreadKindTactical
+	tac.ToCall = "EOC"
+	tac.ThreadKey = "EOC"
+
+	for _, m := range []*configstore.Message{in1, in2, in3, tac} {
+		if err := store.Insert(ctx, m); err != nil {
+			t.Fatalf("Insert: %v", err)
+		}
+	}
+
+	ids, err := store.SoftDeleteByThread(ctx, ThreadKindDM, "W1ABC")
+	if err != nil {
+		t.Fatalf("SoftDeleteByThread: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("want 2 deleted ids, got %d (%v)", len(ids), ids)
+	}
+	got := map[uint64]bool{ids[0]: true, ids[1]: true}
+	if !got[in1.ID] || !got[in2.ID] {
+		t.Errorf("expected ids to include %d and %d, got %v", in1.ID, in2.ID, ids)
+	}
+
+	for _, m := range []*configstore.Message{in1, in2} {
+		if _, err := store.GetByID(ctx, m.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Errorf("row %d should be soft-deleted, got %v", m.ID, err)
+		}
+	}
+	if _, err := store.GetByID(ctx, in3.ID); err != nil {
+		t.Errorf("DM with different peer should survive: %v", err)
+	}
+	if _, err := store.GetByID(ctx, tac.ID); err != nil {
+		t.Errorf("tactical row sharing the key should survive: %v", err)
+	}
+
+	// No-op on empty thread or thread with no rows.
+	ids2, err := store.SoftDeleteByThread(ctx, ThreadKindDM, "W1ABC")
+	if err != nil {
+		t.Fatalf("re-delete: %v", err)
+	}
+	if len(ids2) != 0 {
+		t.Errorf("re-delete should return empty list, got %v", ids2)
+	}
+	ids3, err := store.SoftDeleteByThread(ctx, "", "W1ABC")
+	if err != nil {
+		t.Fatalf("empty kind: %v", err)
+	}
+	if len(ids3) != 0 {
+		t.Errorf("empty kind should be no-op, got %v", ids3)
+	}
+}
+
 func TestUpdateRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store, _ := newTestStore(t)

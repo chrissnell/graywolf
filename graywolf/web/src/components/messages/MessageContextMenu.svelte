@@ -12,7 +12,11 @@
   //   - Copy text / Copy callsign / Copy raw
   //   - Mark unread                   (incoming only)
   //   - Resend                        (outgoing + terminal state only)
-  //   - Delete                        (opens AlertDialog confirm)
+  //
+  // Deletion is intentionally NOT in this menu — the only delete path is
+  // the inbox checkboxes + Delete toolbar (ConversationList). Adding a
+  // per-bubble shortcut here would create a parallel UX with weaker
+  // confirmation guarantees.
 
   import { onMount } from 'svelte';
   import { Icon } from '@chrissnell/chonky-ui';
@@ -30,7 +34,6 @@
    *    onReplyPrivate?: (fromCall: string) => void,
    *    onMarkUnread?: (msg: any) => void,
    *    onResend?: (msg: any) => void,
-   *    onDelete?: (msg: any) => void,
    *  }}
    */
   let {
@@ -46,7 +49,6 @@
     onReplyPrivate,
     onMarkUnread,
     onResend,
-    onDelete,
   } = $props();
 
   const isOut = $derived(msg?.direction === 'out');
@@ -142,11 +144,6 @@
         <span>Resend</span>
       </button>
     {/if}
-    <div class="sep" role="separator"></div>
-    <button type="button" class="item danger" role="menuitem" onclick={() => pick(onDelete)}>
-      <Icon name="trash-2" size="sm" />
-      <span>Delete</span>
-    </button>
   </div>
 {/if}
 
@@ -194,8 +191,6 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
-  .item.danger { color: var(--color-danger); }
-  .item.danger:hover:not([disabled]) { background: var(--color-danger-muted); }
   .item.primary {
     color: var(--color-primary);
     font-weight: 600;

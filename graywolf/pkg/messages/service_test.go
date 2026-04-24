@@ -441,6 +441,59 @@ func TestService_SoftDelete_EmitsEvent(t *testing.T) {
 	}
 }
 
+func TestService_SoftDeleteThread_BulkEmitsEvents(t *testing.T) {
+	svc, rig, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	// Two messages targeting the same DM peer, one to a different peer.
+	a, err := svc.SendMessage(ctx, SendMessageRequest{OurCall: "N0CALL", To: "W1ABC", Text: "one"})
+	if err != nil {
+		t.Fatalf("send a: %v", err)
+	}
+	b, err := svc.SendMessage(ctx, SendMessageRequest{OurCall: "N0CALL", To: "W1ABC", Text: "two"})
+	if err != nil {
+		t.Fatalf("send b: %v", err)
+	}
+	other, err := svc.SendMessage(ctx, SendMessageRequest{OurCall: "N0CALL", To: "K9ZZZ", Text: "leave alone"})
+	if err != nil {
+		t.Fatalf("send other: %v", err)
+	}
+	drainQuickly(rig.eventC, 100*time.Millisecond)
+
+	n, err := svc.SoftDeleteThread(ctx, ThreadKindDM, "W1ABC")
+	if err != nil {
+		t.Fatalf("SoftDeleteThread: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("deleted count = %d, want 2", n)
+	}
+
+	got := drainQuickly(rig.eventC, 300*time.Millisecond)
+	deleted := map[uint64]bool{}
+	for _, e := range got {
+		if e.Type == EventMessageDeleted {
+			deleted[e.MessageID] = true
+		}
+	}
+	if !deleted[a.ID] || !deleted[b.ID] {
+		t.Errorf("expected delete events for %d and %d; got %+v", a.ID, b.ID, got)
+	}
+	if deleted[other.ID] {
+		t.Errorf("did not expect delete event for %d", other.ID)
+	}
+
+	// Other-peer DM should still be reachable.
+	if _, err := svc.cfg.Store.GetByID(ctx, other.ID); err != nil {
+		t.Errorf("other peer row should survive: %v", err)
+	}
+}
+
 func TestService_TxHookIntegration_FlipsSentAt(t *testing.T) {
 	svc, rig, hookReg, cleanup := buildService(t)
 	defer cleanup()
