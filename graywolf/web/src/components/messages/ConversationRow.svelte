@@ -127,12 +127,12 @@
       <label
         class="lead-checkbox"
         aria-label={`Select ${thread?.key || 'conversation'}`}
-        onclick={handleCheckboxClick}
       >
         <input
           type="checkbox"
           checked={selected}
           onchange={handleSelectChange}
+          onclick={handleCheckboxClick}
           data-testid="conversation-row-checkbox"
         />
       </label>
