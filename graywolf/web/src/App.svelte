@@ -7,6 +7,7 @@
   import { start as startMessagesTransport } from './lib/messagesTransport.js';
   import { releaseNotes } from './lib/releaseNotesStore.svelte.js';
   import { unitsState } from './lib/settings/units-store.svelte.js';
+  import { themeState } from './lib/settings/theme-store.svelte.js';
 
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
@@ -100,6 +101,7 @@
       // Pull the persisted units preference so every page formats
       // distances/altitudes/speeds the way the operator last saved.
       unitsState.fetchConfig();
+      themeState.fetchConfig();
     }
   });
 </script>
