@@ -143,6 +143,7 @@ func (s *Store) Migrate() error {
 		&StationConfig{},
 		&UpdatesConfig{},
 		&UnitsConfig{},
+		&ThemeConfig{},
 	); err != nil {
 		_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 		return err
