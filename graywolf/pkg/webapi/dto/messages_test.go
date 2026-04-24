@@ -175,16 +175,19 @@ func TestValidateMessageText(t *testing.T) {
 	if err := ValidateMessageText(ok); err != nil {
 		t.Errorf("normal text should pass: %v", err)
 	}
-	// Exactly 67 chars — boundary.
-	at := ""
-	for i := 0; i < 67; i++ {
-		at += "x"
+	// The DTO now gates only on the hard upper ceiling — the effective
+	// 67-char default cap is enforced by the preference-aware sender
+	// path, not here, so long-mode operators aren't blocked at this
+	// layer. 200 chars must pass; 201 must not.
+	at200 := ""
+	for range MaxMessageTextUnsafe {
+		at200 += "x"
 	}
-	if err := ValidateMessageText(at); err != nil {
-		t.Errorf("67 chars should pass: %v", err)
+	if err := ValidateMessageText(at200); err != nil {
+		t.Errorf("%d chars (at ceiling) should pass: %v", MaxMessageTextUnsafe, err)
 	}
-	if err := ValidateMessageText(at + "y"); err == nil {
-		t.Error("68 chars should fail")
+	if err := ValidateMessageText(at200 + "y"); err == nil {
+		t.Errorf("%d chars (over ceiling) should fail", MaxMessageTextUnsafe+1)
 	}
 }
 

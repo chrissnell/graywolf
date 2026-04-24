@@ -136,17 +136,20 @@ const MaxMessageText = 67
 // bulletins/status/position frames are unaffected.
 const MaxMessageTextUnsafe = 200
 
-// ValidateMessageText rejects empty or over-long bodies against the
-// conservative default cap. REST callers see this 400 first; the
-// sender path re-checks against the effective cap (per MessagePreferences)
-// so non-REST callers (APRS-IS inbound routing, bot-initiated sends,
-// retry resend) share the same policy.
+// ValidateMessageText rejects empty or patently over-long bodies. The
+// upper bound here is MaxMessageTextUnsafe (the hard AX.25 headroom
+// ceiling), not the default 67-char cap — the authoritative per-operator
+// cap lives on pkg/messages.Sender and consults MessagePreferences, so
+// a long-mode user with override=200 can compose up to that without
+// the DTO rejecting them first. In default mode the sender-path gate
+// still rejects anything over 67 chars; the DTO's role is just to
+// short-circuit blatantly oversized bodies before they hit the sender.
 func ValidateMessageText(text string) error {
 	if text == "" {
 		return fmt.Errorf("text is required")
 	}
-	if len(text) > MaxMessageText {
-		return fmt.Errorf("text exceeds %d characters (got %d)", MaxMessageText, len(text))
+	if len(text) > MaxMessageTextUnsafe {
+		return fmt.Errorf("text exceeds %d characters (got %d)", MaxMessageTextUnsafe, len(text))
 	}
 	return nil
 }
