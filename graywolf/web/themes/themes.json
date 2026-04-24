@@ -4,12 +4,12 @@
     {
       "id": "graywolf",
       "name": "Graywolf",
-      "description": "Dark with blue accents. The original graywolf palette."
+      "description": "The default light palette. Orange primary with green accent."
     },
     {
       "id": "graywolf-night",
       "name": "Graywolf Night",
-      "description": "Deeper dark with muted blue. Easier on the eyes for overnight nets."
+      "description": "Dark variant of the default palette. Easier on the eyes after sunset."
     },
     {
       "id": "grayscale",
@@ -24,7 +24,7 @@
     {
       "id": "chonky",
       "name": "Chonky",
-      "description": "Light with orange primary and green accent. Matches the chonky-ui docs site."
+      "description": "Same light palette as Graywolf but with strong, solid, white-text badges."
     }
   ]
 }

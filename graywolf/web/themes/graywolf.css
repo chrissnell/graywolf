@@ -1,38 +1,64 @@
 /*
- * Graywolf — the original graywolf palette. Dark, GitHub-style, blue
- * accents. This is the default theme.
+ * Graywolf -- the default light palette. Chonky-ui's signature orange
+ * primary, green accent, on light surfaces. Packet-log badges use solid
+ * saturated backgrounds with white text so each type is instantly
+ * scannable without the "blue-on-light-blue" legibility trap.
  */
 :root[data-theme="graywolf"] {
-  --color-bg: #0d1117;
-  --color-surface: #161b22;
-  --color-surface-raised: #21262d;
-  --color-border: #30363d;
-  --color-border-subtle: #21262d;
-  --color-text: #e6edf3;
-  --color-text-muted: #8b949e;
-  --color-text-dim: #6e7681;
-  --color-accent: #58a6ff;
-  --color-primary: #58a6ff;
-  --color-primary-hover: #79c0ff;
-  --color-primary-muted: rgba(88, 166, 255, 0.15);
-  --color-primary-fg: #0d1117;
-  --color-danger: #f85149;
-  --color-danger-hover: #ff6e67;
-  --color-danger-muted: rgba(248, 81, 73, 0.15);
-  --color-danger-fg: #fff;
-  --color-success: #3fb950;
-  --color-success-fill: #3fb950;
-  --color-success-muted: rgba(63, 185, 80, 0.15);
-  --color-success-fg: #fff;
-  --color-warning: #d29922;
-  --color-warning-muted: rgba(210, 153, 34, 0.15);
-  --color-warning-fg: #000;
-  --color-info: #58a6ff;
-  --color-info-muted: rgba(88, 166, 255, 0.15);
-  --color-info-fg: #fff;
-  --color-btn-bg: #21262d;
-  --color-btn-bg-hover: #30363d;
-  --color-btn-border: #30363d;
+  --color-bg: #ffffff;
+  --color-surface: #f8f8f8;
+  --color-surface-raised: #f0f0f0;
+  --color-border: #dddddd;
+  --color-border-subtle: #eeeeee;
+  --color-text: #111111;
+  --color-text-muted: #555555;
+  --color-text-dim: #888888;
+  --color-accent: #215e21;
+  --color-primary: #ffaa00;
+  --color-primary-hover: #ffbb33;
+  --color-primary-muted: rgba(255, 170, 0, 0.12);
+  --color-primary-fg: #000000;
+  --color-danger: #c41010;
+  --color-danger-hover: #d42020;
+  --color-danger-muted: rgba(214, 2, 2, 0.12);
+  --color-danger-fg: #ffffff;
+  --color-success: #215e21;
+  --color-success-fill: #215e21;
+  --color-success-muted: rgba(33, 94, 33, 0.15);
+  --color-success-fg: #ffffff;
+  --color-warning: #c48a10;
+  --color-warning-muted: rgba(196, 138, 16, 0.15);
+  --color-warning-fg: #ffffff;
+  --color-info: #1a6e94;
+  --color-info-muted: rgba(26, 110, 148, 0.15);
+  --color-info-fg: #ffffff;
+  --color-btn-bg: #f0f0f0;
+  --color-btn-bg-hover: #e4e4e4;
+  --color-btn-border: #cccccc;
   --font-mono: 'Inconsolata', 'Courier New', monospace;
-  --radius: 6px;
+  --radius: 2px;
 }
+
+/* Packet-log badges: solid saturated background + white text. Distinct
+   hue per APRS packet type for at-a-glance scanning. */
+:root[data-theme="graywolf"] .pkt-b-type[data-type='position']     { background: #1e7ec3; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='weather']      { background: #2d8a2d; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='telemetry']    { background: #c48a10; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='message']      { background: #0a8c9a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='object']       { background: #6e3dab; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='item']         { background: #4a9f4a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='mic-e']        { background: #c4378a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='status']       { background: #5c6b7a; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='capabilities'] { background: #8a4cbe; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='df-report'],
+:root[data-theme="graywolf"] .pkt-b-type[data-type='query']        { background: #d66e00; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-type[data-type='third-party'],
+:root[data-theme="graywolf"] .pkt-b-type[data-type='unknown']      { background: #757575; color: #ffffff; }
+
+/* Origin badges (bcn / digi / igate): solid + white, aligned with the
+   packet-type palette. */
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='bcn']          { background: #d66e00; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='digi']         { background: #1e7ec3; color: #ffffff; }
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='igate'],
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='igate-is2rf'],
+:root[data-theme="graywolf"] .pkt-b-origin[data-origin='igate-rf2is'] { background: #8a4cbe; color: #ffffff; }

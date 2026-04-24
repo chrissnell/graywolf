@@ -1,5 +1,6 @@
 /*
- * Grayscale Night — dark, monochrome.
+ * Grayscale Night -- dark, monochrome. Single neutral badge tone
+ * matches the theme's no-chromatic-accents discipline.
  */
 :root[data-theme="grayscale-night"] {
   --color-bg: #000000;
@@ -34,4 +35,11 @@
   --color-btn-border: #2a2a2a;
   --font-mono: 'Inconsolata', 'Courier New', monospace;
   --radius: 2px;
+}
+
+/* Single-tone packet and origin badges. */
+:root[data-theme="grayscale-night"] .pkt-b-type[data-type],
+:root[data-theme="grayscale-night"] .pkt-b-origin[data-origin] {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e0e0e0;
 }

@@ -76,8 +76,8 @@ Each of `danger`, `success`, `warning`, `info` has a trio:
 
 ### Typography / shape (optional)
 - `--font-mono` — monospaced stack. Leave alone unless you have reason.
-- `--radius` — corner radius in px. Graywolf uses 6px; grayscale/chonky
-  use 2px.
+- `--radius` — corner radius in px. Most shipped themes use 2px;
+  Graywolf Night bumps it to 6px for a softer feel at low contrast.
 
 ## Contrast and legibility
 
