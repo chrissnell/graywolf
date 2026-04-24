@@ -363,6 +363,22 @@ type ThemeConfig struct {
 	UpdatedAt time.Time `json:"-"`
 }
 
+// MapsConfig is the singleton row that captures the operator's basemap
+// source choice plus the device-local registration with auth.nw5w.com.
+// Source is one of "osm" (public OSM raster tiles) or "graywolf"
+// (private maps.nw5w.com vector tiles, requires Token). An empty Token
+// means the user hasn't registered this device yet, in which case the
+// frontend forces Source to "osm" until they do.
+type MapsConfig struct {
+	ID           uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Source       string    `gorm:"not null;default:'osm'" json:"source"`
+	Callsign     string    `gorm:"not null;default:''" json:"callsign"`
+	Token        string    `gorm:"not null;default:''" json:"-"`
+	RegisteredAt time.Time `json:"registered_at,omitempty"`
+	CreatedAt    time.Time `json:"-"`
+	UpdatedAt    time.Time `json:"-"`
+}
+
 // GPSConfig is a singleton (id=1) row for the GPS receiver.
 type GPSConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
