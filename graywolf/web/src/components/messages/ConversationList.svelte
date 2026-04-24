@@ -214,8 +214,23 @@
   let confirmOpen = $state(false);
   let deleting = $state(false);
 
+  // Resolve which thread IDs the Delete pill targets right now.
+  // Selection has priority; if nothing is checked, fall back to the
+  // currently open thread so the pill still does something useful when
+  // the user is reading a single conversation.
+  const deleteTargetIds = $derived.by(() => {
+    if (messages.selectedThreadIds.size > 0) {
+      return [...messages.selectedThreadIds];
+    }
+    if (activeThreadId && messages.conversations.has(activeThreadId)) {
+      return [activeThreadId];
+    }
+    return [];
+  });
+  const canDelete = $derived(deleteTargetIds.length > 0);
+
   function openDeleteConfirm() {
-    if (messages.selectedThreadIds.size === 0) return;
+    if (!canDelete) return;
     confirmOpen = true;
   }
 
@@ -226,7 +241,7 @@
   async function runDelete() {
     if (deleting) return;
     deleting = true;
-    const ids = [...messages.selectedThreadIds];
+    const ids = deleteTargetIds;
     let okCount = 0;
     const failures = [];
     for (const threadId of ids) {
@@ -262,10 +277,13 @@
   }
 
   // Phrasing for the confirm dialog body. Tactical-aware so the user
-  // knows the unsubscribe side-effect before they commit.
+  // knows the unsubscribe side-effect before they commit. Operates on
+  // the same target set as runDelete so the dialog can never describe
+  // one thing while the action does another.
   const confirmSummary = $derived.by(() => {
-    const ids = [...messages.selectedThreadIds];
-    const threads = ids.map((id) => messages.conversations.get(id)).filter(Boolean);
+    const threads = deleteTargetIds
+      .map((id) => messages.conversations.get(id))
+      .filter(Boolean);
     const n = threads.length;
     const tacticals = threads.filter((t) => t.kind === 'tactical');
     const tacticalCount = tacticals.length;
@@ -311,19 +329,27 @@
           </button>
         {/each}
       </div>
-      {#if visibleSelectedCount > 0}
-        <button
-          type="button"
-          class="delete-btn"
-          onclick={openDeleteConfirm}
-          disabled={deleting}
-          aria-label={`Delete ${visibleSelectedCount} selected conversation${visibleSelectedCount === 1 ? '' : 's'}`}
-          title={`Delete ${visibleSelectedCount} selected`}
-          data-testid="bulk-delete-btn"
-        >
-          <Icon name="trash-2" size="sm" />
-        </button>
-      {/if}
+      <button
+        type="button"
+        class="delete-pill"
+        onclick={openDeleteConfirm}
+        disabled={!canDelete || deleting}
+        aria-label={
+          deleteTargetIds.length > 1
+            ? `Delete ${deleteTargetIds.length} selected conversations`
+            : 'Delete conversation'
+        }
+        title={
+          deleteTargetIds.length === 0
+            ? 'Open or select a conversation to delete'
+            : deleteTargetIds.length === 1
+              ? 'Delete this conversation'
+              : `Delete ${deleteTargetIds.length} selected`
+        }
+        data-testid="bulk-delete-btn"
+      >
+        Delete
+      </button>
       <button
         type="button"
         class="new-btn"
@@ -536,7 +562,36 @@
     border-color: var(--color-primary);
   }
 
-  .delete-btn,
+  /* Delete is styled as a red pill so it sits in the same visual rhythm
+     as the filter pills next to it; always visible per UX direction so
+     the affordance never disappears. Disabled when nothing is targetable
+     (no selection AND no open thread). */
+  .delete-pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-danger);
+    border: 1px solid var(--color-danger);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    line-height: 1;
+  }
+  .delete-pill:hover:not(:disabled) {
+    background: var(--color-danger);
+    color: white;
+  }
+  .delete-pill:focus-visible {
+    outline: 2px solid var(--color-danger);
+    outline-offset: 2px;
+  }
+  .delete-pill:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   .new-btn {
     display: inline-flex;
     align-items: center;
@@ -551,22 +606,6 @@
     flex-shrink: 0;
     color: var(--color-text-muted);
     transition: background 0.12s, color 0.12s, border-color 0.12s;
-  }
-  .delete-btn {
-    color: var(--color-danger);
-  }
-  .delete-btn:hover:not(:disabled) {
-    background: var(--color-danger-muted);
-    border-color: var(--color-danger);
-  }
-  .delete-btn:focus-visible {
-    outline: 2px solid var(--color-danger);
-    outline-offset: 2px;
-  }
-  .delete-btn:disabled {
-    color: var(--color-text-dim);
-    cursor: not-allowed;
-    opacity: 0.6;
   }
   .new-btn:hover {
     background: var(--color-surface-raised);
