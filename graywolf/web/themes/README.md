@@ -13,7 +13,10 @@ changes, no OpenAPI regen, no build-config edits.
    cp grayscale.css field-day-2026.css
    ```
 3. **Rename the selector** inside the new file from
-   `[data-theme="grayscale"]` to `[data-theme="field-day-2026"]`.
+   `:root[data-theme="grayscale"]` to `:root[data-theme="field-day-2026"]`.
+   The `:root` prefix matters — it bumps specificity to (0,2,0) so
+   your theme wins against chonky-ui's own `:root` baseline block,
+   which is emitted later in the bundle.
 4. **Tweak the CSS variables** (full list below). You don't have to
    override every one — unset variables fall through to chonky-ui's
    `:root` defaults, but most themes override the whole palette for

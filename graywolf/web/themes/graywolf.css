@@ -2,7 +2,7 @@
  * Graywolf — the original graywolf palette. Dark, GitHub-style, blue
  * accents. This is the default theme.
  */
-[data-theme="graywolf"] {
+:root[data-theme="graywolf"] {
   --color-bg: #0d1117;
   --color-surface: #161b22;
   --color-surface-raised: #21262d;

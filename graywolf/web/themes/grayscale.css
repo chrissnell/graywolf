@@ -1,7 +1,7 @@
 /*
  * Grayscale — light, monochrome. No chromatic accents; only greys.
  */
-[data-theme="grayscale"] {
+:root[data-theme="grayscale"] {
   --color-bg: #ffffff;
   --color-surface: #f5f5f5;
   --color-surface-raised: #e8e8e8;

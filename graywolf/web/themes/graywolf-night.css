@@ -2,7 +2,7 @@
  * Graywolf Night — deeper dark, more muted blue. For long overnight
  * nets.
  */
-[data-theme="graywolf-night"] {
+:root[data-theme="graywolf-night"] {
   --color-bg: #05080c;
   --color-surface: #0b0f14;
   --color-surface-raised: #121821;

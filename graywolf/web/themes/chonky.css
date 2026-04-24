@@ -2,7 +2,7 @@
  * Chonky — light with orange primary and green accent. Matches the
  * chrissnell.com/styles/chonky documentation site.
  */
-[data-theme="chonky"] {
+:root[data-theme="chonky"] {
   --color-bg: #ffffff;
   --color-surface: #f8f8f8;
   --color-surface-raised: #f0f0f0;

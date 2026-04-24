@@ -1,7 +1,7 @@
 /*
  * Grayscale Night — dark, monochrome.
  */
-[data-theme="grayscale-night"] {
+:root[data-theme="grayscale-night"] {
   --color-bg: #000000;
   --color-surface: #0c0c0c;
   --color-surface-raised: #1a1a1a;
