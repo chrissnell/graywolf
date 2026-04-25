@@ -669,8 +669,8 @@
     font-size: 10px;
     font-weight: 600;
     color: #ffffff;
-    background: rgba(28, 28, 28, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    background: rgba(28, 28, 28, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.6);
     border-radius: 2px;
     white-space: nowrap;
     max-width: 120px;
