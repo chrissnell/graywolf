@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 // ParseFlags parses the graywolf command-line flags (everything after
@@ -58,9 +59,30 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 	if leftover := fs.Args(); len(leftover) > 0 {
 		return Config{}, fmt.Errorf("unexpected positional arguments: %v", leftover)
 	}
+	// Derive tile-cache-dir from --config's parent dir when --config was
+	// supplied but --tile-cache-dir was not. Avoids the "./tiles" CWD-
+	// relative trap on systemd installs (CWD is "/", read-only). Operators
+	// using --config /var/lib/graywolf/graywolf.db get
+	// /var/lib/graywolf/tiles automatically.
+	if !flagWasSet(fs, "tile-cache-dir") && flagWasSet(fs, "config") {
+		cfg.TileCacheDir = filepath.Join(filepath.Dir(cfg.DBPath), "tiles")
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// flagWasSet reports whether the named flag was explicitly set on the
+// command line. fs.Visit only iterates flags actually passed by the
+// user, so a flag inheriting its default value is not visited.
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
 }
 

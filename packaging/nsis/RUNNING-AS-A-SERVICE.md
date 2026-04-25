@@ -20,6 +20,7 @@ choco install nssm
 nssm install Graywolf "C:\Program Files\Graywolf\graywolf.exe" `
   -config "C:\ProgramData\Graywolf\graywolf.db" `
   -history-db "C:\ProgramData\Graywolf\graywolf-history.db" `
+  -tile-cache-dir "C:\ProgramData\Graywolf\tiles" `
   -modem "C:\Program Files\Graywolf\graywolf-modem.exe" `
   -http 127.0.0.1:8080
 
@@ -36,7 +37,7 @@ policy on its own.
 
 ```powershell
 sc.exe create Graywolf `
-  binPath= "\"C:\Program Files\Graywolf\graywolf.exe\" -config \"C:\ProgramData\Graywolf\graywolf.db\" -history-db \"C:\ProgramData\Graywolf\graywolf-history.db\" -modem \"C:\Program Files\Graywolf\graywolf-modem.exe\" -http 127.0.0.1:8080" `
+  binPath= "\"C:\Program Files\Graywolf\graywolf.exe\" -config \"C:\ProgramData\Graywolf\graywolf.db\" -history-db \"C:\ProgramData\Graywolf\graywolf-history.db\" -tile-cache-dir \"C:\ProgramData\Graywolf\tiles\" -modem \"C:\Program Files\Graywolf\graywolf-modem.exe\" -http 127.0.0.1:8080" `
   start= auto `
   DisplayName= "Graywolf APRS"
 
