@@ -374,6 +374,10 @@ type MapsConfig struct {
 	Source       string    `gorm:"not null;default:'osm'" json:"source"`
 	Callsign     string    `gorm:"not null;default:''" json:"callsign"`
 	Token        string    `gorm:"not null;default:''" json:"-"`
+	// RegisteredAt is the zero time when no registration has occurred;
+	// kept as a value type (not *time.Time) so the JSON contract is
+	// always a string and Token=="" remains the single source of truth
+	// for whether this device is registered.
 	RegisteredAt time.Time `json:"registered_at"`
 	CreatedAt    time.Time `json:"-"`
 	UpdatedAt    time.Time `json:"-"`
