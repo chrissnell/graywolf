@@ -48,6 +48,7 @@
   // use a FAB + bottom-sheet drawer like the legacy Leaflet UI.
   let isMobile = $state(false);
   let panelOpen = $state(false);
+  let layerCardCollapsed = $state(false);
   let layerToggles = $state({
     stations: true,
     trails: true,
@@ -353,14 +354,44 @@
       {@render panelBody()}
     </InfoPanel>
   {:else}
-    <!-- Desktop: perma-card at top-left, like the legacy Leaflet UI. -->
-    <aside class="layer-card" aria-label="Map Layers">
-      <header class="layer-card-header">
+    <!-- Desktop: perma-card at top-left, like the legacy Leaflet UI.
+         A caret in the header collapses the body; the header stays
+         visible so the operator can re-expand it. -->
+    <aside
+      class="layer-card"
+      class:collapsed={layerCardCollapsed}
+      aria-label="Map Layers"
+    >
+      <button
+        type="button"
+        class="layer-card-header"
+        onclick={() => (layerCardCollapsed = !layerCardCollapsed)}
+        aria-expanded={!layerCardCollapsed}
+        aria-controls="layer-card-body"
+      >
         <h2>Map Layers</h2>
-      </header>
-      <div class="layer-card-body">
-        {@render panelBody()}
-      </div>
+        <svg
+          class="layer-card-caret"
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+        >
+          <polyline
+            points="2,4 6,8 10,4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+      {#if !layerCardCollapsed}
+        <div id="layer-card-body" class="layer-card-body">
+          {@render panelBody()}
+        </div>
+      {/if}
     </aside>
   {/if}
 
@@ -432,8 +463,21 @@
     z-index: 50;
   }
   .layer-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
     padding: 8px 12px;
+    border: none;
     border-bottom: 1px solid var(--map-overlay-border);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+  }
+  .layer-card.collapsed .layer-card-header {
+    border-bottom: none;
   }
   .layer-card-header h2 {
     margin: 0;
@@ -442,6 +486,18 @@
     text-transform: uppercase;
     letter-spacing: 1px;
     color: var(--color-text-muted);
+  }
+  .layer-card-caret {
+    color: var(--color-text-muted);
+    transition: transform 120ms ease;
+    flex-shrink: 0;
+  }
+  .layer-card.collapsed .layer-card-caret {
+    transform: rotate(-90deg);
+  }
+  .layer-card-header:hover .layer-card-caret,
+  .layer-card-header:hover h2 {
+    color: var(--color-text);
   }
   .layer-card-body {
     padding: 10px 12px;
