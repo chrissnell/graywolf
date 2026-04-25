@@ -40,13 +40,13 @@
   }
 }
 
-.maps-cta {
+:global(.maps-cta) {
   /* Primary CTA spans the row on mobile, sits inline on tablet+. */
   width: 100%;
   min-height: 44px;
 }
 @media (min-width: 600px) {
-  .maps-cta {
+  :global(.maps-cta) {
     width: auto;
   }
 }
