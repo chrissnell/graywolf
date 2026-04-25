@@ -39,8 +39,8 @@
         { path: '/gps', label: 'GPS' },
         { path: '/position-log', label: 'Position Log' },
         { path: '/simulation', label: 'Simulation' },
-        { path: '/preferences', label: 'Preferences' },
         { path: '/preferences/maps', label: 'Maps' },
+        { path: '/preferences', label: 'General' },
       ],
     },
     {
@@ -108,6 +108,22 @@
   let isMapActive = $derived(currentPath === '/map' || currentPath.startsWith('/map/'));
   // Messages route match — '/messages' or any '/messages/*' sub-route.
   let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
+
+  // Per-group active item: longest-prefix match wins. This prevents e.g.
+  // '/preferences/maps' from highlighting both the Maps entry and a
+  // 'General' (/preferences) entry — only the most specific match lights up.
+  function activePathFor(items, path) {
+    let best = '';
+    for (const it of items) {
+      if (path === it.path || path.startsWith(it.path + '/')) {
+        if (it.path.length > best.length) best = it.path;
+      }
+    }
+    return best;
+  }
+  let activeGroupPaths = $derived(
+    navGroups.map((g) => activePathFor(g.items, currentPath)),
+  );
 </script>
 
 {#snippet navItems()}
@@ -127,7 +143,7 @@
       </li>
     {/each}
   </ul>
-  {#each navGroups as group}
+  {#each navGroups as group, groupIdx}
     <div class="nav-group">
       <h2 class="nav-group-label">{group.label}</h2>
       <ul class="nav-list">
@@ -138,7 +154,7 @@
               use:link
               class="nav-link"
               class:has-icon={item.icon}
-              class:active={currentPath === item.path || currentPath.startsWith(item.path + '/')}
+              class:active={item.path === activeGroupPaths[groupIdx]}
               aria-current={currentPath === item.path ? 'page' : undefined}
               onclick={onNavClick}
             >

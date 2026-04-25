@@ -292,7 +292,7 @@
         <input
           type="checkbox"
           checked={layerToggles.stations}
-          onchange={(e) => (layerToggles = { ...layerToggles, stations: e.currentTarget.checked })}
+          onchange={(e) => (layerToggles.stations = e.currentTarget.checked)}
         />
         <span>Stations</span>
       </label>
@@ -300,7 +300,7 @@
         <input
           type="checkbox"
           checked={layerToggles.trails}
-          onchange={(e) => (layerToggles = { ...layerToggles, trails: e.currentTarget.checked })}
+          onchange={(e) => (layerToggles.trails = e.currentTarget.checked)}
         />
         <span>Trails</span>
       </label>
@@ -308,7 +308,7 @@
         <input
           type="checkbox"
           checked={layerToggles.weather}
-          onchange={(e) => (layerToggles = { ...layerToggles, weather: e.currentTarget.checked })}
+          onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
         />
         <span>Weather</span>
       </label>
@@ -316,7 +316,7 @@
         <input
           type="checkbox"
           checked={layerToggles.myPosition}
-          onchange={(e) => (layerToggles = { ...layerToggles, myPosition: e.currentTarget.checked })}
+          onchange={(e) => (layerToggles.myPosition = e.currentTarget.checked)}
         />
         <span>My Position</span>
       </label>
@@ -578,30 +578,45 @@
     }
   }
 
-  /* The stations layer attaches .gw-station-marker / .gw-station-label
-     elements outside this component's scope (MapLibre owns the DOM), so
-     these have to be :global. */
+  /* The stations layer attaches .gw-station-marker / .gw-station-label /
+     .gw-station-icon elements outside this component's scope (MapLibre
+     owns the DOM), so these have to be :global.
+
+     Layout: the marker is a 21x21 square (the icon) with anchor:'center'
+     so its geometric center sits on the lat/lon. The callsign label is
+     positioned absolutely to the right of the icon so it doesn't shift
+     the anchor point regardless of label length. */
   :global(.gw-station-marker) {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    position: relative;
+    width: 21px;
+    height: 21px;
     cursor: pointer;
     pointer-events: auto;
     user-select: none;
   }
+  :global(.gw-station-icon) {
+    width: 21px;
+    height: 21px;
+  }
   :global(.gw-station-label) {
-    margin-top: 2px;
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 4px;
     padding: 1px 4px;
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: 10px;
     font-weight: 600;
-    color: var(--map-overlay-fg);
-    background: var(--map-overlay-bg);
+    color: #ffffff;
+    background: rgba(28, 28, 28, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.7);
     border-radius: 2px;
     white-space: nowrap;
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 
   /* Station popup: theme-aware container + tip + close button. */

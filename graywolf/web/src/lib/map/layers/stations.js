@@ -36,8 +36,9 @@ export function mountStationsLayer(map, getStations, {
     const icon = createAprsIconElement({
       table: s.symbol_table,
       symbol: s.symbol_code,
-      displayPx: 28,
+      displayPx: 21,
     });
+    icon.classList.add('gw-station-icon');
     root.appendChild(icon);
 
     const label = document.createElement('div');
@@ -84,7 +85,11 @@ export function mountStationsLayer(map, getStations, {
       const entry = markers.get(callsign);
       if (!entry) {
         const root = createRoot(s);
-        const marker = new maplibregl.Marker({ element: root, anchor: 'bottom' })
+        // anchor:'center' centers the icon square on the lat/lon. The
+        // callsign label is absolutely positioned to the right of the
+        // icon (see CSS in LiveMapV2.svelte) so it doesn't shift the
+        // anchor point.
+        const marker = new maplibregl.Marker({ element: root, anchor: 'center' })
           .setLngLat([pos.lon, pos.lat])
           .addTo(map);
         markers.set(callsign, { marker });

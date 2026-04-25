@@ -46,6 +46,7 @@ export function mountMyPositionLayer(map, getMyPosition, {
   let visible = true;
   function setVisible(next) {
     visible = !!next;
+    console.debug('[my-position] setVisible', { next, hasMarker: !!marker });
     if (marker) {
       marker.getElement().style.display = visible ? '' : 'none';
     }
