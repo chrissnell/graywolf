@@ -7,16 +7,12 @@
   import { US_STATES } from '../lib/maps/state-list.js';
   import { formatBytes } from '../lib/maps/format-bytes.js';
   import StatePicker from '../lib/maps/state-picker.svelte';
-  import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import wolfLogoUrl from '../assets/graywolf.svg';
 
   let consented = $state(false);
   let callsignInput = $state('');
   let lastError = $state(null); // { ok, status, code, message }
-
-  let revealedToken = $state(null);
-  let revealing = $state(false);
 
   let pickerOpen = $state(false);
 
@@ -71,46 +67,7 @@
     }
   }
 
-  async function onShowToken() {
-    if (revealedToken) {
-      revealedToken = null;
-      return;
-    }
-    revealing = true;
-    revealedToken = await mapsState.revealToken();
-    revealing = false;
-  }
-
-  async function onCopyToken() {
-    const t = revealedToken ?? mapsState.tokenOnce;
-    if (!t) return;
-    try {
-      await navigator.clipboard.writeText(t);
-      toasts.success('Token copied to clipboard');
-    } catch {
-      toasts.error("Couldn't copy — try the download button instead");
-    }
-  }
-
-  function onDownloadToken() {
-    const t = revealedToken ?? mapsState.tokenOnce;
-    if (!t) return;
-    const blob = new Blob(
-      [`callsign: ${mapsState.callsign}\ntoken: ${t}\n`],
-      { type: 'text/plain' },
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `graywolf-maps-${mapsState.callsign.toLowerCase()}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
   async function onReregister() {
-    revealedToken = null;
     lastError = null;
     const result = await mapsState.register(mapsState.callsign);
     if (!result.ok) {
@@ -240,31 +197,20 @@
       {/if}
     </p>
 
-    {#if mapsState.tokenOnce}
-      <div class="token-once" role="region" aria-label="Token displayed once">
-        <p class="prose">
-          <strong>Save this token.</strong> Servers only emit it once;
-          if you lose it, click "Re-register this device" below to get a new one.
-        </p>
-        <code class="token-display">{mapsState.tokenOnce}</code>
-        <div class="maps-row">
-          <Button class="maps-cta" onclick={onCopyToken}>Copy</Button>
-          <Button class="maps-cta" onclick={onDownloadToken}>Download as file</Button>
-        </div>
-      </div>
-    {:else}
-      <div class="maps-row">
-        <Button class="maps-cta" onclick={onShowToken} disabled={revealing}>
-          {revealing ? 'Loading...' : revealedToken ? 'Hide token' : 'Show token'}
-        </Button>
-        <Button class="maps-cta" variant="default" onclick={onReregister} disabled={mapsState.registering}>
-          {mapsState.registering ? 'Re-registering...' : 'Re-register this device'}
-        </Button>
-      </div>
-      {#if revealedToken}
-        <code class="token-display">{revealedToken}</code>
-      {/if}
-    {/if}
+    <p class="form-hint">
+      If something goes wrong with this device's registration, click below to
+      get a fresh one. Your other devices keep working.
+    </p>
+    <div class="maps-row">
+      <Button
+        class="maps-cta"
+        variant="default"
+        onclick={onReregister}
+        disabled={mapsState.registering}
+      >
+        {mapsState.registering ? 'Re-registering...' : 'Re-register this device'}
+      </Button>
+    </div>
 
     {#if lastError}
       <div class="error-card" role="alert">

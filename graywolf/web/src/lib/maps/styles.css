@@ -141,26 +141,6 @@
   font-weight: 600;
   color: var(--accent);
 }
-.token-once {
-  margin: 12px 0;
-  padding: 12px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--accent) 6%, var(--bg-secondary));
-}
-.token-display {
-  display: block;
-  margin: 12px 0;
-  padding: 12px;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  word-break: break-all;
-  border-radius: 4px;
-  user-select: all;
-}
-
 /* Source radio group uses chonky-ui Radio components. The sublabel is rendered
  * outside the Radio (chonky's Radio takes a single label prop, no children)
  * and indented to align under the label text rather than the radio dot. */
