@@ -39,6 +39,12 @@ type Config struct {
 	// can point it at a writable location.
 	HistoryDBPath string
 
+	// TileCacheDir is the directory for the offline PMTiles cache
+	// (-tile-cache-dir). The directory is created on startup if missing.
+	// Used by Plan 2's offline downloads; Plan 1 only establishes the
+	// path and ensures it exists.
+	TileCacheDir string
+
 	// FlacFile, when non-empty, overrides the first audio device with a
 	// FLAC file for offline testing (-flac).
 	FlacFile string
@@ -66,6 +72,7 @@ func DefaultConfig() Config {
 	return Config{
 		DBPath:          defaultDBPath(),
 		HistoryDBPath:   defaultHistoryDBPath(),
+		TileCacheDir:    defaultTileCacheDir(),
 		HTTPAddr:        "127.0.0.1:8080",
 		ShutdownTimeout: 10 * time.Second,
 	}

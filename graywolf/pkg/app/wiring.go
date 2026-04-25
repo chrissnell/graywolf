@@ -77,6 +77,19 @@ func (a *App) wireServices(ctx context.Context) error {
 		return err
 	}
 
+	// --- Offline tile cache directory ----------------------------------
+	//
+	// Plan 1 only establishes the directory; Plan 2's PMTiles downloader
+	// will write into it. Created here (idempotent via MkdirAll) before
+	// any other I/O so a permission failure aborts startup with a clear
+	// error naming the path rather than surfacing later as a confusing
+	// download/read failure.
+	if a.cfg.TileCacheDir != "" {
+		if err := os.MkdirAll(a.cfg.TileCacheDir, 0o755); err != nil {
+			return fmt.Errorf("create tile cache dir %q: %w", a.cfg.TileCacheDir, err)
+		}
+	}
+
 	// --- Configstore ---------------------------------------------------
 	//
 	// Opened synchronously here (not inside the configstore component's
