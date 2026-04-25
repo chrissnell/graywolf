@@ -176,6 +176,17 @@
   border: 0;
 }
 
+.source-offline-hint {
+  margin: -4px 0 0 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+}
+
 .downloaded-list {
   list-style: none;
   margin: 12px 0;

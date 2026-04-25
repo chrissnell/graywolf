@@ -117,8 +117,9 @@
     }
   }
 
-  // Three radio options. "Graywolf private maps (offline)" is disabled in
-  // Plan 1 because no PMTiles download exists yet; Plan 2 enables it.
+  // Two radio options. Offline tiles are preferred automatically when
+  // downloads exist; the Graywolf row picks them up transparently and
+  // falls back to online elsewhere.
   const sources = [
     {
       value: 'osm',
@@ -127,25 +128,17 @@
     },
     {
       value: 'graywolf',
-      label: 'Graywolf private maps (online)',
-      sublabel: 'Polished cartography. Requires registration and an internet connection.',
-    },
-    {
-      value: 'graywolf-offline',
-      label: 'Graywolf private maps (offline)',
-      sublabel: 'Coming soon -- pre-downloaded state tiles for off-grid use.',
-      disabled: true,
+      label: 'Graywolf private maps',
+      sublabel: 'Polished cartography. Requires registration.',
     },
   ];
 
   function isDisabled(src) {
-    if (src.disabled) return true;
     if (src.value === 'graywolf' && !mapsState.registered) return true;
     return false;
   }
 
   function onSourceChange(v) {
-    if (v === 'graywolf-offline') return; // Plan 2 stub
     mapsState.setSource(v);
   }
 </script>
@@ -296,6 +289,13 @@
           <span class="radio-sublabel">{src.sublabel}</span>
         </span>
       </label>
+      {#if src.value === 'graywolf' && mapsState.source === 'graywolf' && downloadsState.completed.size > 0}
+        <p class="source-offline-hint">
+          Using offline tiles for {downloadsState.completed.size}
+          of 51 state{downloadsState.completed.size === 1 ? '' : 's'}.
+          Areas without offline coverage fall back to online.
+        </p>
+      {/if}
     {/each}
   </fieldset>
 </Box>
