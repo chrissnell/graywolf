@@ -27,6 +27,7 @@
   import LiveMap from './routes/LiveMap.svelte';
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
+  import MapsSettings from './routes/MapsSettings.svelte';
   import Messages from './routes/Messages.svelte';
 
   const routes = {
@@ -49,6 +50,7 @@
     '/position-log': PositionLog,
     '/logs': Logs,
     '/preferences': Preferences,
+    '/preferences/maps': MapsSettings,
     '/about': About,
   };
 
