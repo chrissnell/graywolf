@@ -34,7 +34,7 @@ type MapsConfigResponse struct {
 	Source       string    `json:"source"`
 	Callsign     string    `json:"callsign,omitempty"`
 	Registered   bool      `json:"registered"`
-	RegisteredAt time.Time `json:"registered_at,omitempty"`
+	RegisteredAt time.Time `json:"registered_at"`
 	Token        string    `json:"token,omitempty"`
 }
 
