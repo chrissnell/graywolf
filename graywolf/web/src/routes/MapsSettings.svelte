@@ -183,7 +183,7 @@
         <Input
           id="maps-callsign-input"
           type="text"
-          placeholder="N5XXX"
+          placeholder="YOUR CALLSIGN"
           bind:value={callsignInput}
           autocapitalize="characters"
           autocomplete="off"
