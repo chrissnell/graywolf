@@ -12,6 +12,7 @@
   import { mountTrailsLayer } from '../lib/map/layers/trails.js';
   import { mountWeatherLayer } from '../lib/map/layers/weather.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
+  import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
 
@@ -20,6 +21,7 @@
   let trailsLayer = null;
   let weatherLayer = null;
   let hoverPathLayer = null;
+  let myPositionLayer = null;
   let mapRef = null;
   let activePopup = null;
 
@@ -99,6 +101,22 @@
       },
       onMarkerClick: (s) => openStationPopup(map, s),
     });
+    myPositionLayer = mountMyPositionLayer(map, () => dataStore.myPosition, {
+      onMarkerEnter: () => {
+        // If myPosition has a matching station record, show its hover path.
+        // The /api/position DTO does not currently include a callsign, so
+        // this gracefully no-ops; left wired for forward compatibility.
+        if (activePopup) return;
+        const my = dataStore.myPosition;
+        if (!my?.callsign) return;
+        const myStation = dataStore.stations.get(my.callsign);
+        if (myStation) hoverPathLayer?.show(myStation);
+      },
+      onMarkerLeave: () => {
+        if (activePopup) return;
+        hoverPathLayer?.clear();
+      },
+    });
 
     function updateBounds() {
       const b = map.getBounds();
@@ -121,9 +139,11 @@
   $effect(() => {
     const _size = dataStore.stations.size;
     const _isMetric = unitsState.isMetric;
+    const _myPos = dataStore.myPosition; // track
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
     if (weatherLayer) weatherLayer.refresh();
+    if (myPositionLayer) myPositionLayer.refresh();
   });
 
   onDestroy(() => {
@@ -133,10 +153,12 @@
     trailsLayer?.destroy();
     weatherLayer?.destroy();
     hoverPathLayer?.destroy();
+    myPositionLayer?.destroy();
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
     hoverPathLayer = null;
+    myPositionLayer = null;
     mapRef = null;
   });
 </script>
@@ -208,5 +230,21 @@
     font-size: 22px;
     width: 36px;
     height: 36px;
+  }
+
+  /* Own position marker. Copied verbatim from LiveMap.svelte:844 so the
+     MapLibre marker DOM (which is outside this component's scope) picks
+     up the same styling. Migrates to a shared stylesheet at task 31. */
+  :global(.own-position-marker) {
+    background: none !important;
+    border: none !important;
+  }
+  :global(.own-position) {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    border: 2px solid var(--color-text);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
   }
 </style>
