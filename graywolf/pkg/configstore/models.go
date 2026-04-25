@@ -383,6 +383,22 @@ type MapsConfig struct {
 	UpdatedAt    time.Time `json:"-"`
 }
 
+// MapsDownload tracks one state's offline PMTiles archive. The file
+// itself lives at <tile-cache-dir>/<slug>.pmtiles; this row is just
+// the metadata. Status transitions: pending -> downloading ->
+// complete | error. A retry restarts at pending.
+type MapsDownload struct {
+	ID              uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Slug            string    `gorm:"not null;uniqueIndex" json:"slug"`
+	Status          string    `gorm:"not null;default:'pending'" json:"status"` // pending|downloading|complete|error
+	BytesTotal      int64     `gorm:"not null;default:0" json:"bytes_total"`
+	BytesDownloaded int64     `gorm:"not null;default:0" json:"bytes_downloaded"`
+	DownloadedAt    time.Time `json:"downloaded_at"`
+	ErrorMessage    string    `gorm:"not null;default:''" json:"error_message,omitempty"`
+	CreatedAt       time.Time `json:"-"`
+	UpdatedAt       time.Time `json:"-"`
+}
+
 // GPSConfig is a singleton (id=1) row for the GPS receiver.
 type GPSConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
