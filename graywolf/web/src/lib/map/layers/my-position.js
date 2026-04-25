@@ -2,10 +2,9 @@
 // operator's own beacon position. Fetched once at start by the data
 // store; updated reactively if the data store ever refreshes it.
 //
-// Visual mirrors the legacy own-position-marker dot styling. The
-// element gets the `own-position-marker` and `own-position` classes
-// so the existing global CSS in LiveMap.svelte's <style> block (which
-// will be carried over to LiveMapV2 in task 28/31) applies.
+// The element gets the `own-position-marker` and `own-position`
+// classes so the global CSS rules in LiveMapV2.svelte's <style>
+// block apply.
 
 import maplibregl from 'maplibre-gl';
 

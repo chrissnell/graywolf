@@ -1,10 +1,7 @@
-// Station popup HTML factory. Mirrors station-layer.js's _popupContent()
-// so the cutover (task 29) is a visual no-op. The CSS classes (.stn-popup,
-// .stn-hdr, .stn-call, .stn-sub, .stn-coords, .stn-meta, .stn-via,
-// .stn-path, .stn-comment, .badge, .b-rx, .b-tx, .b-is, .via-is,
-// .via-rf, .via-rf-hops, .path-link) are defined :global() in
-// LiveMap.svelte for now; once Leaflet is removed those will move
-// into a shared stylesheet.
+// Station popup HTML factory. The CSS classes (.stn-popup, .stn-hdr,
+// .stn-call, .stn-sub, .stn-coords, .stn-meta, .stn-via, .stn-path,
+// .stn-comment, .badge, .b-rx, .b-tx, .b-is, .via-is, .via-rf,
+// .via-rf-hops, .path-link) are defined :global() in LiveMapV2.svelte.
 
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText } from './popup-helpers.js';
 
