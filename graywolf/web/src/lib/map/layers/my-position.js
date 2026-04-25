@@ -44,8 +44,25 @@ export function mountMyPositionLayer(map, getMyPosition, {
     lastKey = key;
   }
 
+  let visible = true;
+  function setVisible(next) {
+    visible = !!next;
+    if (marker) {
+      marker.getElement().style.display = visible ? '' : 'none';
+    }
+  }
+
+  // Wrap refresh so newly-minted markers honor the current visibility.
+  const wrappedRefresh = () => {
+    refresh();
+    if (!visible && marker) {
+      marker.getElement().style.display = 'none';
+    }
+  };
+
   return {
-    refresh,
+    refresh: wrappedRefresh,
+    setVisible,
     destroy() {
       if (marker) { marker.remove(); marker = null; }
     },
