@@ -34,5 +34,8 @@
     "@rollup/rollup-darwin-x64": "4.60.1",
     "@rollup/rollup-linux-arm64-gnu": "4.60.1",
     "@rollup/rollup-linux-x64-gnu": "4.60.1"
+  },
+  "overrides": {
+    "glob": "^10.4.5"
   }
 }

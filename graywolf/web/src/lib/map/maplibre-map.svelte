@@ -178,7 +178,16 @@
           `shield\n${network}\n${ref}\n${name}`,
       },
     )
-      .filterImageID((id) => String(id).startsWith('shield\n'))
+      .filterImageID((id) => {
+        const s = String(id);
+        if (!s.startsWith('shield\n')) return false;
+        // Skip shields with no route number — americana defines these
+        // (NHS corridors, named-only routes, unsigned co-routings) but
+        // the renderer can't draw them and would emit "Didn't produce"
+        // warnings for every tile. The style falls back to plain text.
+        const ref = s.split('\n')[2] ?? '';
+        return ref.length > 0;
+      })
       .renderOnMaplibreGL(map);
 
     // Catch-all for non-shield image IDs the americana style asks for
