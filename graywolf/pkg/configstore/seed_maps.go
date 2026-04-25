@@ -38,10 +38,16 @@ func (s *Store) GetMapsConfig(ctx context.Context) (MapsConfig, error) {
 	return c, nil
 }
 
-// UpsertMapsConfig stores the singleton maps preference. Values other
-// than "osm" or "graywolf" are rejected so a bad PUT can't corrupt the
-// row. When c.ID == 0 and a row already exists, the existing ID is
-// adopted so the singleton invariant is preserved.
+// UpsertMapsConfig persists the singleton maps preference. Source must
+// be one of the two recognized values; anything else is rejected so a
+// bad PUT can't corrupt the row. ID is adopted from any existing row
+// to preserve the singleton invariant.
+//
+// This is a full-replace operation: every mutable column (source,
+// callsign, token, registered_at) is overwritten with the value on c.
+// Callers that intend to update only one field (e.g. just Source)
+// MUST GetMapsConfig first, mutate the returned struct, then pass it
+// here — otherwise empty fields silently un-register the device.
 func (s *Store) UpsertMapsConfig(ctx context.Context, c MapsConfig) error {
 	if c.Source != mapsSourceOSM && c.Source != mapsSourceGraywolf {
 		return errors.New("source must be 'osm' or 'graywolf'")

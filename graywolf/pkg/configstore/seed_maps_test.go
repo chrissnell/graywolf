@@ -41,6 +41,9 @@ func TestUpsertMapsConfig_RoundTrip(t *testing.T) {
 	if got.Source != "graywolf" || got.Callsign != "N5XXX" || got.Token != in.Token {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
+	if !got.RegisteredAt.Equal(now) {
+		t.Fatalf("RegisteredAt mismatch: got %v, want %v", got.RegisteredAt, now)
+	}
 }
 
 func TestUpsertMapsConfig_RejectsBadSource(t *testing.T) {
@@ -67,5 +70,12 @@ func TestUpsertMapsConfig_PreservesIDAcrossUpserts(t *testing.T) {
 	second, _ := s.GetMapsConfig(ctx)
 	if second.ID != first.ID {
 		t.Fatalf("singleton invariant broken: id %d -> %d", first.ID, second.ID)
+	}
+	var count int64
+	if err := s.DB().Model(&MapsConfig{}).Count(&count).Error; err != nil {
+		t.Fatalf("count maps_configs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 row after two upserts, got %d", count)
 	}
 }
