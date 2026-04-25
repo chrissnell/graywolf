@@ -109,3 +109,63 @@
   border-radius: 4px;
   user-select: all;
 }
+
+.radio-group {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  min-height: 44px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.radio-row:hover:not(.disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.radio-row.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.radio-row input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.radio-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.radio-sublabel {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

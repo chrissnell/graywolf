@@ -74,6 +74,38 @@
       lastError = result;
     }
   }
+
+  // Three radio options. "Graywolf private maps (offline)" is disabled in
+  // Plan 1 because no PMTiles download exists yet; Plan 2 enables it.
+  const sources = [
+    {
+      value: 'osm',
+      label: 'OpenStreetMap public tiles',
+      sublabel: 'Free, available everywhere, less polished cartography.',
+    },
+    {
+      value: 'graywolf',
+      label: 'Graywolf private maps (online)',
+      sublabel: 'Polished cartography. Requires registration and an internet connection.',
+    },
+    {
+      value: 'graywolf-offline',
+      label: 'Graywolf private maps (offline)',
+      sublabel: 'Coming soon -- pre-downloaded state tiles for off-grid use.',
+      disabled: true,
+    },
+  ];
+
+  function isDisabled(src) {
+    if (src.disabled) return true;
+    if (src.value === 'graywolf' && !mapsState.registered) return true;
+    return false;
+  }
+
+  function onSourceChange(v) {
+    if (v === 'graywolf-offline') return; // Plan 2 stub
+    mapsState.setSource(v);
+  }
 </script>
 
 <PageHeader title="Maps" subtitle="Choose your basemap source" />
@@ -203,6 +235,28 @@
     {/if}
   </Box>
 {/if}
+
+<Box title="Map source">
+  <fieldset class="radio-group">
+    <legend class="visually-hidden">Choose a basemap source</legend>
+    {#each sources as src}
+      <label class="radio-row" class:disabled={isDisabled(src)}>
+        <input
+          type="radio"
+          name="map-source"
+          value={src.value}
+          checked={mapsState.source === src.value}
+          disabled={isDisabled(src)}
+          onchange={(e) => onSourceChange(e.currentTarget.value)}
+        />
+        <span class="radio-text">
+          <span class="radio-label">{src.label}</span>
+          <span class="radio-sublabel">{src.sublabel}</span>
+        </span>
+      </label>
+    {/each}
+  </fieldset>
+</Box>
 
 <style>
   @import '../lib/maps/styles.css';
