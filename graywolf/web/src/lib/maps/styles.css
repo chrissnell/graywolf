@@ -40,6 +40,23 @@
   }
 }
 
+/* maps-row-aligned: variant of .maps-row used by the registration form
+ * where the row holds a single-line input + single-line button. Stretches
+ * children to equal heights so the chonky Button and Input visually align. */
+@media (min-width: 600px) {
+  .maps-row-aligned {
+    align-items: stretch;
+  }
+}
+
+/* Wrap div around the callsign Input grows to fill the row on desktop;
+ * the chonky button keeps its natural width. min-width: 0 prevents the
+ * input from overflowing its container in flex layouts. */
+.maps-callsign-input {
+  flex: 1;
+  min-width: 0;
+}
+
 :global(.maps-cta) {
   /* Primary CTA spans the row on mobile, sits inline on tablet+. */
   width: 100%;
@@ -53,7 +70,7 @@
 
 /* iOS Safari auto-zooms <input> with font-size <16px. chonky-ui's --text-base
  * is 0.9rem (~14.4px), so force 16px on the callsign input to suppress zoom. */
-:global(.maps-input-label input) {
+:global(.maps-callsign-input input) {
   font-size: 16px;
 }
 
@@ -116,64 +133,33 @@
   user-select: all;
 }
 
-.radio-group {
-  border: none;
-  margin: 0;
-  padding: 0;
+/* Source radio group uses chonky-ui Radio components. The sublabel is rendered
+ * outside the Radio (chonky's Radio takes a single label prop, no children)
+ * and indented to align under the label text rather than the radio dot. */
+:global(.source-radio-group) {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
 }
-.radio-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
-  min-height: 44px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.radio-row:hover:not(.disabled) {
-  background: var(--bg-hover);
-  border-color: var(--accent);
-}
-.radio-row.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.radio-row input[type="radio"] {
-  width: 20px;
-  height: 20px;
-  margin-top: 2px;
-  accent-color: var(--accent);
-  flex-shrink: 0;
-}
-.radio-text {
+
+.source-radio-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
-.radio-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.radio-sublabel {
+
+.source-sublabel {
+  margin: 0 0 0 32px;
   font-size: 13px;
   color: var(--text-muted);
+  line-height: 1.4;
 }
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+
+@media (max-width: 480px) {
+  .source-sublabel {
+    margin-left: 28px;
+    font-size: 12px;
+  }
 }
 
 .source-offline-hint {
