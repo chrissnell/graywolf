@@ -3,11 +3,15 @@
   import { Box, Button, Input, Toggle } from '@chrissnell/chonky-ui';
   import { mapsState, ISSUES_URL } from '../lib/settings/maps-store.svelte.js';
   import { validateCallsign } from '../lib/maps/callsign.js';
+  import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
 
   let consented = $state(false);
   let callsignInput = $state('');
   let lastError = $state(null); // { ok, status, code, message }
+
+  let revealedToken = $state(null);
+  let revealing = $state(false);
 
   let validation = $derived(validateCallsign(callsignInput));
   let canSubmit = $derived(consented && validation.ok && !mapsState.registering);
@@ -21,6 +25,53 @@
       lastError = result;
     } else {
       callsignInput = '';
+    }
+  }
+
+  async function onShowToken() {
+    if (revealedToken) {
+      revealedToken = null;
+      return;
+    }
+    revealing = true;
+    revealedToken = await mapsState.revealToken();
+    revealing = false;
+  }
+
+  async function onCopyToken() {
+    const t = revealedToken ?? mapsState.tokenOnce;
+    if (!t) return;
+    try {
+      await navigator.clipboard.writeText(t);
+      toasts.success('Token copied to clipboard');
+    } catch {
+      toasts.error("Couldn't copy — try the download button instead");
+    }
+  }
+
+  function onDownloadToken() {
+    const t = revealedToken ?? mapsState.tokenOnce;
+    if (!t) return;
+    const blob = new Blob(
+      [`callsign: ${mapsState.callsign}\ntoken: ${t}\n`],
+      { type: 'text/plain' },
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `graywolf-maps-${mapsState.callsign.toLowerCase()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function onReregister() {
+    revealedToken = null;
+    lastError = null;
+    const result = await mapsState.register(mapsState.callsign);
+    if (!result.ok) {
+      lastError = result;
     }
   }
 </script>
@@ -98,6 +149,53 @@
         {:else if lastError.code === 'blocked'}
           <p>This callsign has been blocked. Please open an issue at the link below to ask the operator about it.</p>
         {/if}
+        <a class="error-link" href={ISSUES_URL} target="_blank" rel="noreferrer noopener">
+          Open a GitHub issue
+        </a>
+      </div>
+    {/if}
+  </Box>
+{/if}
+
+{#if mapsState.registered}
+  <Box title="Registered">
+    <p class="prose">
+      This device is registered as <code>{mapsState.callsign}</code>.
+      {#if mapsState.registeredAt}
+        Registered {mapsState.registeredAt.toLocaleString()}.
+      {/if}
+    </p>
+
+    {#if mapsState.tokenOnce}
+      <div class="token-once" role="region" aria-label="Token displayed once">
+        <p class="prose">
+          <strong>Save this token.</strong> Servers only emit it once;
+          if you lose it, click "Re-register this device" below to get a new one.
+        </p>
+        <code class="token-display">{mapsState.tokenOnce}</code>
+        <div class="maps-row">
+          <Button class="maps-cta" onclick={onCopyToken}>Copy</Button>
+          <Button class="maps-cta" onclick={onDownloadToken}>Download as file</Button>
+        </div>
+      </div>
+    {:else}
+      <div class="maps-row">
+        <Button class="maps-cta" onclick={onShowToken} disabled={revealing}>
+          {revealing ? 'Loading...' : revealedToken ? 'Hide token' : 'Show token'}
+        </Button>
+        <Button class="maps-cta" variant="default" onclick={onReregister} disabled={mapsState.registering}>
+          {mapsState.registering ? 'Re-registering...' : 'Re-register this device'}
+        </Button>
+      </div>
+      {#if revealedToken}
+        <code class="token-display">{revealedToken}</code>
+      {/if}
+    {/if}
+
+    {#if lastError}
+      <div class="error-card" role="alert">
+        <h3>Re-registration failed</h3>
+        <p>{lastError.message}</p>
         <a class="error-link" href={ISSUES_URL} target="_blank" rel="noreferrer noopener">
           Open a GitHub issue
         </a>
