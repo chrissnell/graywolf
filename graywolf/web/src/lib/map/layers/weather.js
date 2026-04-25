@@ -87,8 +87,12 @@ export function mountWeatherLayer(map, getStations) {
   }
 
   function destroy() {
-    if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID);
-    if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
+    // Map may already be torn down by the shell's onDestroy; guard so
+    // a stale removal call doesn't throw and abort sibling cleanups.
+    try {
+      if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID);
+      if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
+    } catch { /* map already removed */ }
   }
 
   function setVisible(visible) {

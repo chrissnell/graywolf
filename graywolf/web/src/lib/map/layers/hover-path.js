@@ -143,12 +143,15 @@ export function mountHoverPathLayer(map, getOwnPosition = () => null) {
   }
 
   function destroy() {
-    for (const id of [NODES_LAYER, PATH_LINE_LAYER, PATH_GLOW_LAYER]) {
-      if (map.getLayer(id)) map.removeLayer(id);
-    }
-    for (const id of [NODES_SRC, PATH_SRC]) {
-      if (map.getSource(id)) map.removeSource(id);
-    }
+    // Guard: shell's onDestroy may have run map.remove() already.
+    try {
+      for (const id of [NODES_LAYER, PATH_LINE_LAYER, PATH_GLOW_LAYER]) {
+        if (map.getLayer(id)) map.removeLayer(id);
+      }
+      for (const id of [NODES_SRC, PATH_SRC]) {
+        if (map.getSource(id)) map.removeSource(id);
+      }
+    } catch { /* map already removed */ }
   }
 
   // setVisible: provided for API symmetry with the other layers, even

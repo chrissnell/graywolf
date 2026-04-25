@@ -53,8 +53,13 @@ export function mountTrailsLayer(map, getStations) {
   }
 
   function destroy() {
-    if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID);
-    if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
+    // Parent route's onDestroy runs after the map shell's, which means
+    // map.remove() may already have torn down internal state. Guard --
+    // if the map is gone, the layer/source went with it.
+    try {
+      if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID);
+      if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
+    } catch { /* map already removed */ }
   }
 
   function setVisible(visible) {

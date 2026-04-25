@@ -19,13 +19,14 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
+    "@americana/maplibre-shield-generator": "^0.1.1",
     "@chrissnell/chonky-ui": "^0.4.0",
     "@internationalized/date": "^3.8.0",
     "bits-ui": "^2.0.0",
     "lucide-svelte": "^0.577.0",
-    "maplibre-gl": "^4.7.1",
+    "maplibre-gl": "^5.24.0",
     "openapi-fetch": "0.17.0",
-    "pmtiles": "^3.2.1",
+    "pmtiles": "^4.4.1",
     "svelte-spa-router": "^4.0.0"
   },
   "optionalDependencies": {

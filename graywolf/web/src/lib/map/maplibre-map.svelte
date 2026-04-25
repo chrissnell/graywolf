@@ -9,6 +9,7 @@
   import maplibregl from 'maplibre-gl';
   import 'maplibre-gl/dist/maplibre-gl.css';
   import { Protocol } from 'pmtiles';
+  import { URLShieldRenderer } from '@americana/maplibre-shield-generator';
   import { mapsState } from '../settings/maps-store.svelte.js';
   import { osmRasterStyle } from './sources/osm-raster.js';
   import { downloadsState } from '../maps/downloads-store.svelte.js';
@@ -69,27 +70,6 @@
   // don't re-fetch every time downloads change.
   let cachedUpstreamStyle = null;
 
-  // hasIncompatibleExpression scans a style.layers entry and returns
-  // true if any layout/paint property references an expression that
-  // MapLibre v4 cannot parse. The americana style uses `global-state`
-  // (a v5 expression) on a couple of highway-shield text-field layers;
-  // those layers are dropped so the rest of the style still renders.
-  // The visible loss is the dynamic shield numbering -- everything
-  // else (roads, water, labels, POIs) is unaffected.
-  const V5_ONLY_EXPRESSIONS = ['global-state'];
-  function hasIncompatibleExpression(layer) {
-    const stringify = (v) => {
-      try {
-        return JSON.stringify(v);
-      } catch {
-        return '';
-      }
-    };
-    const blobs = [stringify(layer.layout), stringify(layer.paint), stringify(layer.filter)];
-    const json = blobs.join('|');
-    return V5_ONLY_EXPRESSIONS.some((expr) => json.includes(`"${expr}"`));
-  }
-
   async function buildGraywolfStyle({ federated }) {
     if (!cachedUpstreamStyle) {
       const res = await fetch(
@@ -100,7 +80,6 @@
     }
     // Deep clone so we don't mutate the cached upstream payload.
     const style = JSON.parse(JSON.stringify(cachedUpstreamStyle));
-    style.layers = style.layers.filter((l) => !hasIncompatibleExpression(l));
     if (federated) {
       for (const src of Object.values(style.sources)) {
         if (src.type === 'vector') {
@@ -175,6 +154,48 @@
       new maplibregl.ScaleControl({ maxWidth: 100, unit: 'imperial' }),
       'bottom-left',
     );
+    // Wire up the americana highway-shield generator. The americana
+    // style references runtime-generated shield images via image IDs
+    // like "shield\nUS:I\n70\n" -- one styleimagemissing event per
+    // unique shield. The URLShieldRenderer fetches the shields.json
+    // (which describes shield shape/color per route network) and
+    // generates the artwork on demand. We restrict it to image IDs
+    // that start with "shield" so non-shield missing images (e.g. POI
+    // runtime sprites) fall through.
+    new URLShieldRenderer(
+      'https://maps.nw5w.com/style/americana/shields.json',
+      {
+        parse: (id) => {
+          // image-id format: "shield\n<network>\n<ref>\n<name>"
+          const parts = String(id).split('\n');
+          return {
+            network: parts[1] ?? '',
+            ref: parts[2] ?? '',
+            name: parts[3] ?? '',
+          };
+        },
+        format: (network, ref, name) =>
+          `shield\n${network}\n${ref}\n${name}`,
+      },
+    )
+      .filterImageID((id) => String(id).startsWith('shield\n'))
+      .renderOnMaplibreGL(map);
+
+    // Catch-all for non-shield image IDs the americana style asks for
+    // (e.g. POI runtime sprites): provide a 1x1 transparent placeholder
+    // so MapLibre stops emitting "could not be loaded" warnings and the
+    // rest of the map renders. Shield IDs are handled by the renderer
+    // above and will short-circuit before reaching this listener.
+    map.on('styleimagemissing', (e) => {
+      if (!map || !e || !e.id) return;
+      if (String(e.id).startsWith('shield\n')) return;
+      if (map.hasImage && map.hasImage(e.id)) return;
+      try {
+        map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+      } catch {
+        // Style may be mid-swap; ignore.
+      }
+    });
     map.once('load', () => oncreate?.(map));
   });
 
