@@ -11,7 +11,6 @@
   import { Protocol } from 'pmtiles';
   import { mapsState } from '../settings/maps-store.svelte.js';
   import { osmRasterStyle } from './sources/osm-raster.js';
-  import { graywolfVectorStyle } from './sources/graywolf-vector.js';
   import { downloadsState } from '../maps/downloads-store.svelte.js';
   import { createFederatedProtocol } from './sources/gw-federated-protocol.js';
 
@@ -20,6 +19,14 @@
   let container;
   let map = null;
   let bearerToken = $state(null);
+
+  // Set context synchronously during component init -- setContext after
+  // an await throws lifecycle_outside_component because Svelte's
+  // current_component is only set during the synchronous setup phase.
+  // Children (Phase 4 layers) call getMap() after the map is created
+  // via the oncreate callback, so reading the closed-over `map` later
+  // is fine.
+  setContext('maplibre-map', { getMap: () => map });
 
   // Register pmtiles:// protocol once per module load. Safe to register
   // even though Plan 1 doesn't actually serve PMTiles -- Plan 2 will.
@@ -62,7 +69,28 @@
   // don't re-fetch every time downloads change.
   let cachedUpstreamStyle = null;
 
-  async function buildOfflineAwareStyle() {
+  // hasIncompatibleExpression scans a style.layers entry and returns
+  // true if any layout/paint property references an expression that
+  // MapLibre v4 cannot parse. The americana style uses `global-state`
+  // (a v5 expression) on a couple of highway-shield text-field layers;
+  // those layers are dropped so the rest of the style still renders.
+  // The visible loss is the dynamic shield numbering -- everything
+  // else (roads, water, labels, POIs) is unaffected.
+  const V5_ONLY_EXPRESSIONS = ['global-state'];
+  function hasIncompatibleExpression(layer) {
+    const stringify = (v) => {
+      try {
+        return JSON.stringify(v);
+      } catch {
+        return '';
+      }
+    };
+    const blobs = [stringify(layer.layout), stringify(layer.paint), stringify(layer.filter)];
+    const json = blobs.join('|');
+    return V5_ONLY_EXPRESSIONS.some((expr) => json.includes(`"${expr}"`));
+  }
+
+  async function buildGraywolfStyle({ federated }) {
     if (!cachedUpstreamStyle) {
       const res = await fetch(
         'https://maps.nw5w.com/style/americana-roboto/style.json',
@@ -72,10 +100,13 @@
     }
     // Deep clone so we don't mutate the cached upstream payload.
     const style = JSON.parse(JSON.stringify(cachedUpstreamStyle));
-    for (const src of Object.values(style.sources)) {
-      if (src.type === 'vector') {
-        delete src.url; // drop the tilejson pointer
-        src.tiles = ['gw-tile://{z}/{x}/{y}'];
+    style.layers = style.layers.filter((l) => !hasIncompatibleExpression(l));
+    if (federated) {
+      for (const src of Object.values(style.sources)) {
+        if (src.type === 'vector') {
+          delete src.url; // drop the tilejson pointer
+          src.tiles = ['gw-tile://{z}/{x}/{y}'];
+        }
       }
     }
     return style;
@@ -83,10 +114,9 @@
 
   async function buildStyle() {
     if (mapsState.source === 'graywolf' && mapsState.registered) {
-      if (downloadsState.completed.size > 0) {
-        return await buildOfflineAwareStyle();
-      }
-      return graywolfVectorStyle();
+      return await buildGraywolfStyle({
+        federated: downloadsState.completed.size > 0,
+      });
     }
     return osmRasterStyle();
   }
@@ -118,9 +148,15 @@
 
   onMount(async () => {
     ensureGwTileProtocol();
-    // Populate downloadsState.completed before the first style build
-    // so the very first paint uses offline tiles when available.
-    await downloadsState.refresh();
+    // Hydrate mapsState + downloadsState before the first style build
+    // so the first paint reflects the persisted source choice and any
+    // already-downloaded states. Without this, mapsState.source defaults
+    // to 'osm' on a direct page-load to /map even when the operator has
+    // selected Graywolf in settings, and the very first style is OSM.
+    await Promise.all([
+      mapsState.fetchConfig(),
+      downloadsState.refresh(),
+    ]);
     await syncToken();
     const initialStyle = await buildStyle();
     map = new maplibregl.Map({
@@ -139,7 +175,6 @@
       new maplibregl.ScaleControl({ maxWidth: 100, unit: 'imperial' }),
       'bottom-left',
     );
-    setContext('maplibre-map', { getMap: () => map });
     map.once('load', () => oncreate?.(map));
   });
 
