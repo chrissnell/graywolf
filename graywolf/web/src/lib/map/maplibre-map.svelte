@@ -190,17 +190,24 @@
       })
       .renderOnMaplibreGL(map);
 
-    // Catch-all for non-shield image IDs the americana style asks for
-    // (e.g. POI runtime sprites): provide a 1x1 transparent placeholder
-    // so MapLibre stops emitting "could not be loaded" warnings and the
-    // rest of the map renders. Shield IDs are handled by the renderer
-    // above and will short-circuit before reaching this listener.
+    // Catch-all for image IDs the americana style asks for that no one
+    // produces: provide a 1x1 transparent placeholder so MapLibre stops
+    // emitting "could not be loaded" warnings and the rest of the map
+    // renders. Shields with a non-empty `ref` are handled by the
+    // URLShieldRenderer above and short-circuit here; shields with an
+    // empty ref (NHS corridors, named-only routes, unsigned co-routings)
+    // were filtered out of the renderer and DO need the placeholder, or
+    // MapLibre logs once per tile that contains them.
     map.on('styleimagemissing', (e) => {
       if (!map || !e || !e.id) return;
-      if (String(e.id).startsWith('shield\n')) return;
-      if (map.hasImage && map.hasImage(e.id)) return;
+      const id = String(e.id);
+      if (id.startsWith('shield\n')) {
+        const ref = id.split('\n')[2] ?? '';
+        if (ref.length > 0) return; // URLShieldRenderer will handle it
+      }
+      if (map.hasImage && map.hasImage(id)) return;
       try {
-        map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+        map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
       } catch {
         // Style may be mid-swap; ignore.
       }

@@ -162,6 +162,7 @@
     padding: 0;
     height: 100vh;
     overflow: hidden;
+    position: relative;
   }
   .main-content.full-bleed .app-footer {
     display: none;

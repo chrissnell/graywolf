@@ -20,6 +20,8 @@
 // 20+. The legacy LiveMap.svelte (Leaflet) keeps its inline polling logic
 // until cutover at task 29.
 
+import { SvelteMap } from 'svelte/reactivity';
+
 const POLL_BASE_MS = 5_000;
 const POLL_MAX_MS = 60_000;
 const MAX_TRAIL_LEN = 500;
@@ -41,9 +43,14 @@ function bboxEqual(a, b) {
 
 export function createDataStore() {
   // --- Reactive collections ($state) ---
-  let stations = $state(new Map());      // callsign → StationDTO (positions accumulated)
-  let trails = $state(new Map());        // callsign → StationPosDTO[] (newest-first)
-  let weather = $state(new Map());       // callsign → WeatherDTO
+  // Plain `new Map()` wrapped in $state() does NOT make .set/.delete
+  // mutations reactive — Svelte 5 only deep-proxies objects/arrays. For
+  // reactive Map iteration and .size, we need SvelteMap from
+  // svelte/reactivity. Without this, the $effect in LiveMapV2 that drives
+  // layer.refresh() reads stations.size = 0 on first run and never re-fires.
+  const stations = new SvelteMap();      // callsign → StationDTO (positions accumulated)
+  const trails = new SvelteMap();        // callsign → StationPosDTO[] (newest-first)
+  const weather = new SvelteMap();       // callsign → WeatherDTO
   let myPosition = $state(null);         // PositionDTO | null
   let lastFetchAt = $state(null);        // Date | null
   let pollingState = $state('idle');     // 'idle' | 'polling' | 'error'
@@ -75,12 +82,6 @@ export function createDataStore() {
         weather.delete(callsign);
       }
     }
-    // Reassign so $state notices map mutations (Svelte's reactive Map proxies
-    // mutations directly, but the explicit reassign keeps consumers safe even
-    // if a future Svelte version drops the proxy).
-    stations = stations;
-    trails = trails;
-    weather = weather;
   }
 
   function mergeStation(incoming, isDelta) {

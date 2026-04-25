@@ -5,7 +5,7 @@
   // the FAB + InfoPanel (layer toggles + time-range), plus the bottom
   // coord display and status bar. Cutover at task 29.
 
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import maplibregl from 'maplibre-gl';
   import MaplibreMap from '../lib/map/maplibre-map.svelte';
   import InfoPanel from '../lib/map/info-panel.svelte';
@@ -44,6 +44,9 @@
   let activePopup = null;
 
   // Operator chrome state.
+  // On desktop the layer card is a perma-card (top-left); on mobile we
+  // use a FAB + bottom-sheet drawer like the legacy Leaflet UI.
+  let isMobile = $state(false);
   let panelOpen = $state(false);
   let layerToggles = $state({
     stations: true,
@@ -63,6 +66,16 @@
       tickNow = Date.now();
     }, 1000);
   }
+
+  let mqUnsub = null;
+  onMount(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 768px)');
+    isMobile = mq.matches;
+    const handler = (e) => (isMobile = e.matches);
+    mq.addEventListener('change', handler);
+    mqUnsub = () => mq.removeEventListener('change', handler);
+  });
 
   function closePopup() {
     if (activePopup) {
@@ -265,30 +278,15 @@
       clearInterval(tickTimer);
       tickTimer = null;
     }
+    mqUnsub?.();
+    mqUnsub = null;
   });
 </script>
 
 <div class="livemap-shell">
   <MaplibreMap oncreate={onMapReady} />
 
-  <!-- Floating Action Button (top-right, sits below MapLibre's NavigationControl
-       which already lives at top-right; we offset right enough to avoid overlap
-       on desktop, and the NavigationControl is hidden on mobile via gesture). -->
-  <button
-    type="button"
-    class="map-fab"
-    onclick={() => (panelOpen = !panelOpen)}
-    aria-label="Map controls"
-    aria-expanded={panelOpen}
-  >
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <polygon points="12 2 2 7 12 12 22 7 12 2" />
-      <polyline points="2 17 12 22 22 17" />
-      <polyline points="2 12 12 17 22 12" />
-    </svg>
-  </button>
-
-  <InfoPanel title="Map Layers" bind:open={panelOpen}>
+  {#snippet panelBody()}
     <div class="layer-toggles">
       <label class="toggle-row">
         <input
@@ -334,14 +332,45 @@
         <option value={opt.value}>{opt.label}</option>
       {/each}
     </select>
-  </InfoPanel>
+  {/snippet}
+
+  {#if isMobile}
+    <!-- Mobile: FAB at top-right opens a bottom-sheet drawer. -->
+    <button
+      type="button"
+      class="map-fab"
+      onclick={() => (panelOpen = !panelOpen)}
+      aria-label="Map controls"
+      aria-expanded={panelOpen}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="12 2 2 7 12 12 22 7 12 2" />
+        <polyline points="2 17 12 22 22 17" />
+        <polyline points="2 12 12 17 22 12" />
+      </svg>
+    </button>
+    <InfoPanel title="Map Layers" bind:open={panelOpen}>
+      {@render panelBody()}
+    </InfoPanel>
+  {:else}
+    <!-- Desktop: perma-card at top-left, like the legacy Leaflet UI. -->
+    <aside class="layer-card" aria-label="Map Layers">
+      <header class="layer-card-header">
+        <h2>Map Layers</h2>
+      </header>
+      <div class="layer-card-body">
+        {@render panelBody()}
+      </div>
+    </aside>
+  {/if}
 
   <!-- Coord display (bottom-right) -->
   {#if coordText}
     <div class="map-coord-display">{coordText}</div>
   {/if}
 
-  <!-- Status bar (bottom-left) -->
+  <!-- Status bar (bottom-center; legacy placement so it doesn't sit
+       under the sidebar on narrow desktop windows). -->
   <div class="map-status-bar" aria-live="polite">
     <span class="status-dot {pollDotClass}" aria-hidden="true"></span>
     <span>{pollLabel}</span>
@@ -363,14 +392,14 @@
     overflow: hidden;
   }
 
-  /* FAB. Sits to the LEFT of MapLibre's NavigationControl (which is
-     already top-right at the default 10px inset). We use top: 12px and
-     position via right offset large enough to clear the 30px-wide nav
-     stack plus its margin. */
+  /* FAB (mobile only). Sits to the LEFT of MapLibre's NavigationControl
+     (which is already top-right at the default 10px inset). NavigationControl
+     itself is hidden on touch widths via maplibre-map.svelte's media query,
+     so the FAB has the corner to itself. */
   .map-fab {
     position: absolute;
     top: 12px;
-    right: 60px;
+    right: 12px;
     width: 44px;
     height: 44px;
     border-radius: 22px;
@@ -386,6 +415,36 @@
   }
   .map-fab:hover {
     color: var(--color-text);
+  }
+
+  /* Desktop layer card (top-left, perma-visible — matches the legacy
+     Leaflet UI). */
+  .layer-card {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: 200px;
+    background: var(--map-overlay-bg);
+    color: var(--map-overlay-fg);
+    border: 1px solid var(--map-overlay-border);
+    border-radius: 8px;
+    box-shadow: var(--map-overlay-shadow);
+    z-index: 50;
+  }
+  .layer-card-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--map-overlay-border);
+  }
+  .layer-card-header h2 {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--color-text-muted);
+  }
+  .layer-card-body {
+    padding: 10px 12px;
   }
 
   .layer-toggles {
@@ -448,13 +507,14 @@
     z-index: 40;
   }
 
-  /* Status bar (bottom-left; sits above MapLibre's ScaleControl which
-     also lives at bottom-left -- ScaleControl is short and the offset
-     keeps them stacked cleanly). */
+  /* Status bar (bottom-center; matches the legacy Leaflet placement so
+     it doesn't sit under the sidebar on narrow desktop windows and stays
+     visible whether the sidebar is wide or collapsed). */
   .map-status-bar {
     position: absolute;
-    bottom: 28px;
-    left: 12px;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
     padding: 4px 10px;
     background: var(--map-overlay-bg);
     color: var(--map-overlay-fg);
@@ -499,6 +559,13 @@
       max-width: calc(100% - 24px);
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+  }
+  /* Pull the status bar up on mobile so it clears the bottom safe area
+     and the MapLibre attribution. */
+  @media (max-width: 768px) {
+    .map-status-bar {
+      bottom: 14px;
     }
   }
 
@@ -596,18 +663,21 @@
   :global(.stn-popup .b-tx) { background: rgba(210, 153, 34, 0.15); color: var(--color-warning); }
   :global(.stn-popup .b-is) { background: rgba(195, 155, 255, 0.15); color: #c39bff; }
 
-  /* Own position marker. The MapLibre marker DOM is outside this
-     component's scope, so these have to be :global. */
+  /* Own position marker -- iOS Maps "blue dot" look: white ring around a
+     solid blue core, with a soft blue halo. The MapLibre marker DOM is
+     outside this component's scope, so these have to be :global. */
   :global(.own-position-marker) {
     background: none !important;
     border: none !important;
   }
   :global(.own-position) {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
-    background: var(--color-accent);
-    border: 2px solid var(--color-text);
-    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+    background: #007aff;
+    border: 2px solid #ffffff;
+    box-shadow:
+      0 0 0 6px rgba(0, 122, 255, 0.18),
+      0 1px 4px rgba(0, 0, 0, 0.4);
   }
 </style>
