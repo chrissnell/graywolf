@@ -486,12 +486,28 @@
   }
 
   /* Mobile: shrink coord/status text. Don't go below 11px to keep
-     numbers readable on a small phone. */
+     numbers readable on a small phone. Cap status-bar width and
+     ellipsize so it can't push past the right edge into the coord
+     display area on narrow phones. */
   @media (max-width: 480px) {
     .map-coord-display,
     .map-status-bar {
       font-size: 11px;
       padding: 4px 8px;
+    }
+    .map-status-bar {
+      max-width: calc(100% - 24px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  /* iOS Safari auto-zooms <select> with font-size <16px on focus.
+     The select lives inside the InfoPanel bottom-sheet on mobile,
+     so bump it to 16px there to suppress the zoom. */
+  @media (max-width: 768px) {
+    .map-timerange-select {
+      font-size: 16px;
     }
   }
 
