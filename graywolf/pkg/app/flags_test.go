@@ -86,6 +86,38 @@ func TestParseFlags_TileCacheDirOverride(t *testing.T) {
 	}
 }
 
+// TestParseFlags_TileCacheDirDerivedFromConfig pins the systemd-friendly
+// behavior: when the operator passes -config to relocate the SQLite DB,
+// the tile cache co-locates next to it instead of inheriting the
+// CWD-relative ./tiles default (which fails under systemd where CWD
+// is /, read-only).
+func TestParseFlags_TileCacheDirDerivedFromConfig(t *testing.T) {
+	cfg, err := ParseFlags([]string{"-config", "/var/lib/graywolf/graywolf.db"})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	want := "/var/lib/graywolf/tiles"
+	if cfg.TileCacheDir != want {
+		t.Errorf("TileCacheDir: got %q, want %q", cfg.TileCacheDir, want)
+	}
+}
+
+// TestParseFlags_TileCacheDirExplicitWinsOverConfig confirms an explicit
+// -tile-cache-dir flag is honored even when -config is also set, so an
+// operator who deliberately wants tiles elsewhere keeps that ability.
+func TestParseFlags_TileCacheDirExplicitWinsOverConfig(t *testing.T) {
+	cfg, err := ParseFlags([]string{
+		"-config", "/var/lib/graywolf/graywolf.db",
+		"-tile-cache-dir", "/elsewhere/tiles",
+	})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if cfg.TileCacheDir != "/elsewhere/tiles" {
+		t.Errorf("TileCacheDir: got %q, want %q", cfg.TileCacheDir, "/elsewhere/tiles")
+	}
+}
+
 func TestParseFlagsErrors(t *testing.T) {
 	tests := []struct {
 		name    string
