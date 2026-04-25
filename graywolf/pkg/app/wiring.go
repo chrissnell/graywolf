@@ -28,6 +28,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/kiss"
+	"github.com/chrissnell/graywolf/pkg/mapscache"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
@@ -804,6 +805,21 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", a.metrics.Handler())
 
+	// PMTiles download/cache manager. The token provider closure reads
+	// the singleton MapsConfig on every download so re-registration
+	// (which rotates the bearer token) is picked up without a process
+	// restart. maxConcurrent=2 keeps us polite to the upstream.
+	mapsCache := mapscache.New(
+		a.cfg.TileCacheDir,
+		a.store,
+		func(ctx context.Context) string {
+			c, _ := a.store.GetMapsConfig(ctx)
+			return c.Token
+		},
+		mapscache.DefaultMapsBaseURL,
+		2,
+	)
+
 	apiSrv, err := webapi.NewServer(webapi.Config{
 		Store:         a.store,
 		Bridge:        a.bridge,
@@ -812,6 +828,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Logger:        a.logger,
 		HistoryDBPath: a.cfg.HistoryDBPath,
 		Version:       a.cfg.Version,
+		MapsCache:     mapsCache,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)
@@ -916,6 +933,32 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterReleaseNotes(apiSrv, apiMux, a.cfg.Version, a.authStore)
 
 	mux.Handle("/api/", webauth.RequireAuth(a.authStore)(apiMux))
+
+	// /tiles/{slug}.pmtiles serves the cached PMTiles archives behind
+	// RequireAuth. Mounted as a sibling of /api/ on the outer mux so it
+	// inherits the same session-cookie redirect path; must be registered
+	// BEFORE the SPA catch-all "/" so the fallback doesn't shadow it.
+	//
+	// Go 1.22 ServeMux wildcards must occupy a complete path segment, so
+	// "GET /tiles/{slug}.pmtiles" is rejected at registration time.
+	// Instead we mount the prefix "/tiles/" and a tiny adapter parses
+	// the slug + asserts the .pmtiles suffix before delegating to
+	// ServeTilesPMTiles, which still consumes r.PathValue("slug") so
+	// its existing test surface (which calls SetPathValue) is unchanged.
+	tilesAdapter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const prefix = "/tiles/"
+		const suffix = ".pmtiles"
+		name := strings.TrimPrefix(r.URL.Path, prefix)
+		if !strings.HasSuffix(name, suffix) {
+			http.NotFound(w, r)
+			return
+		}
+		slug := strings.TrimSuffix(name, suffix)
+		r.SetPathValue("slug", slug)
+		apiSrv.ServeTilesPMTiles(w, r)
+	})
+	mux.Handle("GET /tiles/", webauth.RequireAuth(a.authStore)(tilesAdapter))
+
 	mux.Handle("/", web.SPAHandler())
 
 	a.httpSrv = &http.Server{
