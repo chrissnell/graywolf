@@ -72,6 +72,24 @@
   }
 }
 
+/* chonky's btn-primary is outlined-by-default and fills only on hover.
+ * For our primary CTA we want a permanently solid fill so the button
+ * reads as the obvious next action; chonky's :hover treatment becomes
+ * our resting state. Disabled keeps a stronger fade than chonky's 0.4
+ * so the button still reads as a button while clearly inert. */
+:global(.btn.btn-primary.maps-cta) {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+  font-weight: 700;
+}
+:global(.btn.btn-primary.maps-cta:hover:not(:disabled)) {
+  background: var(--color-primary-hover);
+  color: var(--color-primary-fg);
+}
+:global(.btn.btn-primary.maps-cta:disabled) {
+  opacity: 0.65;
+}
+
 /* iOS Safari auto-zooms <input> with font-size <16px. chonky-ui's --text-base
  * is 0.9rem (~14.4px), so force 16px on the callsign input to suppress zoom.
  * Explicit 44px height matches the .maps-cta button so they align cleanly
