@@ -107,5 +107,27 @@ export function mountStationsLayer(map, getStations, {
     markers.clear();
   }
 
-  return { refresh, destroy };
+  // setVisible: toggle marker DOM visibility without removing the
+  // markers (so refresh() can keep updating positions in the background).
+  // We track the desired state so newly-created markers in subsequent
+  // refresh() calls inherit the right visibility.
+  let visible = true;
+  function setVisible(next) {
+    visible = !!next;
+    const display = visible ? '' : 'none';
+    for (const { marker } of markers.values()) {
+      marker.getElement().style.display = display;
+    }
+  }
+  // Wrap refresh so newly-minted markers honor the current visibility.
+  const wrappedRefresh = () => {
+    refresh();
+    if (!visible) {
+      for (const { marker } of markers.values()) {
+        marker.getElement().style.display = 'none';
+      }
+    }
+  };
+
+  return { refresh: wrappedRefresh, destroy, setVisible };
 }

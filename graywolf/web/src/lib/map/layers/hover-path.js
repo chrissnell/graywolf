@@ -151,5 +151,15 @@ export function mountHoverPathLayer(map, getOwnPosition = () => null) {
     }
   }
 
-  return { show, clear, destroy };
+  // setVisible: provided for API symmetry with the other layers, even
+  // though hover-path is transient (only populated on hover/popup) and
+  // there is currently no UI toggle for it.
+  function setVisible(visible) {
+    const v = visible ? 'visible' : 'none';
+    for (const id of [PATH_GLOW_LAYER, PATH_LINE_LAYER, NODES_LAYER]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+    }
+  }
+
+  return { show, clear, destroy, setVisible };
 }

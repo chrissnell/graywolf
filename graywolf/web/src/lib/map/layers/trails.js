@@ -57,5 +57,11 @@ export function mountTrailsLayer(map, getStations) {
     if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
   }
 
-  return { refresh, destroy };
+  function setVisible(visible) {
+    if (map.getLayer(LAYER_ID)) {
+      map.setLayoutProperty(LAYER_ID, 'visibility', visible ? 'visible' : 'none');
+    }
+  }
+
+  return { refresh, destroy, setVisible };
 }
