@@ -9,6 +9,7 @@
   import StatePicker from '../lib/maps/state-picker.svelte';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
+  import wolfLogoUrl from '../assets/graywolf.svg';
 
   let consented = $state(false);
   let callsignInput = $state('');
@@ -285,7 +286,11 @@
     aria-label="Choose a basemap source"
   >
     {#each sources as src}
-      <div class="source-radio-row">
+      <div
+        class="source-radio-row"
+        class:source-radio-graywolf={src.value === 'graywolf'}
+        style:--source-icon-url={src.value === 'graywolf' ? `url(${wolfLogoUrl})` : null}
+      >
         <Radio
           value={src.value}
           label={src.label}

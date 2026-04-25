@@ -176,6 +176,24 @@
   gap: 4px;
 }
 
+/* Drop the graywolf logo before the option text on the Graywolf
+ * private-maps row. Injected as ::before on chonky's <label class="radio">.
+ * The asset URL is passed in from MapsSettings.svelte via the
+ * --source-icon-url custom property so Vite-hashed asset paths work. */
+.source-radio-graywolf :global(label.radio)::before {
+  content: '';
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  background-image: var(--source-icon-url);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  vertical-align: -3px;
+  flex-shrink: 0;
+}
+
 .source-sublabel {
   margin: 0 0 0 32px;
   font-size: 13px;
