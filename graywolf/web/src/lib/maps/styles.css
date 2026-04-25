@@ -1,0 +1,52 @@
+/* Shared styles for the Maps Settings page (Tasks 10-13) and any
+ * map-overlay UI later. Uses the project's theme custom properties
+ * so light/dark/grayscale variants all render correctly. */
+
+.prose {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+}
+.prose-heading {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+  margin: 16px 0 8px;
+}
+.prose-list {
+  margin: 0 0 12px 18px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+.prose-list li {
+  margin-bottom: 4px;
+}
+
+/* Mobile-first: stack the form vertically; tablet+ allows side-by-side. */
+.maps-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (min-width: 600px) {
+  .maps-row {
+    flex-direction: row;
+    align-items: end;
+  }
+}
+
+.maps-cta {
+  /* Primary CTA spans the row on mobile, sits inline on tablet+. */
+  width: 100%;
+  min-height: 44px;
+}
+@media (min-width: 600px) {
+  .maps-cta {
+    width: auto;
+  }
+}
