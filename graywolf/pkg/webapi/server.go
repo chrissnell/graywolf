@@ -36,6 +36,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/kiss"
+	"github.com/chrissnell/graywolf/pkg/mapsauth"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
@@ -64,6 +65,7 @@ type Server struct {
 	messagesReload    chan struct{} // signalled when messages preferences or tactical callsigns change
 	updatesReloadCh   chan struct{} // signalled when the updates-check toggle flips so the checker re-evaluates immediately
 	updatesChecker    *updatescheck.Checker
+	mapsAuth          *mapsauth.Client // client for auth.nw5w.com /register; defaulted in NewServer
 	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
 	// Nudged after any change that could alter the channel-backing
 	// map (kiss interface add/remove/mode/allow_tx flip, channel
@@ -118,6 +120,12 @@ type Config struct {
 	Logger        *slog.Logger
 	HistoryDBPath string // path to history database, from -history-db flag
 	Version       string // build-time version string reported by GET /api/version
+	// MapsAuth is the registration client used by
+	// POST /api/preferences/maps/register. Optional; NewServer
+	// defaults to a client pointed at mapsauth.DefaultBaseURL when
+	// nil so production wiring doesn't need to set it explicitly.
+	// Tests inject a client pointed at an httptest.Server.
+	MapsAuth *mapsauth.Client
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -134,6 +142,10 @@ func NewServer(cfg Config) (*Server, error) {
 	if kissCtx == nil {
 		kissCtx = context.Background()
 	}
+	mapsClient := cfg.MapsAuth
+	if mapsClient == nil {
+		mapsClient = mapsauth.NewClient(mapsauth.DefaultBaseURL)
+	}
 	return &Server{
 		store:           cfg.Store,
 		bridge:          cfg.Bridge,
@@ -144,6 +156,7 @@ func NewServer(cfg Config) (*Server, error) {
 		historyDBPath:   cfg.HistoryDBPath,
 		version:         cfg.Version,
 		updatesReloadCh: make(chan struct{}, 1),
+		mapsAuth:        mapsClient,
 	}, nil
 }
 
@@ -191,6 +204,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerUpdates(mux)
 	s.registerUnits(mux)
 	s.registerTheme(mux)
+	s.registerMaps(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)

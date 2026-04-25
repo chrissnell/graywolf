@@ -25,5 +25,15 @@ func defaultHistoryDBPath() string {
 	return `C:\ProgramData\Graywolf\graywolf-history.db`
 }
 
+// defaultTileCacheDir returns the default offline PMTiles cache directory
+// for Windows. Placed under ProgramData so it shares a writable parent
+// with the config and history DBs.
+func defaultTileCacheDir() string {
+	if pd := os.Getenv("ProgramData"); pd != "" {
+		return filepath.Join(pd, "Graywolf", "tiles")
+	}
+	return `C:\ProgramData\Graywolf\tiles`
+}
+
 // modemBinaryName is the platform-specific filename for the modem binary.
 const modemBinaryName = "graywolf-modem.exe"

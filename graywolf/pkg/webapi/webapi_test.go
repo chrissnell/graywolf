@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/mapsauth"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 )
 
@@ -59,10 +60,25 @@ func newTestServer(t *testing.T) (*Server, *modembridge.Bridge) {
 		Store:  store,
 		Bridge: bridge,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		// Point mapsAuth at an unreachable URL so handlers don't panic
+		// when registration tests run without their own httptest stub.
+		// Tests that exercise the /register endpoint use
+		// newTestServerWithAuth to swap in a real stub URL.
+		MapsAuth: mapsauth.NewClient("http://127.0.0.1:1"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	return srv, bridge
+}
+
+// newTestServerWithAuth builds a test server like newTestServer but
+// points the mapsAuth client at the supplied authBaseURL — used by
+// the maps-register tests to swap in an httptest.Server.
+func newTestServerWithAuth(t *testing.T, authBaseURL string) (*Server, *modembridge.Bridge) {
+	t.Helper()
+	srv, bridge := newTestServer(t)
+	srv.mapsAuth = mapsauth.NewClient(authBaseURL)
 	return srv, bridge
 }
 

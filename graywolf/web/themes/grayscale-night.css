@@ -35,6 +35,13 @@
   --color-btn-border: #2a2a2a;
   --font-mono: 'Inconsolata', 'Courier New', monospace;
   --radius: 2px;
+  /* Map overlay tokens (used by MapLibre Live Map rebuild) */
+  --map-overlay-bg: var(--color-surface);
+  --map-overlay-fg: var(--color-text);
+  --map-overlay-muted: var(--color-text-muted);
+  --map-overlay-border: var(--color-border);
+  --map-overlay-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --map-attribution-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
 }
 
 /* Single-tone packet and origin badges. */

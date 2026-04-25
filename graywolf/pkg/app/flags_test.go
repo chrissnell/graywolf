@@ -62,6 +62,30 @@ func TestParseFlagsValues(t *testing.T) {
 	}
 }
 
+func TestParseFlags_TileCacheDirDefault(t *testing.T) {
+	cfg, err := ParseFlags(nil)
+	if err != nil {
+		t.Fatalf("ParseFlags([]): %v", err)
+	}
+	def := DefaultConfig()
+	if cfg.TileCacheDir != def.TileCacheDir {
+		t.Errorf("TileCacheDir: got %q, want %q", cfg.TileCacheDir, def.TileCacheDir)
+	}
+	if cfg.TileCacheDir == "" {
+		t.Errorf("TileCacheDir default must be non-empty")
+	}
+}
+
+func TestParseFlags_TileCacheDirOverride(t *testing.T) {
+	cfg, err := ParseFlags([]string{"-tile-cache-dir", "/explicit/path"})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if cfg.TileCacheDir != "/explicit/path" {
+		t.Errorf("TileCacheDir: got %q, want %q", cfg.TileCacheDir, "/explicit/path")
+	}
+}
+
 func TestParseFlagsErrors(t *testing.T) {
 	tests := []struct {
 		name    string

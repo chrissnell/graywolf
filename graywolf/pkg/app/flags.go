@@ -41,6 +41,8 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 		"path to graywolf-modem binary (default: $GRAYWOLF_MODEM, then next to graywolf, then ./target/release/graywolf-modem, then $PATH)")
 	fs.StringVar(&cfg.HistoryDBPath, "history-db", cfg.HistoryDBPath,
 		"path to position-history database (used when enabled in the web UI)")
+	fs.StringVar(&cfg.TileCacheDir, "tile-cache-dir", cfg.TileCacheDir,
+		"directory for offline PMTiles cache (created on startup if missing)")
 	fs.StringVar(&cfg.HTTPAddr, "http", cfg.HTTPAddr, "HTTP listen address")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", cfg.ShutdownTimeout,
 		"max time to wait for clean shutdown")

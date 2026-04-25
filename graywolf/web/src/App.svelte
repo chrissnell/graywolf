@@ -24,15 +24,16 @@
   import Simulation from './routes/Simulation.svelte';
   import PositionLog from './routes/PositionLog.svelte';
   import Logs from './routes/Logs.svelte';
-  import LiveMap from './routes/LiveMap.svelte';
+  import LiveMapV2 from './routes/LiveMapV2.svelte';
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
+  import MapsSettings from './routes/MapsSettings.svelte';
   import Messages from './routes/Messages.svelte';
 
   const routes = {
     '/login': Login,
     '/': Dashboard,
-    '/map': LiveMap,
+    '/map': LiveMapV2,
     '/messages': Messages,
     '/messages/*': Messages,
     '/channels': Channels,
@@ -49,6 +50,7 @@
     '/position-log': PositionLog,
     '/logs': Logs,
     '/preferences': Preferences,
+    '/preferences/maps': MapsSettings,
     '/about': About,
   };
 
