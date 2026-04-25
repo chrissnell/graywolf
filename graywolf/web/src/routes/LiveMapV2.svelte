@@ -669,7 +669,7 @@
     font-size: 10px;
     font-weight: 600;
     color: #ffffff;
-    background: rgba(28, 28, 28, 0.72);
+    background: rgba(14, 14, 14, 0.78);
     border: 1px solid rgba(255, 255, 255, 0.6);
     border-radius: 2px;
     white-space: nowrap;
