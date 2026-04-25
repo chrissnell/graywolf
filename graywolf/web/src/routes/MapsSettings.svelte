@@ -156,7 +156,11 @@
       To prevent abuse from non-amateur clients, the map server requires a one-time
       registration per device.
     </p>
-    <h3 class="prose-heading">What is sent during registration</h3>
+    <h3 class="prose-heading">What is sent</h3>
+    <p class="prose">
+      At registration, and again every time you load map tiles or download
+      offline state maps:
+    </p>
     <ul class="prose-list">
       <li>Your callsign (uppercase, without -SSID).</li>
       <li>Your IP address, captured by the server.</li>
