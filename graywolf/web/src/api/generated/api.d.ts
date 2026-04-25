@@ -1387,50 +1387,33 @@ export interface components {
         /** @enum {string} */
         "aprs.PacketType": "unknown" | "position" | "message" | "telemetry" | "weather" | "object" | "item" | "mic-e" | "status" | "capabilities" | "df-report" | "query" | "third-party";
         "aprs.Position": {
-            /**
-             * Format: float64
-             * @description meters (0 if none reported)
-             */
+            /** @description meters (0 if none reported) */
             altitude?: number;
             /** @description 0..4, digits of ambiguity introduced by spaces */
             ambiguity?: number;
             compressed?: boolean;
             /** @description degrees true (0..359) */
             course?: number;
-            /**
-             * Format: int32
-             * @description DAO datum byte (APRS101 DAO extension), 0 if not present
-             */
+            /** @description DAO datum byte (APRS101 DAO extension), 0 if not present */
             daodatum?: number;
             hasAlt?: boolean;
             hasCourse?: boolean;
-            /**
-             * Format: float64
-             * @description decimal degrees, positive north
-             */
+            /** @description decimal degrees, positive north */
             latitude?: number;
             /** @description true if the timestamp was the '/' local-time form (APRS101 ch 6) */
             localTime?: boolean;
-            /**
-             * Format: float64
-             * @description decimal degrees, positive east
-             */
+            /** @description decimal degrees, positive east */
             longitude?: number;
             /** @description decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present */
             phg?: components["schemas"]["aprs.PHG"];
-            /**
-             * Format: float64
-             * @description knots
-             */
+            /** @description knots */
             speed?: number;
             symbol?: components["schemas"]["aprs.Symbol"];
             /** @description nil if positionless or no embedded time */
             timestamp?: string;
         };
         "aprs.Symbol": {
-            /** Format: int32 */
             code?: number;
-            /** Format: int32 */
             table?: number;
         };
         "aprs.Telemetry": {
@@ -1439,20 +1422,14 @@ export interface components {
             analogHas?: boolean[];
             /** @description trailing free-form */
             comment?: string;
-            /**
-             * Format: int32
-             * @description bits 0..7 (only lower 8)
-             */
+            /** @description bits 0..7 (only lower 8) */
             digital?: number;
             hasDigital?: boolean;
             /** @description 0..999, -1 if absent */
             seq?: number;
         };
         "aprs.TelemetryMeta": {
-            /**
-             * Format: int32
-             * @description BITS. sense-bits bitmap (active-high per bit)
-             */
+            /** @description BITS. sense-bits bitmap (active-high per bit) */
             bits?: number;
             /** @description a, b, c coefficients per analog channel */
             eqns?: number[][];
@@ -1480,47 +1457,27 @@ export interface components {
             humidity?: number;
             /** @description watts/m^2 */
             luminosity?: number;
-            /**
-             * Format: float64
-             * @description tenths of millibar (e.g. 10132 = 1013.2)
-             */
+            /** @description tenths of millibar (e.g. 10132 = 1013.2) */
             pressure?: number;
-            /**
-             * Format: float64
-             * @description hundredths of an inch
-             */
+            /** @description hundredths of an inch */
             rain1Hour?: number;
-            /** Format: float64 */
             rain24Hour?: number;
-            /** Format: float64 */
             rainSinceMid?: number;
             /** @description raw rain counter ('#' field) */
             rawRainCounter?: number;
-            /**
-             * Format: float64
-             * @description inches (via 's' after 'g')
-             */
+            /** @description inches (via 's' after 'g') */
             snowfall24h?: number;
             /** @description one-letter software code (e.g. 'w', 'x', 'd') */
             softwareType?: string;
-            /**
-             * Format: float64
-             * @description degrees F
-             */
+            /** @description degrees F */
             temperature?: number;
             /** @description 2..4 ASCII letters identifying the unit/model */
             weatherUnitTag?: string;
             /** @description degrees true */
             windDirection?: number;
-            /**
-             * Format: float64
-             * @description mph (5-minute peak)
-             */
+            /** @description mph (5-minute peak) */
             windGust?: number;
-            /**
-             * Format: float64
-             * @description mph (1-minute sustained)
-             */
+            /** @description mph (1-minute sustained) */
             windSpeed?: number;
         };
         "configstore.Referrer": {

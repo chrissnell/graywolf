@@ -5048,8 +5048,7 @@
                     "description": "original AX.25 frame bytes",
                     "type": "array",
                     "items": {
-                        "type": "integer",
-                        "format": "int32"
+                        "type": "integer"
                     }
                 },
                 "source": {
@@ -5299,8 +5298,7 @@
             "properties": {
                 "altitude": {
                     "description": "meters (0 if none reported)",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "ambiguity": {
                     "description": "0..4, digits of ambiguity introduced by spaces",
@@ -5315,8 +5313,7 @@
                 },
                 "daodatum": {
                     "description": "DAO datum byte (APRS101 DAO extension), 0 if not present",
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "hasAlt": {
                     "type": "boolean"
@@ -5326,8 +5323,7 @@
                 },
                 "latitude": {
                     "description": "decimal degrees, positive north",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "localTime": {
                     "description": "true if the timestamp was the '/' local-time form (APRS101 ch 6)",
@@ -5335,8 +5331,7 @@
                 },
                 "longitude": {
                     "description": "decimal degrees, positive east",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "phg": {
                     "description": "decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present",
@@ -5348,8 +5343,7 @@
                 },
                 "speed": {
                     "description": "knots",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "symbol": {
                     "$ref": "#/definitions/aprs.Symbol"
@@ -5364,12 +5358,10 @@
             "type": "object",
             "properties": {
                 "code": {
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "table": {
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 }
             }
         },
@@ -5379,8 +5371,7 @@
                 "analog": {
                     "type": "array",
                     "items": {
-                        "type": "number",
-                        "format": "float64"
+                        "type": "number"
                     }
                 },
                 "analogHas": {
@@ -5396,8 +5387,7 @@
                 },
                 "digital": {
                     "description": "bits 0..7 (only lower 8)",
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "hasDigital": {
                     "type": "boolean"
@@ -5413,8 +5403,7 @@
             "properties": {
                 "bits": {
                     "description": "BITS. sense-bits bitmap (active-high per bit)",
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "eqns": {
                     "description": "a, b, c coefficients per analog channel",
@@ -5422,8 +5411,7 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number",
-                            "format": "float64"
+                            "type": "number"
                         }
                     }
                 },
@@ -5498,21 +5486,17 @@
                 },
                 "pressure": {
                     "description": "tenths of millibar (e.g. 10132 = 1013.2)",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "rain1Hour": {
                     "description": "hundredths of an inch",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "rain24Hour": {
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "rainSinceMid": {
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "rawRainCounter": {
                     "description": "raw rain counter ('#' field)",
@@ -5520,8 +5504,7 @@
                 },
                 "snowfall24h": {
                     "description": "inches (via 's' after 'g')",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "softwareType": {
                     "description": "one-letter software code (e.g. 'w', 'x', 'd')",
@@ -5529,8 +5512,7 @@
                 },
                 "temperature": {
                     "description": "degrees F",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "weatherUnitTag": {
                     "description": "2..4 ASCII letters identifying the unit/model",
@@ -5542,13 +5524,11 @@
                 },
                 "windGust": {
                     "description": "mph (5-minute peak)",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 },
                 "windSpeed": {
                     "description": "mph (1-minute sustained)",
-                    "type": "number",
-                    "format": "float64"
+                    "type": "number"
                 }
             }
         },
@@ -7545,11 +7525,6 @@
                 "DirRX": "heard on the air",
                 "DirTX": "transmitted by us"
             },
-            "x-enum-descriptions": [
-                "heard on the air",
-                "transmitted by us",
-                "APRS-IS upload/download (iGate)"
-            ],
             "x-enum-varnames": [
                 "DirRX",
                 "DirTX",
@@ -7720,8 +7695,7 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number",
-                            "format": "float64"
+                            "type": "number"
                         }
                     }
                 },
@@ -7806,8 +7780,7 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number",
-                            "format": "float64"
+                            "type": "number"
                         }
                     }
                 },
