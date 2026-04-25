@@ -11,11 +11,21 @@
 // here to keep refresh() O(n) and allocation-free for the common path.
 // If a symbol does change mid-session the marker keeps its old icon
 // until the next page load -- acceptable for now.
+//
+// Mouse callbacks (onMarkerEnter/Leave/Click) are wired once per marker
+// at creation time. The closure-captured station reference is fine for
+// hover (the digi path doesn't change second-to-second) but the click
+// handler resolves the FRESHEST station from getStations() at click
+// time so the popup doesn't render stale path/comment data.
 
 import maplibregl from 'maplibre-gl';
 import { createAprsIconElement } from '../aprs-icon-element.js';
 
-export function mountStationsLayer(map, getStations) {
+export function mountStationsLayer(map, getStations, {
+  onMarkerEnter = null,
+  onMarkerLeave = null,
+  onMarkerClick = null,
+} = {}) {
   // callsign → { marker }
   const markers = new Map();
 
@@ -35,7 +45,30 @@ export function mountStationsLayer(map, getStations) {
     label.textContent = s.callsign;
     root.appendChild(label);
 
+    if (onMarkerEnter) {
+      root.addEventListener('mouseenter', () => {
+        const fresh = lookupStation(s.callsign) || s;
+        onMarkerEnter(fresh);
+      });
+    }
+    if (onMarkerLeave) {
+      root.addEventListener('mouseleave', () => onMarkerLeave());
+    }
+    if (onMarkerClick) {
+      root.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const fresh = lookupStation(s.callsign) || s;
+        onMarkerClick(fresh);
+      });
+    }
+
     return root;
+  }
+
+  function lookupStation(callsign) {
+    const stations = getStations();
+    if (!stations) return null;
+    return stations.get(callsign) || null;
   }
 
   function refresh() {
