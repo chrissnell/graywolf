@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Box, Button, Input, Toggle } from '@chrissnell/chonky-ui';
+  import { Box, Button, Input, Toggle, Radio, RadioGroup } from '@chrissnell/chonky-ui';
   import { mapsState, ISSUES_URL } from '../lib/settings/maps-store.svelte.js';
   import { validateCallsign } from '../lib/maps/callsign.js';
   import { downloadsState } from '../lib/maps/downloads-store.svelte.js';
@@ -173,10 +173,11 @@
   </Box>
 
   <Box title="Register this device">
-    <div class="maps-row">
-      <label class="maps-input-label">
-        <span class="maps-input-label-text">Your callsign</span>
+    <label for="maps-callsign-input" class="maps-input-label-text">Your callsign</label>
+    <div class="maps-row maps-row-aligned">
+      <div class="maps-callsign-input">
         <Input
+          id="maps-callsign-input"
           type="text"
           placeholder="N5XXX"
           bind:value={callsignInput}
@@ -186,7 +187,7 @@
           inputmode="text"
           disabled={!consented}
         />
-      </label>
+      </div>
       <Button
         class="maps-cta"
         variant="primary"
@@ -272,23 +273,22 @@
 {/if}
 
 <Box title="Map source">
-  <fieldset class="radio-group">
-    <legend class="visually-hidden">Choose a basemap source</legend>
+  <RadioGroup
+    value={mapsState.source}
+    onValueChange={onSourceChange}
+    name="map-source"
+    class="source-radio-group"
+    aria-label="Choose a basemap source"
+  >
     {#each sources as src}
-      <label class="radio-row" class:disabled={isDisabled(src)}>
-        <input
-          type="radio"
-          name="map-source"
+      <div class="source-radio-row">
+        <Radio
           value={src.value}
-          checked={mapsState.source === src.value}
+          label={src.label}
           disabled={isDisabled(src)}
-          onchange={(e) => onSourceChange(e.currentTarget.value)}
         />
-        <span class="radio-text">
-          <span class="radio-label">{src.label}</span>
-          <span class="radio-sublabel">{src.sublabel}</span>
-        </span>
-      </label>
+        <p class="source-sublabel">{src.sublabel}</p>
+      </div>
       {#if src.value === 'graywolf' && mapsState.source === 'graywolf' && downloadsState.completed.size > 0}
         <p class="source-offline-hint">
           Using offline tiles for {downloadsState.completed.size}
@@ -297,7 +297,7 @@
         </p>
       {/if}
     {/each}
-  </fieldset>
+  </RadioGroup>
 </Box>
 
 {#if mapsState.registered}
@@ -367,13 +367,9 @@
 <style>
   @import '../lib/maps/styles.css';
 
-  .maps-input-label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
-  }
   .maps-input-label-text {
+    display: block;
+    margin-bottom: 4px;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
