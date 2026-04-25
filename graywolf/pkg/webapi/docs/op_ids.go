@@ -293,3 +293,14 @@ const (
 	OpGetThemeConfig    = "getThemeConfig"
 	OpUpdateThemeConfig = "updateThemeConfig"
 )
+
+// Maps preference — singleton at /api/preferences/maps. GET + PUT
+// match the other display-preference endpoints; /register proxies a
+// device registration to auth.nw5w.com and is the only response that
+// returns the issued token. ?include_token=1 on the GET is the lone
+// way to retrieve the persisted token after registration.
+const (
+	OpGetMapsConfig    = "getMapsConfig"
+	OpUpdateMapsConfig = "updateMapsConfig"
+	OpRegisterMapsToken = "registerMapsToken"
+)

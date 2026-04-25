@@ -838,6 +838,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preferences/maps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get maps preference */
+        get: operations["getMapsConfig"];
+        /** Update maps preference */
+        put: operations["updateMapsConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/preferences/maps/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register this device with auth.nw5w.com */
+        post: operations["registerMapsToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/preferences/theme": {
         parameters: {
             query?: never;
@@ -1886,6 +1921,16 @@ export interface components {
             tnc_ingress_rate_hz?: number;
             type?: string;
         };
+        "dto.MapsConfigRequest": {
+            source?: string;
+        };
+        "dto.MapsConfigResponse": {
+            callsign?: string;
+            registered?: boolean;
+            registered_at?: string;
+            source?: string;
+            token?: string;
+        };
         "dto.MessageChange": {
             id?: number;
             kind?: string;
@@ -2039,6 +2084,16 @@ export interface components {
             method?: string;
             persist?: number;
             slot_time_ms?: number;
+        };
+        "dto.RegisterRequest": {
+            callsign?: string;
+        };
+        "dto.RegisterResponse": {
+            callsign?: string;
+            registered?: boolean;
+            registered_at?: string;
+            source?: string;
+            token?: string;
         };
         "dto.ReleaseNoteDTO": {
             /** @description pre-sanitized HTML */
@@ -5656,6 +5711,142 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMapsConfig: {
+        parameters: {
+            query?: {
+                /** @description Set to 1 to include the device token in the response */
+                include_token?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MapsConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateMapsConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Maps preference */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.MapsConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MapsConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    registerMapsToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Registration request */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.RegisterResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

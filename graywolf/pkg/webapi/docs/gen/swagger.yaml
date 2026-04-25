@@ -1127,6 +1127,24 @@ definitions:
       type:
         type: string
     type: object
+  dto.MapsConfigRequest:
+    properties:
+      source:
+        type: string
+    type: object
+  dto.MapsConfigResponse:
+    properties:
+      callsign:
+        type: string
+      registered:
+        type: boolean
+      registered_at:
+        type: string
+      source:
+        type: string
+      token:
+        type: string
+    type: object
   dto.MessageChange:
     properties:
       id:
@@ -1357,6 +1375,24 @@ definitions:
         type: integer
       slot_time_ms:
         type: integer
+    type: object
+  dto.RegisterRequest:
+    properties:
+      callsign:
+        type: string
+    type: object
+  dto.RegisterResponse:
+    properties:
+      callsign:
+        type: string
+      registered:
+        type: boolean
+      registered_at:
+        type: string
+      source:
+        type: string
+      token:
+        type: string
     type: object
   dto.ReleaseNoteDTO:
     properties:
@@ -4442,6 +4478,101 @@ paths:
       summary: Update position log config
       tags:
         - position-log
+  /preferences/maps:
+    get:
+      operationId: getMapsConfig
+      parameters:
+        - description: Set to 1 to include the device token in the response
+          in: query
+          name: include_token
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MapsConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get maps preference
+      tags:
+        - preferences
+    put:
+      consumes:
+        - application/json
+      operationId: updateMapsConfig
+      parameters:
+        - description: Maps preference
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.MapsConfigRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MapsConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update maps preference
+      tags:
+        - preferences
+  /preferences/maps/register:
+    post:
+      consumes:
+        - application/json
+      operationId: registerMapsToken
+      parameters:
+        - description: Registration request
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.RegisterRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.RegisterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Register this device with auth.nw5w.com
+      tags:
+        - preferences
   /preferences/theme:
     get:
       operationId: getThemeConfig
