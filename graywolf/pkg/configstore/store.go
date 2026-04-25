@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -27,7 +28,21 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("create config db directory %q: %w", dir, err)
 		}
 	}
-	return openDSN(path)
+	s, err := openDSN(path)
+	if err != nil {
+		return nil, err
+	}
+	// Best-effort: tighten permissions on the SQLite file. The DB holds
+	// session credentials, the maps registration token, and other
+	// device-local secrets the operator wouldn't want world-readable.
+	// glebarez's :memory: driver accepts paths starting with ":" and has
+	// no real file to chmod, so skip those. Errors are logged but never
+	// fatal — chmod is hygiene, not a security control. Filesystems that
+	// don't support unix permissions (e.g. FAT32) will simply ignore it.
+	if !strings.HasPrefix(path, ":") {
+		_ = os.Chmod(path, 0o600)
+	}
+	return s, nil
 }
 
 // OpenMemory opens an isolated in-memory database (one per call).
