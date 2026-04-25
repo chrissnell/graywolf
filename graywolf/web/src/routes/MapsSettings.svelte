@@ -3,6 +3,10 @@
   import { Box, Button, Input, Toggle } from '@chrissnell/chonky-ui';
   import { mapsState, ISSUES_URL } from '../lib/settings/maps-store.svelte.js';
   import { validateCallsign } from '../lib/maps/callsign.js';
+  import { downloadsState } from '../lib/maps/downloads-store.svelte.js';
+  import { US_STATES } from '../lib/maps/state-list.js';
+  import { formatBytes } from '../lib/maps/format-bytes.js';
+  import StatePicker from '../lib/maps/state-picker.svelte';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
 
@@ -13,10 +17,48 @@
   let revealedToken = $state(null);
   let revealing = $state(false);
 
+  let pickerOpen = $state(false);
+
   let validation = $derived(validateCallsign(callsignInput));
   let canSubmit = $derived(consented && validation.ok && !mapsState.registering);
 
-  onMount(() => mapsState.fetchConfig());
+  onMount(() => {
+    mapsState.fetchConfig();
+    downloadsState.refresh().then(() => {
+      if (
+        [...downloadsState.items.values()].some(
+          (d) => d.state === 'downloading' || d.state === 'pending',
+        )
+      ) {
+        downloadsState.ensurePolling();
+      }
+    });
+  });
+
+  // Build a name lookup for the downloaded list.
+  const slugToName = Object.fromEntries(US_STATES.map((s) => [s.slug, s.name]));
+
+  let downloadedRows = $derived.by(() => {
+    const rows = [];
+    for (const [slug, item] of downloadsState.items) {
+      if (item.state === 'complete') {
+        rows.push({ slug, name: slugToName[slug] ?? slug, ...item });
+      }
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return rows;
+  });
+
+  let activeDownloads = $derived.by(() => {
+    const rows = [];
+    for (const [slug, item] of downloadsState.items) {
+      if (item.state === 'downloading' || item.state === 'pending' || item.state === 'error') {
+        rows.push({ slug, name: slugToName[slug] ?? slug, ...item });
+      }
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return rows;
+  });
 
   async function onRegister() {
     lastError = null;
@@ -75,8 +117,9 @@
     }
   }
 
-  // Three radio options. "Graywolf private maps (offline)" is disabled in
-  // Plan 1 because no PMTiles download exists yet; Plan 2 enables it.
+  // Two radio options. Offline tiles are preferred automatically when
+  // downloads exist; the Graywolf row picks them up transparently and
+  // falls back to online elsewhere.
   const sources = [
     {
       value: 'osm',
@@ -85,25 +128,17 @@
     },
     {
       value: 'graywolf',
-      label: 'Graywolf private maps (online)',
-      sublabel: 'Polished cartography. Requires registration and an internet connection.',
-    },
-    {
-      value: 'graywolf-offline',
-      label: 'Graywolf private maps (offline)',
-      sublabel: 'Coming soon -- pre-downloaded state tiles for off-grid use.',
-      disabled: true,
+      label: 'Graywolf private maps',
+      sublabel: 'Polished cartography. Requires registration.',
     },
   ];
 
   function isDisabled(src) {
-    if (src.disabled) return true;
     if (src.value === 'graywolf' && !mapsState.registered) return true;
     return false;
   }
 
   function onSourceChange(v) {
-    if (v === 'graywolf-offline') return; // Plan 2 stub
     mapsState.setSource(v);
   }
 </script>
@@ -254,9 +289,80 @@
           <span class="radio-sublabel">{src.sublabel}</span>
         </span>
       </label>
+      {#if src.value === 'graywolf' && mapsState.source === 'graywolf' && downloadsState.completed.size > 0}
+        <p class="source-offline-hint">
+          Using offline tiles for {downloadsState.completed.size}
+          of 51 state{downloadsState.completed.size === 1 ? '' : 's'}.
+          Areas without offline coverage fall back to online.
+        </p>
+      {/if}
     {/each}
   </fieldset>
 </Box>
+
+{#if mapsState.registered}
+  <Box title="Offline maps">
+    <p class="prose">
+      Download per-state vector tiles for off-grid use. The map will use these
+      automatically where coverage exists; it falls back to online tiles for
+      areas you have not downloaded.
+    </p>
+
+    {#if activeDownloads.length > 0}
+      <h3 class="prose-heading">In progress</h3>
+      <ul class="downloaded-list">
+        {#each activeDownloads as row (row.slug)}
+          <li class="downloaded-row">
+            <span class="downloaded-name">{row.name}</span>
+            <span class="downloaded-meta">
+              {#if row.state === 'downloading'}
+                {formatBytes(row.bytes_downloaded)}
+                {#if row.bytes_total > 0}
+                  / {formatBytes(row.bytes_total)}
+                  ({Math.round((row.bytes_downloaded / row.bytes_total) * 100)}%)
+                {/if}
+              {:else if row.state === 'error'}
+                <span class="status-error">Error: {row.error_message || 'Download failed'}</span>
+              {:else}
+                Pending...
+              {/if}
+            </span>
+            {#if row.state === 'downloading' && row.bytes_total > 0}
+              <progress class="downloaded-progress" value={row.bytes_downloaded} max={row.bytes_total}></progress>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#if downloadedRows.length === 0 && activeDownloads.length === 0}
+      <p class="form-hint">No states downloaded yet.</p>
+    {:else if downloadedRows.length > 0}
+      <h3 class="prose-heading">Downloaded ({downloadedRows.length})</h3>
+      <ul class="downloaded-list">
+        {#each downloadedRows as row (row.slug)}
+          <li class="downloaded-row">
+            <span class="downloaded-name">{row.name}</span>
+            <span class="downloaded-meta">
+              {formatBytes(row.bytes_total)}
+              {#if row.downloaded_at}
+                · {new Date(row.downloaded_at).toLocaleDateString()}
+              {/if}
+            </span>
+            <Button variant="default" onclick={() => downloadsState.start(row.slug)}>Re-download</Button>
+            <Button variant="danger" onclick={() => downloadsState.remove(row.slug)}>Delete</Button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    <Button class="maps-cta" onclick={() => (pickerOpen = true)}>
+      Add a state
+    </Button>
+  </Box>
+
+  <StatePicker bind:open={pickerOpen} />
+{/if}
 
 <style>
   @import '../lib/maps/styles.css';

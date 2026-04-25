@@ -881,6 +881,21 @@ definitions:
       to_channel:
         type: integer
     type: object
+  dto.DownloadStatus:
+    properties:
+      bytes_downloaded:
+        type: integer
+      bytes_total:
+        type: integer
+      downloaded_at:
+        type: string
+      error_message:
+        type: string
+      slug:
+        type: string
+      state:
+        type: string
+    type: object
   dto.GPSRequest:
     properties:
       baud_rate:
@@ -2290,6 +2305,8 @@ tags:
     description: 'Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI.'
   - name: preferences
     description: Operator display preferences stored server-side (units, etc.).
+  - name: maps
+    description: 'Offline PMTiles map downloads: per-state download lifecycle and status.'
   - name: auth
     description: Session login, logout, and first-user setup.
   - name: version
@@ -3783,6 +3800,128 @@ paths:
       summary: Reconnect a KISS tcp-client interface now
       tags:
         - kiss
+  /maps/downloads:
+    get:
+      operationId: listMapsDownloads
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.DownloadStatus'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List offline map downloads
+      tags:
+        - maps
+  /maps/downloads/{slug}:
+    delete:
+      operationId: deleteMapsDownload
+      parameters:
+        - description: state slug
+          in: path
+          name: slug
+          required: true
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete an offline download for a state
+      tags:
+        - maps
+    get:
+      operationId: getMapsDownloadStatus
+      parameters:
+        - description: state slug
+          in: path
+          name: slug
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.DownloadStatus'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get one download's status
+      tags:
+        - maps
+    post:
+      operationId: startMapsDownload
+      parameters:
+        - description: state slug
+          in: path
+          name: slug
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/dto.DownloadStatus'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Start an offline download for a state
+      tags:
+        - maps
   /messages:
     get:
       operationId: listMessages

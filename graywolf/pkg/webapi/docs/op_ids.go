@@ -304,3 +304,18 @@ const (
 	OpUpdateMapsConfig = "updateMapsConfig"
 	OpRegisterMapsToken = "registerMapsToken"
 )
+
+// Maps offline downloads — /api/maps/downloads (Plan 2). Per-state
+// PMTiles archives are downloaded asynchronously; the start endpoint
+// returns 202 immediately and the status endpoint reports live
+// progress. The DELETE is idempotent and cancels any in-flight
+// download for the same slug. /tiles/{slug}.pmtiles is mounted on the
+// outer mux (under RequireAuth) by pkg/app/wiring.go and has no
+// generated client method — browsers fetch it via maplibre-gl, not
+// via the typed API client.
+const (
+	OpListMapsDownloads     = "listMapsDownloads"
+	OpGetMapsDownloadStatus = "getMapsDownloadStatus"
+	OpStartMapsDownload     = "startMapsDownload"
+	OpDeleteMapsDownload    = "deleteMapsDownload"
+)
