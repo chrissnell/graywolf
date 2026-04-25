@@ -26,10 +26,9 @@ func (r MapsConfigRequest) Validate() error {
 // echo back. Token is omitted unless ?include_token=1 is set on the
 // GET — see the handler. Registered is true iff a token is present.
 //
-// omitempty on RegisteredAt is a no-op for time.Time (struct value);
-// the handler will populate it only when registered, so the zero-value
-// case will still serialize. Acceptable here — the Registered bool is
-// the source of truth for the UI.
+// RegisteredAt always serializes; when not registered it will be the
+// Go zero time. The Registered bool is the authoritative source of
+// truth for "is this populated" — don't infer from the timestamp.
 type MapsConfigResponse struct {
 	Source       string    `json:"source"`
 	Callsign     string    `json:"callsign,omitempty"`
