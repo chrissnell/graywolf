@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -38,8 +39,8 @@ type Manager struct {
 
 type activeDownload struct {
 	slug       string
-	bytesTotal int64
-	bytesDone  int64
+	bytesTotal atomic.Int64
+	bytesDone  atomic.Int64
 	cancel     context.CancelFunc
 	startedAt  time.Time
 }
@@ -101,8 +102,8 @@ func (m *Manager) Status(ctx context.Context, slug string) (Status, error) {
 		return Status{
 			Slug:            slug,
 			State:           "downloading",
-			BytesTotal:      a.bytesTotal,
-			BytesDownloaded: a.bytesDone,
+			BytesTotal:      a.bytesTotal.Load(),
+			BytesDownloaded: a.bytesDone.Load(),
 		}, nil
 	}
 	row, err := m.store.GetMapsDownload(ctx, slug)
@@ -133,7 +134,7 @@ func (m *Manager) List(ctx context.Context) ([]Status, error) {
 		if active {
 			out = append(out, Status{
 				Slug: r.Slug, State: "downloading",
-				BytesTotal: a.bytesTotal, BytesDownloaded: a.bytesDone,
+				BytesTotal: a.bytesTotal.Load(), BytesDownloaded: a.bytesDone.Load(),
 			})
 		} else {
 			out = append(out, statusFromRow(r))
@@ -145,7 +146,7 @@ func (m *Manager) List(ctx context.Context) ([]Status, error) {
 		if !seen[slug] {
 			out = append(out, Status{
 				Slug: slug, State: "downloading",
-				BytesTotal: a.bytesTotal, BytesDownloaded: a.bytesDone,
+				BytesTotal: a.bytesTotal.Load(), BytesDownloaded: a.bytesDone.Load(),
 			})
 		}
 	}
@@ -233,15 +234,15 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 		m.fail(ctx, a.slug, fmt.Errorf("upstream %d %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
 		return
 	}
-	a.bytesTotal = resp.ContentLength
-	if a.bytesTotal > 0 {
+	a.bytesTotal.Store(resp.ContentLength)
+	if resp.ContentLength > 0 {
 		_ = m.store.UpsertMapsDownload(ctx, configstore.MapsDownload{
-			Slug: a.slug, Status: "downloading", BytesTotal: a.bytesTotal,
+			Slug: a.slug, Status: "downloading", BytesTotal: resp.ContentLength,
 		})
 	}
 
 	finalPath := m.PathFor(a.slug)
-	written, err := writeAtomic(finalPath, resp.Body, func(n int64) { a.bytesDone = n })
+	written, err := writeAtomic(finalPath, resp.Body, func(n int64) { a.bytesDone.Store(n) })
 	if err != nil {
 		m.fail(ctx, a.slug, err)
 		return
