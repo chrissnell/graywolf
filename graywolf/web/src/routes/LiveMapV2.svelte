@@ -225,7 +225,6 @@
     weatherLayer?.setVisible(layerToggles.weather);
   });
   $effect(() => {
-    console.log('[livemap] myPosition effect', layerToggles.myPosition, 'layer?', !!myPositionLayer);
     myPositionLayer?.setVisible(layerToggles.myPosition);
   });
 
@@ -583,12 +582,15 @@
      .gw-station-icon elements outside this component's scope (MapLibre
      owns the DOM), so these have to be :global.
 
-     Layout: the marker is a 21x21 square (the icon) with anchor:'center'
-     so its geometric center sits on the lat/lon. The callsign label is
-     positioned absolutely to the right of the icon so it doesn't shift
-     the anchor point regardless of label length. */
+     Layout: the marker root keeps maplibregl's position:absolute (do NOT
+     override with position:relative — that pulls the marker into document
+     flow and the per-marker transform stacks all of them at the canvas
+     origin). The 21x21 icon child is the visual anchor (anchor:'center'
+     in stations.js puts the icon center on the lat/lon). The callsign
+     label is absolutely positioned to the right of the icon, anchored
+     within the maplibregl-applied positioning context, so its width
+     doesn't shift the icon off-target. */
   :global(.gw-station-marker) {
-    position: relative;
     width: 21px;
     height: 21px;
     cursor: pointer;
