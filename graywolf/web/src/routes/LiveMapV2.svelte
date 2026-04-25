@@ -607,19 +607,20 @@
     top: 50%;
     transform: translateY(-50%);
     margin-left: 4px;
-    padding: 1px 4px;
+    padding: 0 4px;
+    line-height: 12px;
     font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 600;
     color: #ffffff;
-    background: rgba(28, 28, 28, 0.78);
-    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: rgba(28, 28, 28, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.5);
     border-radius: 2px;
     white-space: nowrap;
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   }
 
   /* Station popup: theme-aware container + tip + close button. */
