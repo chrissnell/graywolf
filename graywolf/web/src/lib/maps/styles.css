@@ -184,22 +184,24 @@
   font-weight: 700;
 }
 
-/* Drop the graywolf logo before the option text on the Graywolf
- * private-maps row. Injected as ::before on chonky's <label class="radio">.
+/* Drop the graywolf logo between the radio dot and the option text on
+ * the Graywolf private-maps row. Injected as ::after on chonky's radio
+ * button so the icon renders right after the radio-mark span (inside
+ * the button's inline content), before the label text node that
+ * follows the button in chonky's <label class="radio"> markup.
  * The asset URL is passed in from MapsSettings.svelte via the
  * --source-icon-url custom property so Vite-hashed asset paths work. */
-.source-radio-graywolf :global(label.radio)::before {
+.source-radio-graywolf :global(label.radio button)::after {
   content: '';
   display: inline-block;
   width: 18px;
   height: 18px;
-  margin-right: 6px;
+  margin-left: 6px;
   background-image: var(--source-icon-url);
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
   vertical-align: -3px;
-  flex-shrink: 0;
 }
 
 .source-sublabel {
