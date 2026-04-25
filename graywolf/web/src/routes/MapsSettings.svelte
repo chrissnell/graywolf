@@ -153,7 +153,7 @@
       personally, and provides this map to the amateur radio community at no cost.
     </p>
     <p class="prose">
-      To prevent abuse from non-amateur clients, the map server requires a one-time
+      To prevent abuse from other apps, the map server requires a one-time
       registration per device.
     </p>
     <h3 class="prose-heading">What is sent</h3>
