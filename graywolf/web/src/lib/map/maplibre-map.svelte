@@ -193,4 +193,11 @@
   :global(.maplibregl-ctrl-attrib a) {
     color: var(--map-overlay-fg) !important;
   }
+  /* Hide MapLibre's +/- zoom buttons on touch viewports — pinch-zoom
+     is sufficient and the buttons would clash with the FAB. */
+  @media (max-width: 768px) {
+    :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-group) {
+      display: none;
+    }
+  }
 </style>
