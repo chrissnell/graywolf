@@ -51,6 +51,12 @@
   }
 }
 
+/* iOS Safari auto-zooms <input> with font-size <16px. chonky-ui's --text-base
+ * is 0.9rem (~14.4px), so force 16px on the callsign input to suppress zoom. */
+:global(.maps-input-label input) {
+  font-size: 16px;
+}
+
 .form-hint {
   margin: 12px 0 0;
   font-size: 13px;
