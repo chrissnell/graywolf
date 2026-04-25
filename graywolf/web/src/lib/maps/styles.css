@@ -58,9 +58,13 @@
 }
 
 :global(.maps-cta) {
-  /* Primary CTA spans the row on mobile, sits inline on tablet+. */
+  /* Primary CTA spans the row on mobile, sits inline on tablet+.
+   * Explicit height (not min-height) so it matches the input height
+   * exactly when both share a row. Without this, chonky's button has
+   * a different intrinsic height than chonky's input and they look
+   * misaligned. */
   width: 100%;
-  min-height: 44px;
+  height: 44px;
 }
 @media (min-width: 600px) {
   :global(.maps-cta) {
@@ -69,9 +73,15 @@
 }
 
 /* iOS Safari auto-zooms <input> with font-size <16px. chonky-ui's --text-base
- * is 0.9rem (~14.4px), so force 16px on the callsign input to suppress zoom. */
+ * is 0.9rem (~14.4px), so force 16px on the callsign input to suppress zoom.
+ * Explicit 44px height matches the .maps-cta button so they align cleanly
+ * side-by-side on desktop. */
 :global(.maps-callsign-input input) {
   font-size: 16px;
+  height: 44px;
+}
+:global(.maps-callsign-input .input-wrapper) {
+  height: 100%;
 }
 
 .form-hint {
