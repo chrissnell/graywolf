@@ -148,7 +148,7 @@
 {#if !mapsState.registered}
   <Box title="About Graywolf private maps">
     <p class="prose">
-      Graywolf can use a private, prettier basemap hosted by the project author,
+      Graywolf can use a private basemap hosted by the project author,
       <strong>Chris Snell (NW5W)</strong>. Chris pays for the hosting and bandwidth
       personally, and provides this map to the amateur radio community at no cost.
     </p>
