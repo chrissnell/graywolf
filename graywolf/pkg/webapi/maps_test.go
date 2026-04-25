@@ -184,6 +184,40 @@ func TestRegister_PropagatesUpstreamError(t *testing.T) {
 	}
 }
 
+// PUT must never echo the token, even when the caller sneaks in
+// ?include_token=1. The query-string knob is GET-only.
+func TestPutMapsConfig_DoesNotLeakTokenWithIncludeFlag(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// Seed a registered row so a token is available to leak.
+	if err := srv.store.UpsertMapsConfig(context.Background(), configstore.MapsConfig{
+		Source:       "graywolf",
+		Callsign:     "N5XXX",
+		Token:        "seed-token",
+		RegisteredAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"source":"osm"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/preferences/maps?include_token=1", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var raw map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := raw["token"]; has {
+		t.Errorf("PUT response must omit token regardless of include_token query; body=%v", raw)
+	}
+}
+
 // ?include_token=1 is the lone way to retrieve the stored token after
 // the one-shot register response. The default GET must continue to
 // suppress it.

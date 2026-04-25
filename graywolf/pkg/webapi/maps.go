@@ -86,10 +86,19 @@ func (s *Server) updateMapsConfig(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "upsert maps config", err)
 		return
 	}
-	// Echo back the new state in the same shape as GET. include_token
-	// query handling lives in getMapsConfig; deferring there keeps the
-	// two responses consistent.
-	s.getMapsConfig(w, r)
+	// PUT never returns the token, regardless of any include_token query
+	// param: registration is the only path that hands the token back.
+	c, err := s.store.GetMapsConfig(r.Context())
+	if err != nil {
+		s.internalError(w, r, "get maps config after upsert", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto.MapsConfigResponse{
+		Source:       c.Source,
+		Callsign:     c.Callsign,
+		Registered:   c.Token != "",
+		RegisteredAt: c.RegisteredAt,
+	})
 }
 
 // @Summary  Register this device with auth.nw5w.com
@@ -123,6 +132,10 @@ func (s *Server) registerMapsToken(w http.ResponseWriter, r *http.Request) {
 		// real failures) instead of a generic "registration failed".
 		var rerr *mapsauth.Error
 		if errors.As(err, &rerr) {
+			s.logger.WarnContext(r.Context(), "mapsauth register rejected",
+				"status", rerr.Status,
+				"code", rerr.Code,
+				"callsign", callsign)
 			writeJSON(w, rerr.Status, map[string]string{
 				"error":   rerr.Code,
 				"message": rerr.Message,
