@@ -80,7 +80,14 @@ func (c *Client) Register(ctx context.Context, callsign string) (RegisterRespons
 		return RegisterResponse{}, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	// Cap the read at 64 KiB. Legitimate success bodies are ~100 bytes;
+	// the largest documented error body is the issue-tracker message at
+	// ~110 bytes. 64 KiB leaves headroom for HTML 5xx pages from a
+	// misbehaving edge while preventing a hostile server from OOMing us.
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if readErr != nil {
+		return RegisterResponse{}, fmt.Errorf("mapsauth: read body: %w", readErr)
+	}
 
 	if resp.StatusCode == http.StatusOK {
 		var out RegisterResponse

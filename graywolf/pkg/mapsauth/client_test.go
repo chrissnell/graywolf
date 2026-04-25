@@ -85,3 +85,28 @@ func TestRegister_BlockedShouldNotRetry(t *testing.T) {
 		t.Fatalf("expected blocked error, got %v", err)
 	}
 }
+
+func TestRegister_FiveXXWithHTMLBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`<html><body>502 Bad Gateway</body></html>`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	_, err := c.Register(context.Background(), "N5XXX")
+	var rerr *Error
+	if !errors.As(err, &rerr) {
+		t.Fatalf("expected *Error, got %T: %v", err, err)
+	}
+	if rerr.Status != http.StatusInternalServerError {
+		t.Fatalf("Status = %d, want 500", rerr.Status)
+	}
+	if rerr.Code != "internal" {
+		t.Fatalf("Code = %q, want %q", rerr.Code, "internal")
+	}
+	if !strings.Contains(rerr.Message, "github.com/chrissnell/graywolf/issues") {
+		t.Fatalf("synthesized message must include issues URL, got %q", rerr.Message)
+	}
+}
