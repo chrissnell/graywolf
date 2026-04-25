@@ -55,6 +55,7 @@ var tagOrder = []tagEntry{
 	{"release-notes", "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."},
 	{"updates", "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."},
 	{"preferences", "Operator display preferences stored server-side (units, etc.)."},
+	{"maps", "Offline PMTiles map downloads: per-state download lifecycle and status."},
 
 	// --- Admin / auth / health ------------------------------------------
 	{"auth", "Session login, logout, and first-user setup."},

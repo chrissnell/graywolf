@@ -37,6 +37,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/mapsauth"
+	"github.com/chrissnell/graywolf/pkg/mapscache"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
@@ -65,7 +66,8 @@ type Server struct {
 	messagesReload    chan struct{} // signalled when messages preferences or tactical callsigns change
 	updatesReloadCh   chan struct{} // signalled when the updates-check toggle flips so the checker re-evaluates immediately
 	updatesChecker    *updatescheck.Checker
-	mapsAuth          *mapsauth.Client // client for auth.nw5w.com /register; defaulted in NewServer
+	mapsAuth          *mapsauth.Client    // client for auth.nw5w.com /register; defaulted in NewServer
+	mapsCache         *mapscache.Manager  // PMTiles cache; nil until P2-T5 wires it up — handlers return 503 when nil
 	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
 	// Nudged after any change that could alter the channel-backing
 	// map (kiss interface add/remove/mode/allow_tx flip, channel
@@ -126,6 +128,12 @@ type Config struct {
 	// nil so production wiring doesn't need to set it explicitly.
 	// Tests inject a client pointed at an httptest.Server.
 	MapsAuth *mapsauth.Client
+	// MapsCache is the PMTiles download/cache manager. Optional —
+	// the /api/maps/downloads handlers and ServeTilesPMTiles return
+	// 503 when nil so wiring can defer construction until the cache
+	// directory is known. Tests inject a Manager pointed at a temp
+	// dir + httptest upstream.
+	MapsCache *mapscache.Manager
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -157,6 +165,7 @@ func NewServer(cfg Config) (*Server, error) {
 		version:         cfg.Version,
 		updatesReloadCh: make(chan struct{}, 1),
 		mapsAuth:        mapsClient,
+		mapsCache:       cfg.MapsCache,
 	}, nil
 }
 
@@ -205,6 +214,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerUnits(mux)
 	s.registerTheme(mux)
 	s.registerMaps(mux)
+	s.registerDownloads(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
