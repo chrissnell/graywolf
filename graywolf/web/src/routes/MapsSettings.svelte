@@ -171,6 +171,7 @@
       independently -- your laptop and your tablet each get their own token.
     </p>
     <Toggle
+      class="consent-toggle"
       checked={consented}
       onCheckedChange={(v) => (consented = v)}
       label="I understand and agree."

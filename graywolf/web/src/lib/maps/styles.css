@@ -176,6 +176,14 @@
   gap: 4px;
 }
 
+/* Make the consent-toggle label visually heavier so it reads as the
+ * decision-point on the disclosure block. Targets chonky's
+ * <span class="toggle-label"> inside the .consent-toggle <label>. */
+:global(.consent-toggle .toggle-label) {
+  font-size: 16px;
+  font-weight: 700;
+}
+
 /* Drop the graywolf logo before the option text on the Graywolf
  * private-maps row. Injected as ::before on chonky's <label class="radio">.
  * The asset URL is passed in from MapsSettings.svelte via the
