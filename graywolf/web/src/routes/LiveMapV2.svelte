@@ -225,6 +225,7 @@
     weatherLayer?.setVisible(layerToggles.weather);
   });
   $effect(() => {
+    console.log('[livemap] myPosition effect', layerToggles.myPosition, 'layer?', !!myPositionLayer);
     myPositionLayer?.setVisible(layerToggles.myPosition);
   });
 
