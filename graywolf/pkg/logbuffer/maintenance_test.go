@@ -2,7 +2,6 @@ package logbuffer
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -28,9 +27,14 @@ func TestMaintenanceTriggersEviction(t *testing.T) {
 	db.gorm.Raw("SELECT COUNT(*) FROM logs").Scan(&count)
 	// Eviction at every Nth insert means count peaks at
 	// RingSize + MaintenanceEvery - 1 between evictions. With
-	// RingSize=5, MaintenanceEvery=3 → upper bound 7.
+	// RingSize=5, MaintenanceEvery=3 → bounds [5, 7]. Lower bound
+	// catches an over-eager DELETE that would silently drop survivors;
+	// upper bound catches a missed eviction.
 	if count > 7 {
 		t.Fatalf("ring exceeded: count=%d, want <=7", count)
+	}
+	if count < 5 {
+		t.Fatalf("ring under-populated: count=%d, want >=5 (eviction over-deleted?)", count)
 	}
 	// Should be at least one eviction by row 20 (eviction triggers at
 	// inserts 3,6,9,...). The most recent row's content should reflect
@@ -62,5 +66,4 @@ func TestMaintenanceEveryZeroDisablesAutoEviction(t *testing.T) {
 	if count != 20 {
 		t.Fatalf("with MaintenanceEvery=0, no eviction expected; got count=%d", count)
 	}
-	_ = context.Background()
 }
