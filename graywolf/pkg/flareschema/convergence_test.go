@@ -1,6 +1,7 @@
 package flareschema
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,6 +10,17 @@ import (
 	"runtime"
 	"testing"
 )
+
+// strictDecode runs json.Unmarshal with DisallowUnknownFields so any
+// field the Rust side emits that isn't named on the Go side fails the
+// test. encoding/json's default ignores unknown fields silently, which
+// would let a Rust-side rename (e.g. `channels` → `channel_count`)
+// pass — defeating the convergence-test contract.
+func strictDecode(data []byte, v interface{}) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
+}
 
 // repoRoot walks up looking for graywolf-modem/Cargo.toml — the same
 // marker the modembridge integration tests use to locate the workspace
@@ -92,20 +104,21 @@ func TestConvergenceListAudio(t *testing.T) {
 	}
 
 	var got AudioDevices
-	if err := json.Unmarshal(stdout, &got); err != nil {
-		t.Fatalf("unmarshal --list-audio output into AudioDevices: %v\nstdout:\n%s", err, stdout)
+	if err := strictDecode(stdout, &got); err != nil {
+		t.Fatalf("strict-decode --list-audio output into AudioDevices: %v\nstdout:\n%s", err, stdout)
 	}
 
-	// Round-trip the parsed value back to JSON and re-parse so a stray
-	// extra field on the Rust side gets surfaced. encoding/json is lossy
-	// on unknown fields by default; we want this to be a contract test.
+	// Round-trip strict: confirm the parsed value re-encodes to a shape
+	// the strict decoder also accepts. Combined with the first strict
+	// decode, this catches both (a) Rust emitting a field Go doesn't know
+	// and (b) Go marshaling a field Go can't subsequently round-trip.
 	roundTrip, err := json.Marshal(got)
 	if err != nil {
 		t.Fatalf("re-marshal: %v", err)
 	}
 	var second AudioDevices
-	if err := json.Unmarshal(roundTrip, &second); err != nil {
-		t.Fatalf("re-parse: %v", err)
+	if err := strictDecode(roundTrip, &second); err != nil {
+		t.Fatalf("strict re-parse: %v", err)
 	}
 
 	// Sanity: the document must be well-formed even on hosts with no
@@ -130,18 +143,18 @@ func TestConvergenceListUSB(t *testing.T) {
 	}
 
 	var got USBTopology
-	if err := json.Unmarshal(stdout, &got); err != nil {
-		t.Fatalf("unmarshal --list-usb output into USBTopology: %v\nstdout:\n%s", err, stdout)
+	if err := strictDecode(stdout, &got); err != nil {
+		t.Fatalf("strict-decode --list-usb output into USBTopology: %v\nstdout:\n%s", err, stdout)
 	}
 
-	// Re-marshal/re-parse to ensure the document round-trips cleanly.
+	// Round-trip strict: see TestConvergenceListAudio for rationale.
 	rt, err := json.Marshal(got)
 	if err != nil {
 		t.Fatalf("re-marshal: %v", err)
 	}
 	var second USBTopology
-	if err := json.Unmarshal(rt, &second); err != nil {
-		t.Fatalf("re-parse: %v", err)
+	if err := strictDecode(rt, &second); err != nil {
+		t.Fatalf("strict re-parse: %v", err)
 	}
 
 	// Sanity: the document must always have a devices field, even if
