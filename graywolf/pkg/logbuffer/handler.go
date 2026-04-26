@@ -37,13 +37,10 @@ type Handler struct {
 	goAttrs  []slog.Attr
 	goGroups []string
 
-	// shared throttle state lives behind a pointer so every chained
-	// child Handler (produced by WithAttrs / WithGroup) increments the
-	// same counter. Without this, per-subsystem loggers like
-	// slog.With("component","ptt") each get their own counter and
-	// MaintenanceEvery=200 never fires on cold chains. Putting the
-	// mutex here also avoids the `go vet` "assignment copies lock value"
-	// warning that a `clone := *h` would otherwise trip.
+	// shared throttle state. Indirection so every Handler clone
+	// produced by WithAttrs / WithGroup increments the same counter
+	// (otherwise MaintenanceEvery never fires on per-subsystem
+	// loggers). `go vet` enforces the invariant.
 	shared *handlerShared
 }
 
