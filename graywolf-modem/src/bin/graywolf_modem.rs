@@ -68,6 +68,11 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    if args.len() == 2 && args[1] == "--list-usb" {
+        println!("{}", graywolf_demod::list_usb::run());
+        return ExitCode::SUCCESS;
+    }
+
     let server = bind_server(&args);
     let server = match server {
         Ok(s) => s,

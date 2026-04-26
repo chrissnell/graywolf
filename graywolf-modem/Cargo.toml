@@ -12,6 +12,10 @@ cpal = "0.17"
 hidapi = "2.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# USB topology enumeration for `--list-audio`'s sibling --list-usb.
+# Pure-Rust, no libusb dependency, and works cross-platform without
+# requiring privileged kernel APIs.
+nusb = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 # Direct POSIX access for serial PTT: fcntl::open + libc TIOCMSET ioctls.
