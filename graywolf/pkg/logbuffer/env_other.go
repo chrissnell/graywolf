@@ -10,3 +10,7 @@ func isSDCardDevice(_ string) bool { return false }
 func backingDeviceForPath(string) (string, error) {
 	return "", nil
 }
+
+func IsRaspberryPiHost() bool                 { return false }
+func BackingDeviceFor(string) (string, error) { return "", nil }
+func IsSDCardDevice(string) bool              { return false }

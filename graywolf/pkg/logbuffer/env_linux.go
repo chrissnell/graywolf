@@ -114,3 +114,15 @@ func parseMountinfo(content []byte, abs string) (string, error) {
 	}
 	return bestSource, nil
 }
+
+// IsRaspberryPiHost is the production-default wrapper around
+// isRaspberryPi that reads /sys/firmware/devicetree/base/model. Exposed
+// so cmd/graywolf can drive the path picker without re-implementing the
+// detection.
+func IsRaspberryPiHost() bool { return isRaspberryPi(piModelPath) }
+
+// BackingDeviceFor exposes backingDeviceForPath under an exported name.
+func BackingDeviceFor(p string) (string, error) { return backingDeviceForPath(p) }
+
+// IsSDCardDevice exposes isSDCardDevice under an exported name.
+func IsSDCardDevice(dev string) bool { return isSDCardDevice(dev) }
