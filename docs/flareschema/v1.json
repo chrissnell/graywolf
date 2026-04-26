@@ -1,0 +1,638 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chrissnell/graywolf/pkg/flareschema/flare",
+  "$ref": "#/$defs/Flare",
+  "$defs": {
+    "AudioDevice": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "is_default": {
+          "type": "boolean"
+        },
+        "supported_configs": {
+          "items": {
+            "$ref": "#/$defs/AudioStreamConfigRange"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "direction",
+        "is_default"
+      ]
+    },
+    "AudioDevices": {
+      "properties": {
+        "hosts": {
+          "items": {
+            "$ref": "#/$defs/AudioHost"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "hosts"
+      ]
+    },
+    "AudioHost": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "is_default": {
+          "type": "boolean"
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/AudioDevice"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "is_default",
+        "devices"
+      ]
+    },
+    "AudioStreamConfigRange": {
+      "properties": {
+        "channels": {
+          "type": "integer"
+        },
+        "min_sample_rate_hz": {
+          "type": "integer"
+        },
+        "max_sample_rate_hz": {
+          "type": "integer"
+        },
+        "sample_format": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "channels",
+        "min_sample_rate_hz",
+        "max_sample_rate_hz",
+        "sample_format"
+      ]
+    },
+    "CM108Device": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "product": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "path",
+        "vendor",
+        "product",
+        "description"
+      ]
+    },
+    "CM108Devices": {
+      "properties": {
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/CM108Device"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "devices"
+      ]
+    },
+    "CollectorIssue": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "kind",
+        "message"
+      ]
+    },
+    "ConfigItem": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "key",
+        "value"
+      ]
+    },
+    "ConfigSection": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ConfigItem"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "items"
+      ]
+    },
+    "Flare": {
+      "properties": {
+        "schema_version": {
+          "type": "integer"
+        },
+        "user": {
+          "$ref": "#/$defs/User"
+        },
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        },
+        "config": {
+          "$ref": "#/$defs/ConfigSection"
+        },
+        "system": {
+          "$ref": "#/$defs/System"
+        },
+        "service_status": {
+          "$ref": "#/$defs/ServiceStatus"
+        },
+        "ptt": {
+          "$ref": "#/$defs/PTTSection"
+        },
+        "gps": {
+          "$ref": "#/$defs/GPSSection"
+        },
+        "audio_devices": {
+          "$ref": "#/$defs/AudioDevices"
+        },
+        "usb_topology": {
+          "$ref": "#/$defs/USBTopology"
+        },
+        "cm108": {
+          "$ref": "#/$defs/CM108Devices"
+        },
+        "logs": {
+          "$ref": "#/$defs/LogsSection"
+        }
+      },
+      "type": "object",
+      "required": [
+        "schema_version",
+        "user",
+        "meta",
+        "config",
+        "system",
+        "service_status",
+        "ptt",
+        "gps",
+        "audio_devices",
+        "usb_topology",
+        "cm108",
+        "logs"
+      ]
+    },
+    "GPSCandidate": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "product": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "reachable": {
+          "type": "boolean"
+        },
+        "accessible": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "kind"
+      ]
+    },
+    "GPSSection": {
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/GPSCandidate"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "candidates"
+      ]
+    },
+    "LogEntry": {
+      "properties": {
+        "ts_ns": {
+          "type": "integer"
+        },
+        "level": {
+          "type": "string"
+        },
+        "component": {
+          "type": "string"
+        },
+        "msg": {
+          "type": "string"
+        },
+        "attrs": {
+          "type": "object"
+        }
+      },
+      "type": "object",
+      "required": [
+        "ts_ns",
+        "level",
+        "component",
+        "msg"
+      ]
+    },
+    "LogsSection": {
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/LogEntry"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
+        "entries"
+      ]
+    },
+    "Meta": {
+      "properties": {
+        "schema_version": {
+          "type": "integer"
+        },
+        "graywolf_version": {
+          "type": "string"
+        },
+        "graywolf_commit": {
+          "type": "string"
+        },
+        "graywolf_modem_version": {
+          "type": "string"
+        },
+        "graywolf_modem_commit": {
+          "type": "string"
+        },
+        "hostname_hash": {
+          "type": "string"
+        },
+        "submitted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "schema_version",
+        "graywolf_version",
+        "submitted_at"
+      ]
+    },
+    "NetworkInterface": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mac_oui": {
+          "type": "string"
+        },
+        "up": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "up"
+      ]
+    },
+    "PTTCandidate": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "product": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "accessible": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "kind"
+      ]
+    },
+    "PTTSection": {
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/PTTCandidate"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "candidates"
+      ]
+    },
+    "ServiceStatus": {
+      "properties": {
+        "manager": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "is_active": {
+          "type": "boolean"
+        },
+        "is_failed": {
+          "type": "boolean"
+        },
+        "restart_count": {
+          "type": "integer"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "is_active",
+        "is_failed"
+      ]
+    },
+    "System": {
+      "properties": {
+        "os": {
+          "type": "string"
+        },
+        "os_pretty": {
+          "type": "string"
+        },
+        "kernel": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "is_raspberry_pi": {
+          "type": "boolean"
+        },
+        "pi_model": {
+          "type": "string"
+        },
+        "groups": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ntp_synchronized": {
+          "type": "boolean"
+        },
+        "udev_rules_present": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "network_interfaces": {
+          "items": {
+            "$ref": "#/$defs/NetworkInterface"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "os",
+        "arch"
+      ]
+    },
+    "USBDevice": {
+      "properties": {
+        "bus_number": {
+          "type": "integer"
+        },
+        "port_path": {
+          "type": "string"
+        },
+        "vendor_id": {
+          "type": "string"
+        },
+        "product_id": {
+          "type": "string"
+        },
+        "vendor_name": {
+          "type": "string"
+        },
+        "product_name": {
+          "type": "string"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "class": {
+          "type": "string"
+        },
+        "subclass": {
+          "type": "string"
+        },
+        "usb_version": {
+          "type": "string"
+        },
+        "speed": {
+          "type": "string"
+        },
+        "max_power_ma": {
+          "type": "integer"
+        },
+        "hub_power_source": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "bus_number",
+        "vendor_id",
+        "product_id"
+      ]
+    },
+    "USBTopology": {
+      "properties": {
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/USBDevice"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/CollectorIssue"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "devices"
+      ]
+    },
+    "User": {
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "radio_model": {
+          "type": "string"
+        },
+        "audio_interface": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  }
+}
