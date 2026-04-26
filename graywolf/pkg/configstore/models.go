@@ -339,6 +339,18 @@ type UpdatesConfig struct {
 	UpdatedAt time.Time `json:"-"`
 }
 
+// LogBufferConfig stores the operator's override for the in-database
+// log ring size. Singleton at id=1. MaxRows == 0 disables persistence
+// entirely (back to console-only logging). When no row exists, the
+// logbuffer package picks an environment-aware default (2000 on Pi /
+// SD-card / ramdisk, 5000 on disk-backed systems).
+type LogBufferConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	MaxRows   int       `gorm:"not null;default:0" json:"max_rows"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
 // UnitsConfig stores the operator's preferred measurement system for
 // display. Singleton at id=1, default System="imperial". Valid values
 // are "imperial" and "metric"; unknown values fall back to imperial

@@ -161,6 +161,7 @@ func (s *Store) Migrate() error {
 		&ThemeConfig{},
 		&MapsConfig{},
 		&MapsDownload{},
+		&LogBufferConfig{},
 	); err != nil {
 		_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 		return err
