@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"golang.org/x/sys/unix"
 )
 
 const piModelPath = "/sys/firmware/devicetree/base/model"
@@ -46,12 +44,6 @@ func isSDCardDevice(dev string) bool {
 // backingDeviceForPath returns the /dev path of the block device backing
 // the filesystem at p. Used by ResolvePath to decide whether the data
 // dir lives on an SD card.
-//
-// Implementation: statfs gives us the filesystem id, but mapping that
-// back to a /dev path requires walking /proc/self/mountinfo. The
-// simpler trick — and the one the rest of graywolf doesn't need to
-// share — is to read /proc/self/mountinfo and find the longest mount
-// point that's a prefix of p.
 func backingDeviceForPath(p string) (string, error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
@@ -61,15 +53,33 @@ func backingDeviceForPath(p string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read mountinfo: %w", err)
 	}
-	// Each line: id parent major:minor root mountpoint opts ... - fstype source ...
-	// We want fields[4]=mountpoint and fields[9]=source after the "-" separator.
+	return parseMountinfo(mi, abs)
+}
+
+// parseMountinfo returns the longest mount whose mountpoint is a
+// path-component prefix of abs. Pulled out of backingDeviceForPath so
+// the prefix logic can be unit-tested against fixture content rather
+// than the host's real /proc.
+//
+// Format reminder: each line is
+//   id parent major:minor root mountpoint opts ... - fstype source ...
+// fields[4] is the mountpoint; the source field follows the literal "-"
+// separator at offset +2. Mount options can themselves contain a "-"
+// token only after the separator (kernel never emits one before), so
+// scanning left-to-right for the first "-" is safe.
+//
+// Known limitation: the kernel octal-escapes whitespace and a few other
+// characters in mountpoint/source (\040 for space, etc.). graywolf's
+// install paths are ASCII-without-whitespace by convention, so we don't
+// decode these escapes today; if that ever changes, decode here.
+func parseMountinfo(content []byte, abs string) (string, error) {
 	var bestMount, bestSource string
-	for _, line := range strings.Split(string(mi), "\n") {
+	for _, line := range strings.Split(string(content), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 10 {
 			continue
 		}
-		var sepIdx = -1
+		sepIdx := -1
 		for i, f := range fields {
 			if f == "-" {
 				sepIdx = i
@@ -81,7 +91,17 @@ func backingDeviceForPath(p string) (string, error) {
 		}
 		mount := fields[4]
 		source := fields[sepIdx+2]
-		if !strings.HasPrefix(abs, mount) {
+		// Path-component prefix: mount must equal abs OR be its
+		// ancestor. Reject "/var/lib/foo" being treated as an ancestor
+		// of "/var/lib/foobar".
+		switch {
+		case mount == abs:
+			// exact match
+		case mount == "/":
+			// root is an ancestor of everything
+		case strings.HasPrefix(abs, mount+"/"):
+			// proper ancestor with path-component boundary
+		default:
 			continue
 		}
 		if len(mount) > len(bestMount) {
@@ -93,14 +113,4 @@ func backingDeviceForPath(p string) (string, error) {
 		return "", fmt.Errorf("no mount found for %q", abs)
 	}
 	return bestSource, nil
-}
-
-// statfsType returns the fs magic for path (used in tests to confirm a
-// path lives on tmpfs — magic 0x01021994). Pure helper; no policy.
-func statfsType(path string) (int64, error) {
-	var s unix.Statfs_t
-	if err := unix.Statfs(path, &s); err != nil {
-		return 0, err
-	}
-	return int64(s.Type), nil
 }

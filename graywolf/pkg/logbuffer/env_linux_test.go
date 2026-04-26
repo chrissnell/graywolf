@@ -54,3 +54,39 @@ func TestIsSDCardDevice(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMountinfoPathComponentPrefix(t *testing.T) {
+	// One line per mount, fabricated to mirror real /proc/self/mountinfo
+	// shape: id parent maj:min root mountpoint opts - fstype source super
+	const content = `1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw
+36 1 0:31 / /var/lib/foo rw - ext4 /dev/sda3 rw
+40 1 0:32 / /var/lib/foobar rw - ext4 /dev/mmcblk0p2 rw
+`
+	cases := []struct {
+		path string
+		want string
+	}{
+		// Exact match on /var/lib/foobar must NOT be misattributed to
+		// the sibling mount /var/lib/foo.
+		{"/var/lib/foobar/graywolf-logs.db", "/dev/mmcblk0p2"},
+		{"/var/lib/foo/graywolf-logs.db", "/dev/sda3"},
+		// A path that exists under no specific mount falls through to root.
+		{"/etc/hostname", "/dev/sda1"},
+	}
+	for _, c := range cases {
+		got, err := parseMountinfo([]byte(content), c.path)
+		if err != nil {
+			t.Fatalf("parseMountinfo(%q): %v", c.path, err)
+		}
+		if got != c.want {
+			t.Errorf("parseMountinfo(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
+}
+
+func TestParseMountinfoNoMatch(t *testing.T) {
+	// Content with no entries at all returns an error.
+	if _, err := parseMountinfo([]byte(""), "/var"); err == nil {
+		t.Fatal("expected error for empty mountinfo")
+	}
+}
