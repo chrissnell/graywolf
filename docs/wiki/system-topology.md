@@ -71,7 +71,7 @@ Operator handbook page for the history DB: [`../handbook/history-database.html`]
 
 ## Logging
 
-[`cmd/graywolf/main.go`](../../graywolf/cmd/graywolf/main.go) builds the process logger by wrapping the console `slog.TextHandler` with [`logbuffer.Handler`](../../graywolf/pkg/logbuffer/handler.go). The console handler keeps its operator-chosen level; the `logbuffer` wrapper captures every record at DEBUG and tees it into `graywolf-logs.db` -- a standalone SQLite file, not the main config DB. Records carry a `component` column derived from the slog group chain (e.g. `ptt.serial` from `slog.With("ptt").WithGroup("serial")`).
+[`cmd/graywolf/main.go`](../../graywolf/cmd/graywolf/main.go) builds the process logger by wrapping the console `slog.TextHandler` with [`logbuffer.Handler`](../../graywolf/pkg/logbuffer/handler.go). The console handler keeps its operator-chosen level; the `logbuffer` wrapper captures every record at DEBUG and tees it into `graywolf-logs.db` -- a standalone SQLite file, not the main config DB. Records carry a `component` column derived from the slog group chain (e.g. `ptt.serial` from `slog.WithGroup("ptt").WithGroup("serial")`).
 
 Path policy (resolved in [`pkg/logbuffer/path.go`](../../graywolf/pkg/logbuffer/path.go)): on Raspberry Pi or SD-card-rooted hosts, and when the operator passes `--logbuffer-ramdisk`, the ring lives on tmpfs (`/run/graywolf/` preferred, `/dev/shm/graywolf/` fallback) so we don't burn flash. Everywhere else it sits next to `graywolf.db`. Ring size defaults to 2000 rows on tmpfs and 5000 on disk; the `LogBufferConfig.MaxRows` configstore singleton overrides that, with `0` disabling persistence entirely. The buffer feeds the future `graywolf flare` diagnostic submission CLI.
 
