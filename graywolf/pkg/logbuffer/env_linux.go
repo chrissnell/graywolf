@@ -30,6 +30,13 @@ func isRaspberryPi(modelPath string) bool {
 // raw-NAND block device. The check is name-based because the alternative
 // (tracing minor numbers through subsystems) varies across kernel
 // versions.
+//
+// Assumption: dev is the resolved mountinfo source path, e.g.
+// /dev/mmcblk0p2. /proc/self/mountinfo records the kernel-resolved
+// device, not the fstab spec, so symlinks under /dev/disk/by-id/ etc.
+// are already followed by the time we inspect the path. If the input
+// ever changes to come from fstab directly, add filepath.EvalSymlinks
+// here.
 func isSDCardDevice(dev string) bool {
 	base := filepath.Base(dev)
 	switch {
