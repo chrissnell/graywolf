@@ -70,9 +70,11 @@ func Open(path string) (*DB, error) {
 
 	// WAL is required for the bursty write pattern (one INSERT per slog
 	// record). Unlike historydb (which swallows this error), we treat
-	// failure as fatal: rollback-journal mode would serialize every
-	// record under an exclusive lock and break the "console output
-	// never delayed by DB work" contract documented on Handle.
+	// failure as fatal: rollback-journal mode serializes every writer
+	// behind an exclusive lock and degrades insert throughput enough
+	// to cause visible backpressure under sustained log bursts.
+	// historydb tolerates WAL failure because its write rate is
+	// orders of magnitude lower.
 	if err := gdb.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
 		return nil, fmt.Errorf("PRAGMA journal_mode: %w", err)
 	}
@@ -82,6 +84,7 @@ func Open(path string) (*DB, error) {
 	if err := gdb.Exec(schema).Error; err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}
+
 	// chmod is hygiene, not a security control. Filesystems that don't
 	// support unix permissions (FAT32 on a Pi /boot partition, for
 	// example) silently ignore it; that's intentional. Mirrors
