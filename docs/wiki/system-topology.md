@@ -75,6 +75,30 @@ Operator handbook page for the history DB: [`../handbook/history-database.html`]
 
 Path policy (resolved in [`pkg/logbuffer/path.go`](../../graywolf/pkg/logbuffer/path.go)): on Raspberry Pi or SD-card-rooted hosts, and when the operator passes `--logbuffer-ramdisk`, the ring lives on tmpfs (`/run/graywolf/` preferred, `/dev/shm/graywolf/` fallback) so we don't burn flash. Everywhere else it sits next to `graywolf.db`. Ring size defaults to 2000 rows on tmpfs and 5000 on disk; the `LogBufferConfig.MaxRows` configstore singleton overrides that, with `0` disabling persistence entirely. The buffer feeds the future `graywolf flare` diagnostic submission CLI.
 
+## Wire schema (flare submission contract)
+
+The `graywolf flare` CLI (Plan 2b) and `graywolf-flare-server` (Plan 2c)
+exchange a schema-versioned JSON document. The canonical struct tree
+lives in graywolf at [`../../graywolf/pkg/flareschema/`](../../graywolf/pkg/flareschema/);
+the JSON Schema generated from it commits to
+[`../../docs/flareschema/v1.json`](../../docs/flareschema/v1.json) and is
+regenerated via `make flareschema`.
+
+graywolf-flare-server lives in its own repo and depends on this package
+through go.mod — locally via a `replace` directive pointing at this
+worktree, and in CI pinned to a tagged graywolf version. Bumping
+`SchemaVersion` is therefore a coordinated change across both repos plus
+a new committed `docs/flareschema/v<N>.json`.
+
+`graywolf-modem` participates in the contract through its `--list-audio`
+and `--list-usb` flags ([`../../graywolf-modem/src/list_audio.rs`](../../graywolf-modem/src/list_audio.rs),
+[`../../graywolf-modem/src/list_usb.rs`](../../graywolf-modem/src/list_usb.rs)),
+whose stdout JSON unmarshals directly into `flareschema.AudioDevices`
+and `flareschema.USBTopology`. The cross-language guard is the
+convergence test in [`../../graywolf/pkg/flareschema/convergence_test.go`](../../graywolf/pkg/flareschema/convergence_test.go),
+which runs the modem binary at test time and parses its stdout into the
+schema types.
+
 ## External services
 
 | Service | Purpose | Code | Handbook |
