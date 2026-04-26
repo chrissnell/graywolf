@@ -98,9 +98,14 @@ pub fn run() -> String {
             serial: d.serial_number().unwrap_or_default().to_string(),
             class: format!("{:02x}", d.class()),
             subclass: format!("{:02x}", d.subclass()),
-            // nusb 0.1.14 renamed `usb_version()` to `device_version()`;
-            // the JSON field stays `usb_version` (Go-side wire contract).
-            usb_version: format_bcd(d.device_version()),
+            // usb_version (bcdUSB, the USB protocol version) is not
+            // exposed by nusb 0.1.x's portable DeviceInfo —
+            // device_version() returns bcdDevice (firmware revision),
+            // a different descriptor field. Leave the JSON field
+            // omitted (skip_serializing_if drops the empty string)
+            // until a per-platform collector reads bcdUSB from sysfs
+            // (Linux), IOKit (macOS), or SetupAPI (Windows).
+            usb_version: String::new(),
             speed: format_speed(d.speed()),
             // bMaxPower / hub power source require a descriptor read
             // which on some platforms requires open(); leave them unset
@@ -121,12 +126,6 @@ fn marshal(t: &USBTopology) -> String {
             e.to_string()
         )
     })
-}
-
-fn format_bcd(bcd: u16) -> String {
-    let major = (bcd >> 8) & 0xff;
-    let minor = bcd & 0xff;
-    format!("{:x}.{:02x}", major, minor)
 }
 
 /// Render a stable per-device locator string for the `port_path` JSON
