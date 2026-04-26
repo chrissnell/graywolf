@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // Config tunes the Handler.
@@ -50,8 +51,9 @@ type Handler struct {
 // chain. Allocated once by New and aliased by every clone produced
 // by WithAttrs / WithGroup.
 type handlerShared struct {
-	mu      sync.Mutex
-	counter int
+	mu         sync.Mutex
+	counter    int
+	failedOnce bool
 }
 
 // New returns a Handler that wraps inner and tees to db.
@@ -112,7 +114,7 @@ func (h *Handler) persist(r slog.Record) {
 	attrs := h.collectAttrs(r)
 	attrsJSON, _ := json.Marshal(attrs)
 	component := h.componentFromGroups()
-	_ = h.db.gorm.Exec(
+	err := h.db.gorm.Exec(
 		"INSERT INTO logs (ts_ns, level, component, msg, attrs_json) VALUES (?,?,?,?,?)",
 		r.Time.UnixNano(),
 		r.Level.String(),
@@ -120,7 +122,9 @@ func (h *Handler) persist(r slog.Record) {
 		r.Message,
 		string(attrsJSON),
 	).Error
-
+	if err != nil {
+		h.notePersistFailureOnce(err)
+	}
 	h.afterInsert()
 }
 
@@ -203,4 +207,24 @@ func dottedGroups(groups []string) string {
 		}
 	}
 	return out
+}
+
+// notePersistFailureOnce surfaces the first DB-write failure via the
+// inner handler so an operator running with stderr open sees something
+// went wrong, then suppresses every subsequent notice for the lifetime
+// of this Handler chain. The intent is "fail loudly once, then get
+// out of the way" — the alternative (one stderr line per dropped
+// record) is worse than silent dropping. State lives on shared so a
+// single failure on any chained child suppresses notices everywhere.
+func (h *Handler) notePersistFailureOnce(err error) {
+	h.shared.mu.Lock()
+	already := h.shared.failedOnce
+	h.shared.failedOnce = true
+	h.shared.mu.Unlock()
+	if already {
+		return
+	}
+	rec := slog.NewRecord(time.Now(), slog.LevelWarn, "logbuffer: persist failed (further failures suppressed)", 0)
+	rec.AddAttrs(slog.String("err", err.Error()))
+	_ = h.inner.Handle(context.Background(), rec)
 }

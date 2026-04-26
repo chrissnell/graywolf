@@ -171,3 +171,30 @@ func TestHandlerSkipsLeadingEmptyGroup(t *testing.T) {
 		t.Fatalf("component = %q, want %q", component, "ptt")
 	}
 }
+
+func TestHandlerSurvivesClosedDB(t *testing.T) {
+	h, db, console := newTestHandler(t, slog.LevelDebug)
+	// Close the DB so every subsequent insert fails.
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+	logger := slog.New(h)
+
+	// Should not panic, should not return an error from slog's path.
+	for i := 0; i < 5; i++ {
+		logger.Info("after-close", "i", i)
+	}
+
+	// Console must still get every record (inner handler is at DEBUG).
+	got := console.String()
+	for i := 0; i < 5; i++ {
+		if !strings.Contains(got, "after-close") {
+			t.Fatalf("console missing record %d: %q", i, got)
+		}
+	}
+	// First failure must produce exactly one notice on the inner handler;
+	// subsequent failures stay quiet.
+	if c := strings.Count(got, "logbuffer: persist failed"); c != 1 {
+		t.Fatalf("notice count = %d, want exactly 1: %q", c, got)
+	}
+}
