@@ -1027,12 +1027,18 @@ pub mod listing {
                 }
             };
 
+            // cpal deprecated `.name()` in favor of `.description()`,
+            // which returns a structured DeviceDescription. We carry
+            // its `.name()` field (an owned String) on the wire — the
+            // JSON field stays `name` for the schema contract.
             let default_input = host
                 .default_input_device()
-                .and_then(|d| d.name().ok());
+                .and_then(|d| d.description().ok())
+                .map(|desc| desc.name().to_string());
             let default_output = host
                 .default_output_device()
-                .and_then(|d| d.name().ok());
+                .and_then(|d| d.description().ok())
+                .map(|desc| desc.name().to_string());
 
             let mut devices = Vec::new();
             collect_devices(
@@ -1089,7 +1095,10 @@ pub mod listing {
         };
 
         for dev in iter {
-            let name = dev.name().unwrap_or_else(|_| "<unknown>".to_string());
+            let name = dev
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| "<unknown>".to_string());
             let is_default = default_name.map(|d| d == name).unwrap_or(false);
 
             let configs = match direction {

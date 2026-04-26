@@ -128,29 +128,33 @@ fn marshal(t: &USBTopology) -> String {
     })
 }
 
-/// Render a stable per-device locator string for the `port_path` JSON
-/// field. nusb 0.1.x's portable `DeviceInfo` only exposes
-/// `device_address()` cross-platform; richer hub chains live behind
-/// platform-specific accessors and are a follow-up.
+// Render a stable per-device locator string for the `port_path` JSON
+// field. nusb 0.1.x's portable `DeviceInfo` only exposes
+// `device_address()` cross-platform; richer hub chains live behind
+// platform-specific accessors and are a follow-up.
+//
+// One impl per target OS keeps each fn body to a single trailing
+// expression (no `return`, no clippy::needless_return) while the
+// dead branches stay out of the compiled binary.
+#[cfg(target_os = "macos")]
 fn port_path_for(d: &nusb::DeviceInfo) -> String {
-    #[cfg(target_os = "macos")]
-    {
-        // macOS location IDs encode the full hub chain in 4-bit
-        // nibbles (e.g. 0x14310000 → root 1, hub 4, port 3, port 1).
-        // Render as zero-padded 8-digit hex to match Apple's
-        // System Information display.
-        return format!("{:08x}", d.location_id());
-    }
-    #[cfg(target_os = "windows")]
-    {
-        return d.port_number().to_string();
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        // Linux + everything else: the device address is unique per
-        // bus and the simplest portable identifier nusb exposes.
-        return d.device_address().to_string();
-    }
+    // macOS location IDs encode the full hub chain in 4-bit nibbles
+    // (e.g. 0x14310000 → root 1, hub 4, port 3, port 1). Render as
+    // zero-padded 8-digit hex to match Apple's System Information
+    // display.
+    format!("{:08x}", d.location_id())
+}
+
+#[cfg(target_os = "windows")]
+fn port_path_for(d: &nusb::DeviceInfo) -> String {
+    d.port_number().to_string()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn port_path_for(d: &nusb::DeviceInfo) -> String {
+    // Linux + everything else: the device address is unique per
+    // bus and the simplest portable identifier nusb exposes.
+    d.device_address().to_string()
 }
 
 fn format_speed(s: Option<nusb::Speed>) -> String {
