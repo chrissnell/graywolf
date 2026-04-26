@@ -17,11 +17,11 @@ roles.
 
 ## Pages
 
-- [`system-topology.md`](system-topology.md) -- processes, ports, persistence, hardware surface, deployment targets.
-- [`code-map.md`](code-map.md) -- feature/concern -> file lookup, table per component.
-- [`build-pipelines.md`](build-pipelines.md) -- how each artifact is produced (Go binary, Rust modem, web UI, proto codegen, OpenAPI, goreleaser, packages, in-app release notes).
+- [`system-topology.md`](system-topology.md) -- processes, ports, persistence, hardware surface, and deployment targets.
+- [`code-map.md`](code-map.md) -- feature/concern -> file lookup, one table per component.
+- [`build-pipelines.md`](build-pipelines.md) -- per-artifact build recipes (Go binary, Rust modem, web UI, proto codegen, OpenAPI, goreleaser, packages, in-app release notes).
 - [`invariants.md`](invariants.md) -- cross-cutting "if X then also Y" rules with reasons.
-- [`glossary.md`](glossary.md) -- domain terms as graywolf uses them, with pointers.
+- [`glossary.md`](glossary.md) -- domain terms as graywolf uses them, with source pointers.
 
 ## Maintenance
 

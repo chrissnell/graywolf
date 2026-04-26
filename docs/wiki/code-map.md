@@ -52,7 +52,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | Package | Purpose | Key files |
 |---|---|---|
 | `ax25` | AX.25 v2.0 UI frame encode/decode (UI only) | `frame.go`, `address.go`, `priority.go` |
-| `aprs` | APRS info-field parsing (positions, mic-e, weather, telemetry, NMEA, peetbros, base91, DAO, PHG, DF, capabilities, messages, objects, deviceid) | `parse.go`, `position.go`, `mice.go`, `message.go`, `weather.go`, ... |
+| `aprs` | APRS info-field parsing (positions, messages, weather, telemetry, mic-e, plus assorted extensions -- see [glossary.md](glossary.md)) | `parse.go`, `position.go`, `mice.go`, `message.go`, `weather.go`, ... |
 | `kiss` | KISS framing + TCP server + TCP client + multi-port manager + tx queue + ratelimit | `framing.go`, `server.go`, `client.go`, `manager.go`, `tx_queue.go` |
 | `agw` | AGWPE TCP server (direwolf-compatible subset: R/G/g/k/K/m/X/x/y/Y/V) | `server.go`, `protocol.go` |
 | `ipcproto` | Generated Go bindings for `proto/graywolf.proto` | `graywolf.pb.go` (regen via `make proto`) |
@@ -98,7 +98,7 @@ The split is enforced by [invariant 9](invariants.md).
 
 | Package | Purpose |
 |---|---|
-| `webapi` | REST API (Gorilla mux); per-feature handlers (channels, beacons, digipeater, igate, kiss, agw, audio_devices, ptt, gps, maps, messages, stations, status, smart_beacon, station_config, packets, position, position_log, release_notes, theme, units, updates, version, downloads, igate_config, errors) |
+| `webapi` | REST API handlers (Gorilla mux); one handler file per feature -- see [`../../graywolf/pkg/webapi/`](../../graywolf/pkg/webapi/) |
 | `webapi/dto` | Wire-shape DTOs; constants like `DefaultAgwListenAddr`, `MaxMessageText` live here |
 | `webapi/docs` | Swag annotation infra: `op_ids.go`, `cmd/idlint`, `cmd/tagify`, `gen/swagger.{json,yaml}` |
 | `webauth` | Password hash, session tokens (cookie), `RequireAuth` middleware, store, handlers |
@@ -112,7 +112,7 @@ The split is enforced by [invariant 9](invariants.md).
 
 ## Web UI (`graywolf/web/`)
 
-Built into [`../../graywolf/web/dist/`](../../graywolf/web/) (gitignored)
+Built into `dist/` under [`../../graywolf/web/`](../../graywolf/web/) (gitignored)
 and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 
 | Path | What |
