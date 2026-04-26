@@ -46,6 +46,13 @@ func Open(path string) (*DB, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create logbuffer dir %q: %w", dir, err)
 	}
+	// Pre-flight: confirm the target directory is writable. SQLite
+	// reports a full / read-only filesystem as "out of memory", which
+	// is unactionable; converting it here yields a message the operator
+	// can act on. Mirrors historydb.checkWritable.
+	if err := checkWritable(dir); err != nil {
+		return nil, fmt.Errorf("logbuffer dir %q is not writable (filesystem full or read-only?): %w", dir, err)
+	}
 
 	gdb, err := gorm.Open(sqlite.Open(abs), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -73,6 +80,21 @@ func Open(path string) (*DB, error) {
 	_ = os.Chmod(abs, 0o600)
 
 	return &DB{gorm: gdb, Path: abs}, nil
+}
+
+// checkWritable verifies dir accepts a temp-file write. The created
+// file is removed before return; the only side effect on success is a
+// brief inode allocation. Used by Open to convert SQLite's opaque
+// "out of memory" error on a full or read-only filesystem into an
+// actionable message.
+func checkWritable(dir string) error {
+	f, err := os.CreateTemp(dir, ".logbuffer-probe-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	f.Close()
+	return os.Remove(name)
 }
 
 // Close releases the underlying connection.
