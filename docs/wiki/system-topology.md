@@ -63,10 +63,17 @@ is enforced by [invariant 9](invariants.md).
 |---|---|---|---|
 | `graywolf.db` (+`-shm`,`-wal`) | Config DB (SQLite, GORM, glebarez/sqlite, no cgo) | [`../../graywolf/pkg/configstore/`](../../graywolf/pkg/configstore/) | `./graywolf.db` (Unix); `%PROGRAMDATA%\Graywolf\graywolf.db` (Windows) |
 | `graywolf-history.db` | Position-history SQLite (separate DB) | [`../../graywolf/pkg/historydb/`](../../graywolf/pkg/historydb/) | `./graywolf-history.db` (Unix); same dir on Windows |
+| `graywolf-logs.db` (+`-shm`,`-wal`) | Circular slog-record ring (separate SQLite DB) | [`../../graywolf/pkg/logbuffer/`](../../graywolf/pkg/logbuffer/) | tmpfs (`/run/graywolf/` then `/dev/shm/graywolf/`) on Raspberry Pi / SD-card hosts and when `--logbuffer-ramdisk` is set; otherwise alongside `graywolf.db` |
 | Tile cache dir | Offline PMTiles cache | [`../../graywolf/pkg/mapscache/`](../../graywolf/pkg/mapscache/) | flag `-tile-cache-dir`; derived from `dirname(-config) + /tiles` |
 | `notes.yaml` | In-app release notes (embedded in binary) | [`../../graywolf/pkg/releasenotes/`](../../graywolf/pkg/releasenotes/) | n/a (`go:embed`) |
 
 Operator handbook page for the history DB: [`../handbook/history-database.html`](../handbook/history-database.html).
+
+## Logging
+
+[`cmd/graywolf/main.go`](../../graywolf/cmd/graywolf/main.go) builds the process logger by wrapping the console `slog.TextHandler` with [`logbuffer.Handler`](../../graywolf/pkg/logbuffer/handler.go). The console handler keeps its operator-chosen level; the `logbuffer` wrapper captures every record at DEBUG and tees it into `graywolf-logs.db` -- a standalone SQLite file, not the main config DB. Records carry a `component` column derived from the slog group chain (e.g. `ptt.serial` from `slog.With("ptt").WithGroup("serial")`).
+
+Path policy (resolved in [`pkg/logbuffer/path.go`](../../graywolf/pkg/logbuffer/path.go)): on Raspberry Pi or SD-card-rooted hosts, and when the operator passes `--logbuffer-ramdisk`, the ring lives on tmpfs (`/run/graywolf/` preferred, `/dev/shm/graywolf/` fallback) so we don't burn flash. Everywhere else it sits next to `graywolf.db`. Ring size defaults to 2000 rows on tmpfs and 5000 on disk; the `LogBufferConfig.MaxRows` configstore singleton overrides that, with `0` disabling persistence entirely. The buffer feeds the future `graywolf flare` diagnostic submission CLI.
 
 ## External services
 

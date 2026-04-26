@@ -75,6 +75,7 @@ background, the operator handbook is the starting point.
 | `releasenotes` | Embedded release-note YAML + parser; powers the in-app "What's new" popup. | [`../../graywolf/pkg/releasenotes/`](../../graywolf/pkg/releasenotes/) |
 | `updatescheck` | Daily GitHub releases poll. | [`../../graywolf/pkg/updatescheck/`](../../graywolf/pkg/updatescheck/) |
 | `packetlog` | In-memory ring of RX/TX/IS records with filter-query API. | [`../../graywolf/pkg/packetlog/`](../../graywolf/pkg/packetlog/) |
+| `logbuffer` | `slog.Handler` tee that writes every record at DEBUG into a circular SQLite ring (`graywolf-logs.db`), separate from the config and history DBs. Env-aware path (tmpfs on Pi/SD-card hosts, disk elsewhere); feeds the future `graywolf flare` diagnostic submission. | [`../../graywolf/pkg/logbuffer/`](../../graywolf/pkg/logbuffer/) |
 | `stationcache` | Heard-station cache (memory + persistent). | [`../../graywolf/pkg/stationcache/`](../../graywolf/pkg/stationcache/) |
 | `webapi` / `webauth` / `webtypes` | REST API, auth primitives, shared schemas. | [`../../graywolf/pkg/webapi/`](../../graywolf/pkg/webapi/), [`../../graywolf/pkg/webauth/`](../../graywolf/pkg/webauth/), [`../../graywolf/pkg/webtypes/`](../../graywolf/pkg/webtypes/) |
 | `ipcproto` | Generated Go bindings for the proto. | [`../../graywolf/pkg/ipcproto/`](../../graywolf/pkg/ipcproto/) |
@@ -83,4 +84,4 @@ background, the operator handbook is the starting point.
 | Workspace shim | The root `Cargo.toml`; see [invariant 1](invariants.md). | [`../../Cargo.toml`](../../Cargo.toml) |
 | `notes.yaml` | The in-app release-notes data file (embedded into the Go binary). | [`../../graywolf/pkg/releasenotes/notes.yaml`](../../graywolf/pkg/releasenotes/notes.yaml) |
 | `VERSION` | Repo-root authoritative version file. Read by Makefile and Rust `build.rs`. | [`../../VERSION`](../../VERSION) |
-| `graywolf.db` / `graywolf-history.db` | Config and history SQLite files at runtime (gitignored). | see [system-topology.md](system-topology.md) |
+| `graywolf.db` / `graywolf-history.db` / `graywolf-logs.db` | Config, history, and log-ring SQLite files at runtime (gitignored). | see [system-topology.md](system-topology.md) |
