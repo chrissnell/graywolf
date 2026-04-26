@@ -114,3 +114,40 @@ func TestConvergenceListAudio(t *testing.T) {
 		t.Fatalf("both hosts and issues nil; document was empty")
 	}
 }
+
+func TestConvergenceListUSB(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows runners don't ship the modem binary in this matrix")
+	}
+	bin := findModemBinary(t)
+	if bin == "" {
+		t.Skip("graywolf-modem binary not found; build with `cargo build --release` to enable")
+	}
+
+	stdout, err := runModemListing(bin, "--list-usb")
+	if err != nil {
+		t.Fatalf("--list-usb: %v", err)
+	}
+
+	var got USBTopology
+	if err := json.Unmarshal(stdout, &got); err != nil {
+		t.Fatalf("unmarshal --list-usb output into USBTopology: %v\nstdout:\n%s", err, stdout)
+	}
+
+	// Re-marshal/re-parse to ensure the document round-trips cleanly.
+	rt, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	var second USBTopology
+	if err := json.Unmarshal(rt, &second); err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+
+	// Sanity: the document must always have a devices field, even if
+	// empty (omitempty is intentionally not set on USBTopology.Devices).
+	// Hosts with no USB visibility report it via the issues channel.
+	if got.Devices == nil && got.Issues == nil {
+		t.Fatalf("both devices and issues nil; document was empty")
+	}
+}
