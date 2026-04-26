@@ -133,17 +133,7 @@ func (h *Handler) persist(r slog.Record) {
 // grep-friendly when an operator dumps the ring with `sqlite3`.
 func (h *Handler) collectAttrs(r slog.Record) map[string]any {
 	out := make(map[string]any, len(h.goAttrs)+r.NumAttrs())
-	prefix := ""
-	for _, g := range h.goGroups {
-		if g == "" {
-			continue
-		}
-		if prefix == "" {
-			prefix = g
-		} else {
-			prefix = prefix + "." + g
-		}
-	}
+	prefix := dottedGroups(h.goGroups)
 	for _, a := range h.goAttrs {
 		flattenAttr(out, prefix, a)
 	}
@@ -190,17 +180,27 @@ func (h *Handler) afterInsert() { h.maintenance() }
 // componentFromGroups returns the dotted group chain for the
 // component column, e.g. ["ptt","serial"] -> "ptt.serial". Empty when
 // no group is set, which is the common case for top-level startup
-// logging.
+// logging. Shares dottedGroups so the column and the attrs-JSON
+// prefix never diverge on edge cases like a leading empty group.
 func (h *Handler) componentFromGroups() string {
-	if len(h.goGroups) == 0 {
-		return ""
-	}
-	out := h.goGroups[0]
-	for _, g := range h.goGroups[1:] {
+	return dottedGroups(h.goGroups)
+}
+
+// dottedGroups joins a slog group chain into a dotted string, skipping
+// every empty entry (slog permits WithGroup("") and the spec inlines
+// such groups). Used by both componentFromGroups and collectAttrs so
+// they treat empty entries identically.
+func dottedGroups(groups []string) string {
+	out := ""
+	for _, g := range groups {
 		if g == "" {
 			continue
 		}
-		out += "." + g
+		if out == "" {
+			out = g
+		} else {
+			out += "." + g
+		}
 	}
 	return out
 }

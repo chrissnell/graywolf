@@ -156,3 +156,18 @@ func TestHandlerWritesNestedComponent(t *testing.T) {
 		t.Fatalf("component = %q, want %q", component, "ptt.serial")
 	}
 }
+
+func TestHandlerSkipsLeadingEmptyGroup(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	// slog permits WithGroup("") (it inlines children at the parent
+	// scope). The component column must agree with collectAttrs's
+	// dotted prefix — neither should produce a leading dot.
+	logger := slog.New(h.WithGroup("").WithGroup("ptt"))
+	logger.Info("filtered")
+
+	var component string
+	db.gorm.Raw("SELECT component FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&component)
+	if component != "ptt" {
+		t.Fatalf("component = %q, want %q", component, "ptt")
+	}
+}
