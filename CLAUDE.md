@@ -1,5 +1,48 @@
 # Graywolf — Claude Code Instructions
 
+## Architecture knowledge — consult the wiki first
+
+For any cross-system question — deployment topology, build pipelines,
+request lifecycle, "where does feature X live", "what files do I need to
+touch to change Y" — the **first action** is to read [`docs/wiki/`](docs/wiki/).
+Start at [`docs/wiki/README.md`](docs/wiki/README.md) for the index.
+
+The wiki is authoritative for *how pieces connect* and *where to look*; the
+code is authoritative for *what each piece does*. Only fall back to grep,
+find, or open-ended Read traversal once the wiki has been consulted.
+
+For operator-facing setup, configuration, hardware, and REST API
+reference, the canonical source is the HTML handbook at
+[`docs/handbook/`](docs/handbook/) (also published at
+chrissnell.com/software/graywolf/). The wiki points into it; don't
+duplicate its content. For original design intent on a subsystem, plan
+files live in `.context/`.
+
+## Wiki maintenance — required, not optional
+
+The wiki only earns its keep if it stays current. Three triggers:
+
+1. **Wiki didn't have what you needed.** If you had to grep or trace code
+   to answer a question that the wiki *should* have answered, add it to
+   the relevant page before finishing your task.
+
+2. **Wiki disagrees with the code.** Code wins. Update the wiki to match
+   reality in the same change that surfaced the discrepancy. A stale wiki
+   is worse than none, because it gets trusted.
+
+3. **You added or changed something wiki-worthy.** New component, renamed
+   file, new env var or invariant, new endpoint, schema migration, build
+   stage, deployment surface, hostname, secret, cross-system rule — all
+   belong in the wiki. Update the page in the same change that introduces
+   the thing.
+
+The "wiki-worthy" bar: anything a future session would otherwise have to
+grep for, read multiple files to assemble, or learn the hard way by
+breaking. Component-internal details don't belong (the code's job); the
+wiki carries topology, navigation, invariants, and intent.
+
+---
+
 ## Release workflow
 
 When the user asks to release, cut a release, bump, tag, or any equivalent phrasing:
