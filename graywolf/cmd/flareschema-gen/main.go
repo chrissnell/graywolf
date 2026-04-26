@@ -3,9 +3,15 @@
 // Makefile's `flareschema` target.
 //
 // Stable output: invopop/jsonschema walks struct fields in declaration
-// order, and we explicitly disable additional-properties so the schema
-// matches Go's encoding/json behaviour. Re-running the generator
-// against an unchanged Go source tree yields a byte-identical document.
+// order, so re-running the generator against an unchanged Go source
+// tree yields a byte-identical document.
+//
+// Forward-compatibility: AllowAdditionalProperties is enabled so older
+// receivers don't reject payloads from newer client builds carrying an
+// extra field before the server's migration path runs. The version
+// gate (SchemaVersion / ErrUnsupportedSchemaVersion in the schema
+// package) is what enforces compatibility, not a strict-properties
+// schema check.
 package main
 
 import (
