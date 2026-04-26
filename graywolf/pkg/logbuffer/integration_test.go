@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,30 +27,37 @@ func TestEndToEndBurstStaysBounded(t *testing.T) {
 		logger.Info("emitted", "seq", i, "ts", time.Now().UnixNano())
 	}
 
-	// Ring must be capped: count <= ring + maintenance interval (the
-	// last few rows live between eviction passes).
+	// Peak observable count between eviction passes is exactly
+	// RingSize + MaintenanceEvery = 60: insert N+10 fires eviction
+	// after the row is already in. Anything above 60 means eviction
+	// is silently broken; below 40 means inserts are being dropped.
 	var count int64
-	db.gorm.Raw("SELECT COUNT(*) FROM logs").Scan(&count)
-	if count > 60 { // 50 + slack for 10-row maintenance interval
-		t.Fatalf("ring exceeded slack budget: count=%d, want <=60", count)
+	if err := db.gorm.Raw("SELECT COUNT(*) FROM logs").Scan(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count > 60 {
+		t.Fatalf("ring exceeded peak: count=%d, want <=60", count)
+	}
+	if count < 40 {
+		t.Fatalf("ring under-populated: count=%d, want >=40 (writes dropped?)", count)
 	}
 
 	// Surviving rows must be the most recent ones — check the last row
 	// holds the highest seq we emitted.
 	var lastAttrs string
-	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&lastAttrs)
-	if !contains(lastAttrs, `"ptt.seq":499`) {
+	if err := db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&lastAttrs); err != nil {
+		t.Fatalf("scan attrs: %v", err)
+	}
+	if !strings.Contains(lastAttrs, `"ptt.seq":499`) {
 		t.Fatalf("last row attrs = %q; expected to contain ptt.seq:499", lastAttrs)
 	}
 
 	// Component column must reflect the group.
 	var lastComponent string
-	db.gorm.Raw("SELECT component FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&lastComponent)
+	if err := db.gorm.Raw("SELECT component FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&lastComponent); err != nil {
+		t.Fatalf("scan component: %v", err)
+	}
 	if lastComponent != "ptt" {
 		t.Fatalf("component = %q, want ptt", lastComponent)
 	}
-}
-
-func contains(haystack, needle string) bool {
-	return bytes.Contains([]byte(haystack), []byte(needle))
 }
