@@ -15,6 +15,16 @@
 //!                                    devices as a JSON array and exit.
 //!                                    Used by the Go parent on macOS and
 //!                                    Windows where sysfs is unavailable.
+//!     graywolf-modem --list-audio    Enumerate cpal hosts + input/output
+//!                                    devices + supported config ranges
+//!                                    as JSON and exit. Used by the
+//!                                    `graywolf flare` CLI to capture the
+//!                                    audio stack from the same crate the
+//!                                    modem uses at runtime.
+//!     graywolf-modem --list-usb      Enumerate the USB device tree
+//!                                    (bus/port path, vendor/product
+//!                                    strings, hub power source,
+//!                                    bMaxPower, speed) as JSON and exit.
 //!
 //! On Unix the IPC listener is a Unix domain socket at the given path. On
 //! Windows it is a TCP socket on 127.0.0.1 with an OS-assigned port; the
@@ -51,6 +61,16 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         }
+    }
+
+    if args.len() == 2 && args[1] == "--list-audio" {
+        println!("{}", graywolf_demod::list_audio::run());
+        return ExitCode::SUCCESS;
+    }
+
+    if args.len() == 2 && args[1] == "--list-usb" {
+        println!("{}", graywolf_demod::list_usb::run());
+        return ExitCode::SUCCESS;
     }
 
     let server = bind_server(&args);

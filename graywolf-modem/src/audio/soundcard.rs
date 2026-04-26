@@ -954,3 +954,186 @@ mod tests {
         }
     }
 }
+
+/// Read-only enumeration of every cpal host's input + output devices.
+///
+/// Used by the `--list-audio` CLI subcommand. No streams are constructed
+/// here — every call walks the host iterator and reads supported config
+/// ranges, nothing more. Safe to call from a one-shot binary path that
+/// exits immediately after.
+///
+/// The output structures mirror the Go-side `flareschema.AudioDevices`
+/// shape so the JSON serialization is the contract.
+pub mod listing {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    pub struct AudioDevices {
+        pub hosts: Vec<AudioHost>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        pub issues: Vec<CollectorIssue>,
+    }
+
+    #[derive(Serialize)]
+    pub struct AudioHost {
+        pub id: String,
+        pub name: String,
+        pub is_default: bool,
+        pub devices: Vec<AudioDevice>,
+    }
+
+    #[derive(Serialize)]
+    pub struct AudioDevice {
+        pub name: String,
+        pub direction: String,
+        pub is_default: bool,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        pub supported_configs: Vec<AudioStreamConfigRange>,
+    }
+
+    #[derive(Serialize)]
+    pub struct AudioStreamConfigRange {
+        pub channels: u16,
+        pub min_sample_rate_hz: u32,
+        pub max_sample_rate_hz: u32,
+        pub sample_format: String,
+    }
+
+    #[derive(Serialize)]
+    pub struct CollectorIssue {
+        pub kind: String,
+        pub message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub path: Option<String>,
+    }
+
+    pub fn enumerate() -> AudioDevices {
+        let mut hosts_out = Vec::new();
+        let mut issues = Vec::new();
+
+        let default_host_id = cpal::default_host().id();
+
+        for host_id in cpal::available_hosts() {
+            let host = match cpal::host_from_id(host_id) {
+                Ok(h) => h,
+                Err(e) => {
+                    issues.push(CollectorIssue {
+                        kind: "host_init_failed".into(),
+                        message: format!("{}: {}", host_id.name(), e),
+                        path: None,
+                    });
+                    continue;
+                }
+            };
+
+            // cpal deprecated `.name()` in favor of `.description()`,
+            // which returns a structured DeviceDescription. We carry
+            // its `.name()` field (an owned String) on the wire — the
+            // JSON field stays `name` for the schema contract.
+            let default_input = host
+                .default_input_device()
+                .and_then(|d| d.description().ok())
+                .map(|desc| desc.name().to_string());
+            let default_output = host
+                .default_output_device()
+                .and_then(|d| d.description().ok())
+                .map(|desc| desc.name().to_string());
+
+            let mut devices = Vec::new();
+            collect_devices(
+                &host,
+                "input",
+                default_input.as_deref(),
+                &mut devices,
+                &mut issues,
+            );
+            collect_devices(
+                &host,
+                "output",
+                default_output.as_deref(),
+                &mut devices,
+                &mut issues,
+            );
+
+            hosts_out.push(AudioHost {
+                id: host_id.name().to_lowercase(),
+                name: host_id.name().to_string(),
+                is_default: host_id == default_host_id,
+                devices,
+            });
+        }
+
+        AudioDevices {
+            hosts: hosts_out,
+            issues,
+        }
+    }
+
+    fn collect_devices(
+        host: &cpal::Host,
+        direction: &str,
+        default_name: Option<&str>,
+        devices: &mut Vec<AudioDevice>,
+        issues: &mut Vec<CollectorIssue>,
+    ) {
+        let iter = match direction {
+            "input" => host.input_devices(),
+            "output" => host.output_devices(),
+            _ => unreachable!(),
+        };
+        let iter = match iter {
+            Ok(it) => it,
+            Err(e) => {
+                issues.push(CollectorIssue {
+                    kind: "enumerate_failed".into(),
+                    message: format!("{} {}: {}", host.id().name(), direction, e),
+                    path: None,
+                });
+                return;
+            }
+        };
+
+        for dev in iter {
+            let name = dev
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| "<unknown>".to_string());
+            let is_default = default_name.map(|d| d == name).unwrap_or(false);
+
+            let configs = match direction {
+                "input" => dev.supported_input_configs().map(|i| i.collect::<Vec<_>>()),
+                "output" => dev.supported_output_configs().map(|i| i.collect::<Vec<_>>()),
+                _ => unreachable!(),
+            };
+            let configs = configs.unwrap_or_default();
+
+            let mut ranges = Vec::with_capacity(configs.len());
+            for c in configs {
+                ranges.push(AudioStreamConfigRange {
+                    channels: c.channels(),
+                    min_sample_rate_hz: c.min_sample_rate(),
+                    max_sample_rate_hz: c.max_sample_rate(),
+                    sample_format: format_sample_format(c.sample_format()),
+                });
+            }
+
+            devices.push(AudioDevice {
+                name,
+                direction: direction.to_string(),
+                is_default,
+                supported_configs: ranges,
+            });
+        }
+    }
+
+    fn format_sample_format(f: cpal::SampleFormat) -> String {
+        match f {
+            cpal::SampleFormat::I16 => "i16",
+            cpal::SampleFormat::U16 => "u16",
+            cpal::SampleFormat::F32 => "f32",
+            other => return format!("{:?}", other).to_lowercase(),
+        }
+        .to_string()
+    }
+}

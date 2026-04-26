@@ -85,3 +85,10 @@ background, the operator handbook is the starting point.
 | `notes.yaml` | The in-app release-notes data file (embedded into the Go binary). | [`../../graywolf/pkg/releasenotes/notes.yaml`](../../graywolf/pkg/releasenotes/notes.yaml) |
 | `VERSION` | Repo-root authoritative version file. Read by Makefile and Rust `build.rs`. | [`../../VERSION`](../../VERSION) |
 | `graywolf.db` / `graywolf-history.db` / `graywolf-logs.db` | Config, history, and log-ring SQLite files at runtime (gitignored). | see [system-topology.md](system-topology.md) |
+
+## Diagnostics
+
+| Term | In this project | Pointer |
+|---|---|---|
+| Flare | A schema-versioned diagnostic submission carrying a graywolf user's config, hardware, devices, and recent logs. Sent by `graywolf flare` (Plan 2b) to `graywolf-flare-server` (Plan 2c). | [`../../.context/2026-04-25-graywolf-flare-system-design.md`](../../.context/2026-04-25-graywolf-flare-system-design.md) |
+| Wire schema (flareschema) | The canonical Go struct tree at `graywolf/pkg/flareschema/` defining the JSON document a flare submission carries. | [`../../graywolf/pkg/flareschema/`](../../graywolf/pkg/flareschema/), [`../../docs/flareschema/v1.json`](../../docs/flareschema/v1.json) |
