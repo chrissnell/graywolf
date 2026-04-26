@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -59,5 +60,69 @@ func TestEndToEndBurstStaysBounded(t *testing.T) {
 	}
 	if lastComponent != "ptt" {
 		t.Fatalf("component = %q, want ptt", lastComponent)
+	}
+}
+
+func TestConcurrentChainsShareThrottleAndStayBounded(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(filepath.Join(dir, "graywolf-logs.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	var console bytes.Buffer
+	inner := slog.NewTextHandler(&console, &slog.HandlerOptions{Level: slog.LevelInfo})
+	root := New(inner, db, Config{RingSize: 50, MaintenanceEvery: 10})
+
+	// Two chains derived from root via WithGroup. The throttle counter
+	// lives on root.shared and must be aliased by both children, so
+	// MaintenanceEvery=10 fires regardless of which child logged the
+	// 10th record.
+	chainA := slog.New(root.WithGroup("ptt"))
+	chainB := slog.New(root.WithGroup("kiss"))
+
+	const goroutines = 8
+	const perGoroutine = 250
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		g := g
+		go func() {
+			defer wg.Done()
+			logger := chainA
+			if g%2 == 1 {
+				logger = chainB
+			}
+			for i := 0; i < perGoroutine; i++ {
+				logger.Info("burst", "g", g, "i", i)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Bound check: same shape as TestEndToEndBurstStaysBounded but
+	// across N concurrent producers. If the throttle counter were
+	// per-chain, MaintenanceEvery would only fire on whichever chain
+	// hit the threshold first and the count would blow past the bound.
+	var count int64
+	if err := db.gorm.Raw("SELECT COUNT(*) FROM logs").Scan(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count > 60 {
+		t.Fatalf("ring exceeded peak: count=%d, want <=60 (throttle counter not shared?)", count)
+	}
+	if count < 40 {
+		t.Fatalf("ring under-populated: count=%d, want >=40 (concurrent writes lost?)", count)
+	}
+
+	// Both components must be represented in the survivors — proves
+	// neither chain was starved by the other.
+	var componentsSeen int64
+	if err := db.gorm.Raw("SELECT COUNT(DISTINCT component) FROM logs").Scan(&componentsSeen).Error; err != nil {
+		t.Fatalf("distinct components: %v", err)
+	}
+	if componentsSeen != 2 {
+		t.Fatalf("distinct components = %d, want 2 (ptt+kiss)", componentsSeen)
 	}
 }
