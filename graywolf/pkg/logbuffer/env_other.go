@@ -5,12 +5,10 @@ package logbuffer
 // Non-Linux platforms never reach the Pi/SD-card branches; these stubs
 // keep the path picker compileable. macOS and Windows always use the
 // disk-backed default.
-func isRaspberryPi(_ string) bool  { return false }
-func isSDCardDevice(_ string) bool { return false }
-func backingDeviceForPath(string) (string, error) {
-	return "", nil
-}
+func isRaspberryPi(_ string) bool                   { return false }
+func isSDCardDevice(_ string) bool                  { return false }
+func backingDeviceForPath(_ string) (string, error) { return "", nil }
 
-func IsRaspberryPiHost() bool                 { return false }
-func BackingDeviceFor(string) (string, error) { return "", nil }
-func IsSDCardDevice(string) bool              { return false }
+func IsRaspberryPiHost() bool                      { return false }
+func BackingDeviceFor(_ string) (string, error)    { return "", nil }
+func IsSDCardDevice(_ string) bool                 { return false }
