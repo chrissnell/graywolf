@@ -183,5 +183,6 @@ func flattenAttr(out map[string]any, prefix string, a slog.Attr) {
 	out[key] = a.Value.Any()
 }
 
-// afterInsert is the maintenance hook; bodied in Task 5.
-func (h *Handler) afterInsert() {}
+// afterInsert delegates to maintenance() so the eviction policy can
+// evolve in maintenance.go without touching Handle.
+func (h *Handler) afterInsert() { h.maintenance() }
