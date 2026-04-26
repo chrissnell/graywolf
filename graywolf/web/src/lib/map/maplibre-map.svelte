@@ -67,16 +67,48 @@
   }
 
   // Cache the upstream americana style.json across style swaps so we
-  // don't re-fetch every time downloads change.
+  // don't re-fetch every time downloads change. The cache is in-memory
+  // only; a full page reload always re-fetches from the network.
+  //
+  // Freshness: maps.nw5w.com serves style.json with `Cache-Control:
+  // no-cache` so the browser revalidates with origin on every request
+  // and we never sit on a stale style after a deploy. Tiles still go
+  // through CF's edge cache untouched.
+  //
+  // Offline: we save the most recent successful response into
+  // localStorage so that an operator who loaded the app online and
+  // later went offline still gets a working style. A first-ever load
+  // with no network can't be saved by anything we do here — it has to
+  // fail visibly so the operator knows to come online once.
+  const STYLE_URL = 'https://maps.nw5w.com/style/americana-roboto/style.json';
+  const STYLE_CACHE_KEY = 'graywolf:upstream-style:v1';
   let cachedUpstreamStyle = null;
+
+  async function fetchUpstreamStyle() {
+    try {
+      const res = await fetch(STYLE_URL);
+      if (!res.ok) throw new Error(`fetch upstream style: ${res.status}`);
+      const text = await res.text();
+      try {
+        localStorage.setItem(STYLE_CACHE_KEY, text);
+      } catch {
+        // Quota or disabled storage — non-fatal; next online load retries.
+      }
+      return JSON.parse(text);
+    } catch (err) {
+      const cached = localStorage.getItem(STYLE_CACHE_KEY);
+      if (!cached) throw err;
+      console.warn(
+        '[graywolf] upstream style fetch failed, using cached fallback:',
+        err,
+      );
+      return JSON.parse(cached);
+    }
+  }
 
   async function buildGraywolfStyle({ federated }) {
     if (!cachedUpstreamStyle) {
-      const res = await fetch(
-        'https://maps.nw5w.com/style/americana-roboto/style.json',
-      );
-      if (!res.ok) throw new Error(`fetch upstream style: ${res.status}`);
-      cachedUpstreamStyle = await res.json();
+      cachedUpstreamStyle = await fetchUpstreamStyle();
     }
     // Deep clone so we don't mutate the cached upstream payload.
     const style = JSON.parse(JSON.stringify(cachedUpstreamStyle));
