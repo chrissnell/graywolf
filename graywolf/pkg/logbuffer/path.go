@@ -3,6 +3,7 @@ package logbuffer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ResolveOptions are the inputs to the path picker. All fields are
@@ -77,4 +78,18 @@ func defaultWritableProbe(dir string) error {
 	name := f.Name()
 	f.Close()
 	return os.Remove(name)
+}
+
+// IsRamdiskPath reports whether p was placed under one of the tmpfs
+// candidates ResolvePath tries (i.e. /run/graywolf or /dev/shm/graywolf).
+// Used by cmd/graywolf to detect a "wanted ramdisk but fell back to disk"
+// outcome and surface the spec-required WARN. Kept here so the candidate
+// list stays the single source of truth.
+func IsRamdiskPath(p string) bool {
+	for _, dir := range ramdiskCandidates {
+		if strings.HasPrefix(p, dir+"/") {
+			return true
+		}
+	}
+	return false
 }

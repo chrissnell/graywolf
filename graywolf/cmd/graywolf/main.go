@@ -105,16 +105,16 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 		dbDev, _ = logbuffer.BackingDeviceFor(cfg.DBPath)
 		isSD     = logbuffer.IsSDCardDevice(dbDev)
 	)
-	target, err := logbuffer.ResolvePath(logbuffer.ResolveOptions{
+	// ResolvePath has no failure path today (the writability probe's
+	// errors are deliberately swallowed and the disk default always
+	// succeeds). The error return is kept on the signature for future
+	// flexibility; we ignore it here.
+	target, _ := logbuffer.ResolvePath(logbuffer.ResolveOptions{
 		ConfigDBPath:    cfg.DBPath,
 		PreferRamdisk:   cfg.LogBufferRamdisk,
 		IsRaspberryPi:   isPi,
 		BackingIsSDCard: isSD,
 	})
-	if err != nil {
-		warn(inner, "logbuffer: path resolution failed; falling back to console-only", "err", err)
-		return slog.New(inner)
-	}
 
 	db, err := logbuffer.Open(target)
 	if err != nil {
@@ -123,7 +123,7 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 	}
 
 	wantedRamdisk := isPi || isSD || cfg.LogBufferRamdisk
-	if wantedRamdisk && !pathIsRamdisk(target) {
+	if wantedRamdisk && !logbuffer.IsRamdiskPath(target) {
 		// Spec § Subsystem 1: "Fall back to disk with a WARN log if no
 		// ramdisk is writable." Surface this through the inner handler
 		// since SetDefault hasn't run yet.
@@ -154,18 +154,6 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 	return logger
 }
 
-// pathIsRamdisk reports whether p lives under one of the tmpfs
-// candidates the resolver tries. Used by setupLogger to detect "wanted
-// ramdisk, didn't get one" so the spec's fallback WARN can fire.
-func pathIsRamdisk(p string) bool {
-	for _, dir := range []string{"/run/graywolf/", "/dev/shm/graywolf/"} {
-		if len(p) >= len(dir) && p[:len(dir)] == dir {
-			return true
-		}
-	}
-	return false
-}
-
 // warn emits a single warning through the inner handler. Used during
 // setup before slog.SetDefault is called.
 func warn(inner slog.Handler, msg string, attrs ...any) {
@@ -181,6 +169,14 @@ func warn(inner slog.Handler, msg string, attrs ...any) {
 // swallowed: a misconfigured configstore should not prevent graywolf
 // from booting; the rest of the program will fail with a clearer error
 // when it tries to use the configstore for real.
+//
+// Cost note: this is the first of two configstore.Open calls during
+// startup (the second is in app.wiring). Both run Migrate(), but
+// migrations are gated by PRAGMA user_version so the second pass is a
+// no-op on the schema; the AutoMigrate sweep + idempotent seeds still
+// run twice, which is wasteful but small. If startup latency ever
+// matters, expose a configstore read-only entry point that skips
+// Migrate, or thread the override through app.New.
 func readMaxRowsOverride(dbPath string) (int, bool) {
 	store, err := configstore.Open(dbPath)
 	if err != nil {
