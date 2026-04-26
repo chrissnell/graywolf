@@ -42,6 +42,9 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | GPIO chardev v2 PTT (Linux gpiocdev) | `tx/ptt_gpio_linux.rs` |
 | rigctld TCP PTT (`T 1\n` / `T 0\n`) | `tx/ptt_rigctld.rs` |
 | CM108 HID enumeration (`--list-cm108`) | `cm108.rs` |
+| `--list-audio` JSON enumerator (cpal hosts/devices) | `src/audio/soundcard.rs` (`listing` module), `src/list_audio.rs` |
+| `--list-usb` JSON enumerator (nusb tree walk) | `src/list_usb.rs` |
+| Modem CLI dispatch + flag handlers | `src/bin/graywolf_modem.rs` |
 | IPC framing | `ipc/framing.rs` |
 | IPC server (UDS / Windows TCP) | `ipc/server.rs` |
 | Generated proto types | `ipc/proto.rs` (re-exports `OUT_DIR/graywolf.rs`) |
@@ -110,6 +113,21 @@ The split is enforced by [invariant 9](invariants.md).
 | `app/{aprsfanout,rxfanout}` | RX fanout to digipeater / KISS broadcast / APRS submit |
 | `app/{auth_store,gpsmanager,adapters,wiring,modem,flags,config,shutdown,platform_*}` | Wiring helpers |
 | `internal/{backoff,dedup,ratelimit,testsync,testtx}` | Internal utilities |
+
+## Wire schema (Go)
+
+Canonical struct tree for the flare wire payload — the contract between
+`graywolf flare` (Plan 2b) and graywolf-flare-server (Plan 2c).
+
+| Concern | File |
+|---|---|
+| Top-level `Flare` struct | [`../../graywolf/pkg/flareschema/flare.go`](../../graywolf/pkg/flareschema/flare.go) |
+| `SchemaVersion` constant + `Unmarshal` | [`../../graywolf/pkg/flareschema/version.go`](../../graywolf/pkg/flareschema/version.go), [`../../graywolf/pkg/flareschema/unmarshal.go`](../../graywolf/pkg/flareschema/unmarshal.go) |
+| Per-section types | `audio.go`, `usb.go`, `cm108.go`, `system.go`, `devices.go`, `logs.go`, `config.go`, `user.go`, `issue.go` |
+| Sample fixture (round-trip + schema gen) | [`../../graywolf/pkg/flareschema/sample.go`](../../graywolf/pkg/flareschema/sample.go) |
+| Cross-language convergence test | [`../../graywolf/pkg/flareschema/convergence_test.go`](../../graywolf/pkg/flareschema/convergence_test.go) |
+| JSON Schema generator | [`../../graywolf/cmd/flareschema-gen/main.go`](../../graywolf/cmd/flareschema-gen/main.go) |
+| Generated JSON Schema document | [`../../docs/flareschema/v1.json`](../../docs/flareschema/v1.json) |
 
 ## Web UI (`graywolf/web/`)
 
