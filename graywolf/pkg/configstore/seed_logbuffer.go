@@ -1,8 +1,19 @@
+// Singleton accessors for the log-buffer configuration.
+//
+// Distinguishing trait: GetLogBufferConfig returns three values
+// (config, exists, error). Most other singletons here use either a
+// `*T` return that distinguishes "no row" with `nil` (e.g. GetGPSConfig)
+// or a `T, error` return that ignores absence. Log-buffer needs to
+// disambiguate "operator stored MaxRows == 0 to disable persistence"
+// from "no row, fall back to the environment default" — neither nil-
+// pointer nor zero-value alone can carry that distinction, so the
+// boolean joins the contract.
 package configstore
 
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -33,6 +44,15 @@ func (s *Store) GetLogBufferConfig(ctx context.Context) (LogBufferConfig, bool, 
 // We use a map-based UpdateColumns path so MaxRows == 0 is never
 // silently rewritten by GORM's "default" tag handling (same footgun
 // the UpdatesConfig CRUD documents at seed_updates.go:38-45).
+//
+// Side effect: UpdateColumns suppresses auto-timestamps, so
+// UpdatedAt stays stale. No consumer reads it today; same behavior
+// as seed_updates.go's UpsertUpdatesConfig.
+//
+// Defensive: when c.ID != 0 but the row does not exist, the
+// UpdateColumns call would silently no-op (RowsAffected=0). We
+// require RowsAffected >= 1 on the update path so that footgun
+// surfaces as an error rather than vanishing.
 func (s *Store) UpsertLogBufferConfig(ctx context.Context, c LogBufferConfig) error {
 	db := s.db.WithContext(ctx)
 	if c.ID == 0 {
@@ -50,7 +70,14 @@ func (s *Store) UpsertLogBufferConfig(ctx context.Context, c LogBufferConfig) er
 			"max_rows": c.MaxRows,
 		}).Error
 	}
-	return db.Model(&LogBufferConfig{}).Where("id = ?", c.ID).UpdateColumns(map[string]any{
+	res := db.Model(&LogBufferConfig{}).Where("id = ?", c.ID).UpdateColumns(map[string]any{
 		"max_rows": c.MaxRows,
-	}).Error
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("UpsertLogBufferConfig: no row with id=%d", c.ID)
+	}
+	return nil
 }

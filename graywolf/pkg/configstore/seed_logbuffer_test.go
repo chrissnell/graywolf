@@ -47,3 +47,14 @@ func TestUpsertLogBufferConfigRoundTrip(t *testing.T) {
 		t.Fatalf("MaxRows after disable = %d, want 0", got.MaxRows)
 	}
 }
+
+func TestUpsertLogBufferConfigRejectsUnknownID(t *testing.T) {
+	s := newTestStore(t)
+	// Production callers leave c.ID == 0 so the upsert finds-or-creates.
+	// If a refactor ever passes a stale ID, GORM's UpdateColumns silently
+	// no-ops; that's a footgun. Surface the no-op as an error.
+	err := s.UpsertLogBufferConfig(context.Background(), LogBufferConfig{ID: 9999, MaxRows: 42})
+	if err == nil {
+		t.Fatal("upsert with unknown ID should error")
+	}
+}
