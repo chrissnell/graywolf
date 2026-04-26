@@ -88,3 +88,35 @@ func TestHandlerEnabledAlwaysTrueAtDebug(t *testing.T) {
 		t.Fatal("handler must report Enabled(DEBUG)=true so slog forwards records")
 	}
 }
+
+func TestHandlerWithGroupChainFlattensToDottedKeys(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h).WithGroup("a").WithGroup("b").With("x", 1)
+	logger.Info("nested", "y", 2)
+
+	var attrs string
+	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
+	// Both the chain attr (x) and the record attr (y) should land
+	// under the dotted prefix built from the group chain.
+	if !strings.Contains(attrs, `"a.b.x":1`) {
+		t.Fatalf("attrs missing a.b.x: %s", attrs)
+	}
+	if !strings.Contains(attrs, `"a.b.y":2`) {
+		t.Fatalf("attrs missing a.b.y: %s", attrs)
+	}
+}
+
+func TestHandlerInlineGroupAttrFlattens(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h)
+	logger.Info("grouped", slog.Group("conn", "remote", "10.0.0.1", "port", 8080))
+
+	var attrs string
+	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
+	if !strings.Contains(attrs, `"conn.remote":"10.0.0.1"`) {
+		t.Fatalf("attrs missing conn.remote: %s", attrs)
+	}
+	if !strings.Contains(attrs, `"conn.port":8080`) {
+		t.Fatalf("attrs missing conn.port: %s", attrs)
+	}
+}

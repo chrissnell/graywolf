@@ -36,13 +36,32 @@ type Handler struct {
 	goAttrs  []slog.Attr
 	goGroups []string
 
+	// shared throttle state lives behind a pointer so every chained
+	// child Handler (produced by WithAttrs / WithGroup) increments the
+	// same counter. Without this, per-subsystem loggers like
+	// slog.With("component","ptt") each get their own counter and
+	// MaintenanceEvery=200 never fires on cold chains. Putting the
+	// mutex here also avoids the `go vet` "assignment copies lock value"
+	// warning that a `clone := *h` would otherwise trip.
+	shared *handlerShared
+}
+
+// handlerShared is the throttle state common to every Handler in a
+// chain. Allocated once by New and aliased by every clone produced
+// by WithAttrs / WithGroup.
+type handlerShared struct {
 	mu      sync.Mutex
-	counter int // used by maintenance.go to throttle eviction
+	counter int
 }
 
 // New returns a Handler that wraps inner and tees to db.
 func New(inner slog.Handler, db *DB, cfg Config) *Handler {
-	return &Handler{inner: inner, db: db, cfg: cfg}
+	return &Handler{
+		inner:  inner,
+		db:     db,
+		cfg:    cfg,
+		shared: &handlerShared{},
+	}
 }
 
 // Enabled returns true for every level >= Debug. The inner handler is
@@ -107,8 +126,11 @@ func (h *Handler) persist(r slog.Record) {
 
 // collectAttrs merges the handler-chain attrs (from With()) with the
 // per-record attrs into a single map keyed by attribute key. Group
-// nesting is encoded as a dotted prefix on the key, matching the slog
-// JSON handler's convention.
+// nesting (both from the WithGroup chain and from per-record
+// slog.Group attrs) is flattened into dotted-prefix keys -- chosen
+// over slog.NewJSONHandler's nested-object convention because a flat
+// map serializes cleanly into a single TEXT column and stays
+// grep-friendly when an operator dumps the ring with `sqlite3`.
 func (h *Handler) collectAttrs(r slog.Record) map[string]any {
 	out := make(map[string]any, len(h.goAttrs)+r.NumAttrs())
 	prefix := ""
@@ -122,21 +144,43 @@ func (h *Handler) collectAttrs(r slog.Record) map[string]any {
 			prefix = prefix + "." + g
 		}
 	}
-	addAttr := func(a slog.Attr) {
-		key := a.Key
-		if prefix != "" {
-			key = prefix + "." + key
-		}
-		out[key] = a.Value.Any()
-	}
 	for _, a := range h.goAttrs {
-		addAttr(a)
+		flattenAttr(out, prefix, a)
 	}
 	r.Attrs(func(a slog.Attr) bool {
-		addAttr(a)
+		flattenAttr(out, prefix, a)
 		return true
 	})
 	return out
+}
+
+// flattenAttr writes one attribute into out, recursing into
+// slog.Group values so the flat-map invariant holds. Resolve()
+// honours LogValuer attributes the same way slog's built-in handlers
+// do. Empty group keys (slog spec: a group with key "" inlines its
+// contents) are handled by treating them as no-prefix recursion.
+func flattenAttr(out map[string]any, prefix string, a slog.Attr) {
+	a.Value = a.Value.Resolve()
+	if a.Value.Kind() == slog.KindGroup {
+		groupAttrs := a.Value.Group()
+		childPrefix := prefix
+		if a.Key != "" {
+			if childPrefix == "" {
+				childPrefix = a.Key
+			} else {
+				childPrefix = childPrefix + "." + a.Key
+			}
+		}
+		for _, ga := range groupAttrs {
+			flattenAttr(out, childPrefix, ga)
+		}
+		return
+	}
+	key := a.Key
+	if prefix != "" {
+		key = prefix + "." + key
+	}
+	out[key] = a.Value.Any()
 }
 
 // afterInsert is the maintenance hook; bodied in Task 5.
