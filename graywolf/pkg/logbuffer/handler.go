@@ -107,9 +107,10 @@ func (h *Handler) WithGroup(name string) slog.Handler {
 	return &clone
 }
 
-// persist writes one row. Errors are intentionally swallowed in this
-// task so a transient DB problem can't take down the program; Task 7
-// adds the "log to stderr once" surfacing.
+// persist writes one row. The first DB error per Handler chain is
+// surfaced once via notePersistFailureOnce; subsequent errors are
+// dropped to avoid stderr-spam on persistent failures like a closed
+// handle or a full disk.
 func (h *Handler) persist(r slog.Record) {
 	attrs := h.collectAttrs(r)
 	attrsJSON, _ := json.Marshal(attrs)

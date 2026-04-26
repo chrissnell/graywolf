@@ -187,10 +187,8 @@ func TestHandlerSurvivesClosedDB(t *testing.T) {
 
 	// Console must still get every record (inner handler is at DEBUG).
 	got := console.String()
-	for i := 0; i < 5; i++ {
-		if !strings.Contains(got, "after-close") {
-			t.Fatalf("console missing record %d: %q", i, got)
-		}
+	if c := strings.Count(got, "after-close"); c != 5 {
+		t.Fatalf("console got %d 'after-close' records, want 5: %q", c, got)
 	}
 	// First failure must produce exactly one notice on the inner handler;
 	// subsequent failures stay quiet.
