@@ -161,14 +161,73 @@ func TestHandlerSkipsLeadingEmptyGroup(t *testing.T) {
 	h, db, _ := newTestHandler(t, slog.LevelDebug)
 	// slog permits WithGroup("") (it inlines children at the parent
 	// scope). The component column must agree with collectAttrs's
-	// dotted prefix — neither should produce a leading dot.
-	logger := slog.New(h.WithGroup("").WithGroup("ptt"))
+	// dotted prefix — neither should produce a leading dot. Both halves
+	// (component column and attrs_json prefix) are asserted so a future
+	// refactor that re-inlines one of the two call sites can't slip a
+	// leading-dot regression past the other.
+	logger := slog.New(h.WithGroup("").WithGroup("ptt")).With("k", "v")
 	logger.Info("filtered")
 
-	var component string
-	db.gorm.Raw("SELECT component FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&component)
+	var component, attrs string
+	row := db.gorm.Raw("SELECT component, attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row()
+	if err := row.Scan(&component, &attrs); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
 	if component != "ptt" {
 		t.Fatalf("component = %q, want %q", component, "ptt")
+	}
+	if !strings.Contains(attrs, `"ptt.k":"v"`) {
+		t.Fatalf("attrs missing ptt.k (no leading dot): %s", attrs)
+	}
+	if strings.Contains(attrs, `".ptt.k":`) || strings.Contains(attrs, `".k":`) {
+		t.Fatalf("attrs has leading-dot leak: %s", attrs)
+	}
+}
+
+func TestHandlerNestedGroupAttrFlattens(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h)
+	// slog.Group("conn", slog.Group("tls", "version", "1.3"), "remote", "1.2.3.4")
+	// must produce conn.tls.version and conn.remote — the recursive
+	// branch of flattenAttr is the only path that handles a group
+	// value inside another group's children.
+	logger.Info("nested",
+		slog.Group("conn",
+			slog.Group("tls", "version", "1.3"),
+			"remote", "1.2.3.4",
+		),
+	)
+
+	var attrs string
+	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
+	if !strings.Contains(attrs, `"conn.tls.version":"1.3"`) {
+		t.Fatalf("attrs missing conn.tls.version: %s", attrs)
+	}
+	if !strings.Contains(attrs, `"conn.remote":"1.2.3.4"`) {
+		t.Fatalf("attrs missing conn.remote: %s", attrs)
+	}
+}
+
+func TestHandlerEmptyKeyGroupInlinesChildren(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h)
+	// slog spec: a Group with key "" inlines its children at the
+	// parent scope. flattenAttr handles this via the
+	// `if a.Key != ""` branch — without it the child keys would gain
+	// a leading dot.
+	logger.Info("inlined", slog.Group("", "x", 1, "y", 2))
+
+	var attrs string
+	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
+	if !strings.Contains(attrs, `"x":1`) {
+		t.Fatalf("attrs missing inlined x: %s", attrs)
+	}
+	if !strings.Contains(attrs, `"y":2`) {
+		t.Fatalf("attrs missing inlined y: %s", attrs)
+	}
+	// Negative check: no leading dot leaked through.
+	if strings.Contains(attrs, `".x":`) || strings.Contains(attrs, `".y":`) {
+		t.Fatalf("attrs has leading-dot leak: %s", attrs)
 	}
 }
 
