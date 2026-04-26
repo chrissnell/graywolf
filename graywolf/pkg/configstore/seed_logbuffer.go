@@ -1,14 +1,16 @@
-// Singleton accessors for the log-buffer configuration.
-//
-// Distinguishing trait: GetLogBufferConfig returns three values
-// (config, exists, error). Most other singletons here use either a
-// `*T` return that distinguishes "no row" with `nil` (e.g. GetGPSConfig)
-// or a `T, error` return that ignores absence. Log-buffer needs to
-// disambiguate "operator stored MaxRows == 0 to disable persistence"
-// from "no row, fall back to the environment default" — neither nil-
-// pointer nor zero-value alone can carry that distinction, so the
-// boolean joins the contract.
 package configstore
+
+// File rationale (kept off the package-doc position so it doesn't
+// override store.go's package summary in godoc):
+//
+// Distinguishing trait of this file: GetLogBufferConfig returns three
+// values (config, exists, error). Most other singletons in
+// configstore use either a `*T` return that distinguishes "no row"
+// with `nil` (e.g. GetGPSConfig) or a `T, error` return that ignores
+// absence. Log-buffer needs to disambiguate "operator stored
+// MaxRows == 0 to disable persistence" from "no row, fall back to the
+// environment default" — neither nil-pointer nor zero-value alone can
+// carry that distinction, so the boolean joins the contract.
 
 import (
 	"context"
