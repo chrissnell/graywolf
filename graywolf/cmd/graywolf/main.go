@@ -99,27 +99,30 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 		ringSizeDisk        = 5000
 		maintenanceInterval = 200
 	)
+	// Single fallback logger reused for every pre-SetDefault WARN line
+	// in this function, instead of constructing one per call.
+	fallback := slog.New(inner)
 
 	var (
 		isPi     = logbuffer.IsRaspberryPiHost()
 		dbDev, _ = logbuffer.BackingDeviceFor(cfg.DBPath)
 		isSD     = logbuffer.IsSDCardDevice(dbDev)
 	)
-	// ResolvePath has no failure path today (the writability probe's
-	// errors are deliberately swallowed and the disk default always
-	// succeeds). The error return is kept on the signature for future
-	// flexibility; we ignore it here.
-	target, _ := logbuffer.ResolvePath(logbuffer.ResolveOptions{
+	target, err := logbuffer.ResolvePath(logbuffer.ResolveOptions{
 		ConfigDBPath:    cfg.DBPath,
 		PreferRamdisk:   cfg.LogBufferRamdisk,
 		IsRaspberryPi:   isPi,
 		BackingIsSDCard: isSD,
 	})
+	if err != nil {
+		fallback.Warn("logbuffer: path resolution failed; falling back to console-only", "err", err)
+		return fallback
+	}
 
 	db, err := logbuffer.Open(target)
 	if err != nil {
-		warn(inner, "logbuffer: open failed; falling back to console-only", "err", err, "path", target)
-		return slog.New(inner)
+		fallback.Warn("logbuffer: open failed; falling back to console-only", "err", err, "path", target)
+		return fallback
 	}
 
 	wantedRamdisk := isPi || isSD || cfg.LogBufferRamdisk
@@ -127,20 +130,20 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 		// Spec § Subsystem 1: "Fall back to disk with a WARN log if no
 		// ramdisk is writable." Surface this through the inner handler
 		// since SetDefault hasn't run yet.
-		warn(inner, "logbuffer: no ramdisk writable; falling back to disk-backed ring", "path", target)
+		fallback.Warn("logbuffer: no ramdisk writable; falling back to disk-backed ring", "path", target)
 	}
 
 	ringSize := ringSizeDisk
 	if wantedRamdisk {
 		ringSize = ringSizeRamdisk
 	}
-	override, hasOverride := readMaxRowsOverride(cfg.DBPath)
+	override, hasOverride := readMaxRowsOverride(cfg.DBPath, fallback)
 	if hasOverride {
 		if override <= 0 {
 			// Operator explicitly disabled persistence.
 			_ = db.Close()
-			warn(inner, "logbuffer: persistence disabled by configstore (logbuffer.max_rows=0)")
-			return slog.New(inner)
+			fallback.Warn("logbuffer: persistence disabled by configstore (logbuffer.max_rows=0)")
+			return fallback
 		}
 		ringSize = override
 	}
@@ -154,21 +157,18 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 	return logger
 }
 
-// warn emits a single warning through the inner handler. Used during
-// setup before slog.SetDefault is called.
-func warn(inner slog.Handler, msg string, attrs ...any) {
-	tmp := slog.New(inner)
-	tmp.Warn(msg, attrs...)
-}
-
 // readMaxRowsOverride opens the configstore (read-only intent) and
 // returns the operator's max_rows override along with a "has-override"
 // flag. The flag is critical because MaxRows == 0 with hasOverride
 // means "operator opted out of persistence" -- distinct from "no
-// override stored, use environment default". Errors are intentionally
-// swallowed: a misconfigured configstore should not prevent graywolf
-// from booting; the rest of the program will fail with a clearer error
-// when it tries to use the configstore for real.
+// override stored, use environment default".
+//
+// Errors fall back to "no override" so a misconfigured configstore
+// does not prevent graywolf from booting; the rest of the program
+// will fail with a clearer error when it tries to use the configstore
+// for real. Genuine errors (distinct from "row not present", which
+// GetLogBufferConfig converts to exists=false, err=nil) are surfaced
+// here as a WARN so the operator gets an early signal.
 //
 // Cost note: this is the first of two configstore.Open calls during
 // startup (the second is in app.wiring). Both run Migrate(), but
@@ -177,14 +177,19 @@ func warn(inner slog.Handler, msg string, attrs ...any) {
 // run twice, which is wasteful but small. If startup latency ever
 // matters, expose a configstore read-only entry point that skips
 // Migrate, or thread the override through app.New.
-func readMaxRowsOverride(dbPath string) (int, bool) {
+func readMaxRowsOverride(dbPath string, fallback *slog.Logger) (int, bool) {
 	store, err := configstore.Open(dbPath)
 	if err != nil {
+		fallback.Warn("logbuffer: configstore open for max_rows override failed; using environment default", "err", err)
 		return 0, false
 	}
 	defer store.Close()
 	cfg, exists, err := store.GetLogBufferConfig(context.Background())
-	if err != nil || !exists {
+	if err != nil {
+		fallback.Warn("logbuffer: configstore read for max_rows override failed; using environment default", "err", err)
+		return 0, false
+	}
+	if !exists {
 		return 0, false
 	}
 	return cfg.MaxRows, true
