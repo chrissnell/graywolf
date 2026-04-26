@@ -245,6 +245,7 @@
       }
     });
     map.once('load', () => oncreate?.(map));
+    if (typeof window !== 'undefined') window.__gwMap = map;
   });
 
   // Track source/registered/completed-downloads changes; re-apply the
