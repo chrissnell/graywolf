@@ -1,0 +1,90 @@
+package logbuffer
+
+import (
+	"bytes"
+	"context"
+	"log/slog"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func newTestHandler(t *testing.T, innerLevel slog.Level) (*Handler, *DB, *bytes.Buffer) {
+	t.Helper()
+	db, err := Open(filepath.Join(t.TempDir(), "graywolf-logs.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	var buf bytes.Buffer
+	inner := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: innerLevel})
+	h := New(inner, db, Config{RingSize: 100, MaintenanceEvery: 0})
+	return h, db, &buf
+}
+
+func TestHandlerTeesToConsoleAndDB(t *testing.T) {
+	h, db, console := newTestHandler(t, slog.LevelInfo)
+	logger := slog.New(h)
+
+	logger.Info("hello world", "k", "v")
+
+	// Console gets the record (inner handler is INFO-and-above).
+	if !strings.Contains(console.String(), "hello world") {
+		t.Fatalf("console missing record: %q", console.String())
+	}
+
+	// DB gets the record too.
+	var msg, level string
+	row := db.gorm.Raw("SELECT msg, level FROM logs ORDER BY id DESC LIMIT 1").Row()
+	if err := row.Scan(&msg, &level); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if msg != "hello world" {
+		t.Fatalf("db msg = %q, want %q", msg, "hello world")
+	}
+	if level != "INFO" {
+		t.Fatalf("db level = %q, want INFO", level)
+	}
+}
+
+func TestHandlerCapturesDebugEvenWhenInnerIsInfo(t *testing.T) {
+	h, db, console := newTestHandler(t, slog.LevelInfo)
+	logger := slog.New(h)
+
+	logger.Debug("low-level detail", "x", 1)
+
+	// Console must NOT contain the debug record (inner handler is INFO).
+	if strings.Contains(console.String(), "low-level detail") {
+		t.Fatalf("console should not contain debug record, got: %q", console.String())
+	}
+
+	// DB MUST contain it — capture level is always DEBUG.
+	var count int64
+	db.gorm.Raw("SELECT COUNT(*) FROM logs WHERE msg = ?", "low-level detail").Scan(&count)
+	if count != 1 {
+		t.Fatalf("db count for debug record = %d, want 1", count)
+	}
+}
+
+func TestHandlerForwardsAttrs(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h).With("conn_id", "abc123")
+	logger.Info("connected", "remote", "10.0.0.1")
+
+	var attrs string
+	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
+	if !strings.Contains(attrs, `"conn_id":"abc123"`) {
+		t.Fatalf("attrs missing conn_id: %s", attrs)
+	}
+	if !strings.Contains(attrs, `"remote":"10.0.0.1"`) {
+		t.Fatalf("attrs missing remote: %s", attrs)
+	}
+}
+
+func TestHandlerEnabledAlwaysTrueAtDebug(t *testing.T) {
+	h, _, _ := newTestHandler(t, slog.LevelInfo)
+	if !h.Enabled(context.Background(), slog.LevelDebug) {
+		t.Fatal("handler must report Enabled(DEBUG)=true so slog forwards records")
+	}
+}
