@@ -111,7 +111,7 @@ func (h *Handler) WithGroup(name string) slog.Handler {
 func (h *Handler) persist(r slog.Record) {
 	attrs := h.collectAttrs(r)
 	attrsJSON, _ := json.Marshal(attrs)
-	component := "" // populated in Task 6
+	component := h.componentFromGroups()
 	_ = h.db.gorm.Exec(
 		"INSERT INTO logs (ts_ns, level, component, msg, attrs_json) VALUES (?,?,?,?,?)",
 		r.Time.UnixNano(),
@@ -186,3 +186,21 @@ func flattenAttr(out map[string]any, prefix string, a slog.Attr) {
 // afterInsert delegates to maintenance() so the eviction policy can
 // evolve in maintenance.go without touching Handle.
 func (h *Handler) afterInsert() { h.maintenance() }
+
+// componentFromGroups returns the dotted group chain for the
+// component column, e.g. ["ptt","serial"] -> "ptt.serial". Empty when
+// no group is set, which is the common case for top-level startup
+// logging.
+func (h *Handler) componentFromGroups() string {
+	if len(h.goGroups) == 0 {
+		return ""
+	}
+	out := h.goGroups[0]
+	for _, g := range h.goGroups[1:] {
+		if g == "" {
+			continue
+		}
+		out += "." + g
+	}
+	return out
+}

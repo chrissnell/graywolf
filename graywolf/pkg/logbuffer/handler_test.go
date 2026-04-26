@@ -120,3 +120,39 @@ func TestHandlerInlineGroupAttrFlattens(t *testing.T) {
 		t.Fatalf("attrs missing conn.port: %s", attrs)
 	}
 }
+
+func TestHandlerWritesComponentFromGroup(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h.WithGroup("ptt"))
+	logger.Info("ptt asserted")
+
+	var component string
+	db.gorm.Raw("SELECT component FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&component)
+	if component != "ptt" {
+		t.Fatalf("component = %q, want %q", component, "ptt")
+	}
+}
+
+func TestHandlerWritesEmptyComponentWhenNoGroup(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h)
+	logger.Info("startup banner")
+
+	var component string
+	db.gorm.Raw("SELECT component FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&component)
+	if component != "" {
+		t.Fatalf("component = %q, want empty", component)
+	}
+}
+
+func TestHandlerWritesNestedComponent(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h.WithGroup("ptt").WithGroup("serial"))
+	logger.Info("opened device")
+
+	var component string
+	db.gorm.Raw("SELECT component FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&component)
+	if component != "ptt.serial" {
+		t.Fatalf("component = %q, want %q", component, "ptt.serial")
+	}
+}
