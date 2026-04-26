@@ -1,6 +1,7 @@
 package logbuffer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,12 @@ func ResolvePath(opts ResolveOptions) (string, error) {
 		}
 		// Fall through to disk default.
 	}
+	if opts.ConfigDBPath == "" {
+		// app.Config.Validate enforces this upstream; we fail closed
+		// here so a refactor that bypasses Validate doesn't quietly
+		// place graywolf-logs.db in CWD (filepath.Dir("") == ".").
+		return "", fmt.Errorf("ResolvePath: ConfigDBPath is required when ramdisk is unavailable")
+	}
 	defaultDir := filepath.Dir(opts.ConfigDBPath)
 	return filepath.Join(defaultDir, "graywolf-logs.db"), nil
 }
@@ -75,9 +82,8 @@ func defaultWritableProbe(dir string) error {
 	if err != nil {
 		return err
 	}
-	name := f.Name()
-	f.Close()
-	return os.Remove(name)
+	defer f.Close()
+	return os.Remove(f.Name())
 }
 
 // IsRamdiskPath reports whether p was placed under one of the tmpfs
