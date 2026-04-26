@@ -52,6 +52,12 @@ type Config struct {
 	// Debug enables debug-level logging (-debug).
 	Debug bool
 
+	// LogBufferRamdisk forces the logbuffer to land on tmpfs even when
+	// graywolf is not running on an SD-card-backed system
+	// (--logbuffer-ramdisk). Useful for desktop/server operators who
+	// want the same write-burst characteristics as the Pi default.
+	LogBufferRamdisk bool
+
 	// SessionMaxAge, when non-zero, overrides the webauth package's
 	// default session cookie lifetime. Zero means use the webauth
 	// default (currently 7 days). Threaded through wireHTTP into
