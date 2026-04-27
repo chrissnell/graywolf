@@ -47,6 +47,8 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "flare":
+			os.Exit(runFlare(os.Args[2:], Version, GitCommit))
 		case "version":
 			fmt.Println(fullVersion())
 			return
