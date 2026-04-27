@@ -129,8 +129,8 @@ Path through the system on `graywolf flare` invocation:
 1. **Discovery** — `pkg/diagcollect/dbpath.go` resolves `graywolf.db` (flag -> env -> service-install -> user-config -> CWD); `pkg/diagcollect/modem.go` resolves `graywolf-modem` (mirroring `pkg/app/modem.go` lookup order).
 2. **Collection** — `pkg/diagcollect/Collect` walks every domain (configstore, system, service, PTT, GPS, audio, USB, CM108, logs). Each collector emits a typed `flareschema.<Section>` plus `[]CollectorIssue` so a domain failure never aborts the whole flare. Audio/USB/CM108 shell out to `graywolf-modem --list-audio` / `--list-usb` / `--list-cm108` (see [`../../graywolf-modem/src/list_audio.rs`](../../graywolf-modem/src/list_audio.rs), [`list_usb.rs`](../../graywolf-modem/src/list_usb.rs)).
 3. **Redaction** — `pkg/diagcollect/redact` runs a single regex-table scrub plus a per-submission hostname hash. APRS callsigns are deliberately NOT redacted (see invariants).
-4. **Review** — `pkg/diagcollect/review` paginates the scrubbed payload and accepts one keystroke at a time (s/c/e/r/d). The user can stack ad-hoc redactions through `r`.
-5. **Submission** — `pkg/diagcollect/submit` POSTs `application/json` to `<server>/api/v1/submit`. 5xx responses save the body to `~/.local/state/graywolf/pending-flare-<unix-ts>.json`. After success the response is saved to `~/.local/state/graywolf/flares/<flare-id>.json` so `--resubmit` can find the portal token.
+4. **Review** — `pkg/diagcollect/review` paginates the scrubbed payload and accepts one keystroke at a time (s/c/e/r). The user can stack ad-hoc redactions through `r`.
+5. **Submission** — `pkg/diagcollect/submit` POSTs `application/json` to `<server>/api/v1/submit`. 5xx responses save the body to `~/.local/state/graywolf/pending-flare-<unix-ts>.json` (mode 0600) so the operator can retry. The CLI does not persist any per-flare state on success; if a follow-up submission is needed the operator just runs `graywolf flare` again.
 
 The wire contract (`flareschema.Flare` -> `flareschema.SubmitResponse`) is the only surface graywolf-flare-server (Plan 2c) sees.
 

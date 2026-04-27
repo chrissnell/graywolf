@@ -125,7 +125,7 @@ The split is enforced by [invariant 9](invariants.md).
 | Per-collector domains | `pkg/diagcollect/{configdump,system,service,serial,gpio,gps,audio,usb,cm108,logs}.go` |
 | Flare scrubber (rules, hostname, ad-hoc, ScrubFlare) | `pkg/diagcollect/redact/{rules,hostname,engine,flare}.go` |
 | Review TUI | `pkg/diagcollect/review/review.go` |
-| Submission HTTP client + token store + resubmit diff | `pkg/diagcollect/submit/{client,store,resubmit}.go` |
+| Submission HTTP client + 5xx pending-flare save | `pkg/diagcollect/submit/{client,store}.go` |
 
 ## Wire schema (Go)
 

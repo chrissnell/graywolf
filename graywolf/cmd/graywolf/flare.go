@@ -33,20 +33,19 @@ func runFlare(args []string, version, gitCommit string) int {
 	fs := flag.NewFlagSet("graywolf flare", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
-		dbPath     = fs.String("db", "", "path to graywolf.db (overrides discovery)")
-		serverURL  = fs.String("server", defaultFlareServer, "flare-server base URL")
-		email      = fs.String("email", "", "user email for portal/email replies (optional)")
-		notes      = fs.String("notes", "", "free-text notes (optional)")
-		radio      = fs.String("radio", "", "radio model (optional)")
-		audio      = fs.String("audio", "", "audio interface model (optional)")
-		dryRun     = fs.Bool("dry-run", false, "collect+scrub+review then print payload to stdout (no submit)")
-		noLogs     = fs.Bool("no-logs", false, "skip log section")
-		noModem    = fs.Bool("no-modem", false, "skip audio/USB/CM108 sections (don't shell out to graywolf-modem)")
-		outPath    = fs.String("out", "", "write the prepared payload to FILE instead of submitting")
-		resubmitID = fs.String("resubmit", "", "re-collect and update an existing flare by id (requires saved token)")
-		modemBin   = fs.String("modem", "", "path to graywolf-modem (overrides discovery)")
-		verbose    = fs.Bool("verbose", false, "verbose collection progress to stderr")
-		logLimit   = fs.Int("log-limit", 0, "max log rows to include (0 = ring default)")
+		dbPath    = fs.String("db", "", "path to graywolf.db (overrides discovery)")
+		serverURL = fs.String("server", defaultFlareServer, "flare-server base URL")
+		email     = fs.String("email", "", "user email for portal/email replies (optional)")
+		notes     = fs.String("notes", "", "free-text notes (optional)")
+		radio     = fs.String("radio", "", "radio model (optional)")
+		audio     = fs.String("audio", "", "audio interface model (optional)")
+		dryRun    = fs.Bool("dry-run", false, "collect+scrub+review then print payload to stdout (no submit)")
+		noLogs    = fs.Bool("no-logs", false, "skip log section")
+		noModem   = fs.Bool("no-modem", false, "skip audio/USB/CM108 sections (don't shell out to graywolf-modem)")
+		outPath   = fs.String("out", "", "write the prepared payload to FILE instead of submitting")
+		modemBin  = fs.String("modem", "", "path to graywolf-modem (overrides discovery)")
+		verbose   = fs.Bool("verbose", false, "verbose collection progress to stderr")
+		logLimit  = fs.Int("log-limit", 0, "max log rows to include (0 = ring default)")
 	)
 	// Mirror --verbose to a -v shortcut.
 	fs.BoolVar(verbose, "v", false, "alias for --verbose")
@@ -144,14 +143,6 @@ func runFlare(args []string, version, gitCommit string) int {
 		return 1
 	case review.OutcomeSubmit:
 		// fallthrough to submission below
-	case review.OutcomeDiff:
-		// 'd' is only meaningful in --resubmit mode (against the
-		// previously-submitted payload). In fresh-submit mode there's
-		// nothing to diff against, so refuse rather than silently
-		// submit. The user can re-run and press 's' if that's what
-		// they meant.
-		fmt.Fprintln(os.Stderr, "diff requires --resubmit mode; not submitting")
-		return 1
 	default:
 		// OutcomeAddNotes is consumed by runReviewLoop; OutcomeAddRedaction
 		// is handled inline by review.Run. Any other Outcome reaching here
@@ -172,35 +163,13 @@ func runFlare(args []string, version, gitCommit string) int {
 	}
 
 	client := submit.NewHTTPClient(*serverURL, nil)
-	if *resubmitID != "" {
-		return runResubmit(client, *resubmitID, body)
-	}
-	return runFreshSubmit(client, body)
-}
-
-func runFreshSubmit(c submit.Client, body []byte) int {
-	resp, err := c.Submit(body)
-	return handleSubmitResult(resp, err, body)
-}
-
-func runResubmit(c submit.Client, flareID string, body []byte) int {
-	dir := submit.StorageDir()
-	prev, err := submit.LoadTokenAt(dir, flareID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "no saved token for flare %q; submit a fresh flare instead\n", flareID)
-		return 1
-	}
-	resp, err := c.Update(prev.FlareID, body)
-	if err == nil {
-		_, _ = submit.SaveTokenAt(dir, resp)
-	}
+	resp, err := client.Submit(body)
 	return handleSubmitResult(resp, err, body)
 }
 
 func handleSubmitResult(resp flareschema.SubmitResponse, err error, body []byte) int {
 	if err == nil {
 		fmt.Printf("flare submitted: %s\n", resp.PortalURL)
-		_, _ = submit.SaveTokenAt(submit.StorageDir(), resp)
 		return 0
 	}
 	var schemaErr submit.ErrSchemaRejected
@@ -240,7 +209,7 @@ func handleSubmitResult(resp flareschema.SubmitResponse, err error, body []byte)
 // outcome (anything except OutcomeAddNotes). After a notes edit, the
 // engine re-scrubs and we re-render so the operator audits the
 // updated payload before submitting. Edits chain: the user can press
-// e -> s, e -> e -> s, e -> c, e -> d, etc. without being kicked out.
+// e -> s, e -> e -> s, e -> c, etc. without being kicked out.
 //
 // We share one bufio.Reader across review.Run and the notes prompt:
 // review.Run wraps its input in bufio.NewReader internally, and

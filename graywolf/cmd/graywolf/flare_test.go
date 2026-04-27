@@ -91,19 +91,3 @@ func TestRunReviewLoop_EditNotesThenCancel(t *testing.T) {
 		t.Fatalf("outcome = %v, want OutcomeCancel", got)
 	}
 }
-
-// Pressing 'd' after editing notes should still propagate as
-// OutcomeDiff so the caller can decide whether the current mode
-// (--resubmit or fresh) is appropriate.
-func TestRunReviewLoop_EditNotesThenDiff(t *testing.T) {
-	in := strings.NewReader("e\nrevised\nd\n")
-	var out bytes.Buffer
-	f := flareschema.BuildSampleFlare()
-	got, err := runReviewLoop(in, &out, &f, redact.NewEngine())
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	if got != review.OutcomeDiff {
-		t.Fatalf("outcome = %v, want OutcomeDiff", got)
-	}
-}

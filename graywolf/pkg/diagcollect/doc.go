@@ -10,8 +10,8 @@
 //     It is mandatory for non-dry-run submissions; dry-run / --out
 //     also run it (the scrub is what the user is asked to audit).
 //   - The graywolf-flare-server is reached through a configurable URL.
-//     Token-protected resubmission saves the portal token locally to
-//     ~/.local/state/graywolf/flares/<flare-id>.json (mode 0600).
+//     5xx responses save the body to ~/.local/state/graywolf/
+//     pending-flare-<unix-ts>.json (mode 0600) for retry.
 //
 // Privacy invariants (also enforced by tests in redact/):
 //   - APRS callsigns are NOT redacted (public identifiers; the whole
@@ -21,5 +21,6 @@
 //     cross-references survive scrubbing.
 //
 // Design: .context/2026-04-25-graywolf-flare-system-design.md
-//         § "Subsystem 2 — graywolf flare CLI".
+//
+//	§ "Subsystem 2 — graywolf flare CLI".
 package diagcollect

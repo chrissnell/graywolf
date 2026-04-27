@@ -21,7 +21,6 @@ const (
 	OutcomeCancel
 	OutcomeAddNotes
 	OutcomeAddRedaction
-	OutcomeDiff
 )
 
 func (o Outcome) String() string {
@@ -34,8 +33,6 @@ func (o Outcome) String() string {
 		return "add_notes"
 	case OutcomeAddRedaction:
 		return "add_redaction"
-	case OutcomeDiff:
-		return "diff"
 	}
 	return "unknown"
 }
@@ -56,7 +53,7 @@ func Run(in io.Reader, out io.Writer, payload *flareschema.Flare, eng *redact.En
 		paginate(out, render)
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "APRS callsigns are NOT redacted; everything else above has been scrubbed.")
-		fmt.Fprintln(out, "[s]ubmit  [c]ancel  [e]dit notes  [r]edact regex  [d]iff (resubmit only)  [enter] page")
+		fmt.Fprintln(out, "[s]ubmit  [c]ancel  [e]dit notes  [r]edact regex  [enter] page")
 		fmt.Fprint(out, "> ")
 		line, err := r.ReadString('\n')
 		if err != nil && line == "" {
@@ -70,8 +67,6 @@ func Run(in io.Reader, out io.Writer, payload *flareschema.Flare, eng *redact.En
 			return OutcomeCancel, nil
 		case "e":
 			return OutcomeAddNotes, nil
-		case "d":
-			return OutcomeDiff, nil
 		case "r":
 			fmt.Fprint(out, "regex to redact: ")
 			pat, err := r.ReadString('\n')
@@ -89,7 +84,7 @@ func Run(in io.Reader, out io.Writer, payload *flareschema.Flare, eng *redact.En
 			// Empty input → advance one page (rendered above).
 			continue
 		default:
-			fmt.Fprintf(out, "unknown key %q; press s/c/e/r/d or enter\n", key)
+			fmt.Fprintf(out, "unknown key %q; press s/c/e/r or enter\n", key)
 		}
 	}
 }

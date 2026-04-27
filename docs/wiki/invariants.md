@@ -167,4 +167,4 @@ Source: `pkg/diagcollect/Collect` calls `redact.ScrubFlare` before returning; th
 
 *Why:* Anything that leaves the host across the network must pass through human eyes. `--dry-run` and `--out` print the same scrubbed payload, but only `--dry-run` skips the network -- and both still run the scrub.
 
-Source: `cmd/graywolf/flare.go`'s control flow: `runFreshSubmit` and `runResubmit` are unreachable except through `review.Run` returning `OutcomeSubmit`.
+Source: `cmd/graywolf/flare.go`'s control flow: the network `client.Submit` call is unreachable except through `runReviewLoop` returning `OutcomeSubmit`.

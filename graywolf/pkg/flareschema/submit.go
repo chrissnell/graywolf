@@ -1,12 +1,13 @@
 package flareschema
 
 // SubmitResponse is the JSON document graywolf-flare-server returns
-// from POST /api/v1/submit and POST /api/v1/submit/{id}/update.
+// from POST /api/v1/submit.
 //
 // FlareID is the server-assigned UUID; PortalToken is the unguessable
-// per-flare URL token the user follows back to read the operator's
-// reply; PortalURL is the fully-qualified browser link the CLI prints
-// (and the server emails, when --email was supplied).
+// per-flare URL token the server may use to authenticate operator-portal
+// access (the CLI does not persist it locally); PortalURL is the
+// fully-qualified browser link the CLI prints (and the server emails,
+// when --email was supplied).
 //
 // SchemaVersion echoes the schema_version the server accepted —
 // useful for diagnostics if the CLI ever finds itself talking to a

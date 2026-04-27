@@ -21,5 +21,6 @@
 // the server can never silently disagree.
 //
 // Design: .context/2026-04-25-graywolf-flare-system-design.md
-//         § "Subsystem 2 — graywolf flare CLI" → "Wire Schema".
+//
+//	§ "Subsystem 2 — graywolf flare CLI" → "Wire Schema".
 package flareschema

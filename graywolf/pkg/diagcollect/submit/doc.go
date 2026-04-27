@@ -4,10 +4,11 @@
 // production implementation.
 //
 // Errors:
-//   ErrSchemaRejected   server replied 400 (caller should print body)
-//   ErrRateLimited      server replied 429 (caller should print retry-after)
-//   ErrServerError      server replied 5xx (caller should save pending)
-//   ErrPayloadTooLarge  body exceeds 5 MB (caller should warn)
+//
+//	ErrSchemaRejected   server replied 400 (caller should print body)
+//	ErrRateLimited      server replied 429 (caller should print retry-after)
+//	ErrServerError      server replied 5xx (caller should save pending)
+//	ErrPayloadTooLarge  body exceeds 5 MB (caller should warn)
 //
 // All error types preserve the server's response body where
 // available so the operator can debug schema-version mismatches and

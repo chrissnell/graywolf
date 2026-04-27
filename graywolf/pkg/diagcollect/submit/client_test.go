@@ -104,18 +104,3 @@ func TestHTTPClient_BodyTooLargeShortCircuits(t *testing.T) {
 		t.Fatalf("err = %v, want ErrPayloadTooLarge", err)
 	}
 }
-
-func TestHTTPClient_Update(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/submit/abc/update" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"flare_id":"abc","portal_token":"t","portal_url":"u","schema_version":1}`))
-	}))
-	defer srv.Close()
-	c := NewHTTPClient(srv.URL, srv.Client())
-	if _, err := c.Update("abc", sampleBody(t)); err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-}

@@ -7,7 +7,7 @@ package flareschema
 //   - "is it on a powered hub" (hub_power_source, max_power_ma)
 //   - "is it negotiating a sane speed" (speed, usb_version)
 //   - "what bus position" (port_path) so two identical devices can be
-//     told apart between resubmits
+//     told apart in a single flare and across re-submissions
 type USBTopology struct {
 	Devices []USBDevice      `json:"devices"`
 	Issues  []CollectorIssue `json:"issues,omitempty"`

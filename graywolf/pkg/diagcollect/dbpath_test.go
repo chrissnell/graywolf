@@ -42,10 +42,10 @@ func TestDiscoverConfigDB_EnvBeforeServiceInstall(t *testing.T) {
 		UserConfigDir:  "/home/u/.config/Graywolf",
 		Workdir:        "/cwd",
 		Stat: fakeStat(map[string]bool{
-			"/tmp/env.db":                           true,
-			"/var/lib/graywolf/graywolf.db":         true,
+			"/tmp/env.db":                          true,
+			"/var/lib/graywolf/graywolf.db":        true,
 			"/home/u/.config/Graywolf/graywolf.db": true,
-			"/cwd/graywolf.db":                      true,
+			"/cwd/graywolf.db":                     true,
 		}),
 	})
 	if got != "/tmp/env.db" || src != "env" {
@@ -59,9 +59,9 @@ func TestDiscoverConfigDB_ServiceInstallBeforeUserConfig(t *testing.T) {
 		UserConfigDir:  "/home/u/.config/Graywolf",
 		Workdir:        "/cwd",
 		Stat: fakeStat(map[string]bool{
-			"/var/lib/graywolf/graywolf.db":         true,
+			"/var/lib/graywolf/graywolf.db":        true,
 			"/home/u/.config/Graywolf/graywolf.db": true,
-			"/cwd/graywolf.db":                      true,
+			"/cwd/graywolf.db":                     true,
 		}),
 	})
 	if got != "/var/lib/graywolf/graywolf.db" || src != "service_install" {

@@ -10,10 +10,10 @@ type ConfigItem struct {
 }
 
 // ConfigSection is the top-level "config" object on a flare. Items
-// preserve the order the configstore emitted them so resubmit diffs stay
-// stable across re-runs. Issues records collector failures (e.g.
-// "configstore unreadable") so a flare without config remains useful for
-// system+device debugging.
+// preserve the order the configstore emitted them so flares from the
+// same install stay comparable across re-runs. Issues records collector
+// failures (e.g. "configstore unreadable") so a flare without config
+// remains useful for system+device debugging.
 type ConfigSection struct {
 	Items  []ConfigItem     `json:"items"`
 	Issues []CollectorIssue `json:"issues,omitempty"`

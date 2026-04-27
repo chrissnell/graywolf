@@ -19,7 +19,6 @@ const MaxBodyBytes = 5 * 1024 * 1024
 // Client is the abstraction the CLI dispatches to.
 type Client interface {
 	Submit(body []byte) (flareschema.SubmitResponse, error)
-	Update(flareID string, body []byte) (flareschema.SubmitResponse, error)
 }
 
 // HTTPClient is the production Client.
@@ -38,10 +37,6 @@ func NewHTTPClient(baseURL string, h *http.Client) *HTTPClient {
 
 func (c *HTTPClient) Submit(body []byte) (flareschema.SubmitResponse, error) {
 	return c.post("/api/v1/submit", body)
-}
-
-func (c *HTTPClient) Update(flareID string, body []byte) (flareschema.SubmitResponse, error) {
-	return c.post(fmt.Sprintf("/api/v1/submit/%s/update", flareID), body)
 }
 
 func (c *HTTPClient) post(path string, body []byte) (flareschema.SubmitResponse, error) {
