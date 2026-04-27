@@ -47,11 +47,11 @@
     const federated = createFederatedProtocol({
       completedSlugsProvider: () => downloadsState.completed,
       fetchOnline: async (z, x, y, signal) => {
-        const url = `https://maps.nw5w.com/${z}/${x}/${y}.mvt`;
-        const headers = bearerToken
-          ? { Authorization: `Bearer ${bearerToken}` }
-          : {};
-        const res = await fetch(url, { headers, signal });
+        const base = `https://maps.nw5w.com/${z}/${x}/${y}.mvt`;
+        const url = bearerToken
+          ? `${base}?t=${encodeURIComponent(bearerToken)}`
+          : base;
+        const res = await fetch(url, { signal });
         if (!res.ok) {
           throw new Error(`tile ${z}/${x}/${y} fetch failed: ${res.status}`);
         }
@@ -132,17 +132,32 @@
     return osmRasterStyle();
   }
 
-  // transformRequest: attach Bearer token to maps.nw5w.com requests
-  // EXCEPT /style/* (must stay anonymous to keep CF edge cache shared).
+  // transformRequest: attach the bearer token as ?t=<token> on
+  // maps.nw5w.com tile and tiles.json requests. URL-token auth keeps
+  // requests CORS-simple (no preflight) and lets the worker share its
+  // CF edge cache across operators (cache key is the canonical URL,
+  // stripped of ?t=). /style/* stays anonymous; /download/ keeps the
+  // Authorization-header path for any future browser-initiated download.
   function transformRequest(url) {
-    if (
-      url.startsWith('https://maps.nw5w.com/') &&
-      !url.startsWith('https://maps.nw5w.com/style/') &&
-      bearerToken
-    ) {
-      return { url, headers: { Authorization: `Bearer ${bearerToken}` } };
+    if (url.startsWith('https://maps.nw5w.com/download/')) {
+      if (bearerToken) {
+        return { url, headers: { Authorization: `Bearer ${bearerToken}` } };
+      }
+      return { url };
+    }
+    if (url.startsWith('https://maps.nw5w.com/style/')) {
+      return { url };
+    }
+    if (url.startsWith('https://maps.nw5w.com/') && bearerToken) {
+      return { url: appendToken(url, bearerToken) };
     }
     return { url };
+  }
+
+  function appendToken(url, token) {
+    const u = new URL(url);
+    u.searchParams.set('t', token);
+    return u.toString();
   }
 
   // Sync the in-memory token from the server. revealToken() hits the
