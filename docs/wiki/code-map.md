@@ -114,6 +114,19 @@ The split is enforced by [invariant 9](invariants.md).
 | `app/{auth_store,gpsmanager,adapters,wiring,modem,flags,config,shutdown,platform_*}` | Wiring helpers |
 | `internal/{backoff,dedup,ratelimit,testsync,testtx}` | Internal utilities |
 
+## Go service: diagnostic flare CLI
+
+| Concern | File |
+|---|---|
+| `graywolf flare` CLI subcommand entry | `cmd/graywolf/flare.go` |
+| Diagnostic-flare orchestration (`Collect`, `Options`) | `pkg/diagcollect/collect.go` |
+| Flare DB discovery (graywolf.db) | `pkg/diagcollect/dbpath.go` |
+| Modem locator + listing exec helper | `pkg/diagcollect/modem.go` |
+| Per-collector domains | `pkg/diagcollect/{configdump,system,service,serial,gpio,gps,audio,usb,cm108,logs}.go` |
+| Flare scrubber (rules, hostname, ad-hoc, ScrubFlare) | `pkg/diagcollect/redact/{rules,hostname,engine,flare}.go` |
+| Review TUI | `pkg/diagcollect/review/review.go` |
+| Submission HTTP client + token store + resubmit diff | `pkg/diagcollect/submit/{client,store,resubmit}.go` |
+
 ## Wire schema (Go)
 
 Canonical struct tree for the flare wire payload — the contract between
