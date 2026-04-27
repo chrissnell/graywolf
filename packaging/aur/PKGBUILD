@@ -17,26 +17,24 @@ sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 prepare() {
   cd "graywolf-${pkgver}"
-  cd graywolf && go mod download
+  go mod download
 }
 
 build() {
   cd "graywolf-${pkgver}"
 
   # Svelte frontend (populates web/dist for Go embed)
-  cd graywolf/web
+  cd web
   npm install
   npm run build
-  cd ../..
+  cd ..
 
   # Go binary
-  cd graywolf
   export CGO_ENABLED=0
   go build -trimpath \
     -ldflags "-w -s -X main.Version=${pkgver} -X main.GitCommit=${pkgver}" \
     -o "${srcdir}/graywolf" \
     ./cmd/graywolf/
-  cd ..
 
   # Rust modem binary
   cd graywolf-modem
