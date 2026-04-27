@@ -144,3 +144,27 @@ Files:
 [`../handbook/openapi.json`](../handbook/openapi.json),
 [`../handbook/openapi.yaml`](../handbook/openapi.yaml).
 Source: `GENERATED_SPEC_FILES` in [`../../Makefile`](../../Makefile).
+
+### 19. APRS callsigns are NOT redacted by `graywolf flare`
+
+*Why:* APRS callsigns are public ham-radio identifiers, and the entire purpose of a flare submission is to diagnose APRS issues. Redacting them would defeat the operator UI's correlation between flare config and observed packets.
+
+Source: [`../../graywolf/pkg/diagcollect/redact/doc.go`](../../graywolf/pkg/diagcollect/redact/doc.go), enforced by `TestEngine_PreservesAPRSCallsigns`.
+
+### 20. Hostname hash is consistent within one submission
+
+*Why:* The hostname appears across many fields (system, log lines, file paths). Hashing it once per submission and substituting the same 8-hex tag everywhere preserves cross-references inside the operator UI without leaking the literal name.
+
+Source: [`../../graywolf/pkg/diagcollect/redact/hostname.go`](../../graywolf/pkg/diagcollect/redact/hostname.go); the engine wires it through `SetHostname`.
+
+### 21. Redaction always runs before review
+
+*Why:* The review TUI is the user's audit step; the user can only audit what we're going to ship. Showing a pre-scrub payload would mean a user pressing 's' submits a different document than they reviewed.
+
+Source: `pkg/diagcollect/Collect` calls `redact.ScrubFlare` before returning; the review TUI re-applies it after every ad-hoc rule add.
+
+### 22. Review is mandatory for non-dry-run, non-`--out` invocations
+
+*Why:* Anything that leaves the host across the network must pass through human eyes. `--dry-run` and `--out` print the same scrubbed payload, but only `--dry-run` skips the network -- and both still run the scrub.
+
+Source: `cmd/graywolf/flare.go`'s control flow: the network `client.Submit` call is unreachable except through `runReviewLoop` returning `OutcomeSubmit`.

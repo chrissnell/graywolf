@@ -5,8 +5,9 @@ package flareschema
 //
 // Field order in this struct is the canonical wire order. encoding/json
 // preserves struct order on Marshal, so the resulting JSON is stable
-// across builds — important for diffing across resubmits in the operator
-// UI and for human-readable dry-run output.
+// across builds — useful for the operator UI comparing multiple flares
+// from the same install side-by-side and for human-readable dry-run
+// output.
 //
 // schema_version is duplicated here at the top level (and lives inside
 // Meta as well). The top-level field is the contract surface every
