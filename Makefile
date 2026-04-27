@@ -15,8 +15,8 @@ GO_LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(FULL_COMMIT)
 
 # Subproject directories (see refactor/split-modem-and-app).
 MODEM_DIR := graywolf-modem
-APP_DIR   := graywolf
-WEB_DIR   := $(APP_DIR)/web
+APP_DIR   := .
+WEB_DIR   := web
 
 MANIFEST := --manifest-path $(MODEM_DIR)/Cargo.toml
 
@@ -54,7 +54,7 @@ GENERATED_SPEC_FILES := $(DOCS_GEN_DIR)/swagger.json $(DOCS_GEN_DIR)/swagger.yam
 all: release web
 	mkdir -p bin
 	cp target/release/graywolf-modem bin/
-	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
+	go build -ldflags="$(GO_LDFLAGS)" -o bin/graywolf ./cmd/graywolf/
 
 build:
 	$(CARGO_ENV) $(CARGO) build $(MANIFEST)
@@ -86,7 +86,7 @@ doc:
 clean: clean-web
 	$(CARGO) clean $(MANIFEST)
 	rm -rf bin
-	rm -f $(APP_DIR)/graywolf
+	rm -f graywolf
 
 # clean-web: force-reinstall node_modules on next build. Useful after pulling
 # a branch that regenerated package-lock.json on a different OS (npm CLI
@@ -106,10 +106,10 @@ distclean: clean
 # and protoc-gen-go on PATH. Install the latter with:
 #   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 proto:
-	cd $(APP_DIR) && protoc \
-		--proto_path=../proto \
+	protoc \
+		--proto_path=proto \
 		--go_out=. --go_opt=module=github.com/chrissnell/graywolf \
-		../proto/graywolf.proto
+		proto/graywolf.proto
 
 NODE_STAMP := $(WEB_DIR)/node_modules/.stamp-$(shell uname -s)-$(shell uname -m)
 
@@ -127,16 +127,16 @@ web: $(NODE_STAMP)
 	cd $(WEB_DIR) && npm run build
 
 go-build:
-	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" ./...
+	go build -ldflags="$(GO_LDFLAGS)" ./...
 
 go-test: docs-check api-client-check
-	cd $(APP_DIR) && go test -race ./...
+	go test -race ./...
 
 # Run Go fuzz targets for a bounded duration. Override FUZZTIME to change it.
 FUZZTIME ?= 60s
 go-fuzz:
-	cd $(APP_DIR) && go test -run=^$$ -fuzz=FuzzDecode -fuzztime=$(FUZZTIME) ./pkg/ax25/
-	cd $(APP_DIR) && go test -run=^$$ -fuzz=FuzzParseInfo -fuzztime=$(FUZZTIME) ./pkg/aprs/
+	go test -run=^$$ -fuzz=FuzzDecode -fuzztime=$(FUZZTIME) ./pkg/ax25/
+	go test -run=^$$ -fuzz=FuzzParseInfo -fuzztime=$(FUZZTIME) ./pkg/aprs/
 
 # Build everything: Rust release, Svelte UI, Go binary.
 # Also stages graywolf-modem into bin/ so ./bin/graywolf can find it via
@@ -144,7 +144,7 @@ go-fuzz:
 graywolf: release web
 	mkdir -p bin
 	cp target/release/graywolf-modem bin/
-	cd $(APP_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o ../bin/graywolf ./cmd/graywolf/
+	go build -ldflags="$(GO_LDFLAGS)" -o bin/graywolf ./cmd/graywolf/
 
 run-bench: release
 	@echo "Usage: make run-bench FLAC=<file> [ITER=5]"
@@ -157,8 +157,8 @@ version:
 bump-minor:
 	@echo "Current version: $(VERSION)"
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.0", $$1, $$2+1}'))
-	@grep -qE '^-[[:space:]]+version:[[:space:]]+"?$(NEW)"?[[:space:]]*$$' graywolf/pkg/releasenotes/notes.yaml || { \
-	  echo "error: no release note for v$(NEW) in graywolf/pkg/releasenotes/notes.yaml"; \
+	@grep -qE '^-[[:space:]]+version:[[:space:]]+"?$(NEW)"?[[:space:]]*$$' pkg/releasenotes/notes.yaml || { \
+	  echo "error: no release note for v$(NEW) in pkg/releasenotes/notes.yaml"; \
 	  echo "       author the entry first (see CLAUDE.md release workflow)."; \
 	  exit 1; \
 	}
@@ -171,7 +171,7 @@ bump-minor:
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock graywolf/pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
@@ -179,8 +179,8 @@ bump-minor:
 bump-point:
 	@echo "Current version: $(VERSION)"
 	$(eval NEW := $(shell echo $(VERSION) | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'))
-	@grep -qE '^-[[:space:]]+version:[[:space:]]+"?$(NEW)"?[[:space:]]*$$' graywolf/pkg/releasenotes/notes.yaml || { \
-	  echo "error: no release note for v$(NEW) in graywolf/pkg/releasenotes/notes.yaml"; \
+	@grep -qE '^-[[:space:]]+version:[[:space:]]+"?$(NEW)"?[[:space:]]*$$' pkg/releasenotes/notes.yaml || { \
+	  echo "error: no release note for v$(NEW) in pkg/releasenotes/notes.yaml"; \
 	  echo "       author the entry first (see CLAUDE.md release workflow)."; \
 	  exit 1; \
 	}
@@ -193,7 +193,7 @@ bump-point:
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock graywolf/pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
@@ -247,8 +247,8 @@ TAGIFY := go run ./pkg/webapi/docs/cmd/tagify
 
 docs:
 	@test -x "$(SWAG)" || { echo "swag not found at $(SWAG). See SWAG comment in Makefile."; exit 1; }
-	cd $(APP_DIR) && $(SWAG_INIT) -o pkg/webapi/docs/gen
-	cd $(APP_DIR) && $(TAGIFY) --json pkg/webapi/docs/gen/swagger.json --yaml pkg/webapi/docs/gen/swagger.yaml
+	$(SWAG_INIT) -o pkg/webapi/docs/gen
+	$(TAGIFY) --json pkg/webapi/docs/gen/swagger.json --yaml pkg/webapi/docs/gen/swagger.yaml
 
 docs-api-html: docs
 	@test -d $(SWAGGER_UI_VENDOR) || { echo "missing $(SWAGGER_UI_VENDOR); vendor Swagger UI dist files first"; exit 1; }
@@ -261,7 +261,7 @@ docs-check:
 	@test -x "$(SWAG)" || { echo "swag not found at $(SWAG); cannot verify docs."; echo "See the SWAG comment in Makefile for install instructions."; exit 1; }
 	@tmpdir=$$(mktemp -d 2>/dev/null || mktemp -d -t docs-check); \
 		trap 'rm -rf "$$tmpdir"' EXIT; \
-		cd $(APP_DIR) && $(SWAG_INIT) -o "$$tmpdir" >/dev/null \
+		$(SWAG_INIT) -o "$$tmpdir" >/dev/null \
 			&& $(TAGIFY) --strict --json "$$tmpdir/swagger.json" --yaml "$$tmpdir/swagger.yaml" >/dev/null; \
 		for f in swagger.json swagger.yaml; do \
 			if ! diff -q "$$tmpdir/$$f" pkg/webapi/docs/gen/$$f >/dev/null 2>&1; then \
@@ -273,13 +273,13 @@ docs-check:
 		echo "docs-check: generated spec matches committed copy."
 
 docs-lint:
-	cd $(APP_DIR) && go run ./pkg/webapi/docs/cmd/idlint
+	go run ./pkg/webapi/docs/cmd/idlint
 
 # --- OpenAPI TypeScript client -------------------------------------------
 #
-# `make api-client`       regenerate graywolf/web/src/api/generated/api.d.ts
+# `make api-client`       regenerate web/src/api/generated/api.d.ts
 #                         from the committed Swagger 2.0 spec. The generator
-#                         lives in graywolf/web/scripts/generate-api.mjs and
+#                         lives in web/scripts/generate-api.mjs and
 #                         is driven by `npm run api:generate`.
 # `make api-client-check` regenerate into a scratch dir and diff against the
 #                         committed file. Mirrors docs-check. Wired into
@@ -287,8 +287,8 @@ docs-lint:
 #                         without regenerating the client fail CI.
 #
 # The client itself is library code committed under
-# graywolf/web/src/api/generated/. The hand-written wrapper at
-# graywolf/web/src/api/client.ts is the only non-generated file in that
+# web/src/api/generated/. The hand-written wrapper at
+# web/src/api/client.ts is the only non-generated file in that
 # tree. Existing .svelte fetch calls are NOT migrated — that's deferred
 # to a separate initiative.
 
@@ -316,7 +316,7 @@ api-client-check: $(NODE_STAMP)
 .PHONY: flareschema
 flareschema:
 	@echo ">> regenerating docs/flareschema/v1.json"
-	@cd graywolf && go run ./cmd/flareschema-gen > ../docs/flareschema/v1.json
+	@go run ./cmd/flareschema-gen > docs/flareschema/v1.json
 	@echo ">> docs/flareschema/v1.json updated"
 
 # --- Git hooks -----------------------------------------------------------
