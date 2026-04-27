@@ -89,6 +89,19 @@ func TestRunListing_BinaryMissing(t *testing.T) {
 	}
 }
 
+func TestRunListing_EmptyBin(t *testing.T) {
+	// The empty-bin guard is what catches an upstream ResolveModemPath
+	// failure being plumbed through the orchestrator without an early
+	// return. Lock it in so a refactor can't quietly drop the check.
+	out, issue := RunListing("", "--list-audio")
+	if out != nil {
+		t.Fatalf("out = %v, want nil", out)
+	}
+	if issue == nil || issue.Kind != "modem_unavailable" {
+		t.Fatalf("issue = %+v, want kind=modem_unavailable", issue)
+	}
+}
+
 func TestRunListing_NonZeroExit(t *testing.T) {
 	// `false` returns 1; pretend it's the modem to exercise the
 	// non-zero-exit branch without depending on a real cargo build.
