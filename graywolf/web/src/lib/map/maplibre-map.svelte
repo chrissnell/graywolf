@@ -244,7 +244,19 @@
         // Style may be mid-swap; ignore.
       }
     });
-    map.once('load', () => oncreate?.(map));
+    // Mount the operator's data layers (stations, trails, weather,
+    // my-position) as soon as the style *spec* is parsed -- do NOT wait
+    // for the basemap's `load`, which only fires after every basemap
+    // source has completed its first fetch. If maps.nw5w.com is slow,
+    // unreachable, or its tiles.json hangs, `load` never fires and the
+    // operator's stations silently fail to appear on what is otherwise
+    // a working map. style.load fires as soon as `style._loaded` flips
+    // true, which is all addSource/addLayer/Marker.addTo need.
+    if (map.style?._loaded) {
+      oncreate?.(map);
+    } else {
+      map.once('style.load', () => oncreate?.(map));
+    }
     if (typeof window !== 'undefined') window.__gwMap = map;
   });
 
