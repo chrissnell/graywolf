@@ -57,6 +57,7 @@
   });
   let timerangeSec = $state(Math.floor(dataStore.timerangeMs / 1000));
   let coordText = $state('');
+  let zoomLevel = $state(null);
 
   // Tick once a second so "5s ago" stays accurate without hammering the
   // status-bar derived state from elsewhere.
@@ -201,6 +202,9 @@
     }
     map.on('moveend', updateBounds);
     updateBounds();
+
+    zoomLevel = map.getZoom();
+    map.on('zoom', () => (zoomLevel = map.getZoom()));
 
     // Coord display: cheap (single $state assignment per move). MapLibre
     // already throttles mousemove to once per animation frame, so this
@@ -415,9 +419,12 @@
     </aside>
   {/if}
 
-  <!-- Coord display (bottom-right) -->
-  {#if coordText}
-    <div class="map-coord-display">{coordText}</div>
+  <!-- Coord + zoom display (bottom-right). Zoom is always visible;
+       coords/grid only appear while the cursor is over the map. -->
+  {#if zoomLevel !== null || coordText}
+    <div class="map-coord-display">
+      {#if coordText}{coordText} &middot; {/if}z {zoomLevel?.toFixed(1) ?? ''}
+    </div>
   {/if}
 
   <!-- Status bar (bottom-center; legacy placement so it doesn't sit
