@@ -2,6 +2,8 @@ target/
 .cursor/
 .vscode/
 .DS_Store
+go.work
+go.work.sum
 aprs-test-tracks/
 .context/
 .claude/
