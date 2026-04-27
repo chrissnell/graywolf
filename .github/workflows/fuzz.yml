@@ -23,15 +23,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: graywolf/go.mod
-          cache-dependency-path: graywolf/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Fuzz ax25.Decode
-        working-directory: graywolf
         run: go test -run=^$ -fuzz=FuzzDecode -fuzztime=60s ./pkg/ax25/
 
       - name: Fuzz aprs.ParseInfo
-        working-directory: graywolf
         run: go test -run=^$ -fuzz=FuzzParseInfo -fuzztime=60s ./pkg/aprs/
 
       - name: Upload failing corpus (on failure)
@@ -39,5 +37,5 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: fuzz-failures
-          path: graywolf/pkg/**/testdata/fuzz/
+          path: pkg/**/testdata/fuzz/
           if-no-files-found: ignore

@@ -12,12 +12,12 @@
 # The output file is intentionally generic (prev_release.db). The
 # fixture is NOT committed to git — it is regenerated on demand by CI
 # and optionally by developers running the migration test locally.
-# See graywolf/pkg/configstore/testdata/README.md.
+# See pkg/configstore/testdata/README.md.
 #
 # Usage:
 #   ./scripts/testdata/gen_prev_release_db.sh [OUTPUT_PATH]
 #
-# Defaults to graywolf/pkg/configstore/testdata/prev_release.db
+# Defaults to pkg/configstore/testdata/prev_release.db
 # relative to the repo root.
 #
 # Requirements:
@@ -33,7 +33,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-DEFAULT_OUT="${REPO_ROOT}/graywolf/pkg/configstore/testdata/prev_release.db"
+DEFAULT_OUT="${REPO_ROOT}/pkg/configstore/testdata/prev_release.db"
 OUT_PATH="${1:-$DEFAULT_OUT}"
 LISTEN_ADDR="127.0.0.1:${PORT:-38080}"
 
