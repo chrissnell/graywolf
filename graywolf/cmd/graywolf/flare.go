@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -132,7 +133,7 @@ func runFlare(args []string, version, gitCommit string) int {
 	if hostname, _ := os.Hostname(); hostname != "" {
 		eng.SetHostname(hostname)
 	}
-	outcome, rerr := review.Run(os.Stdin, os.Stdout, flare, eng)
+	outcome, rerr := runReviewLoop(os.Stdin, os.Stdout, flare, eng)
 	if rerr != nil {
 		fmt.Fprintf(os.Stderr, "review: %v\n", rerr)
 		return 4
@@ -141,15 +142,6 @@ func runFlare(args []string, version, gitCommit string) int {
 	case review.OutcomeCancel:
 		fmt.Println("cancelled.")
 		return 1
-	case review.OutcomeAddNotes:
-		fmt.Print("new notes (single line): ")
-		updated, _ := readLine(os.Stdin)
-		flare.User.Notes = updated
-		redact.ScrubFlare(flare, eng)
-		nextOutcome, _ := review.Run(os.Stdin, os.Stdout, flare, eng)
-		if nextOutcome != review.OutcomeSubmit {
-			return 1
-		}
 	case review.OutcomeSubmit:
 		// fallthrough to submission below
 	case review.OutcomeDiff:
@@ -161,8 +153,8 @@ func runFlare(args []string, version, gitCommit string) int {
 		fmt.Fprintln(os.Stderr, "diff requires --resubmit mode; not submitting")
 		return 1
 	default:
-		// OutcomeAddRedaction is handled inline by review.Run and
-		// shouldn't reach here. Any future Outcome reaching this point
+		// OutcomeAddNotes is consumed by runReviewLoop; OutcomeAddRedaction
+		// is handled inline by review.Run. Any other Outcome reaching here
 		// is a programming error — refuse to ship the flare.
 		fmt.Fprintf(os.Stderr, "unexpected review outcome %v; not submitting\n", outcome)
 		return 1
@@ -242,6 +234,36 @@ func handleSubmitResult(resp flareschema.SubmitResponse, err error, body []byte)
 	}
 	fmt.Fprintf(os.Stderr, "submit failed: %v\n", err)
 	return 4
+}
+
+// runReviewLoop drives review.Run until the user reaches a terminal
+// outcome (anything except OutcomeAddNotes). After a notes edit, the
+// engine re-scrubs and we re-render so the operator audits the
+// updated payload before submitting. Edits chain: the user can press
+// e -> s, e -> e -> s, e -> c, e -> d, etc. without being kicked out.
+//
+// We share one bufio.Reader across review.Run and the notes prompt:
+// review.Run wraps its input in bufio.NewReader internally, and
+// bufio.NewReader returns the existing reader unchanged when its
+// buffer is already large enough. Without sharing, any data the
+// inner Reader pre-buffered past the first newline (e.g. a paste, a
+// pipe, or fast typing the OS batched into one read) would be lost
+// when review.Run returns and its private bufio.Reader is dropped.
+func runReviewLoop(in io.Reader, out io.Writer, flare *flareschema.Flare, eng *redact.Engine) (review.Outcome, error) {
+	br := bufio.NewReader(in)
+	for {
+		outcome, err := review.Run(br, out, flare, eng)
+		if err != nil {
+			return outcome, err
+		}
+		if outcome != review.OutcomeAddNotes {
+			return outcome, nil
+		}
+		fmt.Fprint(out, "new notes (single line): ")
+		updated, _ := readLine(br)
+		flare.User.Notes = updated
+		redact.ScrubFlare(flare, eng)
+	}
 }
 
 // readLine reads one line from in (used for "new notes" re-prompt).

@@ -54,6 +54,34 @@ func TestRule_IPv6(t *testing.T) {
 	mustLeaveAlone(t, r, "the time is 12:34:56 today") // colons but not v6
 }
 
+// Compressed forms with no leading group: previously slipped past the
+// rule because the regex required at least one hex group before ::.
+func TestRule_IPv6_LeadingDoubleColon(t *testing.T) {
+	r := ruleByID(t, "ipv6")
+	mustReplace(t, r, "loopback ::1 listening", "<ip>")
+	mustReplace(t, r, "all-zeros :: route", "<ip>")
+}
+
+// Trailing :: form (e.g. fe80::) lost the \b anchor at end-of-token
+// in the old pattern.
+func TestRule_IPv6_TrailingDoubleColon(t *testing.T) {
+	r := ruleByID(t, "ipv6")
+	mustReplace(t, r, "interface fe80:: link", "<ip>")
+}
+
+// Fully-expanded eight-group address never has :: and was unmatched.
+func TestRule_IPv6_FullyExpanded(t *testing.T) {
+	r := ruleByID(t, "ipv6")
+	mustReplace(t, r, "address 2001:db8:1:2:3:4:5:6 done", "<ip>")
+}
+
+// MAC addresses still must NOT match the IPv6 rule even with the
+// broader regex (no ::, only six octet-sized groups).
+func TestRule_IPv6_DoesNotEatMAC(t *testing.T) {
+	r := ruleByID(t, "ipv6")
+	mustLeaveAlone(t, r, "wlan0 hwaddr b8:27:eb:11:22:33")
+}
+
 func TestRule_MAC(t *testing.T) {
 	r := ruleByID(t, "mac")
 	mustReplace(t, r, "wlan0 hwaddr b8:27:eb:11:22:33", "<mac:b8:27:eb>")

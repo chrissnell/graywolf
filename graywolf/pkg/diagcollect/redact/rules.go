@@ -70,10 +70,15 @@ func BuiltinRules() []Rule {
 			Pattern: regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}(?:\.\d+)?\b`),
 		},
 		{
-			// Matches compressed (::) IPv6 forms like fe80::1234:abcd.
-			// Does not match bare HH:MM:SS time strings (no ::).
+			// Two alternatives, both validated by net.ParseIP in applyIPv6:
+			//   (a) any token containing `::` (covers ::, ::1, fe80::,
+			//       fe80::1, 2001:db8::1, ::ffff:1.2.3.4)
+			//   (b) fully-expanded eight-group form (no ::, exactly seven
+			//       group-colon pairs followed by a final group)
+			// HH:MM:SS time strings have neither, so they pass through.
+			// MAC addresses (six octets, five colons) match neither.
 			ID:      "ipv6",
-			Pattern: regexp.MustCompile(`\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4})*::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4})*)?\b`),
+			Pattern: regexp.MustCompile(`[0-9a-fA-F:]*::[0-9a-fA-F:.]*|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}`),
 		},
 		{
 			ID:      "mac",
@@ -94,7 +99,7 @@ func BuiltinRules() []Rule {
 	rules[1].applyFn = func(r Rule, s string) string { return r.Pattern.ReplaceAllString(s, "Bearer [REDACTED]") }
 	rules[2].applyFn = func(r Rule, s string) string { return r.Pattern.ReplaceAllString(s, "[REDACTED]") }
 	rules[3].applyFn = func(r Rule, s string) string { return applyIPv4(r.Pattern, s) }
-	rules[4].applyFn = func(r Rule, s string) string { return r.Pattern.ReplaceAllString(s, "<ip>") }
+	rules[4].applyFn = func(r Rule, s string) string { return applyIPv6(r.Pattern, s) }
 	rules[5].applyFn = func(r Rule, s string) string { return applyMAC(r.Pattern, s) }
 	rules[6].applyFn = func(r Rule, s string) string { return r.Pattern.ReplaceAllString(s, "<home>") }
 	rules[7].applyFn = func(r Rule, s string) string {
@@ -127,6 +132,20 @@ func applyIPv4(re *regexp.Regexp, s string) string {
 			return "<ip>"
 		}
 		return m
+	})
+}
+
+// applyIPv6 replaces every valid IPv6 candidate with <ip>. The regex
+// is permissive on purpose; net.ParseIP is the source of truth for
+// "this is actually an IPv6 address." IPv4-mapped IPv6 (To4() != nil)
+// is left to the IPv4 rule, which already ran.
+func applyIPv6(re *regexp.Regexp, s string) string {
+	return re.ReplaceAllStringFunc(s, func(m string) string {
+		ip := net.ParseIP(m)
+		if ip == nil || ip.To4() != nil {
+			return m
+		}
+		return "<ip>"
 	})
 }
 
