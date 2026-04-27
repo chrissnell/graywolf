@@ -1,6 +1,7 @@
 package aprs
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
@@ -124,6 +125,30 @@ func TestParseMicEAltitude(t *testing.T) {
 	}
 	if !pkt.Position.HasAlt || int(pkt.Position.Altitude) != 1234 {
 		t.Errorf("outer position altitude %+v", pkt.Position)
+	}
+}
+
+// TestParseMicEAmbiguousLonRejected covers a DL9DAK packet seen in the
+// wild whose longitude info-field begins with SPACE (0x20). dest "U3SUY8"
+// sets the +100° longitude-offset bit (dest[4]='Y'), so combining the
+// SPACE byte (raw lon=4) with the offset yields 104.96° — a
+// spec-compliant decode that drops the German station onto Mongolia,
+// ~8000 km from its actual position. APRS101 ch 10 reserves SPACE as the
+// ambiguous-data marker for this field, so we refuse to plot it.
+func TestParseMicEAmbiguousLonRejected(t *testing.T) {
+	srcAddr, _ := ax25.ParseAddress("DL9DAK")
+	destAddr, _ := ax25.ParseAddress("U3SUY8")
+	info := []byte{'\'', 0x20, 'U', 'h', 'l', 0x20, 'B', '-', '/', '>'}
+	f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := Parse(f)
+	if err == nil {
+		t.Fatalf("expected error for ambiguous lon, got pkt %+v", pkt.MicE)
+	}
+	if !errors.Is(err, ErrMicELonAmbiguous) {
+		t.Fatalf("wrong error: %v (want ErrMicELonAmbiguous)", err)
 	}
 }
 
