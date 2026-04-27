@@ -124,7 +124,7 @@ jobs:
           node-version: 22
 
       - name: Build frontend
-        working-directory: graywolf/web
+        working-directory: web
         run: |
           npm ci
           npm install @rollup/rollup-linux-x64-gnu
@@ -134,7 +134,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: frontend-dist
-          path: graywolf/web/dist/
+          path: web/dist/
           retention-days: 1
 
   release:
@@ -151,13 +151,13 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: frontend-dist
-          path: graywolf/web/dist/
+          path: web/dist/
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: graywolf/go.mod
-          cache-dependency-path: graywolf/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

@@ -4,15 +4,11 @@ project_name: graywolf
 
 before:
   hooks:
-    # GoReleaser 2.15 parses `before.hooks` as plain string commands
-    # (the `cmd:`/`dir:` map form is a newer feature). Use a shell
-    # one-liner to cd into the Go module directory.
-    - sh -c "cd graywolf && go mod tidy"
+    - go mod tidy
 
 builds:
   - id: graywolf
     binary: graywolf
-    dir: graywolf
     main: ./cmd/graywolf/
     env:
       - CGO_ENABLED=0

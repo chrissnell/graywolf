@@ -31,8 +31,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: graywolf/go.mod
-          cache-dependency-path: graywolf/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       # Node is needed for the generated OpenAPI TypeScript client drift
       # guard (`make api-client-check`). Version tracks the local
@@ -42,7 +42,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: graywolf/web/package-lock.json
+          cache-dependency-path: web/package-lock.json
 
       # swag is a dev-time CLI only; install it into the repo-local
       # scratch/bin (the same location the Makefile's SWAG variable
@@ -63,7 +63,6 @@ jobs:
         run: make api-client-check
 
       - name: go vet
-        working-directory: graywolf
         run: go vet ./...
 
       # Regenerate the prior-release migration fixture so
@@ -78,7 +77,6 @@ jobs:
           fi
 
       - name: go test -race
-        working-directory: graywolf
         run: go test -race ./...
 
   rust-ci:

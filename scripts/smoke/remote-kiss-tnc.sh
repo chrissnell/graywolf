@@ -14,7 +14,7 @@
 #   1. A throwaway TCP listener (Python, one-shot) that accepts a
 #      single connection, reads whatever the client sends within a
 #      generous window, and dumps the bytes to a temp file.
-#   2. The smoke-kiss-tcp-client helper under graywolf/cmd/, which
+#   2. The smoke-kiss-tcp-client helper under cmd/, which
 #      wires a kiss.Manager tcp-client supervisor with Mode=TNC and
 #      AllowTxFromGovernor=true, waits for connected, submits one UI
 #      frame via Manager.TransmitOnChannel, then exits.
@@ -84,7 +84,7 @@ trap cleanup EXIT INT TERM
 log "building smoke-kiss-tcp-client helper"
 HELPER_BIN="$TMPDIR/smoke-kiss-tcp-client"
 (
-  cd "$REPO_ROOT/graywolf"
+  cd "$REPO_ROOT"
   go build -o "$HELPER_BIN" ./cmd/smoke-kiss-tcp-client/
 ) || fail "helper build failed"
 
