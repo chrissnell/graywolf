@@ -59,7 +59,10 @@ log "detected previous release tag: $TAG"
 
 WORKTREE="/tmp/graywolf-prev-release-${TAG}"
 CFG_DIR="$(mktemp -d -t graywolf-prev-release-cfg.XXXXXX)"
-BIN_PATH="${WORKTREE}/graywolf/bin/graywolf"
+# BIN_PATH and SRC_DIR are set by the layout probe in step 2 once
+# the worktree is created and we can tell pre- vs post-flatten apart.
+BIN_PATH=""
+SRC_DIR=""
 GRAYWOLF_PID=""
 
 cleanup() {
@@ -93,12 +96,22 @@ git -C "$REPO_ROOT" worktree add "$WORKTREE" "$TAG"
 
 # --- 2. Build graywolf -------------------------------------------------
 
-log "building graywolf $TAG"
-(cd "$WORKTREE" && make build)
+# Detect layout: post-flatten tags carry go.mod at the worktree root;
+# pre-flatten tags (v0.11.4 and earlier) carry go.mod at graywolf/go.mod.
+if [[ -f "$WORKTREE/go.mod" ]]; then
+  SRC_DIR="$WORKTREE"
+  BIN_PATH="$WORKTREE/bin/graywolf"
+elif [[ -f "$WORKTREE/graywolf/go.mod" ]]; then
+  SRC_DIR="$WORKTREE/graywolf"
+  BIN_PATH="$WORKTREE/graywolf/bin/graywolf"
+else
+  die "neither $WORKTREE/go.mod nor $WORKTREE/graywolf/go.mod exists in tag $TAG worktree"
+fi
+
+log "building graywolf $TAG (src=$SRC_DIR)"
+(cd "$SRC_DIR" && go build -o bin/graywolf ./cmd/graywolf)
 if [[ ! -x "$BIN_PATH" ]]; then
-  # Older tags may use a different make target; fall back to direct go build.
-  log "make build did not produce $BIN_PATH; falling back to go build"
-  (cd "$WORKTREE/graywolf" && go build -o bin/graywolf ./cmd/graywolf)
+  die "go build produced no binary at $BIN_PATH"
 fi
 
 # --- 3. Run graywolf against throwaway config dir ---------------------
