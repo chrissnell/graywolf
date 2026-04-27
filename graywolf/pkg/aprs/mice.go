@@ -323,11 +323,30 @@ func isMicEHighBit(c byte) bool {
 	return false
 }
 
+// ErrMicELonAmbiguous reports that one of the three longitude bytes is a
+// SPACE (0x20), which APRS101 ch 10 reserves as the "no/ambiguous data"
+// marker for the Mic-E info-field longitude field. Some encoders (Yaesu
+// FT-2D/FT-3D, Kenwood TH-D72) emit this state before GPS lock; the
+// receiver MUST NOT combine the SPACE byte with the destination's
+// longitude offset bit and pretend the result is a position. parseMicE
+// surfaces this as a warn-and-drop rather than plotting the station
+// 8000+ km from its actual location.
+var ErrMicELonAmbiguous = errors.New("mic-e: longitude ambiguous (SPACE in info field)")
+
 // decodeMicELon decodes the 3-byte info-field longitude into decimal
 // degrees and applies the offset / hemisphere.
 func decodeMicELon(b []byte, offset int, sign float64) (float64, error) {
 	if len(b) < 3 {
 		return 0, errors.New("mic-e: lon short")
+	}
+	// APRS101 ch 10: a SPACE (0x20) in any of the three longitude
+	// bytes flags that field as unknown — the convention used when GPS
+	// has not locked or the encoder is otherwise unwilling to assert a
+	// value. Combining it with the dest-byte-4 +100° offset would
+	// otherwise yield lon = (b[0]-28)+100 = 104° from a 0x20 byte and
+	// drop a German station onto Mongolia.
+	if b[0] == ' ' || b[1] == ' ' || b[2] == ' ' {
+		return 0, ErrMicELonAmbiguous
 	}
 	// Degrees byte (0x1C..0x7F after +28 offset).
 	d := int(b[0]) - 28
