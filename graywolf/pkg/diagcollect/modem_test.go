@@ -90,12 +90,15 @@ func TestRunListing_BinaryMissing(t *testing.T) {
 }
 
 func TestRunListing_NonZeroExit(t *testing.T) {
-	// /bin/false returns 1; pretend it's the modem to exercise the
+	// `false` returns 1; pretend it's the modem to exercise the
 	// non-zero-exit branch without depending on a real cargo build.
-	if _, err := os.Stat("/bin/false"); err != nil {
-		t.Skipf("/bin/false not available on this platform: %v", err)
+	// Modern macOS keeps it at /usr/bin/false rather than /bin/false,
+	// so resolve via PATH instead of hardcoding.
+	falseBin, err := exec.LookPath("false")
+	if err != nil {
+		t.Skipf("false not available on PATH: %v", err)
 	}
-	out, issue := RunListing("/bin/false", "--list-audio")
+	out, issue := RunListing(falseBin, "--list-audio")
 	if out != nil {
 		t.Fatalf("out = %v, want nil", out)
 	}
