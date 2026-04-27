@@ -7,16 +7,16 @@ Release pipeline definition: [`../../.goreleaser.yml`](../../.goreleaser.yml).
 
 | Artifact | Producer | Inputs | Output | Trigger |
 |---|---|---|---|---|
-| Go binary `graywolf` | `make graywolf` (= `release web` + `go build`) | `graywolf/cmd/graywolf/`, `graywolf/pkg/...`, `graywolf/web/dist/` (embedded) | `bin/graywolf` (+ `bin/graywolf-modem` copied from `target/release/`) | Manual |
+| Go binary `graywolf` | `make graywolf` (= `release web` + `go build`) | `cmd/graywolf/`, `pkg/...`, `web/dist/` (embedded) | `bin/graywolf` (+ `bin/graywolf-modem` copied from `target/release/`) | Manual |
 | Rust modem (native dev) | `make release` | `graywolf-modem/`, `proto/graywolf.proto`, `VERSION` | `target/release/graywolf-modem` (workspace root, not `graywolf-modem/target/`) | Manual; see [invariant 1](invariants.md) |
 | Rust modem (cross arm64) | `cross` per [`../../Cross.toml`](../../Cross.toml) | same + Docker image with aarch64 ALSA/udev libs and protoc | `target/<triple>/release/graywolf-modem` | Release CI |
-| Web UI | `make web` (`npm install`, `npm run build`) | `graywolf/web/src/`, `package.json`, themes, public, generated TS client | `graywolf/web/dist/` (gitignored, then `go:embed` -- [invariant 12](invariants.md)) | Triggered by `make graywolf` / `make all` / `make api-client` |
-| TS API client | `make api-client` (`make docs` + `npm run api:generate`) | `graywolf/pkg/webapi/docs/gen/swagger.{json,yaml}` | `graywolf/web/src/api/generated/api.d.ts` (committed) | `make bump-*`; CI guard `api-client-check` |
-| Proto codegen (Go) | `make proto` (`protoc --go_out`) | [`../../proto/graywolf.proto`](../../proto/graywolf.proto) | `graywolf/pkg/ipcproto/graywolf.pb.go` (committed) | Manual after proto edits |
+| Web UI | `make web` (`npm install`, `npm run build`) | `web/src/`, `package.json`, themes, public, generated TS client | `web/dist/` (gitignored, then `go:embed` -- [invariant 12](invariants.md)) | Triggered by `make graywolf` / `make all` / `make api-client` |
+| TS API client | `make api-client` (`make docs` + `npm run api:generate`) | `pkg/webapi/docs/gen/swagger.{json,yaml}` | `web/src/api/generated/api.d.ts` (committed) | `make bump-*`; CI guard `api-client-check` |
+| Proto codegen (Go) | `make proto` (`protoc --go_out`) | [`../../proto/graywolf.proto`](../../proto/graywolf.proto) | `pkg/ipcproto/graywolf.pb.go` (committed) | Manual after proto edits |
 | Proto codegen (Rust) | `prost-build` in [`../../graywolf-modem/build.rs`](../../graywolf-modem/build.rs) | `proto/graywolf.proto`, `VERSION` | `OUT_DIR/graywolf.rs` (build-tree only; included via `src/ipc/proto.rs`) | Every `cargo build` (cargo `rerun-if-changed`) |
-| Swagger spec | `make docs` (`swag init` + `tagify`) | swag annotations in `pkg/webapi`, `pkg/modembridge`, `pkg/webauth` | `graywolf/pkg/webapi/docs/gen/swagger.{json,yaml}` (committed) | `make bump-*`; CI guard `docs-check` |
+| Swagger spec | `make docs` (`swag init` + `tagify`) | swag annotations in `pkg/webapi`, `pkg/modembridge`, `pkg/webauth` | `pkg/webapi/docs/gen/swagger.{json,yaml}` (committed) | `make bump-*`; CI guard `docs-check` |
 | Handbook OpenAPI sibling | `make docs-api-html` | `gen/swagger.{json,yaml}` | copies them to `docs/handbook/openapi.{json,yaml}` | Manual; see "two copies" note below |
-| In-app release notes | hand-edited [`../../graywolf/pkg/releasenotes/notes.yaml`](../../graywolf/pkg/releasenotes/notes.yaml) | n/a | embedded in Go binary via `go:embed` | Hand-authored; bump targets refuse without an entry for the new version (see project [`../../CLAUDE.md`](../../CLAUDE.md)) |
+| In-app release notes | hand-edited [`../../pkg/releasenotes/notes.yaml`](../../pkg/releasenotes/notes.yaml) | n/a | embedded in Go binary via `go:embed` | Hand-authored; bump targets refuse without an entry for the new version (see project [`../../CLAUDE.md`](../../CLAUDE.md)) |
 | Release commit + tag | `make bump-point` / `make bump-minor` / `make bump-beta` | All of the above | git commit + `git tag vX.Y.Z` + push | Manual |
 | Goreleaser archives | `.goreleaser.yml` `archives:` | Go binary (built per OS/arch by goreleaser) + `rust-bin/<os>_<arch>/graywolf-modem*` (pre-built outside goreleaser, supplied as `extra_files`) | Tarball / zip in goreleaser dist | Tag push (`release.yml`) |
 | `.deb`, `.rpm` | goreleaser `nfpms:` | Go binary + rust-bin + systemd unit + udev rules + post/pre scripts | `.deb` / `.rpm` artifacts | Tag push |
@@ -40,7 +40,7 @@ guards locally.
 ## OpenAPI lives in two places
 
 The swag-generated spec is committed to
-`graywolf/pkg/webapi/docs/gen/swagger.{json,yaml}` and is the source of
+`pkg/webapi/docs/gen/swagger.{json,yaml}` and is the source of
 truth for the TS client generator. `make docs-api-html` copies it next to
 the hand-edited [`../handbook/api.html`](../handbook/api.html), producing
 [`../handbook/openapi.json`](../handbook/openapi.json) and

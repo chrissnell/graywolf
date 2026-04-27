@@ -50,7 +50,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | Generated proto types | `ipc/proto.rs` (re-exports `OUT_DIR/graywolf.rs`) |
 | Build script (prost + version env) | `build.rs` |
 
-## Go service: networking & protocol (`graywolf/pkg/`)
+## Go service: networking & protocol (`pkg/`)
 
 | Package | Purpose | Key files |
 |---|---|---|
@@ -102,7 +102,7 @@ The split is enforced by [invariant 9](invariants.md).
 
 | Package | Purpose |
 |---|---|
-| `webapi` | REST API handlers (Gorilla mux); one handler file per feature -- see [`../../graywolf/pkg/webapi/`](../../graywolf/pkg/webapi/) |
+| `webapi` | REST API handlers (Gorilla mux); one handler file per feature -- see [`../../pkg/webapi/`](../../pkg/webapi/) |
 | `webapi/dto` | Wire-shape DTOs; constants like `DefaultAgwListenAddr`, `MaxMessageText` live here |
 | `webapi/docs` | Swag annotation infra: `op_ids.go`, `cmd/idlint`, `cmd/tagify`, `gen/swagger.{json,yaml}` |
 | `webauth` | Password hash, session tokens (cookie), `RequireAuth` middleware, store, handlers |
@@ -134,17 +134,17 @@ Canonical struct tree for the flare wire payload — the contract between
 
 | Concern | File |
 |---|---|
-| Top-level `Flare` struct | [`../../graywolf/pkg/flareschema/flare.go`](../../graywolf/pkg/flareschema/flare.go) |
-| `SchemaVersion` constant + `Unmarshal` | [`../../graywolf/pkg/flareschema/version.go`](../../graywolf/pkg/flareschema/version.go), [`../../graywolf/pkg/flareschema/unmarshal.go`](../../graywolf/pkg/flareschema/unmarshal.go) |
+| Top-level `Flare` struct | [`../../pkg/flareschema/flare.go`](../../pkg/flareschema/flare.go) |
+| `SchemaVersion` constant + `Unmarshal` | [`../../pkg/flareschema/version.go`](../../pkg/flareschema/version.go), [`../../pkg/flareschema/unmarshal.go`](../../pkg/flareschema/unmarshal.go) |
 | Per-section types | `audio.go`, `usb.go`, `cm108.go`, `system.go`, `devices.go`, `logs.go`, `config.go`, `user.go`, `issue.go` |
-| Sample fixture (round-trip + schema gen) | [`../../graywolf/pkg/flareschema/sample.go`](../../graywolf/pkg/flareschema/sample.go) |
-| Cross-language convergence test | [`../../graywolf/pkg/flareschema/convergence_test.go`](../../graywolf/pkg/flareschema/convergence_test.go) |
-| JSON Schema generator | [`../../graywolf/cmd/flareschema-gen/main.go`](../../graywolf/cmd/flareschema-gen/main.go) |
+| Sample fixture (round-trip + schema gen) | [`../../pkg/flareschema/sample.go`](../../pkg/flareschema/sample.go) |
+| Cross-language convergence test | [`../../pkg/flareschema/convergence_test.go`](../../pkg/flareschema/convergence_test.go) |
+| JSON Schema generator | [`../../cmd/flareschema-gen/main.go`](../../cmd/flareschema-gen/main.go) |
 | Generated JSON Schema document | [`../../docs/flareschema/v1.json`](../../docs/flareschema/v1.json) |
 
-## Web UI (`graywolf/web/`)
+## Web UI (`web/`)
 
-Built into `dist/` under [`../../graywolf/web/`](../../graywolf/web/) (gitignored)
+Built into `dist/` under [`../../web/`](../../web/) (gitignored)
 and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 
 | Path | What |
@@ -165,17 +165,17 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 
 | Concern | File |
 |---|---|
-| Auth registration + bearer token | [`../../graywolf/pkg/mapsauth/client.go`](../../graywolf/pkg/mapsauth/client.go) |
-| Tile cache (PMTiles, atomic writes) | [`../../graywolf/pkg/mapscache/manager.go`](../../graywolf/pkg/mapscache/manager.go), `atomic_writer.go` |
-| Web-side glue | `graywolf/web/src/lib/maps/`, `graywolf/web/src/routes/MapsSettings.svelte` |
-| Map render | `graywolf/web/src/lib/map/`, `graywolf/web/src/routes/LiveMapV2.svelte` |
+| Auth registration + bearer token | [`../../pkg/mapsauth/client.go`](../../pkg/mapsauth/client.go) |
+| Tile cache (PMTiles, atomic writes) | [`../../pkg/mapscache/manager.go`](../../pkg/mapscache/manager.go), `atomic_writer.go` |
+| Web-side glue | `web/src/lib/maps/`, `web/src/routes/MapsSettings.svelte` |
+| Map render | `web/src/lib/map/`, `web/src/routes/LiveMapV2.svelte` |
 
 PMTiles infrastructure (manifest gen, R2 sync, Cloudflare Worker) is in
 `~/dev/graywolf-maps`, not here. See [invariant 7](invariants.md).
 
 ## Live updates
 
-[`../../graywolf/pkg/updatescheck/checker.go`](../../graywolf/pkg/updatescheck/checker.go)
+[`../../pkg/updatescheck/checker.go`](../../pkg/updatescheck/checker.go)
 polls GitHub Releases once per day and serves the snapshot via webapi `/api/updates`.
 
 ## Packaging (`packaging/`)
