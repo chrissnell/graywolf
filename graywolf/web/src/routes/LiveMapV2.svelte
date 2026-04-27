@@ -142,11 +142,23 @@
     coordText = `${fmtLat(lat)} ${fmtLon(lon)} · ${toMaidenhead(lat, lon)}`;
   }
 
+  function focusStation(callsign) {
+    const target = dataStore.stations.get(callsign);
+    if (!target) return;
+    const tpos = target.positions && target.positions[0];
+    if (!tpos) return;
+    mapRef?.panTo([tpos.lon, tpos.lat]);
+    if (mapRef) openStationPopup(mapRef, target);
+  }
+
   function onMapReady(map) {
     mapRef = map;
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
-    trailsLayer = mountTrailsLayer(map, () => dataStore.stations);
+    trailsLayer = mountTrailsLayer(map, () => dataStore.stations, {
+      hasStation: (callsign) => dataStore.stations.has(callsign),
+      focusStation,
+    });
     weatherLayer = mountWeatherLayer(map, () => dataStore.stations);
     hoverPathLayer = mountHoverPathLayer(map, () => {
       const my = dataStore.myPosition;
@@ -213,20 +225,28 @@
     if (myPositionLayer) myPositionLayer.refresh();
   });
 
-  // Push the layer toggles into the layer modules. Each module no-ops
-  // safely before the layer is actually mounted (effect re-fires after
-  // onMapReady).
+  // Push the layer toggles into the layer modules. We MUST read the
+  // reactive value before the optional-chain so Svelte 5 tracks it as a
+  // dependency on the initial run. With `layer?.setVisible(toggle)`, if
+  // `layer` is null on first run (mount before onMapReady), the RHS is
+  // short-circuited and `toggle` is never read — the effect ends up with
+  // zero deps and never re-fires when the operator clicks a checkbox.
+  // Reading `toggle` into a const first guarantees the dep is registered.
   $effect(() => {
-    stationsLayer?.setVisible(layerToggles.stations);
+    const v = layerToggles.stations;
+    stationsLayer?.setVisible(v);
   });
   $effect(() => {
-    trailsLayer?.setVisible(layerToggles.trails);
+    const v = layerToggles.trails;
+    trailsLayer?.setVisible(v);
   });
   $effect(() => {
-    weatherLayer?.setVisible(layerToggles.weather);
+    const v = layerToggles.weather;
+    weatherLayer?.setVisible(v);
   });
   $effect(() => {
-    myPositionLayer?.setVisible(layerToggles.myPosition);
+    const v = layerToggles.myPosition;
+    myPositionLayer?.setVisible(v);
   });
 
   // Push the timerange into the data store.
@@ -737,6 +757,44 @@
   :global(.stn-popup .b-rx) { background: rgba(63, 185, 80, 0.15); color: var(--color-success); }
   :global(.stn-popup .b-tx) { background: rgba(210, 153, 34, 0.15); color: var(--color-warning); }
   :global(.stn-popup .b-is) { background: rgba(195, 155, 255, 0.15); color: #c39bff; }
+
+  /* Weather label chip -- ports the legacy Leaflet wx-label/wx-text
+     styling. The marker root is a maplibregl.Marker (DOM-based) so
+     these have to be :global. */
+  :global(.wx-label) {
+    background: none !important;
+    border: none !important;
+    pointer-events: none;
+  }
+  :global(.wx-text) {
+    background: rgba(22, 27, 34, 0.85);
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  /* Trail hover tooltip: small dim chip with the callsign, tip-less and
+     non-interactive. Distinct from station popups so it doesn't pull
+     theme styling for the close button etc. */
+  :global(.gw-trail-tooltip .maplibregl-popup-content) {
+    background: rgba(22, 27, 34, 0.85);
+    color: #e0e0e0;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: none;
+    pointer-events: none;
+  }
+  :global(.gw-trail-tooltip .maplibregl-popup-tip) {
+    display: none;
+  }
 
   /* Own position marker -- iOS Maps "blue dot" look: white ring around a
      solid blue core, with a soft blue halo. The MapLibre marker DOM is
