@@ -152,6 +152,20 @@ func runFlare(args []string, version, gitCommit string) int {
 		}
 	case review.OutcomeSubmit:
 		// fallthrough to submission below
+	case review.OutcomeDiff:
+		// 'd' is only meaningful in --resubmit mode (against the
+		// previously-submitted payload). In fresh-submit mode there's
+		// nothing to diff against, so refuse rather than silently
+		// submit. The user can re-run and press 's' if that's what
+		// they meant.
+		fmt.Fprintln(os.Stderr, "diff requires --resubmit mode; not submitting")
+		return 1
+	default:
+		// OutcomeAddRedaction is handled inline by review.Run and
+		// shouldn't reach here. Any future Outcome reaching this point
+		// is a programming error — refuse to ship the flare.
+		fmt.Fprintf(os.Stderr, "unexpected review outcome %v; not submitting\n", outcome)
+		return 1
 	}
 
 	body, mErr := json.Marshal(flare)
