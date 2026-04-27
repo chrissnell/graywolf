@@ -9,14 +9,14 @@ one-line *why*, source.
 
 Source: [`../../Cargo.toml`](../../Cargo.toml) (comment is authoritative),
 [`../../Makefile`](../../Makefile),
-[`../../graywolf/pkg/app/modem.go`](../../graywolf/pkg/app/modem.go).
+[`../../pkg/app/modem.go`](../../pkg/app/modem.go).
 
 ### 2. `proto/graywolf.proto` is the single Go<->Rust IPC contract
 
 *Why:* Both sides regenerate from this file (wire format `[4 BE bytes length][IpcMessage]`), so any change requires regenerating both.
 
 Source: [`../../proto/graywolf.proto`](../../proto/graywolf.proto). Go:
-`make proto` -> `graywolf/pkg/ipcproto/graywolf.pb.go`. Rust:
+`make proto` -> `pkg/ipcproto/graywolf.pb.go`. Rust:
 [`../../graywolf-modem/build.rs`](../../graywolf-modem/build.rs) ->
 `OUT_DIR/graywolf.rs`.
 
@@ -31,10 +31,10 @@ Source: bump targets in [`../../Makefile`](../../Makefile)
 
 ### 4. Release notes precede the bump
 
-*Why:* The bump targets `grep` `graywolf/pkg/releasenotes/notes.yaml` for the *new* version and refuse to run if the entry is missing.
+*Why:* The bump targets `grep` `pkg/releasenotes/notes.yaml` for the *new* version and refuse to run if the entry is missing.
 
 Source: [`../../Makefile`](../../Makefile),
-[`../../graywolf/pkg/releasenotes/notes.yaml`](../../graywolf/pkg/releasenotes/notes.yaml),
+[`../../pkg/releasenotes/notes.yaml`](../../pkg/releasenotes/notes.yaml),
 [`../../CLAUDE.md`](../../CLAUDE.md).
 
 ### 5. Release notes ship as-tagged (retag contract)
@@ -48,7 +48,7 @@ Source: [`../../CLAUDE.md`](../../CLAUDE.md) ("Retag contract").
 *Why:* No emoji, em dashes, smart quotes, or non-ASCII punctuation -- keeps the operator-facing changelog portable since bump targets do not re-encode the YAML.
 
 Source: [`../../CLAUDE.md`](../../CLAUDE.md);
-[`../../graywolf/pkg/releasenotes/notes.yaml`](../../graywolf/pkg/releasenotes/notes.yaml)
+[`../../pkg/releasenotes/notes.yaml`](../../pkg/releasenotes/notes.yaml)
 header.
 
 ### 7. PMTiles / offline-maps infra lives in `~/dev/graywolf-maps`, not here
@@ -63,21 +63,21 @@ Source: absence of those modules in this tree;
 *Why:* CPAL runs in `graywolf-modem` and Go talks to the modem only via the IPC proto, keeping realtime DSP out of Go's GC and platform-specific audio in one place.
 
 Source: [`../../graywolf-modem/src/audio/`](../../graywolf-modem/src/audio/);
-no CPAL dep in `graywolf/pkg/`; control surface is the proto messages
+no CPAL dep in `pkg/`; control surface is the proto messages
 `ConfigureAudio` / `StartAudio` / `StopAudio` / `EnumerateAudioDevices`.
 
 ### 9. PTT enumeration vs. driving split
 
 *Why:* Go enumerates PTT hardware and Rust drives it, so both sides must agree on the identifier scheme passed via `ConfigurePtt.method` and `ConfigurePtt.device`.
 
-Source: [`../../graywolf/pkg/pttdevice/`](../../graywolf/pkg/pttdevice/);
+Source: [`../../pkg/pttdevice/`](../../pkg/pttdevice/);
 [`../../graywolf-modem/src/tx/`](../../graywolf-modem/src/tx/);
 [`../../proto/graywolf.proto`](../../proto/graywolf.proto)
 (`ConfigurePtt`).
 
 ### 10. Gitignored output dirs are not canonical
 
-*Why:* `target/`, `bin/`, `dist/`, `rust-bin/`, `rust-artifacts/`, `graywolf/web/dist/`, `.worktrees/`, `.context/`, `*.db*` regenerate from sources and are gitignored, so never reference them as authoritative.
+*Why:* `target/`, `bin/`, `dist/`, `rust-bin/`, `rust-artifacts/`, `web/dist/`, `.worktrees/`, `.context/`, `*.db*` regenerate from sources and are gitignored, so never reference them as authoritative.
 
 Source: [`../../.gitignore`](../../.gitignore);
 [`build-pipelines.md`](build-pipelines.md).
@@ -93,14 +93,14 @@ Source: [`../../Makefile`](../../Makefile),
 
 *Why:* `go:embed all:dist` produces a self-contained binary, but the dir must exist at build time -- a placeholder `.keep` suffices until `npm run build` populates it.
 
-Source: [`../../graywolf/web/embed.go`](../../graywolf/web/embed.go).
+Source: [`../../web/embed.go`](../../web/embed.go).
 
 ### 13. Modem readiness signal is on stdout, not the IPC channel
 
 *Why:* The Go parent waits for `\n` (Unix) or `<port>\n` (Windows) on the modem's stdout before connecting, avoiding a connect-retry race against the bind.
 
 Source: [`../../graywolf-modem/src/ipc/server.rs`](../../graywolf-modem/src/ipc/server.rs);
-[`../../graywolf/pkg/modembridge/`](../../graywolf/pkg/modembridge/)
+[`../../pkg/modembridge/`](../../pkg/modembridge/)
 (`ipc_unix.go`, `ipc_windows.go`).
 
 ### 14. Version display string is shared across Go and Rust
@@ -108,29 +108,29 @@ Source: [`../../graywolf-modem/src/ipc/server.rs`](../../graywolf-modem/src/ipc/
 *Why:* Both sides produce `v<Version>-<GitCommit>` and modembridge checks them at startup, so a mismatch immediately flags that the two halves of the build disagree.
 
 Source:
-[`../../graywolf/cmd/graywolf/main.go`](../../graywolf/cmd/graywolf/main.go),
-[`../../graywolf/pkg/app/config.go`](../../graywolf/pkg/app/config.go),
+[`../../cmd/graywolf/main.go`](../../cmd/graywolf/main.go),
+[`../../pkg/app/config.go`](../../pkg/app/config.go),
 [`../../graywolf-modem/build.rs`](../../graywolf-modem/build.rs).
 
 ### 15. Default IS->RF policy is deny
 
 *Why:* The IS->RF rule engine evaluates rules in priority order and drops anything no rule matches, preventing accidental flooding of RF with arbitrary internet traffic.
 
-Source: [`../../graywolf/pkg/igate/filters/filters.go`](../../graywolf/pkg/igate/filters/filters.go)
+Source: [`../../pkg/igate/filters/filters.go`](../../pkg/igate/filters/filters.go)
 (package comment).
 
 ### 16. TX path is single-source-of-truth via `txgovernor`
 
 *Why:* Every TX origin (KISS, AGW, beacons, digipeater, iGate IS->RF) funnels through one Governor for per-channel rate limits, dedup, and priority -- new sources must route through it, not around.
 
-Source: [`../../graywolf/pkg/txgovernor/governor.go`](../../graywolf/pkg/txgovernor/governor.go)
+Source: [`../../pkg/txgovernor/governor.go`](../../pkg/txgovernor/governor.go)
 (package comment).
 
 ### 17. RX fanout carries provenance via `ingress.Source` (in-process)
 
 *Why:* Lets KISS broadcast suppress its own loopback without leaking a transport detail into the proto -- the provenance tag is in-process only, never on the wire.
 
-Source: [`../../graywolf/pkg/app/ingress/source.go`](../../graywolf/pkg/app/ingress/source.go)
+Source: [`../../pkg/app/ingress/source.go`](../../pkg/app/ingress/source.go)
 (package comment).
 
 ### 18. Generated artifacts that ship in commits
@@ -138,9 +138,9 @@ Source: [`../../graywolf/pkg/app/ingress/source.go`](../../graywolf/pkg/app/ingr
 *Why:* CI's drift guards (see [invariant 11](invariants.md)) only work if regenerated copies are committed; bump targets stage them so each release tag includes them.
 
 Files:
-[`../../graywolf/pkg/ipcproto/graywolf.pb.go`](../../graywolf/pkg/ipcproto/graywolf.pb.go),
-`graywolf/pkg/webapi/docs/gen/swagger.{json,yaml}`,
-[`../../graywolf/web/src/api/generated/api.d.ts`](../../graywolf/web/src/api/generated/api.d.ts),
+[`../../pkg/ipcproto/graywolf.pb.go`](../../pkg/ipcproto/graywolf.pb.go),
+`pkg/webapi/docs/gen/swagger.{json,yaml}`,
+[`../../web/src/api/generated/api.d.ts`](../../web/src/api/generated/api.d.ts),
 [`../handbook/openapi.json`](../handbook/openapi.json),
 [`../handbook/openapi.yaml`](../handbook/openapi.yaml).
 Source: `GENERATED_SPEC_FILES` in [`../../Makefile`](../../Makefile).
@@ -149,13 +149,13 @@ Source: `GENERATED_SPEC_FILES` in [`../../Makefile`](../../Makefile).
 
 *Why:* APRS callsigns are public ham-radio identifiers, and the entire purpose of a flare submission is to diagnose APRS issues. Redacting them would defeat the operator UI's correlation between flare config and observed packets.
 
-Source: [`../../graywolf/pkg/diagcollect/redact/doc.go`](../../graywolf/pkg/diagcollect/redact/doc.go), enforced by `TestEngine_PreservesAPRSCallsigns`.
+Source: [`../../pkg/diagcollect/redact/doc.go`](../../pkg/diagcollect/redact/doc.go), enforced by `TestEngine_PreservesAPRSCallsigns`.
 
 ### 20. Hostname hash is consistent within one submission
 
 *Why:* The hostname appears across many fields (system, log lines, file paths). Hashing it once per submission and substituting the same 8-hex tag everywhere preserves cross-references inside the operator UI without leaking the literal name.
 
-Source: [`../../graywolf/pkg/diagcollect/redact/hostname.go`](../../graywolf/pkg/diagcollect/redact/hostname.go); the engine wires it through `SetHostname`.
+Source: [`../../pkg/diagcollect/redact/hostname.go`](../../pkg/diagcollect/redact/hostname.go); the engine wires it through `SetHostname`.
 
 ### 21. Redaction always runs before review
 
