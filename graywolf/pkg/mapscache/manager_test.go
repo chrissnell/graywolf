@@ -33,8 +33,11 @@ func newTestManager(t *testing.T, upstreamHandler http.Handler) (*Manager, *conf
 func TestManager_HappyPath(t *testing.T) {
 	body := strings.Repeat("X", 64*1024) // 64 KB
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" {
-			t.Errorf("expected bearer token; got %q", r.Header.Get("Authorization"))
+		if got := r.URL.Query().Get("t"); got != "test-token" {
+			t.Errorf("expected t=test-token query param; got %q", got)
+		}
+		if h := r.Header.Get("Authorization"); h != "" {
+			t.Errorf("expected no Authorization header; got %q", h)
 		}
 		w.Header().Set("Content-Length", "65536")
 		w.Header().Set("Content-Type", "application/vnd.pmtiles")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -215,14 +216,17 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 	}()
 
 	tok := m.tokenProvider(ctx)
-	url := fmt.Sprintf("%s/download/state/%s.pmtiles", m.mapsBaseURL, a.slug)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	base := fmt.Sprintf("%s/download/state/%s.pmtiles", m.mapsBaseURL, a.slug)
+	fullURL := base
+	if tok != "" {
+		q := url.Values{}
+		q.Set("t", tok)
+		fullURL = base + "?" + q.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		m.fail(ctx, a.slug, err)
 		return
-	}
-	if tok != "" {
-		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
