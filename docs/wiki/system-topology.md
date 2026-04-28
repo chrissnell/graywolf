@@ -107,6 +107,7 @@ schema types.
 | `auth.nw5w.com` | graywolf-maps registration; per-device bearer token | [`../../pkg/mapsauth/`](../../pkg/mapsauth/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
 | `maps.nw5w.com` | tile fetch + offline state PMTiles downloads | [`../../pkg/mapscache/`](../../pkg/mapscache/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
 | GitHub Releases | Daily update poll | [`../../pkg/updatescheck/`](../../pkg/updatescheck/) | (no dedicated page) |
+| `flare.nw5w.com` | graywolf flare submission receiver (graywolf-flare-server, see https://github.com/chrissnell/graywolf-flare-server) | [`../../pkg/diagcollect/submit/`](../../pkg/diagcollect/submit/) | (no dedicated handbook page yet) |
 
 PMTiles infra (manifest gen, R2 sync, origin Worker) lives in `~/dev/graywolf-maps`,
 not here. Integration spec: `~/dev/graywolf-maps/.context/graywolf-client-integration.md`.
@@ -133,6 +134,8 @@ Path through the system on `graywolf flare` invocation:
 5. **Submission** — `pkg/diagcollect/submit` POSTs `application/json` to `<server>/api/v1/submit`. 5xx responses save the body to `~/.local/state/graywolf/pending-flare-<unix-ts>.json` (mode 0600) so the operator can retry. The CLI does not persist any per-flare state on success; if a follow-up submission is needed the operator just runs `graywolf flare` again.
 
 The wire contract (`flareschema.Flare` -> `flareschema.SubmitResponse`) is the only surface graywolf-flare-server (Plan 2c) sees.
+
+**Plan 2d superseded the wiki-bundle CI plan.** The flare-server keeps the upload endpoint compiled but unused; graywolf release CI does not sign or POST a bundle. The wiki lives in this repo and is consumed in-session by Claude agents, not by an LLM-API call.
 
 ## Deployment targets
 
