@@ -381,6 +381,30 @@ pub struct SoundcardOutputConfig {
     pub audio_channel: u32,
 }
 
+/// True for cpal pcm_ids that should carry the "Recommended" badge in
+/// any user-facing surface (the runtime audio-device picker, the flare
+/// `--list-audio` enumeration). Source of truth for both call sites:
+/// see modem/mod.rs (live device-info builder) and listing::collect_devices
+/// (the `--list-audio` JSON emitter).
+///
+/// The heuristic is "device targets a stable card name": ALSA's
+/// `plughw:CARD=<name>` form, where `<name>` starts with an alphabetic
+/// character (kernel-stable card name) rather than a numeric index
+/// that can change across reboots when USB devices enumerate in a
+/// different order. macOS / Windows pcm_ids never match `plughw:` and
+/// thus always return false.
+pub fn is_recommended_pcm_id(pcm_id: &str) -> bool {
+    if !pcm_id.starts_with("plughw:") {
+        return false;
+    }
+    if let Some(idx) = pcm_id.find("CARD=") {
+        let after = &pcm_id[idx + 5..];
+        after.starts_with(|c: char| c.is_ascii_alphabetic())
+    } else {
+        false
+    }
+}
+
 /// Resolve a cpal output [`Device`] by its pcm_id (e.g. `plughw:CARD=Foo,DEV=0`).
 pub fn resolve_output_device(pcm_id: &str) -> Result<Device, String> {
     let host = cpal::default_host();
@@ -988,9 +1012,20 @@ pub mod listing {
         pub name: String,
         pub direction: String,
         pub is_default: bool,
+        // Mirrors graywolf-modem's runtime-API "Recommended" badge
+        // (see web/src/routes/AudioDevices.svelte). Set when the
+        // cpal-reported PCM id is `plughw:CARD=<name>` with a stable
+        // alphabetic card name (not a numeric index that changes
+        // across reboots when USB enumeration reorders).
+        #[serde(skip_serializing_if = "is_false")]
+        pub recommended: bool,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         pub supported_configs: Vec<AudioStreamConfigRange>,
     }
+
+    // Helper for `skip_serializing_if`: keeps `recommended: false` off
+    // the wire so older clients that don't know the field see no drift.
+    fn is_false(v: &bool) -> bool { !*v }
 
     #[derive(Serialize)]
     pub struct AudioStreamConfigRange {
@@ -1070,6 +1105,7 @@ pub mod listing {
         }
     }
 
+    #[allow(deprecated)] // DeviceTrait::name() gives the raw pcm_id we need for `recommended`.
     fn collect_devices(
         host: &cpal::Host,
         direction: &str,
@@ -1100,6 +1136,12 @@ pub mod listing {
                 .map(|d| d.name().to_string())
                 .unwrap_or_else(|_| "<unknown>".to_string());
             let is_default = default_name.map(|d| d == name).unwrap_or(false);
+            // pcm_id (cpal `name()`) is the ALSA hw identifier on Linux
+            // (e.g. `plughw:CARD=Foo,DEV=0`). On macOS / Windows the
+            // recommendation heuristic does not apply and `recommended`
+            // stays false.
+            let pcm_id = dev.name().unwrap_or_default();
+            let recommended = super::is_recommended_pcm_id(&pcm_id);
 
             let configs = match direction {
                 "input" => dev.supported_input_configs().map(|i| i.collect::<Vec<_>>()),
@@ -1122,6 +1164,7 @@ pub mod listing {
                 name,
                 direction: direction.to_string(),
                 is_default,
+                recommended,
                 supported_configs: ranges,
             });
         }

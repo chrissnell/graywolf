@@ -27,10 +27,18 @@ type AudioHost struct {
 // AudioDevice is one cpal device under a host. Direction is "input" or
 // "output". IsDefault marks the host's default-input / default-output
 // pick (each direction has its own default).
+//
+// Recommended mirrors the flag graywolf-modem's web UI uses on the
+// user-facing device picker — set when the device's PCM identifier is
+// a stable `plughw:CARD=<name>` form (i.e. the card has a kernel-stable
+// name rather than a numeric index that can change across reboots).
+// The operator UI surfaces this as the "Recommended" label so the
+// triage view matches what the user saw when picking a device.
 type AudioDevice struct {
 	Name             string                   `json:"name"`
 	Direction        string                   `json:"direction"`
 	IsDefault        bool                     `json:"is_default"`
+	Recommended      bool                     `json:"recommended,omitempty"`
 	SupportedConfigs []AudioStreamConfigRange `json:"supported_configs,omitempty"`
 }
 

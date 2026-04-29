@@ -1237,20 +1237,6 @@ fn is_useful_alsa_device(_pcm_id: &str) -> bool {
     true
 }
 
-/// Returns true if the ALSA pcm_id uses a named card (e.g. CARD=Device)
-/// rather than a numeric index (e.g. CARD=0). Named cards are stable
-/// across reboots; numeric indices can shuffle when USB devices
-/// enumerate in a different order.
-fn has_named_card(pcm_id: &str) -> bool {
-    if let Some(idx) = pcm_id.find("CARD=") {
-        let after = &pcm_id[idx + 5..];
-        // Named if the first char after CARD= is not a digit.
-        after.starts_with(|c: char| c.is_ascii_alphabetic())
-    } else {
-        false
-    }
-}
-
 /// Collect [`AudioDeviceInfo`] entries from a cpal device iterator.
 ///
 /// Shared between input and output enumeration — the only difference is
@@ -1315,7 +1301,7 @@ where
         // Prefer plughw: devices that use a stable card name (CARD=Foo)
         // rather than a numeric index (CARD=0) which can change across
         // reboots if USB devices enumerate in a different order.
-        let recommended = pcm_id.starts_with("plughw:") && has_named_card(&pcm_id);
+        let recommended = crate::audio::soundcard::is_recommended_pcm_id(&pcm_id);
 
         out.push(AudioDeviceInfo {
             name: display_name,
