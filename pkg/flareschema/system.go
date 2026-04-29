@@ -24,13 +24,23 @@ type System struct {
 	Issues            []CollectorIssue   `json:"issues,omitempty"`
 }
 
-// NetworkInterface carries the OUI-only identity of a NIC. The full MAC
-// is intentionally not represented here; the OUI alone is enough to
-// identify USB-Ethernet adapters or Pi-built-in NICs.
+// NetworkInterface carries the OUI-only identity of a NIC plus its
+// configured addresses. The full MAC is intentionally not represented
+// here; the OUI alone is enough to identify USB-Ethernet adapters or
+// Pi-built-in NICs.
+//
+// IPv4/IPv6 are recorded as CIDR strings ("192.168.1.5/24",
+// "fe80::1/64") so an operator can see at a glance which subnet the
+// radio host is on. Loopback (127.0.0.1, ::1) is filtered out at the
+// collector. MTU is the kernel-reported MTU; 0 means the value was
+// unavailable.
 type NetworkInterface struct {
-	Name   string `json:"name"`
-	MACOUI string `json:"mac_oui,omitempty"`
-	Up     bool   `json:"up"`
+	Name   string   `json:"name"`
+	MACOUI string   `json:"mac_oui,omitempty"`
+	Up     bool     `json:"up"`
+	IPv4   []string `json:"ipv4,omitempty"`
+	IPv6   []string `json:"ipv6,omitempty"`
+	MTU    int      `json:"mtu,omitempty"`
 }
 
 // ServiceStatus reports the platform's view of the graywolf service.

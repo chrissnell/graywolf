@@ -50,7 +50,7 @@ func BuildSampleFlare() Flare {
 			Groups:            []string{"audio", "dialout", "gpio"},
 			NTPSynchronized:   true,
 			UdevRulesPresent:  []string{"99-graywolf.rules"},
-			NetworkInterfaces: []NetworkInterface{{Name: "wlan0", MACOUI: "b8:27:eb", Up: true}},
+			NetworkInterfaces: []NetworkInterface{{Name: "wlan0", MACOUI: "b8:27:eb", Up: true, IPv4: []string{"192.168.1.42/24"}, IPv6: []string{"fe80::1/64"}, MTU: 1500}},
 			Issues:            []CollectorIssue{{Kind: "udev_check", Message: "/etc/udev/rules.d not readable", Path: "/etc/udev/rules.d"}},
 		},
 		ServiceStatus: ServiceStatus{
@@ -80,7 +80,7 @@ func BuildSampleFlare() Flare {
 					ID: "alsa", Name: "ALSA", IsDefault: true,
 					Devices: []AudioDevice{
 						{
-							Name: "default", Direction: "input", IsDefault: true,
+							Name: "default", Direction: "input", IsDefault: true, Recommended: true,
 							SupportedConfigs: []AudioStreamConfigRange{
 								{Channels: 1, MinSampleRateHz: 48000, MaxSampleRateHz: 48000, SampleFormat: "i16"},
 							},

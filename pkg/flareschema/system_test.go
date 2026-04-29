@@ -18,7 +18,7 @@ func TestSystemFullJSON(t *testing.T) {
 		NTPSynchronized:  true,
 		UdevRulesPresent: []string{"99-graywolf.rules"},
 		NetworkInterfaces: []NetworkInterface{
-			{Name: "wlan0", MACOUI: "b8:27:eb", Up: true},
+			{Name: "wlan0", MACOUI: "b8:27:eb", Up: true, IPv4: []string{"192.168.1.42/24"}, IPv6: []string{"fe80::1/64"}, MTU: 1500},
 		},
 	}
 	b, err := json.Marshal(s)
@@ -38,6 +38,9 @@ func TestSystemFullJSON(t *testing.T) {
 		`"name":"wlan0"`,
 		`"mac_oui":"b8:27:eb"`,
 		`"up":true`,
+		`"ipv4":["192.168.1.42/24"]`,
+		`"ipv6":["fe80::1/64"]`,
+		`"mtu":1500`,
 	} {
 		if !strings.Contains(string(b), want) {
 			t.Fatalf("got %s, missing %s", b, want)

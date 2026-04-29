@@ -97,7 +97,11 @@ func extractMACOUI(mac string) string {
 
 // collectNetworkInterfaces walks net.Interfaces() and emits one
 // flareschema.NetworkInterface per interface with the MAC reduced to
-// OUI-only.
+// OUI-only and addresses recorded as CIDR strings. Loopback addresses
+// (127.0.0.1, ::1) are filtered out — they're never useful for
+// diagnosing radio-host connectivity. Per-interface address-lookup
+// failures degrade gracefully (the interface still appears, just
+// without addresses) rather than dropping the row or returning early.
 func collectNetworkInterfaces(sys *flareschema.System) []flareschema.NetworkInterface {
 	out := make([]flareschema.NetworkInterface, 0)
 	ifaces, err := net.Interfaces()
@@ -109,11 +113,43 @@ func collectNetworkInterfaces(sys *flareschema.System) []flareschema.NetworkInte
 		return out
 	}
 	for _, iface := range ifaces {
+		ipv4, ipv6 := interfaceAddrs(&iface, sys)
 		out = append(out, flareschema.NetworkInterface{
 			Name:   iface.Name,
 			MACOUI: extractMACOUI(iface.HardwareAddr.String()),
 			Up:     iface.Flags&net.FlagUp != 0,
+			IPv4:   ipv4,
+			IPv6:   ipv6,
+			MTU:    iface.MTU,
 		})
 	}
 	return out
+}
+
+// interfaceAddrs splits one interface's addresses into IPv4 and IPv6
+// CIDR-string slices, filtering out loopback. Errors are recorded as a
+// single issue keyed by interface name; the function still returns
+// whatever it managed to collect.
+func interfaceAddrs(iface *net.Interface, sys *flareschema.System) (ipv4, ipv6 []string) {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		sys.Issues = append(sys.Issues, flareschema.CollectorIssue{
+			Kind:    "network_interface_addrs_unavailable",
+			Message: iface.Name + ": " + err.Error(),
+		})
+		return nil, nil
+	}
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok || ipNet == nil || ipNet.IP.IsLoopback() {
+			continue
+		}
+		s := ipNet.String()
+		if ipNet.IP.To4() != nil {
+			ipv4 = append(ipv4, s)
+		} else {
+			ipv6 = append(ipv6, s)
+		}
+	}
+	return ipv4, ipv6
 }
