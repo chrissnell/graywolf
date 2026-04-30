@@ -194,7 +194,10 @@
       transformRequest,
     });
     map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
+      new maplibregl.NavigationControl({
+        showCompass: true,
+        visualizePitch: true,
+      }),
       'top-right',
     );
     map.addControl(
@@ -326,9 +329,11 @@
     color: var(--map-overlay-fg) !important;
   }
   /* Hide MapLibre's +/- zoom buttons on touch viewports — pinch-zoom
-     is sufficient and the buttons would clash with the FAB. */
+     is sufficient and the buttons would clash with the FAB. Keep the
+     compass so operators can still reset bearing after a rotate. */
   @media (max-width: 768px) {
-    :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-group) {
+    :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-zoom-in),
+    :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-zoom-out) {
       display: none;
     }
   }
