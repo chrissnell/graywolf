@@ -85,13 +85,30 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 	// should land as a 400 before the upsert — the iGate singleton is
 	// always writable (UpsertIGateConfig never rejects), so this is
 	// the only gate on orphan refs.
-	if err := dto.ValidateChannelRef(ctx, s.store, "rf_channel", req.RfChannel); err != nil {
-		badRequest(w, err.Error())
-		return
+	//
+	// Idempotent pass-through: when the request value matches the
+	// persisted value, skip the existence check. Without this, an FK
+	// that became orphaned out-of-band (channel deleted via a path
+	// that bypassed the cascade, schema migration, etc.) traps the
+	// operator — the broken value is not exposed in the UI (e.g.
+	// rf_channel has no field on the iGate page) so they cannot
+	// supply a non-orphaned replacement, yet every save round-trips
+	// the same broken value back through the validator and 400s.
+	// Skipping when unchanged lets the operator save other fields
+	// while the orphan FK is healed elsewhere (cascade on delete,
+	// runtime resolveTxChannel fallback).
+	existingRf, existingTx := loadIGateChannelRefs(ctx, s.store)
+	if req.RfChannel != existingRf {
+		if err := dto.ValidateChannelRef(ctx, s.store, "rf_channel", req.RfChannel); err != nil {
+			badRequest(w, err.Error())
+			return
+		}
 	}
-	if err := dto.ValidateChannelRef(ctx, s.store, "tx_channel", req.TxChannel); err != nil {
-		badRequest(w, err.Error())
-		return
+	if req.TxChannel != existingTx {
+		if err := dto.ValidateChannelRef(ctx, s.store, "tx_channel", req.TxChannel); err != nil {
+			badRequest(w, err.Error())
+			return
+		}
 	}
 	// TX-capability gate (plan D2): the tx_channel must actually be able
 	// to transmit. rf_channel is RX-only from the iGate's perspective,
@@ -99,8 +116,11 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 	// iGate as a whole is disabled (Enabled=false) — per plan D3, a
 	// disabled referrer on a broken channel is harmless and the goal is
 	// to block silently-broken *active* config, not to trap operators
-	// in a modal while they're turning things off.
-	if req.Enabled {
+	// in a modal while they're turning things off. Also skipped on
+	// idempotent saves (req.TxChannel == existingTx) so an orphaned or
+	// no-longer-TX-capable persisted value can't trap the operator;
+	// resolveTxChannel handles the runtime fallback in that case.
+	if req.Enabled && req.TxChannel != existingTx {
 		if err := s.requireTxCapableChannel(ctx, "tx_channel", req.TxChannel); err != nil {
 			badRequest(w, err.Error())
 			return
@@ -118,6 +138,21 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 	// Router without a daemon restart.
 	s.signalMessagesReload()
 	writeJSON(w, http.StatusOK, dto.IGateConfigFromModel(m))
+}
+
+// loadIGateChannelRefs returns the persisted RfChannel and TxChannel
+// values for the iGate singleton, or (0, 0) when no row exists or the
+// fetch errors. Used by updateIgateConfig to support idempotent
+// pass-through validation: a request that does not change either FK
+// is allowed through even when the persisted value points at a
+// non-existent (orphaned) channel, so the operator can still save
+// other fields while the orphan is healed elsewhere.
+func loadIGateChannelRefs(ctx context.Context, store *configstore.Store) (rf, tx uint32) {
+	cfg, err := store.GetIGateConfig(ctx)
+	if err != nil || cfg == nil {
+		return 0, 0
+	}
+	return cfg.RfChannel, cfg.TxChannel
 }
 
 // signalIgateReload performs a non-blocking send on the igate reload
