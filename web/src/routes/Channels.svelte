@@ -77,11 +77,6 @@
     tx_delay_ms: '300', tx_tail_ms: '100', slot_ms: '100', persist: '63', full_dup: false,
   });
   let errors = $state({});
-  // Convert-type dialog (D11 edit flow). When the user clicks
-  // "Convert…" on an edit form, we stage the target type here and
-  // surface a confirmation explaining the delete+create semantics.
-  let convertOpen = $state(false);
-  let convertTargetType = $state(null);
 
   let isModemType = $derived(form.channel_type === 'modem');
   let isTxEnabled = $derived(isModemType && form.output_device_id !== '0');
@@ -334,55 +329,6 @@
     putServerError = '';
   }
 
-  // D11: edit-time type conversion is modeled as delete + create.
-  // Dependent rows (beacons/digi rules/igate references) may become
-  // orphaned; Phase 5 will add the proper cascade flow. We warn
-  // explicitly so the operator doesn't discover that silently.
-  function requestConvert(newType) {
-    if (!editing) return;
-    convertTargetType = newType;
-    convertOpen = true;
-  }
-
-  async function executeConvert() {
-    if (!editing || !convertTargetType) return;
-    const originalId = editing.id;
-    const targetType = convertTargetType;
-    try {
-      // Stage the new channel payload by flipping channel_type and
-      // clearing audio fields as appropriate.
-      const nextForm = {
-        ...form,
-        channel_type: targetType,
-      };
-      if (targetType === 'kiss-tnc') {
-        nextForm.input_device_id = '0';
-        nextForm.output_device_id = '0';
-      } else {
-        // Defaulting to the first available input device keeps the
-        // user from landing on a form with no valid device
-        // selection.
-        const defaultInput = inputDevices.length > 0 ? String(inputDevices[0].id) : '0';
-        nextForm.input_device_id = defaultInput;
-      }
-      form = nextForm;
-      // Delete the original row; the user must then Save to create
-      // the new-shape row. This is intentionally two-step so the
-      // operator can cancel mid-flight without losing data.
-      await api.delete(`/channels/${originalId}`);
-      toasts.info('Channel deleted. Review the form and Save to create the converted channel.');
-      // Flip the modal from edit mode to create mode so Save does a
-      // POST rather than a PUT against the deleted id.
-      editing = null;
-      await loadChannels();
-    } catch (err) {
-      toasts.error(err.message);
-    } finally {
-      convertOpen = false;
-      convertTargetType = null;
-    }
-  }
-
   // Phase 5 two-step delete flow (D12).
   //
   // Click "Delete" → requestDelete(row):
@@ -570,18 +516,13 @@
 <div class="wide-modal">
 <Modal bind:open={modalOpen} title={editing ? 'Edit Channel' : 'New Channel'}>
   <!-- Channel type picker (D11). Segmented on create; read-only badge
-       on edit with a "Convert…" affordance that opens a destructive
-       confirmation. -->
+       on edit. -->
   <div class="channel-type-row">
     <span class="channel-type-label" id="channel-type-label">Channel type</span>
     {#if editing}
       <span class="channel-type-badge">
         {#if form.channel_type === 'modem'}Modem-backed{:else}KISS-TNC only{/if}
       </span>
-      <button type="button" class="convert-link"
-              onclick={() => requestConvert(form.channel_type === 'modem' ? 'kiss-tnc' : 'modem')}>
-        Convert to {form.channel_type === 'modem' ? 'KISS-TNC only' : 'Modem-backed'}…
-      </button>
     {:else}
       <div class="segmented" role="radiogroup" aria-labelledby="channel-type-label">
         <button type="button"
@@ -796,29 +737,6 @@
         disabled={putInFlight}
       >
         Save channel and break {putTotal} reference{putTotal === 1 ? '' : 's'}
-      </AlertDialog.Action>
-    </div>
-  </AlertDialog.Content>
-</AlertDialog>
-
-<!-- Convert-type confirmation (D11).
-     Conversion is a delete + create, not an in-place rewrite, because
-     the backend validator forbids mutating a channel's backing shape
-     mid-flight; switching types invalidates dependent beacons / digi
-     rules / igate references (Phase 5 will add the proper cascade). -->
-<AlertDialog bind:open={convertOpen}>
-  <AlertDialog.Content>
-    <AlertDialog.Title>Convert channel type</AlertDialog.Title>
-    <AlertDialog.Description>
-      Converting this channel is equivalent to deleting and recreating
-      it. All dependent beacons, digipeater rules, iGate references,
-      and KISS interface bindings may become invalid and require
-      manual fix-up. Continue?
-    </AlertDialog.Description>
-    <div class="modal-footer">
-      <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-      <AlertDialog.Action class="danger-action" onclick={executeConvert}>
-        Delete and convert
       </AlertDialog.Action>
     </div>
   </AlertDialog.Content>
@@ -1105,19 +1023,6 @@
     font-weight: 600;
     color: var(--text-primary);
   }
-  .convert-link {
-    background: none;
-    border: none;
-    color: var(--color-info, #388bfd);
-    padding: 0;
-    cursor: pointer;
-    font: inherit;
-    text-decoration: underline;
-  }
-  .convert-link:hover {
-    text-decoration: none;
-  }
-
   .kiss-only-explainer {
     padding: 10px 12px;
     background: var(--bg-tertiary);
