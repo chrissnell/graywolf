@@ -60,6 +60,20 @@ type RouterConfig struct {
 	DedupWindow time.Duration
 }
 
+// AutoAckChannel returns the live RF channel ID used for auto-ACKs
+// when the inbound was IS-sourced (RF-sourced packets reuse pkt.Channel).
+// Reads are lock-free.
+func (r *Router) AutoAckChannel() uint32 { return r.autoAckCh.Load() }
+
+// SetAutoAckChannel updates the IS-fallback auto-ACK channel. Zero is
+// ignored. Safe to call concurrently with the consumer goroutine.
+func (r *Router) SetAutoAckChannel(ch uint32) {
+	if ch == 0 {
+		return
+	}
+	r.autoAckCh.Store(ch)
+}
+
 // Defaults for the router.
 const (
 	// DefaultRouterQueueCapacity is the internal bounded-channel size
@@ -92,11 +106,11 @@ const (
 type Router struct {
 	cfg RouterConfig
 
-	logger     *slog.Logger
-	clock      RouterClock
-	queueCap   int
-	dedupWin   time.Duration
-	autoAckCh  uint32
+	logger    *slog.Logger
+	clock     RouterClock
+	queueCap  int
+	dedupWin  time.Duration
+	autoAckCh atomic.Uint32
 
 	queue chan *aprs.DecodedAPRSPacket
 
@@ -167,16 +181,16 @@ func NewRouter(cfg RouterConfig) (*Router, error) {
 	}
 
 	r := &Router{
-		cfg:       cfg,
-		logger:    logger,
-		clock:     clock,
-		queueCap:  qcap,
-		dedupWin:  dedupWin,
-		autoAckCh: ch,
-		queue:     make(chan *aprs.DecodedAPRSPacket, qcap),
-		stopped:   make(chan struct{}),
-		dedupMap:  make(map[string]time.Time),
+		cfg:      cfg,
+		logger:   logger,
+		clock:    clock,
+		queueCap: qcap,
+		dedupWin: dedupWin,
+		queue:    make(chan *aprs.DecodedAPRSPacket, qcap),
+		stopped:  make(chan struct{}),
+		dedupMap: make(map[string]time.Time),
 	}
+	r.autoAckCh.Store(ch)
 	if err := r.initMetrics(cfg.Registerer); err != nil {
 		return nil, err
 	}
@@ -642,7 +656,7 @@ func (r *Router) sendAutoAck(
 			"error", err, "peer", peerCall, "msgid", msgID)
 		return
 	}
-	ch := r.autoAckCh
+	ch := r.autoAckCh.Load()
 	if pkt.Direction == aprs.DirectionRF && pkt.Channel > 0 {
 		ch = uint32(pkt.Channel)
 	}

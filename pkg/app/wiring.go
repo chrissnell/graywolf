@@ -558,12 +558,7 @@ func (a *App) wireIGate(ctx context.Context) error {
 		igGov = a.gov
 	}
 
-	txCh := igCfg.TxChannel
-	if txCh == 0 {
-		if chs, err := a.store.ListChannels(ctx); err == nil && len(chs) > 0 {
-			txCh = chs[0].ID // lowest channel ID
-		}
-	}
+	txCh := a.resolveTxChannel(ctx, igCfg.TxChannel)
 
 	// Compose the APRS-IS server filter via the single entry point so
 	// enabled tactical callsigns are auto-appended as g/ clauses. Any
@@ -706,10 +701,11 @@ func (a *App) wireMessages(ctx context.Context) error {
 	// "" so the sender treats IS as read-only; this matches the pre-
 	// centralization behaviour where an unconfigured iGate row meant
 	// an empty passcode.
-	var txChannel uint32
+	var configuredTxCh uint32
 	if igCfg, _ := a.store.GetIGateConfig(ctx); igCfg != nil {
-		txChannel = igCfg.TxChannel
+		configuredTxCh = igCfg.TxChannel
 	}
+	txChannel := a.resolveTxChannel(ctx, configuredTxCh)
 	var passcode string
 	if stationCall, err := a.store.ResolveStationCallsign(ctx); err == nil {
 		passcode = strconv.Itoa(callsign.APRSPasscode(stationCall))
@@ -733,6 +729,13 @@ func (a *App) wireMessages(ctx context.Context) error {
 		StationCache:  a.stationCache,
 		Logger:        a.logger.With("component", "messages"),
 		TxChannel:     txChannel,
+		TxChannelResolver: func(rctx context.Context) uint32 {
+			var configured uint32
+			if igCfg, _ := a.store.GetIGateConfig(rctx); igCfg != nil {
+				configured = igCfg.TxChannel
+			}
+			return a.resolveTxChannel(rctx, configured)
+		},
 		IGatePasscode: passcode,
 		OurCall:       ourCall,
 		LocalTxRing:   a.msgLocalRing, // shared with iGate.Config.LocalOrigin
@@ -1411,6 +1414,52 @@ func (a *App) buildTxBackendSnapshot() *txbackend.Snapshot {
 	return txbackend.BuildSnapshot(modem, modemChannels, kissBackends)
 }
 
+// resolveTxChannel picks a usable TX channel for igate / messages
+// traffic. Returns the configured channel when it has a modem input
+// device bound (i.e. buildTxBackendSnapshot will register a modem
+// backend for it). Otherwise falls back to the lowest channel ID with
+// a modem input device, then to the lowest channel ID overall, then 0.
+//
+// Logs a warning when a non-zero configured value is overridden so an
+// operator can correlate stale TxChannel references against the on-box
+// logs without having to read the DB. Also logs a distinct warning
+// when no channel has a modem backend at all — the returned ID will
+// fail at submit time but is the least-bad option, and the dedicated
+// log line is the operator's diagnostic for that case.
+//
+// Called from wireIGate / wireMessages at startup and from
+// reloadIgate / Service.ReloadConfig on iGate-config saves so a
+// runtime channel renumbering propagates without a service restart.
+func (a *App) resolveTxChannel(ctx context.Context, configured uint32) uint32 {
+	chs, err := a.store.ListChannels(ctx)
+	if err != nil || len(chs) == 0 {
+		return configured
+	}
+	var firstWithModem uint32
+	for _, c := range chs {
+		if c.InputDeviceID == nil {
+			continue
+		}
+		if c.ID == configured {
+			return configured
+		}
+		if firstWithModem == 0 {
+			firstWithModem = c.ID
+		}
+	}
+	if firstWithModem == 0 {
+		fallback := chs[0].ID
+		a.logger.Warn("tx channel fallback: no channel has a modem backend; tx will fail at submit",
+			"configured", configured, "using", fallback)
+		return fallback
+	}
+	if configured != 0 && configured != firstWithModem {
+		a.logger.Warn("tx channel fallback: configured channel has no modem backend",
+			"configured", configured, "using", firstWithModem)
+	}
+	return firstWithModem
+}
+
 func (a *App) digipeaterComponent() namedComponent {
 	reload := func(ctx context.Context) {
 		cfg, err := a.store.GetDigipeaterConfig(ctx)
@@ -1881,6 +1930,11 @@ func (a *App) igateComponent() namedComponent {
 // and debug log; Reconfigure's own filter-changed check prevents the
 // reconnect.
 func (a *App) reloadIgate(ctx context.Context) {
+	var configuredTxCh uint32
+	if igCfg, _ := a.store.GetIGateConfig(ctx); igCfg != nil {
+		configuredTxCh = igCfg.TxChannel
+	}
+	a.ig.SetTxChannel(a.resolveTxChannel(ctx, configuredTxCh))
 	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
 	rules := make([]filters.Rule, 0, len(rfFilters))
 	for _, f := range rfFilters {
@@ -2002,6 +2056,9 @@ func (a *App) messagesComponent() namedComponent {
 							}
 							if err := a.msgSvc.ReloadPreferences(ctx); err != nil {
 								a.logger.Warn("messages reload preferences", "err", err)
+							}
+							if err := a.msgSvc.ReloadConfig(ctx); err != nil {
+								a.logger.Warn("messages reload config", "err", err)
 							}
 						}
 					}

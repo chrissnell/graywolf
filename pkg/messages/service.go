@@ -46,6 +46,13 @@ type ServiceConfig struct {
 	// TxChannel is the RF channel used for outbound messages.
 	// Defaults to 1 when zero.
 	TxChannel uint32
+	// TxChannelResolver, if non-nil, is invoked by ReloadConfig to
+	// fetch the live TX channel ID. The resolver should return zero
+	// when no usable channel is available; ReloadConfig then leaves
+	// the current value unchanged. Used by the app-level reload path
+	// to push iGate-config changes (TxChannel field) into the running
+	// Sender + Router without a daemon restart.
+	TxChannelResolver func(context.Context) uint32
 	// IGatePasscode lets the sender short-circuit the IS fallback
 	// when the operator runs a read-only iGate ("-1").
 	IGatePasscode string
@@ -272,6 +279,52 @@ func (s *Service) LocalTxRing() *LocalTxRing { return s.ring }
 // TacticalSet returns the live tactical-set snapshot (read-only).
 // Tests use it to observe reload results.
 func (s *Service) TacticalSet() *TacticalSet { return s.tactSet }
+
+// ReloadConfig re-resolves the TX channel via the configured
+// TxChannelResolver and pushes the new value into the live Sender +
+// Router. A nil resolver, a zero return, or a value matching the
+// current channel is a no-op. Logs a single info line when the value
+// actually changes so operators can correlate iGate-config saves
+// against the swap.
+//
+// Called from the app's messagesReload drainer after every iGate
+// config save. Concurrency: SetTxChannel / SetAutoAckChannel use
+// atomics; safe to call while the Router consumer goroutine and the
+// Sender's compose / retry callers are running.
+func (s *Service) ReloadConfig(ctx context.Context) error {
+	if s.cfg.TxChannelResolver == nil {
+		return nil
+	}
+	ch := s.cfg.TxChannelResolver(ctx)
+	if ch == 0 {
+		return nil
+	}
+	prev := s.sender.TxChannel()
+	if ch == prev {
+		return nil
+	}
+	s.sender.SetTxChannel(ch)
+	// Mirror the constructor's "AutoAckChannel defaults to TxChannel"
+	// rule on reload: when the operator never overrode AutoAckChannel
+	// explicitly, keep it tracking TxChannel; when they did, leave it
+	// pinned. Detection: if the router's current auto-ack channel
+	// equals the prior TxChannel, treat it as the default-tracking
+	// case and update it.
+	//
+	// Caveat: this detection is value-based, not intent-based. It is
+	// correct only while AutoAckChannel has no separate config surface
+	// (today: wireMessages never calls SetAutoAckChannel, so the value
+	// always equals the seeded TxChannel). If a future change adds an
+	// independent operator knob for AutoAckChannel, replace this with
+	// an explicit "overridden" flag — otherwise an operator override
+	// equal to a future TxChannel value will be silently overwritten
+	// on the next reload.
+	if s.router.AutoAckChannel() == prev {
+		s.router.SetAutoAckChannel(ch)
+	}
+	s.logger.Info("messages tx channel updated", "previous", prev, "new", ch)
+	return nil
+}
 
 // ReloadPreferences refetches the MessagePreferences singleton and
 // replaces the cached snapshot. Called by the Phase 4 messagesReload

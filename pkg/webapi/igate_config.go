@@ -112,6 +112,11 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.signalIgateReload()
+	// iGate's TxChannel field is also the source of truth for messages
+	// outbound RF channel (see app.wireMessages). Signal the messages
+	// reload so a saved TxChannel propagates into the running Sender +
+	// Router without a daemon restart.
+	s.signalMessagesReload()
 	writeJSON(w, http.StatusOK, dto.IGateConfigFromModel(m))
 }
 
