@@ -35,6 +35,10 @@
   ];
 
   const dataStore = createDataStore();
+  // Auto-fit on first successful poll: planet view → bounds of stations
+  // heard in the active timerange (default 1h). One-shot, so panning/zooming
+  // afterward sticks.
+  let didAutoFit = false;
   let stationsLayer = null;
   let trailsLayer = null;
   let weatherLayer = null;
@@ -258,6 +262,34 @@
     dataStore.setTimerange(timerangeSec * 1000);
   });
 
+  // One-shot auto-fit: after the first poll completes, frame all stations
+  // currently in the data store. Empty result → leave at planet view.
+  $effect(() => {
+    const t = dataStore.lastFetchAt;
+    if (!t || !mapRef || didAutoFit) return;
+    didAutoFit = true;
+    fitToStations();
+  });
+
+  function fitToStations() {
+    if (!mapRef) return;
+    const coords = [];
+    for (const s of dataStore.stations.values()) {
+      const p = s.positions && s.positions[0];
+      if (p && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
+        coords.push([p.lon, p.lat]);
+      }
+    }
+    if (coords.length === 0) return;
+    if (coords.length === 1) {
+      mapRef.easeTo({ center: coords[0], zoom: 9, duration: 600 });
+      return;
+    }
+    const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
+    for (let i = 1; i < coords.length; i++) bounds.extend(coords[i]);
+    mapRef.fitBounds(bounds, { padding: 60, maxZoom: 12, duration: 600 });
+  }
+
   // ---- Status bar derivations ----
   let stationCount = $derived(dataStore.stations.size);
   let timerangeLabel = $derived(
@@ -309,7 +341,8 @@
 </script>
 
 <div class="livemap-shell">
-  <MaplibreMap oncreate={onMapReady} />
+  <!-- Start at planet view; onMapReady fits to recent stations after first poll. -->
+  <MaplibreMap initialCenter={[0, 20]} initialZoom={1} oncreate={onMapReady} />
 
   {#snippet panelBody()}
     <div class="layer-toggles">
