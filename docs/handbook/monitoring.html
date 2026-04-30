@@ -70,40 +70,6 @@
       <div class="caption">The packet log viewer with live streaming, search filtering, and CSV export</div>
     </div>
 
-    <h2>Web UI Dashboard</h2>
-
-    <p>
-      The dashboard is the at-a-glance view of your station. It shows:
-    </p>
-
-    <ul>
-      <li><strong>Status pills</strong> for RX, TX Audio, and the active
-        channel/modem (e.g. <em>CH4: VHF APRS &middot; AFSK 1200 bd</em>).</li>
-      <li><strong>DCD / RX / TX</strong> indicators and the current audio
-        peak in <code>dBFS</code>, so you can spot a stuck-keyed neighbour
-        or a dead-quiet receive feed without leaving the page.</li>
-      <li>Live counters: <strong>Packets RX</strong>, <strong>Packets
-        TX</strong>, <strong>iGated</strong>, <strong>Bad FCS</strong>,
-        and <strong>Uptime</strong>.</li>
-      <li>Your station&rsquo;s position (<em>FIXED POSITION</em> or
-        <em>GPS</em>) and altitude.</li>
-      <li>A <strong>Beacon Now</strong> quick-trigger that fires a
-        beacon immediately, without waiting for its scheduled slot.</li>
-      <li>A live packet table showing time, type
-        (<em>mic-e</em>, <em>position</em>, <em>weather</em>,
-        <em>telemetry</em>, <em>object</em>, <em>status</em>,
-        <em>third-party</em>, &hellip;), source &rarr; destination, channel,
-        distance from your station, and the raw frame. Provenance tags
-        on the row make it clear how each packet got to you:
-        <em>iGate RF&rarr;IS</em>, <em>iGate IS RX</em>, or
-        <em>Beacon</em>.</li>
-    </ul>
-
-    <p>
-      The dedicated <a href="logs.html">Logs</a> page is the same packet
-      stream with filtering and CSV export.
-    </p>
-
     <h2>Prometheus Metrics</h2>
 
     <p>
