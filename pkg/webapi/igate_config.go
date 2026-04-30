@@ -64,11 +64,20 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err.Error())
 		return
 	}
-	if err := req.Validate(); err != nil {
-		badRequest(w, err.Error())
-		return
-	}
 	ctx := r.Context()
+	// Idempotent pass-through for req.Validate(): a legacy persisted
+	// server_filter that contains `|` (saved by an older binary that
+	// allowed it) must not block saves of unrelated fields. The DTO
+	// validator only fires when the operator actually changed the
+	// value, mirroring the FK-reference logic below. The frontend
+	// applies the same rule on its serverFilterError preflight.
+	existingServerFilter := loadIGateServerFilter(ctx, s.store)
+	if req.ServerFilter != existingServerFilter {
+		if err := req.Validate(); err != nil {
+			badRequest(w, err.Error())
+			return
+		}
+	}
 	// Enable-guard (centralized station-callsign plan D7 rule 1):
 	// reject any request that flips Enabled=true while the station
 	// callsign is empty or N0CALL. Saves with Enabled=false, and
@@ -153,6 +162,21 @@ func loadIGateChannelRefs(ctx context.Context, store *configstore.Store) (rf, tx
 		return 0, 0
 	}
 	return cfg.RfChannel, cfg.TxChannel
+}
+
+// loadIGateServerFilter returns the persisted ServerFilter for the
+// iGate singleton, or "" when no row exists or the fetch errors.
+// Used by updateIgateConfig to skip DTO Validate() (which rejects `|`
+// in server_filter) when the request value is unchanged from the
+// persisted value, so a legacy filter saved by an older binary that
+// allowed pipes does not trap the operator on saves of unrelated
+// fields.
+func loadIGateServerFilter(ctx context.Context, store *configstore.Store) string {
+	cfg, err := store.GetIGateConfig(ctx)
+	if err != nil || cfg == nil {
+		return ""
+	}
+	return cfg.ServerFilter
 }
 
 // signalIgateReload performs a non-blocking send on the igate reload

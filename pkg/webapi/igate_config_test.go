@@ -127,6 +127,50 @@ func TestIGateConfig_AllowsIdempotentOrphanFKs(t *testing.T) {
 	}
 }
 
+// TestIGateConfig_AllowsIdempotentLegacyPipeFilter covers the same
+// trap pattern as the orphan-FK case: an older binary persisted a
+// server_filter containing `|` (which the current Validate() rejects)
+// and the operator now hits Save on the Connection tab to change an
+// unrelated field. The handler must allow the legacy value through
+// when the request does not change it; a *new* pipe in server_filter
+// still 400s.
+func TestIGateConfig_AllowsIdempotentLegacyPipeFilter(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+
+	if err := srv.store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "N0CAL"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
+		Enabled: true, Server: "rotate.aprs2.net", Port: 14580,
+		ServerFilter: "g/NW5W | b/NW5W-12",
+		MaxMsgHops:   2, SoftwareName: "graywolf", SoftwareVersion: "0.1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Echoing the persisted pipe-filter unchanged must succeed.
+	body := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"server_filter":"g/NW5W | b/NW5W-12","rf_channel":0,"tx_channel":0,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("idempotent legacy pipe filter: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Changing server_filter to a *different* value that contains a
+	// pipe must still 400 — idempotent pass-through is not a backdoor.
+	body2 := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"server_filter":"new | clause","rf_channel":0,"tx_channel":0,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	req2 := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body2))
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("new pipe in server_filter: expected 400, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+}
+
 // TestIGateConfig_AllowsIdempotentOrphanTxChannelWhenEnabled pins the
 // requireTxCapableChannel skip on the same idempotent edge: a
 // persisted tx_channel that is not (or no longer) TX-capable must not

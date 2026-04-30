@@ -73,8 +73,18 @@
   // as "iGate is receiving everything" with no on-box symptom. The
   // backend DTO also rejects this at save time; mirroring client-side
   // gives immediate inline feedback and keeps the save button honest.
+  //
+  // Idempotent pass-through: only flag pipes when the operator has
+  // actually edited the field. A legacy persisted value with a pipe
+  // (saved by an older binary that allowed it) must not block saves
+  // of unrelated fields like tx_channel — the operator could be on
+  // the Connection tab without ever visiting the filter input. Once
+  // they DO edit server_filter, the inline error reappears.
+  let loadedServerFilter = $state('');
   let serverFilterError = $derived(
-    form.server_filter && form.server_filter.includes('|')
+    form.server_filter !== loadedServerFilter
+      && form.server_filter
+      && form.server_filter.includes('|')
       ? 'The `|` character is not valid APRS-IS filter syntax. Separate clauses with spaces.'
       : ''
   );
@@ -252,6 +262,7 @@
       (async () => {
         const data = await api.get('/igate/config');
         const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
+        loadedServerFilter = data.server_filter ?? '';
         form = {
           enabled: data.enabled ?? false,
           server: data.server,
