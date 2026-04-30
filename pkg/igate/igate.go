@@ -188,6 +188,11 @@ type Igate struct {
 	lastConnected time.Time
 	simulation    atomic.Bool
 
+	// txChannel mirrors cfg.TxChannel but is mutable at runtime via
+	// SetTxChannel so an iGate-config save can retarget IS→RF without
+	// a daemon restart. Reads on the IS→RF hot path are lock-free.
+	txChannel atomic.Uint32
+
 	// inputCh fans IS->RF frames out to PacketInput consumers.
 	inputCh chan *aprs.InboundPacket
 
@@ -261,6 +266,7 @@ func New(cfg Config) (*Igate, error) {
 	ig.filter.Store(filters.New(cfg.Rules))
 	ig.sessCtx.Store(&sessCtxHolder{ctx: context.Background()})
 	ig.simulation.Store(cfg.SimulationMode)
+	ig.txChannel.Store(cfg.TxChannel)
 	if err := ig.initMetrics(); err != nil {
 		return nil, err
 	}
@@ -451,7 +457,8 @@ func (ig *Igate) handleISLine(line string) {
 	// read-loop hot path.
 	parent := ig.sessCtx.Load().ctx
 	submitCtx, cancel := context.WithTimeout(parent, igateSubmitTimeout)
-	err = ig.cfg.Governor.Submit(submitCtx, ig.cfg.TxChannel, wrapped, txgovernor.SubmitSource{
+	txCh := ig.txChannel.Load()
+	err = ig.cfg.Governor.Submit(submitCtx, txCh, wrapped, txgovernor.SubmitSource{
 		Kind:     "igate",
 		Detail:   "is2rf",
 		Priority: txgovernor.PriorityIGateMsg,
@@ -471,7 +478,7 @@ func (ig *Igate) handleISLine(line string) {
 	// are counted but not logged: inputCh is a best-effort tap and a
 	// slow consumer should not back-pressure gating.
 	select {
-	case ig.inputCh <- &aprs.InboundPacket{Raw: mustEncode(wrapped), Source: "aprs-is", Channel: int(ig.cfg.TxChannel)}:
+	case ig.inputCh <- &aprs.InboundPacket{Raw: mustEncode(wrapped), Source: "aprs-is", Channel: int(txCh)}:
 	default:
 		ig.mFanoutDropped.Inc()
 	}
@@ -730,6 +737,21 @@ func (ig *Igate) Reconfigure(serverFilter string, rules []filters.Rule, gov txgo
 		}
 	}
 	ig.logger.Info("igate reconfigured", "server_filter", serverFilter, "rules", len(rules))
+}
+
+// TxChannel returns the live IS→RF channel ID. Reads are lock-free.
+func (ig *Igate) TxChannel() uint32 { return ig.txChannel.Load() }
+
+// SetTxChannel updates the IS→RF channel at runtime. A zero value is
+// ignored. Concurrent with the IS→RF submit path; safe via atomic.
+func (ig *Igate) SetTxChannel(ch uint32) {
+	if ch == 0 {
+		return
+	}
+	prev := ig.txChannel.Swap(ch)
+	if prev != ch {
+		ig.logger.Info("igate tx channel updated", "previous", prev, "new", ch)
+	}
 }
 
 // SetSimulationMode toggles simulation-mode at runtime.

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
@@ -108,12 +109,33 @@ type Sender struct {
 	logger *slog.Logger
 	clock  SenderClock
 	bridge RFAvailability
+	// txChannel is the live RF channel used for outbound submissions.
+	// Mutable at runtime via SetTxChannel so an iGate-config save can
+	// retarget messaging without restarting the daemon. cfg.TxChannel
+	// seeds the initial value at NewSender; concurrent callers (Send,
+	// retry manager, REST compose) read it lock-free.
+	txChannel atomic.Uint32
 	// pending tracks frames submitted via this sender, keyed by frame
 	// pointer. The TxHook looks up the row id by frame pointer to
 	// flip SentAt. The governor guarantees it invokes the hook with
 	// the same *ax25.Frame pointer we submitted.
 	pendingMu sync.Mutex
 	pending   map[*ax25.Frame]pendingFrame
+}
+
+// TxChannel returns the live RF channel ID used for outbound
+// submissions. Reads are lock-free and observe the most recent
+// SetTxChannel mutation.
+func (s *Sender) TxChannel() uint32 { return s.txChannel.Load() }
+
+// SetTxChannel updates the live TX channel. A zero value is ignored
+// (matches NewSender's default-to-1 behaviour for unset configs).
+// Safe to call concurrently with Send.
+func (s *Sender) SetTxChannel(ch uint32) {
+	if ch == 0 {
+		return
+	}
+	s.txChannel.Store(ch)
 }
 
 // pendingFrame is the metadata recorded at Submit time and consumed
@@ -159,13 +181,15 @@ func NewSender(cfg SenderConfig) (*Sender, error) {
 	if cfg.TxChannel == 0 {
 		cfg.TxChannel = 1
 	}
-	return &Sender{
+	s := &Sender{
 		cfg:     cfg,
 		logger:  logger,
 		clock:   clock,
 		bridge:  bridge,
 		pending: make(map[*ax25.Frame]pendingFrame),
-	}, nil
+	}
+	s.txChannel.Store(cfg.TxChannel)
+	return s, nil
 }
 
 // Send dispatches a single outbound attempt for row. The row must
@@ -248,7 +272,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 	// wire. Opting out of dedup is correct for message TX; we keep the
 	// governor's other admission controls (rate limits, DCD-aware
 	// CSMA, queue capacity) active.
-	submitErr := s.cfg.TxSink.Submit(ctx, s.cfg.TxChannel, frame, txgovernor.SubmitSource{
+	submitErr := s.cfg.TxSink.Submit(ctx, s.txChannel.Load(), frame, txgovernor.SubmitSource{
 		Kind:      SubmitKindMessages,
 		Priority:  txgovernor.PriorityIGateMsg,
 		SkipDedup: true,
