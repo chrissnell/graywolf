@@ -13,8 +13,8 @@ func TestGetMapsConfig_DefaultsWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMapsConfig: %v", err)
 	}
-	if c.Source != "osm" {
-		t.Fatalf("default source = %q, want %q", c.Source, "osm")
+	if c.Source != "graywolf" {
+		t.Fatalf("default source = %q, want %q", c.Source, "graywolf")
 	}
 	if c.Callsign != "" || c.Token != "" {
 		t.Fatalf("expected empty callsign/token on fresh install, got %+v", c)

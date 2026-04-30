@@ -13,7 +13,7 @@ import (
 )
 
 // Fresh DB has no MapsConfig row. GET returns the singleton default
-// of source=osm, registered=false, and (per the suppress-token
+// of source=graywolf, registered=false, and (per the suppress-token
 // contract) no `token` field in the body.
 func TestGetMapsConfig_DefaultsForFreshInstall(t *testing.T) {
 	srv, _ := newTestServer(t)
@@ -34,8 +34,8 @@ func TestGetMapsConfig_DefaultsForFreshInstall(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&raw); err != nil {
 		t.Fatal(err)
 	}
-	if raw["source"] != "osm" {
-		t.Errorf("source = %v, want %q", raw["source"], "osm")
+	if raw["source"] != "graywolf" {
+		t.Errorf("source = %v, want %q", raw["source"], "graywolf")
 	}
 	if raw["registered"] != false {
 		t.Errorf("registered = %v, want false", raw["registered"])
@@ -62,14 +62,14 @@ func TestPutMapsConfig_RejectsGraywolfWithoutToken(t *testing.T) {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// Persisted Source must remain the default (osm) — a rejected PUT
-	// must not have mutated the row.
+	// Persisted Source must remain the default (graywolf) — a rejected
+	// PUT must not have mutated the row.
 	c, err := srv.store.GetMapsConfig(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Source != "osm" {
-		t.Errorf("Source after rejected PUT = %q, want %q", c.Source, "osm")
+	if c.Source != "graywolf" {
+		t.Errorf("Source after rejected PUT = %q, want %q", c.Source, "graywolf")
 	}
 }
 

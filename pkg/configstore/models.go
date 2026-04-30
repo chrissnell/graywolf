@@ -378,12 +378,12 @@ type ThemeConfig struct {
 // MapsConfig is the singleton row that captures the operator's basemap
 // source choice plus the device-local registration with auth.nw5w.com.
 // Source is one of "osm" (public OSM raster tiles) or "graywolf"
-// (private maps.nw5w.com vector tiles, requires Token). An empty Token
-// means the user hasn't registered this device yet, in which case the
-// frontend forces Source to "osm" until they do.
+// (private maps.nw5w.com vector tiles, requires Token). Graywolf is
+// the default; an empty Token means the device hasn't registered yet,
+// and the maplibre frontend falls back to OSM rendering until it does.
 type MapsConfig struct {
 	ID           uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Source       string    `gorm:"not null;default:'osm'" json:"source"`
+	Source       string    `gorm:"not null;default:'graywolf'" json:"source"`
 	Callsign     string    `gorm:"not null;default:''" json:"callsign"`
 	Token        string    `gorm:"not null;default:''" json:"-"`
 	// RegisteredAt is the zero time when no registration has occurred;

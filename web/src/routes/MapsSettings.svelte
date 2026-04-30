@@ -80,14 +80,14 @@
   // falls back to online elsewhere.
   const sources = [
     {
-      value: 'osm',
-      label: 'OpenStreetMap public tiles',
-      sublabel: 'Free, available everywhere, less polished cartography.',
-    },
-    {
       value: 'graywolf',
       label: 'Graywolf private maps',
       sublabel: 'Polished cartography. Requires registration.',
+    },
+    {
+      value: 'osm',
+      label: 'OpenStreetMap public tiles',
+      sublabel: 'Free, available everywhere, less polished cartography.',
     },
   ];
 

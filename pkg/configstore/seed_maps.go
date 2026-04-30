@@ -20,20 +20,23 @@ const (
 )
 
 // GetMapsConfig returns the singleton maps preference. When no row
-// exists (fresh install), returns MapsConfig{Source: "osm"} with no
-// error so the UI has a deterministic default without a seed step. An
-// unknown Source value in the stored row is normalized to osm.
+// exists (fresh install), returns MapsConfig{Source: "graywolf"} with
+// no error so the UI has a deterministic default without a seed step.
+// Graywolf is the default basemap; the maplibre frontend falls back to
+// OSM rendering automatically when the device hasn't registered yet,
+// so this is safe even before the operator obtains a token. An unknown
+// Source value in the stored row is normalized to graywolf.
 func (s *Store) GetMapsConfig(ctx context.Context) (MapsConfig, error) {
 	var c MapsConfig
 	err := s.db.WithContext(ctx).Order("id").First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return MapsConfig{Source: mapsSourceOSM}, nil
+		return MapsConfig{Source: mapsSourceGraywolf}, nil
 	}
 	if err != nil {
 		return MapsConfig{}, err
 	}
 	if c.Source != mapsSourceOSM && c.Source != mapsSourceGraywolf {
-		c.Source = mapsSourceOSM
+		c.Source = mapsSourceGraywolf
 	}
 	return c, nil
 }
