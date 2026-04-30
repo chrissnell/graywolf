@@ -10,6 +10,7 @@
   let status = $state(null);
   let position = $state(null);
   let beacons = $state([]);
+  let stationCallsign = $state('');
   let audioDevices = $state([]);
   let pollTimer = $state(null);
 
@@ -40,6 +41,7 @@
   onMount(() => {
     loadData();
     loadBeacons();
+    loadStationCallsign();
     loadAudioDevices();
     pollTimer = setInterval(loadData, 5000);
     return () => clearInterval(pollTimer);
@@ -79,6 +81,13 @@
 
   async function loadBeacons() {
     try { beacons = await api.get('/beacons') || []; } catch (_) {}
+  }
+
+  async function loadStationCallsign() {
+    try {
+      const s = await api.get('/station/config');
+      stationCallsign = s?.callsign ?? '';
+    } catch (_) {}
   }
 
   async function loadAudioDevices() {
@@ -195,7 +204,7 @@
                 onclick={() => sendBeaconNow(bcn.id)}
                 disabled={sendingBeacon[bcn.id]}
               >
-                {sendingBeacon[bcn.id] ? 'Sent!' : `Beacon Now: ${bcn.callsign}`}
+                {sendingBeacon[bcn.id] ? 'Sent!' : `Beacon Now: ${bcn.callsign || stationCallsign}`}
               </Button>
             {/each}
           </div>
