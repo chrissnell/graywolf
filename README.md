@@ -39,13 +39,14 @@ Reproduce with `./bench.sh`.
 
 - **Modern Web UI** - Configure and monitor your station from your browser, with live packet logs and preset-driven setup for digipeater and iGate
 
-- **Live Map** - Real-time APRS station map with trails, weather overlays, APRS-IS layer, and station popups with path and heard-via details
+- **Live Map** - Real-time APRS map with trails, weather overlays, APRS-IS layer, and station popups, rendered on a high-fidelity vector basemap with optional offline regional bundles
 
 - **Messages** - SMS-style APRS messaging with delivery status and unread badges
 
   - Direct messages with auto-ACK and retry
   - Tactical callsigns (e.g. `SLCTAC`, `AMIGOS`) for group nets
   - RF-first delivery with APRS-IS fallback
+  - Opt-in long messages up to 200 characters
 
 - **Software Modem** - Native Rust DSP, no external sound card tooling required
 
@@ -53,7 +54,6 @@ Reproduce with `./bench.sh`.
   - 9600 baud G3RUH
   - PSK
   - FX.25 and IL2P forward error correction
-  - SDR input support
 
 - **Push-to-Talk** - Multiple PTT methods for any setup
 
