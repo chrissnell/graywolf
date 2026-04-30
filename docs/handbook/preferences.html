@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -54,13 +58,44 @@
 
   <main class="content">
     <h1>Preferences</h1>
-    <p class="subtitle">Display units and formatting options</p>
+    <p class="subtitle">Theme, units, update checks, and message length</p>
 
     <p>
-      The Preferences page lets you choose between Imperial and Metric
-      units for all measurements displayed in the web UI. The setting
-      is saved in your browser and takes effect immediately &mdash; no
-      page reload required.
+      The Preferences page collects the small per-station knobs that
+      don&rsquo;t belong anywhere else: how the UI looks, what units it
+      uses, whether to phone home for new releases, and whether to allow
+      longer-than-spec APRS messages.
+    </p>
+
+    <h2>Theme</h2>
+
+    <p>
+      Pick a theme from the <strong>THEME</strong> selector. Graywolf
+      ships with a default light palette (orange primary, green accent,
+      strong solid badges). Want your own colour scheme? See
+      <code>graywolf/web/themes/README.md</code> in the source tree for
+      how to drop one in via pull request.
+    </p>
+
+    <h2>Updates</h2>
+
+    <p>
+      <strong>Check for updates from GitHub</strong> tells graywolf to
+      contact <code>github.com</code> once a day to see whether a newer
+      release is out. When it finds one, the <em>About</em> page surfaces
+      it. Turn this off for offline stations, or if you don&rsquo;t want
+      your station&rsquo;s IP showing up in GitHub&rsquo;s logs.
+    </p>
+
+    <h2>Long messages</h2>
+
+    <p>
+      <strong>Allow long APRS messages</strong> lifts graywolf&rsquo;s
+      67-byte cap on outbound messages, letting you send up to 200
+      characters. Some receiving clients silently truncate or drop
+      anything past 67 bytes, so leave this off unless you&rsquo;ve
+      confirmed your contacts can decode the longer form. See
+      <a href="messaging.html">Messaging</a> for the full picture.
     </p>
 
     <h2>Unit System Toggle</h2>
@@ -161,9 +196,9 @@
     </p>
 
     <nav class="page-nav">
-      <a href="monitoring.html">
+      <a href="maps.html">
         <span class="label">Previous</span>
-        Monitoring
+        Maps
       </a>
       <a href="architecture.html" class="next">
         <span class="label">Next</span>

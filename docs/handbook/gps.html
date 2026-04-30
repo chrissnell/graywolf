@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -67,6 +71,16 @@
       <img src="img/gps.png" alt="GPS page showing serial port configuration with device path and baud rate" />
       <div class="caption">GPS configuration using a serial NMEA receiver</div>
     </div>
+
+    <h2>Detect Devices</h2>
+
+    <p>
+      Click <strong>Detect Devices</strong> to scan attached serial ports.
+      Recognised GPS receivers (u-blox modules, common USB-serial GPS
+      pucks) get flagged so you can configure them with one click. Use
+      <strong>+ Configure GPS</strong> if you&rsquo;d rather enter device,
+      baud, or gpsd host yourself.
+    </p>
 
     <h2>Settings</h2>
 
@@ -198,9 +212,9 @@
         <span class="label">Previous</span>
         AGWPE
       </a>
-      <a href="monitoring.html" class="next">
+      <a href="history-database.html" class="next">
         <span class="label">Next</span>
-        Monitoring
+        Position Log
       </a>
     </nav>
   </main>

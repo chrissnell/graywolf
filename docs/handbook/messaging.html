@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -60,9 +64,23 @@
       Graywolf&rsquo;s messaging screen is a chat client that speaks APRS.
       Every outbound message is transmitted as an APRS11 text packet over
       RF (with an APRS-IS fallback when the peer is internet-only), and
-      every APRS text frame graywolf hears is shown as a message in the
-      matching conversation. Messages longer than the 67-byte APRS cap are
-      split into numbered segments and reassembled on receive.
+      every APRS text frame graywolf hears &mdash; whether it came in over
+      the air or arrived through APRS-IS &mdash; is shown as a message in
+      the matching conversation. Messages longer than the 67-byte APRS cap
+      are split into numbered segments and reassembled on receive.
+    </p>
+
+    <p>
+      The conversation list is always sectioned: <strong>Tactical</strong>
+      chats first, then <strong>Direct Messages</strong>. A
+      <strong>Manage Tactical Chats</strong> button at the top of the
+      list takes you to your tactical subscriptions. Inside any tactical
+      thread, the header carries a <strong>Leave Chat</strong> button:
+      clicking it stops your station from monitoring the tactical, drops
+      it from the inbox, and updates your APRS-IS subscription so you no
+      longer receive its traffic. The message history is preserved
+      server-side as a read-only archive, so rejoining later picks back up
+      where you left off.
     </p>
 
     <div class="screenshot">
@@ -292,6 +310,19 @@
       <a href="api.html">REST API</a> (<code>GET/PUT
       /api/messages/preferences</code>). A dedicated settings page is
       not shipped today.
+    </p>
+
+    <h2>Long messages</h2>
+
+    <p>
+      The APRS spec caps a message body at 67 bytes. Graywolf enforces
+      that limit by default. If you know your contacts are running clients
+      that accept longer messages, flip <strong>Allow long APRS
+      messages</strong> on the <a href="preferences.html">Preferences</a>
+      page &mdash; that lets you send up to 200 characters in one message.
+      Stations on stricter clients may truncate or drop anything past 67
+      bytes, so leave it off unless you&rsquo;ve confirmed it works on
+      both ends.
     </p>
 
     <h2>Edge cases</h2>

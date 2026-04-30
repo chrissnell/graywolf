@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Station Callsign &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Station Callsign</h1>
+    <p class="subtitle">One callsign for the whole station</p>
+
+    <p>
+      Your station callsign is the single source of truth that the iGate,
+      digipeater, beacons, and messenger use by default. Setting it once
+      here means you don&rsquo;t have to retype it (and re-typo it) on
+      every other page.
+    </p>
+
+    <p>
+      Open <strong>Settings &rarr; Station Callsign</strong>, type your
+      callsign with the SSID you want to use as your default
+      (e.g. <code>NW5W-5</code> for a fixed digi/iGate, <code>NW5W-9</code>
+      for a tracker), and click <strong>Save</strong>. Every page that
+      defaults to the station callsign reads it back as
+      <em>(inherited)</em>.
+    </p>
+
+    <h2>Where it&rsquo;s used</h2>
+
+    <ul>
+      <li><strong>iGate</strong> &mdash; APRS-IS login.</li>
+      <li><strong>Beacons</strong> &mdash; default source callsign on every beacon. You can still override per beacon if a tracker needs a different SSID.</li>
+      <li><strong>Digipeater</strong> &mdash; the callsign your digi transmits under, and the one used for preemptive digi when a packet&rsquo;s path explicitly names you. Override if you want the digi to wear a different SSID than the rest of the station.</li>
+      <li><strong>Messages</strong> &mdash; the From callsign on outbound DMs and tactical posts.</li>
+    </ul>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          If no station callsign is set, sending a message returns a clear
+          error pointing you back here. Set this before you put your
+          station on the air.
+        </p>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="installation.html">
+        <span class="label">Previous</span>
+        Installation
+      </a>
+      <a href="audio.html" class="next">
+        <span class="label">Next</span>
+        Audio Devices
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

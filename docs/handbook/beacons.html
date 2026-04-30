@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -60,6 +64,15 @@
       Beacons are periodic APRS transmissions that announce your station&rsquo;s
       position, capabilities, or other information. Graywolf supports multiple
       beacon types, each with independent scheduling and channel assignment.
+    </p>
+
+    <p>
+      The beacon&rsquo;s callsign defaults to your <a href="callsign.html">station
+      callsign</a> &mdash; you&rsquo;ll see <em>(inherited)</em> next to it. You
+      can override per beacon if you want a different SSID for, say, a
+      tracker vs. a digipeater beacon. Click <strong>Beacon Now</strong>
+      on any beacon card to fire it immediately without waiting for the
+      next scheduled slot.
     </p>
 
     <div class="screenshot">
@@ -274,6 +287,19 @@
             <td>Shell command whose stdout becomes the comment (e.g., weather data)</td>
           </tr>
         </table>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Drop <code>{{version}}</code> anywhere in your comment and
+          graywolf substitutes the running version at send time. The
+          default beacon comment is <code>Graywolf/{{version}}</code>, so
+          your beacon always advertises which release is on the air
+          without you having to remember to update it.
+        </p>
       </div>
     </div>
 

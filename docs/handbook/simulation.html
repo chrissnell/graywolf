@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simulation Mode &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Simulation Mode</h1>
+    <p class="subtitle">Run the full station with the transmit muted</p>
+
+    <p>
+      Simulation mode lets you exercise every part of graywolf &mdash;
+      digipeater, iGate, beacons, messaging &mdash; <strong>without
+      keying the radio</strong>. PTT stays down and audio out is
+      suppressed; everything else (RX, packet log, beacons, gating
+      decisions, web UI updates) runs normally. It&rsquo;s the right
+      switch to flip when you&rsquo;re tuning rules and want to see
+      what <em>would</em> have transmitted before you actually let it
+      transmit.
+    </p>
+
+    <h2>Turning it on</h2>
+
+    <p>
+      Open <strong>Settings &rarr; Simulation</strong>, tick
+      <strong>Enable simulation mode</strong>, and click
+      <strong>Apply</strong>. The setting takes effect immediately and
+      survives restarts &mdash; remember to turn it off again when
+      you&rsquo;re ready to go live.
+    </p>
+
+    <h2>What changes</h2>
+
+    <ul>
+      <li>Outbound packets are processed end-to-end (CSMA, dedup,
+        rate limit, third-party wrap, &hellip;) and logged, but never
+        modulated to the radio.</li>
+      <li>iGate IS&rarr;RF gating still runs every rule and records
+        what it would have keyed, so you can validate a server filter
+        and rule set against real APRS-IS traffic before going on the
+        air.</li>
+      <li>Receive is unaffected. You still hear stations, the live
+        map populates, and the logs fill normally.</li>
+    </ul>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          Don&rsquo;t leave simulation on by accident. A digipeater or
+          beacon stuck in simulation is silent on the air even though
+          everything looks healthy in the UI. The dashboard and About
+          page do not currently flag simulation status in a hard-to-miss
+          way &mdash; check this page after every config change you
+          intended to ship live.
+        </p>
+      </div>
+    </div>
+
+    <nav class="page-nav">
+      <a href="monitoring.html">
+        <span class="label">Previous</span>
+        Monitoring
+      </a>
+      <a href="maps.html" class="next">
+        <span class="label">Next</span>
+        Maps
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

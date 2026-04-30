@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AGWPE &mdash; Graywolf Handbook</title>
+  <title>Maps &mdash; Graywolf Handbook</title>
   <link rel="stylesheet" href="handbook.css" />
 </head>
 <body>
@@ -57,94 +57,86 @@
   </aside>
 
   <main class="content">
-    <h1>AGWPE</h1>
-    <p class="subtitle">AGW Packet Engine protocol interface for legacy software</p>
+    <h1>Maps</h1>
+    <p class="subtitle">Pick a basemap and download offline tiles</p>
 
     <p>
-      The AGWPE (AGW Packet Engine) interface provides compatibility with
-      Windows packet radio software that speaks the AGW protocol. This is
-      a single-instance TCP server that supports multiple simultaneous
-      clients and up to four radio ports.
+      The Maps page controls what you see <em>under</em> the APRS overlay
+      on the <a href="livemap.html">Live Map</a>. Two settings live here:
+      which basemap to use, and which states to keep on disk for off-grid
+      use.
     </p>
 
-    <div class="screenshot">
-      <img src="img/agwpe.png" alt="AGW Interface page showing listen address and callsign configuration" />
-      <div class="caption">AGWPE interface configuration with listen address and per-port callsigns</div>
-    </div>
+    <h2>Map source</h2>
 
-    <h2>Settings</h2>
+    <p>
+      Pick one of two basemaps:
+    </p>
 
     <div class="box">
       <div class="box-body">
         <table>
-          <thead>
-            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>enabled</code></td>
-              <td><code>false</code></td>
-              <td>Enable the AGWPE listener</td>
-            </tr>
-            <tr>
-              <td><code>listen_addr</code></td>
-              <td><code>0.0.0.0:8000</code></td>
-              <td>TCP listen address</td>
-            </tr>
-            <tr>
-              <td><code>callsigns</code></td>
-              <td>&mdash;</td>
-              <td>Comma-separated callsigns, one per AGW port (max 4)</td>
-            </tr>
-          </tbody>
+          <tr>
+            <td><strong>Graywolf private maps</strong></td>
+            <td>Polished, ham-radio-tuned cartography served from
+            graywolf&rsquo;s own tile infrastructure. This is the default.
+            It needs a one-click registration so the tile server knows
+            which station is asking.</td>
+          </tr>
+          <tr>
+            <td><strong>OpenStreetMap public tiles</strong></td>
+            <td>Free, available everywhere, no registration. Cartography
+            is rougher than the Graywolf basemap but you can&rsquo;t
+            beat the price or the reach.</td>
+          </tr>
         </table>
       </div>
     </div>
 
-    <h2>Port Mapping</h2>
+    <h2>Registration</h2>
 
     <p>
-      AGWPE supports up to four radio ports (numbered 0&ndash;3). Each port
-      is mapped to a callsign specified in the <code>callsigns</code> field.
-      The order determines the port number:
+      Registration ties this graywolf install to your station callsign so
+      it can pull from the Graywolf tile server. The page shows when you
+      registered and under which callsign. If something goes wrong with
+      the registration on this device &mdash; corrupt token, hostname
+      change, or just paranoia &mdash; click <strong>Re-register this
+      device</strong> for a fresh one. Your other registered devices keep
+      working unaffected.
     </p>
 
-<pre><code>callsigns: "N0CALL,N0CALL-5,N0CALL-10"
-# Port 0 → N0CALL
-# Port 1 → N0CALL-5
-# Port 2 → N0CALL-10</code></pre>
-
-    <h2>Supported Frame Types</h2>
+    <h2>Offline maps</h2>
 
     <p>
-      Graywolf implements the AGWPE protocol subset needed for packet radio
-      operations:
+      For stations that operate off-grid, in remote sites with flaky
+      backhaul, or just don&rsquo;t want to depend on a tile server, you
+      can pre-download per-state vector tiles to local disk. Add the
+      states you operate in under <strong>OFFLINE MAPS &rarr; Add a
+      state</strong>. The Live Map will use the local tiles automatically
+      where coverage exists and fall back to online tiles outside those
+      areas, so you don&rsquo;t need to predict in advance which corner
+      of the map you&rsquo;ll be on.
     </p>
 
-    <ul>
-      <li><strong>Monitor frames</strong> &mdash; receive decoded AX.25 packets</li>
-      <li><strong>Unproto frames</strong> &mdash; transmit UI (unnumbered information) packets</li>
-      <li><strong>Raw frames</strong> &mdash; send and receive raw AX.25 data</li>
-    </ul>
-
-    <div class="callout info">
-      <span class="callout-icon">&#9432;</span>
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
       <div class="callout-body">
         <p>
-          Port 8000 is the conventional AGWPE port. Most AGWPE-compatible
-          software will default to this port.
+          A state is typically tens to hundreds of megabytes. Download
+          them while you have a good network &mdash; they live on local
+          disk after that, regardless of whether graywolf has internet.
         </p>
       </div>
     </div>
 
     <nav class="page-nav">
-      <a href="remote-kiss-tnc.html">
+      <a href="simulation.html">
         <span class="label">Previous</span>
-        Remote KISS TNC
+        Simulation
       </a>
-      <a href="gps.html" class="next">
+      <a href="preferences.html" class="next">
         <span class="label">Next</span>
-        GPS
+        Preferences
       </a>
     </nav>
   </main>

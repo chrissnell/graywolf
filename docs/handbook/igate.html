@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -204,7 +208,23 @@
     <p>
       The <strong>APRS-IS Server Filter</strong> field is the filter string sent
       to the APRS-IS server at login. If left empty, no packets are received.
+      Clauses are separated by spaces; the pipe character <code>|</code> is
+      not valid APRS-IS syntax and will be flagged inline if you paste one
+      in.
     </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          You don&rsquo;t need to add <code>g/</code> clauses for your
+          tactical chats &mdash; graywolf appends one automatically for
+          every enabled tactical callsign so APRS-IS forwards traffic
+          addressed to those tacticals. Manage tacticals from the
+          <a href="messaging.html">Messages</a> page.
+        </p>
+      </div>
+    </div>
 
     <h3>IS &rarr; RF Gating Rules</h3>
 

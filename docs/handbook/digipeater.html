@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -104,6 +108,54 @@
       alias in the packet&rsquo;s digipeater path and specifies an action.
       Rules are evaluated in <code>priority</code> order (lower number = higher
       priority). The first matching rule wins.
+    </p>
+
+    <h3>Adding a rule</h3>
+
+    <p>
+      Click <strong>+ Add Rule</strong> and pick a <strong>Rule type</strong>
+      first:
+    </p>
+
+    <ul>
+      <li><strong>Repeat on same channel.</strong> The default WIDEn-N
+        digipeater behaviour &mdash; packets heard on a channel are
+        retransmitted on that same channel.</li>
+      <li><strong>Bridge to another channel.</strong> Forward matching
+        frames to a different channel. Useful for crossbanding (VHF
+        &rarr; UHF) or for piping RF onto a KISS-TNC channel and out to
+        another graywolf, a LoRa modem, or downstream software.</li>
+    </ul>
+
+    <p>
+      Then pick a <strong>Preset</strong> &mdash; the preset fills in the
+      rule&rsquo;s alias, max-hops, and action so you don&rsquo;t have to
+      think about it:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><strong>Fill-in digi (home / urban)</strong></td>
+            <td>Responds only to <code>WIDE1-1</code>. Plugs local coverage gaps without extending range. Safe default for home stations and low sites.</td>
+          </tr>
+          <tr>
+            <td><strong>Wide-area digi (mountain top)</strong></td>
+            <td>Handles <code>WIDE1-1</code> and <code>WIDE2-2</code>. Use only at a true high site where you actually carry the network &mdash; running this from a low site clutters the air without adding coverage.</td>
+          </tr>
+          <tr>
+            <td><strong>Custom</strong></td>
+            <td>Drop down into the raw alias / type / max-hops fields. For unusual setups (TRACEn-N, exact-callsign preemptive rules, cross-channel bridges that need bespoke behaviour).</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Each rule row on the rules table shows the channel it&rsquo;s bound
+      to. If you delete a channel, rules pointing at it surface a
+      <strong>Deleted</strong> badge so you can clean them up.
     </p>
 
     <div class="box">

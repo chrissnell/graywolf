@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -78,21 +82,54 @@
           </thead>
           <tbody>
             <tr>
-              <td><code>tcp</code></td>
-              <td>TCP socket server accepting multiple clients</td>
-              <td>Most APRS software (Xastir, YAAC, etc.)</td>
+              <td><strong>TCP (server)</strong></td>
+              <td>Graywolf listens on a TCP port; clients dial in</td>
+              <td>Most APRS software (Xastir, YAAC, pinpoint, aprx, etc.)</td>
             </tr>
             <tr>
-              <td><code>serial</code></td>
+              <td><strong>TCP Client</strong></td>
+              <td>Graywolf dials <em>out</em> to a remote KISS server and reconnects automatically</td>
+              <td>Bridging to a remote TNC, a LoRa modem, or another graywolf. See <a href="remote-kiss-tnc.html">Remote KISS TNC</a>.</td>
+            </tr>
+            <tr>
+              <td><strong>Serial</strong></td>
               <td>Virtual serial port</td>
               <td>Legacy software expecting a serial TNC</td>
             </tr>
             <tr>
-              <td><code>bluetooth</code></td>
+              <td><strong>Bluetooth</strong></td>
               <td>Bluetooth serial profile</td>
               <td>Mobile APRS apps (APRSdroid, etc.)</td>
             </tr>
           </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Mode</h2>
+
+    <p>
+      Each KISS interface runs in one of two modes. The Mode column on the
+      KISS Interfaces page shows you which.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><strong>Modem</strong></td>
+            <td>The KISS interface rides on top of a modem-backed
+            <a href="channels.html">channel</a>. Frames you send through
+            KISS get modulated and transmitted on RF; frames heard on the
+            air get handed back to the KISS client.</td>
+          </tr>
+          <tr>
+            <td><strong>TNC</strong></td>
+            <td>The interface <em>is</em> the radio link &mdash; KISS frames
+            are forwarded to and from an external TNC, a LoRa modem, or
+            another graywolf over TCP Client. The channel itself is
+            KISS-TNC-only (no software modem).</td>
+          </tr>
         </table>
       </div>
     </div>

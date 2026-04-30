@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -67,6 +71,25 @@
       <img src="img/audio-devices.png" alt="Audio Devices page showing configured input and output devices with gain sliders" />
       <div class="caption">Audio device cards show direction, path, sample rate, level meters, and gain controls</div>
     </div>
+
+    <h2>Detect Devices</h2>
+
+    <p>
+      Click <strong>Detect Devices</strong> at the top of the page to scan
+      attached sound cards and pre-fill an entry. Adapters that graywolf
+      recognises as a known APRS interface (Digirig, AIOC, SignaLink, and
+      so on) are flagged as <em>Recommended</em> so you can pick them with
+      one click. You can still use <strong>+ Add Device</strong> to enter a
+      device manually.
+    </p>
+
+    <p>
+      The status row at the top of the page shows whether
+      <strong>Receive (RX)</strong> and <strong>Transmit (TX)</strong> are
+      ready. A green dot on TX means an output device is configured;
+      transmitting also requires <a href="ptt.html">PTT</a>, which the
+      hint underneath reminds you of.
+    </p>
 
     <h2>Source Types</h2>
 
@@ -191,6 +214,30 @@
       radio channel to a different stereo channel.
     </p>
 
+    <h2>Test Tone</h2>
+
+    <p>
+      Each output device has a <strong>Test Tone</strong> button on its
+      card. Press it to send a short test tone out the radio &mdash; useful
+      for verifying that PTT keys, deviation is in spec, and audio reaches
+      the air. Watch the LEVEL meter on the card while it plays.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          The LEVEL meter and the Test Tone button only come alive once
+          the device is wired into a <a href="channels.html">channel</a>.
+          Adding an audio device on this page just makes it available
+          &mdash; until a channel is using it for input or output, the
+          modem isn&rsquo;t opening it and there&rsquo;s no audio to meter
+          or push a tone through. Set up the channel first, then come
+          back here to set levels.
+        </p>
+      </div>
+    </div>
+
     <h2>Software Gain</h2>
 
     <p>
@@ -223,9 +270,9 @@
     </p>
 
     <nav class="page-nav">
-      <a href="installation.html">
+      <a href="callsign.html">
         <span class="label">Previous</span>
-        Installation
+        Station Callsign
       </a>
       <a href="channels.html" class="next">
         <span class="label">Next</span>

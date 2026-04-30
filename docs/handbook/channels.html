@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -57,11 +61,45 @@
     <p class="subtitle">Configure modem type, frequencies, and demodulator settings</p>
 
     <p>
-      A radio channel ties an <a href="audio.html">audio device</a> to a
-      modem configuration. Each channel represents one RF path &mdash;
-      typically one radio on one frequency. Graywolf supports multiple
-      simultaneous channels, allowing you to monitor and transmit on
-      several frequencies or modulation modes at once.
+      A radio channel is one RF path &mdash; typically one radio on one
+      frequency. Graywolf can run several at once on different audio
+      devices, so you can monitor (and transmit on) VHF and UHF in parallel.
+    </p>
+
+    <h2>Channel Type</h2>
+
+    <p>
+      When you click <strong>+ Add Channel</strong>, pick the channel type
+      first. The rest of the form changes based on what you choose.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr>
+            <td><strong>Modem-backed</strong></td>
+            <td>The normal case: graywolf does the modulating and
+            demodulating itself against an <a href="audio.html">audio device</a>.
+            Use this for any channel where graywolf talks to the radio
+            directly.</td>
+          </tr>
+          <tr>
+            <td><strong>KISS-TNC only</strong></td>
+            <td>No audio device, no software modem. Frames come and go
+            through a KISS interface backed by an external TNC, an
+            attached LoRa modem, or a remote KISS server. See
+            <a href="kiss.html">KISS Interfaces</a> and
+            <a href="remote-kiss-tnc.html">Remote KISS TNC</a>.</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Each channel card shows a <strong>BACKING</strong> badge so you can
+      see at a glance what&rsquo;s driving it: <em>Modem &middot; Live</em>
+      for an in-process software modem, or <em>TNC</em>/<em>KISS client</em>
+      for KISS-backed channels.
     </p>
 
     <div class="screenshot">
@@ -96,7 +134,7 @@
             <tr>
               <td><code>output_device_id</code></td>
               <td><code>0</code></td>
-              <td>Audio output device (0 = receive only)</td>
+              <td>Audio output device. Pick <em>None (RX only)</em> for a receive-only channel.</td>
             </tr>
             <tr>
               <td><code>output_channel</code></td>
@@ -110,10 +148,26 @@
 
     <h2>Modem Types</h2>
 
+    <p>
+      Graywolf&rsquo;s software modem offers four modulation types. Pick the
+      one that matches the radio you&rsquo;re plugging into.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tr><td><strong>AFSK</strong></td><td>Audio FSK (Bell 202). Standard 1200&nbsp;baud APRS on VHF &mdash; what you want for 144.39 MHz / 144.80 MHz.</td></tr>
+          <tr><td><strong>GFSK</strong></td><td>Gaussian FSK at 9600&nbsp;baud (G3RUH-style). Needs a radio with a discriminator output (flat audio, no de-emphasis).</td></tr>
+          <tr><td><strong>PSK</strong></td><td>Phase-shift keying for experimental packet modes.</td></tr>
+          <tr><td><strong>FSK</strong></td><td>Plain frequency-shift keying. Pick this if you know the radio and slot you&rsquo;re using already.</td></tr>
+        </table>
+      </div>
+    </div>
+
     <div data-tabs>
       <div class="tabs">
         <button class="tab active" data-target="tab-afsk">AFSK 1200</button>
-        <button class="tab" data-target="tab-9600">9600 G3RUH</button>
+        <button class="tab" data-target="tab-9600">GFSK 9600</button>
         <button class="tab" data-target="tab-psk">PSK</button>
       </div>
 
@@ -222,15 +276,14 @@
 
       <div class="tab-panel" id="tab-9600">
         <p>
-          9600 baud G3RUH direct FSK is used for high-speed packet radio.
-          Requires a radio with a discriminator output (flat audio, no
-          de-emphasis).
+          GFSK at 9600&nbsp;baud (G3RUH-style direct FSK) for high-speed
+          packet. Requires a radio with a discriminator output.
         </p>
 
         <div class="box">
           <div class="box-body">
             <table>
-              <tr><td><code>modem_type</code></td><td><code>9600</code></td></tr>
+              <tr><td><code>modem_type</code></td><td><code>gfsk</code></td></tr>
               <tr><td><code>bit_rate</code></td><td><code>9600</code></td></tr>
             </table>
           </div>

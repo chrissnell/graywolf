@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Logs &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Logs</h1>
+    <p class="subtitle">Live and historical packet log viewer</p>
+
+    <p>
+      The Logs page is the long-form view of every packet your station
+      handles &mdash; the same stream the dashboard skims, but with
+      filters, more rows, and a CSV export. Use it when you&rsquo;re
+      hunting a specific station, debugging a digipeater rule, or
+      sanity-checking what&rsquo;s actually going out on the air.
+    </p>
+
+    <h2>Reading a row</h2>
+
+    <p>
+      Each row carries a timestamp, packet type, source &rarr;
+      destination, channel, distance from your station, and the raw
+      frame on a second line. A provenance tag tells you where the
+      packet came from:
+    </p>
+
+    <ul>
+      <li><strong>(no tag)</strong> &mdash; heard on RF.</li>
+      <li><strong>iGate RF&rarr;IS</strong> &mdash; the same packet, just after your iGate forwarded it to APRS-IS. (Direct-RF and gated-out copies sit next to each other so you can confirm the gate is actually working.)</li>
+      <li><strong>iGate IS RX</strong> &mdash; received from APRS-IS, not heard locally on the air.</li>
+      <li><strong>Beacon</strong> &mdash; transmitted by one of your own beacons.</li>
+    </ul>
+
+    <h2>Controls</h2>
+
+    <ul>
+      <li><strong>Refresh</strong> &mdash; pull the latest entries.</li>
+      <li><strong>Export CSV</strong> &mdash; download the current view for offline analysis or to attach to a bug report.</li>
+      <li>The <strong>type filter</strong> at the top narrows the table to a single packet kind (mic-e, position, weather, telemetry, object, status, third-party, message, &hellip;).</li>
+      <li>The page tails the live feed automatically; the entry count under the controls shows how many rows you&rsquo;re looking at.</li>
+    </ul>
+
+    <p>
+      Logs share the underlying packet ring buffer and WebSocket stream
+      documented on the <a href="monitoring.html">Monitoring</a> page,
+      so anything you see here is also available over the
+      <a href="api.html">REST API</a> for scripts, dashboards, or
+      external loggers.
+    </p>
+
+    <nav class="page-nav">
+      <a href="history-database.html">
+        <span class="label">Previous</span>
+        Position Log
+      </a>
+      <a href="monitoring.html" class="next">
+        <span class="label">Next</span>
+        Monitoring
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

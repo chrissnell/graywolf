@@ -26,6 +26,7 @@
       <div class="sidebar-section">Getting Started</div>
       <a href="index.html">Introduction</a>
       <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
       <div class="sidebar-section">Radio</div>
       <a href="audio.html">Audio Devices</a>
       <a href="channels.html">Radio Channels</a>
@@ -43,7 +44,10 @@
       <a href="gps.html">GPS</a>
       <div class="sidebar-section">Operations</div>
       <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
       <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
       <a href="preferences.html">Preferences</a>
       <a href="architecture.html">Architecture</a>
       <div class="sidebar-section">Reference</div>
@@ -67,6 +71,34 @@
       <img src="img/ptt.png" alt="PTT Configuration page showing a Serial RTS PTT on /dev/cu.usbserial" />
       <div class="caption">PTT configuration showing a serial RTS setup for the VHF APRS channel</div>
     </div>
+
+    <h2>Detect Devices</h2>
+
+    <p>
+      Click <strong>Detect Devices</strong> at the top of the page and
+      graywolf scans your hardware: USB audio adapters with CM108 PTT,
+      <code>/dev/gpiochip*</code> nodes on Linux, USB-serial ports, and so
+      on. Two lists come back:
+    </p>
+
+    <ul>
+      <li><strong>Recommended for PTT</strong> &mdash; the best match for
+        your hardware (e.g. an AIOC or Digirig adapter showing as
+        <em>cm108</em> on <code>/dev/hidraw1</code>). Click it to pre-fill
+        the form.</li>
+      <li><strong>Other Detected Devices</strong> &mdash; everything else
+        worth showing, with type and path. Pick one only if you know it&rsquo;s
+        right for your adapter. Some entries carry hints &mdash; for example,
+        an AIOC&rsquo;s serial port is annotated <em>Use /dev/hidraw1 for PTT
+        on this adapter; this serial port is for data</em> &mdash; so you
+        don&rsquo;t accidentally pick the wrong one.</li>
+    </ul>
+
+    <p>
+      Detection is the fastest way to set up PTT correctly. Use Add PTT
+      manually if your hardware doesn&rsquo;t enumerate the way you
+      expected.
+    </p>
 
     <h2>PTT Methods</h2>
 
@@ -258,8 +290,9 @@ ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
 
     <p>
       Select the <code>cm108</code> method and choose the detected hidraw
-      device. The default GPIO pin is 3, which is correct for nearly all
-      commercial and homebrew designs.
+      device. The GPIO pin selector is annotated for you: pin 3 (the
+      default) is the most common, pin 2 is unavailable on CM108AH/B, and
+      pins 5&ndash;8 only exist on CM109/CM119.
     </p>
 
     <div class="box">
