@@ -8,6 +8,7 @@
   import FormField from '../components/FormField.svelte';
 
   let devices = $state([]);
+  let channels = $state([]);
   let available = $state([]);
   let loadingAvail = $state(false);
   let scanLevels = $state({});
@@ -30,9 +31,12 @@
 
   onMount(() => {
     loadDevices();
+    loadChannels();
     const interval = setInterval(pollLevels, 200);
+    const channelsInterval = setInterval(loadChannels, 5000);
     return () => {
       clearInterval(interval);
+      clearInterval(channelsInterval);
       Object.values(gainTimers).forEach(clearTimeout);
     };
   });
@@ -93,6 +97,14 @@
 
   async function loadDevices() {
     devices = await api.get('/audio-devices') || [];
+  }
+
+  async function loadChannels() {
+    try {
+      channels = await api.get('/channels') || [];
+    } catch (_) {
+      channels = [];
+    }
   }
 
   async function refreshAvailable() {
@@ -229,6 +241,13 @@
   let inputDevices = $derived(devices.filter(d => d.direction === 'input'));
   let outputDevices = $derived(devices.filter(d => d.direction === 'output'));
   let configuredPaths = $derived(new Set(devices.map(d => d.device_path)));
+  // Level meters in the modem only fire for devices that a channel
+  // actively binds to. If no channel has audio assigned, the meters
+  // here will sit at -inf no matter what hardware is plugged in.
+  let hasAudioChannel = $derived(
+    channels.some(ch => ch.input_device_id != null || (ch.output_device_id ?? 0) !== 0)
+  );
+  let showNoChannelBanner = $derived(devices.length > 0 && !hasAudioChannel);
 
   function truncatePath(p, max = 40) {
     if (!p || p.length <= max) return p || '—';
@@ -247,6 +266,16 @@
   {/if}
   <Button variant="primary" onclick={openCreate}>+ Add Device</Button>
 </PageHeader>
+
+{#if showNoChannelBanner}
+  <div class="no-channel-banner" role="alert">
+    <strong>Level meters inactive:</strong>
+    no channel has an audio interface assigned, so the modem isn't
+    opening any of these devices. Create a channel on the
+    <a href="#/channels">Channels page</a> and assign input/output
+    interfaces to it, then return here to adjust levels.
+  </div>
+{/if}
 
 <!-- Station readiness -->
 <div class="readiness">
@@ -472,6 +501,22 @@
 </AlertDialog>
 
 <style>
+  .no-channel-banner {
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-warning, #d29922);
+    border-left-width: 4px;
+    border-radius: var(--radius);
+    background: var(--color-warning-muted, rgba(210, 153, 34, 0.15));
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .no-channel-banner a {
+    color: var(--accent, #58a6ff);
+    text-decoration: underline;
+  }
+
   /* Station readiness */
   .readiness {
     display: flex;
