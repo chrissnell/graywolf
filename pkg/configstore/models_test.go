@@ -70,3 +70,46 @@ func TestKissModeConstants(t *testing.T) {
 		t.Errorf("KissModeTnc = %q, want %q", KissModeTnc, "tnc")
 	}
 }
+
+// ValidChannelMode is the only gatekeeper between a user-supplied string
+// and a stored row, so its rejection behavior — including case variants
+// and surrounding whitespace — is part of the API contract.
+func TestValidChannelMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"aprs", true},
+		{"packet", true},
+		{"aprs+packet", true},
+		{"", false},
+		{"APRS", false},
+		{"Packet", false},
+		{"aprs ", false},
+		{" aprs", false},
+		{"garbage", false},
+		{"aprs+packet ", false},
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			if got := ValidChannelMode(c.in); got != c.want {
+				t.Fatalf("ValidChannelMode(%q) = %v, want %v", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestChannelModeConstants pins the string forms of Channel.Mode constants
+// so a rename fails at the test boundary rather than silently breaking
+// downstream consumers.
+func TestChannelModeConstants(t *testing.T) {
+	if ChannelModeAPRS != "aprs" {
+		t.Errorf("ChannelModeAPRS = %q, want %q", ChannelModeAPRS, "aprs")
+	}
+	if ChannelModePacket != "packet" {
+		t.Errorf("ChannelModePacket = %q, want %q", ChannelModePacket, "packet")
+	}
+	if ChannelModeAPRSPacket != "aprs+packet" {
+		t.Errorf("ChannelModeAPRSPacket = %q, want %q", ChannelModeAPRSPacket, "aprs+packet")
+	}
+}

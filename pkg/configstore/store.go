@@ -797,6 +797,13 @@ func (s *Store) DeletePttConfig(ctx context.Context, channelID uint32) error {
 // this validator walks the kiss_interfaces table and rejects the edit
 // with a clear error naming both rows when the combination is detected.
 func (s *Store) validateChannel(ctx context.Context, c *Channel, excludeID uint32) error {
+	if c.Mode == "" {
+		c.Mode = ChannelModeAPRS
+	}
+	if !ValidChannelMode(c.Mode) {
+		return fmt.Errorf("channels: invalid mode %q (want aprs|packet|aprs+packet)", c.Mode)
+	}
+
 	// Validate input device when bound. A nil InputDeviceID means
 	// "KISS-only channel" — the modem subprocess is never told about
 	// this channel, so there is no audio device to validate.
