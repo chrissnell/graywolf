@@ -6410,6 +6410,9 @@
                 "mark_freq": {
                     "type": "integer"
                 },
+                "mode": {
+                    "type": "string"
+                },
                 "modem_type": {
                     "type": "string"
                 },
@@ -6468,6 +6471,9 @@
                 },
                 "mark_freq": {
                     "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
                 },
                 "modem_type": {
                     "type": "string"

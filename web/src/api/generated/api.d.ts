@@ -1800,6 +1800,7 @@ export interface components {
             input_channel?: number;
             input_device_id?: number;
             mark_freq?: number;
+            mode?: string;
             modem_type?: string;
             name?: string;
             num_decoders?: number;
@@ -1820,6 +1821,7 @@ export interface components {
             input_channel?: number;
             input_device_id?: number;
             mark_freq?: number;
+            mode?: string;
             modem_type?: string;
             name?: string;
             num_decoders?: number;

@@ -832,6 +832,8 @@ definitions:
         type: integer
       mark_freq:
         type: integer
+      mode:
+        type: string
       modem_type:
         type: string
       name:
@@ -871,6 +873,8 @@ definitions:
         type: integer
       mark_freq:
         type: integer
+      mode:
+        type: string
       modem_type:
         type: string
       name:

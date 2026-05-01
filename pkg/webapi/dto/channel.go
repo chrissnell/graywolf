@@ -19,6 +19,7 @@ import (
 // that at write time.
 type ChannelRequest struct {
 	Name           string  `json:"name"`
+	Mode           string  `json:"mode"`
 	InputDeviceID  *uint32 `json:"input_device_id"`
 	InputChannel   uint32  `json:"input_channel"`
 	OutputDeviceID uint32  `json:"output_device_id"`
@@ -60,6 +61,9 @@ func (r ChannelRequest) Validate() error {
 		// (the client probably meant "missing, please default").
 		return fmt.Errorf("input_device_id must be null or a valid device id, not 0")
 	}
+	if r.Mode != "" && !configstore.ValidChannelMode(r.Mode) {
+		return fmt.Errorf("invalid mode %q (want aprs|packet|aprs+packet)", r.Mode)
+	}
 	if r.ModemType == "" {
 		return fmt.Errorf("modem_type is required")
 	}
@@ -70,6 +74,7 @@ func (r ChannelRequest) Validate() error {
 func (r ChannelRequest) ToModel() configstore.Channel {
 	return configstore.Channel{
 		Name:           r.Name,
+		Mode:           r.Mode,
 		InputDeviceID:  r.InputDeviceID,
 		InputChannel:   r.InputChannel,
 		OutputDeviceID: r.OutputDeviceID,
@@ -222,6 +227,7 @@ func ChannelFromModel(m configstore.Channel) ChannelResponse {
 		ID: m.ID,
 		ChannelRequest: ChannelRequest{
 			Name:           m.Name,
+			Mode:           m.Mode,
 			InputDeviceID:  m.InputDeviceID,
 			InputChannel:   m.InputChannel,
 			OutputDeviceID: m.OutputDeviceID,
