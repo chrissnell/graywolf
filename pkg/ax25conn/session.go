@@ -272,6 +272,13 @@ func (s *Session) Run(ctx context.Context) {
 // handle dispatches by current state. Returns false when the session
 // should exit.
 func (s *Session) handle(ctx context.Context, ev Event) bool {
+	// EventHeartbeat runs the housekeeping tick across all states; it
+	// is not state-dispatched. The tick re-arms itself unconditionally
+	// (see heartbeatTick).
+	if ev.Kind == EventHeartbeat {
+		s.heartbeatTick()
+		return true
+	}
 	switch s.state {
 	case StateDisconnected:
 		return s.onDisconnected(ctx, ev)

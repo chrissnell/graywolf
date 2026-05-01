@@ -15,11 +15,12 @@ func (s *Session) onDisconnected(_ context.Context, ev Event) bool {
 	case EventConnect:
 		// Equivalent of ax25_std_establish_data_link
 		// (ax25_std_subr.c:35-50): zero condition, n2count=0, TX
-		// SABM(P=1, cmd), start T1, seed RTT.
+		// SABM(P=1, cmd), start T1, start heartbeat, seed RTT.
 		s.v = vars{}
 		s.stats = LinkStats{}
 		s.sendSABM(s.cfg.Mod128)
 		s.resetT1()
+		s.hb.reset()
 		s.setState(StateAwaitingConnection)
 		return true
 	case EventFrameRX:
