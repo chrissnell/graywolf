@@ -605,3 +605,129 @@ func TestSender_LengthGate_BoundaryExactlyAtDefault_Accepted(t *testing.T) {
 		t.Errorf("submitted frames = %d, want 1 at boundary", len(got))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Packet-mode channel refusal tests
+// ---------------------------------------------------------------------------
+
+// fakeChannelModeLookup is a test double for configstore.ChannelModeLookup.
+type fakeChannelModeLookup struct {
+	modes map[uint32]string
+}
+
+func (f *fakeChannelModeLookup) ModeForChannel(_ context.Context, channelID uint32) (string, error) {
+	if m, ok := f.modes[channelID]; ok {
+		return m, nil
+	}
+	return configstore.ChannelModeAPRS, nil
+}
+
+// buildSenderWithChannelModes mirrors buildSender but injects a ChannelModeLookup.
+func buildSenderWithChannelModes(t *testing.T, policy string, rfRunning bool, modes configstore.ChannelModeLookup) *senderRig {
+	t.Helper()
+	cs, err := configstore.OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	if policy != "" {
+		prefs, err := cs.GetMessagePreferences(context.Background())
+		if err != nil {
+			t.Fatalf("GetMessagePreferences: %v", err)
+		}
+		if prefs == nil {
+			prefs = &configstore.MessagePreferences{}
+		}
+		prefs.FallbackPolicy = policy
+		if err := cs.UpsertMessagePreferences(context.Background(), prefs); err != nil {
+			t.Fatalf("UpsertMessagePreferences: %v", err)
+		}
+	}
+	store := NewStore(cs.DB())
+	sink := &configurableTxSink{}
+	igate := &fakeIGateSender{}
+	bridge := &fakeBridge{running: rfRunning}
+	clock := &fakeClock{now: time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)}
+	ring := NewLocalTxRing(16, time.Minute)
+	hub := NewEventHub(16)
+	prefObj := NewPreferences(cs)
+	if _, err := prefObj.Load(context.Background()); err != nil {
+		t.Fatalf("prefs Load: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sender, err := NewSender(SenderConfig{
+		Store:         store,
+		TxSink:        sink,
+		IGateSender:   igate,
+		Bridge:        bridge,
+		LocalTxRing:   ring,
+		Preferences:   prefObj,
+		EventHub:      hub,
+		Logger:        logger,
+		Clock:         clock,
+		TxChannel:     1,
+		IGatePasscode: "12345",
+		ChannelModes:  modes,
+	})
+	if err != nil {
+		t.Fatalf("NewSender: %v", err)
+	}
+	ch, unsub := hub.Subscribe()
+	return &senderRig{
+		sender: sender,
+		store:  store,
+		cs:     cs,
+		sink:   sink,
+		igate:  igate,
+		bridge: bridge,
+		clock:  clock,
+		ring:   ring,
+		prefs:  prefObj,
+		hub:    hub,
+		eventC: ch,
+		unsub:  unsub,
+	}
+}
+
+func TestSender_PacketModeChannel_Refuses(t *testing.T) {
+	rig := buildSenderWithChannelModes(t, FallbackPolicyRFOnly, true,
+		&fakeChannelModeLookup{modes: map[uint32]string{1: configstore.ChannelModePacket}})
+	defer rig.close()
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", "hello")
+
+	res := rig.sender.Send(context.Background(), row)
+	if res.Err == nil {
+		t.Fatal("expected error on packet-mode TX, got nil")
+	}
+	if !strings.Contains(res.Err.Error(), "packet-mode") {
+		t.Fatalf("error %q should mention packet-mode", res.Err)
+	}
+	if res.Retryable {
+		t.Fatal("packet-mode refusal must be non-retryable")
+	}
+	if got := len(rig.sink.list()); got != 0 {
+		t.Fatalf("sink got %d frames, want 0 (Submit must not run)", got)
+	}
+	// Verify FailureReason was persisted.
+	got, err := rig.store.GetByID(context.Background(), row.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !strings.Contains(got.FailureReason, "packet-mode") {
+		t.Fatalf("FailureReason %q should mention packet-mode", got.FailureReason)
+	}
+}
+
+func TestSender_AprsModeChannel_Permits(t *testing.T) {
+	rig := buildSenderWithChannelModes(t, FallbackPolicyRFOnly, true,
+		&fakeChannelModeLookup{modes: map[uint32]string{1: configstore.ChannelModeAPRS}})
+	defer rig.close()
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", "hello")
+
+	res := rig.sender.Send(context.Background(), row)
+	if res.Err != nil {
+		t.Fatalf("Send returned error on APRS-mode channel: %v", res.Err)
+	}
+	if got := len(rig.sink.list()); got != 1 {
+		t.Fatalf("sink got %d frames, want 1", got)
+	}
+}

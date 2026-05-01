@@ -697,18 +697,18 @@ func (a *App) wireMessages(ctx context.Context) error {
 		return c
 	}
 
-	// TxChannel is read from the iGate config when present so the sender
-	// picks the operator's preferred RF channel. The IGatePasscode
-	// argument to messages.NewService is kept for its read-only-IS gate
-	// semantics (empty / "-1" → disable IS fallback): we compute the
-	// passcode at wire time from the resolved station callsign via
+	// TxChannel is read from MessagesConfig so the sender picks the
+	// operator's preferred RF channel. The IGatePasscode argument to
+	// messages.NewService is kept for its read-only-IS gate semantics
+	// (empty / "-1" → disable IS fallback): we compute the passcode at
+	// wire time from the resolved station callsign via
 	// callsign.APRSPasscode. When the station callsign is unset, we pass
 	// "" so the sender treats IS as read-only; this matches the pre-
 	// centralization behaviour where an unconfigured iGate row meant
 	// an empty passcode.
 	var configuredTxCh uint32
-	if igCfg, _ := a.store.GetIGateConfig(ctx); igCfg != nil {
-		configuredTxCh = igCfg.TxChannel
+	if mc, _ := a.store.GetMessagesConfig(ctx); mc != nil {
+		configuredTxCh = mc.TxChannel
 	}
 	txChannel := a.resolveTxChannel(ctx, configuredTxCh)
 	var passcode string
@@ -736,13 +736,14 @@ func (a *App) wireMessages(ctx context.Context) error {
 		TxChannel:     txChannel,
 		TxChannelResolver: func(rctx context.Context) uint32 {
 			var configured uint32
-			if igCfg, _ := a.store.GetIGateConfig(rctx); igCfg != nil {
-				configured = igCfg.TxChannel
+			if mc, _ := a.store.GetMessagesConfig(rctx); mc != nil {
+				configured = mc.TxChannel
 			}
 			return a.resolveTxChannel(rctx, configured)
 		},
 		IGatePasscode: passcode,
 		OurCall:       ourCall,
+		ChannelModes:  a.store,
 		LocalTxRing:   a.msgLocalRing, // shared with iGate.Config.LocalOrigin
 	})
 	if err != nil {
