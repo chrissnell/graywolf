@@ -334,6 +334,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		DedupeWindow: 30 * time.Second,
 		Submit:       a.gov.Submit,
 		Logger:       a.logger,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
 		OnPacket: func(note string, fromChan, toChan uint32, f *ax25.Frame) {
 			a.metrics.DigipeaterPackets.Inc()
 			// Packet-log recording lives in the governor TX hook above;
@@ -366,11 +367,12 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- Beacon scheduler ----------------------------------------------
 	beaconSched, err := beacon.New(beacon.Options{
-		Sink:     a.gov,
-		Cache:    a.gpsCache,
-		Logger:   a.logger,
-		Observer: &beaconObserver{m: a.metrics},
-		Version:  a.cfg.Version,
+		Sink:         a.gov,
+		Cache:        a.gpsCache,
+		Logger:       a.logger,
+		Observer:     &beaconObserver{m: a.metrics},
+		Version:      a.cfg.Version,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
 	})
 	if err != nil {
 		return fmt.Errorf("beacon scheduler init: %w", err)
@@ -611,7 +613,8 @@ func (a *App) wireIGate(ctx context.Context) error {
 				a.stationCache.Update(entries)
 			}
 		},
-		IsRxHook: a.onIGateIsRxPacket,
+		IsRxHook:     a.onIGateIsRxPacket,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
 	})
 	if err != nil {
 		// Matches the old main.go behavior: init failure is logged but
