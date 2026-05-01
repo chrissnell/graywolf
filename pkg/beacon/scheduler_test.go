@@ -485,42 +485,86 @@ func TestTimeToNextSlot(t *testing.T) {
 	}
 }
 
-// TestSchedulerSkipsPacketModeBeacons verifies that a beacon fire on a
-// channel whose Mode is "packet" is silently suppressed before submission.
-func TestSchedulerSkipsPacketModeBeacons(t *testing.T) {
-	sink := testtx.NewRecorder() // not a mockSink — we expect zero submissions
-	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+// TestSchedulerChannelModeGate is a table-driven test covering all
+// combinations of the ChannelModes lookup gate:
+//   - nil lookup (no ChannelModes wired) → TX proceeds
+//   - ChannelModeAPRS → TX proceeds
+//   - ChannelModeAPRSPacket → TX proceeds
+//   - ChannelModePacket → TX suppressed + SkipObserver called
+func TestSchedulerChannelModeGate(t *testing.T) {
+	t.Parallel()
 
-	lookup := &fakeChannelModeLookup{modes: map[uint32]string{7: configstore.ChannelModePacket}}
-	s, err := New(Options{
-		Sink:         sink,
-		Logger:       logger,
-		ChannelModes: lookup,
-	})
-	if err != nil {
-		t.Fatal(err)
+	const chanID uint32 = 7
+	cases := []struct {
+		name       string
+		modes      map[uint32]string // nil = no lookup wired
+		wantTX     bool
+		wantSkip   bool
+		wantReason string
+	}{
+		{"nil_lookup_permits", nil, true, false, ""},
+		{"aprs_permits", map[uint32]string{chanID: configstore.ChannelModeAPRS}, true, false, ""},
+		{"aprs_packet_permits", map[uint32]string{chanID: configstore.ChannelModeAPRSPacket}, true, false, ""},
+		{"packet_skips", map[uint32]string{chanID: configstore.ChannelModePacket}, false, true, "packet_mode"},
 	}
 
-	cfg := Config{
-		ID:          7,
-		Type:        TypePosition,
-		Channel:     7,
-		Source:      mustAddr(t, "N0CALL-9"),
-		Dest:        mustAddr(t, "APGRWO"),
-		Slot:        -1,
-		Lat:         37.0,
-		Lon:         -122.0,
-		SymbolTable: '/',
-		SymbolCode:  '-',
-		Comment:     "packet-mode test",
-		Enabled:     true,
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sink := testtx.NewRecorder()
+			logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+			obs := &skipObserver{}
 
-	// sendBeaconWith is the shared TX path; call it directly via sendBeacon.
-	s.sendBeacon(context.Background(), cfg)
+			var lookup configstore.ChannelModeLookup
+			if tc.modes != nil {
+				lookup = &fakeChannelModeLookup{modes: tc.modes}
+			}
 
-	if n := sink.Len(); n != 0 {
-		t.Fatalf("expected 0 submissions for packet-mode channel, got %d", n)
+			s, err := New(Options{
+				Sink:         sink,
+				Logger:       logger,
+				Observer:     obs,
+				ChannelModes: lookup,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg := Config{
+				ID:          chanID,
+				Type:        TypePosition,
+				Channel:     chanID,
+				Source:      mustAddr(t, "N0CALL-9"),
+				Dest:        mustAddr(t, "APGRWO"),
+				Slot:        -1,
+				Lat:         37.0,
+				Lon:         -122.0,
+				SymbolTable: '/',
+				SymbolCode:  '-',
+				Comment:     "mode gate test",
+				Enabled:     true,
+			}
+
+			s.sendBeacon(context.Background(), cfg)
+
+			gotTX := sink.Len() == 1
+			if gotTX != tc.wantTX {
+				t.Errorf("wantTX=%v but sink.Len()=%d", tc.wantTX, sink.Len())
+			}
+
+			gotSkip := obs.skipped.Load() == 1
+			if gotSkip != tc.wantSkip {
+				t.Errorf("wantSkip=%v but skipped count=%d", tc.wantSkip, obs.skipped.Load())
+			}
+			if tc.wantSkip {
+				obs.mu.Lock()
+				reason := obs.lastSkipKey
+				obs.mu.Unlock()
+				if reason != tc.wantReason {
+					t.Errorf("skip reason: got %q, want %q", reason, tc.wantReason)
+				}
+			}
+		})
 	}
 }
 

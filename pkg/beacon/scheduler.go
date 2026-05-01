@@ -76,6 +76,8 @@ type Options struct {
 	// ChannelModes resolves Channel.Mode at TX time. Beacons whose
 	// channel is "packet" are skipped silently. Nil = treat every
 	// channel as ChannelModeAPRS (preserves pre-Phase-0 behavior).
+	// Lookup errors are silently ignored (fail-open): a DB failure
+	// does not suppress beaconing.
 	ChannelModes configstore.ChannelModeLookup
 }
 
@@ -356,15 +358,18 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 // sendBeaconWith is the shared implementation for sendBeacon and
 // sendBeaconImmediate.
 func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool) {
+	name := beaconName(b)
 	if s.channelModes != nil {
 		mode, _ := s.channelModes.ModeForChannel(ctx, b.Channel)
 		if mode == configstore.ChannelModePacket {
 			s.logger.Debug("beacon skipped: channel mode is packet",
 				"id", b.ID, "channel", b.Channel)
+			if so, ok := s.observer.(SkipObserver); ok && so != nil {
+				so.OnBeaconSkipped(name, "packet_mode")
+			}
 			return
 		}
 	}
-	name := beaconName(b)
 	info, err := s.buildInfo(ctx, b)
 	if err != nil {
 		// Build errors (comment_cmd missing required GPS, bad PHG, etc.)
