@@ -117,13 +117,11 @@ type Config struct {
 	// TxChannel is the radio channel IS->RF frames are submitted on.
 	TxChannel uint32
 	// ChannelModes resolves Channel.Mode at TX time. When the iGate's
-	// configured TxChannel is "packet"-mode, IS->RF gating is suppressed
-	// and a Warn is logged. ResolveTxChannel computes a fall-back channel
-	// for callers that have a candidate list (the wiring layer in
-	// pkg/app uses this on reload). Nil = treat every channel as
-	// ChannelModeAPRS (preserves pre-Phase-0 behavior). Lookup errors
-	// are silently ignored (fail-open at the resolver, fail-closed at
-	// the IS->RF gate -- see the runtime check at the gate point).
+	// configured TxChannel is "packet"-mode, the IS->RF runtime gate
+	// drops the frame and logs a Warn (see handleISLine). Nil = treat
+	// every channel as ChannelModeAPRS (preserves pre-Phase-0
+	// behavior). Lookup errors are treated as APRS-mode at the gate
+	// point (fail-open).
 	ChannelModes configstore.ChannelModeLookup
 	// Governor is the TX governor for IS->RF submissions. Required for
 	// downlink; leave nil for IS->RF=disabled. Declared as the
@@ -162,28 +160,6 @@ type Config struct {
 	SuppressLocalMessageReGate bool
 	// now is an optional clock for tests.
 	now func() time.Time
-}
-
-// ResolveTxChannel returns cfg.TxChannel when its mode is aprs or
-// aprs+packet. When the configured channel is packet-mode, the
-// resolver picks the first channel in candidates whose mode is
-// aprs/aprs+packet. Returns 0 when no eligible channel exists
-// (caller must guard against this).
-func (cfg *Config) ResolveTxChannel(ctx context.Context, candidates []uint32) uint32 {
-	if cfg.ChannelModes == nil {
-		return cfg.TxChannel
-	}
-	mode, _ := cfg.ChannelModes.ModeForChannel(ctx, cfg.TxChannel)
-	if mode != configstore.ChannelModePacket {
-		return cfg.TxChannel
-	}
-	for _, c := range candidates {
-		m, _ := cfg.ChannelModes.ModeForChannel(ctx, c)
-		if m == configstore.ChannelModeAPRS || m == configstore.ChannelModeAPRSPacket {
-			return c
-		}
-	}
-	return 0
 }
 
 // Status is the current state exposed via the REST endpoint.

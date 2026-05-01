@@ -2,6 +2,7 @@ package configstore
 
 import (
 	"fmt"
+	"log/slog"
 
 	"gorm.io/gorm"
 )
@@ -41,7 +42,8 @@ func migrateMessagesConfigCopyFromIgate(tx *gorm.DB) error {
 		// Column removed by a later migration without first deleting
 		// this one. Loud-log so operators notice the lost setting
 		// rather than silently defaulting to 0.
-		fmt.Printf("WARN: migrate_messages_config: i_gate_configs.tx_channel absent; seeding messages_configs.tx_channel=0. Operators must reselect TX channel under Messages preferences.\n")
+		slog.Default().Warn("migrate_messages_config: i_gate_configs.tx_channel absent; seeding messages_configs.tx_channel=0",
+			"action", "operator must reselect TX channel under Messages preferences")
 	}
 	if err := tx.Exec(
 		`INSERT INTO messages_configs (id, tx_channel, created_at, updated_at)

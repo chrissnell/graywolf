@@ -249,6 +249,11 @@ func (s *Sender) Send(ctx context.Context, row *configstore.Message) SendResult 
 // sendRF attempts an RF submission. If allowFallback is true and the
 // RF path is unavailable (or the governor rejects synchronously), the
 // caller upgrades to IS; otherwise this is a single-shot RF attempt.
+//
+// Precedence: length cap (caller) -> packet-mode refusal (here) -> RF
+// availability -> governor submit. The packet-mode refusal must come
+// before the rfAvailable check because a misconfigured TxChannel is an
+// operator error that shouldn't be hidden by a transient bridge stop.
 func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailable, allowFallback bool) SendResult {
 	if s.cfg.ChannelModes != nil {
 		mode, _ := s.cfg.ChannelModes.ModeForChannel(ctx, s.txChannel.Load())

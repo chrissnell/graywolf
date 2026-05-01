@@ -70,5 +70,13 @@ func (s *Server) putMessagesConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.signalMessagesReload()
-	writeJSON(w, http.StatusOK, in)
+	// Re-fetch the persisted row rather than echoing the request body,
+	// so the response always reflects what the store stored (timestamps,
+	// any future server-side normalization).
+	persisted, err := s.store.GetMessagesConfig(r.Context())
+	if err != nil {
+		s.internalError(w, r, "re-fetch messages config", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto.MessagesConfig{TxChannel: persisted.TxChannel})
 }
