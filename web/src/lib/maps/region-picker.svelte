@@ -70,9 +70,9 @@
     {:else}
       <ul class="region-list" role="list">
         {#each filteredTree as country (country.iso2)}
+          {@const cItem = statusOf(country.slug)}
+          {@const cStatus = cItem?.state ?? 'absent'}
           <li class="region-country">
-            {@const cItem = statusOf(country.slug)}
-            {@const cStatus = cItem?.state ?? 'absent'}
             <div class="region-row" data-level="country">
               <button
                 class="region-toggle"
