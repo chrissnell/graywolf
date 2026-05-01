@@ -1,7 +1,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -48,9 +47,9 @@ func (s *Server) getMessagesConfig(w http.ResponseWriter, r *http.Request) {
 // @Security CookieAuth
 // @Router   /messages/config [put]
 func (s *Server) putMessagesConfig(w http.ResponseWriter, r *http.Request) {
-	var in dto.MessagesConfig
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		badRequest(w, "invalid JSON")
+	in, err := decodeJSON[dto.MessagesConfig](r)
+	if err != nil {
+		badRequest(w, err.Error())
 		return
 	}
 	if in.TxChannel != 0 {

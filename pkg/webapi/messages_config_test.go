@@ -68,6 +68,18 @@ func TestPutMessagesConfig_RejectsPacketModeChannel(t *testing.T) {
 	}
 }
 
+func TestPutMessagesConfig_RejectsUnknownFields(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	body := bytes.NewBufferString(`{"tx_channel":1,"typo":true}`)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/messages/config", body))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", rec.Code, rec.Body.String())
+	}
+}
+
 // TestPutMessagesConfig_AcceptsAprsModeChannel — sanity check: a normal channel works.
 func TestPutMessagesConfig_AcceptsAprsModeChannel(t *testing.T) {
 	srv, _ := newTestServer(t)
