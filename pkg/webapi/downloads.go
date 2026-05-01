@@ -16,14 +16,27 @@ func (s *Server) registerDownloads(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/maps/downloads/{slug...}", s.deleteDownload)
 }
 
-// resolveSlug parses the URL path's slug, fetches the live catalog,
-// and confirms the slug names a published archive. Returns
-// (slug, ok). On rejection writes the appropriate HTTP error and
-// returns ok=false.
-func (s *Server) resolveSlug(w http.ResponseWriter, r *http.Request) (string, bool) {
+// validSlugGrammar pulls slug from the URL path and confirms it parses.
+// Used by handlers that only need the grammar check (e.g. tile-serving,
+// where the file-existence test is the closed set). Returns "" with an
+// HTTP 400 already written when the slug is bad.
+func (s *Server) validSlugGrammar(w http.ResponseWriter, r *http.Request) (string, bool) {
 	slug := r.PathValue("slug")
 	if _, _, _, ok := parseSlug(slug); !ok {
 		badRequest(w, "invalid slug")
+		return "", false
+	}
+	return slug, true
+}
+
+// resolveSlug parses the URL path's slug, fetches the live catalog,
+// and confirms the slug names a published archive. Used by handlers
+// that mutate state (start/delete) or report status against the
+// catalog. Tile-serving uses validSlugGrammar instead so a Worker
+// outage does not brick already-downloaded archives.
+func (s *Server) resolveSlug(w http.ResponseWriter, r *http.Request) (string, bool) {
+	slug, ok := s.validSlugGrammar(w, r)
+	if !ok {
 		return "", false
 	}
 	if s.catalog == nil {
@@ -46,8 +59,14 @@ func (s *Server) resolveSlug(w http.ResponseWriter, r *http.Request) (string, bo
 // pkg/app/wiring.go because it lives at /tiles/..., outside /api/...
 // http.ServeFile honors the Range header natively, which PMTiles
 // relies on for efficient sub-range fetches of the index + tile blobs.
+//
+// Catalog membership is intentionally NOT checked here: the slug
+// grammar plus a successful filesystem lookup form the closed set.
+// Otherwise an outage of the maps Worker (catalog endpoint) would
+// brick already-downloaded local archives, which is a regression vs.
+// the previous static-allowlist design.
 func (s *Server) ServeTilesPMTiles(w http.ResponseWriter, r *http.Request) {
-	slug, ok := s.resolveSlug(w, r)
+	slug, ok := s.validSlugGrammar(w, r)
 	if !ok {
 		return
 	}
