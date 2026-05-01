@@ -23,16 +23,22 @@ func writeAtomic(finalPath string, r io.Reader, onProgress func(int64)) (int64, 
 	if err != nil {
 		return 0, fmt.Errorf("open tmp: %w", err)
 	}
-	defer f.Close()
 
 	written, err := copyWithProgress(f, r, onProgress)
 	if err != nil {
+		_ = f.Close()
 		_ = os.Remove(tmp)
 		return written, err
 	}
 	if err := f.Sync(); err != nil {
+		_ = f.Close()
 		_ = os.Remove(tmp)
 		return written, fmt.Errorf("fsync: %w", err)
+	}
+	// Must close before rename: Windows refuses to rename an open file.
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return written, fmt.Errorf("close tmp: %w", err)
 	}
 	if err := os.Rename(tmp, finalPath); err != nil {
 		_ = os.Remove(tmp)
