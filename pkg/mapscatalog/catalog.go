@@ -51,6 +51,57 @@ type Catalog struct {
 	Countries     []Country  `json:"countries"`
 	Provinces     []Province `json:"provinces"`
 	States        []State    `json:"states"`
+
+	// slugIndex is a lazily-built O(1) membership lookup populated by
+	// indexSlugs. Not serialized; rebuilt on every fresh fetch.
+	slugIndex map[string]struct{} `json:"-"`
+}
+
+// HasSlug reports whether slug names a published archive in this
+// catalog. Slugs are namespaced ("state/colorado", "country/de",
+// "province/ca/british-columbia"). O(1) when the index is populated
+// (every catalog returned by Cache.Get is); falls back to a linear
+// scan for hand-constructed Catalog values where indexSlugs has not
+// run.
+func (c *Catalog) HasSlug(slug string) bool {
+	if c.slugIndex != nil {
+		_, ok := c.slugIndex[slug]
+		return ok
+	}
+	// Fallback for callers that hand-construct a Catalog (tests,
+	// fakes). Production paths build the index in Cache.fetch.
+	for _, s := range c.States {
+		if "state/"+s.Slug == slug {
+			return true
+		}
+	}
+	for _, x := range c.Countries {
+		if "country/"+x.ISO2 == slug {
+			return true
+		}
+	}
+	for _, p := range c.Provinces {
+		if "province/"+p.ISO2+"/"+p.Slug == slug {
+			return true
+		}
+	}
+	return false
+}
+
+// indexSlugs (re)builds the slugIndex from the entry slices. Called
+// after every successful fetch.
+func (c *Catalog) indexSlugs() {
+	idx := make(map[string]struct{}, len(c.Countries)+len(c.Provinces)+len(c.States))
+	for _, s := range c.States {
+		idx["state/"+s.Slug] = struct{}{}
+	}
+	for _, x := range c.Countries {
+		idx["country/"+x.ISO2] = struct{}{}
+	}
+	for _, p := range c.Provinces {
+		idx["province/"+p.ISO2+"/"+p.Slug] = struct{}{}
+	}
+	c.slugIndex = idx
 }
 
 // Cache fetches and caches the worker catalog.
@@ -63,6 +114,11 @@ type Cache struct {
 	mu        sync.Mutex
 	cached    *Catalog
 	fetchedAt time.Time
+
+	// inflight is set while a Get-driven fetch is in progress so
+	// concurrent first-callers wait on a single upstream call instead
+	// of each issuing their own. Closed when the fetch completes.
+	inflight chan struct{}
 }
 
 // New constructs a Cache. baseURL is the maps host root (e.g.
@@ -79,32 +135,58 @@ func New(baseURL string, tokenProvider func(context.Context) string, ttl time.Du
 }
 
 // Get returns the current catalog. Fresh fetch on miss or expired TTL.
-// Stale-on-error after the first successful fetch.
+// Stale-on-error after the first successful fetch. Concurrent callers
+// who arrive while a fetch is in flight share the result rather than
+// issuing duplicate upstream calls.
 func (c *Cache) Get(ctx context.Context) (Catalog, error) {
-	c.mu.Lock()
-	if c.cached != nil && c.ttl > 0 && time.Since(c.fetchedAt) < c.ttl {
-		out := *c.cached
-		c.mu.Unlock()
-		return out, nil
-	}
-	c.mu.Unlock()
-
-	fresh, err := c.fetch(ctx)
-	if err != nil {
+	for {
 		c.mu.Lock()
+		// Fast path: fresh cached copy.
+		if c.cached != nil && c.ttl > 0 && time.Since(c.fetchedAt) < c.ttl {
+			out := *c.cached
+			c.mu.Unlock()
+			return out, nil
+		}
+		// Another goroutine is already fetching; wait for it.
+		if ch := c.inflight; ch != nil {
+			c.mu.Unlock()
+			select {
+			case <-ch:
+			case <-ctx.Done():
+				return Catalog{}, ctx.Err()
+			}
+			// Loop: re-check the cache. If the leader succeeded the
+			// fast-path returns; if it failed and we have stale data,
+			// the stale-on-error branch below returns it; otherwise we
+			// take a turn as the leader on the next iteration.
+			continue
+		}
+		// We're the leader: install our channel and fetch.
+		ch := make(chan struct{})
+		c.inflight = ch
+		c.mu.Unlock()
+
+		fresh, err := c.fetch(ctx)
+
+		c.mu.Lock()
+		if err == nil {
+			c.cached = &fresh
+			c.fetchedAt = time.Now()
+		}
+		c.inflight = nil
 		stale := c.cached
 		c.mu.Unlock()
-		if stale != nil {
-			slog.Warn("mapscatalog refresh failed, serving stale", "err", err)
-			return *stale, nil
+		close(ch)
+
+		if err != nil {
+			if stale != nil && err != ctx.Err() {
+				slog.Warn("mapscatalog refresh failed, serving stale", "err", err)
+				return *stale, nil
+			}
+			return Catalog{}, err
 		}
-		return Catalog{}, err
+		return fresh, nil
 	}
-	c.mu.Lock()
-	c.cached = &fresh
-	c.fetchedAt = time.Now()
-	c.mu.Unlock()
-	return fresh, nil
 }
 
 // Refresh forces a fetch and updates the cache. Returns the new
@@ -152,5 +234,6 @@ func (c *Cache) fetch(ctx context.Context) (Catalog, error) {
 	if out.SchemaVersion != 1 {
 		return Catalog{}, errors.New("unsupported manifest schemaVersion")
 	}
+	out.indexSlugs()
 	return out, nil
 }
