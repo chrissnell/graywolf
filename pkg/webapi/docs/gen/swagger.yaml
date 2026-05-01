@@ -687,6 +687,76 @@ definitions:
         description: '"sent"'
         type: string
     type: object
+  dto.Catalog:
+    properties:
+      countries:
+        items:
+          $ref: '#/definitions/dto.CatalogCountry'
+        type: array
+      generatedAt:
+        type: string
+      provinces:
+        items:
+          $ref: '#/definitions/dto.CatalogProvince'
+        type: array
+      schemaVersion:
+        type: integer
+      states:
+        items:
+          $ref: '#/definitions/dto.CatalogState'
+        type: array
+    type: object
+  dto.CatalogCountry:
+    properties:
+      bbox:
+        items:
+          type: number
+        type: array
+      iso2:
+        type: string
+      name:
+        type: string
+      sha256:
+        type: string
+      sizeBytes:
+        type: integer
+    type: object
+  dto.CatalogProvince:
+    properties:
+      bbox:
+        items:
+          type: number
+        type: array
+      code:
+        type: string
+      iso2:
+        type: string
+      name:
+        type: string
+      sha256:
+        type: string
+      sizeBytes:
+        type: integer
+      slug:
+        type: string
+    type: object
+  dto.CatalogState:
+    properties:
+      bbox:
+        items:
+          type: number
+        type: array
+      code:
+        type: string
+      name:
+        type: string
+      sha256:
+        type: string
+      sizeBytes:
+        type: integer
+      slug:
+        type: string
+    type: object
   dto.ChannelBacking:
     properties:
       health:
@@ -3800,6 +3870,29 @@ paths:
       summary: Reconnect a KISS tcp-client interface now
       tags:
         - kiss
+  /maps/catalog:
+    get:
+      operationId: getMapsCatalog
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Catalog'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get the offline-maps download catalog
+      tags:
+        - maps
   /maps/downloads:
     get:
       operationId: listMapsDownloads

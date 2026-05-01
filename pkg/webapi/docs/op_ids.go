@@ -318,4 +318,5 @@ const (
 	OpGetMapsDownloadStatus = "getMapsDownloadStatus"
 	OpStartMapsDownload     = "startMapsDownload"
 	OpDeleteMapsDownload    = "deleteMapsDownload"
+	OpGetMapsCatalog        = "getMapsCatalog"
 )
