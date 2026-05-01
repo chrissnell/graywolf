@@ -446,7 +446,7 @@
             {:else if ch.mode === 'aprs+packet'}
               <Badge variant="info">APRS + Packet</Badge>
             {:else}
-              <Badge variant="default">APRS</Badge>
+              <Badge variant="info">APRS</Badge>
             {/if}
           </div>
         </div>
@@ -569,7 +569,7 @@
 
   <FormField
     label="Mode"
-    hint="Controls which subsystems may transmit on this channel."
+    hint="APRS only: beacon, digipeater, iGate, and messages may transmit. Packet only: AX.25 connected-mode terminal sessions only; APRS subsystems are blocked. APRS + Packet: both, on a shared channel."
     id="ch-mode"
   >
     <Select

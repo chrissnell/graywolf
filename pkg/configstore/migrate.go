@@ -119,8 +119,11 @@ type migration struct {
 //	    See .context/2026-04-21-centralized-station-callsign.md §D4.
 //	12 — channels_mode: add the channels.mode column (default 'aprs')
 //	    so per-channel TX gating (beacon/digi/igate/messages) can route
-//	    on the new enum without breaking pre-Phase-0 databases. Runs
-//	    post-AutoMigrate (after v11) so the version gate is respected.
+//	    on the new enum without breaking pre-Phase-0 databases. Runs in
+//	    the post-AutoMigrate phase so AutoMigrate has already created
+//	    (or verified) the channels table; on fresh installs AutoMigrate
+//	    adds the column from the Go struct and this migration is a
+//	    no-op via the columnExists guard.
 //	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §0.2.
 //	13 — messages_config_singleton: create messages_configs (id=1) and
 //	    seed TxChannel from the legacy IGateConfig.TxChannel value once.

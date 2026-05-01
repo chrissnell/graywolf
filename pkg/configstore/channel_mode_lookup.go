@@ -1,6 +1,9 @@
 package configstore
 
-import "context"
+import (
+	"context"
+	"log/slog"
+)
 
 // ChannelModeLookup is the small read-only surface the TX-gating
 // subsystems (beacon, digipeater, igate, messages, ax25conn) consume
@@ -17,6 +20,11 @@ type ChannelModeLookup interface {
 // always carry a non-empty Mode (validateChannel normalizes empty to
 // ChannelModeAPRS), so the empty-string branch is solely a missing-row
 // guard.
+//
+// Missing-row hits emit a debug log so operators investigating why a
+// downstream subsystem (e.g. ax25conn refusing to bind) believes a
+// channel is APRS-only can correlate against an actually-deleted
+// channel ID without re-deriving the lookup path.
 func (s *Store) ModeForChannel(ctx context.Context, channelID uint32) (string, error) {
 	if channelID == 0 {
 		return ChannelModeAPRS, nil
@@ -32,6 +40,8 @@ func (s *Store) ModeForChannel(ctx context.Context, channelID uint32) (string, e
 		return "", err
 	}
 	if mode == "" {
+		slog.Default().Debug("ModeForChannel: missing row, defaulting to APRS",
+			"channel_id", channelID)
 		return ChannelModeAPRS, nil
 	}
 	return mode, nil

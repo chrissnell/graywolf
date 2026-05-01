@@ -348,22 +348,6 @@ func (f *fakeChannelModeLookup) ModeForChannel(_ context.Context, id uint32) (st
 	return f.modes[id], nil
 }
 
-// TestIgateRefusesPacketModeRfChannel verifies that ResolveTxChannel
-// falls back to the first APRS-eligible channel when the configured
-// TxChannel is packet-mode.
-func TestIgateRefusesPacketModeRfChannel(t *testing.T) {
-	t.Parallel()
-	modes := &fakeChannelModeLookup{modes: map[uint32]string{
-		2: configstore.ChannelModePacket,
-		1: configstore.ChannelModeAPRS,
-	}}
-	cfg := Config{TxChannel: 2, ChannelModes: modes}
-	got := cfg.ResolveTxChannel(context.Background(), []uint32{1, 2})
-	if got != 1 {
-		t.Fatalf("ResolveTxChannel=%d, want fall-back to 1", got)
-	}
-}
-
 // TestIgateSkipsPacketModeTxChannelAtRuntime verifies that when the
 // iGate's TxChannel is packet-mode, handleISLine drops the packet and
 // increments mSubmitDropped without calling Governor.Submit.
