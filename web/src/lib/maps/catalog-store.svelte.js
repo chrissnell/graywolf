@@ -11,9 +11,13 @@ export const catalogStore = (() => {
   let error = $state(null);
   let inflight = null;
 
+  // Force a fresh fetch on the next load() call. Used by retry().
+  let invalidateOnNextLoad = false;
+
   async function load() {
-    if (catalog) return catalog;
+    if (catalog && !invalidateOnNextLoad) return catalog;
     if (inflight) return inflight;
+    invalidateOnNextLoad = false;
     loading = true;
     error = null;
     inflight = (async () => {
@@ -45,6 +49,13 @@ export const catalogStore = (() => {
     return inflight;
   }
 
+  // retry forces a fresh fetch even if a prior failure left no
+  // catalog. Called by the region-picker's "Try again" button.
+  function retry() {
+    invalidateOnNextLoad = true;
+    return load();
+  }
+
   function namespacedStateSlug(slug)    { return `state/${slug}`; }
   function namespacedCountrySlug(iso2)  { return `country/${iso2}`; }
   function namespacedProvinceSlug(iso2, slug) { return `province/${iso2}/${slug}`; }
@@ -54,6 +65,7 @@ export const catalogStore = (() => {
     get loading() { return loading; },
     get error() { return error; },
     load,
+    retry,
 
     // Returns Map<namespacedSlug, [west, south, east, north]>.
     get boundsBySlug() {
