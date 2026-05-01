@@ -58,7 +58,7 @@ func (c *SessionConfig) applyDefaults() {
 			c.Window = DefaultWindowMod8
 		}
 	}
-	if c.Backoff == 0 {
+	if c.Backoff == backoffUnset {
 		c.Backoff = DefaultBackoff
 	}
 	if c.Clock == nil {
@@ -126,6 +126,78 @@ func (s *Session) modulus() int {
 		return 128
 	}
 	return 8
+}
+
+// nextT1 returns the T1 duration to set on the next reset. Mirrors
+// ax25_calculate_t1 in net/ax25/ax25_subr.c:220-258. The kernel
+// scales a measured-and-clamped RTT by a backoff factor that grows
+// with N2Count.
+func (s *Session) nextT1() time.Duration {
+	rtt := s.v.RTT
+	if rtt == 0 {
+		rtt = s.cfg.T1 / 2
+	}
+	if rtt < RTTClampLo {
+		rtt = RTTClampLo
+	}
+	if rtt > RTTClampHi {
+		rtt = RTTClampHi
+	}
+	switch s.cfg.Backoff {
+	case BackoffNone:
+		return 2 * rtt
+	case BackoffExponential:
+		shift := uint(s.v.N2Count)
+		// Cap shift to avoid overflow at large N2; even N2=20 already
+		// hits the 8x ceiling below. 30 covers any future expansion.
+		if shift > 30 {
+			shift = 30
+		}
+		d := time.Duration(1<<shift) * 2 * rtt
+		if d > 8*rtt {
+			d = 8 * rtt
+		}
+		if d < 2*rtt {
+			d = 2 * rtt
+		}
+		return d
+	case BackoffLinear:
+		fallthrough
+	default:
+		return time.Duration(2+2*s.v.N2Count) * rtt
+	}
+}
+
+// resetT1 stamps the start time and arms T1 with the backoff-adjusted
+// duration. State handlers should call this rather than t1.reset()
+// directly so RTT measurement remains accurate.
+func (s *Session) resetT1() {
+	s.v.T1Started = s.cfg.Clock.Now()
+	s.t1.resetTo(s.nextT1())
+}
+
+// calcRTT folds the latest T1 measurement into the RTT EWMA per
+// ax25_calculate_rtt (net/ax25/ax25_subr.c:220-258). Sampled only on
+// first-shot success (n2count==0); retransmits don't poison the
+// estimate.
+func (s *Session) calcRTT() {
+	if s.v.N2Count != 0 || s.v.T1Started.IsZero() {
+		return
+	}
+	measured := s.cfg.Clock.Now().Sub(s.v.T1Started)
+	if measured < 0 {
+		return
+	}
+	if s.v.RTT == 0 {
+		s.v.RTT = s.cfg.T1 / 2
+	}
+	s.v.RTT = (9*s.v.RTT + measured) / 10
+	if s.v.RTT < RTTClampLo {
+		s.v.RTT = RTTClampLo
+	}
+	if s.v.RTT > RTTClampHi {
+		s.v.RTT = RTTClampHi
+	}
 }
 
 // Submit places an event into the input queue.

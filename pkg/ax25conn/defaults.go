@@ -40,13 +40,16 @@ const (
 )
 
 // Backoff selects the T1-on-retry growth strategy. Kernel default is
-// BackoffLinear (AX25_DEF_BACKOFF=1).
+// linear backoff (AX25_DEF_BACKOFF=1, kernel constant naming differs).
+// Value 0 is reserved for "unset" so applyDefaults can promote it to
+// DefaultBackoff without mistakenly overwriting an explicit BackoffNone.
 type Backoff uint8
 
 const (
-	BackoffNone        Backoff = 0 // T1 = 2 * RTT regardless of retries
-	BackoffLinear      Backoff = 1 // T1 = (2 + 2*n2count) * RTT
-	BackoffExponential Backoff = 2 // T1 = (2 << n2count) * RTT, capped at 8 * RTT
+	backoffUnset       Backoff = 0
+	BackoffNone        Backoff = 1 // T1 = 2 * RTT regardless of retries
+	BackoffLinear      Backoff = 2 // T1 = (2 + 2*n2count) * RTT
+	BackoffExponential Backoff = 3 // T1 = (2 << n2count) * RTT, capped at 8 * RTT
 )
 
 const DefaultBackoff = BackoffLinear
