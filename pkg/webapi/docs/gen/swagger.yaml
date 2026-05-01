@@ -3922,7 +3922,7 @@ paths:
     delete:
       operationId: deleteMapsDownload
       parameters:
-        - description: state slug
+        - description: namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>)
           in: path
           name: slug
           required: true
@@ -3944,13 +3944,13 @@ paths:
             $ref: '#/definitions/webtypes.ErrorResponse'
       security:
         - CookieAuth: []
-      summary: Delete an offline download for a state
+      summary: Delete an offline download
       tags:
         - maps
     get:
       operationId: getMapsDownloadStatus
       parameters:
-        - description: state slug
+        - description: namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>)
           in: path
           name: slug
           required: true
@@ -3982,7 +3982,7 @@ paths:
     post:
       operationId: startMapsDownload
       parameters:
-        - description: state slug
+        - description: namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>)
           in: path
           name: slug
           required: true
@@ -4012,7 +4012,7 @@ paths:
             $ref: '#/definitions/webtypes.ErrorResponse'
       security:
         - CookieAuth: []
-      summary: Start an offline download for a state
+      summary: Start an offline download
       tags:
         - maps
   /messages:

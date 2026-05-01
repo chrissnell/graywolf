@@ -621,9 +621,9 @@ export interface paths {
         /** Get one download's status */
         get: operations["getMapsDownloadStatus"];
         put?: never;
-        /** Start an offline download for a state */
+        /** Start an offline download */
         post: operations["startMapsDownload"];
-        /** Delete an offline download for a state */
+        /** Delete an offline download */
         delete: operations["deleteMapsDownload"];
         options?: never;
         head?: never;
@@ -4910,7 +4910,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description state slug */
+                /** @description namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>) */
                 slug: string;
             };
             cookie?: never;
@@ -4960,7 +4960,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description state slug */
+                /** @description namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>) */
                 slug: string;
             };
             cookie?: never;
@@ -5019,7 +5019,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description state slug */
+                /** @description namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>) */
                 slug: string;
             };
             cookie?: never;
