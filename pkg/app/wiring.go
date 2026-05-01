@@ -604,8 +604,10 @@ func (a *App) wireIGate(ctx context.Context) error {
 				Decoded:   pkt,
 				Notes:     "rf2is",
 			})
-			// RF-heard station uploaded to IS — cache as via=rf.
-			if entries := stationcache.ExtractEntry(pkt, "igate", "IS", uint32(pkt.Channel)); len(entries) > 0 {
+			// RF-heard station uploaded to IS — cache as via=rf,
+			// direction=RX (we heard them on the air, even though we
+			// also forwarded the packet onto APRS-IS).
+			if entries := stationcache.ExtractEntry(pkt, "igate", "RX", uint32(pkt.Channel)); len(entries) > 0 {
 				a.stationCache.Update(entries)
 			}
 		},
@@ -648,7 +650,9 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 		Decoded:   pkt,
 		Notes:     "is-rx",
 	})
-	if entries := stationcache.ExtractEntry(pkt, "igate-is", "RX", uint32(pkt.Channel)); len(entries) > 0 {
+	// IS-received packet — cache as via=is, direction=IS so the map can
+	// distinguish APRS-IS arrivals from RF receptions.
+	if entries := stationcache.ExtractEntry(pkt, "igate-is", "IS", uint32(pkt.Channel)); len(entries) > 0 {
 		a.stationCache.Update(entries)
 	}
 	if a.msgSvc != nil {

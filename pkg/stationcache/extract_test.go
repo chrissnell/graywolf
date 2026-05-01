@@ -198,7 +198,7 @@ func TestExtractEntry_ThirdPartyUnwrap(t *testing.T) {
 		Timestamp:  time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC),
 	}
 
-	entries := ExtractEntry(pkt, "igate-is", "RX", 0)
+	entries := ExtractEntry(pkt, "igate-is", "IS", 0)
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
