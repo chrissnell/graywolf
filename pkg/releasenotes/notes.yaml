@@ -7,6 +7,17 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.12.2"
+  date: "2026-04-30"
+  style: info
+  schema_version: 1
+  title: "Windows: PTT works on COM10 and above"
+  body: |
+    On Windows, picking a serial PTT port numbered COM10 or higher
+    (for example COM12) used to fail with "the system cannot find
+    the file specified". Those ports now key the radio normally.
+    Nothing to reconfigure.
+
 - version: "0.12.1"
   date: "2026-04-30"
   style: info
