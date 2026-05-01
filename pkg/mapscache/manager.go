@@ -328,6 +328,48 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 	})
 }
 
+// MigrateLegacyArchives moves legacy bare-slug files
+// (<cache>/colorado.pmtiles) into the new namespaced state subdir
+// (<cache>/state/colorado.pmtiles). Idempotent: skips files already
+// in subdirs and skips non-pmtiles files. Designed to run once on
+// startup; safe to re-run.
+func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
+	_ = ctx
+	if m.cacheDir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(m.cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	stateDir := filepath.Join(m.cacheDir, "state")
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".pmtiles") {
+			continue
+		}
+		slug := strings.TrimSuffix(name, ".pmtiles")
+		if !reSlugLeaf.MatchString(slug) {
+			continue
+		}
+		if err := os.MkdirAll(stateDir, 0o755); err != nil {
+			return err
+		}
+		oldPath := filepath.Join(m.cacheDir, name)
+		newPath := filepath.Join(stateDir, name)
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return fmt.Errorf("migrate %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func (m *Manager) fail(ctx context.Context, slug string, err error) {
 	_ = m.store.UpsertMapsDownload(ctx, configstore.MapsDownload{
 		Slug: slug, Status: "error", ErrorMessage: err.Error(),

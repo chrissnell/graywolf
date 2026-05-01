@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -252,6 +253,39 @@ func TestURLForSlug_RejectsBad(t *testing.T) {
 	}
 	if _, err := m.urlForSlug("country/cn", ""); err == nil {
 		t.Fatal("expected error for forbidden country")
+	}
+}
+
+func TestMigrateLegacyArchives(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"colorado.pmtiles", "wyoming.pmtiles"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "country"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "country", "de.pmtiles"), []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manager{cacheDir: dir}
+	if err := m.MigrateLegacyArchives(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, slug := range []string{"colorado", "wyoming"} {
+		newPath := filepath.Join(dir, "state", slug+".pmtiles")
+		if _, err := os.Stat(newPath); err != nil {
+			t.Errorf("expected %s to exist: %v", newPath, err)
+		}
+		oldPath := filepath.Join(dir, slug+".pmtiles")
+		if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be gone, err=%v", oldPath, err)
+		}
+	}
+	if err := m.MigrateLegacyArchives(context.Background()); err != nil {
+		t.Fatalf("second run: %v", err)
 	}
 }
 

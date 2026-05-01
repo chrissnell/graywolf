@@ -44,6 +44,13 @@ func (s *Store) GetMapsDownload(ctx context.Context, slug string) (MapsDownload,
 // (uniqueIndex on the model); a second call with the same slug
 // updates in place rather than inserting a duplicate. Status must be
 // one of the four documented values; the slug must be non-empty.
+//
+// Slug format is namespaced: state/<slug>, country/<iso2>, or
+// province/<iso2>/<slug>. Legacy bare-slug rows (e.g. "colorado")
+// from pre-namespaced installs are migrated in place at startup by
+// MigrateMapsDownloadSlugs. The store layer does not enforce the
+// grammar -- the webapi layer validates against the live catalog
+// before any write reaches here.
 func (s *Store) UpsertMapsDownload(ctx context.Context, d MapsDownload) error {
 	if !validDownloadStatuses[d.Status] {
 		return fmt.Errorf("invalid status %q", d.Status)
