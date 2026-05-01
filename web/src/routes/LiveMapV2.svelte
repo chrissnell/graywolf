@@ -20,9 +20,10 @@
   import { toMaidenhead } from '../lib/map/maidenhead.js';
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
 
-  // 9-entry list. Values are seconds (data store wants ms; multiplied at
-  // dispatch). Extends the legacy 6-option dropdown with 2/4/7-day entries.
+  // Values are seconds (data store wants ms; multiplied at dispatch).
   const TIMERANGES_S = [
+    { value: 900, label: '15 minutes' },
+    { value: 1800, label: '30 minutes' },
     { value: 3600, label: '1 hour' },
     { value: 7200, label: '2 hours' },
     { value: 14400, label: '4 hours' },
