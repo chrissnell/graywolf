@@ -813,13 +813,18 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// the singleton MapsConfig on every download so re-registration
 	// (which rotates the bearer token) is picked up without a process
 	// restart. maxConcurrent=2 keeps us polite to the upstream.
+	mapsTokenProvider := func(ctx context.Context) string {
+		c, err := a.store.GetMapsConfig(ctx)
+		if err != nil {
+			a.logger.Warn("read MapsConfig for upstream token failed; sending empty token", "err", err)
+			return ""
+		}
+		return c.Token
+	}
 	mapsCache := mapscache.New(
 		a.cfg.TileCacheDir,
 		a.store,
-		func(ctx context.Context) string {
-			c, _ := a.store.GetMapsConfig(ctx)
-			return c.Token
-		},
+		mapsTokenProvider,
 		mapscache.DefaultMapsBaseURL,
 		2,
 	)
@@ -831,10 +836,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// rotates the bearer for catalog fetches too.
 	catalog := mapscatalog.New(
 		mapscache.DefaultMapsBaseURL,
-		func(ctx context.Context) string {
-			c, _ := a.store.GetMapsConfig(ctx)
-			return c.Token
-		},
+		mapsTokenProvider,
 		time.Hour,
 	)
 	// Best-effort warm; failures are non-fatal -- Get() will retry on
