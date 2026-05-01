@@ -796,6 +796,10 @@ func (s *Store) DeletePttConfig(ctx context.Context, channelID uint32) error {
 // channel — every frame would double-transmit. Forbidden by design;
 // this validator walks the kiss_interfaces table and rejects the edit
 // with a clear error naming both rows when the combination is detected.
+//
+// An empty Mode is normalized in place to ChannelModeAPRS before
+// validation, so callers can omit the field on legacy code paths and
+// still get a valid persisted row.
 func (s *Store) validateChannel(ctx context.Context, c *Channel, excludeID uint32) error {
 	if c.Mode == "" {
 		c.Mode = ChannelModeAPRS

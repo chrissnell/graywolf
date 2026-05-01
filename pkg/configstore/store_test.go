@@ -767,3 +767,24 @@ func TestCreateChannelEmptyModeDefaultsToAPRS(t *testing.T) {
 		t.Fatalf("Mode after empty-string create = %q, want %q", got.Mode, ChannelModeAPRS)
 	}
 }
+
+func TestUpdateChannelRejectsInvalidMode(t *testing.T) {
+	store := newTestStore(t)
+	dev := &AudioDevice{Name: "d", Direction: "input", SourceType: "flac",
+		SourcePath: "/tmp/x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	if err := store.CreateAudioDevice(context.Background(), dev); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	ch := &Channel{
+		Name: "u", InputDeviceID: U32Ptr(dev.ID),
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := store.CreateChannel(context.Background(), ch); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	ch.Mode = "garbage"
+	if err := store.UpdateChannel(context.Background(), ch); err == nil {
+		t.Fatal("expected error on update with invalid mode, got nil")
+	}
+}
