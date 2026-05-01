@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -85,11 +87,77 @@ func New(cacheDir string, store *configstore.Store, tokenProvider func(context.C
 	}
 }
 
-// PathFor returns the on-disk path of slug's PMTiles archive. The
-// file may not exist; check Status.State == "complete" first.
+// PathFor returns the on-disk path of slug's PMTiles archive. For
+// namespaced slugs, the slashes become subdirectory separators:
+//
+//	state/colorado            -> <cache>/state/colorado.pmtiles
+//	country/de                -> <cache>/country/de.pmtiles
+//	province/ca/british-...   -> <cache>/province/ca/british-...pmtiles
 func (m *Manager) PathFor(slug string) string {
-	return filepath.Join(m.cacheDir, slug+".pmtiles")
+	return filepath.Join(m.cacheDir, filepath.FromSlash(slug)+".pmtiles")
 }
+
+// urlForSlug returns the absolute download URL for a namespaced slug.
+// Token is appended as ?t= when non-empty (matches the Worker contract).
+// Returns an error for any slug that does not match the legal grammar.
+func (m *Manager) urlForSlug(slug, token string) (string, error) {
+	kind, a, b, ok := parseSlug(slug)
+	if !ok {
+		return "", fmt.Errorf("invalid slug %q", slug)
+	}
+	base := strings.TrimRight(m.mapsBaseURL, "/")
+	var raw string
+	switch kind {
+	case "state":
+		raw = fmt.Sprintf("%s/download/state/%s.pmtiles", base, a)
+	case "country":
+		raw = fmt.Sprintf("%s/download/country/%s.pmtiles", base, a)
+	case "province":
+		raw = fmt.Sprintf("%s/download/province/%s/%s.pmtiles", base, a, b)
+	}
+	if token == "" {
+		return raw, nil
+	}
+	q := url.Values{}
+	q.Set("t", token)
+	return raw + "?" + q.Encode(), nil
+}
+
+// parseSlug is a copy of webapi.parseSlug, kept here to avoid an import
+// cycle. They MUST stay in lockstep -- see webapi/slug_test.go and
+// mapscache/manager_test.go for parallel coverage.
+func parseSlug(s string) (kind, a, b string, ok bool) {
+	if s == "" || len(s) > 80 {
+		return "", "", "", false
+	}
+	parts := strings.Split(s, "/")
+	switch parts[0] {
+	case "state":
+		if len(parts) != 2 || !reSlugLeaf.MatchString(parts[1]) {
+			return "", "", "", false
+		}
+		return "state", parts[1], "", true
+	case "country":
+		if len(parts) != 2 || !reISO2.MatchString(parts[1]) || parts[1] == "cn" || parts[1] == "ru" {
+			return "", "", "", false
+		}
+		return "country", parts[1], "", true
+	case "province":
+		if len(parts) != 3 || !reISO2.MatchString(parts[1]) || !reSlugLeaf.MatchString(parts[2]) {
+			return "", "", "", false
+		}
+		if parts[1] == "cn" || parts[1] == "ru" {
+			return "", "", "", false
+		}
+		return "province", parts[1], parts[2], true
+	}
+	return "", "", "", false
+}
+
+var (
+	reSlugLeaf = regexp.MustCompile(`^[a-z][a-z0-9-]{0,49}$`)
+	reISO2     = regexp.MustCompile(`^[a-z]{2}$`)
+)
 
 // Status returns a snapshot for slug. Reads in-memory live counters
 // when an active download is in progress; falls back to the persisted
@@ -215,13 +283,10 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 		m.mu.Unlock()
 	}()
 
-	tok := m.tokenProvider(ctx)
-	base := fmt.Sprintf("%s/download/state/%s.pmtiles", m.mapsBaseURL, a.slug)
-	fullURL := base
-	if tok != "" {
-		q := url.Values{}
-		q.Set("t", tok)
-		fullURL = base + "?" + q.Encode()
+	fullURL, err := m.urlForSlug(a.slug, m.tokenProvider(ctx))
+	if err != nil {
+		m.fail(ctx, a.slug, err)
+		return
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
@@ -246,6 +311,10 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 	}
 
 	finalPath := m.PathFor(a.slug)
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+		m.fail(ctx, a.slug, err)
+		return
+	}
 	written, err := writeAtomic(finalPath, resp.Body, func(n int64) { a.bytesDone.Store(n) })
 	if err != nil {
 		m.fail(ctx, a.slug, err)

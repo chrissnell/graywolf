@@ -53,7 +53,7 @@ func TestManager_HappyPath(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "georgia"); err != nil {
+	if err := mgr.Start(context.Background(), "state/georgia"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -61,7 +61,7 @@ func TestManager_HappyPath(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	var final Status
 	for time.Now().Before(deadline) {
-		s, err := mgr.Status(context.Background(), "georgia")
+		s, err := mgr.Status(context.Background(), "state/georgia")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +79,7 @@ func TestManager_HappyPath(t *testing.T) {
 	}
 
 	// File must exist at PathFor and contain the expected bytes
-	data, err := os.ReadFile(mgr.PathFor("georgia"))
+	data, err := os.ReadFile(mgr.PathFor("state/georgia"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +96,10 @@ func TestManager_AlreadyInflight(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "texas"); err != nil {
+	if err := mgr.Start(context.Background(), "state/texas"); err != nil {
 		t.Fatal(err)
 	}
-	err := mgr.Start(context.Background(), "texas")
+	err := mgr.Start(context.Background(), "state/texas")
 	if !errors.Is(err, ErrAlreadyInflight) {
 		t.Fatalf("expected ErrAlreadyInflight, got %v", err)
 	}
@@ -112,20 +112,20 @@ func TestManager_DeleteDuringActiveDownload(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "ohio"); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio"); err != nil {
 		t.Fatal(err)
 	}
 	// Give the goroutine a moment to start the request
 	time.Sleep(100 * time.Millisecond)
 
-	if err := mgr.Delete(context.Background(), "ohio"); err != nil {
+	if err := mgr.Delete(context.Background(), "state/ohio"); err != nil {
 		t.Fatal(err)
 	}
-	s, _ := mgr.Status(context.Background(), "ohio")
+	s, _ := mgr.Status(context.Background(), "state/ohio")
 	if s.State != "absent" {
 		t.Fatalf("expected absent after delete, got %+v", s)
 	}
-	if _, err := os.Stat(mgr.PathFor("ohio")); !os.IsNotExist(err) {
+	if _, err := os.Stat(mgr.PathFor("state/ohio")); !os.IsNotExist(err) {
 		t.Fatalf("file should not exist: %v", err)
 	}
 }
@@ -137,13 +137,13 @@ func TestManager_BadUpstreamStatus(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "florida"); err != nil {
+	if err := mgr.Start(context.Background(), "state/florida"); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	var final Status
 	for time.Now().Before(deadline) {
-		s, _ := mgr.Status(context.Background(), "florida")
+		s, _ := mgr.Status(context.Background(), "state/florida")
 		if s.State == "error" {
 			final = s
 			break
@@ -157,10 +157,10 @@ func TestManager_BadUpstreamStatus(t *testing.T) {
 		t.Fatalf("error message should mention 401: %q", final.ErrorMessage)
 	}
 	// File must not exist (the .tmp was cleaned up too)
-	if _, err := os.Stat(mgr.PathFor("florida")); !os.IsNotExist(err) {
+	if _, err := os.Stat(mgr.PathFor("state/florida")); !os.IsNotExist(err) {
 		t.Fatalf("file should not exist after failed download: %v", err)
 	}
-	if _, err := os.Stat(mgr.PathFor("florida") + ".tmp"); !os.IsNotExist(err) {
+	if _, err := os.Stat(mgr.PathFor("state/florida") + ".tmp"); !os.IsNotExist(err) {
 		t.Fatalf(".tmp file should not exist after failed download: %v", err)
 	}
 }
@@ -179,11 +179,11 @@ func TestManager_RetryAfterError(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	_ = mgr.Start(context.Background(), "ohio")
+	_ = mgr.Start(context.Background(), "state/ohio")
 	// Wait for first attempt to fail
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		s, _ := mgr.Status(context.Background(), "ohio")
+		s, _ := mgr.Status(context.Background(), "state/ohio")
 		if s.State == "error" {
 			break
 		}
@@ -191,13 +191,13 @@ func TestManager_RetryAfterError(t *testing.T) {
 	}
 
 	// Second attempt
-	if err := mgr.Start(context.Background(), "ohio"); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio"); err != nil {
 		t.Fatal(err)
 	}
 	deadline = time.Now().Add(2 * time.Second)
 	var final Status
 	for time.Now().Before(deadline) {
-		s, _ := mgr.Status(context.Background(), "ohio")
+		s, _ := mgr.Status(context.Background(), "state/ohio")
 		if s.State == "complete" {
 			final = s
 			break
@@ -209,5 +209,65 @@ func TestManager_RetryAfterError(t *testing.T) {
 	}
 	if final.BytesTotal != 16 {
 		t.Fatalf("expected 16 bytes, got %+v", final)
+	}
+}
+
+func TestURLForSlug(t *testing.T) {
+	m := &Manager{mapsBaseURL: "https://maps.example"}
+	cases := []struct {
+		slug string
+		want string
+	}{
+		{"state/colorado", "https://maps.example/download/state/colorado.pmtiles"},
+		{"country/de", "https://maps.example/download/country/de.pmtiles"},
+		{"province/ca/british-columbia", "https://maps.example/download/province/ca/british-columbia.pmtiles"},
+	}
+	for _, tc := range cases {
+		got, err := m.urlForSlug(tc.slug, "")
+		if err != nil {
+			t.Fatalf("urlForSlug(%q): %v", tc.slug, err)
+		}
+		if got != tc.want {
+			t.Errorf("urlForSlug(%q) = %q, want %q", tc.slug, got, tc.want)
+		}
+	}
+}
+
+func TestURLForSlug_AppendsToken(t *testing.T) {
+	m := &Manager{mapsBaseURL: "https://maps.example"}
+	got, err := m.urlForSlug("state/colorado", "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://maps.example/download/state/colorado.pmtiles?t=tok"
+	if got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}
+
+func TestURLForSlug_RejectsBad(t *testing.T) {
+	m := &Manager{mapsBaseURL: "https://maps.example"}
+	if _, err := m.urlForSlug("colorado", ""); err == nil {
+		t.Fatal("expected error for legacy bare slug")
+	}
+	if _, err := m.urlForSlug("country/cn", ""); err == nil {
+		t.Fatal("expected error for forbidden country")
+	}
+}
+
+func TestPathFor(t *testing.T) {
+	m := &Manager{cacheDir: "/var/lib/graywolf/tiles"}
+	cases := []struct {
+		slug string
+		want string
+	}{
+		{"state/colorado", "/var/lib/graywolf/tiles/state/colorado.pmtiles"},
+		{"country/de", "/var/lib/graywolf/tiles/country/de.pmtiles"},
+		{"province/ca/british-columbia", "/var/lib/graywolf/tiles/province/ca/british-columbia.pmtiles"},
+	}
+	for _, tc := range cases {
+		if got := m.PathFor(tc.slug); got != tc.want {
+			t.Errorf("PathFor(%q) = %q, want %q", tc.slug, got, tc.want)
+		}
 	}
 }
