@@ -312,38 +312,32 @@ func (s *Session) setState(ns State) {
 	s.emit(OutEvent{Kind: OutStateChange, State: ns})
 }
 
-// Stub state handlers; filled in by transitions_<state>.go in later
-// tasks. Keeping the package compilable lets every task land its own
-// commit.
-func (s *Session) onDisconnected(ctx context.Context, ev Event) bool {
+// State handlers live in transitions_<state>.go. The placeholders
+// below cover states whose handler files are not yet present so the
+// package compiles between Phase 1 commits. They become unused once
+// the corresponding transitions_*.go file is added (Tasks 1.8-1.11).
+func (s *Session) onAwaitingConnection(_ context.Context, ev Event) bool {
 	if ev.Kind == EventShutdown {
 		return false
 	}
 	return true
 }
 
-func (s *Session) onAwaitingConnection(ctx context.Context, ev Event) bool {
+func (s *Session) onConnected(_ context.Context, ev Event) bool {
 	if ev.Kind == EventShutdown {
 		return false
 	}
 	return true
 }
 
-func (s *Session) onConnected(ctx context.Context, ev Event) bool {
+func (s *Session) onTimerRecovery(_ context.Context, ev Event) bool {
 	if ev.Kind == EventShutdown {
 		return false
 	}
 	return true
 }
 
-func (s *Session) onTimerRecovery(ctx context.Context, ev Event) bool {
-	if ev.Kind == EventShutdown {
-		return false
-	}
-	return true
-}
-
-func (s *Session) onAwaitingRelease(ctx context.Context, ev Event) bool {
+func (s *Session) onAwaitingRelease(_ context.Context, ev Event) bool {
 	if ev.Kind == EventShutdown {
 		return false
 	}

@@ -34,6 +34,31 @@ func (f *Frame) hasPID() bool {
 	return f.Control.Kind == FrameI || f.Control.Kind == FrameUI
 }
 
+// ToAX25Frame projects f into the *ax25.Frame surface that
+// pkg/txgovernor and TxHook consumers observe. Sets ConnectedControl
+// to the encoded bytes; UI Control byte is left zero.
+func (f *Frame) ToAX25Frame() (*ax25.Frame, error) {
+	ctl, err := EncodeControl(f.Control, f.Mod128)
+	if err != nil {
+		return nil, err
+	}
+	out := &ax25.Frame{
+		Dest:             f.Dest,
+		Source:           f.Source,
+		Path:             append([]ax25.Address(nil), f.Path...),
+		CommandResp:      f.IsCommand,
+		ConnectedControl: ctl,
+		ConnectedHasInfo: f.hasInfo(),
+	}
+	if f.hasPID() {
+		out.PID = f.PID
+	}
+	if f.hasInfo() {
+		out.Info = append([]byte(nil), f.Info...)
+	}
+	return out, nil
+}
+
 // Encode emits the wire bytes (no FCS — modem appends).
 func (f *Frame) Encode() ([]byte, error) {
 	if len(f.Path) > ax25.MaxRepeaters {

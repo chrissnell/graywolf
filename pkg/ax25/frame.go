@@ -21,13 +21,22 @@ const (
 // path.
 const MaxRepeaters = 8
 
-// A Frame is a decoded AX.25 UI frame (or the header of an unsupported
-// frame type). The zero value is not a valid frame.
+// A Frame is a decoded AX.25 UI or connected-mode frame. The zero value
+// is not a valid frame.
+//
+// UI frames carry [Frame.Control] (single byte) plus PID/Info.
+// Connected-mode frames (I, RR, RNR, REJ, SABM/E, DISC, UA, DM,
+// FRMR, XID, TEST) populate [Frame.ConnectedControl] (1 byte mod-8,
+// 2 bytes mod-128) and leave Control unused; PID and Info are only
+// set when [Frame.ConnectedHasInfo] is true. pkg/ax25conn produces
+// connected-mode Frames via [ax25conn.Frame.ToAX25Frame] so the
+// txgovernor send path, hook surface, and dedup keying continue to
+// observe a single Frame surface.
 type Frame struct {
 	Dest    Address
 	Source  Address
 	Path    []Address // up to 8 digipeater addresses
-	Control byte
+	Control byte      // UI control byte (used iff ConnectedControl == nil)
 	PID     byte
 	Info    []byte
 
@@ -35,7 +44,22 @@ type Frame struct {
 	// C-bit set, source C-bit clear (AX.25 v2.0 "command" frame). The
 	// default New* constructors produce a command frame.
 	CommandResp bool
+
+	// ConnectedControl, when non-empty, is the wire-encoded control
+	// field for a connected-mode frame (1 byte mod-8 / 2 bytes
+	// mod-128). UI Control is ignored when this field is set.
+	ConnectedControl []byte
+
+	// ConnectedHasInfo indicates that PID and Info should be appended
+	// after ConnectedControl. True for I-frames and the v2.2 informational
+	// U-frames (FRMR, XID, TEST); false for RR/RNR/REJ/SREJ/SABM/E,
+	// DISC, UA, DM.
+	ConnectedHasInfo bool
 }
+
+// IsConnectedMode reports whether f represents a connected-mode (LAPB)
+// frame produced by pkg/ax25conn rather than a UI frame.
+func (f *Frame) IsConnectedMode() bool { return len(f.ConnectedControl) > 0 }
 
 // NewUIFrame constructs a v2.0-command UI frame with the given path and
 // payload. PID defaults to 0xF0 (no-layer-3, APRS).
@@ -64,12 +88,22 @@ func (f *Frame) IsUI() bool {
 // Encode serialises f into a byte slice suitable for passing as the Data
 // field of a TransmitFrame IPC message (no FCS — the modem appends it).
 func (f *Frame) Encode() ([]byte, error) {
-	if !f.IsUI() {
-		return nil, errors.New("ax25: Encode only supports UI frames")
-	}
 	addrBytes, err := EncodeAddressBlock(f.Source, f.Dest, f.Path, f.CommandResp)
 	if err != nil {
 		return nil, err
+	}
+	if f.IsConnectedMode() {
+		out := make([]byte, 0, len(addrBytes)+len(f.ConnectedControl)+1+len(f.Info))
+		out = append(out, addrBytes...)
+		out = append(out, f.ConnectedControl...)
+		if f.ConnectedHasInfo {
+			out = append(out, f.PID)
+			out = append(out, f.Info...)
+		}
+		return out, nil
+	}
+	if !f.IsUI() {
+		return nil, errors.New("ax25: Encode only supports UI or connected-mode frames")
 	}
 	out := make([]byte, 0, len(addrBytes)+2+len(f.Info))
 	out = append(out, addrBytes...)
