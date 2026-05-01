@@ -63,7 +63,7 @@
     <p>
       The Maps page controls what you see <em>under</em> the APRS overlay
       on the <a href="livemap.html">Live Map</a>. Two settings live here:
-      which basemap to use, and which states to keep on disk for off-grid
+      which basemap to use, and which regions to keep on disk for off-grid
       use.
     </p>
 
@@ -110,10 +110,12 @@
     <p>
       For stations that operate off-grid, in remote sites with flaky
       backhaul, or just don&rsquo;t want to depend on a tile server, you
-      can pre-download per-state vector tiles to local disk. Add the
-      states you operate in under <strong>OFFLINE MAPS &rarr; Add a
-      state</strong>. The Live Map will use the local tiles automatically
-      where coverage exists and fall back to online tiles outside those
+      can pre-download vector tiles to local disk. Pick a region under
+      <strong>OFFLINE MAPS &rarr; Add a region</strong>. The drawer
+      shows a country tree: expand United States to grab individual US
+      states, expand Canada for provinces, or pick a whole country.
+      The Live Map will use the local tiles automatically where
+      coverage exists and fall back to online tiles outside those
       areas, so you don&rsquo;t need to predict in advance which corner
       of the map you&rsquo;ll be on.
     </p>
@@ -122,12 +124,18 @@
       <span class="callout-icon">&#10003;</span>
       <div class="callout-body">
         <p>
-          A state is typically tens to hundreds of megabytes. Download
-          them while you have a good network &mdash; they live on local
-          disk after that, regardless of whether graywolf has internet.
+          A US state is typically tens to hundreds of megabytes; whole
+          countries can run to several gigabytes. Download them while
+          you have a good network &mdash; they live on local disk
+          after that, regardless of whether graywolf has internet.
         </p>
       </div>
     </div>
+
+    <p>
+      Existing per-state downloads from earlier versions of graywolf
+      survive the upgrade unchanged &mdash; nothing to reconfigure.
+    </p>
 
     <nav class="page-nav">
       <a href="simulation.html">
