@@ -31,3 +31,25 @@ func TestModeForChannel(t *testing.T) {
 		t.Fatalf("mode=%q, want packet", got)
 	}
 }
+
+func TestModeForChannelZeroID(t *testing.T) {
+	s := newTestStore(t)
+	got, err := s.ModeForChannel(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("zero id: %v", err)
+	}
+	if got != ChannelModeAPRS {
+		t.Fatalf("zero id: mode=%q, want %q", got, ChannelModeAPRS)
+	}
+}
+
+func TestModeForChannelMissingRow(t *testing.T) {
+	s := newTestStore(t)
+	got, err := s.ModeForChannel(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("missing row: %v", err)
+	}
+	if got != ChannelModeAPRS {
+		t.Fatalf("missing row: mode=%q, want %q", got, ChannelModeAPRS)
+	}
+}

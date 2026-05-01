@@ -11,13 +11,17 @@ type ChannelModeLookup interface {
 }
 
 // ModeForChannel returns the Mode column for the given channel id.
-// Returns ChannelModeAPRS and a nil error when the row is missing,
-// matching the migration default — TX subsystems treat "row not
-// found" as the conservative APRS-only choice.
+// Returns ChannelModeAPRS and a nil error when the channelID is 0
+// (no channel selected) or when the row does not exist -- TX subsystems
+// treat both cases as the conservative APRS-only choice. Existing rows
+// always carry a non-empty Mode (validateChannel normalizes empty to
+// ChannelModeAPRS), so the empty-string branch is solely a missing-row
+// guard.
 func (s *Store) ModeForChannel(ctx context.Context, channelID uint32) (string, error) {
 	if channelID == 0 {
 		return ChannelModeAPRS, nil
 	}
+	// Narrow read: avoid full Channel struct alloc; only the mode column matters.
 	var mode string
 	err := s.db.WithContext(ctx).
 		Table("channels").
