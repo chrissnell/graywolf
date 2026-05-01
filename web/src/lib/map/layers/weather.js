@@ -65,6 +65,10 @@ export function mountWeatherLayer(map, getStations) {
     }).setLngLat([lon, lat]).addTo(map);
   }
 
+  // Optional per-station predicate. Stations failing it are dropped
+  // from the weather layer. Driven by the Direct RX toggle.
+  let filter = null;
+
   function refresh() {
     const stations = getStations();
     if (!stations) return;
@@ -73,6 +77,7 @@ export function mountWeatherLayer(map, getStations) {
     const seen = new Set();
 
     for (const [callsign, s] of stations) {
+      if (filter && !filter(s)) continue;
       if (!s.weather) continue;
       const pos = s.positions && s.positions[0];
       if (!pos) continue;
@@ -131,10 +136,15 @@ export function mountWeatherLayer(map, getStations) {
     }
   };
 
+  function setFilter(pred) {
+    filter = typeof pred === 'function' ? pred : null;
+    wrappedRefresh();
+  }
+
   function destroy() {
     for (const { marker } of markers.values()) marker.remove();
     markers.clear();
   }
 
-  return { refresh: wrappedRefresh, destroy, setVisible };
+  return { refresh: wrappedRefresh, destroy, setVisible, setFilter };
 }

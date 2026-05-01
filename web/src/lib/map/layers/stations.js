@@ -117,22 +117,34 @@ export function mountStationsLayer(map, getStations, {
   // We track the desired state so newly-created markers in subsequent
   // refresh() calls inherit the right visibility.
   let visible = true;
-  function setVisible(next) {
-    visible = !!next;
-    const display = visible ? '' : 'none';
-    for (const { marker } of markers.values()) {
-      marker.getElement().style.display = display;
+  // Optional per-station predicate. A station with predicate(s)===false
+  // is hidden even when the layer is "visible". Used by Direct RX toggle.
+  let filter = null;
+
+  function isAllowed(callsign) {
+    if (!filter) return true;
+    const s = lookupStation(callsign);
+    return !!(s && filter(s));
+  }
+  function applyDisplay() {
+    for (const [callsign, { marker }] of markers) {
+      const show = visible && isAllowed(callsign);
+      marker.getElement().style.display = show ? '' : 'none';
     }
   }
-  // Wrap refresh so newly-minted markers honor the current visibility.
+  function setVisible(next) {
+    visible = !!next;
+    applyDisplay();
+  }
+  function setFilter(pred) {
+    filter = typeof pred === 'function' ? pred : null;
+    applyDisplay();
+  }
+  // Wrap refresh so newly-minted markers honor current visibility + filter.
   const wrappedRefresh = () => {
     refresh();
-    if (!visible) {
-      for (const { marker } of markers.values()) {
-        marker.getElement().style.display = 'none';
-      }
-    }
+    applyDisplay();
   };
 
-  return { refresh: wrappedRefresh, destroy, setVisible };
+  return { refresh: wrappedRefresh, destroy, setVisible, setFilter };
 }

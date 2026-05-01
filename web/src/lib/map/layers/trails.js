@@ -195,6 +195,10 @@ export function mountTrailsLayer(map, getStations, opts = {}) {
   map.on('mousemove', LINE_LAYER_ID, onHoverMove);
   map.on('mouseleave', LINE_LAYER_ID, onHoverLeave);
 
+  // Optional per-station predicate. Stations failing it are skipped
+  // entirely (no line, no dots). Driven by the Direct RX toggle.
+  let filter = null;
+
   function refresh() {
     const stations = getStations();
     if (!stations) return;
@@ -203,6 +207,7 @@ export function mountTrailsLayer(map, getStations, opts = {}) {
     const dotFeatures = [];
 
     for (const [callsign, s] of stations) {
+      if (filter && !filter(s)) continue;
       const pts = s.positions;
       if (!pts || pts.length < 2) continue;
       const color = trailColor(callsign);
@@ -292,7 +297,12 @@ export function mountTrailsLayer(map, getStations, opts = {}) {
     } catch { /* map already removed */ }
   }
 
-  return { refresh, destroy, setVisible };
+  function setFilter(pred) {
+    filter = typeof pred === 'function' ? pred : null;
+    refresh();
+  }
+
+  return { refresh, destroy, setVisible, setFilter };
 }
 
 // Trail-dot popup uses per-position metadata so it reflects the packet

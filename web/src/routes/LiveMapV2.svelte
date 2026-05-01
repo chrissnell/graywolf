@@ -58,7 +58,20 @@
     trails: true,
     weather: true,
     myPosition: true,
+    directRxOnly: false,
   });
+
+  // Direct RX predicate: a station qualifies if at least one of its
+  // accumulated positions arrived directly on RF (RX direction with
+  // zero digi hops). Anything iGated (IS) or digipeated is excluded.
+  function isDirectRx(station) {
+    const pts = station?.positions;
+    if (!Array.isArray(pts) || pts.length === 0) return false;
+    for (const p of pts) {
+      if (p.direction === 'RX' && (p.hops ?? 0) === 0) return true;
+    }
+    return false;
+  }
   let timerangeSec = $state(Math.floor(dataStore.timerangeMs / 1000));
   let coordText = $state('');
   let zoomLevel = $state(null);
@@ -256,6 +269,16 @@
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
   });
+  // Direct RX filter: predicate is shared across stations/trails/weather
+  // so the three layers stay in lockstep. my-position is the operator's
+  // own beacon and is intentionally exempt.
+  $effect(() => {
+    const on = layerToggles.directRxOnly;
+    const pred = on ? isDirectRx : null;
+    stationsLayer?.setFilter(pred);
+    trailsLayer?.setFilter(pred);
+    weatherLayer?.setFilter(pred);
+  });
 
   // Push the timerange into the data store.
   $effect(() => {
@@ -377,6 +400,14 @@
           onchange={(e) => (layerToggles.myPosition = e.currentTarget.checked)}
         />
         <span>My Position</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={layerToggles.directRxOnly}
+          onchange={(e) => (layerToggles.directRxOnly = e.currentTarget.checked)}
+        />
+        <span>Direct RX</span>
       </label>
     </div>
 
