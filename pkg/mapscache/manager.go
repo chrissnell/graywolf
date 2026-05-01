@@ -8,13 +8,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/mapsslug"
 )
 
 // DefaultMapsBaseURL is the production tile/download host. Override
@@ -101,7 +101,7 @@ func (m *Manager) PathFor(slug string) string {
 // Token is appended as ?t= when non-empty (matches the Worker contract).
 // Returns an error for any slug that does not match the legal grammar.
 func (m *Manager) urlForSlug(slug, token string) (string, error) {
-	kind, a, b, ok := parseSlug(slug)
+	kind, a, b, ok := mapsslug.Parse(slug)
 	if !ok {
 		return "", fmt.Errorf("invalid slug %q", slug)
 	}
@@ -122,42 +122,6 @@ func (m *Manager) urlForSlug(slug, token string) (string, error) {
 	q.Set("t", token)
 	return raw + "?" + q.Encode(), nil
 }
-
-// parseSlug is a copy of webapi.parseSlug, kept here to avoid an import
-// cycle. They MUST stay in lockstep -- see webapi/slug_test.go and
-// mapscache/manager_test.go for parallel coverage.
-func parseSlug(s string) (kind, a, b string, ok bool) {
-	if s == "" || len(s) > 80 {
-		return "", "", "", false
-	}
-	parts := strings.Split(s, "/")
-	switch parts[0] {
-	case "state":
-		if len(parts) != 2 || !reSlugLeaf.MatchString(parts[1]) {
-			return "", "", "", false
-		}
-		return "state", parts[1], "", true
-	case "country":
-		if len(parts) != 2 || !reISO2.MatchString(parts[1]) || parts[1] == "cn" || parts[1] == "ru" {
-			return "", "", "", false
-		}
-		return "country", parts[1], "", true
-	case "province":
-		if len(parts) != 3 || !reISO2.MatchString(parts[1]) || !reSlugLeaf.MatchString(parts[2]) {
-			return "", "", "", false
-		}
-		if parts[1] == "cn" || parts[1] == "ru" {
-			return "", "", "", false
-		}
-		return "province", parts[1], parts[2], true
-	}
-	return "", "", "", false
-}
-
-var (
-	reSlugLeaf = regexp.MustCompile(`^[a-z][a-z0-9-]{0,49}$`)
-	reISO2     = regexp.MustCompile(`^[a-z]{2}$`)
-)
 
 // Status returns a snapshot for slug. Reads in-memory live counters
 // when an active download is in progress; falls back to the persisted
@@ -331,8 +295,13 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 // MigrateLegacyArchives moves legacy bare-slug files
 // (<cache>/colorado.pmtiles) into the new namespaced state subdir
 // (<cache>/state/colorado.pmtiles). Idempotent: skips files already
-// in subdirs and skips non-pmtiles files. Designed to run once on
-// startup; safe to re-run.
+// in subdirs and skips non-pmtiles files.
+//
+// Collision policy: if the namespaced target already exists, the legacy
+// file is removed rather than overwriting the (presumably newer)
+// namespaced file. Otherwise os.Rename clobbers a file an operator may
+// have already redownloaded under the new layout. Designed to run once
+// on startup; safe to re-run.
 func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 	_ = ctx
 	if m.cacheDir == "" {
@@ -346,6 +315,7 @@ func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 		return err
 	}
 	stateDir := filepath.Join(m.cacheDir, "state")
+	leafRE := mapsslug.LeafRegexp()
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -355,7 +325,7 @@ func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 			continue
 		}
 		slug := strings.TrimSuffix(name, ".pmtiles")
-		if !reSlugLeaf.MatchString(slug) {
+		if !leafRE.MatchString(slug) {
 			continue
 		}
 		if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -363,6 +333,16 @@ func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 		}
 		oldPath := filepath.Join(m.cacheDir, name)
 		newPath := filepath.Join(stateDir, name)
+		if _, err := os.Stat(newPath); err == nil {
+			// Namespaced target already exists; drop the legacy file
+			// rather than clobbering newer data.
+			if err := os.Remove(oldPath); err != nil {
+				return fmt.Errorf("migrate %s: remove legacy: %w", name, err)
+			}
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("migrate %s: stat target: %w", name, err)
+		}
 		if err := os.Rename(oldPath, newPath); err != nil {
 			return fmt.Errorf("migrate %s: %w", name, err)
 		}
