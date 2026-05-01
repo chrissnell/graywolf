@@ -117,6 +117,11 @@ type migration struct {
 //	    these columns, so we re-add them here; on legacy installs they
 //	    already exist and the ADD COLUMN is guarded by a pragma probe.
 //	    See .context/2026-04-21-centralized-station-callsign.md §D4.
+//	12 — channels_mode: add the channels.mode column (default 'aprs')
+//	    so per-channel TX gating (beacon/digi/igate/messages) can route
+//	    on the new enum without breaking pre-Phase-0 databases. Runs
+//	    post-AutoMigrate (after v11) so the version gate is respected.
+//	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §0.2.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -129,6 +134,7 @@ var schemaMigrations = []migration{
 	{version: 9, name: "kiss_interfaces_tx_flags", phase: preAutoMigrate, run: migrateKissInterfacesTxFlags},
 	{version: 10, name: "kiss_interfaces_tcp_client_fields", phase: preAutoMigrate, run: migrateKissInterfacesTcpClientFields},
 	{version: 11, name: "igate_config_retain_callsign_passcode", phase: postAutoMigrate, run: migrateIGateConfigRetainCallsignPasscode},
+	{version: 12, name: "channels_mode", phase: postAutoMigrate, run: migrateChannelsMode},
 }
 
 // runMigrations applies every pending migration in the given phase,
