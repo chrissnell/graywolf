@@ -177,6 +177,17 @@
     trailsLayer = mountTrailsLayer(map, () => dataStore.stations, {
       hasStation: (callsign) => dataStore.stations.has(callsign),
       focusStation,
+      // hoverPathLayer is assigned just below; the callbacks fire on
+      // user hover events, long after this synchronous mount block, so
+      // the closure reads the populated reference.
+      showHoverPath: (s) => {
+        if (activePopup) return;
+        hoverPathLayer?.show(s);
+      },
+      clearHoverPath: () => {
+        if (activePopup) return;
+        hoverPathLayer?.clear();
+      },
     });
     weatherLayer = mountWeatherLayer(map, () => dataStore.stations);
     hoverPathLayer = mountHoverPathLayer(map, () => {

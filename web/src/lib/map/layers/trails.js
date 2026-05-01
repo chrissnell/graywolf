@@ -55,7 +55,12 @@ function trailColor(callsign) {
 }
 
 export function mountTrailsLayer(map, getStations, opts = {}) {
-  const { hasStation = () => false, focusStation = () => {} } = opts;
+  const {
+    hasStation = () => false,
+    focusStation = () => {},
+    showHoverPath = () => {},
+    clearHoverPath = () => {},
+  } = opts;
 
   if (!map.getSource(LINE_SOURCE_ID)) {
     map.addSource(LINE_SOURCE_ID, {
@@ -168,32 +173,70 @@ export function mountTrailsLayer(map, getStations, opts = {}) {
     openDotPopup(f.properties, f.geometry.coordinates);
   }
 
-  function onHoverEnter(e) {
+  // Build a station-shaped object from a trail-dot feature so the
+  // hover-path layer can draw the RF path that was active at the time
+  // of THIS fix, not the station's most-recent fix.
+  function dotToHoverStation(props, coords) {
+    let path = [];
+    let pathPositions = [];
+    try { path = JSON.parse(props.path || '[]'); } catch { path = []; }
+    try { pathPositions = JSON.parse(props.path_positions || '[]'); } catch { pathPositions = []; }
+    return {
+      callsign: props.callsign,
+      via: props.via,
+      path,
+      path_positions: pathPositions,
+      positions: [{ lon: coords[0], lat: coords[1] }],
+    };
+  }
+
+  function onDotHoverEnter(e) {
+    const f = e.features && e.features[0];
+    if (!f) return;
+    map.getCanvas().style.cursor = 'pointer';
+    showHoverTooltip(f.properties.callsign, e.lngLat);
+    showHoverPath(dotToHoverStation(f.properties, f.geometry.coordinates));
+  }
+
+  function onDotHoverMove(e) {
+    const f = e.features && e.features[0];
+    if (!f) { clearHoverTooltip(); clearHoverPath(); return; }
+    showHoverTooltip(f.properties.callsign, e.lngLat);
+    showHoverPath(dotToHoverStation(f.properties, f.geometry.coordinates));
+  }
+
+  function onDotHoverLeave() {
+    map.getCanvas().style.cursor = '';
+    clearHoverTooltip();
+    clearHoverPath();
+  }
+
+  function onLineHoverEnter(e) {
     const f = e.features && e.features[0];
     if (!f) return;
     map.getCanvas().style.cursor = 'pointer';
     showHoverTooltip(f.properties.callsign, e.lngLat);
   }
 
-  function onHoverMove(e) {
+  function onLineHoverMove(e) {
     const f = e.features && e.features[0];
     if (!f) { clearHoverTooltip(); return; }
     showHoverTooltip(f.properties.callsign, e.lngLat);
   }
 
-  function onHoverLeave() {
+  function onLineHoverLeave() {
     map.getCanvas().style.cursor = '';
     clearHoverTooltip();
   }
 
   map.on('click', DOT_LAYER_ID, onDotClick);
   map.on('click', DOT_HIT_LAYER_ID, onDotClick);
-  map.on('mouseenter', DOT_HIT_LAYER_ID, onHoverEnter);
-  map.on('mousemove', DOT_HIT_LAYER_ID, onHoverMove);
-  map.on('mouseleave', DOT_HIT_LAYER_ID, onHoverLeave);
-  map.on('mouseenter', LINE_LAYER_ID, onHoverEnter);
-  map.on('mousemove', LINE_LAYER_ID, onHoverMove);
-  map.on('mouseleave', LINE_LAYER_ID, onHoverLeave);
+  map.on('mouseenter', DOT_HIT_LAYER_ID, onDotHoverEnter);
+  map.on('mousemove', DOT_HIT_LAYER_ID, onDotHoverMove);
+  map.on('mouseleave', DOT_HIT_LAYER_ID, onDotHoverLeave);
+  map.on('mouseenter', LINE_LAYER_ID, onLineHoverEnter);
+  map.on('mousemove', LINE_LAYER_ID, onLineHoverMove);
+  map.on('mouseleave', LINE_LAYER_ID, onLineHoverLeave);
 
   // Optional per-station predicate. Stations failing it are skipped
   // entirely (no line, no dots). Driven by the Direct RX toggle.
@@ -251,8 +294,9 @@ export function mountTrailsLayer(map, getStations, opts = {}) {
             direction: p.direction || 'RX',
             comment: p.comment || '',
             // Stringify so the array survives any GeoJSON round-trip;
-            // parsed back in renderDotPopup.
+            // parsed back in renderDotPopup and the hover-path handler.
             path: JSON.stringify(p.path || []),
+            path_positions: JSON.stringify(p.path_positions || []),
           },
         });
       }
@@ -270,6 +314,7 @@ export function mountTrailsLayer(map, getStations, opts = {}) {
     if (!visible) {
       if (popup) { popup.remove(); popup = null; }
       clearHoverTooltip();
+      clearHoverPath();
     }
   }
 
@@ -280,14 +325,15 @@ export function mountTrailsLayer(map, getStations, opts = {}) {
     try {
       map.off('click', DOT_LAYER_ID, onDotClick);
       map.off('click', DOT_HIT_LAYER_ID, onDotClick);
-      map.off('mouseenter', DOT_HIT_LAYER_ID, onHoverEnter);
-      map.off('mousemove', DOT_HIT_LAYER_ID, onHoverMove);
-      map.off('mouseleave', DOT_HIT_LAYER_ID, onHoverLeave);
-      map.off('mouseenter', LINE_LAYER_ID, onHoverEnter);
-      map.off('mousemove', LINE_LAYER_ID, onHoverMove);
-      map.off('mouseleave', LINE_LAYER_ID, onHoverLeave);
+      map.off('mouseenter', DOT_HIT_LAYER_ID, onDotHoverEnter);
+      map.off('mousemove', DOT_HIT_LAYER_ID, onDotHoverMove);
+      map.off('mouseleave', DOT_HIT_LAYER_ID, onDotHoverLeave);
+      map.off('mouseenter', LINE_LAYER_ID, onLineHoverEnter);
+      map.off('mousemove', LINE_LAYER_ID, onLineHoverMove);
+      map.off('mouseleave', LINE_LAYER_ID, onLineHoverLeave);
       if (popup) { popup.remove(); popup = null; }
       clearHoverTooltip();
+      clearHoverPath();
       for (const id of [DOT_LAYER_ID, DOT_HIT_LAYER_ID, LINE_LAYER_ID]) {
         if (map.getLayer(id)) map.removeLayer(id);
       }
