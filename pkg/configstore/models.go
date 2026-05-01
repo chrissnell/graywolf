@@ -316,6 +316,12 @@ type IGateConfig struct {
 	MaxMsgHops      uint32    `gorm:"not null;default:2" json:"max_msg_hops"`           // WIDE hops for IS->RF messages
 	SoftwareName    string    `gorm:"not null;default:'graywolf'" json:"software_name"` // APRS-IS login banner software name
 	SoftwareVersion string    `gorm:"not null;default:'0.1'" json:"software_version"`   // APRS-IS login banner version
+	// TxChannel governs IS->RF on this iGate. Phase-0 of the AX.25 terminal
+	// plan moved messages-tx onto MessagesConfig.TxChannel but kept this
+	// column because migration 13 (`messages_config_singleton`) reads it
+	// once on first run to seed MessagesConfig. Do not remove without
+	// first deleting that migration -- operators upgrading from pre-Phase-0
+	// builds will silently lose their messages TX channel otherwise.
 	TxChannel       uint32    `gorm:"not null;default:1" json:"tx_channel"`             // radio channel for IS->RF submissions
 	CreatedAt       time.Time `json:"-"`
 	UpdatedAt       time.Time `json:"-"`
@@ -332,6 +338,17 @@ type IGateRfFilter struct {
 	Action    string    `gorm:"not null;default:'allow'" json:"action"` // allow|deny
 	Priority  uint32    `gorm:"not null;default:100" json:"priority"`
 	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// MessagesConfig is a singleton (id=1) row that owns messaging-specific
+// settings. Phase-0 of the AX.25 terminal plan moved TxChannel here
+// from IGateConfig -- see docs/superpowers/plans/2026-05-01-ax25-terminal.md
+// §0.8. iGate retains its own TxChannel which now governs IS->RF only.
+type MessagesConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	TxChannel uint32    `gorm:"not null;default:0" json:"tx_channel"` // 0 = auto-resolve at runtime
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 }

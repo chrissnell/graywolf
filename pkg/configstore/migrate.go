@@ -122,6 +122,9 @@ type migration struct {
 //	    on the new enum without breaking pre-Phase-0 databases. Runs
 //	    post-AutoMigrate (after v11) so the version gate is respected.
 //	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §0.2.
+//	13 — messages_config_singleton: create messages_configs (id=1) and
+//	    seed TxChannel from the legacy IGateConfig.TxChannel value once.
+//	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §0.8.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -135,6 +138,7 @@ var schemaMigrations = []migration{
 	{version: 10, name: "kiss_interfaces_tcp_client_fields", phase: preAutoMigrate, run: migrateKissInterfacesTcpClientFields},
 	{version: 11, name: "igate_config_retain_callsign_passcode", phase: postAutoMigrate, run: migrateIGateConfigRetainCallsignPasscode},
 	{version: 12, name: "channels_mode", phase: postAutoMigrate, run: migrateChannelsMode},
+	{version: 13, name: "messages_config_singleton", phase: postAutoMigrate, run: migrateMessagesConfigCopyFromIgate},
 }
 
 // runMigrations applies every pending migration in the given phase,
