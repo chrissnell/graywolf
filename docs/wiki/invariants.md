@@ -168,3 +168,15 @@ Source: `pkg/diagcollect/Collect` calls `redact.ScrubFlare` before returning; th
 *Why:* Anything that leaves the host across the network must pass through human eyes. `--dry-run` and `--out` print the same scrubbed payload, but only `--dry-run` skips the network -- and both still run the scrub.
 
 Source: `cmd/graywolf/flare.go`'s control flow: the network `client.Submit` call is unreachable except through `runReviewLoop` returning `OutcomeSubmit`.
+
+### 23. Channel mode gates TX, not RX
+
+When a channel's `Mode` is `packet`, the beacon scheduler, digipeater engine, iGate IS→RF gate, and APRS messages sender all skip, refuse, or down-shift when asked to transmit on that channel. RX is unchanged: frames keep demodulating and fan out via the existing fanout; subscribers self-filter.
+
+The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns an error or `nil`, callers behave as if the channel were `aprs` (preserves pre-Phase-0 behavior). The IS→RF runtime gate also fails open -- a transient DB error does not silently suppress beaconing or gating.
+
+*Why:* Operators may want to dedicate a channel to AX.25 connected-mode (Phase 1+) without it accidentally absorbing APRS beacons, digipeated packets, IS→RF traffic, or outbound APRS messages. The `aprs+packet` value preserves the legacy "any channel does anything" behavior for setups that don't care about the split.
+
+Source: [`../../pkg/configstore/channel_mode_lookup.go`](../../pkg/configstore/channel_mode_lookup.go),
+[`../../pkg/configstore/models.go`](../../pkg/configstore/models.go)
+(`Channel.Mode` field comments).

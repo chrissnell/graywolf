@@ -98,6 +98,23 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 PTT *driving* is on the Rust side; see the `tx/ptt_*.rs` files above.
 The split is enforced by [invariant 9](invariants.md).
 
+## Channel TX gating
+
+| Surface | Where |
+|---|---|
+| Per-channel mode enum | `pkg/configstore/models.go` — `Channel.Mode` (`aprs`/`packet`/`aprs+packet`); migrated by `migrate_channel_mode.go` (v12). |
+| Lookup interface | `pkg/configstore/channel_mode_lookup.go` — `ChannelModeLookup` interface; `*Store` satisfies it via `ModeForChannel`. |
+| Beacon refusal | `pkg/beacon/scheduler.go` — `Options.ChannelModes`; `sendBeaconWith` skips packet-mode channels and emits `OnBeaconSkipped(name, "packet_mode")`. |
+| Digipeater refusal | `pkg/digipeater/digipeater.go` — `Config.ChannelModes`; `Handle` short-circuits packet-mode rxChannel; rule loop skips packet-mode `ToChannel`. |
+| iGate refusal | `pkg/igate/igate.go` — `Config.ChannelModes` + `(*Config).ResolveTxChannel`; runtime check at IS→RF gate point logs WARN and increments `mSubmitDropped`. |
+| Messages refusal | `pkg/messages/sender.go` — `SenderConfig.ChannelModes`; `sendRF` returns non-retryable error and persists FailureReason on packet-mode channels. |
+| Messages TX channel singleton | `pkg/configstore/messages_config.go` — `MessagesConfig` (id=1); migration v13 (`messages_config_singleton`) seeds `tx_channel` from legacy `IGateConfig.TxChannel` on first run. iGate's column now governs IS→RF only. |
+| Wiring entry | `pkg/app/wiring.go` — injects `*configstore.Store` as `ChannelModes` into beacon/digi/igate/messages constructors. |
+| REST | `webapi/channels.go` accepts `mode` on POST/PUT; `webapi/messages_config.go` exposes GET/PUT `/api/messages/config` with packet-mode validation. |
+| UI | `web/src/routes/Channels.svelte` shows mode selector + badge; `web/src/routes/Preferences.svelte` shows messages TX-channel selector filtered to non-packet channels. |
+
+See [invariant 23](invariants.md) for the TX-gating contract.
+
 ## Go service: web
 
 | Package | Purpose |
