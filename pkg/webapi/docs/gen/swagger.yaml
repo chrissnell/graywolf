@@ -1377,6 +1377,12 @@ definitions:
       via:
         type: string
     type: object
+  dto.MessagesConfig:
+    properties:
+      tx_channel:
+        description: 0 = auto-resolve
+        type: integer
+    type: object
   dto.ParticipantResponse:
     properties:
       callsign:
@@ -4304,6 +4310,56 @@ paths:
       security:
         - CookieAuth: []
       summary: Mark message unread
+      tags:
+        - messages
+  /messages/config:
+    get:
+      operationId: getMessagesConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessagesConfig'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get messages config
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: putMessagesConfig
+      parameters:
+        - description: Messages config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.MessagesConfig'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessagesConfig'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update messages config
       tags:
         - messages
   /messages/conversations:
