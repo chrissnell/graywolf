@@ -2542,7 +2542,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "state slug",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
                         "name": "slug",
                         "in": "path",
                         "required": true
@@ -2587,12 +2587,12 @@
                 "tags": [
                     "maps"
                 ],
-                "summary": "Start an offline download for a state",
+                "summary": "Start an offline download",
                 "operationId": "startMapsDownload",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "state slug",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
                         "name": "slug",
                         "in": "path",
                         "required": true
@@ -2640,12 +2640,12 @@
                 "tags": [
                     "maps"
                 ],
-                "summary": "Delete an offline download for a state",
+                "summary": "Delete an offline download",
                 "operationId": "deleteMapsDownload",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "state slug",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
                         "name": "slug",
                         "in": "path",
                         "required": true
