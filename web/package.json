@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "api:generate": "node scripts/generate-api.mjs",
-    "api:check": "tsc --noEmit -p src/api/tsconfig.json"
+    "api:check": "tsc --noEmit -p src/api/tsconfig.json",
+    "test": "node --test 'src/**/*.test.js'"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",

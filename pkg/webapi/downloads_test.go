@@ -8,18 +8,22 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/mapscache"
+	"github.com/chrissnell/graywolf/pkg/mapscatalog"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
 // newTestServerWithCache wires a fresh mapscache.Manager into a test
 // server. Returns the server, the manager, and the upstream stub the
 // manager will fetch from. Callers swap in their own upstream by
-// passing a HandlerFunc.
+// passing a HandlerFunc. A fake catalog Cache is also wired so the
+// resolveSlug membership check passes for the canned slugs that the
+// existing tests use plus one country and one province.
 func newTestServerWithCache(t *testing.T, upstream http.Handler) (*Server, *mapscache.Manager, *httptest.Server) {
 	t.Helper()
 	srv, _ := newTestServer(t)
@@ -28,7 +32,42 @@ func newTestServerWithCache(t *testing.T, upstream http.Handler) (*Server, *maps
 	cacheDir := t.TempDir()
 	mgr := mapscache.New(cacheDir, srv.store, func(context.Context) string { return "test-token" }, up.URL, 2)
 	srv.mapsCache = mgr
+	srv.catalog = fakeCatalogCache(t)
 	return srv, mgr, up
+}
+
+// fakeCatalogCache stands up a tiny catalog Cache pointed at an
+// httptest server returning a fixed catalog. Slugs covered:
+//
+//	state/georgia, state/texas, state/ohio, state/florida,
+//	state/nevada, state/vermont, state/colorado
+//	country/de
+//	province/ca/british-columbia
+func fakeCatalogCache(t *testing.T) *mapscatalog.Cache {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(mapscatalog.Catalog{
+			SchemaVersion: 1,
+			GeneratedAt:   "2026-04-30T00:00:00Z",
+			Countries: []mapscatalog.Country{
+				{ISO2: "de", Name: "Germany", SizeBytes: 1, SHA256: "x"},
+			},
+			Provinces: []mapscatalog.Province{
+				{ISO2: "ca", Slug: "british-columbia", Name: "British Columbia", Code: "BC", SizeBytes: 1, SHA256: "x"},
+			},
+			States: []mapscatalog.State{
+				{Slug: "georgia", Name: "Georgia", Code: "GA"},
+				{Slug: "texas", Name: "Texas", Code: "TX"},
+				{Slug: "ohio", Name: "Ohio", Code: "OH"},
+				{Slug: "florida", Name: "Florida", Code: "FL"},
+				{Slug: "nevada", Name: "Nevada", Code: "NV"},
+				{Slug: "vermont", Name: "Vermont", Code: "VT"},
+				{Slug: "colorado", Name: "Colorado", Code: "CO"},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return mapscatalog.New(srv.URL, func(_ context.Context) string { return "tok" }, time.Hour)
 }
 
 // waitFor polls fn at 30ms intervals until it returns true or the
@@ -78,7 +117,7 @@ func TestGetMapsDownloadStatus_AbsentSlug(t *testing.T) {
 	srv, _, _ := newTestServerWithCache(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	mux := newDownloadsMux(srv)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/maps/downloads/georgia", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/maps/downloads/state/georgia", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -92,7 +131,7 @@ func TestGetMapsDownloadStatus_AbsentSlug(t *testing.T) {
 	if out.State != "absent" {
 		t.Errorf("expected state=absent, got %q", out.State)
 	}
-	if out.Slug != "georgia" {
+	if out.Slug != "state/georgia" {
 		t.Errorf("expected slug=georgia, got %q", out.Slug)
 	}
 }
@@ -112,8 +151,10 @@ func TestGetMapsDownloadStatus_InvalidSlug(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(body["error"], "unknown state slug") {
-		t.Errorf("expected 'unknown state slug', got %q", body["error"])
+	// "xxx" doesn't match any of state/, country/, province/ prefixes,
+	// so resolveSlug fails grammar before catalog membership.
+	if !strings.Contains(body["error"], "invalid slug") {
+		t.Errorf("expected 'invalid slug', got %q", body["error"])
 	}
 }
 
@@ -137,7 +178,7 @@ func TestStartMapsDownload_Lifecycle(t *testing.T) {
 	mux := newDownloadsMux(srv)
 
 	// POST starts the download — must return 202 with a status payload.
-	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/georgia", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/state/georgia", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
@@ -147,7 +188,7 @@ func TestStartMapsDownload_Lifecycle(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&started); err != nil {
 		t.Fatal(err)
 	}
-	if started.Slug != "georgia" {
+	if started.Slug != "state/georgia" {
 		t.Errorf("expected slug=georgia, got %q", started.Slug)
 	}
 	if started.State != "downloading" {
@@ -156,7 +197,7 @@ func TestStartMapsDownload_Lifecycle(t *testing.T) {
 
 	// Wait for completion via the GET endpoint.
 	completed := waitFor(t, 5*time.Second, func() bool {
-		st, _ := mgr.Status(context.Background(), "georgia")
+		st, _ := mgr.Status(context.Background(), "state/georgia")
 		return st.State == "complete"
 	})
 	if !completed {
@@ -164,7 +205,7 @@ func TestStartMapsDownload_Lifecycle(t *testing.T) {
 	}
 
 	// Now GET via HTTP and confirm the same.
-	req = httptest.NewRequest(http.MethodGet, "/api/maps/downloads/georgia", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/maps/downloads/state/georgia", nil)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -192,7 +233,7 @@ func TestStartMapsDownload_AlreadyInflight(t *testing.T) {
 	srv, mgr, _ := newTestServerWithCache(t, upstream)
 	mux := newDownloadsMux(srv)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/texas", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/state/texas", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
@@ -200,7 +241,7 @@ func TestStartMapsDownload_AlreadyInflight(t *testing.T) {
 	}
 
 	// Second POST while the first is still inflight should be 409.
-	req = httptest.NewRequest(http.MethodPost, "/api/maps/downloads/texas", nil)
+	req = httptest.NewRequest(http.MethodPost, "/api/maps/downloads/state/texas", nil)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict {
@@ -219,7 +260,7 @@ func TestStartMapsDownload_AlreadyInflight(t *testing.T) {
 
 	// Cleanup so the goroutine doesn't keep the upstream server alive
 	// past test cleanup.
-	_ = mgr.Delete(context.Background(), "texas")
+	_ = mgr.Delete(context.Background(), "state/texas")
 }
 
 func TestDeleteMapsDownload_Idempotent(t *testing.T) {
@@ -234,22 +275,22 @@ func TestDeleteMapsDownload_Idempotent(t *testing.T) {
 
 	// Drive a download to completion so DELETE has both a row and a
 	// file to remove.
-	if err := mgr.Start(context.Background(), "ohio"); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio"); err != nil {
 		t.Fatal(err)
 	}
 	if !waitFor(t, 3*time.Second, func() bool {
-		st, _ := mgr.Status(context.Background(), "ohio")
+		st, _ := mgr.Status(context.Background(), "state/ohio")
 		return st.State == "complete"
 	}) {
 		t.Fatal("setup: download did not complete")
 	}
 
 	// Sanity: file exists before the delete.
-	if _, err := os.Stat(mgr.PathFor("ohio")); err != nil {
+	if _, err := os.Stat(mgr.PathFor("state/ohio")); err != nil {
 		t.Fatalf("expected file to exist before delete: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/maps/downloads/ohio", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/maps/downloads/state/ohio", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
@@ -257,10 +298,10 @@ func TestDeleteMapsDownload_Idempotent(t *testing.T) {
 	}
 
 	// File gone, GET reports absent.
-	if _, err := os.Stat(mgr.PathFor("ohio")); !os.IsNotExist(err) {
+	if _, err := os.Stat(mgr.PathFor("state/ohio")); !os.IsNotExist(err) {
 		t.Fatalf("file should be gone after delete: %v", err)
 	}
-	req = httptest.NewRequest(http.MethodGet, "/api/maps/downloads/ohio", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/maps/downloads/state/ohio", nil)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	var st dto.DownloadStatus
@@ -272,7 +313,7 @@ func TestDeleteMapsDownload_Idempotent(t *testing.T) {
 	}
 
 	// Second DELETE is a no-op (idempotent).
-	req = httptest.NewRequest(http.MethodDelete, "/api/maps/downloads/ohio", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/api/maps/downloads/state/ohio", nil)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
@@ -284,7 +325,7 @@ func TestServeTilesPMTiles_AbsentReturns404(t *testing.T) {
 	srv, _, _ := newTestServerWithCache(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 
 	req := httptest.NewRequest(http.MethodGet, "/tiles/florida.pmtiles", nil)
-	req.SetPathValue("slug", "florida")
+	req.SetPathValue("slug", "state/florida")
 	rec := httptest.NewRecorder()
 	srv.ServeTilesPMTiles(rec, req)
 
@@ -299,12 +340,16 @@ func TestServeTilesPMTiles_ServesBytes(t *testing.T) {
 	// Stage a file directly so the test doesn't depend on an upstream
 	// download.
 	want := []byte("PMTILES_FAKE_BODY_0123456789ABCDEF")
-	if err := os.WriteFile(mgr.PathFor("nevada"), want, 0o644); err != nil {
+	stagePath := mgr.PathFor("state/nevada")
+	if err := os.MkdirAll(filepath.Dir(stagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stagePath, want, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/tiles/nevada.pmtiles", nil)
-	req.SetPathValue("slug", "nevada")
+	req.SetPathValue("slug", "state/nevada")
 	rec := httptest.NewRecorder()
 	srv.ServeTilesPMTiles(rec, req)
 
@@ -327,12 +372,16 @@ func TestServeTilesPMTiles_RangeRequest(t *testing.T) {
 	srv, mgr, _ := newTestServerWithCache(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 
 	body := []byte("0123456789ABCDEFGHIJ") // 20 bytes
-	if err := os.WriteFile(mgr.PathFor("vermont"), body, 0o644); err != nil {
+	stagePath := mgr.PathFor("state/vermont")
+	if err := os.MkdirAll(filepath.Dir(stagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stagePath, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/tiles/vermont.pmtiles", nil)
-	req.SetPathValue("slug", "vermont")
+	req.SetPathValue("slug", "state/vermont")
 	req.Header.Set("Range", "bytes=0-15")
 	rec := httptest.NewRecorder()
 	srv.ServeTilesPMTiles(rec, req)
@@ -366,9 +415,9 @@ func TestDownloads_NilCacheReturns503(t *testing.T) {
 		path   string
 	}{
 		{http.MethodGet, "/api/maps/downloads"},
-		{http.MethodGet, "/api/maps/downloads/georgia"},
-		{http.MethodPost, "/api/maps/downloads/georgia"},
-		{http.MethodDelete, "/api/maps/downloads/georgia"},
+		{http.MethodGet, "/api/maps/downloads/state/georgia"},
+		{http.MethodPost, "/api/maps/downloads/state/georgia"},
+		{http.MethodDelete, "/api/maps/downloads/state/georgia"},
 	} {
 		req := httptest.NewRequest(route.method, route.path, nil)
 		rec := httptest.NewRecorder()
@@ -379,13 +428,13 @@ func TestDownloads_NilCacheReturns503(t *testing.T) {
 	}
 }
 
-// Sanity that the regex pre-check rejects unicode before the closed
-// list does. Belt-and-suspenders coverage.
+// Sanity that the slug grammar rejects unicode and other malformed
+// inputs before catalog membership runs.
 func TestDownloads_UnicodeSlugRejected(t *testing.T) {
 	srv, _, _ := newTestServerWithCache(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	mux := newDownloadsMux(srv)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/maps/downloads/g%C3%A9orgia", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/maps/downloads/state/g%C3%A9orgia", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -398,3 +447,102 @@ func TestDownloads_UnicodeSlugRejected(t *testing.T) {
 // mapscache.Manager — the handler depends on errors.Is for the 409
 // branch.
 var _ = errors.Is(mapscache.ErrAlreadyInflight, mapscache.ErrAlreadyInflight)
+
+// Country happy path: the namespaced country slug round-trips through
+// resolveSlug + manager + on-disk path.
+func TestStartMapsDownload_Country(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "16")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("0123456789ABCDEF"))
+	})
+	srv, mgr, _ := newTestServerWithCache(t, upstream)
+	mux := newDownloadsMux(srv)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/country/de", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var st dto.DownloadStatus
+	if err := json.NewDecoder(rec.Body).Decode(&st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Slug != "country/de" {
+		t.Errorf("slug=%q want country/de", st.Slug)
+	}
+	if !waitFor(t, 3*time.Second, func() bool {
+		s, _ := mgr.Status(context.Background(), "country/de")
+		return s.State == "complete"
+	}) {
+		t.Fatal("country download did not complete")
+	}
+	if _, err := os.Stat(mgr.PathFor("country/de")); err != nil {
+		t.Fatalf("country file missing: %v", err)
+	}
+}
+
+// Province happy path: province slugs include a third path segment;
+// the wildcard route + resolveSlug + nested cache layout must all
+// agree.
+func TestStartMapsDownload_Province(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("12345678"))
+	})
+	srv, mgr, _ := newTestServerWithCache(t, upstream)
+	mux := newDownloadsMux(srv)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/province/ca/british-columbia", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !waitFor(t, 3*time.Second, func() bool {
+		s, _ := mgr.Status(context.Background(), "province/ca/british-columbia")
+		return s.State == "complete"
+	}) {
+		t.Fatal("province download did not complete")
+	}
+	if _, err := os.Stat(mgr.PathFor("province/ca/british-columbia")); err != nil {
+		t.Fatalf("province file missing: %v", err)
+	}
+}
+
+// country/cn is rejected at the grammar stage (not just catalog
+// membership). We don't ship China archives.
+func TestStartMapsDownload_ForbiddenCountry(t *testing.T) {
+	srv, _, _ := newTestServerWithCache(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	mux := newDownloadsMux(srv)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/country/cn", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// state/wisconsin matches the grammar but the fake catalog does not
+// list it, so resolveSlug rejects on membership.
+func TestStartMapsDownload_NotInCatalog(t *testing.T) {
+	srv, _, _ := newTestServerWithCache(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	mux := newDownloadsMux(srv)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/state/wisconsin", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body["error"], "unknown slug") {
+		t.Errorf("expected 'unknown slug', got %q", body["error"])
+	}
+}

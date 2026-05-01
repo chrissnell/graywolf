@@ -1,8 +1,10 @@
 // Reactive store for the offline downloads UI. Polls the backend
 // every 1.5s while any download is active, otherwise stays idle.
-// The state-picker component calls start()/remove(); the source-
+// The region-picker component calls start()/remove(); the source-
 // picker component reads `completed` to decide if the offline radio
-// should be activated.
+// should be activated. Slugs are namespaced (state/<x>,
+// country/<iso2>, province/<iso2>/<x>); the store passes them
+// through unchanged.
 
 import { toasts } from '../stores.js';
 

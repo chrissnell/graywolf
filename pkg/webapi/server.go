@@ -38,6 +38,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/mapsauth"
 	"github.com/chrissnell/graywolf/pkg/mapscache"
+	"github.com/chrissnell/graywolf/pkg/mapscatalog"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
@@ -68,6 +69,7 @@ type Server struct {
 	updatesChecker    *updatescheck.Checker
 	mapsAuth          *mapsauth.Client    // client for auth.nw5w.com /register; defaulted in NewServer
 	mapsCache         *mapscache.Manager  // PMTiles cache; nil until P2-T5 wires it up — handlers return 503 when nil
+	catalog           *mapscatalog.Cache  // download catalog cache; nil until wired — handlers return 503 when nil
 	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
 	// Nudged after any change that could alter the channel-backing
 	// map (kiss interface add/remove/mode/allow_tx flip, channel
@@ -134,6 +136,10 @@ type Config struct {
 	// directory is known. Tests inject a Manager pointed at a temp
 	// dir + httptest upstream.
 	MapsCache *mapscache.Manager
+	// Catalog is the download-catalog fetcher. Optional — the
+	// /api/maps/catalog handler and slug-validation paths return 503
+	// when nil. Tests inject a Cache pointed at an httptest upstream.
+	Catalog *mapscatalog.Cache
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -166,6 +172,7 @@ func NewServer(cfg Config) (*Server, error) {
 		updatesReloadCh: make(chan struct{}, 1),
 		mapsAuth:        mapsClient,
 		mapsCache:       cfg.MapsCache,
+		catalog:         cfg.Catalog,
 	}, nil
 }
 
@@ -214,6 +221,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerUnits(mux)
 	s.registerTheme(mux)
 	s.registerMaps(mux)
+	s.registerCatalog(mux)
 	s.registerDownloads(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)

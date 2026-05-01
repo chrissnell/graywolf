@@ -8,11 +8,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/mapsslug"
 )
 
 // DefaultMapsBaseURL is the production tile/download host. Override
@@ -85,10 +87,40 @@ func New(cacheDir string, store *configstore.Store, tokenProvider func(context.C
 	}
 }
 
-// PathFor returns the on-disk path of slug's PMTiles archive. The
-// file may not exist; check Status.State == "complete" first.
+// PathFor returns the on-disk path of slug's PMTiles archive. For
+// namespaced slugs, the slashes become subdirectory separators:
+//
+//	state/colorado            -> <cache>/state/colorado.pmtiles
+//	country/de                -> <cache>/country/de.pmtiles
+//	province/ca/british-...   -> <cache>/province/ca/british-...pmtiles
 func (m *Manager) PathFor(slug string) string {
-	return filepath.Join(m.cacheDir, slug+".pmtiles")
+	return filepath.Join(m.cacheDir, filepath.FromSlash(slug)+".pmtiles")
+}
+
+// urlForSlug returns the absolute download URL for a namespaced slug.
+// Token is appended as ?t= when non-empty (matches the Worker contract).
+// Returns an error for any slug that does not match the legal grammar.
+func (m *Manager) urlForSlug(slug, token string) (string, error) {
+	kind, a, b, ok := mapsslug.Parse(slug)
+	if !ok {
+		return "", fmt.Errorf("invalid slug %q", slug)
+	}
+	base := strings.TrimRight(m.mapsBaseURL, "/")
+	var raw string
+	switch kind {
+	case "state":
+		raw = fmt.Sprintf("%s/download/state/%s.pmtiles", base, a)
+	case "country":
+		raw = fmt.Sprintf("%s/download/country/%s.pmtiles", base, a)
+	case "province":
+		raw = fmt.Sprintf("%s/download/province/%s/%s.pmtiles", base, a, b)
+	}
+	if token == "" {
+		return raw, nil
+	}
+	q := url.Values{}
+	q.Set("t", token)
+	return raw + "?" + q.Encode(), nil
 }
 
 // Status returns a snapshot for slug. Reads in-memory live counters
@@ -215,13 +247,10 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 		m.mu.Unlock()
 	}()
 
-	tok := m.tokenProvider(ctx)
-	base := fmt.Sprintf("%s/download/state/%s.pmtiles", m.mapsBaseURL, a.slug)
-	fullURL := base
-	if tok != "" {
-		q := url.Values{}
-		q.Set("t", tok)
-		fullURL = base + "?" + q.Encode()
+	fullURL, err := m.urlForSlug(a.slug, m.tokenProvider(ctx))
+	if err != nil {
+		m.fail(ctx, a.slug, err)
+		return
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
@@ -246,6 +275,10 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 	}
 
 	finalPath := m.PathFor(a.slug)
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+		m.fail(ctx, a.slug, err)
+		return
+	}
 	written, err := writeAtomic(finalPath, resp.Body, func(n int64) { a.bytesDone.Store(n) })
 	if err != nil {
 		m.fail(ctx, a.slug, err)
@@ -257,6 +290,64 @@ func (m *Manager) run(ctx context.Context, a *activeDownload) {
 		BytesTotal: written, BytesDownloaded: written,
 		DownloadedAt: time.Now().UTC(),
 	})
+}
+
+// MigrateLegacyArchives moves legacy bare-slug files
+// (<cache>/colorado.pmtiles) into the new namespaced state subdir
+// (<cache>/state/colorado.pmtiles). Idempotent: skips files already
+// in subdirs and skips non-pmtiles files.
+//
+// Collision policy: if the namespaced target already exists, the legacy
+// file is removed rather than overwriting the (presumably newer)
+// namespaced file. Otherwise os.Rename clobbers a file an operator may
+// have already redownloaded under the new layout. Designed to run once
+// on startup; safe to re-run.
+func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
+	_ = ctx
+	if m.cacheDir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(m.cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	stateDir := filepath.Join(m.cacheDir, "state")
+	leafRE := mapsslug.LeafRegexp()
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".pmtiles") {
+			continue
+		}
+		slug := strings.TrimSuffix(name, ".pmtiles")
+		if !leafRE.MatchString(slug) {
+			continue
+		}
+		if err := os.MkdirAll(stateDir, 0o755); err != nil {
+			return err
+		}
+		oldPath := filepath.Join(m.cacheDir, name)
+		newPath := filepath.Join(stateDir, name)
+		if _, err := os.Stat(newPath); err == nil {
+			// Namespaced target already exists; drop the legacy file
+			// rather than clobbering newer data.
+			if err := os.Remove(oldPath); err != nil {
+				return fmt.Errorf("migrate %s: remove legacy: %w", name, err)
+			}
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("migrate %s: stat target: %w", name, err)
+		}
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return fmt.Errorf("migrate %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (m *Manager) fail(ctx context.Context, slug string, err error) {

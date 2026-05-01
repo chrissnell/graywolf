@@ -2447,6 +2447,43 @@
                 }
             }
         },
+        "/maps/catalog": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Get the offline-maps download catalog",
+                "operationId": "getMapsCatalog",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Catalog"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/maps/downloads": {
             "get": {
                 "security": [
@@ -2505,7 +2542,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "state slug",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
                         "name": "slug",
                         "in": "path",
                         "required": true
@@ -2550,12 +2587,12 @@
                 "tags": [
                     "maps"
                 ],
-                "summary": "Start an offline download for a state",
+                "summary": "Start an offline download",
                 "operationId": "startMapsDownload",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "state slug",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
                         "name": "slug",
                         "in": "path",
                         "required": true
@@ -2603,12 +2640,12 @@
                 "tags": [
                     "maps"
                 ],
-                "summary": "Delete an offline download for a state",
+                "summary": "Delete an offline download",
                 "operationId": "deleteMapsDownload",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "state slug",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
                         "name": "slug",
                         "in": "path",
                         "required": true
@@ -6158,6 +6195,113 @@
             "properties": {
                 "status": {
                     "description": "\"sent\"",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.Catalog": {
+            "type": "object",
+            "properties": {
+                "countries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CatalogCountry"
+                    }
+                },
+                "generatedAt": {
+                    "type": "string"
+                },
+                "provinces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CatalogProvince"
+                    }
+                },
+                "schemaVersion": {
+                    "type": "integer"
+                },
+                "states": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CatalogState"
+                    }
+                }
+            }
+        },
+        "dto.CatalogCountry": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "iso2": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.CatalogProvince": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "iso2": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                },
+                "slug": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CatalogState": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                },
+                "slug": {
                     "type": "string"
                 }
             }

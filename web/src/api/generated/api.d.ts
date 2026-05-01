@@ -577,6 +577,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/maps/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the offline-maps download catalog */
+        get: operations["getMapsCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/maps/downloads": {
         parameters: {
             query?: never;
@@ -604,9 +621,9 @@ export interface paths {
         /** Get one download's status */
         get: operations["getMapsDownloadStatus"];
         put?: never;
-        /** Start an offline download for a state */
+        /** Start an offline download */
         post: operations["startMapsDownload"];
-        /** Delete an offline download for a state */
+        /** Delete an offline download */
         delete: operations["deleteMapsDownload"];
         options?: never;
         head?: never;
@@ -1680,6 +1697,37 @@ export interface components {
         "dto.BeaconSendResponse": {
             /** @description "sent" */
             status?: string;
+        };
+        "dto.Catalog": {
+            countries?: components["schemas"]["dto.CatalogCountry"][];
+            generatedAt?: string;
+            provinces?: components["schemas"]["dto.CatalogProvince"][];
+            schemaVersion?: number;
+            states?: components["schemas"]["dto.CatalogState"][];
+        };
+        "dto.CatalogCountry": {
+            bbox?: number[];
+            iso2?: string;
+            name?: string;
+            sha256?: string;
+            sizeBytes?: number;
+        };
+        "dto.CatalogProvince": {
+            bbox?: number[];
+            code?: string;
+            iso2?: string;
+            name?: string;
+            sha256?: string;
+            sizeBytes?: number;
+            slug?: string;
+        };
+        "dto.CatalogState": {
+            bbox?: number[];
+            code?: string;
+            name?: string;
+            sha256?: string;
+            sizeBytes?: number;
+            slug?: string;
         };
         "dto.ChannelBacking": {
             health?: string;
@@ -4781,6 +4829,44 @@ export interface operations {
             };
         };
     };
+    getMapsCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.Catalog"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
     listMapsDownloads: {
         parameters: {
             query?: never;
@@ -4824,7 +4910,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description state slug */
+                /** @description namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>) */
                 slug: string;
             };
             cookie?: never;
@@ -4874,7 +4960,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description state slug */
+                /** @description namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>) */
                 slug: string;
             };
             cookie?: never;
@@ -4933,7 +5019,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description state slug */
+                /** @description namespaced slug (state/<slug>, country/<iso2>, province/<iso2>/<slug>) */
                 slug: string;
             };
             cookie?: never;
