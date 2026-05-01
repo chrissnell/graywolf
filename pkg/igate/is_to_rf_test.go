@@ -10,6 +10,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/prometheus/client_golang/prometheus"
@@ -337,5 +338,68 @@ func TestIsRxHookFiresWithoutGovernor(t *testing.T) {
 
 	if got := atomic.LoadInt32(&hookCalls); got != 1 {
 		t.Fatalf("IsRxHook calls = %d, want 1 (must fire even without Governor)", got)
+	}
+}
+
+// fakeChannelModeLookup satisfies configstore.ChannelModeLookup for tests.
+type fakeChannelModeLookup struct{ modes map[uint32]string }
+
+func (f *fakeChannelModeLookup) ModeForChannel(_ context.Context, id uint32) (string, error) {
+	return f.modes[id], nil
+}
+
+// TestIgateRefusesPacketModeRfChannel verifies that ResolveTxChannel
+// falls back to the first APRS-eligible channel when the configured
+// TxChannel is packet-mode.
+func TestIgateRefusesPacketModeRfChannel(t *testing.T) {
+	t.Parallel()
+	modes := &fakeChannelModeLookup{modes: map[uint32]string{
+		2: configstore.ChannelModePacket,
+		1: configstore.ChannelModeAPRS,
+	}}
+	cfg := Config{TxChannel: 2, ChannelModes: modes}
+	got := cfg.ResolveTxChannel(context.Background(), []uint32{1, 2})
+	if got != 1 {
+		t.Fatalf("ResolveTxChannel=%d, want fall-back to 1", got)
+	}
+}
+
+// TestIgateSkipsPacketModeTxChannelAtRuntime verifies that when the
+// iGate's TxChannel is packet-mode, handleISLine drops the packet and
+// increments mSubmitDropped without calling Governor.Submit.
+func TestIgateSkipsPacketModeTxChannelAtRuntime(t *testing.T) {
+	t.Parallel()
+	var submitCalls int32
+	gov := &stubGovernor{
+		fn: func(ctx context.Context, channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+			atomic.AddInt32(&submitCalls, 1)
+			return nil
+		},
+	}
+	modes := &fakeChannelModeLookup{modes: map[uint32]string{
+		1: configstore.ChannelModePacket,
+	}}
+	ig, err := New(Config{
+		Server:          "127.0.0.1:1",
+		StationCallsign: "KE7XYZ",
+		Rules: []filters.Rule{
+			{ID: 1, Type: filters.TypePrefix, Pattern: "W5", Action: filters.Allow},
+		},
+		Governor:     gov,
+		TxChannel:    1,
+		ChannelModes: modes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ig.heard.Record("KE7XYZ")
+
+	ig.handleISLine(gateableLine)
+
+	if got := atomic.LoadInt32(&submitCalls); got != 0 {
+		t.Fatalf("Submit calls = %d, want 0 (packet-mode channel must be skipped)", got)
+	}
+	if got := counterValue(t, ig.mSubmitDropped); got != 1 {
+		t.Fatalf("mSubmitDropped = %v, want 1", got)
 	}
 }

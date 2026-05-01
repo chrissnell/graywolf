@@ -72,6 +72,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/callsign"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	"github.com/chrissnell/graywolf/pkg/internal/backoff"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
@@ -115,6 +116,15 @@ type Config struct {
 	Rules []filters.Rule
 	// TxChannel is the radio channel IS->RF frames are submitted on.
 	TxChannel uint32
+	// ChannelModes resolves Channel.Mode at TX time. When the iGate's
+	// configured TxChannel is "packet"-mode, IS->RF gating is suppressed
+	// and a Warn is logged. ResolveTxChannel computes a fall-back channel
+	// for callers that have a candidate list (the wiring layer in
+	// pkg/app uses this on reload). Nil = treat every channel as
+	// ChannelModeAPRS (preserves pre-Phase-0 behavior). Lookup errors
+	// are silently ignored (fail-open at the resolver, fail-closed at
+	// the IS->RF gate -- see the runtime check at the gate point).
+	ChannelModes configstore.ChannelModeLookup
 	// Governor is the TX governor for IS->RF submissions. Required for
 	// downlink; leave nil for IS->RF=disabled. Declared as the
 	// canonical txgovernor.TxSink interface so tests can inject a
@@ -152,6 +162,28 @@ type Config struct {
 	SuppressLocalMessageReGate bool
 	// now is an optional clock for tests.
 	now func() time.Time
+}
+
+// ResolveTxChannel returns cfg.TxChannel when its mode is aprs or
+// aprs+packet. When the configured channel is packet-mode, the
+// resolver picks the first channel in candidates whose mode is
+// aprs/aprs+packet. Returns 0 when no eligible channel exists
+// (caller must guard against this).
+func (cfg *Config) ResolveTxChannel(ctx context.Context, candidates []uint32) uint32 {
+	if cfg.ChannelModes == nil {
+		return cfg.TxChannel
+	}
+	mode, _ := cfg.ChannelModes.ModeForChannel(ctx, cfg.TxChannel)
+	if mode != configstore.ChannelModePacket {
+		return cfg.TxChannel
+	}
+	for _, c := range candidates {
+		m, _ := cfg.ChannelModes.ModeForChannel(ctx, c)
+		if m == configstore.ChannelModeAPRS || m == configstore.ChannelModeAPRSPacket {
+			return c
+		}
+	}
+	return 0
 }
 
 // Status is the current state exposed via the REST endpoint.
@@ -458,6 +490,16 @@ func (ig *Igate) handleISLine(line string) {
 	parent := ig.sessCtx.Load().ctx
 	submitCtx, cancel := context.WithTimeout(parent, igateSubmitTimeout)
 	txCh := ig.txChannel.Load()
+	if ig.cfg.ChannelModes != nil {
+		mode, _ := ig.cfg.ChannelModes.ModeForChannel(submitCtx, txCh)
+		if mode == configstore.ChannelModePacket {
+			ig.logger.Warn("IS->RF drop: tx channel is packet-mode",
+				"channel", txCh)
+			cancel()
+			ig.mSubmitDropped.Inc()
+			return
+		}
+	}
 	err = ig.cfg.Governor.Submit(submitCtx, txCh, wrapped, txgovernor.SubmitSource{
 		Kind:     "igate",
 		Detail:   "is2rf",
