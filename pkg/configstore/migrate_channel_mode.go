@@ -31,27 +31,3 @@ func migrateChannelsMode(tx *gorm.DB) error {
 	}
 	return nil
 }
-
-// columnExists reports whether the named column exists in table using
-// PRAGMA table_info. The table name is a Go-source literal, not user
-// input, so fmt.Sprintf is safe here.
-func columnExists(tx *gorm.DB, table, col string) (bool, error) {
-	rows, err := tx.Raw(fmt.Sprintf(`PRAGMA table_info(%s)`, table)).Rows()
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt any
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return false, err
-		}
-		if name == col {
-			return true, nil
-		}
-	}
-	return false, nil
-}

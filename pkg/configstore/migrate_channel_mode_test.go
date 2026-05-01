@@ -15,7 +15,7 @@ func TestMigrateChannelMode_BackfillsAPRSDefault(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	if err := preStore.DB().Exec(`ALTER TABLE channels DROP COLUMN mode`).Error; err != nil {
-		t.Logf("drop column (expected on fresh schemas): %v", err)
+		t.Fatalf("drop mode column: %v", err)
 	}
 	if err := preStore.DB().Exec(
 		`INSERT INTO channels(id, name, modem_type, bit_rate, mark_freq, space_freq, profile,
