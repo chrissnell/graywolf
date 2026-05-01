@@ -8273,6 +8273,10 @@
         "webapi.VersionResponse": {
             "type": "object",
             "properties": {
+                "platform": {
+                    "description": "Platform is runtime.GOOS of the server process — \"windows\", \"linux\",\n\"darwin\", etc. The UI uses it to surface platform-specific guidance\n(e.g. the Windows app-volume warning on the Audio Devices page).",
+                    "type": "string"
+                },
                 "version": {
                     "type": "string"
                 }

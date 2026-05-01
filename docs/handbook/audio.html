@@ -259,6 +259,75 @@
       </div>
     </div>
 
+    <h2>Windows: only hearing carrier when transmitting?</h2>
+
+    <p>
+      A common Windows-specific failure mode looks like this: PTT keys
+      the radio, but the receiving station hears only an unmodulated
+      carrier &mdash; no AFSK "brap" tones. The radio is being keyed
+      correctly; the problem is that no audio is reaching the radio's
+      mic input.
+    </p>
+
+    <p>
+      In almost every reported case the cause is one of three
+      Windows-side volume settings being muted or set to zero, even
+      though the device itself is enabled and selected as Graywolf's
+      output:
+    </p>
+
+    <ol>
+      <li>
+        <strong>Per-application volume.</strong> Right-click the speaker
+        icon in the system tray and choose <em>Open Volume mixer</em>
+        (or <em>Settings &rarr; System &rarr; Sound &rarr; Volume
+        mixer</em>). Find the Graywolf entry under the output device
+        you assigned to the channel and confirm it is not muted and
+        not at zero. Windows remembers per-app volume independently
+        of device volume, and it can silently sit at 0%.
+      </li>
+      <li>
+        <strong>Device master volume.</strong> In the same Sound panel,
+        click the output device itself and verify its master volume
+        is up and not muted.
+      </li>
+      <li>
+        <strong>Sound control panel "Levels" tab.</strong> Open the
+        legacy Sound control panel (<code>mmsys.cpl</code>),
+        right-click the output device, choose <em>Properties &rarr;
+        Levels</em>, and confirm the slider is up and the speaker
+        icon next to it is not crossed out.
+      </li>
+    </ol>
+
+    <p>
+      Also worth checking: if you're using a SignaLink USB or any
+      external interface with a hardware <em>TX</em> potentiometer,
+      that pot must be turned up &mdash; rotated fully closed it
+      produces the same "carrier only" symptom. Start with it at the
+      12 o'clock position and adjust from the <strong>Test
+      Tone</strong> button on this page.
+    </p>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Quick way to confirm whether the problem is on the Windows
+          side or the radio/cable side: in the Sound control panel,
+          open the input device tab, right-click your radio's RX sound
+          card, choose <em>Properties &rarr; Listen</em>, tick
+          <em>Listen to this device</em>, and route it to your laptop
+          speakers. Now press the Test Tone button on this page. If
+          you hear the tone from your laptop speakers, the audio is
+          reaching the sound card &mdash; the issue is between the
+          sound card and the radio (cable, jack, or radio menu). If
+          you hear nothing, the issue is one of the three settings
+          above.
+        </p>
+      </div>
+    </div>
+
     <h2>Hot Reconfiguration</h2>
 
     <p>

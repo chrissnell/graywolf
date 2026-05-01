@@ -24,6 +24,7 @@
   let deviceLevels = $state({});
   let testingTone = $state(null);
   let gainTimers = {};
+  let isWindows = $state(false);
 
   function emptyForm() {
     return { name: '', device_path: '', sample_rate: '48000', source_type: 'soundcard', direction: 'input' };
@@ -32,6 +33,13 @@
   onMount(() => {
     loadDevices();
     loadChannels();
+    // Detect server OS so we can surface platform-specific guidance
+    // (e.g. the Windows app-volume-mute warning below). Falls back to
+    // hidden-state on any error — the warning is helpful, not load-bearing.
+    fetch('/api/version')
+      .then(r => r.json())
+      .then(d => { isWindows = d.platform === 'windows'; })
+      .catch(() => {});
     const interval = setInterval(pollLevels, 200);
     const channelsInterval = setInterval(loadChannels, 5000);
     return () => {
@@ -277,6 +285,20 @@
   </div>
 {/if}
 
+{#if isWindows}
+  <div class="windows-tip" role="note">
+    <strong>Windows tip — only hearing carrier when transmitting?</strong>
+    If your radio keys up but sends an unmodulated carrier (no AFSK
+    "brap"), Windows is most likely muting the audio before it reaches
+    the radio. Open <em>Settings → System → Sound → Volume mixer</em>
+    (or right-click the speaker icon → "Open Volume mixer") and
+    confirm: (1) the output device assigned below is not muted and its
+    level is up, and (2) Graywolf's per-application volume on that
+    device is not at zero. Also check the Windows Sound control panel
+    "Levels" tab for the same device.
+  </div>
+{/if}
+
 <!-- Station readiness -->
 <div class="readiness">
   <div class="readiness-item" class:ready={hasInput}>
@@ -515,6 +537,27 @@
   .no-channel-banner a {
     color: var(--accent, #58a6ff);
     text-decoration: underline;
+  }
+  .windows-tip {
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--accent, #58a6ff);
+    border-left-width: 4px;
+    border-radius: var(--radius);
+    background: var(--color-info-muted, rgba(88, 166, 255, 0.12));
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .windows-tip strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+  .windows-tip em {
+    font-style: normal;
+    background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+    padding: 1px 5px;
+    border-radius: 3px;
   }
 
   /* Station readiness */

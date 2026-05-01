@@ -7,6 +7,22 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.12.3"
+  date: "2026-04-30"
+  style: info
+  schema_version: 1
+  title: "Windows: tip when your radio sends only carrier"
+  link: "#/audio-devices"
+  body: |
+    If your radio keys up but transmits an unmodulated carrier
+    instead of the usual AFSK packet tones, the cause on Windows is
+    almost always the per-application or device volume being muted
+    or set to zero. The Audio Devices page now shows a Windows-only
+    tip pointing you at the Volume mixer and the Sound control
+    panel Levels tab, and the handbook has a new troubleshooting
+    section with the full checklist. Nothing to reconfigure -- this
+    is guidance only.
+
 - version: "0.12.2"
   date: "2026-04-30"
   style: info

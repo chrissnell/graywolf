@@ -1,10 +1,17 @@
 package webapi
 
-import "net/http"
+import (
+	"net/http"
+	"runtime"
+)
 
 // VersionResponse is the JSON shape returned by GET /api/version.
 type VersionResponse struct {
 	Version string `json:"version"`
+	// Platform is runtime.GOOS of the server process — "windows", "linux",
+	// "darwin", etc. The UI uses it to surface platform-specific guidance
+	// (e.g. the Windows app-volume warning on the Audio Devices page).
+	Platform string `json:"platform"`
 }
 
 // RegisterVersion installs GET /api/version on mux. It is a public
@@ -39,6 +46,9 @@ func RegisterVersion(srv *Server, mux *http.ServeMux) {
 // @Router   /version [get]
 func getVersion(version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, VersionResponse{Version: version})
+		writeJSON(w, http.StatusOK, VersionResponse{
+			Version:  version,
+			Platform: runtime.GOOS,
+		})
 	}
 }

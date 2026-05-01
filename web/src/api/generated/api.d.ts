@@ -2625,6 +2625,12 @@ export interface components {
             simulation_mode?: boolean;
         };
         "webapi.VersionResponse": {
+            /**
+             * @description Platform is runtime.GOOS of the server process — "windows", "linux",
+             *     "darwin", etc. The UI uses it to surface platform-specific guidance
+             *     (e.g. the Windows app-volume warning on the Audio Devices page).
+             */
+            platform?: string;
             version?: string;
         };
         "webapi.WeatherDTO": {
