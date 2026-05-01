@@ -7,7 +7,7 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
-- version: "0.13.0"
+- version: "0.12.1"
   date: "2026-04-30"
   style: info
   schema_version: 1
