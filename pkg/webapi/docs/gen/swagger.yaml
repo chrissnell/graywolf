@@ -50,6 +50,7 @@ definitions:
       raw:
         description: original AX.25 frame bytes
         items:
+          format: int32
           type: integer
         type: array
       source:
@@ -228,6 +229,7 @@ definitions:
     properties:
       altitude:
         description: meters (0 if none reported)
+        format: float64
         type: number
       ambiguity:
         description: 0..4, digits of ambiguity introduced by spaces
@@ -239,6 +241,7 @@ definitions:
         type: integer
       daodatum:
         description: DAO datum byte (APRS101 DAO extension), 0 if not present
+        format: int32
         type: integer
       hasAlt:
         type: boolean
@@ -246,12 +249,14 @@ definitions:
         type: boolean
       latitude:
         description: decimal degrees, positive north
+        format: float64
         type: number
       localTime:
         description: true if the timestamp was the '/' local-time form (APRS101 ch 6)
         type: boolean
       longitude:
         description: decimal degrees, positive east
+        format: float64
         type: number
       phg:
         allOf:
@@ -259,6 +264,7 @@ definitions:
         description: decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present
       speed:
         description: knots
+        format: float64
         type: number
       symbol:
         $ref: '#/definitions/aprs.Symbol'
@@ -269,14 +275,17 @@ definitions:
   aprs.Symbol:
     properties:
       code:
+        format: int32
         type: integer
       table:
+        format: int32
         type: integer
     type: object
   aprs.Telemetry:
     properties:
       analog:
         items:
+          format: float64
           type: number
         type: array
       analogHas:
@@ -289,6 +298,7 @@ definitions:
         type: string
       digital:
         description: bits 0..7 (only lower 8)
+        format: int32
         type: integer
       hasDigital:
         type: boolean
@@ -300,11 +310,13 @@ definitions:
     properties:
       bits:
         description: BITS. sense-bits bitmap (active-high per bit)
+        format: int32
         type: integer
       eqns:
         description: a, b, c coefficients per analog channel
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -357,25 +369,31 @@ definitions:
         type: integer
       pressure:
         description: tenths of millibar (e.g. 10132 = 1013.2)
+        format: float64
         type: number
       rain1Hour:
         description: hundredths of an inch
+        format: float64
         type: number
       rain24Hour:
+        format: float64
         type: number
       rainSinceMid:
+        format: float64
         type: number
       rawRainCounter:
         description: raw rain counter ('#' field)
         type: integer
       snowfall24h:
         description: inches (via 's' after 'g')
+        format: float64
         type: number
       softwareType:
         description: one-letter software code (e.g. 'w', 'x', 'd')
         type: string
       temperature:
         description: degrees F
+        format: float64
         type: number
       weatherUnitTag:
         description: 2..4 ASCII letters identifying the unit/model
@@ -385,9 +403,11 @@ definitions:
         type: integer
       windGust:
         description: mph (5-minute peak)
+        format: float64
         type: number
       windSpeed:
         description: mph (1-minute sustained)
+        format: float64
         type: number
     type: object
   configstore.Referrer:
@@ -1931,6 +1951,10 @@ definitions:
       DirIS: APRS-IS upload/download (iGate)
       DirRX: heard on the air
       DirTX: transmitted by us
+    x-enum-descriptions:
+      - heard on the air
+      - transmitted by us
+      - APRS-IS upload/download (iGate)
     x-enum-varnames:
       - DirRX
       - DirTX
@@ -2054,6 +2078,7 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -2114,6 +2139,7 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array

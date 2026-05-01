@@ -75,6 +75,7 @@ type Channel struct {
 	IL2PEncode     bool         `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
 	NumDecoders    uint32       `gorm:"not null;default:1" json:"num_decoders"`
 	DecoderOffset  int32        `gorm:"not null;default:0" json:"decoder_offset"`
+	Mode           string       `gorm:"not null;default:'aprs'" json:"mode"` // aprs|packet|aprs+packet
 	CreatedAt      time.Time    `json:"-"`
 	UpdatedAt      time.Time    `json:"-"`
 }
@@ -193,6 +194,25 @@ const (
 	KissTypeSerial    = "serial"
 	KissTypeBluetooth = "bluetooth"
 )
+
+// Channel.Mode values. Default is ChannelModeAPRS to preserve current
+// behavior on databases that pre-date the column.
+const (
+	ChannelModeAPRS       = "aprs"        // APRS only — connected-mode AX.25 refuses this channel
+	ChannelModePacket     = "packet"      // Packet only — beacon/digi/igate/messages all suppressed for this channel
+	ChannelModeAPRSPacket = "aprs+packet" // Permissive — both allowed
+)
+
+// ValidChannelMode reports whether m is an accepted Channel.Mode value.
+// Empty string is rejected; callers wanting the default must substitute
+// ChannelModeAPRS first.
+func ValidChannelMode(m string) bool {
+	switch m {
+	case ChannelModeAPRS, ChannelModePacket, ChannelModeAPRSPacket:
+		return true
+	}
+	return false
+}
 
 // ValidKissInterfaceType reports whether t is an accepted
 // KissInterface.InterfaceType value. "tcp-client" was added in Phase 4
