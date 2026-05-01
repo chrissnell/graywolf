@@ -4,9 +4,9 @@
   import { mapsState, ISSUES_URL } from '../lib/settings/maps-store.svelte.js';
   import { validateCallsign } from '../lib/maps/callsign.js';
   import { downloadsState } from '../lib/maps/downloads-store.svelte.js';
-  import { US_STATES } from '../lib/maps/state-list.js';
+  import { catalogStore } from '../lib/maps/catalog-store.svelte.js';
   import { formatBytes } from '../lib/maps/format-bytes.js';
-  import StatePicker from '../lib/maps/state-picker.svelte';
+  import RegionPicker from '../lib/maps/region-picker.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import wolfLogoUrl from '../assets/graywolf.svg';
 
@@ -21,6 +21,7 @@
 
   onMount(() => {
     mapsState.fetchConfig();
+    catalogStore.load();
     downloadsState.refresh().then(() => {
       if (
         [...downloadsState.items.values()].some(
@@ -32,8 +33,17 @@
     });
   });
 
-  // Build a name lookup for the downloaded list.
-  const slugToName = Object.fromEntries(US_STATES.map((s) => [s.slug, s.name]));
+  // Catalog-backed name lookup for downloaded slugs. Keys are
+  // namespaced (state/<x>, country/<iso2>, province/<iso2>/<x>).
+  let slugToName = $derived.by(() => {
+    const cat = catalogStore.catalog;
+    if (!cat) return {};
+    const m = {};
+    for (const c of cat.countries) m[`country/${c.iso2}`] = c.name;
+    for (const p of cat.provinces) m[`province/${p.iso2}/${p.slug}`] = p.name;
+    for (const s of cat.states) m[`state/${s.slug}`] = s.name;
+    return m;
+  });
 
   let downloadedRows = $derived.by(() => {
     const rows = [];
@@ -246,9 +256,11 @@
         <p class="source-sublabel">{src.sublabel}</p>
       </div>
       {#if src.value === 'graywolf' && mapsState.source === 'graywolf' && downloadsState.completed.size > 0}
+        {@const cat = catalogStore.catalog}
+        {@const total = cat ? cat.countries.length + cat.provinces.length + cat.states.length : 0}
         <p class="source-offline-hint">
           Using offline tiles for {downloadsState.completed.size}
-          of 51 state{downloadsState.completed.size === 1 ? '' : 's'}.
+          of {total} region{total === 1 ? '' : 's'}.
           Areas without offline coverage fall back to online.
         </p>
       {/if}
@@ -259,9 +271,9 @@
 {#if mapsState.registered}
   <Box title="Offline maps">
     <p class="prose">
-      Download per-state vector tiles for off-grid use. The map will use these
-      automatically where coverage exists; it falls back to online tiles for
-      areas you have not downloaded.
+      Download vector tiles for countries, US states, and Canadian provinces
+      for off-grid use. The map will use these automatically where coverage
+      exists; it falls back to online tiles for areas you have not downloaded.
     </p>
 
     {#if activeDownloads.length > 0}
@@ -292,7 +304,7 @@
     {/if}
 
     {#if downloadedRows.length === 0 && activeDownloads.length === 0}
-      <p class="form-hint">No states downloaded yet.</p>
+      <p class="form-hint">No regions downloaded yet.</p>
     {:else if downloadedRows.length > 0}
       <h3 class="prose-heading">Downloaded ({downloadedRows.length})</h3>
       <ul class="downloaded-list">
@@ -313,11 +325,11 @@
     {/if}
 
     <Button class="maps-cta" onclick={() => (pickerOpen = true)}>
-      Add a state
+      Add a region
     </Button>
   </Box>
 
-  <StatePicker bind:open={pickerOpen} />
+  <RegionPicker bind:open={pickerOpen} />
 {/if}
 
 <style>
