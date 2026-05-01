@@ -289,6 +289,37 @@ func TestMigrateLegacyArchives(t *testing.T) {
 	}
 }
 
+// Collision: legacy bare file AND namespaced file both exist. Migration
+// must NOT overwrite the namespaced file; it removes the legacy one.
+func TestMigrateLegacyArchives_CollisionDropsLegacy(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "colorado.pmtiles"), []byte("LEGACY"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "state"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(dir, "state", "colorado.pmtiles")
+	if err := os.WriteFile(newPath, []byte("NEW"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manager{cacheDir: dir}
+	if err := m.MigrateLegacyArchives(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "NEW" {
+		t.Fatalf("namespaced file was overwritten by legacy: got %q", string(got))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "colorado.pmtiles")); !os.IsNotExist(err) {
+		t.Fatalf("legacy file should have been removed; err=%v", err)
+	}
+}
+
 func TestPathFor(t *testing.T) {
 	m := &Manager{cacheDir: "/var/lib/graywolf/tiles"}
 	cases := []struct {
