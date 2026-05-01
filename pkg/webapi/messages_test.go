@@ -339,6 +339,73 @@ func TestSendMessage_LoopbackGuard(t *testing.T) {
 	}
 }
 
+// TestSendMessage_AllowsCrossSSID asserts the loopback guard compares
+// full callsigns (SSID included). When our station is W6XYZ-10, sending
+// to bare W6XYZ — a separate APRS station — must be permitted.
+func TestSendMessage_AllowsCrossSSID(t *testing.T) {
+	sentCh := make(chan messages.SendMessageRequest, 1)
+	svc := &fakeMessagesSvc{
+		sendFn: func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
+			sentCh <- req
+			return &configstore.Message{
+				ID:         7,
+				Direction:  "out",
+				OurCall:    req.OurCall,
+				FromCall:   req.OurCall,
+				ToCall:     req.To,
+				Text:       req.Text,
+				ThreadKind: messages.ThreadKindDM,
+				ThreadKey:  req.To,
+				MsgID:      "001",
+				CreatedAt:  time.Now(),
+				AckState:   messages.AckStateNone,
+			}, nil
+		},
+	}
+	srv, mux, _ := newMessagesTestServer(t, svc)
+	if err := srv.store.UpsertStationConfig(context.Background(), configstore.StationConfig{Callsign: "W6XYZ-10"}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"to":"W6XYZ","text":"hi"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for cross-SSID send, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got := <-sentCh
+	if got.To != "W6XYZ" || got.OurCall != "W6XYZ-10" {
+		t.Errorf("unexpected send req: %+v", got)
+	}
+}
+
+// TestSendMessage_BlocksExactSSIDMatch asserts the loopback guard still
+// blocks when the destination is an exact match for our callsign with
+// SSID — true loopback to ourselves.
+func TestSendMessage_BlocksExactSSIDMatch(t *testing.T) {
+	svc := &fakeMessagesSvc{
+		sendFn: func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
+			t.Error("service SendMessage must NOT be called for exact loopback")
+			return nil, nil
+		},
+	}
+	srv, mux, _ := newMessagesTestServer(t, svc)
+	if err := srv.store.UpsertStationConfig(context.Background(), configstore.StationConfig{Callsign: "W6XYZ-10"}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"to":"W6XYZ-10","text":"hi"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for exact-SSID loopback, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSendMessage_MissingStationCallsign(t *testing.T) {
 	svc := &fakeMessagesSvc{
 		sendFn: func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {

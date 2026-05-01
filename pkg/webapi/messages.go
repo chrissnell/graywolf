@@ -266,7 +266,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	to := strings.ToUpper(strings.TrimSpace(req.To))
-	if baseCall(to) != "" && baseCall(ourCall) != "" && baseCall(to) == baseCall(ourCall) {
+	if to != "" && ourCall != "" && to == ourCall {
 		badRequest(w, "cannot send a message to our own callsign")
 		return
 	}
