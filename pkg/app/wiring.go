@@ -29,6 +29,7 @@ import (
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/mapscache"
+	"github.com/chrissnell/graywolf/pkg/mapscatalog"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
@@ -823,6 +824,42 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		2,
 	)
 
+	// Catalog cache pulls /manifest.json from the maps Worker once per
+	// hour and serves the trimmed list to the UI + the slug-validation
+	// path on every download request. Token comes from the same place
+	// mapsCache reads it (singleton MapsConfig) so re-registration
+	// rotates the bearer for catalog fetches too.
+	catalog := mapscatalog.New(
+		mapscache.DefaultMapsBaseURL,
+		func(ctx context.Context) string {
+			c, _ := a.store.GetMapsConfig(ctx)
+			return c.Token
+		},
+		time.Hour,
+	)
+	// Best-effort warm; failures are non-fatal -- Get() will retry on
+	// the first request that needs the catalog.
+	go func() {
+		warmCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := catalog.Refresh(warmCtx); err != nil {
+			a.logger.Warn("maps catalog warm-up failed", "err", err)
+		}
+	}()
+
+	// Slug + archive layout migrations (run at most once each; both
+	// idempotent). The DB migration must finish before the webapi
+	// server registers /api/maps/downloads handlers, so it runs
+	// synchronously. The on-disk migration is fire-and-forget; its
+	// failure mode (a stale legacy archive sitting in <cache>/) is
+	// recoverable on the next successful download.
+	if err := a.store.MigrateMapsDownloadSlugs(context.Background()); err != nil {
+		return fmt.Errorf("migrate maps_downloads slugs: %w", err)
+	}
+	if err := mapsCache.MigrateLegacyArchives(context.Background()); err != nil {
+		a.logger.Warn("legacy archive migration failed", "err", err)
+	}
+
 	apiSrv, err := webapi.NewServer(webapi.Config{
 		Store:         a.store,
 		Bridge:        a.bridge,
@@ -832,6 +869,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		HistoryDBPath: a.cfg.HistoryDBPath,
 		Version:       a.cfg.Version,
 		MapsCache:     mapsCache,
+		Catalog:       catalog,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)
