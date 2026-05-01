@@ -105,13 +105,49 @@ schema types.
 |---|---|---|---|
 | APRS-IS (`rotate.aprs2.net` etc.) | iGate session, login, filter, RF<->IS gating | [`../../pkg/igate/`](../../pkg/igate/) | [`../handbook/igate.html`](../handbook/igate.html) |
 | `auth.nw5w.com` | graywolf-maps registration; per-device bearer token | [`../../pkg/mapsauth/`](../../pkg/mapsauth/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
-| `maps.nw5w.com` | tile fetch + offline state PMTiles downloads | [`../../pkg/mapscache/`](../../pkg/mapscache/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
+| `maps.nw5w.com` | tile fetch + offline PMTiles downloads (states, countries, provinces) | [`../../pkg/mapscache/`](../../pkg/mapscache/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
 | GitHub Releases | Daily update poll | [`../../pkg/updatescheck/`](../../pkg/updatescheck/) | (no dedicated page) |
 | `flare.nw5w.com` | graywolf flare submission receiver (graywolf-flare-server, see https://github.com/chrissnell/graywolf-flare-server) | [`../../pkg/diagcollect/submit/`](../../pkg/diagcollect/submit/) | (no dedicated handbook page yet) |
 
 PMTiles infra (manifest gen, R2 sync, origin Worker) lives in `~/dev/graywolf-maps`,
 not here. Integration spec: `~/dev/graywolf-maps/.context/graywolf-client-integration.md`.
 See [invariant 7](invariants.md).
+
+### Offline maps catalog
+
+The Worker exposes `GET /manifest.json` (auth-gated) returning the
+public download catalog: `{ schemaVersion: 1, generatedAt, countries[],
+provinces[], states[] }`. Internal R2 paths and build provenance are
+stripped before the response leaves the Worker.
+
+Graywolf proxies that catalog at `GET /api/maps/catalog`. The
+in-process [`pkg/mapscatalog/`](../../pkg/mapscatalog/) cache holds the
+catalog for one hour with stale-on-error fallback, so the UI's picker
+and the slug validator never block on a fresh fetch beyond first use.
+
+Download slugs are namespaced. The grammar lives in
+[`pkg/webapi/slug.go`](../../pkg/webapi/slug.go) and a parallel copy in
+[`pkg/mapscache/manager.go`](../../pkg/mapscache/manager.go) (kept in
+lockstep to dodge an import cycle):
+
+- `state/<slug>` -- e.g. `state/colorado`
+- `country/<iso2>` -- e.g. `country/de` (cn and ru are forbidden at
+  parse time, not just catalog membership)
+- `province/<iso2>/<slug>` -- e.g. `province/ca/british-columbia`
+
+On disk the slashes become subdirectory separators:
+`<TileCacheDir>/state/colorado.pmtiles`,
+`<TileCacheDir>/country/de.pmtiles`,
+`<TileCacheDir>/province/ca/british-columbia.pmtiles`. Pre-namespaced
+installs (where every archive sat directly in `<TileCacheDir>/`) are
+migrated on startup by `mapsCache.MigrateLegacyArchives` (file move)
+and `store.MigrateMapsDownloadSlugs` (DB row update); both idempotent.
+
+The `/tiles/{multi-segment}.pmtiles` route on the outer mux strips the
+prefix and `.pmtiles` suffix, sets the rest as the slug, and delegates
+to `webapi.Server.ServeTilesPMTiles`. Catalog membership is rechecked
+on every tile request; the cache is in-process so the cost is a map
+lookup.
 
 ## Off-repo, operator-managed (Linux service install)
 
