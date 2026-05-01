@@ -26,7 +26,7 @@
     for (const country of tree) {
       const countryHit = country.name.toLowerCase().includes(q);
       const childHits = country.children.filter(
-        (c) => c.name.toLowerCase().includes(q) || c.slug.includes(q),
+        (c) => c.name.toLowerCase().includes(q),
       );
       if (countryHit || childHits.length > 0) {
         out.push({ ...country, children: countryHit ? country.children : childHits });
@@ -66,7 +66,12 @@
     {#if catalogStore.loading && !catalogStore.catalog}
       <p class="form-hint">Loading catalog...</p>
     {:else if catalogStore.error}
-      <p class="form-hint form-hint-error">{catalogStore.error}</p>
+      <div class="catalog-error">
+        <p class="form-hint form-hint-error">{catalogStore.error}</p>
+        <Button onclick={() => catalogStore.retry()} disabled={catalogStore.loading}>
+          {catalogStore.loading ? 'Retrying...' : 'Try again'}
+        </Button>
+      </div>
     {:else}
       <ul class="region-list" role="list">
         {#each filteredTree as country (country.iso2)}
@@ -181,4 +186,5 @@
   .region-status.complete { color: var(--color-success); }
   .region-actions { display: flex; gap: 4px; }
   .region-empty { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
+  .catalog-error { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
 </style>
