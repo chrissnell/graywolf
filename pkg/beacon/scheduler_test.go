@@ -10,10 +10,18 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
+
+// fakeChannelModeLookup is a test stub for configstore.ChannelModeLookup.
+type fakeChannelModeLookup struct{ modes map[uint32]string }
+
+func (f *fakeChannelModeLookup) ModeForChannel(_ context.Context, id uint32) (string, error) {
+	return f.modes[id], nil
+}
 
 // mockSink wraps the shared testtx.Recorder with a count-to-N latch
 // so beacon tests can block until a known number of frames have been
@@ -474,6 +482,45 @@ func TestTimeToNextSlot(t *testing.T) {
 	now2 := time.Date(2026, 1, 1, 10, 0, 45, 0, time.UTC)
 	if got := timeToNextSlot(now2, 30); got != 3585*time.Second {
 		t.Errorf("slot=30 @ :45: got %v", got)
+	}
+}
+
+// TestSchedulerSkipsPacketModeBeacons verifies that a beacon fire on a
+// channel whose Mode is "packet" is silently suppressed before submission.
+func TestSchedulerSkipsPacketModeBeacons(t *testing.T) {
+	sink := testtx.NewRecorder() // not a mockSink — we expect zero submissions
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+
+	lookup := &fakeChannelModeLookup{modes: map[uint32]string{7: configstore.ChannelModePacket}}
+	s, err := New(Options{
+		Sink:         sink,
+		Logger:       logger,
+		ChannelModes: lookup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		ID:          7,
+		Type:        TypePosition,
+		Channel:     7,
+		Source:      mustAddr(t, "N0CALL-9"),
+		Dest:        mustAddr(t, "APGRWO"),
+		Slot:        -1,
+		Lat:         37.0,
+		Lon:         -122.0,
+		SymbolTable: '/',
+		SymbolCode:  '-',
+		Comment:     "packet-mode test",
+		Enabled:     true,
+	}
+
+	// sendBeaconWith is the shared TX path; call it directly via sendBeacon.
+	s.sendBeacon(context.Background(), cfg)
+
+	if n := sink.Len(); n != 0 {
+		t.Fatalf("expected 0 submissions for packet-mode channel, got %d", n)
 	}
 }
 
