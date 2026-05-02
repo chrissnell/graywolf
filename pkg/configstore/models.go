@@ -809,3 +809,76 @@ func (t *TacticalCallsign) BeforeSave(_ *gorm.DB) error {
 	t.Callsign = strings.ToUpper(strings.TrimSpace(t.Callsign))
 	return nil
 }
+
+// Action is one operator-defined trigger. Identified by Name (used as
+// the message keyword). Type switches between command and webhook
+// execution; the type-specific fields are nullable.
+type Action struct {
+	ID                  uint   `gorm:"primaryKey"`
+	Name                string `gorm:"uniqueIndex;size:32;not null"`
+	Description         string
+	Type                string `gorm:"size:16;not null"` // 'command' | 'webhook'
+	CommandPath         string
+	WorkingDir          string
+	WebhookMethod       string `gorm:"size:8"` // 'GET' | 'POST'
+	WebhookURL          string
+	WebhookHeaders      string `gorm:"type:text;default:'{}'"` // JSON map
+	WebhookBodyTemplate string `gorm:"type:text"`
+	TimeoutSec          int    `gorm:"not null;default:10"`
+	OTPRequired         bool   `gorm:"not null;default:true"`
+	OTPCredentialID     *uint  `gorm:"column:otp_credential_id"` // FK to OTPCredential, nullable; ON DELETE SET NULL
+	SenderAllowlist     string // CSV
+	ArgSchema           string `gorm:"type:text;default:'[]'"` // JSON list
+	RateLimitSec        int    `gorm:"not null;default:5"`
+	QueueDepth          int    `gorm:"not null;default:8"`
+	Enabled             bool   `gorm:"not null;default:true"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+// OTPCredential is one TOTP secret. Stored plaintext; UI surfaces
+// the secret only once at create time and never reads it back.
+type OTPCredential struct {
+	ID         uint   `gorm:"primaryKey"`
+	Name       string `gorm:"uniqueIndex;size:64;not null"`
+	Issuer     string `gorm:"size:64"`
+	Account    string `gorm:"size:128"`
+	Algorithm  string `gorm:"size:16;not null;default:'SHA1'"`
+	Digits     int    `gorm:"not null;default:6"`
+	Period     int    `gorm:"not null;default:30"`
+	SecretB32  string `gorm:"size:64;not null"`
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+}
+
+// ActionListenerAddressee extends the Actions trigger surface with an
+// extra APRS addressee (e.g. "GWACT") independent of the station call
+// or tactical aliases. Ships empty.
+type ActionListenerAddressee struct {
+	ID        uint   `gorm:"primaryKey"`
+	Addressee string `gorm:"uniqueIndex;size:9;not null"`
+	CreatedAt time.Time
+}
+
+// ActionInvocation is the per-attempt audit row. ActionID is nullable
+// so an invocation that resolved to status=unknown still gets logged.
+// ActionNameAt is denormalized so a row remains readable after the
+// underlying Action is deleted.
+type ActionInvocation struct {
+	ID              uint   `gorm:"primaryKey"`
+	ActionID        *uint  `gorm:"index"`
+	ActionNameAt    string `gorm:"size:64"`
+	SenderCall      string `gorm:"size:9;index"`
+	Source          string `gorm:"size:4"` // 'rf' | 'is'
+	OTPCredentialID *uint  `gorm:"column:otp_credential_id"`
+	OTPVerified     bool
+	RawArgsJSON     string `gorm:"type:text"`
+	Status          string `gorm:"size:24"`
+	StatusDetail    string
+	ExitCode        *int
+	HTTPStatus      *int
+	OutputCapture   string `gorm:"type:text"`
+	ReplyText       string
+	Truncated       bool
+	CreatedAt       time.Time `gorm:"index"`
+}
