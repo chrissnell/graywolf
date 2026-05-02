@@ -92,6 +92,13 @@ func (s *Server) handleAX25Terminal(w http.ResponseWriter, r *http.Request) {
 
 	s.runTerminalReader(ctx, c, bridge, user.Username)
 
+	// Bridge.Close submits EventDisconnect on the active session
+	// before we tear down the writer + WebSocket so the LAPB peer
+	// sees a clean DISC frame on the wire instead of waiting for N2
+	// retries to time out. Critical for radio neighbours: every
+	// browser tab close, OS-level WS reaper kill, or mobile suspend
+	// would otherwise leak a ghost link.
+	bridge.Close()
 	cancel()
 	<-writerDone
 	_ = c.Close(websocket.StatusNormalClosure, "session ended")
@@ -119,6 +126,14 @@ func (s *Server) runTerminalReader(ctx context.Context, c *websocket.Conn, bridg
 	}
 }
 
+// runTerminalWriter is the sole sender on the WebSocket. It also
+// owns the keepalive ping ticker so we never have two goroutines
+// writing the connection concurrently. The `out` channel is owned
+// by the bridge; we only read from it. Critically we DO NOT close
+// `out` here -- the bridge's pump goroutine is the single sender,
+// and closing under it would race observer events that may still be
+// in flight when the WS tears down. Bridge.Close + ctx cancel are
+// the bridge's only synchronization points.
 func (s *Server) runTerminalWriter(ctx context.Context, c *websocket.Conn, out <-chan ax25termws.Envelope, done chan<- struct{}, user string) {
 	defer close(done)
 	ticker := time.NewTicker(terminalPingInterval)

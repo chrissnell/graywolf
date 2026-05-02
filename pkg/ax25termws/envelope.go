@@ -20,7 +20,6 @@ const (
 	KindDataRX    MsgKind = "data_rx"
 	KindLinkStats MsgKind = "link_stats"
 	KindError     MsgKind = "error"
-	KindAck       MsgKind = "ack"
 )
 
 // Envelope is the on-wire JSON shape. Data is base64-encoded by

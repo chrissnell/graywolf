@@ -16,6 +16,9 @@
 
   let channelId = $state('');
   let localCall = $state('');
+  // SSID 0 is a valid value (the default for any callsign), not a
+  // missing-field signal. validateSSID below treats 0 as valid; the
+  // form never errors on a blank SSID input.
   let localSSID = $state(0);
   let destCall = $state('');
   let destSSID = $state(0);

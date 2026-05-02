@@ -176,74 +176,92 @@ func (aprsOnlyLookup) ModeForChannel(_ context.Context, _ uint32) (string, error
 	return "aprs", nil
 }
 
+// recvWithin reads one envelope from out within d, or fails the test.
+// The bridge now serializes observer events through an internal pump
+// goroutine, so observer-driven envelopes arrive asynchronously.
+func recvWithin(t *testing.T, out <-chan Envelope, d time.Duration) Envelope {
+	t.Helper()
+	select {
+	case env := <-out:
+		return env
+	case <-time.After(d):
+		t.Fatal("timed out waiting for envelope")
+		return Envelope{}
+	}
+}
+
 func TestBridge_ObserveStateChange(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	out := make(chan Envelope, 4)
 	b, _ := newTestBridge(t, ctx, out, nil)
 	b.observe(ax25conn.OutEvent{Kind: ax25conn.OutStateChange, State: ax25conn.StateConnected})
-	select {
-	case env := <-out:
-		if env.Kind != KindState || env.State == nil || env.State.Name != "CONNECTED" {
-			t.Fatalf("unexpected envelope: %+v", env)
-		}
-	default:
-		t.Fatal("expected state envelope")
+	env := recvWithin(t, out, time.Second)
+	if env.Kind != KindState || env.State == nil || env.State.Name != "CONNECTED" {
+		t.Fatalf("unexpected envelope: %+v", env)
 	}
 }
 
-func TestBridge_ObserveDataRXBlocksUntilDrain(t *testing.T) {
+// observe is supposed to be non-blocking on every kind so the session
+// goroutine never stalls waiting on the WebSocket.
+func TestBridge_ObserveNeverBlocksOnDataRX(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan Envelope) // unbuffered: forces blocking send
+	out := make(chan Envelope) // unbuffered + never drained
 	b, _ := newTestBridge(t, ctx, out, nil)
 
 	done := make(chan struct{})
 	go func() {
-		b.observe(ax25conn.OutEvent{Kind: ax25conn.OutDataRX, Data: []byte("hello")})
-		close(done)
-	}()
-
-	select {
-	case env := <-out:
-		if env.Kind != KindDataRX || string(env.Data) != "hello" {
-			t.Fatalf("unexpected envelope: %+v", env)
+		// Push enough events to overflow inbox + observe call must
+		// never block even though out is jammed.
+		for i := 0; i < inboxSize+10; i++ {
+			b.observe(ax25conn.OutEvent{Kind: ax25conn.OutDataRX, Data: []byte("x")})
 		}
-	case <-time.After(time.Second):
-		t.Fatal("observe never produced envelope")
-	}
-	<-done
-}
-
-func TestBridge_ObserveDataRXUnblocksOnCtxCancel(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	out := make(chan Envelope) // unbuffered, never drained
-	b, _ := newTestBridge(t, ctx, out, nil)
-
-	done := make(chan struct{})
-	go func() {
-		b.observe(ax25conn.OutEvent{Kind: ax25conn.OutDataRX, Data: []byte("hi")})
 		close(done)
 	}()
-	cancel()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("observe did not unblock on ctx cancel")
+		t.Fatal("observe blocked the session goroutine")
 	}
 }
 
-func TestBridge_ObserveLinkStatsDropsWhenFull(t *testing.T) {
+func TestBridge_ObserveDataRXOverflowEmitsErrorEnvelope(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan Envelope, 1)
-	out <- Envelope{Kind: KindAck} // saturate
+	// out has 2 slots so the overflow error envelope can land even
+	// after the pump pushes the first state envelope.
+	out := make(chan Envelope, 2)
 	var buf bytes.Buffer
-	lg := captureLogger(&buf)
-	b, _ := newTestBridge(t, ctx, out, lg)
-	b.observe(ax25conn.OutEvent{Kind: ax25conn.OutLinkStats, Stats: ax25conn.LinkStats{State: ax25conn.StateConnected, RTT: 250 * time.Millisecond}})
-	if !strings.Contains(buf.String(), "out buffer full") {
-		t.Fatalf("expected drop warning, got %q", buf.String())
+	b, _ := newTestBridge(t, ctx, out, captureLogger(&buf))
+
+	// Saturate the inbox without letting the pump drain it. Easiest
+	// reliable way: cancel ctx so the pump exits, then push.
+	cancel()
+	// Wait for the pump to actually exit before testing overflow.
+	deadline := time.Now().Add(time.Second)
+	for !b.pumpExited() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	for i := 0; i < inboxSize; i++ {
+		b.observe(ax25conn.OutEvent{Kind: ax25conn.OutDataRX, Data: []byte("x")})
+	}
+	// inbox is full now; this observe call must drop and signal.
+	b.observe(ax25conn.OutEvent{Kind: ax25conn.OutDataRX, Data: []byte("y")})
+
+	if !strings.Contains(buf.String(), "observer inbox full") {
+		t.Fatalf("expected inbox-full warning, got %q", buf.String())
+	}
+	// The overflow error envelope should land on out (out has slots
+	// since the pump is gone and we never pushed anything to out
+	// from the test side).
+	select {
+	case env := <-out:
+		if env.Kind != KindError || env.Error == nil || env.Error.Code != "rx_overflow" {
+			t.Fatalf("expected rx_overflow error envelope, got %+v", env)
+		}
+	default:
+		t.Fatal("expected rx_overflow error envelope on out")
 	}
 }
 
@@ -253,9 +271,103 @@ func TestBridge_ObserveError(t *testing.T) {
 	out := make(chan Envelope, 4)
 	b, _ := newTestBridge(t, ctx, out, nil)
 	b.observe(ax25conn.OutEvent{Kind: ax25conn.OutError, ErrCode: "frmr", ErrMsg: "bad N(R)"})
-	env := <-out
+	env := recvWithin(t, out, time.Second)
 	if env.Kind != KindError || env.Error == nil || env.Error.Code != "frmr" {
 		t.Fatalf("unexpected envelope: %+v", env)
+	}
+}
+
+func TestBridge_PumpExitsOnCtxCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	out := make(chan Envelope, 4)
+	b, _ := newTestBridge(t, ctx, out, nil)
+	cancel()
+	deadline := time.After(time.Second)
+	for {
+		if b.pumpExited() {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("pump did not exit on ctx cancel")
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
+func TestBridge_CloseWithNoSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 4)
+	b, _ := newTestBridge(t, ctx, out, nil)
+	// Should not panic and must complete promptly.
+	done := make(chan struct{})
+	go func() { b.Close(); close(done) }()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Close hung when no session was active")
+	}
+}
+
+func TestBridge_CloseSubmitsDisconnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 64)
+	b, mgr := newTestBridge(t, ctx, out, nil)
+	if err := b.Handle(ctx, Envelope{Kind: KindConnect, Connect: validConnect()}); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if mgr.Count() != 1 {
+		t.Fatalf("expected 1 session, got %d", mgr.Count())
+	}
+	// Close should run a clean DISC; the session goroutine then
+	// transitions through AWAITING_RELEASE and exits when its T1
+	// chain finishes (with no peer responding the manager removes
+	// the session). Allow some time.
+	closeDone := make(chan struct{})
+	go func() { b.Close(); close(closeDone) }()
+	cancel()
+	select {
+	case <-closeDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not complete")
+	}
+	// Subsequent Close must be a no-op.
+	b.Close()
+}
+
+func TestBridge_HandleConnectChannelAPRSOnlyEmitsErrorEnvelope(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 4)
+	mgr := ax25conn.NewManager(ax25conn.ManagerConfig{
+		TxSink:       nopSink{},
+		Logger:       quietLogger(),
+		ChannelModes: aprsOnlyLookup{},
+	})
+	defer mgr.Close()
+	b := New(BridgeConfig{
+		Manager:  mgr,
+		Logger:   quietLogger(),
+		Operator: "op1",
+		Ctx:      ctx,
+		Out:      out,
+	})
+	defer b.Close()
+	err := b.Handle(ctx, Envelope{Kind: KindConnect, Connect: validConnect()})
+	if err == nil {
+		t.Fatal("expected error from APRS-only channel")
+	}
+	// Operator-visible error envelope so the UI can render the reason.
+	select {
+	case env := <-out:
+		if env.Kind != KindError || env.Error == nil {
+			t.Fatalf("expected KindError envelope, got %+v", env)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected KindError envelope on Open failure")
 	}
 }
 

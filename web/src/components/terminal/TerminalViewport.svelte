@@ -21,13 +21,10 @@
   let mo = null;
   let contrastMQ = null;
 
-  $effect(() => {
-    // React to viewport width changes for the narrow-mode banner.
-    if (typeof window === 'undefined') return;
-    const onResize = () => { viewportWidth = window.innerWidth; };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  });
+  // Resize listener is a one-time subscription with no reactive
+  // dependencies, so it lives in onMount rather than a $effect that
+  // would re-evaluate on every reactive read.
+  let resizeListener = null;
 
   // Apply the named preset by writing CSS custom properties on the
   // viewport host element. xterm later resolves --gw-* vars via
@@ -45,6 +42,10 @@
 
   onMount(async () => {
     mounted = true;
+    if (typeof window !== 'undefined') {
+      resizeListener = () => { viewportWidth = window.innerWidth; };
+      window.addEventListener('resize', resizeListener);
+    }
     if (!host) return;
     applyPreset(host);
 
@@ -115,6 +116,10 @@
 
   onDestroy(() => {
     mounted = false;
+    if (resizeListener && typeof window !== 'undefined') {
+      window.removeEventListener('resize', resizeListener);
+      resizeListener = null;
+    }
     try { mo?.disconnect(); } catch { /* ignore */ }
     try {
       if (contrastMQ) {

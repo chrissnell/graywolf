@@ -8,8 +8,7 @@
 
 import { b64ToBytes, encodeData } from './envelope.js';
 
-const READY_STATE_OPEN = 1; // WebSocket.OPEN -- captured in case the
-// global is not available at module-load time (SSR).
+const READY_STATE_OPEN = 1; // WebSocket.OPEN constant, hoisted for clarity.
 
 function newID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -103,7 +102,7 @@ export function createSession(initial, opts = {}) {
       case 'error':
         state.errorMessage = env.error?.message ?? 'unknown error';
         break;
-      // 'ack' currently has no client-side semantics; ignore.
+      // Default: unknown kind from a future server -- ignore.
     }
   }
 
