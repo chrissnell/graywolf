@@ -7,6 +7,29 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.12.4"
+  date: "2026-05-02"
+  style: info
+  schema_version: 1
+  title: "AX.25 packet terminal (beta)"
+  link: "#/terminal"
+  body: |
+    Graywolf can now connect to BBSes and other live packet stations
+    right from the browser. Open the new Terminal tab in the sidebar,
+    pick a radio channel, type the destination callsign, and you get a
+    live AX.25 connected-mode session in an xterm-style window. Saved
+    profiles, recents, transcripts, and an APRS packet monitor for
+    listen-only channels are all built in.
+
+    Before you can connect, set the channel mode on a radio channel
+    to Packet or APRS+Packet on the Channels page. APRS-only channels
+    will only let you watch the live packet feed, not open a session.
+
+    This is a beta feature. If you hit a bug or something behaves
+    strangely, please file an issue at
+    https://github.com/chrissnell/graywolf/issues so it can get
+    fixed.
+
 - version: "0.12.3"
   date: "2026-04-30"
   style: info
