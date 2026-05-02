@@ -37,6 +37,9 @@ export function createSession(initial, opts = {}) {
     errorMessage: null,
     suspended: false,
     focused: false,
+    // Configured retry budget (N2). Falls back to the kernel default
+    // when the operator left the advanced field at zero.
+    n2: pickN2(initial),
     // Viewport sets these after construction.
     onDataRX: null,
     onStateChange: null,
@@ -143,6 +146,14 @@ export function createSession(initial, opts = {}) {
   open();
 
   return { state, sendData, disconnect, abort, close, clearUnread };
+}
+
+// pickN2 returns the configured retry budget from `initial`, falling
+// back to the kernel default (10). Accepts both snake_case (wire shape
+// emitted by PreConnectForm) and camelCase to be tolerant of callers.
+function pickN2(initial) {
+  const v = Number(initial?.n2 ?? initial?.N2 ?? 0);
+  return v > 0 ? v : 10;
 }
 
 function wsScheme() {

@@ -2,10 +2,13 @@
   import { onMount } from 'svelte';
   import { location } from 'svelte-spa-router';
 
+  import { Button, Icon } from '@chrissnell/chonky-ui';
+
   import TabBar from '../components/terminal/TabBar.svelte';
   import TerminalViewport from '../components/terminal/TerminalViewport.svelte';
   import StatusBar from '../components/terminal/StatusBar.svelte';
   import PreConnectForm from '../components/terminal/PreConnectForm.svelte';
+  import TelemetryPanel from '../components/terminal/TelemetryPanel.svelte';
 
   import {
     terminalSessions,
@@ -47,10 +50,24 @@
     forceForm = false;
     terminalSessions.setActive(id);
   }
+
+  let telemetryOpen = $state(false);
 </script>
 
 <div class="terminal-route">
-  <TabBar onNew={onNewTab} onClose={onCloseTab} />
+  <div class="terminal-header">
+    <TabBar onNew={onNewTab} onClose={onCloseTab} />
+    {#if activeSession}
+      <Button
+        variant="secondary"
+        size="sm"
+        aria-label="Toggle link telemetry panel"
+        onclick={() => (telemetryOpen = !telemetryOpen)}
+      >
+        <Icon name="activity" size="sm" /> Telemetry
+      </Button>
+    {/if}
+  </div>
 
   <div class="terminal-body">
     {#if showForm}
@@ -64,6 +81,10 @@
       {/key}
     {/if}
   </div>
+
+  {#if activeSession}
+    <TelemetryPanel session={activeSession} bind:open={telemetryOpen} />
+  {/if}
 </div>
 
 <style>
@@ -81,4 +102,12 @@
     min-height: 0;
   }
   .form-pane { padding: 16px 24px; }
+  .terminal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-right: 8px;
+    border-bottom: 1px solid var(--color-border, #ddd);
+  }
 </style>
