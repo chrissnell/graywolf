@@ -38,6 +38,10 @@ export function createSession(initial, opts = {}) {
     suspended: false,
     focused: false,
     transcriptEnabled: false,
+    // lastError carries the most-recent typed server error so the route
+    // can decide whether to surface an AlertDialog (fatal codes) or
+    // just show the StatusBar message (transient).
+    lastError: null,
     // Configured retry budget (N2). Falls back to the kernel default
     // when the operator left the advanced field at zero.
     n2: pickN2(initial),
@@ -105,6 +109,9 @@ export function createSession(initial, opts = {}) {
         break;
       case 'error':
         state.errorMessage = env.error?.message ?? 'unknown error';
+        state.lastError = env.error
+          ? { code: env.error.code ?? '', message: env.error.message ?? '' }
+          : null;
         break;
       // Default: unknown kind from a future server -- ignore.
     }
@@ -149,9 +156,13 @@ export function createSession(initial, opts = {}) {
     state.unreadBytes = 0;
   }
 
+  function clearLastError() {
+    state.lastError = null;
+  }
+
   open();
 
-  return { state, sendData, disconnect, abort, close, clearUnread, setTranscript };
+  return { state, sendData, disconnect, abort, close, clearUnread, clearLastError, setTranscript };
 }
 
 // pickN2 returns the configured retry budget from `initial`, falling

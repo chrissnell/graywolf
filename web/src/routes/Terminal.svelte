@@ -2,7 +2,18 @@
   import { onMount } from 'svelte';
   import { location } from 'svelte-spa-router';
 
-  import { Button, Icon } from '@chrissnell/chonky-ui';
+  import { Button, Icon, AlertDialog } from '@chrissnell/chonky-ui';
+
+  // Error codes the bridge surfaces that warrant an AlertDialog rather
+  // than just a StatusBar entry. The link-establish path and a peer
+  // rejection are non-recoverable for the operator's current attempt
+  // and they often miss the bottom-of-route status text. Other codes
+  // (rx_overflow, transcript_*) stay inline.
+  const FATAL_ERROR_CODES = new Set([
+    'link-establish-timeout',
+    'link-setup-timeout',
+    'peer-rejected',
+  ]);
 
   import TabBar from '../components/terminal/TabBar.svelte';
   import TerminalViewport from '../components/terminal/TerminalViewport.svelte';
@@ -72,6 +83,27 @@
   let macroEditorOpen = $state(false);
   let commandBarOpen = $state(false);
   let rawTailChannel = $state(null);
+
+  let fatalDialog = $state({ open: false, code: '', message: '' });
+
+  $effect(() => {
+    const err = activeSession?.state?.lastError;
+    if (!err || !FATAL_ERROR_CODES.has(err.code)) return;
+    fatalDialog = { open: true, code: err.code, message: err.message };
+  });
+
+  function fatalErrorTitle(code) {
+    if (code === 'link-establish-timeout' || code === 'link-setup-timeout') {
+      return 'Link did not come up';
+    }
+    if (code === 'peer-rejected') return 'Peer refused the connection';
+    return 'Session error';
+  }
+
+  function dismissFatal() {
+    fatalDialog = { ...fatalDialog, open: false };
+    activeSession?.clearLastError?.();
+  }
 
   function handleKey(e) {
     // Ctrl-] (or Cmd-]) opens the command bar from anywhere on the
@@ -178,6 +210,15 @@
     <TelemetryPanel session={activeSession} bind:open={telemetryOpen} />
   {/if}
   <MacroEditor bind:open={macroEditorOpen} />
+
+  <AlertDialog
+    bind:open={fatalDialog.open}
+    title={fatalErrorTitle(fatalDialog.code)}
+    description={fatalDialog.message || 'Link could not be established.'}
+    confirmLabel="Dismiss"
+    cancelLabel=""
+    onConfirm={dismissFatal}
+  />
 </div>
 
 <style>
