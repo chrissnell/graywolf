@@ -4,6 +4,8 @@
   import { channelsStore } from '../../lib/stores/channels.svelte.js';
   import { terminalSessions } from '../../lib/terminal/sessions.svelte.js';
   import { profilesStore, profileLabel } from '../../lib/terminal/profiles.svelte.js';
+  import { api } from '../../lib/api.js';
+  import { isStationCallsignMissing } from '../../lib/callsign.js';
 
   let { onSubmit, onRawTail } = $props();
 
@@ -11,6 +13,21 @@
     if (!profilesStore.loaded && !profilesStore.loading) {
       profilesStore.load();
     }
+    // Prefill "Your callsign" from the station callsign so the
+    // operator does not have to retype it every session. Only fills
+    // when the field is still empty -- a profile-applied or hand-typed
+    // value always wins.
+    (async () => {
+      try {
+        const s = await api.get('/station/config');
+        const cs = s?.callsign ?? '';
+        if (cs && !isStationCallsignMissing(cs) && !localCallRaw) {
+          localCallRaw = cs.toUpperCase().trim();
+        }
+      } catch {
+        // Non-fatal -- operator can still type a callsign manually.
+      }
+    })();
   });
 
   // Channel selector. Every channel is selectable; the form's submit
