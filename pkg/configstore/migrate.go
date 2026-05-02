@@ -132,6 +132,15 @@ type migration struct {
 //	    from the Go structs; this migration seeds the AX25TerminalConfig
 //	    singleton (id=1) so the REST GET handler always finds a row.
 //	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §3c.1.
+//	15 — actions_tables: create the four Actions feature tables (actions,
+//	    otp_credentials, action_listener_addressees, action_invocations)
+//	    via raw SQL so actions.otp_credential_id can declare FOREIGN KEY
+//	    ... ON DELETE SET NULL and the audit-log indexes
+//	    (action_id, sender_call, created_at) can be created precisely.
+//	    The four matching Go models are intentionally NOT added to the
+//	    AutoMigrate list — this migration is the single source of truth
+//	    for their schema. See
+//	    docs/superpowers/plans/2026-05-02-graywolf-actions.md Phase A.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -147,6 +156,7 @@ var schemaMigrations = []migration{
 	{version: 12, name: "channels_mode", phase: postAutoMigrate, run: migrateChannelsMode},
 	{version: 13, name: "messages_config_singleton", phase: postAutoMigrate, run: migrateMessagesConfigCopyFromIgate},
 	{version: 14, name: "ax25_terminal_tables", phase: postAutoMigrate, run: migrateAX25TerminalTables},
+	{version: 15, name: "actions_tables", phase: postAutoMigrate, run: migrateActionsTables},
 }
 
 // runMigrations applies every pending migration in the given phase,
