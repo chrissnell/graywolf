@@ -147,7 +147,7 @@
           bind:value={row.payloadText}
         ></textarea>
         <Button variant="ghost" size="sm" onclick={() => removeRow(i)} aria-label="Remove macro">
-          <Icon name="trash" size="sm" />
+          <Icon name="trash-2" size="sm" />
         </Button>
       </div>
     {/each}

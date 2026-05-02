@@ -45,6 +45,7 @@
 
   let activeId = $derived(terminalSessions.activeId());
   let activeSession = $derived(activeId ? terminalSessions.get(activeId) : null);
+  let hasSessions = $derived(terminalSessions.ids().length > 0);
 
   // showForm: true when no session is active, OR when the operator
   // explicitly clicked the "+" tab (handled by TabBar -> onNew). Also
@@ -167,26 +168,28 @@
 <svelte:window onkeydown={handleKey} />
 
 <div class="terminal-route">
-  <div class="terminal-header">
-    <TabBar onNew={onNewTab} onClose={onCloseTab} />
-    {#if activeSession}
-      <Button
-        variant="secondary"
-        size="sm"
-        aria-label="Toggle link telemetry panel"
-        onclick={() => (telemetryOpen = !telemetryOpen)}
-      >
-        <Icon name="activity" size="sm" /> Telemetry
-      </Button>
-    {/if}
-  </div>
+  {#if hasSessions || activeSession}
+    <div class="terminal-header">
+      <TabBar onNew={onNewTab} onClose={onCloseTab} />
+      {#if activeSession}
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-label="Toggle link telemetry panel"
+          onclick={() => (telemetryOpen = !telemetryOpen)}
+        >
+          <Icon name="radio" size="sm" /> Telemetry
+        </Button>
+      {/if}
+    </div>
+  {/if}
 
   <div class="terminal-body">
     {#if rawTailChannel}
       <div class="raw-pane">
         <div class="raw-pane-actions">
           <Button size="sm" variant="ghost" onclick={exitRawTail} aria-label="Back to pre-connect form">
-            <Icon name="arrow-left" size="sm" /> Back
+            <Icon name="chevron-left" size="sm" /> Back
           </Button>
         </div>
         <RawPacketView channel={rawTailChannel} />

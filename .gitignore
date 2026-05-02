@@ -16,6 +16,9 @@ graywolf.db-wal
 graywolf-history.db
 graywolf-history.db-shm
 graywolf-history.db-wal
+graywolf-logs.db
+graywolf-logs.db-shm
+graywolf-logs.db-wal
 
 # Dynamically regenerated migration fixture — produced by
 # scripts/testdata/gen_prev_release_db.sh, consumed by

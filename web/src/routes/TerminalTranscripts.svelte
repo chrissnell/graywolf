@@ -137,7 +137,7 @@
         <Icon name="refresh-cw" size="sm" /> Refresh
       </Button>
       <Button variant="danger" size="sm" disabled={rows.length === 0} onclick={() => (confirmAll = true)}>
-        <Icon name="trash" size="sm" /> Delete all
+        <Icon name="trash-2" size="sm" /> Delete all
       </Button>
     </div>
   </header>
@@ -165,7 +165,7 @@
             {#if row.end_reason}<span class="reason">{row.end_reason}</span>{/if}
           </button>
           <Button variant="ghost" size="sm" onclick={() => removeOne(row)} aria-label={`Delete transcript ${labelFor(row)}`}>
-            <Icon name="trash" size="sm" />
+            <Icon name="trash-2" size="sm" />
           </Button>
           {#if expandedID === row.id}
             <div class="detail">
