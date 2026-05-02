@@ -305,6 +305,44 @@ const (
 	OpRegisterMapsToken = "registerMapsToken"
 )
 
+// AX.25 saved + recent connection profiles — /api/ax25/profiles. Pinned
+// rows persist; recent (unpinned) rows are upserted on each CONNECTED
+// transition and trimmed to the last 20.
+const (
+	OpListAX25Profiles  = "listAX25Profiles"
+	OpCreateAX25Profile = "createAX25Profile"
+	OpGetAX25Profile    = "getAX25Profile"
+	OpUpdateAX25Profile = "updateAX25Profile"
+	OpDeleteAX25Profile = "deleteAX25Profile"
+	OpPinAX25Profile    = "pinAX25Profile"
+)
+
+// AX.25 terminal config — singleton at /api/ax25/terminal-config.
+// Persists scrollback rows, cursor blink, default modulo + paclen, the
+// macro toolbar JSON, and the operator's last raw-tail filter.
+const (
+	OpGetAX25TerminalConfig = "getAX25TerminalConfig"
+	OpPutAX25TerminalConfig = "putAX25TerminalConfig"
+)
+
+// AX.25 transcripts — /api/ax25/transcripts. Operator-recorded byte
+// streams from completed sessions; capture starts on `transcript on`
+// and ends with the LAPB session.
+const (
+	OpListAX25Transcripts      = "listAX25Transcripts"
+	OpGetAX25Transcript        = "getAX25Transcript"
+	OpDeleteAX25Transcript     = "deleteAX25Transcript"
+	OpDeleteAllAX25Transcripts = "deleteAllAX25Transcripts"
+)
+
+// Messages config — singleton at /api/messages/config. Holds the
+// outbound APRS messages TX channel; seeded on first run from the
+// legacy IGateConfig.TxChannel by migration v13.
+const (
+	OpGetMessagesConfig = "getMessagesConfig"
+	OpPutMessagesConfig = "putMessagesConfig"
+)
+
 // Maps offline downloads — /api/maps/downloads (Plan 2). Per-state
 // PMTiles archives are downloaded asynchronously; the start endpoint
 // returns 202 immediately and the status endpoint reports live
