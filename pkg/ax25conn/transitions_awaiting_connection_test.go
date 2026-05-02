@@ -166,6 +166,37 @@ func TestAwaitingConnection_RxDMOnMod128DowngradesAndStays(t *testing.T) {
 	}
 }
 
+// After DM(F=1) downgrades a mod-128 attempt, the next T1 expiry must
+// resend SABM (mod-8), not SABME. AX.25 v2.2 §6.3.4 "the calling DXE
+// shall fall back to a v2.0 setup mechanism."
+func TestAwaitingConnection_RxDMOnMod128ReissuesSABMOnNextT1(t *testing.T) {
+	sink := newCaptureSink()
+	s := newTestSession(t, func(c *SessionConfig) {
+		c.TxSink = sink
+		c.Mod128 = true
+	})
+	putState(t, s, StateAwaitingConnection)
+	s.t1.reset()
+	// Peer rejects SABME with DM(F=1).
+	s.handle(context.Background(), Event{Kind: EventFrameRX, Frame: &Frame{
+		Source: s.cfg.Peer, Dest: s.cfg.Local,
+		Control: Control{Kind: FrameDM, PF: true},
+	}})
+	if s.cfg.Mod128 {
+		t.Fatal("must downgrade to mod-8")
+	}
+	sink.frames = sink.frames[:0]
+	// Next T1 expiry resends as SABM (U-frame 0x3F = SABM with P=1).
+	s.handle(context.Background(), Event{Kind: EventT1Expiry})
+	if sink.count() != 1 {
+		t.Fatalf("expected one re-issued frame, got %d", sink.count())
+	}
+	got := sink.frames[0]
+	if got.ConnectedControl[0] != 0x3F {
+		t.Fatalf("expected SABM(P=1) 0x3F, got 0x%02x", got.ConnectedControl[0])
+	}
+}
+
 func TestAwaitingConnection_RxDMNotFinalIgnored(t *testing.T) {
 	s := newTestSession(t)
 	putState(t, s, StateAwaitingConnection)
