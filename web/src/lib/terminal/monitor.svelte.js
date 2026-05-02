@@ -24,11 +24,12 @@ function wsScheme() {
 }
 
 function fmt(entry) {
-  const ts = new Date(entry.ts).toISOString().slice(11, 19);
-  const src = entry.from || entry.source || '';
-  const raw = (entry.raw ?? '').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '?');
-  const line = `${ts} ${src} ${raw}`.slice(0, MAX_LINE);
-  return line + '\r\n';
+  // Server already formats raw_tail entries as TNC2-style monitor
+  // lines and sanitizes non-printables. Client just frames each line
+  // with CRLF -- no timestamp, no extra prefix, just the packet, like
+  // a packet BBS monitor would show it.
+  const raw = (entry.raw ?? '').slice(0, MAX_LINE);
+  return raw + '\r\n';
 }
 
 export function createMonitorSession({ channel, initialFilter = '' } = {}) {
@@ -99,11 +100,6 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
     ws.onopen = () => {
       state.status = 'open';
       sendSubscribe();
-      // Startup banner identifies what's being shown so an empty channel
-      // doesn't look like a broken page.
-      const banner = `[monitor] channel ${state.channelName || state.channelId} `
-        + `(${state.channelMode}) -- live packets follow\r\n`;
-      emit(banner);
     };
     ws.onmessage = (ev) => {
       let env;

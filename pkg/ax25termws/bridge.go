@@ -564,7 +564,7 @@ func rawEntryToEnvelope(e packetlog.Entry) *RawTailEntry {
 		Type:      e.Type,
 		Direction: string(e.Direction),
 		ChannelID: e.Channel,
-		Raw:       string(e.Raw),
+		Raw:       formatTNC2(e),
 	}
 	if e.Decoded != nil && e.Decoded.Source != "" {
 		out.From = e.Decoded.Source
@@ -580,6 +580,64 @@ func rawEntryToEnvelope(e packetlog.Entry) *RawTailEntry {
 		}
 	}
 	return out
+}
+
+// formatTNC2 renders the entry as a direwolf-style monitor line:
+// "SRC>DEST[,DIGI*,...]:info". Falls back to a printable-byte
+// sanitization of the raw frame if decoding fails -- the operator
+// would rather see "?" placeholders than a wall of binary control
+// codes that corrupt the xterm rendering.
+func formatTNC2(e packetlog.Entry) string {
+	if len(e.Raw) > 0 {
+		if f, err := ax25.Decode(e.Raw); err == nil && f != nil {
+			return sanitizeForTerminal(f.String())
+		}
+	}
+	if e.Decoded != nil {
+		var b strings.Builder
+		b.WriteString(e.Decoded.Source)
+		b.WriteByte('>')
+		b.WriteString(e.Decoded.Dest)
+		for _, p := range e.Decoded.Path {
+			b.WriteByte(',')
+			b.WriteString(p)
+		}
+		if e.Decoded.Comment != "" || e.Decoded.Status != "" {
+			b.WriteByte(':')
+			if e.Decoded.Status != "" {
+				b.WriteString(e.Decoded.Status)
+			} else {
+				b.WriteString(e.Decoded.Comment)
+			}
+			return sanitizeForTerminal(b.String())
+		}
+		return sanitizeForTerminal(b.String())
+	}
+	return sanitizeForTerminal(string(e.Raw))
+}
+
+// sanitizeForTerminal replaces non-printable bytes (control codes,
+// 8-bit binary, DEL) with '?' so an xterm-rendering client never sees
+// escape sequences or raw byte values that would corrupt the display.
+// Tab and newline are kept; the caller is responsible for line
+// framing.
+func sanitizeForTerminal(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\t':
+			b.WriteByte(' ')
+		case c == '\r' || c == '\n':
+			// Drop -- the monitor session adds its own framing.
+		case c < 0x20 || c == 0x7f || c >= 0x80:
+			b.WriteByte('?')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // recordTranscriptTX writes an operator-typed data buffer to the
