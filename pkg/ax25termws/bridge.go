@@ -29,8 +29,11 @@ type BridgeConfig struct {
 	// no goroutine leaks after the WebSocket closes.
 	Ctx context.Context
 	// Out is the channel the bridge fills with outbound envelopes;
-	// the WebSocket handler drains it. The pump goroutine is the
-	// sole sender on this channel.
+	// the WebSocket handler drains it. The bridge sends from three
+	// goroutines: the pump (observer events), rawTailPump
+	// (packetlog subscriber entries), and the reader's
+	// emitErrorEnvelope path. Each sender selects on ctx.Done() so
+	// teardown drains them without closing the channel.
 	Out chan<- Envelope
 	// OnFirstConnected, if set, is invoked once per session the first
 	// time the link reaches CONNECTED. Wiring uses it to upsert a
@@ -93,7 +96,10 @@ type Bridge struct {
 	id       uint64
 	inbox    chan ax25conn.OutEvent
 	pumpDone chan struct{}
-	closed   bool
+	// closeOnce serializes Close() so concurrent invocations (e.g.
+	// deferred + explicit teardown) cannot race the inner DISC submit
+	// or the cancel-then-wait pumpDone read.
+	closeOnce sync.Once
 
 	// connect holds the args used for the most recent KindConnect, so
 	// OnFirstConnected can upsert a recent profile keyed by them.
@@ -153,27 +159,26 @@ func New(cfg BridgeConfig) *Bridge {
 // AWAITING_RELEASE timer guarantees the goroutine still exits even
 // if the peer never UAs.
 func (b *Bridge) Close() {
-	if b.closed {
-		return
-	}
-	b.closed = true
-	// Stop the raw-tail goroutine before any session teardown.
-	b.stopRawTail()
-	// Wrap up an active transcript before tearing the session down so
-	// EndedAt + counters land regardless of how the WebSocket closes.
-	_ = b.endTranscript("session-closed")
-	if b.session != nil {
-		b.session.Submit(ax25conn.Event{Kind: ax25conn.EventDisconnect})
-	}
-	// Cancel the internal ctx so the pump exits even if the parent
-	// ctx is still alive. We don't close the inbox: the session
-	// goroutine may still emit a final OutStateChange(DISCONNECTED)
-	// via cleanup() after our Disconnect submit -- that emit fires
-	// synchronously inside the session's Run loop and will land in
-	// the inbox if there's room or be dropped silently if not. The
-	// pump no longer drains after b.ctx is done either way.
-	b.cancel()
-	<-b.pumpDone
+	b.closeOnce.Do(func() {
+		// Stop the raw-tail goroutine before any session teardown.
+		b.stopRawTail()
+		// Wrap up an active transcript before tearing the session down
+		// so EndedAt + counters land regardless of how the WebSocket
+		// closes.
+		_ = b.endTranscript("session-closed")
+		if b.session != nil {
+			b.session.Submit(ax25conn.Event{Kind: ax25conn.EventDisconnect})
+		}
+		// Cancel the internal ctx so the pump exits even if the parent
+		// ctx is still alive. We don't close the inbox: the session
+		// goroutine may still emit a final OutStateChange(DISCONNECTED)
+		// via cleanup() after our Disconnect submit -- that emit fires
+		// synchronously inside the session's Run loop and will land in
+		// the inbox if there's room or be dropped silently if not. The
+		// pump no longer drains after b.ctx is done either way.
+		b.cancel()
+		<-b.pumpDone
+	})
 }
 
 // SessionID returns the manager-assigned session id, or 0 before a
@@ -344,8 +349,8 @@ func (b *Bridge) observe(ev ax25conn.OutEvent) {
 }
 
 // pump translates OutEvents into envelopes and serializes them onto
-// cfg.Out. Sole sender on cfg.Out. Exits when cfg.Ctx is cancelled by
-// the WebSocket handler.
+// cfg.Out. One of three senders on cfg.Out (see BridgeConfig.Out).
+// Exits when cfg.Ctx is cancelled by the WebSocket handler.
 func (b *Bridge) pump() {
 	defer close(b.pumpDone)
 	for {
@@ -380,6 +385,15 @@ func (b *Bridge) handleTranscriptSet(enabled bool) error {
 	if b.cfg.Transcripts == nil {
 		b.emitErrorEnvelope("transcript_unsupported", "transcript recording is not configured on the server")
 		return errors.New("ax25termws: transcript: no recorder")
+	}
+	// Reject pre-connect toggles up front so the operator gets a typed
+	// error envelope instead of an SQL "PeerCall required" rejection
+	// surfaced as transcript_begin. The connect args (channel, peer
+	// callsign, via path) populate the transcript-session row, so they
+	// must exist before Begin runs.
+	if b.session == nil {
+		b.emitErrorEnvelope("transcript_no_session", "open a session before toggling transcript")
+		return errors.New("ax25termws: transcript: no active session")
 	}
 	if enabled {
 		b.transcriptMu.Lock()
@@ -552,8 +566,18 @@ func rawEntryToEnvelope(e packetlog.Entry) *RawTailEntry {
 		ChannelID: e.Channel,
 		Raw:       string(e.Raw),
 	}
-	if e.Decoded != nil {
+	if e.Decoded != nil && e.Decoded.Source != "" {
 		out.From = e.Decoded.Source
+		return out
+	}
+	// Decoder failed (or APRS parse rejected the info field) but the
+	// raw AX.25 bytes are intact. Pull the source callsign-SSID from
+	// the address block so the operator still sees a callsign in the
+	// "from" column rather than the subsystem tag (kiss/agw/etc).
+	if len(e.Raw) > 0 {
+		if hdr, err := ax25.DecodeAddressBlock(e.Raw); err == nil {
+			out.From = hdr.Source.String()
+		}
 	}
 	return out
 }

@@ -324,6 +324,65 @@ func TestBridge_TranscriptSetWithoutRecorderEmitsError(t *testing.T) {
 	}
 }
 
+// I2: transcript_set before connect must surface a typed
+// transcript_no_session error envelope, not a generic SQL "PeerCall
+// required" message hidden behind transcript_begin.
+// I5: Close must be idempotent under concurrent invocations. The
+// previous closed-bool guard raced when two goroutines (deferred
+// teardown + explicit close on read error) reached Close together --
+// both could clear the bool, both submit DISC, both wait on pumpDone.
+func TestBridge_CloseConcurrentSafe(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 16)
+	b, _ := newTestBridge(t, ctx, out, nil)
+	if err := b.Handle(ctx, Envelope{Kind: KindConnect, Connect: validConnect()}); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	const N = 8
+	done := make(chan struct{}, N)
+	for i := 0; i < N; i++ {
+		go func() {
+			b.Close()
+			done <- struct{}{}
+		}()
+	}
+	for i := 0; i < N; i++ {
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("Close blocked under concurrent invocation")
+		}
+	}
+}
+
+func TestBridge_TranscriptSetBeforeConnectRejected(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 4)
+	mgr := ax25conn.NewManager(ax25conn.ManagerConfig{TxSink: nopSink{}, Logger: quietLogger()})
+	t.Cleanup(mgr.Close)
+	rec := &fakeTranscriptRecorder{}
+	b := New(BridgeConfig{
+		Manager:     mgr,
+		Logger:      quietLogger(),
+		Operator:    "op1",
+		Ctx:         ctx,
+		Out:         out,
+		Transcripts: rec,
+	})
+	if err := b.Handle(ctx, Envelope{Kind: KindTranscriptSet, Transcript: &TranscriptSetPayload{Enabled: true}}); err == nil {
+		t.Fatal("expected pre-connect rejection")
+	}
+	env := recvWithin(t, out, time.Second)
+	if env.Kind != KindError || env.Error == nil || env.Error.Code != "transcript_no_session" {
+		t.Fatalf("expected transcript_no_session, got %+v", env)
+	}
+	if rec.beginCnt != 0 {
+		t.Fatalf("Begin must not run before connect (called %d times)", rec.beginCnt)
+	}
+}
+
 func TestBridge_OnFirstConnectedFiresOnceWithConnectArgs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

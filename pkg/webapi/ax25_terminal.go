@@ -139,10 +139,13 @@ func (s *Server) runTerminalReader(ctx context.Context, c *websocket.Conn, bridg
 // owns the keepalive ping ticker so we never have two goroutines
 // writing the connection concurrently. The `out` channel is owned
 // by the bridge; we only read from it. Critically we DO NOT close
-// `out` here -- the bridge's pump goroutine is the single sender,
-// and closing under it would race observer events that may still be
-// in flight when the WS tears down. Bridge.Close + ctx cancel are
-// the bridge's only synchronization points.
+// `out` here -- the bridge has multiple senders (the pump goroutine
+// drains observer events, rawTailPump drains packetlog subscriber
+// entries, and emitErrorEnvelope on the reader path surfaces typed
+// failures), and closing the channel out from under any of them
+// would panic. Bridge.Close + ctx cancel are the bridge's only
+// synchronization points; every sender selects on ctx.Done() so all
+// three drain on teardown without needing a channel close.
 func (s *Server) runTerminalWriter(ctx context.Context, c *websocket.Conn, out <-chan ax25termws.Envelope, done chan<- struct{}, user string) {
 	defer close(done)
 	ticker := time.NewTicker(terminalPingInterval)
