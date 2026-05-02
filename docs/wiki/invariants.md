@@ -180,3 +180,36 @@ The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns
 Source: [`../../pkg/configstore/channel_mode_lookup.go`](../../pkg/configstore/channel_mode_lookup.go),
 [`../../pkg/configstore/models.go`](../../pkg/configstore/models.go)
 (`Channel.Mode` field comments).
+
+### 24. AX.25 `link_stats` is emitted only while CONNECTED, 1Hz, never blocking
+
+The `pkg/ax25conn` session goroutine arms a 1-second `tStats` timer on
+the transition into `StateConnected` and stops it on every transition
+out. Each tick refreshes `LinkStats` from the live session vars
+(V(S)/V(R)/V(A), N2 retry count, busy flags, RTT EWMA) under the stats
+mutex and emits one `OutLinkStats` event through the observer. The
+bridge translates that to the `link_stats` envelope feeding the
+TelemetryPanel.
+
+The contract:
+
+1. **Cadence is exactly 1Hz while CONNECTED.** No tick fires in
+   DISCONNECTED, AWAITING_CONNECTION, AWAITING_RELEASE, or
+   TIMER_RECOVERY -- only `setState(StateConnected)` arms the timer.
+2. **Re-entry is harmless.** `setState` stops the timer on leaving
+   CONNECTED before re-arming on the next entry, so a CONNECTED ->
+   TIMER_RECOVERY -> CONNECTED bounce produces a single armed timer.
+3. **Emit is non-blocking.** The observer call hits the same pump
+   goroutine as every other `OutEvent`, and the pump non-blocking-sends
+   to the WebSocket out-channel. A jammed browser never back-pressures
+   the LAPB session goroutine.
+
+*Why:* The telemetry panel must show useful RTT/sequence data without
+ever stalling the LAPB timers. Tying the tick to a state-machine
+event-bit (`pendStats`) instead of an external `time.Ticker` keeps the
+session loop authoritative -- timer expiry races and CPU contention
+can't spawn ghost ticks while the link is down.
+
+Source: [`../../pkg/ax25conn/session.go`](../../pkg/ax25conn/session.go)
+(`statsTick`, `setState`),
+[`../../pkg/ax25conn/stats_tick_test.go`](../../pkg/ax25conn/stats_tick_test.go).
