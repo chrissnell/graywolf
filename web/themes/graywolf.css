@@ -4,8 +4,17 @@
  * <Badge> variants and the packet-log type/origin chips) are rendered
  * as solid saturated pills with white text so each label reads clearly
  * against any surface.
+ *
+ * Top-level rule is doubled (`:root:root[data-theme="..."]`) to give
+ * it specificity (0,2,1) so it always wins against chonky-ui's
+ * `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+ * fallback, which sits at (0,1,1). Without the bump, Windows users
+ * with OS dark mode could not switch back to a light graywolf theme
+ * because chonky-ui's media query rule loaded later in the bundle and
+ * tied on specificity. Sub-rules (`:root[data-theme="X"] .badge` etc.)
+ * are already (0,1,2) and don't need the bump.
  */
-:root[data-theme="graywolf"] {
+:root:root[data-theme="graywolf"] {
   --color-bg: #ffffff;
   --color-surface: #f8f8f8;
   --color-surface-raised: #f0f0f0;

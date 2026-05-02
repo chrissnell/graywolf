@@ -7,6 +7,21 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.12.5"
+  date: "2026-05-02"
+  style: info
+  schema_version: 1
+  title: "Fix: light themes stuck after switching from a dark one on Windows"
+  link: "#/preferences"
+  body: |
+    If you switched Graywolf to a dark theme on a Windows machine
+    that has the Windows dark color scheme turned on, then tried to
+    switch back to a light theme, the page stayed dark even though
+    the picker showed the light choice. The light themes now win
+    over the Windows dark setting, so picking Graywolf or Grayscale
+    on Preferences puts the page back into light colors immediately.
+    Nothing to reconfigure.
+
 - version: "0.12.4"
   date: "2026-05-02"
   style: info

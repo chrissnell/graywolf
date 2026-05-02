@@ -3,8 +3,14 @@
  * is kept for brand continuity on dark backgrounds; packet-log badges
  * use muted-tint backgrounds with bright text, a pattern that reads
  * well against dark surfaces.
+ *
+ * Top-level rule is doubled (`:root:root[data-theme="..."]`) so the
+ * theme's vars win against chonky-ui's
+ * `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+ * fallback regardless of bundle source order. See graywolf.css for the
+ * full explanation.
  */
-:root[data-theme="graywolf-night"] {
+:root:root[data-theme="graywolf-night"] {
   --color-bg: #0a0a0a;
   --color-surface: #141414;
   --color-surface-raised: #1e1e1e;

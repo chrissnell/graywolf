@@ -2,8 +2,14 @@
  * Grayscale -- light, monochrome. No chromatic accents. All packet-log
  * badges use one neutral dark fill with white text; the badge LABEL
  * (position, weather, etc.) remains the scanning cue rather than hue.
+ *
+ * Top-level rule is doubled (`:root:root[data-theme="..."]`) so the
+ * theme's vars win against chonky-ui's
+ * `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+ * fallback regardless of bundle source order. See graywolf.css for the
+ * full explanation.
  */
-:root[data-theme="grayscale"] {
+:root:root[data-theme="grayscale"] {
   --color-bg: #ffffff;
   --color-surface: #f5f5f5;
   --color-surface-raised: #e8e8e8;

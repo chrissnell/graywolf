@@ -1,8 +1,14 @@
 /*
  * Grayscale Night -- dark, monochrome. Single neutral badge tone
  * matches the theme's no-chromatic-accents discipline.
+ *
+ * Top-level rule is doubled (`:root:root[data-theme="..."]`) so the
+ * theme's vars win against chonky-ui's
+ * `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+ * fallback regardless of bundle source order. See graywolf.css for the
+ * full explanation.
  */
-:root[data-theme="grayscale-night"] {
+:root:root[data-theme="grayscale-night"] {
   --color-bg: #000000;
   --color-surface: #0c0c0c;
   --color-surface-raised: #1a1a1a;

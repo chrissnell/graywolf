@@ -13,10 +13,15 @@ changes, no OpenAPI regen, no build-config edits.
    cp grayscale.css field-day-2026.css
    ```
 3. **Rename the selector** inside the new file from
-   `:root[data-theme="grayscale"]` to `:root[data-theme="field-day-2026"]`.
-   The `:root` prefix matters — it bumps specificity to (0,2,0) so
-   your theme wins against chonky-ui's own `:root` baseline block,
-   which is emitted later in the bundle.
+   `:root:root[data-theme="grayscale"]` to
+   `:root:root[data-theme="field-day-2026"]`.
+   The doubled `:root:root` prefix matters: it gives the rule
+   specificity (0,2,1) so your theme wins against chonky-ui's
+   `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+   fallback at (0,1,1). Without the doubling, OS dark mode (e.g. on
+   Windows) silently overrides any light theme the operator picks.
+   Sub-rules like `:root[data-theme="X"] .badge` already sit at (0,1,2)
+   and don't need the bump.
 4. **Tweak the CSS variables** (full list below). You don't have to
    override every one — unset variables fall through to chonky-ui's
    `:root` defaults, but most themes override the whole palette for

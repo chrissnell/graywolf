@@ -213,3 +213,28 @@ can't spawn ghost ticks while the link is down.
 Source: [`../../pkg/ax25conn/session.go`](../../pkg/ax25conn/session.go)
 (`statsTick`, `setState`),
 [`../../pkg/ax25conn/stats_tick_test.go`](../../pkg/ax25conn/stats_tick_test.go).
+
+### 25. Theme top-level rule must be `:root:root[data-theme="<id>"]`
+
+Every CSS theme in `web/themes/` declares its variables under a
+doubled `:root:root[data-theme="..."]` selector (specificity (0,2,1))
+rather than the simpler `:root[data-theme="..."]` (0,1,1). Sub-rules
+that target descendants (`:root[data-theme="X"] .badge`) are already
+(0,1,2) and don't need the bump.
+
+*Why:* `@chrissnell/chonky-ui` ships an OS-dark-mode fallback at
+`@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+with specificity (0,1,1). Vite bundles graywolf's theme stylesheets
+*before* chonky-ui's, so on a specificity tie the chonky-ui rule wins
+the cascade and clobbers any explicit graywolf theme whenever the OS
+reports dark. The doubled `:root:root` lifts every graywolf theme one
+notch above that fallback, so the operator's explicit choice always
+beats the OS preference. Without this, Windows users with OS dark mode
+could not switch back to a light graywolf theme.
+
+Source: [`../../web/themes/graywolf.css`](../../web/themes/graywolf.css)
+(top-level rule + comment block),
+[`../../web/themes/README.md`](../../web/themes/README.md) (theme
+authoring guide),
+[`../../web/node_modules/@chrissnell/chonky-ui/dist/css/chonky.css`](../../web/node_modules/@chrissnell/chonky-ui/dist/css/chonky.css)
+(`@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`).
