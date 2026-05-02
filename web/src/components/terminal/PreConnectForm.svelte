@@ -5,7 +5,7 @@
   import { terminalSessions } from '../../lib/terminal/sessions.svelte.js';
   import { profilesStore, profileLabel } from '../../lib/terminal/profiles.svelte.js';
 
-  let { onSubmit } = $props();
+  let { onSubmit, onRawTail } = $props();
 
   onMount(() => {
     if (!profilesStore.loaded && !profilesStore.loading) {
@@ -13,14 +13,28 @@
     }
   });
 
-  // Channel selector. Phase-2 ships only the connected-mode capable
-  // modes (packet, aprs+packet); APRS-only channels are filtered out
-  // so the operator cannot pick a channel the backend will refuse.
+  // Channel selector. Every channel is selectable; the form's submit
+  // path branches on the channel's mode -- packet / aprs+packet open a
+  // connected-mode session, aprs-only channels swap the route to the
+  // raw-packet tail view (Plan §3f).
   let channelOptions = $derived(
-    channelsStore.list
-      .filter((c) => c.mode === 'packet' || c.mode === 'aprs+packet')
-      .map((c) => ({ value: String(c.id), label: c.name + (c.mode === 'aprs+packet' ? ' (APRS+Packet)' : ' (Packet)') }))
+    channelsStore.list.map((c) => ({
+      value: String(c.id),
+      label: c.name + ' (' + modeLabel(c.mode) + ')',
+    }))
   );
+
+  function modeLabel(mode) {
+    if (mode === 'aprs+packet') return 'APRS+Packet';
+    if (mode === 'aprs') return 'APRS only';
+    if (mode === 'packet') return 'Packet';
+    return mode || '?';
+  }
+
+  let selectedChannel = $derived(
+    channelsStore.list.find((c) => String(c.id) === String(channelId)) ?? null
+  );
+  let selectedIsAPRSOnly = $derived(selectedChannel?.mode === 'aprs');
 
   let channelId = $state('');
   let localCall = $state('');
@@ -133,14 +147,21 @@
   function handleSubmit(e) {
     e?.preventDefault?.();
     formError = '';
-    onLocalCallBlur();
-    onDestCallBlur();
-    onLocalSSIDBlur();
-    onDestSSIDBlur();
     if (!channelId) {
       formError = 'Select a channel.';
       return;
     }
+    if (selectedIsAPRSOnly) {
+      // APRS-only channels can't open a connected-mode session; surface
+      // the raw-packet tail view instead. Operator can still scroll/
+      // filter the live feed.
+      onRawTail?.(selectedChannel);
+      return;
+    }
+    onLocalCallBlur();
+    onDestCallBlur();
+    onLocalSSIDBlur();
+    onDestSSIDBlur();
     if (localCallError || destCallError || localSSIDError || destSSIDError) return;
 
     const initial = {
@@ -330,7 +351,9 @@
   {/if}
 
   <div class="actions">
-    <Button type="submit" variant="primary">Connect</Button>
+    <Button type="submit" variant="primary">
+      {selectedIsAPRSOnly ? 'View raw packet feed' : 'Connect'}
+    </Button>
   </div>
 </form>
 

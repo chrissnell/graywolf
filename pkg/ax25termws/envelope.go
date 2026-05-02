@@ -4,6 +4,8 @@
 // pushed back to the browser.
 package ax25termws
 
+import "time"
+
 // MsgKind enumerates wire-level message types. The wire is JSON; the
 // kind value drives a switch in both directions.
 type MsgKind string
@@ -14,32 +16,61 @@ const (
 	KindData          MsgKind = "data"
 	KindDisconnect    MsgKind = "disconnect"
 	KindAbort         MsgKind = "abort"
-	KindTranscriptSet MsgKind = "transcript_set"
+	KindTranscriptSet     MsgKind = "transcript_set"
+	KindRawTailSubscribe  MsgKind = "raw_tail_subscribe"
+	KindRawTailUnsub      MsgKind = "raw_tail_unsubscribe"
 
 	// Server -> Client
 	KindState     MsgKind = "state"
 	KindDataRX    MsgKind = "data_rx"
 	KindLinkStats MsgKind = "link_stats"
 	KindError     MsgKind = "error"
+	KindRawTail   MsgKind = "raw_tail"
 )
 
 // Envelope is the on-wire JSON shape. Data is base64-encoded by
 // encoding/json when the field type is []byte; the JS side decodes
 // via atob.
 type Envelope struct {
-	Kind       MsgKind                `json:"kind"`
-	Connect    *ConnectArgs           `json:"connect,omitempty"`
-	Data       []byte                 `json:"data,omitempty"`
-	State      *StatePayload          `json:"state,omitempty"`
-	Stats      *StatsPayload          `json:"stats,omitempty"`
-	Error      *ErrorPayload          `json:"error,omitempty"`
-	Transcript *TranscriptSetPayload  `json:"transcript,omitempty"`
+	Kind       MsgKind               `json:"kind"`
+	Connect    *ConnectArgs          `json:"connect,omitempty"`
+	Data       []byte                `json:"data,omitempty"`
+	State      *StatePayload         `json:"state,omitempty"`
+	Stats      *StatsPayload         `json:"stats,omitempty"`
+	Error      *ErrorPayload         `json:"error,omitempty"`
+	Transcript *TranscriptSetPayload `json:"transcript,omitempty"`
+	RawTailSub *RawTailSubscribeArgs `json:"raw_tail_sub,omitempty"`
+	RawTail    *RawTailEntry         `json:"raw_tail,omitempty"`
 }
 
 // TranscriptSetPayload toggles transcript recording on/off for the
 // current session. Sent client -> server only.
 type TranscriptSetPayload struct {
 	Enabled bool `json:"enabled"`
+}
+
+// RawTailSubscribeArgs scopes a raw-packet tail to one channel and
+// optional Filter fields. Empty fields match anything.
+type RawTailSubscribeArgs struct {
+	ChannelID uint32 `json:"channel_id"`
+	Source    string `json:"source,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Direction string `json:"direction,omitempty"`
+	// SubstringMatch narrows by matching against the Entry's Decoded.Source
+	// (callsign) -- common operator-friendly filter.
+	SubstringMatch string `json:"substring,omitempty"`
+}
+
+// RawTailEntry is the wire-form of a packetlog Entry, slimmed down to
+// what RawPacketView renders. Server-only payload.
+type RawTailEntry struct {
+	TS        time.Time `json:"ts"`
+	Source    string    `json:"source"`
+	Type      string    `json:"type,omitempty"`
+	Direction string    `json:"direction,omitempty"`
+	ChannelID uint32    `json:"channel_id,omitempty"`
+	From      string    `json:"from,omitempty"`
+	Raw       string    `json:"raw,omitempty"` // TNC2-formatted packet
 }
 
 // ConnectArgs is the payload of a KindConnect envelope.
