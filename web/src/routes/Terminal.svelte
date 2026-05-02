@@ -9,6 +9,9 @@
   import StatusBar from '../components/terminal/StatusBar.svelte';
   import PreConnectForm from '../components/terminal/PreConnectForm.svelte';
   import TelemetryPanel from '../components/terminal/TelemetryPanel.svelte';
+  import MacroToolbar from '../components/terminal/MacroToolbar.svelte';
+  import MacroEditor from '../components/terminal/MacroEditor.svelte';
+  import CommandBar from '../components/terminal/CommandBar.svelte';
 
   import {
     terminalSessions,
@@ -52,7 +55,39 @@
   }
 
   let telemetryOpen = $state(false);
+  let macroEditorOpen = $state(false);
+  let commandBarOpen = $state(false);
+
+  function handleKey(e) {
+    // Ctrl-] (or Cmd-]) opens the command bar from anywhere on the
+    // route.
+    if ((e.ctrlKey || e.metaKey) && e.key === ']') {
+      e.preventDefault();
+      commandBarOpen = true;
+    }
+  }
+
+  function runCommand(cmd) {
+    const parts = cmd.split(/\s+/);
+    const head = parts[0];
+    if (head === 'macros') {
+      macroEditorOpen = true;
+      return { ok: true };
+    }
+    if (head === 'transcript') {
+      // Transcript on/off plumbing lands in Phase 3e.2; surface a
+      // friendly hint so operators don't think the command silently
+      // failed.
+      return { error: 'Transcript toggle ships in a follow-up commit.' };
+    }
+    if (head === 'clear') {
+      return { error: 'Use Ctrl-L (or your terminal’s clear) to wipe the canvas.' };
+    }
+    return { error: `Unknown command: ${head}. Try macros, transcript, or clear.` };
+  }
 </script>
+
+<svelte:window onkeydown={handleKey} />
 
 <div class="terminal-route">
   <div class="terminal-header">
@@ -76,15 +111,18 @@
       </div>
     {:else if activeSession}
       {#key activeSession.state.id}
+        <MacroToolbar session={activeSession} onEdit={() => (macroEditorOpen = true)} />
         <TerminalViewport session={activeSession} />
         <StatusBar session={activeSession} />
       {/key}
     {/if}
+    <CommandBar bind:open={commandBarOpen} onCommand={runCommand} />
   </div>
 
   {#if activeSession}
     <TelemetryPanel session={activeSession} bind:open={telemetryOpen} />
   {/if}
+  <MacroEditor bind:open={macroEditorOpen} />
 </div>
 
 <style>
@@ -100,6 +138,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    position: relative; /* anchor for the CommandBar overlay */
   }
   .form-pane { padding: 16px 24px; }
   .terminal-header {
