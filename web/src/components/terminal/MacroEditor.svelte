@@ -122,7 +122,14 @@
   }
 </script>
 
-<Modal bind:open title="Edit macros" onClose={() => (open = false)}>
+<Modal bind:open onClose={() => (open = false)}>
+  <Modal.Header>
+    <h3 class="modal-title">Edit macros</h3>
+    <Modal.Close aria-label="Close">
+      <Icon name="x" size="sm" />
+    </Modal.Close>
+  </Modal.Header>
+  <Modal.Body>
   <div class="editor">
     <p class="hint">
       Payload accepts <code>\r</code> <code>\n</code> <code>\t</code> <code>\\</code> and
@@ -162,9 +169,11 @@
       </Button>
     </div>
   </div>
+  </Modal.Body>
 </Modal>
 
 <style>
+  .modal-title { margin: 0; font-size: 15px; font-weight: 600; }
   .editor {
     display: flex;
     flex-direction: column;

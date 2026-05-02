@@ -189,14 +189,18 @@
   <p class="back"><a href="#/terminal">Back to terminal</a></p>
 </div>
 
-<AlertDialog
-  bind:open={confirmAll}
-  title="Delete every transcript?"
-  description="This permanently removes every saved transcript session and entry."
-  confirmLabel="Delete everything"
-  cancelLabel="Cancel"
-  onConfirm={removeAll}
-/>
+<AlertDialog bind:open={confirmAll}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>Delete every transcript?</AlertDialog.Title>
+    <AlertDialog.Description>
+      This permanently removes every saved transcript session and entry.
+    </AlertDialog.Description>
+    <div class="confirm-actions">
+      <AlertDialog.Cancel onclick={() => (confirmAll = false)}>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action onclick={removeAll}>Delete everything</AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
 
 <style>
   .page { padding: 16px 24px; max-width: 960px; display: flex; flex-direction: column; gap: 12px; }
@@ -244,4 +248,5 @@
   .muted { color: var(--color-text-muted, #666); margin: 0; }
   .err { color: var(--color-danger, #c41010); margin: 0; }
   .back { font-size: 12px; }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>

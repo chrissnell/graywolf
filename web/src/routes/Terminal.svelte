@@ -210,14 +210,17 @@
   {/if}
   <MacroEditor bind:open={macroEditorOpen} />
 
-  <AlertDialog
-    bind:open={fatalDialog.open}
-    title={fatalErrorTitle(fatalDialog.code)}
-    description={fatalDialog.message || 'Link could not be established.'}
-    confirmLabel="Dismiss"
-    cancelLabel=""
-    onConfirm={dismissFatal}
-  />
+  <AlertDialog bind:open={fatalDialog.open}>
+    <AlertDialog.Content>
+      <AlertDialog.Title>{fatalErrorTitle(fatalDialog.code)}</AlertDialog.Title>
+      <AlertDialog.Description>
+        {fatalDialog.message || 'Link could not be established.'}
+      </AlertDialog.Description>
+      <div class="fatal-actions">
+        <AlertDialog.Action onclick={dismissFatal}>Dismiss</AlertDialog.Action>
+      </div>
+    </AlertDialog.Content>
+  </AlertDialog>
 </div>
 
 <style>
@@ -244,6 +247,7 @@
     padding-top: 8px;
   }
   .raw-pane-actions { padding: 0 14px 6px; }
+  .fatal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
   .terminal-header {
     display: flex;
     align-items: center;
