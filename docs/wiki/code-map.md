@@ -86,7 +86,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 |---|---|---|
 | `configstore` | SQLite config DB (GORM, glebarez/sqlite, pure Go); migrations, seeds, models | [`../handbook/preferences.html`](../handbook/preferences.html) |
 | `historydb` | Position-history SQLite (separate DB, schema bootstrapped on `Open`) | [`../handbook/history-database.html`](../handbook/history-database.html) |
-| `packetlog` | In-memory ring of RX/TX/IS packet records with filter-query API | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
+| `packetlog` | In-memory ring of RX/TX/IS packet records with filter-query API. Live-tail fan-out (`Subscribe`) is in `subscribe.go`; per-subscriber bounded channel, drop-on-full -- backs the AX.25 terminal raw-tail mode and any future live monitor pages. | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
 | `metrics` | Prometheus metrics + helper to fold Rust-side StatusUpdate into them | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
 | `logbuffer` | `slog.Handler` tee that persists DEBUG records into a circular SQLite ring (`graywolf-logs.db`); env-aware path (tmpfs on Pi/SD-card, disk elsewhere); feeds the `graywolf flare` diagnostic submission | (no dedicated page) |
 | `releasenotes` | Embedded release-note YAML (`notes.yaml`); lazy parse + markdown render | (in-app "What's new") |
@@ -175,8 +175,9 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 | `embed.go` | `Handler()` and `SPAHandler()` |
 | `src/App.svelte`, `src/main.js` | App shell, route table |
 | `src/routes/` | One Svelte route per page (Dashboard, LiveMapV2, Channels, Beacons, Digipeater, Igate, Kiss, Agw, Ptt, Gps, AudioDevices, Messages, Terminal + TerminalTranscripts, PositionLog, MapsSettings, Preferences, Login, About, Logs, Simulation) |
-| `src/components/terminal/` | AX.25 terminal pieces: `TerminalViewport` (xterm.js host, 80x24 fixed), `PreConnectForm`, `StatusBar`, `TabBar` |
-| `src/lib/terminal/` | Terminal client state: `session.svelte.js` (one WebSocket per link), `sessions.svelte.js` (multi-tab map, cap 6, focus + visibility tracking), `palette.ts` + `theme.js` (CSS-var-resolved xterm ITheme), `presets.ts` (classic / phosphor-green / phosphor-amber), `envelope.js` (b64 ↔ Uint8Array) |
+| `src/components/terminal/` | AX.25 terminal pieces: `TerminalViewport` (xterm.js host, 80x24 fixed), `PreConnectForm` (channel + CALL[-N] + advanced timers), `StatusBar`, `TabBar`, `CommandBar` (Ctrl-] command line: `disconnect`, `transcript on/off`, etc.), `MacroToolbar` + `MacroEditor` (operator-defined byte-payload buttons), `RawPacketView` (APRS-only channels show packetlog raw-tail in lieu of LAPB session), `TelemetryPanel` (live `link_stats` side panel: V(S)/V(R)/V(A), N2 retry, RTT EWMA, busy flags) |
+| `src/lib/terminal/` | Terminal client state: `session.svelte.js` (one WebSocket per link), `sessions.svelte.js` (multi-tab map, cap 6, focus + visibility tracking), `palette.ts` + `theme.js` (CSS-var-resolved xterm ITheme; `theme.test.js` covers the resolver), `presets.ts` (classic / phosphor-green / phosphor-amber), `envelope.js` (b64 ↔ Uint8Array), `macros.svelte.js` (singleton-config-backed macro store), `profiles.svelte.js` (saved + recent connection profiles store) |
+| `src/lib/stores/terminal.svelte.js` | Sidebar-facing summary: unread-bytes total across non-focused sessions for the Sidebar `NotificationBadge` |
 | `public/fonts/saucecodepro-nerd/` | SauceCodePro Nerd Font face declarations for the terminal viewport. Phase 2 ships `local()` fallbacks; the woff2 binaries are pending vendoring (see `VERSION.txt` in that directory) |
 | `src/components/` | Reusable: ConfirmDialog, DataTable, FormField, Modal, NewsPopup, PacketLogViewer, PageHeader, ReleaseNoteCard, Sidebar, StationCallsignBanner, SymbolPicker, UpdateAvailableBanner |
 | `src/lib/map/` | MapLibre integration (data-store, map-store, layers, sources, popups, APRS icons) |

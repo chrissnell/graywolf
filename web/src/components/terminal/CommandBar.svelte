@@ -18,7 +18,7 @@
 
   let value = $state('');
   let error = $state('');
-  let inputEl;
+  let inputEl = $state(null);
 
   $effect(() => {
     if (open && inputEl) {
@@ -58,6 +58,7 @@
   <div
     class="command-bar"
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
     aria-label="Terminal command bar"
     onkeydown={onKey}

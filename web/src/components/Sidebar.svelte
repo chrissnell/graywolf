@@ -19,7 +19,7 @@
   // visually without forcing every other label into an Icon treatment.
   const operationsItems = [
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
-    { path: '/terminal', label: 'Terminal', icon: 'terminal', badge: 'terminal' },
+    { path: '/terminal', label: 'Terminal', badge: 'terminal' },
     { path: '/beacons', label: 'Beacons' },
     { path: '/digipeater', label: 'Digipeater' },
     { path: '/igate', label: 'iGate' },

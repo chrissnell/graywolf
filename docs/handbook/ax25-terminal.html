@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AX.25 Terminal &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>AX.25 Terminal</h1>
+    <p class="subtitle">Interactive AX.25 connected-mode sessions to BBSes, PMSes, and other live packet hosts &mdash; right in the browser</p>
+
+    <p>
+      The AX.25 Terminal is a built-in connected-mode client. Open it,
+      pick a radio channel, type the callsign of a BBS or another live
+      station, and you get an xterm-style window into a live LAPB
+      session over RF &mdash; no second program, no AGWPE bridge, no
+      KISS-side TNC software. Graywolf speaks AX.25 v2.0 (modulo 8) and
+      negotiates modulo 128 when the peer supports it, with automatic
+      fallback if the peer answers SABME with DM.
+    </p>
+
+    <div class="screenshot">
+      <img src="img/ax25-terminal.png" alt="AX.25 Terminal route showing a connected session to a BBS" />
+      <div class="caption">A connected session to a BBS, with the telemetry side panel open</div>
+    </div>
+
+    <h2>Prerequisite: set the channel mode</h2>
+
+    <p>
+      Connected-mode AX.25 is only enabled on channels whose
+      <strong>Mode</strong> is set to <code>packet</code> or
+      <code>aprs+packet</code>. APRS-only channels refuse new sessions
+      &mdash; the pre-connect form on those channels switches to a
+      read-only raw-tail view instead (see <a href="#raw-tail">Raw-tail mode</a>
+      below). Set the mode on
+      <a href="channels.html">Radio Channels</a>.
+    </p>
+
+    <div class="callout">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          The mode column gates <em>transmission</em>, not reception.
+          A <code>packet</code> channel still receives and demodulates
+          everything &mdash; APRS frames keep flowing into the live map and
+          packet log. The mode just refuses new outbound APRS beacons,
+          digipeats, and iGate IS&rarr;RF, so the channel can be dedicated
+          to a single LAPB conversation without other subsystems
+          stepping on it.
+        </p>
+      </div>
+    </div>
+
+    <h2>Opening a session</h2>
+
+    <p>
+      Click <strong>Terminal</strong> in the sidebar. With no session
+      active, you get the pre-connect form:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tbody>
+            <tr>
+              <td><strong>Channel</strong></td>
+              <td>Pick the radio channel to transmit on. Only channels with a packet-capable mode appear.</td>
+            </tr>
+            <tr>
+              <td><strong>Local Callsign</strong></td>
+              <td>Your station, optionally with an SSID: <code>K0SWE</code> or <code>K0SWE-3</code>. SSID 0 through 15 is the AX.25 spec; pick a different SSID per concurrent session if you plan to run multiple links from the same callsign.</td>
+            </tr>
+            <tr>
+              <td><strong>Destination Callsign</strong></td>
+              <td>The BBS or peer station, same format. For a typical W1AW BBS that would be something like <code>W1AW-4</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Via path</strong></td>
+              <td>Optional comma-separated digipeater list (up to 8 hops). Leave blank for a direct connection.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Click <strong>Connect</strong>. The form swaps for the live xterm
+      viewport as soon as the link reaches CONNECTED state. If the peer
+      answers DM (busy / not listening), the form re-appears with the
+      reason in red.
+    </p>
+
+    <h2>Advanced timer settings</h2>
+
+    <p>
+      The pre-connect form has an <strong>Advanced</strong> disclosure
+      that opens to AX.25 protocol knobs. Operators almost never need
+      to touch these &mdash; the defaults match what a Linux kernel
+      ax25 stack would use &mdash; but they are exposed for the cases
+      that do.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>mod 128</code></td>
+              <td>off</td>
+              <td>Negotiate modulo-128 sequence numbers (SABME). Lets the link have up to 127 outstanding I-frames instead of 7. Falls back to mod-8 automatically if the peer answers DM.</td>
+            </tr>
+            <tr>
+              <td><code>paclen</code></td>
+              <td>0 (server picks)</td>
+              <td>Maximum I-field bytes per outbound I-frame. 0 means use the kernel-default 256.</td>
+            </tr>
+            <tr>
+              <td><code>window</code></td>
+              <td>0 (server picks)</td>
+              <td>Outstanding-I-frame window. 0 means 4 (mod-8) or 32 (mod-128).</td>
+            </tr>
+            <tr>
+              <td><code>N2</code></td>
+              <td>0 (server picks)</td>
+              <td>Maximum retransmits before declaring the link down. 0 means 10.</td>
+            </tr>
+            <tr>
+              <td><code>T1 / T2 / T3 ms</code></td>
+              <td>0 (server picks)</td>
+              <td>Retransmit / response-delay / link-idle timers. 0 leaves the kernel-default values in place; override only if your path RTT is unusual.</td>
+            </tr>
+            <tr>
+              <td><code>backoff</code></td>
+              <td>linear</td>
+              <td>Retry backoff curve: <code>linear</code>, <code>exponential</code>, or <code>none</code>. Exponential helps on noisy channels.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Defaults you set on Preferences (modulo and paclen) seed the form;
+      per-session changes are not persisted &mdash; the next connection
+      starts from the Preferences defaults again.
+    </p>
+
+    <h2>While connected</h2>
+
+    <p>
+      The connected view shows a fixed 80&times;24 xterm window with a
+      status bar across the bottom: <strong>state</strong>,
+      <strong>peer</strong>, <strong>RTT</strong>, and a small
+      <strong>radio</strong> button that toggles the telemetry side
+      panel. The telemetry panel updates once per second while
+      CONNECTED and shows the live LAPB counters: V(S), V(R), V(A),
+      retry count (N2), busy / peer-busy flags, and the RTT exponential
+      moving average. It stops updating in any other state.
+    </p>
+
+    <p>
+      Type to send. Anything you type goes out as I-frame data; bytes
+      from the peer come in and render in the viewport. The terminal
+      uses xterm.js with <code>disableStdin: false</code>, so your
+      keystrokes never echo locally &mdash; the BBS sees them, the BBS
+      echoes them back, and you see what the BBS chose to display. This
+      is the correct behavior for a real LAPB session: the peer is the
+      authority on what gets shown.
+    </p>
+
+    <h3>Command bar</h3>
+
+    <p>
+      Press <strong>Ctrl-]</strong> to drop into the command bar at the
+      bottom of the terminal. From there:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Command</th><th>Effect</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>disconnect</code></td>
+              <td>Send DISC, wait for UA, close the link gracefully.</td>
+            </tr>
+            <tr>
+              <td><code>abort</code></td>
+              <td>Send DM and close immediately. Use when the peer is unresponsive.</td>
+            </tr>
+            <tr>
+              <td><code>transcript on</code> / <code>transcript off</code></td>
+              <td>Start or stop recording the session to the transcript store.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      <strong>Esc</strong> closes the command bar without acting.
+    </p>
+
+    <h3>Macros</h3>
+
+    <p>
+      The macro toolbar above the viewport holds operator-defined
+      buttons. Each macro has a label and a payload (text or arbitrary
+      bytes); clicking the button sends the payload immediately as
+      I-frame data. Edit macros from the gear icon &mdash; payloads are
+      stored base64-encoded so they can hold control characters and
+      non-printable bytes.
+    </p>
+
+    <p>
+      Macros are global (one set per station), not per-session.
+    </p>
+
+    <h3>Tabs</h3>
+
+    <p>
+      The tab bar above the macro toolbar lets you run up to six
+      concurrent sessions. Each tab is its own LAPB link, so you can
+      run a BBS session in one tab and a peer-to-peer keyboard-to-keyboard
+      chat in another. The unread-bytes count in each tab&rsquo;s label
+      tracks bytes that arrived while the tab was not focused; the
+      sidebar Terminal entry shows the same total across all
+      backgrounded tabs.
+    </p>
+
+    <p>
+      <strong>Ctrl-PageUp</strong> and <strong>Ctrl-PageDown</strong>
+      move between tabs from the keyboard.
+    </p>
+
+    <h2>Transcripts</h2>
+
+    <p>
+      Turning <code>transcript on</code> begins recording every byte
+      and state-change to the transcript store. The recorder logs RX
+      bytes, TX bytes, state transitions, and link errors; the
+      <strong>Transcripts</strong> sub-route lists all completed
+      sessions and lets you replay or delete them. Transcripts live in
+      the SQLite config DB and are not size-bounded, so prune
+      occasionally if you record a lot.
+    </p>
+
+    <p>
+      Transcripts capture the byte stream as the session saw it,
+      including the BBS&rsquo;s screen-clear sequences and form-feeds.
+      Replays render in a styled monospace viewer rather than a live
+      terminal &mdash; expect to see escape sequences as text, not as
+      cursor moves.
+    </p>
+
+    <h2>Saved profiles and recents</h2>
+
+    <p>
+      Successful CONNECTED transitions are upserted into a recents
+      list under the pre-connect form. Click any recent to populate the
+      form with its channel, callsigns, via path, and timer settings.
+      Pin a recent (the pin icon turns it into a saved profile) and it
+      stays at the top of the list permanently &mdash; pinned profiles
+      never get trimmed; unpinned recents top out at 20 entries.
+    </p>
+
+    <h2 id="raw-tail">Raw-tail mode (APRS-only channels)</h2>
+
+    <p>
+      If you open the Terminal page on an APRS-only channel, the
+      pre-connect form is replaced with a raw-packet viewer instead.
+      It subscribes to the same packet-log fan-out the
+      <a href="monitoring.html">Monitoring</a> page uses and shows
+      every RX and TX frame on that channel as it happens, in TNC2
+      text format. There is no LAPB session in this mode &mdash; the
+      raw-tail view is for watching APRS traffic live; switch the
+      channel mode to <code>packet</code> or <code>aprs+packet</code>
+      first if you want to open a session.
+    </p>
+
+    <h2>Defaults and theming</h2>
+
+    <p>
+      <a href="preferences.html">Preferences</a> has an
+      <strong>AX.25 Terminal</strong> tab where you can set:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <tbody>
+            <tr>
+              <td><strong>Scrollback rows</strong></td>
+              <td>How much history the terminal viewport keeps. Larger values use more browser memory.</td>
+            </tr>
+            <tr>
+              <td><strong>Cursor blink</strong></td>
+              <td>On / off. Off is easier on the eyes for long sessions.</td>
+            </tr>
+            <tr>
+              <td><strong>Default modulo</strong></td>
+              <td>Pre-fills the Advanced &rarr; <code>mod 128</code> checkbox on every new session.</td>
+            </tr>
+            <tr>
+              <td><strong>Default paclen</strong></td>
+              <td>Pre-fills the Advanced &rarr; <code>paclen</code> field.</td>
+            </tr>
+            <tr>
+              <td><strong>Theme preset</strong></td>
+              <td><code>classic</code>, <code>phosphor-green</code>, or <code>phosphor-amber</code>. The terminal palette is resolved from CSS variables, so the preset also tracks the global graywolf theme.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Out-of-scope</h2>
+
+    <p>
+      The terminal is an outbound-only client. It does <em>not</em>:
+    </p>
+
+    <ul>
+      <li>Listen for inbound SABM and act as a BBS host.</li>
+      <li>Implement NET/ROM, ROSE, or other layer-3 routing.</li>
+      <li>Segment its own application-layer messages &mdash; what you type goes out as a single I-frame stream, paclen-fragmented at the LAPB layer only.</li>
+    </ul>
+
+    <p>
+      For a hosting-side BBS or a NET/ROM node, run a dedicated package
+      (LinBPQ, JNOS, etc.) alongside graywolf and connect to it through
+      the <a href="kiss.html">KISS interface</a>.
+    </p>
+
+    <nav class="page-nav">
+      <a href="livemap.html">
+        <span class="label">Previous</span>
+        Live Map
+      </a>
+      <a href="kiss.html" class="next">
+        <span class="label">Next</span>
+        KISS TNC
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

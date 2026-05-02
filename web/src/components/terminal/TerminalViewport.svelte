@@ -14,7 +14,7 @@
   // is hidden in favor of a "screen too narrow" message.
   let { session, preset = 'classic', narrowMin = 768 } = $props();
 
-  let host;
+  let host = $state(null);
   let term = null;
   let mounted = false;
   let viewportWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1024);

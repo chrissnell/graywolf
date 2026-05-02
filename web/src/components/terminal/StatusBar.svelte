@@ -21,9 +21,9 @@
   <span class="peer">{session.state.peer || '(no peer)'}</span>
   {#if viaText}<span class="via">via {viaText}</span>{/if}
   {#if stats}
-    <span class="metric" title="round-trip time"><label>RTT</label> {stats.rtt_ms ?? 0} ms</span>
-    <span class="metric" title="retry counter"><label>RC</label> {stats.rc ?? 0}</span>
-    <span class="metric" title="frames TX/RX"><label>frames</label> {stats.frames_tx ?? 0}/{stats.frames_rx ?? 0}</span>
+    <span class="metric" title="round-trip time"><span class="metric-key">RTT</span> {stats.rtt_ms ?? 0} ms</span>
+    <span class="metric" title="retry counter"><span class="metric-key">RC</span> {stats.rc ?? 0}</span>
+    <span class="metric" title="frames TX/RX"><span class="metric-key">frames</span> {stats.frames_tx ?? 0}/{stats.frames_rx ?? 0}</span>
   {:else}
     <span class="metric muted">RTT --</span>
   {/if}
@@ -49,7 +49,7 @@
   .peer { font-weight: 600; }
   .via { color: var(--color-text-muted, #666); }
   .metric { display: inline-flex; gap: 4px; align-items: baseline; }
-  .metric label { color: var(--color-text-muted, #666); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .metric-key { color: var(--color-text-muted, #666); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
   .muted { color: var(--color-text-muted, #999); }
   .suspended { color: var(--color-warning, #d66e00); font-style: italic; }
   .err { color: var(--color-danger, #c41010); }

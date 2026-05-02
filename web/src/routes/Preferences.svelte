@@ -102,11 +102,12 @@
     decode longer messages and will truncate or drop them. Leave off
     unless you know your contacts support it.
   </p>
-  <label class="tx-channel-label">Transmit channel</label>
+  <p class="tx-channel-label">Transmit channel</p>
   <Select
     value={txChannel}
     onValueChange={handleTxChannelChange}
     options={txChannelOptions}
+    aria-label="Messages transmit channel"
   />
   <p class="messages-hint">
     Where graywolf sends outbound APRS messages. Auto picks the first
