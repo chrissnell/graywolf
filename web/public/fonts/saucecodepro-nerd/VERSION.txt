@@ -1,0 +1,36 @@
+SauceCodePro Nerd Font -- vendoring status
+==========================================
+
+STATUS: stub (no woff2 files yet)
+
+Planned upstream pin
+--------------------
+  Nerd Fonts release: v3.4.0
+  Source repo:        https://github.com/ryanoasis/nerd-fonts
+  Variant directory:  patched-fonts/SourceCodePro/
+  Subsets needed:     latin, latin-ext, nerd (PUA only)
+  Weights needed:     regular (400), bold (700)
+  Files expected:
+    saucecodepro-regular-latin.woff2
+    saucecodepro-regular-latin-ext.woff2
+    saucecodepro-regular-nerd.woff2
+    saucecodepro-bold-latin.woff2
+    saucecodepro-bold-latin-ext.woff2
+    saucecodepro-bold-nerd.woff2
+
+Build pipeline (when vendored)
+------------------------------
+  1. Pull the Nerd Fonts release tarball (v3.4.0) and extract the
+     SourceCodePro patched ttf files (regular + bold).
+  2. Subset each to latin / latin-ext / PUA codepoints with
+     pyftsubset (fonttools).
+  3. Convert each subset ttf to woff2 with woff2_compress
+     (google/woff2).
+  4. Drop the resulting woff2 files in this directory and update the
+     src: chain in saucecodepro-nerd-font.css to start with their
+     url(...) entries (system local() fonts then become a graceful
+     fallback while the woff2 loads).
+  5. Record the SHA-256 of every woff2 file below so future bumps are
+     verifiable.
+
+SHA-256 inventory (one line per file when populated):
