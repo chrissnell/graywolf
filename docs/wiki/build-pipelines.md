@@ -8,6 +8,7 @@ Release pipeline definition: [`../../.goreleaser.yml`](../../.goreleaser.yml).
 | Artifact | Producer | Inputs | Output | Trigger |
 |---|---|---|---|---|
 | Go binary `graywolf` | `make graywolf` (= `release web` + `go build`) | `cmd/graywolf/`, `pkg/...`, `web/dist/` (embedded) | `bin/graywolf` (+ `bin/graywolf-modem` copied from `target/release/`) | Manual |
+| Go binary + web only (skip Rust) | `make graywolf-quick` (= `web` + `go build`) | same as above, minus `target/release/graywolf-modem` | `bin/graywolf` only; reuses existing `bin/graywolf-modem` | Manual; safe when `proto/` + `VERSION` unchanged |
 | Rust modem (native dev) | `make release` | `graywolf-modem/`, `proto/graywolf.proto`, `VERSION` | `target/release/graywolf-modem` (workspace root, not `graywolf-modem/target/`) | Manual; see [invariant 1](invariants.md) |
 | Rust modem (cross arm64) | `cross` per [`../../Cross.toml`](../../Cross.toml) | same + Docker image with aarch64 ALSA/udev libs and protoc | `target/<triple>/release/graywolf-modem` | Release CI |
 | Web UI | `make web` (`npm install`, `npm run build`) | `web/src/`, `package.json`, themes, public, generated TS client | `web/dist/` (gitignored, then `go:embed` -- [invariant 12](invariants.md)) | Triggered by `make graywolf` / `make all` / `make api-client` |

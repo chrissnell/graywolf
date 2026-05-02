@@ -49,7 +49,7 @@ SWAGGER_UI_VENDOR := $(DOCS_HANDBOOK)/vendor/swagger-ui
 # api-client-check guards catch.
 GENERATED_SPEC_FILES := $(DOCS_GEN_DIR)/swagger.json $(DOCS_GEN_DIR)/swagger.yaml $(WEB_DIR)/src/api/generated/api.d.ts
 
-.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks
+.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf graywolf-quick version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks
 
 all: release web
 	mkdir -p bin
@@ -144,6 +144,18 @@ go-fuzz:
 graywolf: release web
 	mkdir -p bin
 	cp target/release/graywolf-modem bin/
+	go build -ldflags="$(GO_LDFLAGS)" -o bin/graywolf ./cmd/graywolf/
+
+# graywolf-quick: rebuild ONLY the web UI and Go binary; reuse the existing
+# bin/graywolf-modem. Skips the slow Rust release build. Safe when proto/,
+# VERSION, and the Rust modem are unchanged. If proto/graywolf.proto or
+# VERSION changed, use `make graywolf` instead -- the IPC contract and
+# version-display invariants require both sides rebuilt in lockstep.
+graywolf-quick: web
+	@test -x bin/graywolf-modem || { \
+	  echo "error: bin/graywolf-modem missing -- run 'make graywolf' once first"; \
+	  exit 1; \
+	}
 	go build -ldflags="$(GO_LDFLAGS)" -o bin/graywolf ./cmd/graywolf/
 
 run-bench: release
