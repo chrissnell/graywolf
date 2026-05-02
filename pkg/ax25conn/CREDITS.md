@@ -74,6 +74,33 @@ replay fixtures (originally Phase 1 task 1.15) are deferred to Phase 4
 task 4.1b. Until those land, first-time interop with a kernel BBS is
 the de-facto compliance test.
 
+## On-air fixture provenance — Phase 2 smoke test (pending)
+
+Phase 2 ships the WebSocket bridge (`pkg/ax25termws`), the
+`/api/ax25/terminal` endpoint, and the Svelte terminal route. None of
+that surface has been validated against a real kernel-AX.25 peer in
+this branch — the smoke test is left as an operator gate before the
+Phase-2/3 merge to main.
+
+Recommended procedure (matches plan task 2.18):
+
+1. On a Linux box, bring up an AX.25 stack on a loopback radio. The
+   minimal recipe is `axports` plus `kissattach` over a `mkfifo` /
+   `socat` pair so two callsigns share one virtual KISS modem.
+2. Configure a graywolf channel with mode `aprs+packet` (or `packet`).
+3. Build & run the branch (`make build && bin/graywolf -config ...`).
+   Open `/terminal`, fill the PreConnectForm, click Connect.
+4. Verify on the wire:
+   - SABM goes out from graywolf.
+   - UA comes back from the Linux side.
+   - Terminal status flips to CONNECTED.
+   - Bytes typed at the Linux shell appear in the xterm canvas.
+   - Bytes typed in the canvas reach the Linux shell.
+5. Click Disconnect; verify DISC -> UA -> DISCONNECTED.
+6. When validation completes, replace this section with the actual
+   capture details (peer software + version, callsigns, anything that
+   needed a fix in the bridge or state machine).
+
 ## Specification
 
 - AX.25 v2.2 (Jul 1998): https://www.ax25.net/AX25.2.2-Jul%2098-2.pdf
