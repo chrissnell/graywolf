@@ -941,6 +941,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// this function (see "AX.25 connected-mode session manager"); the
 	// handler returns 503 until this setter runs.
 	apiSrv.SetAX25Manager(a.ax25Mgr)
+	apiSrv.SetPacketLog(a.plog)
 
 	// Construct the GitHub-update checker and install it on the webapi
 	// server so GET /api/updates/status can project its cached Snapshot.

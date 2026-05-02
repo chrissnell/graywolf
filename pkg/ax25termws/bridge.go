@@ -11,6 +11,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
+	"github.com/chrissnell/graywolf/pkg/packetlog"
 )
 
 // BridgeConfig configures one per-WebSocket bridge instance.
@@ -41,6 +42,10 @@ type BridgeConfig struct {
 	// toggles transcript on. Optional; nil disables transcript support
 	// entirely (the bridge surfaces a typed error envelope on toggle).
 	Transcripts TranscriptRecorder
+	// RawPacketLog drives the raw-tail mode (Plan §3f). Optional; nil
+	// disables raw-tail support so KindRawTailSubscribe surfaces a
+	// typed error envelope.
+	RawPacketLog *packetlog.Log
 }
 
 // TranscriptRecorder is the persistence interface the bridge calls to
@@ -108,6 +113,13 @@ type Bridge struct {
 	transcriptID         uint32
 	transcriptByteCount  uint64
 	transcriptFrameCount uint64
+
+	// Raw-tail subscription state. rawTailCancel stops the active
+	// fanout goroutine; rawTailArgs carries the active filter so the
+	// goroutine can decide what to forward.
+	rawTailMu     sync.Mutex
+	rawTailCancel context.CancelFunc
+	rawTailArgs   *RawTailSubscribeArgs
 }
 
 // New constructs a Bridge and starts its pump goroutine. The session
@@ -145,6 +157,8 @@ func (b *Bridge) Close() {
 		return
 	}
 	b.closed = true
+	// Stop the raw-tail goroutine before any session teardown.
+	b.stopRawTail()
 	// Wrap up an active transcript before tearing the session down so
 	// EndedAt + counters land regardless of how the WebSocket closes.
 	_ = b.endTranscript("session-closed")
@@ -213,6 +227,14 @@ func (b *Bridge) Handle(ctx context.Context, env Envelope) error {
 			return errors.New("ax25termws: transcript_set: missing payload")
 		}
 		return b.handleTranscriptSet(env.Transcript.Enabled)
+	case KindRawTailSubscribe:
+		if env.RawTailSub == nil {
+			return errors.New("ax25termws: raw_tail_subscribe: missing payload")
+		}
+		return b.handleRawTailSubscribe(env.RawTailSub)
+	case KindRawTailUnsub:
+		b.stopRawTail()
+		return nil
 	default:
 		return fmt.Errorf("ax25termws: unknown kind: %q", env.Kind)
 	}
@@ -428,6 +450,112 @@ func (b *Bridge) recordTranscript(ev ax25conn.OutEvent) {
 	default:
 		b.transcriptMu.Unlock()
 	}
+}
+
+// handleRawTailSubscribe replaces any active raw-tail subscription
+// with one bound to the new args. Spawns a goroutine that pulls from
+// the packetlog fanout and translates each entry into an envelope on
+// b.cfg.Out (non-blocking; envelopes drop if Out is jammed).
+func (b *Bridge) handleRawTailSubscribe(args *RawTailSubscribeArgs) error {
+	if b.cfg.RawPacketLog == nil {
+		b.emitErrorEnvelope("raw_tail_unsupported", "raw-packet feed is not configured on the server")
+		return errors.New("ax25termws: raw_tail: no log")
+	}
+	b.stopRawTail()
+	tailCtx, cancel := context.WithCancel(b.ctx)
+	b.rawTailMu.Lock()
+	b.rawTailCancel = cancel
+	b.rawTailArgs = args
+	b.rawTailMu.Unlock()
+	ch := b.cfg.RawPacketLog.Subscribe(tailCtx)
+	go b.rawTailPump(tailCtx, ch, args)
+	return nil
+}
+
+// stopRawTail cancels the active raw-tail fanout if any. Idempotent.
+func (b *Bridge) stopRawTail() {
+	b.rawTailMu.Lock()
+	cancel := b.rawTailCancel
+	b.rawTailCancel = nil
+	b.rawTailArgs = nil
+	b.rawTailMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// rawTailPump drains the packetlog subscriber and writes RawTail
+// envelopes to b.cfg.Out. Filters by the args fields; non-blocking
+// send so a stuck WebSocket cannot back-pressure the packetlog.
+func (b *Bridge) rawTailPump(ctx context.Context, ch <-chan packetlog.Entry, args *RawTailSubscribeArgs) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e, ok := <-ch:
+			if !ok {
+				return
+			}
+			if !rawTailMatches(args, e) {
+				continue
+			}
+			env := Envelope{Kind: KindRawTail, RawTail: rawEntryToEnvelope(e)}
+			select {
+			case b.cfg.Out <- env:
+			case <-ctx.Done():
+				return
+			default:
+				// Drop on full; the operator-visible miss is via the
+				// packetlog SubscribeStats counter rather than an
+				// inline error envelope (would just compound the jam).
+			}
+		}
+	}
+}
+
+func rawTailMatches(args *RawTailSubscribeArgs, e packetlog.Entry) bool {
+	if args == nil {
+		return true
+	}
+	if args.ChannelID != 0 && args.ChannelID != e.Channel {
+		return false
+	}
+	if args.Source != "" && args.Source != e.Source {
+		return false
+	}
+	if args.Type != "" && args.Type != e.Type {
+		return false
+	}
+	if args.Direction != "" && string(e.Direction) != args.Direction {
+		return false
+	}
+	if args.SubstringMatch != "" {
+		needle := strings.ToUpper(args.SubstringMatch)
+		hay := ""
+		if e.Decoded != nil {
+			hay = strings.ToUpper(e.Decoded.Source + " " + e.Decoded.Dest)
+		}
+		hay += " " + strings.ToUpper(string(e.Raw))
+		if !strings.Contains(hay, needle) {
+			return false
+		}
+	}
+	return true
+}
+
+func rawEntryToEnvelope(e packetlog.Entry) *RawTailEntry {
+	out := &RawTailEntry{
+		TS:        e.Timestamp,
+		Source:    e.Source,
+		Type:      e.Type,
+		Direction: string(e.Direction),
+		ChannelID: e.Channel,
+		Raw:       string(e.Raw),
+	}
+	if e.Decoded != nil {
+		out.From = e.Decoded.Source
+	}
+	return out
 }
 
 // recordTranscriptTX writes an operator-typed data buffer to the

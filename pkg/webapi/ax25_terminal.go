@@ -90,6 +90,7 @@ func (s *Server) handleAX25Terminal(w http.ResponseWriter, r *http.Request) {
 		Out:              out,
 		OnFirstConnected: s.recordRecentAX25Connection,
 		Transcripts:      transcriptRecorder{store: s.store},
+		RawPacketLog:     s.packetLog,
 	})
 
 	// Writer + ping live in the same goroutine so we never have two
