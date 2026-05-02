@@ -75,10 +75,17 @@
       return { ok: true };
     }
     if (head === 'transcript') {
-      // Transcript on/off plumbing lands in Phase 3e.2; surface a
-      // friendly hint so operators don't think the command silently
-      // failed.
-      return { error: 'Transcript toggle ships in a follow-up commit.' };
+      if (!activeSession) return { error: 'No active session.' };
+      const arg = (parts[1] ?? '').toLowerCase();
+      if (arg === 'on' || arg === '') {
+        activeSession.setTranscript?.(true);
+        return { ok: true };
+      }
+      if (arg === 'off') {
+        activeSession.setTranscript?.(false);
+        return { ok: true };
+      }
+      return { error: 'transcript on|off' };
     }
     if (head === 'clear') {
       return { error: 'Use Ctrl-L (or your terminal’s clear) to wipe the canvas.' };

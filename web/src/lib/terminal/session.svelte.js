@@ -37,6 +37,7 @@ export function createSession(initial, opts = {}) {
     errorMessage: null,
     suspended: false,
     focused: false,
+    transcriptEnabled: false,
     // Configured retry budget (N2). Falls back to the kernel default
     // when the operator left the advanced field at zero.
     n2: pickN2(initial),
@@ -128,6 +129,11 @@ export function createSession(initial, opts = {}) {
     send({ kind: 'disconnect' });
   }
 
+  function setTranscript(enabled) {
+    state.transcriptEnabled = !!enabled;
+    return send({ kind: 'transcript_set', transcript: { enabled: !!enabled } });
+  }
+
   function abort() {
     send({ kind: 'abort' });
   }
@@ -145,7 +151,7 @@ export function createSession(initial, opts = {}) {
 
   open();
 
-  return { state, sendData, disconnect, abort, close, clearUnread };
+  return { state, sendData, disconnect, abort, close, clearUnread, setTranscript };
 }
 
 // pickN2 returns the configured retry budget from `initial`, falling

@@ -89,6 +89,7 @@ func (s *Server) handleAX25Terminal(w http.ResponseWriter, r *http.Request) {
 		Ctx:              ctx,
 		Out:              out,
 		OnFirstConnected: s.recordRecentAX25Connection,
+		Transcripts:      transcriptRecorder{store: s.store},
 	})
 
 	// Writer + ping live in the same goroutine so we never have two
@@ -178,6 +179,39 @@ func (s *Server) runTerminalWriter(ctx context.Context, c *websocket.Conn, out <
 			}
 		}
 	}
+}
+
+// transcriptRecorder adapts the configstore to the ax25termws bridge's
+// TranscriptRecorder interface. Plan §3e.2.
+type transcriptRecorder struct {
+	store *configstore.Store
+}
+
+func (t transcriptRecorder) Begin(ctx context.Context, channelID uint32, peerCall string, peerSSID uint8, viaPath string) (uint32, error) {
+	sess := &configstore.AX25TranscriptSession{
+		ChannelID: channelID,
+		PeerCall:  strings.ToUpper(strings.TrimSpace(peerCall)),
+		PeerSSID:  peerSSID,
+		ViaPath:   viaPath,
+	}
+	if err := t.store.CreateAX25TranscriptSession(ctx, sess); err != nil {
+		return 0, err
+	}
+	return sess.ID, nil
+}
+
+func (t transcriptRecorder) Append(ctx context.Context, sessionID uint32, ts time.Time, direction, kind string, payload []byte) error {
+	return t.store.AppendAX25TranscriptEntry(ctx, &configstore.AX25TranscriptEntry{
+		SessionID: sessionID,
+		TS:        ts,
+		Direction: direction,
+		Kind:      kind,
+		Payload:   payload,
+	})
+}
+
+func (t transcriptRecorder) End(ctx context.Context, sessionID uint32, reason string, bytes, frames uint64) error {
+	return t.store.EndAX25TranscriptSession(ctx, sessionID, reason, bytes, frames)
 }
 
 // recordRecentAX25Connection upserts a recent AX25SessionProfile after

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -199,6 +200,127 @@ func TestBridge_ObserveStateChange(t *testing.T) {
 	env := recvWithin(t, out, time.Second)
 	if env.Kind != KindState || env.State == nil || env.State.Name != "CONNECTED" {
 		t.Fatalf("unexpected envelope: %+v", env)
+	}
+}
+
+// fakeTranscriptRecorder captures transcript calls for assertions.
+type fakeTranscriptRecorder struct {
+	mu        sync.Mutex
+	beginCnt  int
+	entries   []string
+	endID     uint32
+	endBytes  uint64
+	endFrames uint64
+	endReason string
+}
+
+func (f *fakeTranscriptRecorder) Begin(_ context.Context, channelID uint32, peerCall string, peerSSID uint8, viaPath string) (uint32, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.beginCnt++
+	_, _, _, _ = channelID, peerCall, peerSSID, viaPath
+	return 42, nil
+}
+
+func (f *fakeTranscriptRecorder) Append(_ context.Context, sessionID uint32, _ time.Time, direction, kind string, payload []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_ = sessionID
+	f.entries = append(f.entries, direction+":"+kind+":"+string(payload))
+	return nil
+}
+
+func (f *fakeTranscriptRecorder) End(_ context.Context, sessionID uint32, reason string, bytes, frames uint64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.endID = sessionID
+	f.endReason = reason
+	f.endBytes = bytes
+	f.endFrames = frames
+	return nil
+}
+
+func TestBridge_TranscriptToggleAndPersist(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 16)
+	mgr := ax25conn.NewManager(ax25conn.ManagerConfig{TxSink: nopSink{}, Logger: quietLogger()})
+	t.Cleanup(mgr.Close)
+	rec := &fakeTranscriptRecorder{}
+	b := New(BridgeConfig{
+		Manager:     mgr,
+		Logger:      quietLogger(),
+		Operator:    "op1",
+		Ctx:         ctx,
+		Out:         out,
+		Transcripts: rec,
+	})
+	if err := b.Handle(ctx, Envelope{Kind: KindConnect, Connect: validConnect()}); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if err := b.Handle(ctx, Envelope{Kind: KindTranscriptSet, Transcript: &TranscriptSetPayload{Enabled: true}}); err != nil {
+		t.Fatalf("transcript on: %v", err)
+	}
+	b.observe(ax25conn.OutEvent{Kind: ax25conn.OutDataRX, Data: []byte("hello")})
+	if err := b.Handle(ctx, Envelope{Kind: KindData, Data: []byte("ack")}); err != nil {
+		t.Fatalf("data: %v", err)
+	}
+	deadline := time.After(time.Second)
+	for {
+		rec.mu.Lock()
+		got := len(rec.entries)
+		rec.mu.Unlock()
+		if got >= 2 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("transcripts never landed, have %d", got)
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	rec.mu.Lock()
+	gotEntries := append([]string(nil), rec.entries...)
+	rec.mu.Unlock()
+	wantHas := func(s string) bool {
+		for _, e := range gotEntries {
+			if e == s {
+				return true
+			}
+		}
+		return false
+	}
+	if !wantHas("rx:data:hello") || !wantHas("tx:data:ack") {
+		t.Fatalf("expected rx + tx data entries, got %v", gotEntries)
+	}
+	if err := b.Handle(ctx, Envelope{Kind: KindTranscriptSet, Transcript: &TranscriptSetPayload{Enabled: false}}); err != nil {
+		t.Fatalf("transcript off: %v", err)
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if rec.endID != 42 {
+		t.Fatalf("End not called: %+v", rec)
+	}
+	if rec.endBytes != uint64(len("hello")+len("ack")) || rec.endFrames != 2 {
+		t.Fatalf("End counters wrong: bytes=%d frames=%d", rec.endBytes, rec.endFrames)
+	}
+	if rec.endReason != "operator-stop" {
+		t.Fatalf("End reason wrong: %q", rec.endReason)
+	}
+}
+
+func TestBridge_TranscriptSetWithoutRecorderEmitsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 4)
+	b, _ := newTestBridge(t, ctx, out, nil)
+	if err := b.Handle(ctx, Envelope{Kind: KindTranscriptSet, Transcript: &TranscriptSetPayload{Enabled: true}}); err == nil {
+		t.Fatal("expected error when transcripts not configured")
+	}
+	env := recvWithin(t, out, time.Second)
+	if env.Kind != KindError || env.Error == nil || env.Error.Code != "transcript_unsupported" {
+		t.Fatalf("expected transcript_unsupported error envelope, got %+v", env)
 	}
 }
 

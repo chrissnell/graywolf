@@ -10,10 +10,11 @@ type MsgKind string
 
 const (
 	// Client -> Server
-	KindConnect    MsgKind = "connect"
-	KindData       MsgKind = "data"
-	KindDisconnect MsgKind = "disconnect"
-	KindAbort      MsgKind = "abort"
+	KindConnect       MsgKind = "connect"
+	KindData          MsgKind = "data"
+	KindDisconnect    MsgKind = "disconnect"
+	KindAbort         MsgKind = "abort"
+	KindTranscriptSet MsgKind = "transcript_set"
 
 	// Server -> Client
 	KindState     MsgKind = "state"
@@ -26,12 +27,19 @@ const (
 // encoding/json when the field type is []byte; the JS side decodes
 // via atob.
 type Envelope struct {
-	Kind    MsgKind        `json:"kind"`
-	Connect *ConnectArgs   `json:"connect,omitempty"`
-	Data    []byte         `json:"data,omitempty"`
-	State   *StatePayload  `json:"state,omitempty"`
-	Stats   *StatsPayload  `json:"stats,omitempty"`
-	Error   *ErrorPayload  `json:"error,omitempty"`
+	Kind       MsgKind                `json:"kind"`
+	Connect    *ConnectArgs           `json:"connect,omitempty"`
+	Data       []byte                 `json:"data,omitempty"`
+	State      *StatePayload          `json:"state,omitempty"`
+	Stats      *StatsPayload          `json:"stats,omitempty"`
+	Error      *ErrorPayload          `json:"error,omitempty"`
+	Transcript *TranscriptSetPayload  `json:"transcript,omitempty"`
+}
+
+// TranscriptSetPayload toggles transcript recording on/off for the
+// current session. Sent client -> server only.
+type TranscriptSetPayload struct {
+	Enabled bool `json:"enabled"`
 }
 
 // ConnectArgs is the payload of a KindConnect envelope.

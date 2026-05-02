@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
@@ -36,6 +37,23 @@ type BridgeConfig struct {
 	// the new connection. The callback runs on a fresh goroutine so
 	// it cannot stall the session loop.
 	OnFirstConnected func(args ConnectArgs)
+	// Transcripts persists per-session recordings when the operator
+	// toggles transcript on. Optional; nil disables transcript support
+	// entirely (the bridge surfaces a typed error envelope on toggle).
+	Transcripts TranscriptRecorder
+}
+
+// TranscriptRecorder is the persistence interface the bridge calls to
+// record one session's transcript. Implementations adapt the
+// configstore (see pkg/webapi/ax25_terminal.go for the wiring).
+type TranscriptRecorder interface {
+	// Begin opens a new transcript session keyed to the connect args.
+	// Returns the persistent session id.
+	Begin(ctx context.Context, channelID uint32, peerCall string, peerSSID uint8, viaPath string) (uint32, error)
+	// Append persists one transcript entry.
+	Append(ctx context.Context, sessionID uint32, ts time.Time, direction, kind string, payload []byte) error
+	// End stamps the wrap-up fields on a transcript session.
+	End(ctx context.Context, sessionID uint32, reason string, bytes, frames uint64) error
 }
 
 // inboxSize bounds the observer-to-pump queue. The session goroutine
@@ -79,6 +97,17 @@ type Bridge struct {
 	// repeated CONNECTED transitions (e.g. CONNECTED -> TIMER_RECOVERY
 	// -> CONNECTED).
 	firedConnected bool
+
+	// Transcript-recording state. transcriptID is non-zero while the
+	// bridge is actively persisting envelopes; the byte/frame counters
+	// roll up the session totals so EndAX25TranscriptSession sees the
+	// final numbers. The reader goroutine flips the toggle (Begin/End)
+	// while the pump goroutine appends entries -- the mutex serializes
+	// both sides.
+	transcriptMu         sync.Mutex
+	transcriptID         uint32
+	transcriptByteCount  uint64
+	transcriptFrameCount uint64
 }
 
 // New constructs a Bridge and starts its pump goroutine. The session
@@ -116,6 +145,9 @@ func (b *Bridge) Close() {
 		return
 	}
 	b.closed = true
+	// Wrap up an active transcript before tearing the session down so
+	// EndedAt + counters land regardless of how the WebSocket closes.
+	_ = b.endTranscript("session-closed")
 	if b.session != nil {
 		b.session.Submit(ax25conn.Event{Kind: ax25conn.EventDisconnect})
 	}
@@ -166,6 +198,7 @@ func (b *Bridge) Handle(ctx context.Context, env Envelope) error {
 		if b.session == nil {
 			return errors.New("ax25termws: not connected")
 		}
+		b.recordTranscriptTX(env.Data)
 		b.session.Submit(ax25conn.Event{Kind: ax25conn.EventDataTX, Data: env.Data})
 	case KindDisconnect:
 		if b.session != nil {
@@ -175,6 +208,11 @@ func (b *Bridge) Handle(ctx context.Context, env Envelope) error {
 		if b.session != nil {
 			b.session.Submit(ax25conn.Event{Kind: ax25conn.EventAbort})
 		}
+	case KindTranscriptSet:
+		if env.Transcript == nil {
+			return errors.New("ax25termws: transcript_set: missing payload")
+		}
+		return b.handleTranscriptSet(env.Transcript.Enabled)
 	default:
 		return fmt.Errorf("ax25termws: unknown kind: %q", env.Kind)
 	}
@@ -294,6 +332,7 @@ func (b *Bridge) pump() {
 			return
 		case ev := <-b.inbox:
 			b.maybeFireConnected(ev)
+			b.recordTranscript(ev)
 			env, ok := translateOutEvent(ev)
 			if !ok {
 				continue
@@ -305,6 +344,120 @@ func (b *Bridge) pump() {
 			}
 		}
 	}
+}
+
+// handleTranscriptSet processes a client transcript_set envelope. The
+// READER goroutine runs Handle, but the pump goroutine owns the
+// transcriptID + counter fields, so the actual Begin/End calls happen
+// here on the reader side using a write barrier through the inbox.
+//
+// Simpler approach: do the Begin / End synchronously here. The pump
+// goroutine reads transcriptID via a single load on each envelope.
+// Concurrent session goroutine writes don't touch these fields.
+func (b *Bridge) handleTranscriptSet(enabled bool) error {
+	if b.cfg.Transcripts == nil {
+		b.emitErrorEnvelope("transcript_unsupported", "transcript recording is not configured on the server")
+		return errors.New("ax25termws: transcript: no recorder")
+	}
+	if enabled {
+		b.transcriptMu.Lock()
+		alreadyOn := b.transcriptID != 0
+		b.transcriptMu.Unlock()
+		if alreadyOn {
+			return nil
+		}
+		via := joinVia(b.connect.Via)
+		id, err := b.cfg.Transcripts.Begin(b.ctx,
+			b.connect.ChannelID,
+			b.connect.DestCall, b.connect.DestSSID, via)
+		if err != nil {
+			b.emitErrorEnvelope("transcript_begin", err.Error())
+			return err
+		}
+		b.transcriptMu.Lock()
+		b.transcriptID = id
+		b.transcriptByteCount = 0
+		b.transcriptFrameCount = 0
+		b.transcriptMu.Unlock()
+		return nil
+	}
+	return b.endTranscript("operator-stop")
+}
+
+// endTranscript closes the active transcript session. Idempotent.
+func (b *Bridge) endTranscript(reason string) error {
+	b.transcriptMu.Lock()
+	id := b.transcriptID
+	bytes := b.transcriptByteCount
+	frames := b.transcriptFrameCount
+	b.transcriptID = 0
+	b.transcriptMu.Unlock()
+	if id == 0 || b.cfg.Transcripts == nil {
+		return nil
+	}
+	// Detach from b.ctx — Close() cancels the context, but a final
+	// End() must still land. Use a fresh context with a short timeout.
+	endCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return b.cfg.Transcripts.End(endCtx, id, reason, bytes, frames)
+}
+
+// recordTranscript appends one envelope to the active transcript
+// session. No-op when transcript is off. Runs on the pump goroutine.
+func (b *Bridge) recordTranscript(ev ax25conn.OutEvent) {
+	b.transcriptMu.Lock()
+	id := b.transcriptID
+	if id == 0 || b.cfg.Transcripts == nil {
+		b.transcriptMu.Unlock()
+		return
+	}
+	now := time.Now().UTC()
+	switch ev.Kind {
+	case ax25conn.OutDataRX:
+		b.transcriptByteCount += uint64(len(ev.Data))
+		b.transcriptFrameCount++
+		b.transcriptMu.Unlock()
+		_ = b.cfg.Transcripts.Append(b.ctx, id, now, "rx", "data", ev.Data)
+	case ax25conn.OutStateChange:
+		b.transcriptMu.Unlock()
+		_ = b.cfg.Transcripts.Append(b.ctx, id, now, "rx", "event", []byte("state="+ev.State.String()))
+	case ax25conn.OutError:
+		b.transcriptMu.Unlock()
+		_ = b.cfg.Transcripts.Append(b.ctx, id, now, "rx", "event",
+			[]byte("error code="+ev.ErrCode+" msg="+ev.ErrMsg))
+	default:
+		b.transcriptMu.Unlock()
+	}
+}
+
+// recordTranscriptTX writes an operator-typed data buffer to the
+// active transcript. Called from Handle when a KindData envelope
+// arrives with transcript on.
+func (b *Bridge) recordTranscriptTX(data []byte) {
+	b.transcriptMu.Lock()
+	id := b.transcriptID
+	if id == 0 || b.cfg.Transcripts == nil {
+		b.transcriptMu.Unlock()
+		return
+	}
+	b.transcriptByteCount += uint64(len(data))
+	b.transcriptFrameCount++
+	b.transcriptMu.Unlock()
+	_ = b.cfg.Transcripts.Append(b.ctx, id, time.Now().UTC(), "tx", "data", data)
+}
+
+func joinVia(via []string) string {
+	if len(via) == 0 {
+		return ""
+	}
+	out := ""
+	for i, v := range via {
+		if i > 0 {
+			out += ","
+		}
+		out += v
+	}
+	return out
 }
 
 // maybeFireConnected dispatches the OnFirstConnected callback once per
