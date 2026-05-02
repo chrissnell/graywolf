@@ -17,7 +17,7 @@
     { path: '/', label: 'Dashboard', svgIcon: 'dashboard' },
     { path: '/map', label: 'Live Map', svgIcon: 'globe' },
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
-    { path: '/terminal', label: 'Terminal', icon: 'radio', badge: 'terminal' },
+    { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
   ];
 
   const navGroups = [
@@ -175,6 +175,21 @@
                 <rect x="14" y="3" width="7" height="5" />
                 <rect x="14" y="12" width="7" height="9" />
                 <rect x="3" y="16" width="7" height="5" />
+              </svg>
+            {:else if item.svgIcon === 'terminal'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
             {/if}
             {#if unread > 0}
@@ -339,7 +354,21 @@
     aria-current={isTerminalActive ? 'page' : undefined}
   >
     <span class="top-bar-icon" aria-hidden="true">
-      <Icon name="radio" size={24} strokeWidth={1.75} />
+      <!-- Inline terminal glyph: chonky's icon allowlist lacks 'terminal'. -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
       {#if terminalUnread > 0}
         <span class="top-bar-dot" aria-hidden="true"></span>
       {/if}
