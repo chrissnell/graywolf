@@ -57,6 +57,9 @@
     channelsStore.list.find((c) => String(c.id) === String(channelId)) ?? null
   );
   let selectedIsAPRSOnly = $derived(selectedChannel?.mode === 'aprs');
+  let selectedSupportsMonitor = $derived(
+    selectedChannel?.mode === 'aprs' || selectedChannel?.mode === 'aprs+packet'
+  );
 
   // Accept both "K0SWE" and "K0SWE-3"; SSID 0..15 is the AX.25 spec.
   const CALL_RE = /^([A-Z0-9]{1,6})(?:-([0-9]|1[0-5]))?$/;
@@ -386,9 +389,20 @@
   {/if}
 
   <footer class="actions">
-    <Button type="submit" variant="primary" size="lg">
-      {selectedIsAPRSOnly ? 'View raw packet feed' : 'Connect'}
-    </Button>
+    {#if !selectedIsAPRSOnly}
+      <Button type="submit" variant="primary" size="lg">Connect</Button>
+    {/if}
+    {#if selectedSupportsMonitor}
+      <Button
+        type="button"
+        variant={selectedIsAPRSOnly ? 'primary' : 'secondary'}
+        size="lg"
+        onclick={() => onRawTail?.(selectedChannel)}
+        disabled={!selectedChannel}
+      >
+        Monitor APRS
+      </Button>
+    {/if}
   </footer>
 </form>
 

@@ -45,7 +45,6 @@
 
   let activeId = $derived(terminalSessions.activeId());
   let activeSession = $derived(activeId ? terminalSessions.get(activeId) : null);
-  let hasSessions = $derived(terminalSessions.ids().length > 0);
 
   // showForm: true when no session is active, OR when the operator
   // explicitly clicked the "+" tab (handled by TabBar -> onNew). Also
@@ -141,10 +140,6 @@
   function runCommand(cmd) {
     const parts = cmd.split(/\s+/);
     const head = parts[0];
-    if (head === 'macros') {
-      macroEditorOpen = true;
-      return { ok: true };
-    }
     if (head === 'transcript') {
       if (!activeSession) return { error: 'No active session.' };
       const arg = (parts[1] ?? '').toLowerCase();
@@ -161,28 +156,34 @@
     if (head === 'clear') {
       return { error: 'Use Ctrl-L (or your terminal’s clear) to wipe the canvas.' };
     }
-    return { error: `Unknown command: ${head}. Try macros, transcript, or clear.` };
+    return { error: `Unknown command: ${head}. Try transcript or clear. Macros: use the toolbar button.` };
   }
 </script>
 
 <svelte:window onkeydown={handleKey} />
 
 <div class="terminal-route">
-  {#if hasSessions || activeSession}
-    <div class="terminal-header">
-      <TabBar onNew={onNewTab} onClose={onCloseTab} />
-      {#if activeSession}
-        <Button
-          variant="secondary"
-          size="sm"
-          aria-label="Toggle link telemetry panel"
-          onclick={() => (telemetryOpen = !telemetryOpen)}
-        >
-          <Icon name="radio" size="sm" /> Telemetry
-        </Button>
-      {/if}
-    </div>
-  {/if}
+  <div class="terminal-header">
+    <TabBar onNew={onNewTab} onClose={onCloseTab} />
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-label="Edit macros"
+      onclick={() => (macroEditorOpen = true)}
+    >
+      Macros
+    </Button>
+    {#if activeSession}
+      <Button
+        variant="secondary"
+        size="sm"
+        aria-label="Toggle link telemetry panel"
+        onclick={() => (telemetryOpen = !telemetryOpen)}
+      >
+        <Icon name="radio" size="sm" /> Telemetry
+      </Button>
+    {/if}
+  </div>
 
   <div class="terminal-body">
     {#if rawTailChannel}

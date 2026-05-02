@@ -42,7 +42,7 @@
     </Button>
   {/each}
   {#if macros.length === 0 && macrosStore.loaded}
-    <span class="hint">No macros saved. Press <kbd>Ctrl+]</kbd> then type <kbd>macros</kbd> to add one.</span>
+    <span class="hint">No macros saved. Click <em>Edit macros</em> to add one.</span>
   {/if}
   <Button size="sm" variant="ghost" onclick={() => onEdit?.()} aria-label="Edit macros">
     Edit macros
@@ -65,13 +65,8 @@
     font-size: 12px;
     margin-left: 4px;
   }
-  kbd {
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-    font-size: 11px;
-    border: 1px solid var(--color-border, #ccc);
-    border-bottom-width: 2px;
-    border-radius: 3px;
-    padding: 0 4px;
-    background: var(--color-bg, #fff);
+  .hint em {
+    font-style: italic;
+    color: var(--color-text, #111);
   }
 </style>

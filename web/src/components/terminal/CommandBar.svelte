@@ -1,13 +1,15 @@
 <script>
   // Minimal Ctrl-] command bar. Operators press Ctrl-] anywhere in
   // the terminal route to surface this prompt; commands route to
-  // callbacks. Phase 3 supports:
+  // callbacks. Supported:
   //
-  //   macros            -> open the MacroEditor modal
   //   transcript on|off -> toggle transcript recording for the active
-  //                        session (Phase 3e.2 wires the side-effect)
+  //                        session
   //   clear             -> hint to the operator to use the terminal's
   //                        own clear (Ctrl-L)
+  //
+  // Macros have a dedicated UI button (MacroToolbar -> Edit macros),
+  // not a Ctrl-] command, so they live outside this prompt.
   //
   // Unknown commands surface an inline error rather than disappearing
   // silently.
@@ -68,7 +70,7 @@
       <Input
         bind:value
         bind:this={inputEl}
-        placeholder="macros / transcript on|off / clear"
+        placeholder="transcript on|off / clear"
         aria-label="Command"
       />
       <Button type="submit" variant="primary" size="sm">Run</Button>
