@@ -7,6 +7,18 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.12.6"
+  date: "2026-05-02"
+  style: info
+  schema_version: 1
+  title: "Fix: Live Map forgets where you left it"
+  link: "#/map"
+  body: |
+    Since 0.12.0 the Live Map has been opening at the world view
+    every time you reload the page, instead of returning to wherever
+    you panned and zoomed last. Your last position and zoom level now
+    stick across reloads again. Nothing to reconfigure.
+
 - version: "0.12.5"
   date: "2026-05-02"
   style: info
