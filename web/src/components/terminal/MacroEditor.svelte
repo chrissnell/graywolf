@@ -131,29 +131,49 @@
   </Modal.Header>
   <Modal.Body>
     <div class="editor">
+      <p class="intro">
+        Macros are reusable payloads you can fire from the toolbar above
+        the terminal. Type a short label and the bytes to send when the
+        button is clicked.
+      </p>
       <p class="hint">
         Payload accepts <code>\r</code> <code>\n</code> <code>\t</code> <code>\\</code> and
         <code>\xNN</code> escape sequences. Plain text is sent as UTF-8.
       </p>
 
       {#each rows as row, i (i)}
-        <div class="row">
-          <Input bind:value={row.label} placeholder="Label (e.g. login)" aria-label={`Macro ${i + 1} label`} />
-          <textarea
-            class="payload"
-            rows="2"
-            aria-label={`Macro ${i + 1} payload`}
-            placeholder="hello\r"
-            bind:value={row.payloadText}
-          ></textarea>
-          <Button variant="ghost" size="sm" onclick={() => removeRow(i)} aria-label="Remove macro">
-            <Icon name="trash-2" size="sm" />
-          </Button>
-        </div>
+        <fieldset class="macro-card">
+          <legend class="macro-card-legend">Macro {i + 1}</legend>
+          <div class="field">
+            <label class="field-label" for={`macro-${i}-label`}>Button label</label>
+            <Input
+              id={`macro-${i}-label`}
+              bind:value={row.label}
+              placeholder="login"
+              aria-label={`Macro ${i + 1} label`}
+            />
+          </div>
+          <div class="field">
+            <label class="field-label" for={`macro-${i}-payload`}>Payload</label>
+            <textarea
+              id={`macro-${i}-payload`}
+              class="payload"
+              rows="3"
+              aria-label={`Macro ${i + 1} payload`}
+              placeholder="hello\r"
+              bind:value={row.payloadText}
+            ></textarea>
+          </div>
+          <div class="card-actions">
+            <Button variant="danger" size="sm" onclick={() => removeRow(i)} aria-label={`Remove macro ${i + 1}`}>
+              <Icon name="trash-2" size="sm" /> Delete
+            </Button>
+          </div>
+        </fieldset>
       {/each}
 
       {#if rows.length === 0}
-        <p class="empty">No macros yet. Click <strong>Add macro</strong> to start.</p>
+        <p class="empty">No macros yet. Click <strong>+ Add macro</strong> below to create one.</p>
       {/if}
 
       {#if saveError}
@@ -162,7 +182,7 @@
     </div>
   </Modal.Body>
   <Modal.Footer>
-    <Button variant="secondary" onclick={addRow}>+ Add macro</Button>
+    <Button variant="accent" onclick={addRow}>+ Add macro</Button>
     <span class="footer-spacer"></span>
     <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
     <Button variant="primary" disabled={saving} onclick={save}>
@@ -172,61 +192,94 @@
 </Modal>
 
 <style>
-  .modal-title { margin: 0; font-size: 15px; font-weight: 600; }
+  .modal-title { margin: 0; font-size: 17px; font-weight: 600; }
 
-  /* Override chonky-ui's default modal width (480px) -- the macro
-     editor needs room for label + payload textarea + delete button on
-     one line, plus the footer's four action buttons. */
+  /* Override chonky-ui's default modal width (480px). The editor wants
+     room for stacked label + payload + delete-button cards. */
   :global(.macro-editor-modal) {
-    width: min(820px, 95vw);
+    width: min(720px, 95vw);
     max-width: 95vw;
   }
 
   .editor {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
+    font-size: 14px;
+  }
+  .intro {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text, #111);
   }
   .hint {
     margin: 0;
-    font-size: 12px;
+    font-size: 13px;
+    line-height: 1.5;
     color: var(--color-text-muted, #666);
   }
   .hint code {
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-    font-size: 11px;
+    font-size: 12px;
     background: var(--color-surface, #f0f0f0);
-    padding: 0 4px;
+    padding: 1px 5px;
     border-radius: 3px;
   }
-  .row {
-    display: grid;
-    grid-template-columns: 180px 1fr auto;
-    gap: 8px;
-    align-items: start;
+  .macro-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 10px;
+    border: 1px solid var(--color-border, #ddd);
+    border-radius: 6px;
+    background: var(--color-bg, #fff);
+    margin: 0;
+  }
+  .macro-card-legend {
+    padding: 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted, #666);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .field-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text, #111);
   }
   .payload {
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-    font-size: 13px;
-    padding: 6px 8px;
+    font-size: 14px;
+    padding: 8px 10px;
     border: 1px solid var(--color-border, #ccc);
     border-radius: 4px;
     resize: vertical;
     min-width: 0;
     width: 100%;
     box-sizing: border-box;
+    line-height: 1.4;
   }
-  .empty { color: var(--color-text-muted, #666); margin: 0; font-style: italic; }
-  .err { color: var(--color-danger, #c41010); margin: 0; }
-
-  /* Push Cancel + Save to the right edge, leave + Add macro on the
-     left. chonky-ui's .modal-footer defaults to flex-end alignment;
-     the spacer absorbs the slack. */
+  .card-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .empty {
+    color: var(--color-text-muted, #666);
+    margin: 0;
+    font-style: italic;
+    font-size: 14px;
+    padding: 18px;
+    text-align: center;
+    border: 1px dashed var(--color-border, #ddd);
+    border-radius: 6px;
+  }
+  .err { color: var(--color-danger, #c41010); margin: 0; font-size: 13px; }
   .footer-spacer { flex: 1 1 auto; }
-
-  @media (max-width: 600px) {
-    .row {
-      grid-template-columns: 1fr;
-    }
-  }
 </style>
