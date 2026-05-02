@@ -1737,6 +1737,14 @@ export interface components {
             raw_tail_filter?: string;
             scrollback_rows?: number;
         };
+        "dto.AX25TerminalConfigPatch": {
+            cursor_blink?: boolean;
+            default_modulo?: number;
+            default_paclen?: number;
+            macros?: components["schemas"]["dto.AX25TerminalMacro"][];
+            raw_tail_filter?: string;
+            scrollback_rows?: number;
+        };
         "dto.AX25TerminalMacro": {
             label?: string;
             payload?: string;
@@ -3910,10 +3918,10 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description Terminal config */
+        /** @description Terminal config patch */
         requestBody: {
             content: {
-                "application/json": components["schemas"]["dto.AX25TerminalConfig"];
+                "application/json": components["schemas"]["dto.AX25TerminalConfigPatch"];
             };
         };
         responses: {

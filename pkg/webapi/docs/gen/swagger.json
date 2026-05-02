@@ -1143,12 +1143,12 @@
                 "operationId": "putAX25TerminalConfig",
                 "parameters": [
                     {
-                        "description": "Terminal config",
+                        "description": "Terminal config patch",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.AX25TerminalConfig"
+                            "$ref": "#/definitions/dto.AX25TerminalConfigPatch"
                         }
                     }
                 ],
@@ -6450,6 +6450,32 @@
             }
         },
         "dto.AX25TerminalConfig": {
+            "type": "object",
+            "properties": {
+                "cursor_blink": {
+                    "type": "boolean"
+                },
+                "default_modulo": {
+                    "type": "integer"
+                },
+                "default_paclen": {
+                    "type": "integer"
+                },
+                "macros": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AX25TerminalMacro"
+                    }
+                },
+                "raw_tail_filter": {
+                    "type": "string"
+                },
+                "scrollback_rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.AX25TerminalConfigPatch": {
             "type": "object",
             "properties": {
                 "cursor_blink": {

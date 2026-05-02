@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
@@ -46,58 +45,85 @@ func (s *Server) getAX25TerminalConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// putAX25TerminalConfig replaces the singleton terminal-UI config. The
-// macros array is re-marshaled to MacrosJSON before the store write so
-// the persisted shape stays a single text column.
+// putAX25TerminalConfig merges a partial patch into the singleton
+// terminal-UI config. Every patch field is a pointer; absent fields
+// preserve the existing column so a UI surface that only edits one
+// field (macros, raw_tail_filter, ...) can PUT just that field
+// without zeroing every other column.
 //
 // @Summary  Update AX.25 terminal config
 // @Tags     ax25
 // @ID       putAX25TerminalConfig
 // @Accept   json
 // @Produce  json
-// @Param    body body     dto.AX25TerminalConfig true "Terminal config"
+// @Param    body body     dto.AX25TerminalConfigPatch true "Terminal config patch"
 // @Success  200  {object} dto.AX25TerminalConfig
 // @Failure  400  {object} webtypes.ErrorResponse
 // @Failure  500  {object} webtypes.ErrorResponse
 // @Security CookieAuth
 // @Router   /ax25/terminal-config [put]
 func (s *Server) putAX25TerminalConfig(w http.ResponseWriter, r *http.Request) {
-	in, err := decodeJSON[dto.AX25TerminalConfig](r)
+	patch, err := decodeJSON[dto.AX25TerminalConfigPatch](r)
 	if err != nil {
 		badRequest(w, err.Error())
 		return
 	}
-	if in.DefaultModulo != 0 && in.DefaultModulo != 8 && in.DefaultModulo != 128 {
+	// Validate non-nil fields before touching the store. Zero-valued
+	// fields are explicit ("operator wants to disable this") and must
+	// pass the same range checks as set values.
+	if patch.DefaultModulo != nil && *patch.DefaultModulo != 8 && *patch.DefaultModulo != 128 {
 		badRequest(w, "default_modulo must be 8 or 128")
 		return
 	}
-	if in.DefaultPaclen > 2048 {
-		badRequest(w, "default_paclen must be <= 2048")
+	if patch.DefaultPaclen != nil && (*patch.DefaultPaclen == 0 || *patch.DefaultPaclen > 2048) {
+		badRequest(w, "default_paclen must be 1..2048")
 		return
 	}
-	if in.ScrollbackRows > 1_000_000 {
-		badRequest(w, "scrollback_rows out of range")
+	if patch.ScrollbackRows != nil && (*patch.ScrollbackRows == 0 || *patch.ScrollbackRows > 1_000_000) {
+		badRequest(w, "scrollback_rows must be 1..1000000")
 		return
 	}
-	for i, m := range in.Macros {
-		if m.Label == "" {
-			badRequest(w, fmt.Sprintf("macros[%d].label required", i))
-			return
+	if patch.Macros != nil {
+		for i, m := range patch.Macros {
+			if m.Label == "" {
+				badRequest(w, fmt.Sprintf("macros[%d].label required", i))
+				return
+			}
 		}
 	}
-	macrosJSON, err := encodeMacrosJSON(in.Macros)
+
+	// Load current row so absent fields preserve their stored values.
+	current, err := s.store.GetAX25TerminalConfig(r.Context())
 	if err != nil {
-		badRequest(w, err.Error())
+		s.internalError(w, r, "load ax25 terminal config", err)
 		return
 	}
-	if err := s.store.UpsertAX25TerminalConfig(r.Context(), &configstore.AX25TerminalConfig{
-		ScrollbackRows: in.ScrollbackRows,
-		CursorBlink:    in.CursorBlink,
-		DefaultModulo:  in.DefaultModulo,
-		DefaultPaclen:  in.DefaultPaclen,
-		MacrosJSON:     macrosJSON,
-		RawTailFilter:  in.RawTailFilter,
-	}); err != nil {
+	merged := *current
+	if patch.ScrollbackRows != nil {
+		merged.ScrollbackRows = *patch.ScrollbackRows
+	}
+	if patch.CursorBlink != nil {
+		merged.CursorBlink = *patch.CursorBlink
+	}
+	if patch.DefaultModulo != nil {
+		merged.DefaultModulo = *patch.DefaultModulo
+	}
+	if patch.DefaultPaclen != nil {
+		merged.DefaultPaclen = *patch.DefaultPaclen
+	}
+	if patch.Macros != nil {
+		macrosJSON, err := encodeMacrosJSON(patch.Macros)
+		if err != nil {
+			badRequest(w, err.Error())
+			return
+		}
+		merged.MacrosJSON = macrosJSON
+	}
+	if patch.RawTailFilter != nil {
+		merged.RawTailFilter = *patch.RawTailFilter
+	}
+
+	if err := s.store.UpsertAX25TerminalConfig(r.Context(), &merged); err != nil {
 		s.internalError(w, r, "upsert ax25 terminal config", err)
 		return
 	}

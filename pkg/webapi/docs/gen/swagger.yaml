@@ -478,6 +478,23 @@ definitions:
       scrollback_rows:
         type: integer
     type: object
+  dto.AX25TerminalConfigPatch:
+    properties:
+      cursor_blink:
+        type: boolean
+      default_modulo:
+        type: integer
+      default_paclen:
+        type: integer
+      macros:
+        items:
+          $ref: '#/definitions/dto.AX25TerminalMacro'
+        type: array
+      raw_tail_filter:
+        type: string
+      scrollback_rows:
+        type: integer
+    type: object
   dto.AX25TerminalMacro:
     properties:
       label:
@@ -3194,12 +3211,12 @@ paths:
         - application/json
       operationId: putAX25TerminalConfig
       parameters:
-        - description: Terminal config
+        - description: Terminal config patch
           in: body
           name: body
           required: true
           schema:
-            $ref: '#/definitions/dto.AX25TerminalConfig'
+            $ref: '#/definitions/dto.AX25TerminalConfigPatch'
       produces:
         - application/json
       responses:
