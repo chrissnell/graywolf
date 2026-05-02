@@ -86,6 +86,13 @@
     term.loadAddon(new WebLinksAddon());
     term.loadAddon(new SearchAddon());
     term.open(host);
+    // Pull keyboard focus into the canvas so operators can type
+    // immediately on session open without an extra click. SR users
+    // also need this for the off-screen accessibility tree (xterm's
+    // screenReaderMode-driven mirror) to start reading.
+    queueMicrotask(() => {
+      try { term?.focus(); } catch { /* ignore */ }
+    });
 
     // Inbound bytes from the bridge. session.svelte.js passes a
     // Uint8Array; xterm 5+ accepts that directly with no UTF-8

@@ -79,6 +79,30 @@
     if ((e.ctrlKey || e.metaKey) && e.key === ']') {
       e.preventDefault();
       commandBarOpen = true;
+      return;
+    }
+    // Ctrl-PageUp / Ctrl-PageDown cycle the active tab. PageUp goes
+    // backward, PageDown forward; the operator never has to click a
+    // tab head to cycle through open links.
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'PageUp' || e.key === 'PageDown')) {
+      const ids = terminalSessions.ids();
+      if (ids.length === 0) return;
+      const cur = terminalSessions.activeId();
+      const idx = cur ? ids.indexOf(cur) : -1;
+      const delta = e.key === 'PageUp' ? -1 : 1;
+      const next = (idx + delta + ids.length) % ids.length;
+      terminalSessions.setActive(ids[next]);
+      e.preventDefault();
+      return;
+    }
+    // Esc closes any open overlay (CommandBar, MacroEditor,
+    // TelemetryPanel) without disrupting the underlying session.
+    if (e.key === 'Escape') {
+      let consumed = false;
+      if (commandBarOpen) { commandBarOpen = false; consumed = true; }
+      if (macroEditorOpen) { macroEditorOpen = false; consumed = true; }
+      if (telemetryOpen) { telemetryOpen = false; consumed = true; }
+      if (consumed) e.preventDefault();
     }
   }
 
