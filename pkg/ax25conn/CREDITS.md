@@ -39,6 +39,23 @@ REJ/SREJ, `§6` busy/RNR, `§7` digi paths, `§8` SABME negotiation,
 re-derive directly from the kernel only when the cheat sheet is
 silent on the question at hand.
 
+## FRMR policy
+
+graywolf/pkg/ax25conn does NOT emit FRMR. We match the Linux kernel
+deviation from spec §4.3.3.9: the kernel never sends FRMR (verified
+by grep — no `ax25_send_frmr` exists). On receipt of FRMR, or any
+frame `ax25_decode()` flags as illegal, we tear the link to state 1
+and re-SABM via `establishDataLink()`. This both matches the kernel
+and is simpler than maintaining an FRMR info-byte encoder that no
+Linux peer would ever accept anyway.
+
+If a future Phase wants spec-correct FRMR transmission, the v2.2
+info-field layout is documented in
+`.context/2026-05-01-ax25-lapb-behavioral-reference.md` §4 and AX.25
+v2.2 §4.3.3.9. Note: kernel peers will tear the link down on FRMR
+receipt regardless of info-field validity, so spec-correctness gains
+nothing on the wire.
+
 ## Specification
 
 - AX.25 v2.2 (Jul 1998): https://www.ax25.net/AX25.2.2-Jul%2098-2.pdf
