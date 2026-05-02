@@ -22,6 +22,7 @@ type SessionConfig struct {
 	Mod128      bool
 	T1, T2, T3  time.Duration
 	Heartbeat   time.Duration
+	StatsTick   time.Duration
 	N2          int
 	Paclen      int
 	Window      int
@@ -45,6 +46,9 @@ func (c *SessionConfig) applyDefaults() {
 	}
 	if c.Heartbeat == 0 {
 		c.Heartbeat = DefaultHeartbeat
+	}
+	if c.StatsTick == 0 {
+		c.StatsTick = DefaultStatsTick
 	}
 	if c.N2 == 0 {
 		c.N2 = DefaultN2
@@ -80,6 +84,7 @@ const (
 	pendT2
 	pendT3
 	pendHB
+	pendStats
 )
 
 // Session is the per-link LAPB state machine driver.
@@ -90,6 +95,7 @@ type Session struct {
 	v     vars
 
 	t1, t2, t3, hb *timer
+	tStats         *timer // 1Hz CONNECTED telemetry
 	pendingTimers  atomic.Uint32 // OR-set by timer goroutines, drained by run loop
 	wakeup         chan struct{} // 1-slot signal that pendingTimers changed
 
@@ -137,6 +143,7 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 	s.t2 = newTimer(cfg.Clock, cfg.T2, func() { s.signalTimer(pendT2) })
 	s.t3 = newTimer(cfg.Clock, cfg.T3, func() { s.signalTimer(pendT3) })
 	s.hb = newTimer(cfg.Clock, cfg.Heartbeat, func() { s.signalTimer(pendHB) })
+	s.tStats = newTimer(cfg.Clock, cfg.StatsTick, func() { s.signalTimer(pendStats) })
 	return s, nil
 }
 
@@ -274,6 +281,9 @@ func (s *Session) Run(ctx context.Context) {
 			if bits&pendHB != 0 && !s.handle(ctx, Event{Kind: EventHeartbeat}) {
 				return
 			}
+			if bits&pendStats != 0 && !s.handle(ctx, Event{Kind: EventStatsTick}) {
+				return
+			}
 			continue
 		}
 		select {
@@ -299,6 +309,10 @@ func (s *Session) handle(ctx context.Context, ev Event) bool {
 		s.heartbeatTick()
 		return true
 	}
+	if ev.Kind == EventStatsTick {
+		s.statsTick()
+		return true
+	}
 	switch s.state {
 	case StateDisconnected:
 		return s.onDisconnected(ctx, ev)
@@ -319,6 +333,7 @@ func (s *Session) cleanup() {
 	s.t2.stop()
 	s.t3.stop()
 	s.hb.stop()
+	s.tStats.stop()
 	s.emit(OutEvent{Kind: OutStateChange, State: StateDisconnected})
 }
 
@@ -332,12 +347,40 @@ func (s *Session) setState(ns State) {
 	if ns == s.state {
 		return
 	}
+	if s.state == StateConnected {
+		s.tStats.stop()
+	}
 	s.state = ns
 	s.mutateStats(func(st *LinkStats) { st.State = ns })
 	s.cfg.Logger.Info("ax25conn: state change",
 		"peer", s.cfg.Peer.String(), "to", ns)
 	s.emit(OutEvent{Kind: OutStateChange, State: ns})
 	s.emit(OutEvent{Kind: OutLinkStats, Stats: s.Snapshot()})
+	if ns == StateConnected {
+		s.tStats.reset()
+	}
+}
+
+// statsTick emits an OutLinkStats snapshot at DefaultStatsTick cadence
+// while CONNECTED. Refreshes the dynamic vars (V(S)/V(R)/V(A), RC,
+// busy flags, RTT) under the stats mutex before the snapshot so
+// external Snapshot() readers see the same numbers the bridge just
+// published.
+func (s *Session) statsTick() {
+	if s.state != StateConnected {
+		return
+	}
+	s.mutateStats(func(st *LinkStats) {
+		st.VS = s.v.VS
+		st.VR = s.v.VR
+		st.VA = s.v.VA
+		st.RC = s.v.N2Count
+		st.PeerBusy = s.v.Cond.Has(CondPeerRxBusy)
+		st.OwnBusy = s.v.Cond.Has(CondOwnRxBusy)
+		st.RTT = s.v.RTT
+	})
+	s.emit(OutEvent{Kind: OutLinkStats, Stats: s.Snapshot()})
+	s.tStats.reset()
 }
 
 // State handlers live in transitions_<state>.go.

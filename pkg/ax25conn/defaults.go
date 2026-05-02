@@ -34,6 +34,10 @@ const (
 	DefaultWindowMod8 = 2
 	// DefaultWindowMod128 — k for modulo-128. Kernel AX25_DEF_EWINDOW=32.
 	DefaultWindowMod128 = 32
+	// DefaultStatsTick — cadence at which an active session emits
+	// OutLinkStats so the UI telemetry panel can sparkline RTT and seq
+	// numbers. Fires only while CONNECTED; never blocks.
+	DefaultStatsTick = time.Second
 )
 
 // Backoff selects the T1-on-retry growth strategy. Kernel default is

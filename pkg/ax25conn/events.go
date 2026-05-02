@@ -15,6 +15,7 @@ const (
 	EventT2Expiry
 	EventT3Expiry
 	EventHeartbeat // 5s housekeeping tick
+	EventStatsTick // 1Hz CONNECTED telemetry emission
 	EventShutdown  // manager tearing us down
 )
 
