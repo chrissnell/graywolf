@@ -179,8 +179,6 @@
   .terminal-letterbox.fit {
     justify-content: stretch;
     padding: 8px;
-    flex: 1 1 auto;
-    min-height: 0;
   }
   .terminal-host {
     max-width: min-content;
@@ -189,8 +187,6 @@
   .terminal-host.fit {
     max-width: none;
     width: 100%;
-    flex: 1 1 auto;
-    min-height: 320px;
   }
   .terminal-narrow {
     display: flex;
