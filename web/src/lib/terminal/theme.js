@@ -9,6 +9,7 @@
 // flips, so the terminal palette tracks chrome-theme switches.
 
 import { ANSI_PALETTE, TERMINAL_DEFAULTS } from './palette.ts';
+import { PRESETS } from './presets.ts';
 
 // extractFallback parses 'var(--name, #rrggbb)' -> '#rrggbb'. Used
 // when the live document has not defined the var (e.g. SSR or before
@@ -88,9 +89,43 @@ export function buildTheme(root = document.documentElement) {
     brightWhite:   readVar(cs, ANSI_PALETTE.brightWhite),
   };
   if (wantsHighContrast) {
-    theme.background = '#000000';
-    theme.foreground = '#ffffff';
-    theme.cursor = '#ffffff';
+    Object.assign(theme, mapPresetToITheme(PRESETS['high-contrast']));
   }
   return theme;
+}
+
+// mapPresetToITheme converts the CSS-custom-property keys we use in
+// presets.ts to the keys xterm.js's ITheme expects, ignoring keys
+// whose preset entry is undefined so partial presets (e.g. classic)
+// don't clobber the resolved values.
+function mapPresetToITheme(preset) {
+  if (!preset) return {};
+  const map = {
+    '--gw-term-bg':              'background',
+    '--gw-term-fg':              'foreground',
+    '--gw-term-cursor':          'cursor',
+    '--gw-term-selection-bg':    'selectionBackground',
+    '--gw-term-selection-fg':    'selectionForeground',
+    '--gw-ansi-black':           'black',
+    '--gw-ansi-red':             'red',
+    '--gw-ansi-green':           'green',
+    '--gw-ansi-yellow':          'yellow',
+    '--gw-ansi-blue':            'blue',
+    '--gw-ansi-magenta':         'magenta',
+    '--gw-ansi-cyan':            'cyan',
+    '--gw-ansi-white':           'white',
+    '--gw-ansi-bright-black':    'brightBlack',
+    '--gw-ansi-bright-red':      'brightRed',
+    '--gw-ansi-bright-green':    'brightGreen',
+    '--gw-ansi-bright-yellow':   'brightYellow',
+    '--gw-ansi-bright-blue':     'brightBlue',
+    '--gw-ansi-bright-magenta':  'brightMagenta',
+    '--gw-ansi-bright-cyan':     'brightCyan',
+    '--gw-ansi-bright-white':    'brightWhite',
+  };
+  const out = {};
+  for (const [css, key] of Object.entries(map)) {
+    if (preset[css]) out[key] = preset[css];
+  }
+  return out;
 }
