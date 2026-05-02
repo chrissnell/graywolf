@@ -210,6 +210,12 @@ class MessagesStore {
       const threadId = this.threadIdFor(s.thread_kind, s.thread_key);
       seen.add(threadId);
       const existing = this.conversations.get(threadId);
+      // Synthetic rows for empty registered tacticals carry a Go zero
+      // time.Time, which serializes as "0001-01-01T00:00:00Z". Normalize
+      // to undefined so date helpers and the row's timestamp slot stay
+      // blank for never-traffic tacticals.
+      const lastAtRaw = s.last_at;
+      const lastAt = lastAtRaw && !lastAtRaw.startsWith('0001-') ? lastAtRaw : undefined;
       /** @type {Thread} */
       const thread = {
         threadId,
@@ -218,7 +224,7 @@ class MessagesStore {
         alias: s.alias,
         unreadCount: s.unread_count || 0,
         totalCount: s.total_count || 0,
-        lastAt: s.last_at,
+        lastAt,
         lastSnippet: s.last_snippet,
         lastSenderCall: s.last_sender_call,
         participantCount: s.participant_count,

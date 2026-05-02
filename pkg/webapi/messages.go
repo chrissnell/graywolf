@@ -558,18 +558,34 @@ func (s *Server) listConversations(w http.ResponseWriter, r *http.Request) {
 	// Look up tactical aliases so tactical threads carry the free-text
 	// label. DM threads leave alias empty.
 	aliases := map[string]string{}
-	if rows, err := s.store.ListTacticalCallsigns(r.Context()); err == nil {
-		for _, row := range rows {
+	enabledTacticals, err := s.store.ListEnabledTacticalCallsigns(r.Context())
+	if err == nil {
+		for _, row := range enabledTacticals {
 			aliases[row.Callsign] = row.Alias
 		}
 	}
-	out := make([]dto.ConversationSummary, len(summaries))
-	for i, sm := range summaries {
+	out := make([]dto.ConversationSummary, 0, len(summaries)+len(enabledTacticals))
+	seenTactical := make(map[string]struct{}, len(summaries))
+	for _, sm := range summaries {
 		alias := ""
 		if sm.ThreadKind == messages.ThreadKindTactical {
 			alias = aliases[sm.ThreadKey]
+			seenTactical[sm.ThreadKey] = struct{}{}
 		}
-		out[i] = dto.ConversationSummaryFromModel(sm, alias)
+		out = append(out, dto.ConversationSummaryFromModel(sm, alias))
+	}
+	// Surface registered tacticals that have no traffic yet so the inbox
+	// shows the group the moment the operator subscribes. Synthetic rows
+	// carry zero counts and a zero LastAt; the client sorts them to the
+	// bottom of the tactical bucket.
+	for _, row := range enabledTacticals {
+		if _, ok := seenTactical[row.Callsign]; ok {
+			continue
+		}
+		out = append(out, dto.ConversationSummaryFromModel(messages.ConversationSummary{
+			ThreadKind: messages.ThreadKindTactical,
+			ThreadKey:  row.Callsign,
+		}, row.Alias))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

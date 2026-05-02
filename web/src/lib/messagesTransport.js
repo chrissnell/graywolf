@@ -234,6 +234,7 @@ export function connectSSE() {
 
 /** Re-fetch the /conversations rollup on demand (e.g. after compose). */
 export function refreshNow() {
+  refreshTacticals();
   refreshConversations();
   fetchDelta().catch(() => {});
 }

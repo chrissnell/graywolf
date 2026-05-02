@@ -31,6 +31,7 @@
   import { DEFAULT_MAX_MESSAGE_TEXT } from '../lib/settings/messages-preferences-store.svelte.js';
   import { refreshNow } from '../lib/messagesTransport.js';
   import { toasts } from '../lib/stores.js';
+  import { api } from '../lib/api.js';
 
   // ---------- query param parsing ----------
   let qs = $state('');
@@ -69,6 +70,38 @@
   onMount(() => {
     refreshNow();
   });
+
+  // ---------- APRS-IS connectivity banner ----------
+  // ANSRVR + internet-only peers reach us only via APRS-IS. If the iGate
+  // is off or the session is down, surface that up front so operators
+  // don't chase phantom message-loss bugs. Polls every 30 s; matches the
+  // conversations rollup cadence so the banner doesn't lag the inbox.
+  let igateAvailable = $state(true);
+  let igateConnected = $state(true);
+
+  async function refreshIgateStatus() {
+    try {
+      const st = await api.get('/igate');
+      igateAvailable = true;
+      igateConnected = st?.connected !== false;
+    } catch {
+      igateAvailable = false;
+      igateConnected = false;
+    }
+  }
+
+  onMount(() => {
+    refreshIgateStatus();
+    const t = setInterval(refreshIgateStatus, 30_000);
+    return () => clearInterval(t);
+  });
+
+  const showIgateBanner = $derived(!igateAvailable || !igateConnected);
+  const igateBannerText = $derived(
+    !igateAvailable
+      ? 'APRS-IS is off. ANSRVR replies and messages from internet-only peers will not arrive.'
+      : 'APRS-IS not connected. ANSRVR replies and messages from internet-only peers will not arrive until the session reconnects.',
+  );
 
   // ---------- responsive breakpoint ----------
   let isMobile = $state(false);
@@ -378,6 +411,12 @@
 
   {#if showList}
     <div class="pane list-pane">
+      {#if showIgateBanner}
+        <div class="igate-banner" role="status" data-testid="igate-banner">
+          <span class="banner-text">{igateBannerText}</span>
+          <a class="banner-link" href="#/igate">Open iGate</a>
+        </div>
+      {/if}
       <ConversationList
         activeThreadId={activeThreadId}
         onSelect={selectThread}
@@ -447,6 +486,28 @@
   .list-pane {
     display: flex;
     flex-direction: column;
+  }
+  .igate-banner {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--color-warn-bg, rgba(212, 154, 0, 0.12));
+    color: var(--color-warn, #d49a00);
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .igate-banner .banner-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .igate-banner .banner-link {
+    flex-shrink: 0;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
   }
   .main-pane {
     display: flex;
