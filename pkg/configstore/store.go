@@ -163,6 +163,10 @@ func (s *Store) Migrate() error {
 		&MapsDownload{},
 		&LogBufferConfig{},
 		&MessagesConfig{},
+		&AX25TerminalConfig{},
+		&AX25SessionProfile{},
+		&AX25TranscriptSession{},
+		&AX25TranscriptEntry{},
 	); err != nil {
 		_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 		return err

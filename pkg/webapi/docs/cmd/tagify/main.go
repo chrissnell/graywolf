@@ -52,6 +52,7 @@ var tagOrder = []tagEntry{
 	{"stations", "Station registry derived from received packets."},
 	{"position", "Current station position."},
 	{"messages", "APRS text messaging: DMs, tactical threads, preferences, and SSE events."},
+	{"ax25", "AX.25 connected-mode terminal: per-link sessions, terminal-route configuration, saved profiles, and transcripts."},
 	{"release-notes", "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."},
 	{"updates", "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."},
 	{"preferences", "Operator display preferences stored server-side (units, etc.)."},

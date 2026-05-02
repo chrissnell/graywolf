@@ -128,6 +128,11 @@ type migration struct {
 //	13 — messages_config_singleton: create messages_configs (id=1) and
 //	    seed TxChannel from the legacy IGateConfig.TxChannel value once.
 //	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §0.8.
+//	14 — ax25_terminal_tables: AutoMigrate creates the four ax25-terminal
+//	    tables (config, profiles, transcript sessions, transcript entries)
+//	    from the Go structs; this migration seeds the AX25TerminalConfig
+//	    singleton (id=1) so the REST GET handler always finds a row.
+//	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §3c.1.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -142,6 +147,7 @@ var schemaMigrations = []migration{
 	{version: 11, name: "igate_config_retain_callsign_passcode", phase: postAutoMigrate, run: migrateIGateConfigRetainCallsignPasscode},
 	{version: 12, name: "channels_mode", phase: postAutoMigrate, run: migrateChannelsMode},
 	{version: 13, name: "messages_config_singleton", phase: postAutoMigrate, run: migrateMessagesConfigCopyFromIgate},
+	{version: 14, name: "ax25_terminal_tables", phase: postAutoMigrate, run: migrateAX25TerminalTables},
 }
 
 // runMigrations applies every pending migration in the given phase,

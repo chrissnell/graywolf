@@ -198,6 +198,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ax25/terminal-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get AX.25 terminal config */
+        get: operations["getAX25TerminalConfig"];
+        /** Update AX.25 terminal config */
+        put: operations["putAX25TerminalConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/beacons": {
         parameters: {
             query?: never;
@@ -1598,6 +1616,18 @@ export interface components {
             id?: number;
             name?: string;
             type?: string;
+        };
+        "dto.AX25TerminalConfig": {
+            cursor_blink?: boolean;
+            default_modulo?: number;
+            default_paclen?: number;
+            macros?: components["schemas"]["dto.AX25TerminalMacro"][];
+            raw_tail_filter?: string;
+            scrollback_rows?: number;
+        };
+        "dto.AX25TerminalMacro": {
+            label?: string;
+            payload?: string;
         };
         "dto.AcceptInviteRequest": {
             /**
@@ -3449,6 +3479,78 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAX25TerminalConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25TerminalConfig"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    putAX25TerminalConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Terminal config */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.AX25TerminalConfig"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25TerminalConfig"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

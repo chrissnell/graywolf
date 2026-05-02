@@ -419,6 +419,30 @@ definitions:
       type:
         type: string
     type: object
+  dto.AX25TerminalConfig:
+    properties:
+      cursor_blink:
+        type: boolean
+      default_modulo:
+        type: integer
+      default_paclen:
+        type: integer
+      macros:
+        items:
+          $ref: '#/definitions/dto.AX25TerminalMacro'
+        type: array
+      raw_tail_filter:
+        type: string
+      scrollback_rows:
+        type: integer
+    type: object
+  dto.AX25TerminalMacro:
+    properties:
+      label:
+        type: string
+      payload:
+        type: string
+    type: object
   dto.AcceptInviteRequest:
     properties:
       callsign:
@@ -2411,6 +2435,8 @@ tags:
     description: Current station position.
   - name: messages
     description: 'APRS text messaging: DMs, tactical threads, preferences, and SSE events.'
+  - name: ax25
+    description: 'AX.25 connected-mode terminal: per-link sessions, terminal-route configuration, saved profiles, and transcripts.'
   - name: release-notes
     description: Per-release user-facing news; drives the login-time popup and About-page 'What's new' section.
   - name: updates
@@ -2871,6 +2897,56 @@ paths:
       summary: Create first-run user
       tags:
         - auth
+  /ax25/terminal-config:
+    get:
+      operationId: getAX25TerminalConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AX25TerminalConfig'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get AX.25 terminal config
+      tags:
+        - ax25
+    put:
+      consumes:
+        - application/json
+      operationId: putAX25TerminalConfig
+      parameters:
+        - description: Terminal config
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AX25TerminalConfig'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AX25TerminalConfig'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update AX.25 terminal config
+      tags:
+        - ax25
   /beacons:
     get:
       operationId: listBeacons

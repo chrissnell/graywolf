@@ -75,6 +75,10 @@
             "description": "APRS text messaging: DMs, tactical threads, preferences, and SSE events."
         },
         {
+            "name": "ax25",
+            "description": "AX.25 connected-mode terminal: per-link sessions, terminal-route configuration, saved profiles, and transcripts."
+        },
+        {
             "name": "release-notes",
             "description": "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."
         },
@@ -792,6 +796,86 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/terminal-config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Get AX.25 terminal config",
+                "operationId": "getAX25TerminalConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TerminalConfig"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Update AX.25 terminal config",
+                "operationId": "putAX25TerminalConfig",
+                "parameters": [
+                    {
+                        "description": "Terminal config",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TerminalConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TerminalConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -5875,6 +5959,43 @@
                     "type": "string"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25TerminalConfig": {
+            "type": "object",
+            "properties": {
+                "cursor_blink": {
+                    "type": "boolean"
+                },
+                "default_modulo": {
+                    "type": "integer"
+                },
+                "default_paclen": {
+                    "type": "integer"
+                },
+                "macros": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AX25TerminalMacro"
+                    }
+                },
+                "raw_tail_filter": {
+                    "type": "string"
+                },
+                "scrollback_rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.AX25TerminalMacro": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "payload": {
                     "type": "string"
                 }
             }
