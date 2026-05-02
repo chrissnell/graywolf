@@ -322,14 +322,7 @@ func (s *Session) setState(ns State) {
 // State handlers live in transitions_<state>.go. The placeholders
 // below cover states whose handler files are not yet present so the
 // package compiles between Phase 1 commits. They become unused once
-// the corresponding transitions_*.go file is added (Tasks 1.10-1.11).
-func (s *Session) onTimerRecovery(_ context.Context, ev Event) bool {
-	if ev.Kind == EventShutdown {
-		return false
-	}
-	return true
-}
-
+// the corresponding transitions_*.go file is added (Task 1.11).
 func (s *Session) onAwaitingRelease(_ context.Context, ev Event) bool {
 	if ev.Kind == EventShutdown {
 		return false
