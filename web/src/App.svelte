@@ -29,6 +29,8 @@
   import Preferences from './routes/Preferences.svelte';
   import MapsSettings from './routes/MapsSettings.svelte';
   import Messages from './routes/Messages.svelte';
+  import Terminal from './routes/Terminal.svelte';
+  import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
 
   const routes = {
     '/login': Login,
@@ -36,6 +38,8 @@
     '/map': LiveMapV2,
     '/messages': Messages,
     '/messages/*': Messages,
+    '/terminal': Terminal,
+    '/terminal/transcripts': TerminalTranscripts,
     '/channels': Channels,
     '/audio-devices': AudioDevices,
     '/ptt': Ptt,
