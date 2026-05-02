@@ -270,6 +270,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ax25/transcripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List AX.25 transcript sessions */
+        get: operations["listAX25Transcripts"];
+        put?: never;
+        post?: never;
+        /** Delete every AX.25 transcript session */
+        delete: operations["deleteAllAX25Transcripts"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ax25/transcripts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get AX.25 transcript session detail */
+        get: operations["getAX25Transcript"];
+        put?: never;
+        post?: never;
+        /** Delete AX.25 transcript session */
+        delete: operations["deleteAX25Transcript"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/beacons": {
         parameters: {
             query?: never;
@@ -1704,6 +1740,31 @@ export interface components {
         "dto.AX25TerminalMacro": {
             label?: string;
             payload?: string;
+        };
+        "dto.AX25TranscriptDetail": {
+            entries?: components["schemas"]["dto.AX25TranscriptEntry"][];
+            session?: components["schemas"]["dto.AX25TranscriptSession"];
+        };
+        "dto.AX25TranscriptEntry": {
+            /** @description rx|tx */
+            direction?: string;
+            id?: number;
+            /** @description data|event */
+            kind?: string;
+            payload?: number[];
+            ts?: string;
+        };
+        "dto.AX25TranscriptSession": {
+            byte_count?: number;
+            channel_id?: number;
+            end_reason?: string;
+            ended_at?: string;
+            frame_count?: number;
+            id?: number;
+            peer_call?: string;
+            peer_ssid?: number;
+            started_at?: string;
+            via_path?: string;
         };
         "dto.AcceptInviteRequest": {
             /**
@@ -3881,6 +3942,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAX25Transcripts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25TranscriptSession"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAllAX25Transcripts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAX25Transcript: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Transcript session ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25TranscriptDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAX25Transcript: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Transcript session ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };
