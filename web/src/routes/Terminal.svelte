@@ -163,27 +163,23 @@
 <svelte:window onkeydown={handleKey} />
 
 <div class="terminal-route">
-  <div class="terminal-header">
-    <TabBar onNew={onNewTab} onClose={onCloseTab} />
-    <Button
-      variant="secondary"
-      size="sm"
-      aria-label="Edit macros"
-      onclick={() => (macroEditorOpen = true)}
-    >
-      Macros
-    </Button>
-    {#if activeSession}
-      <Button
-        variant="secondary"
-        size="sm"
-        aria-label="Toggle link telemetry panel"
-        onclick={() => (telemetryOpen = !telemetryOpen)}
-      >
-        <Icon name="radio" size="sm" /> Telemetry
-      </Button>
-    {/if}
-  </div>
+  {#if terminalSessions.ids().length > 0 || activeSession}
+    <div class="terminal-header">
+      <TabBar onNew={onNewTab} onClose={onCloseTab} />
+      {#if activeSession}
+        <Button
+          variant="default"
+          size="sm"
+          aria-label="Toggle link telemetry panel"
+          onclick={() => (telemetryOpen = !telemetryOpen)}
+        >
+          <Icon name="radio" size="sm" /> Telemetry
+        </Button>
+      {/if}
+    </div>
+  {/if}
+
+  <MacroToolbar session={activeSession} onEdit={() => (macroEditorOpen = true)} />
 
   <div class="terminal-body">
     {#if rawTailChannel}
@@ -201,7 +197,6 @@
       </div>
     {:else if activeSession}
       {#key activeSession.state.id}
-        <MacroToolbar session={activeSession} onEdit={() => (macroEditorOpen = true)} />
         <TerminalViewport session={activeSession} />
         <StatusBar session={activeSession} />
       {/key}

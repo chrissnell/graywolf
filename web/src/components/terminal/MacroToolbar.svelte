@@ -1,15 +1,18 @@
 <script>
-  // Chonky toolbar of operator-defined macros. Click sends the macro's
-  // base64-decoded payload bytes via the active session. Per-button
-  // disable when the session isn't CONNECTED -- macros mid-handshake
-  // would race the link state and the bytes would be dropped silently.
+  // Persistent toolbar of operator-defined macros. Sits above the
+  // terminal viewport in every state of the route -- pre-connect,
+  // monitor, and active LAPB session -- so the operator always sees
+  // the macro buttons + the Edit macros action. Macro buttons are
+  // disabled when there's no CONNECTED session: macros mid-handshake
+  // (or with no peer at all) would race the link state and the bytes
+  // would be dropped silently.
 
   import { onMount } from 'svelte';
   import { Button } from '@chrissnell/chonky-ui';
 
   import { macrosStore, payloadBytes } from '../../lib/terminal/macros.svelte.js';
 
-  let { session, onEdit } = $props();
+  let { session = null, onEdit } = $props();
 
   onMount(() => {
     if (!macrosStore.loaded && !macrosStore.loading) {
@@ -29,24 +32,24 @@
 </script>
 
 <div class="macro-toolbar" role="toolbar" aria-label="Operator macros">
+  <Button variant="accent" onclick={() => onEdit?.()} aria-label="Edit macros">
+    Edit macros
+  </Button>
+  <span class="divider" aria-hidden="true"></span>
   {#each macros as m (m.label)}
     <Button
-      size="sm"
-      variant="secondary"
+      variant="primary"
       disabled={!connected}
       onclick={() => fireMacro(m)}
       aria-label={`Send macro ${m.label}`}
-      title={`Send macro: ${m.label}`}
+      title={connected ? `Send macro: ${m.label}` : `${m.label} (connect to send)`}
     >
       {m.label}
     </Button>
   {/each}
   {#if macros.length === 0 && macrosStore.loaded}
-    <span class="hint">No macros saved. Click <em>Edit macros</em> to add one.</span>
+    <span class="hint">No macros yet. Click <em>Edit macros</em> to add one.</span>
   {/if}
-  <Button size="sm" variant="ghost" onclick={() => onEdit?.()} aria-label="Edit macros">
-    Edit macros
-  </Button>
 </div>
 
 <style>
@@ -54,19 +57,26 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: 8px;
+    padding: 8px 14px;
     background: var(--color-surface, #f8f8f8);
     border-bottom: 1px solid var(--color-border, #ddd);
-    font-size: 13px;
+    font-size: 14px;
+  }
+  .divider {
+    width: 1px;
+    height: 22px;
+    background: var(--color-border, #ddd);
+    margin: 0 4px;
   }
   .hint {
     color: var(--color-text-muted, #666);
-    font-size: 12px;
-    margin-left: 4px;
+    font-size: 13px;
+    font-style: italic;
   }
   .hint em {
-    font-style: italic;
+    font-style: normal;
+    font-weight: 600;
     color: var(--color-text, #111);
   }
 </style>
