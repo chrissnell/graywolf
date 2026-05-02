@@ -252,11 +252,18 @@ handbook-sync:
 # --outputTypes json,yaml omits the docs.go register file. We don't
 # serve the spec from the daemon, and keeping docs.go out of the tree
 # means swag never leaks into go.mod as a runtime dependency.
-SWAG_INIT := $(SWAG) init -g server.go --dir pkg/webapi,pkg/modembridge,pkg/webauth --packageName gen --outputTypes json,yaml --parseDependency --parseInternal --quiet
+# GOWORK=off so swag resolves types against this checkout's go.mod
+# instead of an ancestor go.work. Worktrees under .worktrees/ otherwise
+# inherit the main checkout's workspace (which uses `.` = main checkout,
+# not the worktree), causing --parseDependency walks to skip packages
+# that exist only on the branch. Pre-commit hook gets the same fix via
+# this variable.
+SWAG_INIT := GOWORK=off $(SWAG) init -g server.go --dir pkg/webapi,pkg/modembridge,pkg/webauth --packageName gen --outputTypes json,yaml --parseDependency --parseInternal --quiet
 
 # tagify post-processes the swag output to inject the curated
 # top-level tag ordering. Runs via `go run` so no binary to install.
-TAGIFY := go run ./pkg/webapi/docs/cmd/tagify
+# GOWORK=off for the same worktree reason as SWAG_INIT above.
+TAGIFY := GOWORK=off go run ./pkg/webapi/docs/cmd/tagify
 
 docs:
 	@test -x "$(SWAG)" || { echo "swag not found at $(SWAG). See SWAG comment in Makefile."; exit 1; }
