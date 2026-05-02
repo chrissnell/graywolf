@@ -179,13 +179,11 @@
     </div>
   {/if}
 
-  <MacroToolbar session={activeSession} onEdit={() => (macroEditorOpen = true)} />
-
   <div class="terminal-body">
     {#if rawTailChannel}
-      <div class="raw-pane">
-        <div class="raw-pane-actions">
-          <Button size="sm" variant="ghost" onclick={exitRawTail} aria-label="Back to pre-connect form">
+      <div class="session-pane">
+        <div class="session-back">
+          <Button variant="default" onclick={exitRawTail} aria-label="Back to pre-connect form">
             <Icon name="chevron-left" size="sm" /> Back
           </Button>
         </div>
@@ -197,8 +195,16 @@
       </div>
     {:else if activeSession}
       {#key activeSession.state.id}
-        <TerminalViewport session={activeSession} />
-        <StatusBar session={activeSession} />
+        <div class="session-pane">
+          <div class="session-back">
+            <Button variant="default" onclick={onNewTab} aria-label="Back to pre-connect form">
+              <Icon name="chevron-left" size="sm" /> Back
+            </Button>
+          </div>
+          <MacroToolbar session={activeSession} onEdit={() => (macroEditorOpen = true)} />
+          <TerminalViewport session={activeSession} />
+          <StatusBar session={activeSession} />
+        </div>
       {/key}
     {/if}
     <CommandBar bind:open={commandBarOpen} onCommand={runCommand} />
@@ -238,14 +244,14 @@
     position: relative; /* anchor for the CommandBar overlay */
   }
   .form-pane { padding: 16px 24px; }
-  .raw-pane {
+  .session-pane {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding-top: 8px;
+    padding-top: 12px;
   }
-  .raw-pane-actions { padding: 0 14px 6px; }
+  .session-back { padding: 0 14px 10px; }
   .fatal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
   .terminal-header {
     display: flex;

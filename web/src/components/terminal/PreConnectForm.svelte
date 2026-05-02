@@ -30,6 +30,18 @@
     })();
   });
 
+  // Default channel: pick the lowest-id channel as soon as the channel
+  // store has loaded, but only when the field is still empty -- a
+  // profile-applied selection always wins. The effect re-runs when
+  // channelsStore.list is replaced (initial fetch or poller refresh).
+  $effect(() => {
+    if (channelId) return;
+    const list = channelsStore.list;
+    if (!list || list.length === 0) return;
+    const first = list.reduce((a, b) => (a.id <= b.id ? a : b));
+    channelId = String(first.id);
+  });
+
   // Channel selector. Every channel is selectable; the form's submit
   // path branches on the channel's mode -- packet / aprs+packet open a
   // connected-mode session, aprs-only channels swap the route to the
