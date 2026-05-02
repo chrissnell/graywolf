@@ -198,6 +198,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ax25/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List AX.25 session profiles */
+        get: operations["listAX25Profiles"];
+        put?: never;
+        /** Create AX.25 session profile */
+        post: operations["createAX25Profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ax25/profiles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get AX.25 session profile */
+        get: operations["getAX25Profile"];
+        /** Update AX.25 session profile */
+        put: operations["updateAX25Profile"];
+        post?: never;
+        /** Delete AX.25 session profile */
+        delete: operations["deleteAX25Profile"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ax25/profiles/{id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pin or unpin an AX.25 session profile */
+        post: operations["pinAX25Profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ax25/terminal-config": {
         parameters: {
             query?: never;
@@ -1617,6 +1671,28 @@ export interface components {
             name?: string;
             type?: string;
         };
+        "dto.AX25SessionProfile": {
+            channel_id?: number;
+            dest_call?: string;
+            dest_ssid?: number;
+            id?: number;
+            last_used?: string;
+            local_call?: string;
+            local_ssid?: number;
+            maxframe?: number;
+            mod128?: boolean;
+            n2?: number;
+            name?: string;
+            paclen?: number;
+            pinned?: boolean;
+            t1_ms?: number;
+            t2_ms?: number;
+            t3_ms?: number;
+            via_path?: string;
+        };
+        "dto.AX25SessionProfilePin": {
+            pinned?: boolean;
+        };
         "dto.AX25TerminalConfig": {
             cursor_blink?: boolean;
             default_modulo?: number;
@@ -2814,6 +2890,12 @@ export interface components {
     responses: never;
     parameters: never;
     requestBodies: {
+        /** @description Profile */
+        "dto.AX25SessionProfile": {
+            content: {
+                "application/json": components["schemas"]["dto.AX25SessionProfile"];
+            };
+        };
         /** @description Igate RF filter definition */
         "dto.IGateRfFilterRequest": {
             content: {
@@ -3479,6 +3561,240 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAX25Profiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25SessionProfile"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAX25Profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.AX25SessionProfile"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25SessionProfile"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAX25Profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Profile ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25SessionProfile"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAX25Profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Profile ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.AX25SessionProfile"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25SessionProfile"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAX25Profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Profile ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    pinAX25Profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Profile ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Pin payload */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.AX25SessionProfilePin"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.AX25SessionProfile"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

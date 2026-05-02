@@ -378,9 +378,9 @@ type AX25SessionProfile struct {
 	ID        uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      string `gorm:"not null;default:''" json:"name"`
 	LocalCall string `gorm:"not null" json:"local_call"`
-	LocalSSID uint8  `gorm:"not null;default:0" json:"local_ssid"`
+	LocalSSID uint8  `gorm:"column:local_ssid;not null;default:0" json:"local_ssid"`
 	DestCall  string `gorm:"not null" json:"dest_call"`
-	DestSSID  uint8  `gorm:"not null;default:0" json:"dest_ssid"`
+	DestSSID  uint8  `gorm:"column:dest_ssid;not null;default:0" json:"dest_ssid"`
 	// ViaPath is a comma-separated digipeater list ("WIDE2-1,RELAY") so
 	// the column stays a single text column without a join table.
 	ViaPath   string  `gorm:"not null;default:''" json:"via_path"`
@@ -409,7 +409,7 @@ type AX25TranscriptSession struct {
 	ID         uint32     `gorm:"primaryKey;autoIncrement" json:"id"`
 	ChannelID  uint32     `gorm:"not null;index" json:"channel_id"`
 	PeerCall   string     `gorm:"not null;index" json:"peer_call"`
-	PeerSSID   uint8      `gorm:"not null;default:0" json:"peer_ssid"`
+	PeerSSID   uint8      `gorm:"column:peer_ssid;not null;default:0" json:"peer_ssid"`
 	ViaPath    string     `gorm:"not null;default:''" json:"via_path"`
 	StartedAt  time.Time  `gorm:"not null;index" json:"started_at"`
 	EndedAt    *time.Time `gorm:"" json:"ended_at,omitempty"`

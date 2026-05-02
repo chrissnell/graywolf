@@ -419,6 +419,48 @@ definitions:
       type:
         type: string
     type: object
+  dto.AX25SessionProfile:
+    properties:
+      channel_id:
+        type: integer
+      dest_call:
+        type: string
+      dest_ssid:
+        type: integer
+      id:
+        type: integer
+      last_used:
+        type: string
+      local_call:
+        type: string
+      local_ssid:
+        type: integer
+      maxframe:
+        type: integer
+      mod128:
+        type: boolean
+      n2:
+        type: integer
+      name:
+        type: string
+      paclen:
+        type: integer
+      pinned:
+        type: boolean
+      t1_ms:
+        type: integer
+      t2_ms:
+        type: integer
+      t3_ms:
+        type: integer
+      via_path:
+        type: string
+    type: object
+  dto.AX25SessionProfilePin:
+    properties:
+      pinned:
+        type: boolean
+    type: object
   dto.AX25TerminalConfig:
     properties:
       cursor_blink:
@@ -2897,6 +2939,188 @@ paths:
       summary: Create first-run user
       tags:
         - auth
+  /ax25/profiles:
+    get:
+      operationId: listAX25Profiles
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.AX25SessionProfile'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List AX.25 session profiles
+      tags:
+        - ax25
+    post:
+      consumes:
+        - application/json
+      operationId: createAX25Profile
+      parameters:
+        - description: Profile
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AX25SessionProfile'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.AX25SessionProfile'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create AX.25 session profile
+      tags:
+        - ax25
+  /ax25/profiles/{id}:
+    delete:
+      operationId: deleteAX25Profile
+      parameters:
+        - description: Profile ID
+          format: int32
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete AX.25 session profile
+      tags:
+        - ax25
+    get:
+      operationId: getAX25Profile
+      parameters:
+        - description: Profile ID
+          format: int32
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AX25SessionProfile'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get AX.25 session profile
+      tags:
+        - ax25
+    put:
+      consumes:
+        - application/json
+      operationId: updateAX25Profile
+      parameters:
+        - description: Profile ID
+          format: int32
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Profile
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AX25SessionProfile'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AX25SessionProfile'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update AX.25 session profile
+      tags:
+        - ax25
+  /ax25/profiles/{id}/pin:
+    post:
+      consumes:
+        - application/json
+      operationId: pinAX25Profile
+      parameters:
+        - description: Profile ID
+          format: int32
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Pin payload
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.AX25SessionProfilePin'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AX25SessionProfile'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Pin or unpin an AX.25 session profile
+      tags:
+        - ax25
   /ax25/terminal-config:
     get:
       operationId: getAX25TerminalConfig
