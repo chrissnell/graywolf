@@ -809,6 +809,291 @@
                 }
             }
         },
+        "/ax25/profiles": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "List AX.25 session profiles",
+                "operationId": "listAX25Profiles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.AX25SessionProfile"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Create AX.25 session profile",
+                "operationId": "createAX25Profile",
+                "parameters": [
+                    {
+                        "description": "Profile",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/profiles/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Get AX.25 session profile",
+                "operationId": "getAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Update AX.25 session profile",
+                "operationId": "updateAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Profile",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Delete AX.25 session profile",
+                "operationId": "deleteAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/profiles/{id}/pin": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Pin or unpin an AX.25 session profile",
+                "operationId": "pinAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pin payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfilePin"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/ax25/terminal-config": {
             "get": {
                 "security": [
@@ -5960,6 +6245,70 @@
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.AX25SessionProfile": {
+            "type": "object",
+            "properties": {
+                "channel_id": {
+                    "type": "integer"
+                },
+                "dest_call": {
+                    "type": "string"
+                },
+                "dest_ssid": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_used": {
+                    "type": "string"
+                },
+                "local_call": {
+                    "type": "string"
+                },
+                "local_ssid": {
+                    "type": "integer"
+                },
+                "maxframe": {
+                    "type": "integer"
+                },
+                "mod128": {
+                    "type": "boolean"
+                },
+                "n2": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "paclen": {
+                    "type": "integer"
+                },
+                "pinned": {
+                    "type": "boolean"
+                },
+                "t1_ms": {
+                    "type": "integer"
+                },
+                "t2_ms": {
+                    "type": "integer"
+                },
+                "t3_ms": {
+                    "type": "integer"
+                },
+                "via_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25SessionProfilePin": {
+            "type": "object",
+            "properties": {
+                "pinned": {
+                    "type": "boolean"
                 }
             }
         },
