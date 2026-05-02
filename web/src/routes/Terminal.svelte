@@ -12,6 +12,7 @@
   import MacroToolbar from '../components/terminal/MacroToolbar.svelte';
   import MacroEditor from '../components/terminal/MacroEditor.svelte';
   import CommandBar from '../components/terminal/CommandBar.svelte';
+  import RawPacketView from '../components/terminal/RawPacketView.svelte';
 
   import {
     terminalSessions,
@@ -36,9 +37,10 @@
   let activeSession = $derived(activeId ? terminalSessions.get(activeId) : null);
 
   // showForm: true when no session is active, OR when the operator
-  // explicitly clicked the "+" tab (handled by TabBar -> onNew).
+  // explicitly clicked the "+" tab (handled by TabBar -> onNew). Also
+  // false when raw-tail view has taken over the right pane.
   let forceForm = $state(false);
-  let showForm = $derived(forceForm || !activeSession);
+  let showForm = $derived(!rawTailChannel && (forceForm || !activeSession));
 
   function onNewTab() {
     forceForm = true;
@@ -51,12 +53,25 @@
 
   function onSubmitConnect(id) {
     forceForm = false;
+    rawTailChannel = null;
     terminalSessions.setActive(id);
+  }
+
+  function onRawTail(channel) {
+    rawTailChannel = channel ?? null;
+    forceForm = false;
+    terminalSessions.setActive(null);
+  }
+
+  function exitRawTail() {
+    rawTailChannel = null;
+    forceForm = true;
   }
 
   let telemetryOpen = $state(false);
   let macroEditorOpen = $state(false);
   let commandBarOpen = $state(false);
+  let rawTailChannel = $state(null);
 
   function handleKey(e) {
     // Ctrl-] (or Cmd-]) opens the command bar from anywhere on the
@@ -112,9 +127,18 @@
   </div>
 
   <div class="terminal-body">
-    {#if showForm}
+    {#if rawTailChannel}
+      <div class="raw-pane">
+        <div class="raw-pane-actions">
+          <Button size="sm" variant="ghost" onclick={exitRawTail} aria-label="Back to pre-connect form">
+            <Icon name="arrow-left" size="sm" /> Back
+          </Button>
+        </div>
+        <RawPacketView channel={rawTailChannel} />
+      </div>
+    {:else if showForm}
       <div class="form-pane">
-        <PreConnectForm onSubmit={onSubmitConnect} />
+        <PreConnectForm onSubmit={onSubmitConnect} onRawTail={onRawTail} />
       </div>
     {:else if activeSession}
       {#key activeSession.state.id}
@@ -148,6 +172,14 @@
     position: relative; /* anchor for the CommandBar overlay */
   }
   .form-pane { padding: 16px 24px; }
+  .raw-pane {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-top: 8px;
+  }
+  .raw-pane-actions { padding: 0 14px 6px; }
   .terminal-header {
     display: flex;
     align-items: center;
