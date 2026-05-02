@@ -226,6 +226,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerAX25Terminal(mux)
 	s.registerAX25TerminalConfig(mux)
 	s.registerAX25Profiles(mux)
+	s.registerAX25Transcripts(mux)
 	s.registerTacticals(mux)
 	s.registerUpdates(mux)
 	s.registerUnits(mux)

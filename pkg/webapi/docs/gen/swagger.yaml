@@ -485,6 +485,55 @@ definitions:
       payload:
         type: string
     type: object
+  dto.AX25TranscriptDetail:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/dto.AX25TranscriptEntry'
+        type: array
+      session:
+        $ref: '#/definitions/dto.AX25TranscriptSession'
+    type: object
+  dto.AX25TranscriptEntry:
+    properties:
+      direction:
+        description: rx|tx
+        type: string
+      id:
+        type: integer
+      kind:
+        description: data|event
+        type: string
+      payload:
+        items:
+          type: integer
+        type: array
+      ts:
+        type: string
+    type: object
+  dto.AX25TranscriptSession:
+    properties:
+      byte_count:
+        type: integer
+      channel_id:
+        type: integer
+      end_reason:
+        type: string
+      ended_at:
+        type: string
+      frame_count:
+        type: integer
+      id:
+        type: integer
+      peer_call:
+        type: string
+      peer_ssid:
+        type: integer
+      started_at:
+        type: string
+      via_path:
+        type: string
+    type: object
   dto.AcceptInviteRequest:
     properties:
       callsign:
@@ -3169,6 +3218,92 @@ paths:
       security:
         - CookieAuth: []
       summary: Update AX.25 terminal config
+      tags:
+        - ax25
+  /ax25/transcripts:
+    delete:
+      operationId: deleteAllAX25Transcripts
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete every AX.25 transcript session
+      tags:
+        - ax25
+    get:
+      operationId: listAX25Transcripts
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.AX25TranscriptSession'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List AX.25 transcript sessions
+      tags:
+        - ax25
+  /ax25/transcripts/{id}:
+    delete:
+      operationId: deleteAX25Transcript
+      parameters:
+        - description: Transcript session ID
+          format: int32
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete AX.25 transcript session
+      tags:
+        - ax25
+    get:
+      operationId: getAX25Transcript
+      parameters:
+        - description: Transcript session ID
+          format: int32
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AX25TranscriptDetail'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get AX.25 transcript session detail
       tags:
         - ax25
   /beacons:

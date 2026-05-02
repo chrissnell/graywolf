@@ -1174,6 +1174,143 @@
                 }
             }
         },
+        "/ax25/transcripts": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "List AX.25 transcript sessions",
+                "operationId": "listAX25Transcripts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.AX25TranscriptSession"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Delete every AX.25 transcript session",
+                "operationId": "deleteAllAX25Transcripts",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/transcripts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Get AX.25 transcript session detail",
+                "operationId": "getAX25Transcript",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Transcript session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TranscriptDetail"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Delete AX.25 transcript session",
+                "operationId": "deleteAX25Transcript",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Transcript session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/beacons": {
             "get": {
                 "security": [
@@ -6345,6 +6482,80 @@
                     "type": "string"
                 },
                 "payload": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25TranscriptDetail": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AX25TranscriptEntry"
+                    }
+                },
+                "session": {
+                    "$ref": "#/definitions/dto.AX25TranscriptSession"
+                }
+            }
+        },
+        "dto.AX25TranscriptEntry": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "rx|tx",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "description": "data|event",
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "ts": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25TranscriptSession": {
+            "type": "object",
+            "properties": {
+                "byte_count": {
+                    "type": "integer"
+                },
+                "channel_id": {
+                    "type": "integer"
+                },
+                "end_reason": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "frame_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "peer_call": {
+                    "type": "string"
+                },
+                "peer_ssid": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "via_path": {
                     "type": "string"
                 }
             }
