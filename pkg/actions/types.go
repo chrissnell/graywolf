@@ -30,6 +30,10 @@ const (
 
 // ParsedInvocation is the output of parser.Parse. Args preserve key
 // order as parsed off the wire so executors can present a stable argv.
+//
+// Args contains raw, untrusted key=value tokens straight off the wire.
+// Callers MUST run them through the runner's sanitizer (Phase C) before
+// passing them to an Executor.
 type ParsedInvocation struct {
 	OTPDigits string // empty if message had no OTP digits
 	Action    string

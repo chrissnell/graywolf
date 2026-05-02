@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,8 +13,15 @@ import (
 
 const (
 	otpStepSeconds = 30
-	otpReplayTTL   = 2*otpStepSeconds*time.Second + 30*time.Second
+	// Covers worst-case validation window (±1 step around current step
+	// = up to ~120s of wall-clock validity) plus a small grace margin.
+	otpReplayTTL = 3*otpStepSeconds*time.Second + 30*time.Second
 )
+
+// ErrOTPReplay is returned by OTPVerifier.Verify when a code matches but
+// has already been observed within the replay TTL. Callers should map
+// this to StatusBadOTP and an audit detail of "replay".
+var ErrOTPReplay = errors.New("actions: code already used")
 
 // OTPVerifier validates TOTP codes and rejects replays.
 type OTPVerifier struct {
@@ -50,13 +58,13 @@ func (v *OTPVerifier) Verify(credID uint, secretB32, code string) (bool, error) 
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if exp, ok := v.used[key]; ok && exp.After(now) {
-		return false, errors.New("actions: code already used")
+		return false, ErrOTPReplay
 	}
 	// Also check ±1 step keys to cover the full validation window.
 	for _, s := range []int64{step - 1, step + 1} {
 		k := replayKey(credID, s, code)
 		if exp, ok := v.used[k]; ok && exp.After(now) {
-			return false, errors.New("actions: code already used")
+			return false, ErrOTPReplay
 		}
 	}
 	v.used[key] = now.Add(otpReplayTTL)
@@ -64,7 +72,8 @@ func (v *OTPVerifier) Verify(credID uint, secretB32, code string) (bool, error) 
 }
 
 // Sweep purges expired ring entries. Safe to call from a background
-// goroutine.
+// goroutine. The composition root in Phase E owns the periodic ticker
+// that invokes this; NewOTPVerifier intentionally does not start one.
 func (v *OTPVerifier) Sweep() {
 	now := v.now()
 	v.mu.Lock()
@@ -78,30 +87,7 @@ func (v *OTPVerifier) Sweep() {
 
 func replayKey(credID uint, step int64, code string) string {
 	h := sha256.Sum256([]byte(code))
-	return hex.EncodeToString(h[:8]) + "|" + itoa(credID) + "|" + itoa64(step)
-}
-
-func itoa(u uint) string    { return formatInt(int64(u)) }
-func itoa64(i int64) string { return formatInt(i) }
-
-func formatInt(i int64) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	var buf [20]byte
-	pos := len(buf)
-	for i > 0 {
-		pos--
-		buf[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		buf[pos] = '-'
-	}
-	return string(buf[pos:])
+	return hex.EncodeToString(h[:8]) + "|" +
+		strconv.FormatUint(uint64(credID), 10) + "|" +
+		strconv.FormatInt(step, 10)
 }
