@@ -24,6 +24,7 @@ sibling of the graywolf binary, `./target/release/graywolf-modem`, `$PATH`
 | Server entry | `pkg/webapi/server.go` | [`../../pkg/webapi/`](../../pkg/webapi/) |
 | SPA fallback | `web/embed.go::SPAHandler` | [`../../web/embed.go`](../../web/embed.go) |
 | Public (no-auth) endpoints | `/api/version`, `/api/auth/setup` | [`../../pkg/webapi/server.go`](../../pkg/webapi/server.go) |
+| WebSocket endpoint | `GET /api/ax25/terminal` (auth required, same-origin only). One WS per active LAPB session; multi-tab via multiple WS. JSON envelopes (`pkg/ax25termws/envelope.go`) carry connect/data/disconnect/abort and state/data_rx/link_stats/error in both directions. | [`../../pkg/webapi/ax25_terminal.go`](../../pkg/webapi/ax25_terminal.go) |
 | OpenAPI reference | [`../handbook/api.html`](../handbook/api.html), [`../handbook/openapi.yaml`](../handbook/openapi.yaml) | (handbook copy of swag-generated spec) |
 
 ## Modem IPC boundary
