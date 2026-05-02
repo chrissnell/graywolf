@@ -54,7 +54,9 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 
 | Package | Purpose | Key files |
 |---|---|---|
-| `ax25` | AX.25 v2.0 UI frame encode/decode (UI only) | `frame.go`, `address.go`, `priority.go` |
+| `ax25` | AX.25 frame encode/decode. UI fields (`Control`, `PID`, `Info`) and connected-mode fields (`ConnectedControl`, `ConnectedHasInfo`) coexist on one `Frame` so UI senders and `pkg/ax25conn` share a single TX surface; `Encode()` dispatches on `IsConnectedMode()`. | `frame.go`, `address.go`, `priority.go` |
+| `ax25conn` | LAPB v2.0 (mod-8) + mod-128 data-link state machine. Outbound-only client; SABME -> DM(F=1) auto-falls-back to SABM. Per-session goroutine over (local, peer, channel); RX dispatched from `pkg/app/rxfanout.go`, TX through `pkg/txgovernor`. CONNECTED state emits an `OutLinkStats` snapshot at 1Hz via `statsTick` for the telemetry side panel. Behavioral edge cases attributed to Linux `net/ax25/` (v6.12) and ax25-tools — per-state kernel-source citations in [`pkg/ax25conn/CREDITS.md`](../../pkg/ax25conn/CREDITS.md). | `session.go`, `manager.go`, `transitions_*.go`, `control.go`, `frame.go`, `timers.go`, `heartbeat.go`, `stats_tick_test.go`, `events.go`, `state.go`, `defaults.go` |
+| `ax25termws` | One-bridge-per-WebSocket glue between `pkg/ax25conn.Manager` and the `/api/ax25/terminal` endpoint. JSON envelopes: `connect`, `data`, `disconnect`, `abort`, `transcript_set`, `raw_tail_subscribe`/`raw_tail_unsubscribe` C→S; `state`, `data_rx`, `link_stats`, `error`, `raw_tail` S→C. `data_rx` uses a blocking send so the LAPB window propagates back-pressure into the peer; control envelopes use non-blocking sends with drop+warn. The bridge optionally adapts a `TranscriptRecorder` and a `*packetlog.Log` for raw-tail mode. | `envelope.go`, `bridge.go` |
 | `aprs` | APRS info-field parsing (positions, messages, weather, telemetry, mic-e, plus assorted extensions -- see [glossary.md](glossary.md)) | `parse.go`, `position.go`, `mice.go`, `message.go`, `weather.go`, ... |
 | `kiss` | KISS framing + TCP server + TCP client + multi-port manager + tx queue + ratelimit | `framing.go`, `server.go`, `client.go`, `manager.go`, `tx_queue.go` |
 | `agw` | AGWPE TCP server (direwolf-compatible subset: R/G/g/k/K/m/X/x/y/Y/V) | `server.go`, `protocol.go` |
@@ -84,7 +86,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 |---|---|---|
 | `configstore` | SQLite config DB (GORM, glebarez/sqlite, pure Go); migrations, seeds, models | [`../handbook/preferences.html`](../handbook/preferences.html) |
 | `historydb` | Position-history SQLite (separate DB, schema bootstrapped on `Open`) | [`../handbook/history-database.html`](../handbook/history-database.html) |
-| `packetlog` | In-memory ring of RX/TX/IS packet records with filter-query API | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
+| `packetlog` | In-memory ring of RX/TX/IS packet records with filter-query API. Live-tail fan-out (`Subscribe`) is in `subscribe.go`; per-subscriber bounded channel, drop-on-full -- backs the AX.25 terminal raw-tail mode and any future live monitor pages. | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
 | `metrics` | Prometheus metrics + helper to fold Rust-side StatusUpdate into them | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
 | `logbuffer` | `slog.Handler` tee that persists DEBUG records into a circular SQLite ring (`graywolf-logs.db`); env-aware path (tmpfs on Pi/SD-card, disk elsewhere); feeds the `graywolf flare` diagnostic submission | (no dedicated page) |
 | `releasenotes` | Embedded release-note YAML (`notes.yaml`); lazy parse + markdown render | (in-app "What's new") |
@@ -98,11 +100,31 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 PTT *driving* is on the Rust side; see the `tx/ptt_*.rs` files above.
 The split is enforced by [invariant 9](invariants.md).
 
+## Channel TX gating
+
+| Surface | Where |
+|---|---|
+| Per-channel mode enum | `pkg/configstore/models.go` — `Channel.Mode` (`aprs`/`packet`/`aprs+packet`); migrated by `migrate_channel_mode.go` (v12). |
+| Lookup interface | `pkg/configstore/channel_mode_lookup.go` — `ChannelModeLookup` interface; `*Store` satisfies it via `ModeForChannel`. |
+| Beacon refusal | `pkg/beacon/scheduler.go` — `Options.ChannelModes`; `sendBeaconWith` skips packet-mode channels and emits `OnBeaconSkipped(name, "packet_mode")`. |
+| Digipeater refusal | `pkg/digipeater/digipeater.go` — `Config.ChannelModes`; `Handle` short-circuits packet-mode rxChannel; rule loop skips packet-mode `ToChannel`. |
+| iGate refusal | `pkg/igate/igate.go` — `Config.ChannelModes`; runtime check in `handleISLine` logs WARN and increments `mSubmitDropped` on packet-mode TxChannel. |
+| Messages refusal | `pkg/messages/sender.go` — `SenderConfig.ChannelModes`; `sendRF` returns non-retryable error and persists FailureReason on packet-mode channels. |
+| Messages TX channel singleton | `pkg/configstore/messages_config.go` — `MessagesConfig` (id=1); migration v13 (`messages_config_singleton`) seeds `tx_channel` from legacy `IGateConfig.TxChannel` on first run. iGate's column now governs IS→RF only. |
+| AX.25 terminal config singleton | `pkg/configstore/ax25_terminal_config.go` — `AX25TerminalConfig` (id=1); migration v14 (`ax25_terminal_tables`) seeds the singleton on first run. Persists scrollback rows, cursor blink, default modulo + paclen, the macro toolbar JSON, and the operator's last raw-tail filter. |
+| AX.25 saved profiles + recents | `pkg/configstore/ax25_profiles.go` — `AX25SessionProfile` rows; pinned profiles persist forever, unpinned recents are upserted on every CONNECTED transition (via `transcriptRecorder` in `pkg/webapi/ax25_terminal.go`'s `OnFirstConnected` callback) and trimmed to 20. |
+| AX.25 transcript store | `pkg/configstore/ax25_transcripts.go` — `AX25TranscriptSession` + `AX25TranscriptEntry`. Bridge calls `transcriptRecorder.Begin/Append/End` when the operator runs `Ctrl-]` `transcript on`; the per-session writer logs every RX/TX byte block plus state-change + error events. |
+| Wiring entry | `pkg/app/wiring.go` — injects `*configstore.Store` as `ChannelModes` into beacon/digi/igate/messages constructors. |
+| REST | `webapi/channels.go` accepts `mode` on POST/PUT; `webapi/messages_config.go` exposes GET/PUT `/api/messages/config` with packet-mode validation. |
+| UI | `web/src/routes/Channels.svelte` shows mode selector + badge; `web/src/routes/Preferences.svelte` shows messages TX-channel selector filtered to non-packet channels. |
+
+See [invariant 23](invariants.md) for the TX-gating contract.
+
 ## Go service: web
 
 | Package | Purpose |
 |---|---|
-| `webapi` | REST API handlers (Gorilla mux); one handler file per feature -- see [`../../pkg/webapi/`](../../pkg/webapi/) |
+| `webapi` | REST API handlers (Gorilla mux); one handler file per feature -- see [`../../pkg/webapi/`](../../pkg/webapi/). The AX.25 terminal upgrades to a WebSocket via `coder/websocket` in [`ax25_terminal.go`](../../pkg/webapi/ax25_terminal.go) (`GET /api/ax25/terminal`); the handler returns 503 until `SetAX25Manager` has been called. |
 | `webapi/dto` | Wire-shape DTOs; constants like `DefaultAgwListenAddr`, `MaxMessageText` live here |
 | `webapi/docs` | Swag annotation infra: `op_ids.go`, `cmd/idlint`, `cmd/tagify`, `gen/swagger.{json,yaml}` |
 | `webauth` | Password hash, session tokens (cookie), `RequireAuth` middleware, store, handlers |
@@ -152,7 +174,11 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 | `package.json`, `vite.config.js`, `svelte.config.js` | Build config |
 | `embed.go` | `Handler()` and `SPAHandler()` |
 | `src/App.svelte`, `src/main.js` | App shell, route table |
-| `src/routes/` | One Svelte route per page (Dashboard, LiveMapV2, Channels, Beacons, Digipeater, Igate, Kiss, Agw, Ptt, Gps, AudioDevices, Messages, PositionLog, MapsSettings, Preferences, Login, About, Logs, Simulation) |
+| `src/routes/` | One Svelte route per page (Dashboard, LiveMapV2, Channels, Beacons, Digipeater, Igate, Kiss, Agw, Ptt, Gps, AudioDevices, Messages, Terminal + TerminalTranscripts, PositionLog, MapsSettings, Preferences, Login, About, Logs, Simulation) |
+| `src/components/terminal/` | AX.25 terminal pieces: `TerminalViewport` (xterm.js host, 80x24 fixed), `PreConnectForm` (channel + CALL[-N] + advanced timers), `StatusBar`, `TabBar`, `CommandBar` (Ctrl-] command line: `disconnect`, `transcript on/off`, etc.), `MacroToolbar` + `MacroEditor` (operator-defined byte-payload buttons), `RawPacketView` (APRS-only channels show packetlog raw-tail in lieu of LAPB session), `TelemetryPanel` (live `link_stats` side panel: V(S)/V(R)/V(A), N2 retry, RTT EWMA, busy flags) |
+| `src/lib/terminal/` | Terminal client state: `session.svelte.js` (one WebSocket per link), `sessions.svelte.js` (multi-tab map, cap 6, focus + visibility tracking), `palette.ts` + `theme.js` (CSS-var-resolved xterm ITheme; `theme.test.js` covers the resolver), `presets.ts` (classic / phosphor-green / phosphor-amber), `envelope.js` (b64 ↔ Uint8Array), `macros.svelte.js` (singleton-config-backed macro store), `profiles.svelte.js` (saved + recent connection profiles store) |
+| `src/lib/stores/terminal.svelte.js` | Sidebar-facing summary: unread-bytes total across non-focused sessions for the Sidebar `NotificationBadge` |
+| `public/fonts/saucecodepro-nerd/` | SauceCodePro Nerd Font face declarations for the terminal viewport. Ships with `local()` fallbacks; the woff2 binaries are pending vendoring (see `VERSION.txt` in that directory) |
 | `src/components/` | Reusable: ConfirmDialog, DataTable, FormField, Modal, NewsPopup, PacketLogViewer, PageHeader, ReleaseNoteCard, Sidebar, StationCallsignBanner, SymbolPicker, UpdateAvailableBanner |
 | `src/lib/map/` | MapLibre integration (data-store, map-store, layers, sources, popups, APRS icons) |
 | `src/lib/maps/` | Offline-maps client glue (downloads-store, state-bounds, state-list, state-picker) |

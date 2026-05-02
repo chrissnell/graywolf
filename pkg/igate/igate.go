@@ -72,6 +72,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/callsign"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/igate/filters"
 	"github.com/chrissnell/graywolf/pkg/internal/backoff"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
@@ -115,6 +116,13 @@ type Config struct {
 	Rules []filters.Rule
 	// TxChannel is the radio channel IS->RF frames are submitted on.
 	TxChannel uint32
+	// ChannelModes resolves Channel.Mode at TX time. When the iGate's
+	// configured TxChannel is "packet"-mode, the IS->RF runtime gate
+	// drops the frame and logs a Warn (see handleISLine). Nil = treat
+	// every channel as ChannelModeAPRS (preserves the legacy
+	// any-channel-does-anything behavior). Lookup errors are treated
+	// as APRS-mode at the gate point (fail-open).
+	ChannelModes configstore.ChannelModeLookup
 	// Governor is the TX governor for IS->RF submissions. Required for
 	// downlink; leave nil for IS->RF=disabled. Declared as the
 	// canonical txgovernor.TxSink interface so tests can inject a
@@ -458,6 +466,16 @@ func (ig *Igate) handleISLine(line string) {
 	parent := ig.sessCtx.Load().ctx
 	submitCtx, cancel := context.WithTimeout(parent, igateSubmitTimeout)
 	txCh := ig.txChannel.Load()
+	if ig.cfg.ChannelModes != nil {
+		mode, _ := ig.cfg.ChannelModes.ModeForChannel(submitCtx, txCh)
+		if mode == configstore.ChannelModePacket {
+			ig.logger.Warn("IS->RF drop: tx channel is packet-mode",
+				"channel", txCh)
+			cancel()
+			ig.mSubmitDropped.Inc()
+			return
+		}
+	}
 	err = ig.cfg.Governor.Submit(submitCtx, txCh, wrapped, txgovernor.SubmitSource{
 		Kind:     "igate",
 		Detail:   "is2rf",

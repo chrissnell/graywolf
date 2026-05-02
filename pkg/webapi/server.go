@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/kiss"
@@ -41,6 +42,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/mapscatalog"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
+	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
@@ -86,6 +88,16 @@ type Server struct {
 	messagesService MessagesService
 	messagesStore   MessagesStore // optional: defaults to messagesService.Store() via adapter
 	messagesBotDir  messages.BotDirectory
+
+	// ax25Mgr is wired by pkg/app at startup via SetAX25Manager. The
+	// /api/ax25/terminal WebSocket handler returns 503 until the
+	// manager is installed so ordering bugs in wiring fail loud.
+	ax25Mgr *ax25conn.Manager
+
+	// packetLog is the live packet ring shared with /api/packets and
+	// the AX.25 terminal raw-tail mode. Wired post-construction via
+	// SetPacketLog so cmd/graywolf can build it once and share it.
+	packetLog *packetlog.Log
 }
 
 // MessagesService is the narrow surface the webapi handlers consume
@@ -216,6 +228,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerPositionLog(mux)
 	s.registerSmartBeacon(mux)
 	s.registerMessages(mux)
+	s.registerMessagesConfig(mux)
+	s.registerAX25Terminal(mux)
+	s.registerAX25TerminalConfig(mux)
+	s.registerAX25Profiles(mux)
+	s.registerAX25Transcripts(mux)
 	s.registerTacticals(mux)
 	s.registerUpdates(mux)
 	s.registerUnits(mux)
@@ -323,6 +340,17 @@ func (s *Server) SetMessagesStore(store MessagesStore) { s.messagesStore = store
 // stations autocomplete endpoint. Useful for tests; production leaves
 // it unset so the package default (messages.DefaultBotDirectory) wins.
 func (s *Server) SetMessagesBotDirectory(dir messages.BotDirectory) { s.messagesBotDir = dir }
+
+// SetAX25Manager installs the ax25conn session manager wiring
+// constructs. Until this is called the /api/ax25/terminal WebSocket
+// handler returns 503 so an ordering bug in wiring fails loud rather
+// than letting the operator open a session that has nowhere to go.
+func (s *Server) SetAX25Manager(m *ax25conn.Manager) { s.ax25Mgr = m }
+
+// SetPacketLog installs the shared packet ring buffer so the AX.25
+// terminal raw-tail mode can fan out live decodes. Until this is set
+// the bridge surfaces a typed `raw_tail_unsupported` error envelope.
+func (s *Server) SetPacketLog(l *packetlog.Log) { s.packetLog = l }
 
 // SetIgateStatusFn installs the function used by /api/status to report
 // igate counters.

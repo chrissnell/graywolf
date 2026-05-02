@@ -18,6 +18,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app/txbackend"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -329,11 +330,22 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		OnClientReconnect: a.metrics.ObserveKissClientReconnect,
 	})
 
+	// --- AX.25 connected-mode session manager --------------------------
+	// Constructed after the governor exists (it is the TxSink) and
+	// after the store is open (ChannelModeLookup). Started below in
+	// startCore so its lifecycle is bound to ctx.
+	a.ax25Mgr = ax25conn.NewManager(ax25conn.ManagerConfig{
+		TxSink:       a.gov,
+		ChannelModes: a.store,
+		Logger:       a.logger.With("component", "ax25conn"),
+	})
+
 	// --- Digipeater ----------------------------------------------------
 	digi, err := digipeater.New(digipeater.Config{
 		DedupeWindow: 30 * time.Second,
 		Submit:       a.gov.Submit,
 		Logger:       a.logger,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
 		OnPacket: func(note string, fromChan, toChan uint32, f *ax25.Frame) {
 			a.metrics.DigipeaterPackets.Inc()
 			// Packet-log recording lives in the governor TX hook above;
@@ -366,11 +378,12 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- Beacon scheduler ----------------------------------------------
 	beaconSched, err := beacon.New(beacon.Options{
-		Sink:     a.gov,
-		Cache:    a.gpsCache,
-		Logger:   a.logger,
-		Observer: &beaconObserver{m: a.metrics},
-		Version:  a.cfg.Version,
+		Sink:         a.gov,
+		Cache:        a.gpsCache,
+		Logger:       a.logger,
+		Observer:     &beaconObserver{m: a.metrics},
+		Version:      a.cfg.Version,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
 	})
 	if err != nil {
 		return fmt.Errorf("beacon scheduler init: %w", err)
@@ -445,6 +458,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		// frame flows. Stop order (reverse): dispatcher stops accepting
 		// new sends BEFORE governor goroutines wind down — see D15.
 		a.txBackendComponent(),
+		a.ax25connComponent(),
 		a.backgroundStatsComponent(),
 		a.updatesCheckComponent(),
 		a.kissComponent(),
@@ -611,7 +625,8 @@ func (a *App) wireIGate(ctx context.Context) error {
 				a.stationCache.Update(entries)
 			}
 		},
-		IsRxHook: a.onIGateIsRxPacket,
+		IsRxHook:     a.onIGateIsRxPacket,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
 	})
 	if err != nil {
 		// Matches the old main.go behavior: init failure is logged but
@@ -697,18 +712,18 @@ func (a *App) wireMessages(ctx context.Context) error {
 		return c
 	}
 
-	// TxChannel is read from the iGate config when present so the sender
-	// picks the operator's preferred RF channel. The IGatePasscode
-	// argument to messages.NewService is kept for its read-only-IS gate
-	// semantics (empty / "-1" → disable IS fallback): we compute the
-	// passcode at wire time from the resolved station callsign via
+	// TxChannel is read from MessagesConfig so the sender picks the
+	// operator's preferred RF channel. The IGatePasscode argument to
+	// messages.NewService is kept for its read-only-IS gate semantics
+	// (empty / "-1" → disable IS fallback): we compute the passcode at
+	// wire time from the resolved station callsign via
 	// callsign.APRSPasscode. When the station callsign is unset, we pass
 	// "" so the sender treats IS as read-only; this matches the pre-
 	// centralization behaviour where an unconfigured iGate row meant
 	// an empty passcode.
 	var configuredTxCh uint32
-	if igCfg, _ := a.store.GetIGateConfig(ctx); igCfg != nil {
-		configuredTxCh = igCfg.TxChannel
+	if mc, _ := a.store.GetMessagesConfig(ctx); mc != nil {
+		configuredTxCh = mc.TxChannel
 	}
 	txChannel := a.resolveTxChannel(ctx, configuredTxCh)
 	var passcode string
@@ -736,13 +751,14 @@ func (a *App) wireMessages(ctx context.Context) error {
 		TxChannel:     txChannel,
 		TxChannelResolver: func(rctx context.Context) uint32 {
 			var configured uint32
-			if igCfg, _ := a.store.GetIGateConfig(rctx); igCfg != nil {
-				configured = igCfg.TxChannel
+			if mc, _ := a.store.GetMessagesConfig(rctx); mc != nil {
+				configured = mc.TxChannel
 			}
 			return a.resolveTxChannel(rctx, configured)
 		},
 		IGatePasscode: passcode,
 		OurCall:       ourCall,
+		ChannelModes:  a.store,
 		LocalTxRing:   a.msgLocalRing, // shared with iGate.Config.LocalOrigin
 	})
 	if err != nil {
@@ -919,6 +935,13 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		apiSrv.SetMessagesReload(a.messagesReload)
 	}
 	apiSrv.SetMessagesBotDirectory(messages.DefaultBotDirectory)
+
+	// AX.25 connected-mode session manager: required by the
+	// /api/ax25/terminal WebSocket handler. Constructed earlier in
+	// this function (see "AX.25 connected-mode session manager"); the
+	// handler returns 503 until this setter runs.
+	apiSrv.SetAX25Manager(a.ax25Mgr)
+	apiSrv.SetPacketLog(a.plog)
 
 	// Construct the GitHub-update checker and install it on the webapi
 	// server so GET /api/updates/status can project its cached Snapshot.
@@ -1127,6 +1150,28 @@ func (a *App) governorComponent() namedComponent {
 			// Run exits when its parent ctx is cancelled, which already
 			// happened by the time shutdown started in Run. Just wait.
 			return waitGroup(shutdownCtx, &a.govWG, "tx governor")
+		},
+	}
+}
+
+// ax25connComponent runs the LAPB session manager. The manager's Run
+// loop is a no-op until Close — Open spawns a per-session goroutine
+// internally — but binding it to startOrder ensures Close fires when
+// the app shuts down so any live sessions cancel cleanly.
+func (a *App) ax25connComponent() namedComponent {
+	return namedComponent{
+		name: "ax25conn manager",
+		start: func(ctx context.Context) error {
+			a.ax25connWG.Add(1)
+			go func() {
+				defer a.ax25connWG.Done()
+				a.ax25Mgr.Run(ctx)
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			a.ax25Mgr.Close()
+			return waitGroup(shutdownCtx, &a.ax25connWG, "ax25conn manager")
 		},
 	}
 }

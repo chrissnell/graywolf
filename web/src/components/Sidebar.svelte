@@ -4,50 +4,41 @@
   import { location } from 'svelte-spa-router';
   import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
   import { messages } from '../lib/messagesStore.svelte.js';
+  import { terminalSidebar } from '../lib/stores/terminal.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
   import logoUrl from '../assets/graywolf.svg';
 
-  const topItems = [
-    { path: '/', label: 'Dashboard' },
-    { path: '/map', label: 'Live Map' },
-  ];
-
-  // The Messages entry is modeled separately from `navGroups[].items`
-  // so it can render an Icon + NotificationBadge — the other Operations
-  // links are plain-label for now. Keeping them in the same group
-  // visually without forcing every other label into an Icon treatment.
-  const operationsItems = [
-    { path: '/messages', label: 'Messages', icon: 'message-square', badge: true },
-    { path: '/beacons', label: 'Beacons' },
-    { path: '/digipeater', label: 'Digipeater' },
-    { path: '/igate', label: 'iGate' },
-    { path: '/logs', label: 'Logs' },
+  // Main-function entries get an icon and render in a single
+  // unsubheadered top section. Inline SVGs cover the cases chonky-ui's
+  // icon allowlist does not: 'globe' (Live Map), 'dashboard' (the
+  // four-rect tile glyph that the mobile top bar already uses for
+  // Dashboard). Messages and Terminal use the chonky icons directly.
+  const mainItems = [
+    { path: '/', label: 'Dashboard', svgIcon: 'dashboard' },
+    { path: '/map', label: 'Live Map', svgIcon: 'globe' },
+    { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
+    { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
   ];
 
   const navGroups = [
     {
-      label: 'Operations',
-      items: operationsItems,
-    },
-    {
       label: 'Settings',
       items: [
-        { path: '/callsign', label: 'Station Callsign' },
-        { path: '/channels', label: 'Channels' },
-        { path: '/audio-devices', label: 'Audio Devices' },
-        { path: '/ptt', label: 'PTT' },
-        { path: '/gps', label: 'GPS' },
-        { path: '/position-log', label: 'Position Log' },
-        { path: '/simulation', label: 'Simulation' },
-        { path: '/preferences/maps', label: 'Maps' },
-        { path: '/preferences', label: 'General' },
-      ],
-    },
-    {
-      label: 'Interfaces',
-      items: [
-        { path: '/kiss', label: 'KISS' },
         { path: '/agw', label: 'AGW' },
+        { path: '/audio-devices', label: 'Audio Devices' },
+        { path: '/beacons', label: 'Beacons' },
+        { path: '/channels', label: 'Channels' },
+        { path: '/digipeater', label: 'Digipeater' },
+        { path: '/preferences', label: 'General' },
+        { path: '/gps', label: 'GPS' },
+        { path: '/igate', label: 'iGate' },
+        { path: '/kiss', label: 'KISS' },
+        { path: '/logs', label: 'Logs' },
+        { path: '/preferences/maps', label: 'Maps' },
+        { path: '/position-log', label: 'Position Log' },
+        { path: '/ptt', label: 'PTT' },
+        { path: '/simulation', label: 'Simulation' },
+        { path: '/callsign', label: 'Station Callsign' },
       ],
     },
   ];
@@ -61,6 +52,13 @@
   // Reactive global unread signal — recomputes when any thread's
   // unreadCount / muted / archived flag changes.
   let unreadTotal = $derived(messages.unreadTotal);
+  let terminalUnread = $derived(terminalSidebar.unreadTotal);
+
+  function badgeCount(kind) {
+    if (kind === 'terminal') return terminalUnread;
+    if (kind === 'messages') return unreadTotal;
+    return 0;
+  }
 
   // Update-check signal — true when a newer GitHub release exists and
   // the operator hasn't dismissed the banner. Drives both the About
@@ -108,6 +106,7 @@
   let isMapActive = $derived(currentPath === '/map' || currentPath.startsWith('/map/'));
   // Messages route match — '/messages' or any '/messages/*' sub-route.
   let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
+  let isTerminalActive = $derived(currentPath === '/terminal' || currentPath.startsWith('/terminal/'));
 
   // Per-group active item: longest-prefix match wins. This prevents e.g.
   // '/preferences/maps' from highlighting both the Maps entry and a
@@ -127,17 +126,76 @@
 </script>
 
 {#snippet navItems()}
-  <ul class="nav-list dashboard-list">
-    {#each topItems as item}
+  <ul class="nav-list main-list">
+    {#each mainItems as item}
+      {@const unread = item.badge ? badgeCount(item.badge) : 0}
       <li>
         <a
           href={item.path}
           use:link
-          class="nav-link dashboard-link"
-          class:active={currentPath === item.path}
+          class="nav-link has-icon main-link"
+          class:active={currentPath === item.path || (item.path !== '/' && currentPath.startsWith(item.path + '/'))}
           aria-current={currentPath === item.path ? 'page' : undefined}
+          aria-label={unread > 0 ? `${item.label}, ${unread} unread` : undefined}
           onclick={onNavClick}
         >
+          <span class="nav-icon" aria-hidden="true">
+            {#if item.icon}
+              <Icon name={item.icon} size="sm" />
+            {:else if item.svgIcon === 'globe'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3a14 14 0 0 1 0 18" />
+                <path d="M12 3a14 14 0 0 0 0 18" />
+              </svg>
+            {:else if item.svgIcon === 'dashboard'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="7" height="9" />
+                <rect x="14" y="3" width="7" height="5" />
+                <rect x="14" y="12" width="7" height="9" />
+                <rect x="3" y="16" width="7" height="5" />
+              </svg>
+            {:else if item.svgIcon === 'terminal'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+            {/if}
+            {#if unread > 0}
+              <span class="nav-icon-dot" aria-hidden="true"></span>
+            {/if}
+          </span>
           <span class="nav-label">{item.label}</span>
         </a>
       </li>
@@ -148,6 +206,7 @@
       <h2 class="nav-group-label">{group.label}</h2>
       <ul class="nav-list">
         {#each group.items as item}
+          {@const unread = item.badge ? badgeCount(item.badge) : 0}
           <li>
             <a
               href={item.path}
@@ -156,19 +215,18 @@
               class:has-icon={item.icon}
               class:active={item.path === activeGroupPaths[groupIdx]}
               aria-current={currentPath === item.path ? 'page' : undefined}
+              aria-label={unread > 0 ? `${item.label}, ${unread} unread` : undefined}
               onclick={onNavClick}
             >
               {#if item.icon}
                 <span class="nav-icon" aria-hidden="true">
                   <Icon name={item.icon} size="sm" />
+                  {#if unread > 0}
+                    <span class="nav-icon-dot" aria-hidden="true"></span>
+                  {/if}
                 </span>
               {/if}
               <span class="nav-label">{item.label}</span>
-              {#if item.badge}
-                <span class="nav-badge">
-                  <NotificationBadge count={unreadTotal} />
-                </span>
-              {/if}
             </a>
           </li>
         {/each}
@@ -281,9 +339,39 @@
   >
     <span class="top-bar-icon" aria-hidden="true">
       <Icon name="message-square" size={24} strokeWidth={1.75} />
+      {#if unreadTotal > 0}
+        <span class="top-bar-dot" aria-hidden="true"></span>
+      {/if}
     </span>
-    <span class="top-bar-badge">
-      <NotificationBadge count={unreadTotal} />
+  </a>
+
+  <a
+    href="/terminal"
+    use:link
+    class="top-bar-action"
+    class:active={isTerminalActive}
+    aria-label={terminalUnread > 0 ? `Terminal, ${terminalUnread} bytes unread` : 'Terminal'}
+    aria-current={isTerminalActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <!-- Inline terminal glyph: chonky's icon allowlist lacks 'terminal'. -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+      {#if terminalUnread > 0}
+        <span class="top-bar-dot" aria-hidden="true"></span>
+      {/if}
     </span>
   </a>
 
@@ -416,11 +504,6 @@
     padding: 0;
   }
 
-  .dashboard-list {
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border-color);
-  }
-
   .nav-group {
     padding: 0;
   }
@@ -465,6 +548,23 @@
     height: 16px;
     flex-shrink: 0;
     color: currentColor;
+    position: relative;
+  }
+
+  /* Red activity dot overlaid on the icon (sidebar). Replaces the
+     numeric NotificationBadge for unread Messages / Terminal so the
+     indicator is consistently sized and never collides with a long
+     label. */
+  .nav-icon-dot {
+    position: absolute;
+    top: -1px;
+    right: -2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-danger, #c41010);
+    border: 1.5px solid var(--bg-primary, #fff);
+    box-sizing: content-box;
   }
 
   .nav-badge {
@@ -473,10 +573,17 @@
     align-items: center;
   }
 
-  .dashboard-link {
-    font-weight: 600;
-    padding-left: 16px;
-    font-size: 13px;
+  /* Main-function entries (Dashboard / Live Map / Messages / Terminal):
+     same font + weight as the rest of the nav so the section reads as
+     a single unsubheadered list. The trailing border-bottom separates
+     it visually from the Settings group below. */
+  .main-list {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+  }
+  .main-link {
+    font-weight: 500;
   }
 
   .nav-link:hover {
@@ -489,10 +596,6 @@
     color: var(--accent);
     border-left: 3px solid var(--accent);
     padding-left: 21px;
-  }
-
-  .dashboard-link.active {
-    padding-left: 13px;
   }
 
   /* .nav-trailing pins About to the bottom of the sidebar
@@ -619,11 +722,21 @@
       width: 24px;
       height: 24px;
       pointer-events: none;
+      position: relative;
     }
-    .top-bar-badge {
+    /* Activity dot overlaid on the top-bar icon (mobile parallel of
+       .nav-icon-dot). Same red, slightly larger to keep visible at
+       24px-touch-target scale. */
+    .top-bar-dot {
       position: absolute;
-      top: 4px;
-      right: 4px;
+      top: -1px;
+      right: -2px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--color-danger, #c41010);
+      border: 2px solid var(--bg-primary, #fff);
+      box-sizing: content-box;
       pointer-events: none;
     }
 

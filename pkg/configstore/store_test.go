@@ -723,3 +723,110 @@ func TestChannelKissInterfaceMutualExclusivity(t *testing.T) {
 		}
 	})
 }
+
+func TestCreateChannelRejectsInvalidMode(t *testing.T) {
+	store := newTestStore(t)
+	dev := &AudioDevice{Name: "d", Direction: "input", SourceType: "flac",
+		SourcePath: "/tmp/x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	if err := store.CreateAudioDevice(context.Background(), dev); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	ch := &Channel{
+		Name: "x", InputDeviceID: U32Ptr(dev.ID),
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+		Mode: "garbage",
+	}
+	err := store.CreateChannel(context.Background(), ch)
+	if err == nil {
+		t.Fatal("expected error for invalid mode, got nil")
+	}
+}
+
+func TestCreateChannelEmptyModeDefaultsToAPRS(t *testing.T) {
+	store := newTestStore(t)
+	dev := &AudioDevice{Name: "d2", Direction: "input", SourceType: "flac",
+		SourcePath: "/tmp/x2.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	if err := store.CreateAudioDevice(context.Background(), dev); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	ch := &Channel{
+		Name: "y", InputDeviceID: U32Ptr(dev.ID),
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+		Mode: "", // explicit empty
+	}
+	if err := store.CreateChannel(context.Background(), ch); err != nil {
+		t.Fatalf("create with empty mode should succeed: %v", err)
+	}
+	got, err := store.GetChannel(context.Background(), ch.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Mode != ChannelModeAPRS {
+		t.Fatalf("Mode after empty-string create = %q, want %q", got.Mode, ChannelModeAPRS)
+	}
+}
+
+func TestUpdateChannelRejectsInvalidMode(t *testing.T) {
+	store := newTestStore(t)
+	dev := &AudioDevice{Name: "d", Direction: "input", SourceType: "flac",
+		SourcePath: "/tmp/x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	if err := store.CreateAudioDevice(context.Background(), dev); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	ch := &Channel{
+		Name: "u", InputDeviceID: U32Ptr(dev.ID),
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := store.CreateChannel(context.Background(), ch); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	ch.Mode = "garbage"
+	if err := store.UpdateChannel(context.Background(), ch); err == nil {
+		t.Fatal("expected error on update with invalid mode, got nil")
+	}
+}
+
+// TestUpdateChannelModeRoundTrip asserts that a valid Mode change
+// (aprs -> packet) is persisted and observable via GetChannel and
+// ModeForChannel. Defense against a future GORM tag drift that would
+// silently drop the column from the UPDATE statement.
+func TestUpdateChannelModeRoundTrip(t *testing.T) {
+	store := newTestStore(t)
+	dev := &AudioDevice{Name: "d", Direction: "input", SourceType: "flac",
+		SourcePath: "/tmp/x.flac", SampleRate: 44100, Channels: 1, Format: "s16le"}
+	if err := store.CreateAudioDevice(context.Background(), dev); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	ch := &Channel{
+		Name: "u", InputDeviceID: U32Ptr(dev.ID),
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := store.CreateChannel(context.Background(), ch); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if ch.Mode != ChannelModeAPRS {
+		t.Fatalf("default Mode = %q, want %q", ch.Mode, ChannelModeAPRS)
+	}
+	ch.Mode = ChannelModePacket
+	if err := store.UpdateChannel(context.Background(), ch); err != nil {
+		t.Fatalf("UpdateChannel(packet): %v", err)
+	}
+	got, err := store.GetChannel(context.Background(), ch.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Mode != ChannelModePacket {
+		t.Fatalf("Mode after update = %q, want %q", got.Mode, ChannelModePacket)
+	}
+	mode, err := store.ModeForChannel(context.Background(), ch.ID)
+	if err != nil {
+		t.Fatalf("ModeForChannel: %v", err)
+	}
+	if mode != ChannelModePacket {
+		t.Fatalf("ModeForChannel = %q, want %q", mode, ChannelModePacket)
+	}
+}

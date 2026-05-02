@@ -159,6 +159,26 @@ export function putPreferences(req) {
   return api.put('/messages/preferences', req);
 }
 
+// --- Messages config ------------------------------------------------
+
+/**
+ * GET /api/messages/config
+ * Returns { tx_channel: number }. 0 = auto-resolve at runtime.
+ * @returns {Promise<{tx_channel: number}>}
+ */
+export function getMessagesConfig() {
+  return api.get('/messages/config');
+}
+
+/**
+ * PUT /api/messages/config
+ * @param {{tx_channel: number}} req
+ * @returns {Promise<{tx_channel: number}>}
+ */
+export function putMessagesConfig(req) {
+  return api.put('/messages/config', req);
+}
+
 // --- Tactical callsigns --------------------------------------------
 
 /**

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -42,15 +43,16 @@ const smartPollInterval = 1 * time.Second
 // that dispatches beacon fires. Configure via New, drive with Run;
 // SetBeacons / Reload / SendNow are safe to call from any goroutine.
 type Scheduler struct {
-	sink     txgovernor.TxSink
-	isSink   ISSink // optional APRS-IS destination; guarded by mu
-	cache    gps.PositionCache
-	logger   *slog.Logger
-	observer Observer
-	clock    Clock
-	version  string
-	maxFires int
-	workers  chan struct{} // counting semaphore sized to maxFires
+	sink         txgovernor.TxSink
+	isSink       ISSink // optional APRS-IS destination; guarded by mu
+	cache        gps.PositionCache
+	logger       *slog.Logger
+	observer     Observer
+	clock        Clock
+	version      string
+	maxFires     int
+	workers      chan struct{} // counting semaphore sized to maxFires
+	channelModes configstore.ChannelModeLookup
 
 	mu       sync.Mutex
 	beacons  []Config
@@ -71,6 +73,12 @@ type Options struct {
 	// never blocks on submit — if all workers are busy when a beacon is
 	// due, the fire is dropped and a skipped_busy event is recorded.
 	MaxConcurrentFires int
+	// ChannelModes resolves Channel.Mode at TX time. Beacons whose
+	// channel is "packet" are skipped silently. Nil = treat every
+	// channel as ChannelModeAPRS (preserves the legacy any-channel-
+	// does-anything behavior). Lookup errors are silently ignored
+	// (fail-open): a DB failure does not suppress beaconing.
+	ChannelModes configstore.ChannelModeLookup
 }
 
 // New constructs a Scheduler.
@@ -91,16 +99,17 @@ func New(opts Options) (*Scheduler, error) {
 		maxFires = DefaultMaxConcurrentFires
 	}
 	return &Scheduler{
-		sink:     opts.Sink,
-		isSink:   opts.ISSink,
-		cache:    opts.Cache,
-		logger:   logger.With("component", "beacon"),
-		observer: opts.Observer,
-		clock:    clock,
-		version:  opts.Version,
-		maxFires: maxFires,
-		workers:  make(chan struct{}, maxFires),
-		reloadCh: make(chan struct{}, 1),
+		sink:         opts.Sink,
+		isSink:       opts.ISSink,
+		cache:        opts.Cache,
+		logger:       logger.With("component", "beacon"),
+		observer:     opts.Observer,
+		clock:        clock,
+		version:      opts.Version,
+		maxFires:     maxFires,
+		workers:      make(chan struct{}, maxFires),
+		reloadCh:     make(chan struct{}, 1),
+		channelModes: opts.ChannelModes,
 	}, nil
 }
 
@@ -350,6 +359,17 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 // sendBeaconImmediate.
 func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool) {
 	name := beaconName(b)
+	if s.channelModes != nil {
+		mode, _ := s.channelModes.ModeForChannel(ctx, b.Channel)
+		if mode == configstore.ChannelModePacket {
+			s.logger.Debug("beacon skipped: channel mode is packet",
+				"id", b.ID, "channel", b.Channel)
+			if so, ok := s.observer.(SkipObserver); ok && so != nil {
+				so.OnBeaconSkipped(name, "packet_mode")
+			}
+			return
+		}
+	}
 	info, err := s.buildInfo(ctx, b)
 	if err != nil {
 		// Build errors (comment_cmd missing required GPS, bad PHG, etc.)

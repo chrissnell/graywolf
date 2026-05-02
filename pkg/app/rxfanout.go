@@ -6,6 +6,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
@@ -113,6 +114,13 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 			if entries := stationcache.ExtractEntry(pkt, logSource, "RX", rf.Channel); len(entries) > 0 {
 				a.stationCache.Update(entries)
 			}
+		}
+	} else if a.ax25Mgr != nil {
+		// Connected-mode dispatch: any non-UI frame that decodes goes to
+		// the LAPB manager. Mismatch on (channel, local, peer) is silent —
+		// the manager has no session for it.
+		if cmFrame, err := ax25conn.Decode(rf.Data, false); err == nil {
+			a.ax25Mgr.Dispatch(rf.Channel, cmFrame)
 		}
 	}
 	a.plog.Record(e)

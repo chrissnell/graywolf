@@ -70,6 +70,7 @@
   // 'kiss-tnc' hides audio fields and sends input_device_id=null.
   let form = $state({
     name: '',
+    mode: 'aprs',
     channel_type: 'modem',
     input_device_id: '0', input_channel: '0',
     output_device_id: '0', output_channel: '0',
@@ -142,6 +143,7 @@
     const defaultInput = inputDevices.length > 0 ? String(inputDevices[0].id) : '0';
     form = {
       name: '',
+      mode: 'aprs',
       channel_type: 'modem',
       input_device_id: defaultInput, input_channel: '0',
       output_device_id: '0', output_channel: '0',
@@ -162,6 +164,7 @@
     const channelType = row.input_device_id == null ? 'kiss-tnc' : 'modem';
     form = {
       ...row,
+      mode: row.mode || 'aprs',
       channel_type: channelType,
       input_device_id: row.input_device_id == null ? '0' : String(row.input_device_id),
       input_channel: String(row.input_channel),
@@ -203,6 +206,7 @@
   function buildPayload() {
     const base = {
       name: form.name,
+      mode: form.mode,
       modem_type: form.modem_type,
       bit_rate: parseInt(form.bit_rate, 10),
       mark_freq: parseInt(form.mark_freq, 10),
@@ -437,6 +441,13 @@
                 <Badge variant="info">RX</Badge>
               {/if}
             {/if}
+            {#if ch.mode === 'packet'}
+              <Badge variant="warning">Packet</Badge>
+            {:else if ch.mode === 'aprs+packet'}
+              <Badge variant="info">APRS + Packet</Badge>
+            {:else}
+              <Badge variant="info">APRS</Badge>
+            {/if}
           </div>
         </div>
 
@@ -555,6 +566,23 @@
       </FormField>
     {/if}
   </div>
+
+  <FormField
+    label="Mode"
+    hint="APRS only: beacon, digipeater, iGate, and messages may transmit. Packet only: AX.25 connected-mode terminal sessions only; APRS subsystems are blocked. APRS + Packet: both, on a shared channel."
+    id="ch-mode"
+  >
+    <Select
+      id="ch-mode"
+      bind:value={form.mode}
+      aria-label="Channel mode"
+      options={[
+        { value: 'aprs', label: 'APRS only' },
+        { value: 'packet', label: 'Packet only' },
+        { value: 'aprs+packet', label: 'APRS + Packet' },
+      ]}
+    />
+  </FormField>
 
   {#if isModemType}
     <div class="form-grid-4">

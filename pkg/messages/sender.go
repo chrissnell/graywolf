@@ -91,8 +91,14 @@ type SenderConfig struct {
 	Logger      *slog.Logger
 	Clock       SenderClock
 	// TxChannel is the RF channel used for outbound submissions.
-	// Defaults to 1 (matches IGateConfig.TxChannel semantics).
+	// Defaults to 1 (matches MessagesConfig.TxChannel semantics).
 	TxChannel uint32
+	// ChannelModes refuses outbound when the resolved TX channel mode
+	// is "packet". Nil = treat every channel as APRS-permissive
+	// (preserves the legacy any-channel-does-anything behavior).
+	// Lookup errors are silently ignored (fail-open at TX time; the
+	// operator's configured channel wins on transient DB issues).
+	ChannelModes configstore.ChannelModeLookup
 	// IGatePasscode is the APRS-IS passcode; "-1" indicates read-only
 	// and disables IS transmits so the sender can short-circuit the
 	// IS fallback when the operator hasn't provisioned credentials.
@@ -243,7 +249,21 @@ func (s *Sender) Send(ctx context.Context, row *configstore.Message) SendResult 
 // sendRF attempts an RF submission. If allowFallback is true and the
 // RF path is unavailable (or the governor rejects synchronously), the
 // caller upgrades to IS; otherwise this is a single-shot RF attempt.
+//
+// Precedence: length cap (caller) -> packet-mode refusal (here) -> RF
+// availability -> governor submit. The packet-mode refusal must come
+// before the rfAvailable check because a misconfigured TxChannel is an
+// operator error that shouldn't be hidden by a transient bridge stop.
 func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailable, allowFallback bool) SendResult {
+	if s.cfg.ChannelModes != nil {
+		mode, _ := s.cfg.ChannelModes.ModeForChannel(ctx, s.txChannel.Load())
+		if mode == configstore.ChannelModePacket {
+			err := errors.New("messages: tx channel is packet-mode")
+			row.FailureReason = truncReason(err.Error())
+			_ = s.cfg.Store.Update(ctx, row)
+			return SendResult{Path: SendPathRF, Err: err, Retryable: false}
+		}
+	}
 	if !rfAvailable {
 		err := errors.New("messages: RF unavailable")
 		return s.finalizeRFFailure(ctx, row, err, allowFallback)

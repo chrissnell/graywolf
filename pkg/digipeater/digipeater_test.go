@@ -2,13 +2,23 @@ package digipeater
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 )
+
+// fakeChannelModeLookup is a test stub for configstore.ChannelModeLookup.
+type fakeChannelModeLookup struct{ modes map[uint32]string }
+
+func (f *fakeChannelModeLookup) ModeForChannel(_ context.Context, id uint32) (string, error) {
+	return f.modes[id], nil
+}
 
 func mustAddr(t *testing.T, s string) ax25.Address {
 	t.Helper()
@@ -230,5 +240,159 @@ func TestTRACEInsertsMyCall(t *testing.T) {
 	}
 	if cap.Frame.Path[1].Call != "TRACE2" || cap.Frame.Path[1].SSID != 1 {
 		t.Fatalf("trace slot not decremented: %+v", cap.Frame.Path[1])
+	}
+}
+
+// TestDigipeaterChannelModeGating verifies that Handle respects the
+// channel mode: packet-mode RX channels short-circuit before any rule
+// evaluation; aprs and aprs+packet channels proceed normally; a nil
+// ChannelModes lookup is treated as all-APRS (preserves the legacy
+// any-channel-does-anything behavior).
+func TestDigipeaterChannelModeGating(t *testing.T) {
+	t.Parallel()
+
+	rule := Rule{
+		FromChannel: 3, ToChannel: 3,
+		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
+	}
+
+	cases := []struct {
+		name       string
+		modes      map[uint32]string // nil → use nil ChannelModes
+		rxChannel  uint32
+		wantRepeat bool
+	}{
+		{
+			name:       "nil lookup permits (legacy behaviour)",
+			modes:      nil,
+			rxChannel:  3,
+			wantRepeat: true,
+		},
+		{
+			name:       "aprs mode permits",
+			modes:      map[uint32]string{3: configstore.ChannelModeAPRS},
+			rxChannel:  3,
+			wantRepeat: true,
+		},
+		{
+			name:       "aprs+packet mode permits",
+			modes:      map[uint32]string{3: configstore.ChannelModeAPRSPacket},
+			rxChannel:  3,
+			wantRepeat: true,
+		},
+		{
+			name:       "packet mode blocks",
+			modes:      map[uint32]string{3: configstore.ChannelModePacket},
+			rxChannel:  3,
+			wantRepeat: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sink := testtx.NewRecorder()
+			cfg := Config{
+				MyCall:       "N0CAL-1",
+				DedupeWindow: 500 * time.Millisecond,
+				Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Submit:       sink.Submit,
+			}
+			if tc.modes != nil {
+				cfg.ChannelModes = &fakeChannelModeLookup{modes: tc.modes}
+			}
+			d, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			d.SetEnabled(true)
+			d.SetRules([]Rule{rule})
+
+			rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "test")
+			got := d.Handle(context.Background(), tc.rxChannel, rx, ingress.Modem())
+			if got != tc.wantRepeat {
+				t.Fatalf("Handle returned %v, want %v", got, tc.wantRepeat)
+			}
+			if tc.wantRepeat && sink.Len() == 0 {
+				t.Fatal("expected TX frame but sink is empty")
+			}
+			if !tc.wantRepeat && sink.Len() != 0 {
+				t.Fatalf("expected no TX but sink has %d frames", sink.Len())
+			}
+		})
+	}
+}
+
+// TestDigipeaterSkipsRuleWhenFromChannelIsPacket is the canonical
+// single-case version for CI clarity.
+func TestDigipeaterSkipsRuleWhenFromChannelIsPacket(t *testing.T) {
+	t.Parallel()
+	modes := &fakeChannelModeLookup{modes: map[uint32]string{
+		3: configstore.ChannelModePacket,
+	}}
+	sink := testtx.NewRecorder()
+	d, err := New(Config{
+		MyCall:       "N0CAL-1",
+		DedupeWindow: 500 * time.Millisecond,
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ChannelModes: modes,
+		Submit:       sink.Submit,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.SetEnabled(true)
+	d.SetRules([]Rule{{
+		FromChannel: 3, ToChannel: 3,
+		Alias: "WIDE", AliasType: "widen", MaxHops: 1, Action: "repeat",
+	}})
+	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "test")
+	consumed := d.Handle(context.Background(), 3, rx, ingress.Modem())
+	if consumed {
+		t.Fatal("digipeater should skip rules on packet-mode channel")
+	}
+	if got := sink.Len(); got != 0 {
+		t.Fatalf("sink got %d frames, want 0", got)
+	}
+}
+
+// TestDigipeaterPerRulePacketModeToChannel verifies that a rule whose
+// ToChannel is packet-mode is skipped while other rules still match.
+func TestDigipeaterPerRulePacketModeToChannel(t *testing.T) {
+	t.Parallel()
+	// Channel 1 = aprs (rx), channel 2 = packet (tx-only rule), channel 3 = aprs (tx-ok rule).
+	modes := &fakeChannelModeLookup{modes: map[uint32]string{
+		1: configstore.ChannelModeAPRS,
+		2: configstore.ChannelModePacket,
+		3: configstore.ChannelModeAPRS,
+	}}
+	sink := testtx.NewRecorder()
+	d, err := New(Config{
+		MyCall:       "N0CAL-1",
+		DedupeWindow: 500 * time.Millisecond,
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ChannelModes: modes,
+		Submit:       sink.Submit,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.SetEnabled(true)
+	// Two rules for the same RX channel: first routes to packet-mode ch2
+	// (should be skipped), second routes to aprs ch3 (should match).
+	d.SetRules([]Rule{
+		{FromChannel: 1, ToChannel: 2, Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat"},
+		{FromChannel: 1, ToChannel: 3, Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat"},
+	})
+	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "test")
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
+		t.Fatal("expected rule to ch3 to fire")
+	}
+	if sink.Len() == 0 {
+		t.Fatal("no TX frame captured")
+	}
+	if ch := sink.Last().Channel; ch != 3 {
+		t.Fatalf("TX channel = %d, want 3", ch)
 	}
 }

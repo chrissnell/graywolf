@@ -75,6 +75,7 @@ type Channel struct {
 	IL2PEncode     bool         `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
 	NumDecoders    uint32       `gorm:"not null;default:1" json:"num_decoders"`
 	DecoderOffset  int32        `gorm:"not null;default:0" json:"decoder_offset"`
+	Mode           string       `gorm:"not null;default:'aprs'" json:"mode"` // aprs|packet|aprs+packet
 	CreatedAt      time.Time    `json:"-"`
 	UpdatedAt      time.Time    `json:"-"`
 }
@@ -194,6 +195,25 @@ const (
 	KissTypeBluetooth = "bluetooth"
 )
 
+// Channel.Mode values. Default is ChannelModeAPRS to preserve current
+// behavior on databases that pre-date the column.
+const (
+	ChannelModeAPRS       = "aprs"        // APRS only — connected-mode AX.25 refuses this channel
+	ChannelModePacket     = "packet"      // Packet only — beacon/digi/igate/messages all suppressed for this channel
+	ChannelModeAPRSPacket = "aprs+packet" // Permissive — both allowed
+)
+
+// ValidChannelMode reports whether m is an accepted Channel.Mode value.
+// Empty string is rejected; callers wanting the default must substitute
+// ChannelModeAPRS first.
+func ValidChannelMode(m string) bool {
+	switch m {
+	case ChannelModeAPRS, ChannelModePacket, ChannelModeAPRSPacket:
+		return true
+	}
+	return false
+}
+
 // ValidKissInterfaceType reports whether t is an accepted
 // KissInterface.InterfaceType value. "tcp-client" was added in Phase 4
 // of the KISS TCP-client + channel-backing plan.
@@ -296,6 +316,12 @@ type IGateConfig struct {
 	MaxMsgHops      uint32    `gorm:"not null;default:2" json:"max_msg_hops"`           // WIDE hops for IS->RF messages
 	SoftwareName    string    `gorm:"not null;default:'graywolf'" json:"software_name"` // APRS-IS login banner software name
 	SoftwareVersion string    `gorm:"not null;default:'0.1'" json:"software_version"`   // APRS-IS login banner version
+	// TxChannel governs IS->RF on this iGate. The messages-tx channel
+	// moved to MessagesConfig.TxChannel; this column stays because
+	// migration 13 (`messages_config_singleton`) reads it once on first
+	// run to seed MessagesConfig. Do not remove without first deleting
+	// that migration -- operators upgrading from older builds will
+	// silently lose their messages TX channel otherwise.
 	TxChannel       uint32    `gorm:"not null;default:1" json:"tx_channel"`             // radio channel for IS->RF submissions
 	CreatedAt       time.Time `json:"-"`
 	UpdatedAt       time.Time `json:"-"`
@@ -314,6 +340,94 @@ type IGateRfFilter struct {
 	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
+}
+
+// MessagesConfig is a singleton (id=1) row that owns messaging-specific
+// settings. TxChannel moved here from IGateConfig; iGate retains its own
+// TxChannel which now governs IS->RF only.
+type MessagesConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	TxChannel uint32    `gorm:"not null;default:0" json:"tx_channel"` // 0 = auto-resolve at runtime
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// AX25TerminalConfig is a singleton (id=1) row holding terminal-route
+// UI preferences and operator-defined macros. See plan §3c.1 for the
+// fields and how the bridge consumes them.
+type AX25TerminalConfig struct {
+	ID             uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	ScrollbackRows uint32    `gorm:"not null;default:1000" json:"scrollback_rows"`
+	CursorBlink    bool      `gorm:"not null;default:false" json:"cursor_blink"`
+	DefaultModulo  uint32    `gorm:"not null;default:8" json:"default_modulo"`
+	DefaultPaclen  uint32    `gorm:"not null;default:256" json:"default_paclen"`
+	// MacrosJSON stores `[{"label": "...", "payload": "<base64>"}]`. Kept
+	// as a JSON-text column so the schema does not have to evolve as the
+	// macro shape grows; the REST DTO marshals to a typed array.
+	MacrosJSON    string    `gorm:"type:text;not null;default:'[]'" json:"-"`
+	RawTailFilter string    `gorm:"not null;default:''" json:"raw_tail_filter"`
+	CreatedAt     time.Time `json:"-"`
+	UpdatedAt     time.Time `json:"-"`
+}
+
+// AX25SessionProfile is a saved BBS shortcut. Operators can pin recents
+// and the terminal UI surfaces both pinned and recent profiles in the
+// pre-connect form. See plan §3d.
+type AX25SessionProfile struct {
+	ID        uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name      string `gorm:"not null;default:''" json:"name"`
+	LocalCall string `gorm:"not null" json:"local_call"`
+	LocalSSID uint8  `gorm:"column:local_ssid;not null;default:0" json:"local_ssid"`
+	DestCall  string `gorm:"not null" json:"dest_call"`
+	DestSSID  uint8  `gorm:"column:dest_ssid;not null;default:0" json:"dest_ssid"`
+	// ViaPath is a comma-separated digipeater list ("WIDE2-1,RELAY") so
+	// the column stays a single text column without a join table.
+	ViaPath   string  `gorm:"not null;default:''" json:"via_path"`
+	Mod128    bool    `gorm:"not null;default:false" json:"mod128"`
+	Paclen    uint32  `gorm:"not null;default:0" json:"paclen"`
+	Maxframe  uint32  `gorm:"not null;default:0" json:"maxframe"`
+	T1MS      uint32  `gorm:"not null;default:0" json:"t1_ms"`
+	T2MS      uint32  `gorm:"not null;default:0" json:"t2_ms"`
+	T3MS      uint32  `gorm:"not null;default:0" json:"t3_ms"`
+	N2        uint32  `gorm:"not null;default:0" json:"n2"`
+	ChannelID *uint32 `gorm:"" json:"channel_id,omitempty"`
+	// Pinned distinguishes operator-saved profiles from automatic recents.
+	// A pinned profile survives the recent-list trim that caps unpinned
+	// rows at 20.
+	Pinned bool `gorm:"not null;default:false;index" json:"pinned"`
+	// LastUsed is updated whenever a profile is bound to a session that
+	// reached CONNECTED. NULL until the first successful connection.
+	LastUsed  *time.Time `gorm:"index" json:"last_used,omitempty"`
+	CreatedAt time.Time  `json:"-"`
+	UpdatedAt time.Time  `json:"-"`
+}
+
+// AX25TranscriptSession is a single recorded link, populated when the
+// operator toggles transcript on for that session. See plan §3e.
+type AX25TranscriptSession struct {
+	ID         uint32     `gorm:"primaryKey;autoIncrement" json:"id"`
+	ChannelID  uint32     `gorm:"not null;index" json:"channel_id"`
+	PeerCall   string     `gorm:"not null;index" json:"peer_call"`
+	PeerSSID   uint8      `gorm:"column:peer_ssid;not null;default:0" json:"peer_ssid"`
+	ViaPath    string     `gorm:"not null;default:''" json:"via_path"`
+	StartedAt  time.Time  `gorm:"not null;index" json:"started_at"`
+	EndedAt    *time.Time `gorm:"" json:"ended_at,omitempty"`
+	EndReason  string     `gorm:"not null;default:''" json:"end_reason"`
+	ByteCount  uint64     `gorm:"not null;default:0" json:"byte_count"`
+	FrameCount uint64     `gorm:"not null;default:0" json:"frame_count"`
+	CreatedAt  time.Time  `json:"-"`
+	UpdatedAt  time.Time  `json:"-"`
+}
+
+// AX25TranscriptEntry is one line in a transcript: a single observed
+// data block or a link-state event timestamp.
+type AX25TranscriptEntry struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID uint32    `gorm:"not null;index" json:"session_id"`
+	TS        time.Time `gorm:"not null;index" json:"ts"`
+	Direction string    `gorm:"not null" json:"direction"` // rx|tx
+	Kind      string    `gorm:"not null" json:"kind"`      // data|event
+	Payload   []byte    `gorm:"" json:"payload,omitempty"`
 }
 
 // StationConfig is a singleton (id=1) row holding the station-wide

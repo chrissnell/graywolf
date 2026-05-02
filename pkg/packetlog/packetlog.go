@@ -70,6 +70,12 @@ type Log struct {
 	head    int     // next write index
 	size    int     // number of valid entries (<= cap)
 	nextID  uint64  // monotonic id (unused externally; kept for future pagination)
+
+	// Subscribe fanout state. subMu guards the map and the per-subscriber
+	// channels. Held inside Record after the ring write, so Record stays
+	// O(num-subscribers).
+	subMu sync.Mutex
+	subs  map[*subscriber]struct{}
 }
 
 // New builds an empty Log.
@@ -102,6 +108,10 @@ func (l *Log) Record(e Entry) {
 	}
 	l.nextID++
 	l.gcLocked(e.Timestamp)
+	// Fan out under the ring lock so a slow subscriber can never see
+	// out-of-order entries (records publish in the same order they hit
+	// the ring). The fanout itself is non-blocking; see subscribe.go.
+	l.fanout(e)
 }
 
 // gcLocked drops entries older than maxAge. Callers hold l.mu.

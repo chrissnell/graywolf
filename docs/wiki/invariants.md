@@ -168,3 +168,48 @@ Source: `pkg/diagcollect/Collect` calls `redact.ScrubFlare` before returning; th
 *Why:* Anything that leaves the host across the network must pass through human eyes. `--dry-run` and `--out` print the same scrubbed payload, but only `--dry-run` skips the network -- and both still run the scrub.
 
 Source: `cmd/graywolf/flare.go`'s control flow: the network `client.Submit` call is unreachable except through `runReviewLoop` returning `OutcomeSubmit`.
+
+### 23. Channel mode gates TX, not RX
+
+When a channel's `Mode` is `packet`, the beacon scheduler, digipeater engine, iGate IS→RF gate, APRS messages sender, and `ax25conn.Manager.Open` (connected-mode session bring-up) all skip, refuse, or down-shift when asked to transmit on that channel. Conversely, `ax25conn.Manager.Open` rejects channels in `aprs`-only mode. RX is unchanged: frames keep demodulating and fan out via the existing fanout; subscribers self-filter.
+
+The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns an error or `nil`, callers behave as if the channel were `aprs` (preserves the legacy any-channel-does-anything behavior). The IS→RF runtime gate also fails open -- a transient DB error does not silently suppress beaconing or gating.
+
+*Why:* Operators may want to dedicate a channel to AX.25 connected-mode without it accidentally absorbing APRS beacons, digipeated packets, IS→RF traffic, or outbound APRS messages. The `aprs+packet` value preserves the legacy "any channel does anything" behavior for setups that don't care about the split.
+
+Source: [`../../pkg/configstore/channel_mode_lookup.go`](../../pkg/configstore/channel_mode_lookup.go),
+[`../../pkg/configstore/models.go`](../../pkg/configstore/models.go)
+(`Channel.Mode` field comments).
+
+### 24. AX.25 `link_stats` is emitted only while CONNECTED, 1Hz, never blocking
+
+The `pkg/ax25conn` session goroutine arms a 1-second `tStats` timer on
+the transition into `StateConnected` and stops it on every transition
+out. Each tick refreshes `LinkStats` from the live session vars
+(V(S)/V(R)/V(A), N2 retry count, busy flags, RTT EWMA) under the stats
+mutex and emits one `OutLinkStats` event through the observer. The
+bridge translates that to the `link_stats` envelope feeding the
+TelemetryPanel.
+
+The contract:
+
+1. **Cadence is exactly 1Hz while CONNECTED.** No tick fires in
+   DISCONNECTED, AWAITING_CONNECTION, AWAITING_RELEASE, or
+   TIMER_RECOVERY -- only `setState(StateConnected)` arms the timer.
+2. **Re-entry is harmless.** `setState` stops the timer on leaving
+   CONNECTED before re-arming on the next entry, so a CONNECTED ->
+   TIMER_RECOVERY -> CONNECTED bounce produces a single armed timer.
+3. **Emit is non-blocking.** The observer call hits the same pump
+   goroutine as every other `OutEvent`, and the pump non-blocking-sends
+   to the WebSocket out-channel. A jammed browser never back-pressures
+   the LAPB session goroutine.
+
+*Why:* The telemetry panel must show useful RTT/sequence data without
+ever stalling the LAPB timers. Tying the tick to a state-machine
+event-bit (`pendStats`) instead of an external `time.Ticker` keeps the
+session loop authoritative -- timer expiry races and CPU contention
+can't spawn ghost ticks while the link is down.
+
+Source: [`../../pkg/ax25conn/session.go`](../../pkg/ax25conn/session.go)
+(`statsTick`, `setState`),
+[`../../pkg/ax25conn/stats_tick_test.go`](../../pkg/ax25conn/stats_tick_test.go).

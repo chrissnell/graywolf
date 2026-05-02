@@ -85,6 +85,14 @@ type Config struct {
 	// OnDedup is an optional hook invoked when a frame is dropped as a
 	// duplicate within the dedup window.
 	OnDedup func()
+
+	// ChannelModes resolves Channel.Mode at RX time. Rules whose RX
+	// channel is "packet" cause Handle to short-circuit; rules whose
+	// ToChannel is "packet" are skipped per-rule. Nil = treat every
+	// channel as ChannelModeAPRS (preserves the legacy any-channel-
+	// does-anything behavior). Lookup errors are silently ignored
+	// (fail-open).
+	ChannelModes configstore.ChannelModeLookup
 }
 
 // Stats exposes counters.
@@ -103,6 +111,8 @@ type Digipeater struct {
 	logger  *slog.Logger
 	onPkt   func(note string, fromChan, toChan uint32, f *ax25.Frame)
 	onDedup func()
+
+	channelModes configstore.ChannelModeLookup
 
 	dedup *dedup.Window[string, struct{}]
 	stats Stats
@@ -141,14 +151,15 @@ func New(cfg Config) (*Digipeater, error) {
 		// has been populated with rules / mycall / window from config.
 		// This avoids a brief window where a freshly-constructed engine
 		// could accept frames with empty rules and no callsign.
-		enabled: false,
-		mycall:  myaddr,
-		rules:   append([]Rule(nil), cfg.Rules...),
-		submit:  cfg.Submit,
-		logger:  cfg.Logger.With("component", "digipeater"),
-		onPkt:   cfg.OnPacket,
-		onDedup: cfg.OnDedup,
-		dedup:   dedup.New[string, struct{}](dedup.Config{TTL: cfg.DedupeWindow}),
+		enabled:      false,
+		mycall:       myaddr,
+		rules:        append([]Rule(nil), cfg.Rules...),
+		submit:       cfg.Submit,
+		logger:       cfg.Logger.With("component", "digipeater"),
+		onPkt:        cfg.OnPacket,
+		onDedup:      cfg.OnDedup,
+		channelModes: cfg.ChannelModes,
+		dedup:        dedup.New[string, struct{}](dedup.Config{TTL: cfg.DedupeWindow}),
 	}, nil
 }
 
@@ -222,6 +233,15 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 	if frame == nil || !frame.IsUI() {
 		return false
 	}
+	// Short-circuit the entire rule pipeline when the RX channel is
+	// packet-mode. channelModes is set once in New() and is safe to
+	// read without a lock.
+	if d.channelModes != nil {
+		mode, _ := d.channelModes.ModeForChannel(ctx, rxChannel)
+		if mode == configstore.ChannelModePacket {
+			return false
+		}
+	}
 	d.mu.Lock()
 	if !d.enabled {
 		d.mu.Unlock()
@@ -290,16 +310,24 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 				}
 			}
 			// ToChannel defaults to rxChannel for preemptive digi
-			// unless a matching exact rule redirects.
+			// unless a matching exact rule redirects. Skip redirect
+			// targets that are packet-mode.
 			toCh := rxChannel
 			for _, r := range rules {
 				if r.FromChannel != rxChannel || r.AliasType != "exact" {
 					continue
 				}
-				if ruleMatchesCall(r, mycall) {
-					toCh = r.ToChannel
-					break
+				if !ruleMatchesCall(r, mycall) {
+					continue
 				}
+				if d.channelModes != nil && r.ToChannel != rxChannel {
+					mode, _ := d.channelModes.ModeForChannel(ctx, r.ToChannel)
+					if mode == configstore.ChannelModePacket {
+						continue
+					}
+				}
+				toCh = r.ToChannel
+				break
 			}
 			return d.submitClone(ctx, rxChannel, toCh, clone, "preemptive "+mycall.String())
 		}
@@ -315,6 +343,14 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 		}
 		if !ruleMatches(r, slotAddr) {
 			continue
+		}
+		// Skip rules whose ToChannel is packet-mode; another rule may
+		// still match on an APRS-capable channel.
+		if d.channelModes != nil && r.ToChannel != rxChannel {
+			mode, _ := d.channelModes.ModeForChannel(ctx, r.ToChannel)
+			if mode == configstore.ChannelModePacket {
+				continue
+			}
 		}
 		matched = &r
 		break

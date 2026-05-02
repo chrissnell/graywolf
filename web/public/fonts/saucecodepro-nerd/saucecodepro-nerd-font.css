@@ -1,0 +1,46 @@
+/*
+ * SauceCodePro Nerd Font face declarations.
+ *
+ * STATUS: stub. The real woff2 subsets (regular/bold x latin/latin-ext/nerd)
+ * have not been vendored yet; see VERSION.txt in this directory for the
+ * planned upstream pin (Nerd Fonts v3.4.0). Until those files land the
+ * @font-face rules below resolve to system monospace via local() fallbacks,
+ * which is good enough for xterm cell metrics and ASCII rendering. PUA
+ * Nerd Font glyphs (icons in the status strip / macros) will not render
+ * until real woff2 files are dropped in next to this CSS and the
+ * src: chain is updated to start with their url(...) entries.
+ *
+ * font-display: block is intentional: xterm
+ * measures its cell box at Terminal() construction; a fallback-then-swap
+ * causes glyph misalignment and clipped Nerd Font icons. block enforces
+ * a 3-second blocking period -- appropriate here because fallback
+ * metrics are *worse* than a brief blank for a terminal UI.
+ */
+
+@font-face {
+  font-family: 'SauceCodeProNF';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: local('SauceCodePro Nerd Font'),
+       local('SauceCodeProNF'),
+       local('Source Code Pro'),
+       local('Menlo'),
+       local('Consolas'),
+       local('DejaVu Sans Mono'),
+       local('monospace');
+}
+
+@font-face {
+  font-family: 'SauceCodeProNF';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: local('SauceCodePro Nerd Font Bold'),
+       local('SauceCodeProNF Bold'),
+       local('Source Code Pro Bold'),
+       local('Menlo Bold'),
+       local('Consolas Bold'),
+       local('DejaVu Sans Mono Bold'),
+       local('monospace');
+}

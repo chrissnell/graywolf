@@ -63,6 +63,10 @@ type ServiceConfig struct {
 	// AutoAckChannel overrides the router's auto-ACK channel. Zero
 	// falls back to TxChannel.
 	AutoAckChannel uint32
+	// ChannelModes is forwarded to the Sender to refuse outbound when
+	// the TX channel is packet-mode. Nil disables the check (legacy
+	// any-channel-does-anything behavior).
+	ChannelModes configstore.ChannelModeLookup
 	// LocalTxRing / TacticalSet / EventHub can be injected for tests
 	// that need to observe them; if nil the Service constructs its
 	// own defaults.
@@ -167,6 +171,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		Clock:         clock,
 		TxChannel:     txCh,
 		IGatePasscode: cfg.IGatePasscode,
+		ChannelModes:  cfg.ChannelModes,
 	})
 	if err != nil {
 		return nil, err

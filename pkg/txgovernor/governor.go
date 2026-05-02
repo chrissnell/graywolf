@@ -36,6 +36,7 @@ const (
 	PriorityBeacon     = ax25.PriorityBeacon
 	PriorityDigipeated = ax25.PriorityDigipeated
 	PriorityClient     = ax25.PriorityClient // KISS/AGW client-originated
+	PriorityAX25Conn   = ax25.PriorityAX25Conn
 	PriorityIGateMsg   = ax25.PriorityIGateMsg
 )
 

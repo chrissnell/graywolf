@@ -237,6 +237,29 @@ func TestComputeChannelBacking_ModemLive(t *testing.T) {
 	}
 }
 
+// TestPutChannelAcceptsMode posts a channel with mode="packet" and asserts
+// the response round-trips the field unchanged.
+func TestPutChannelAcceptsMode(t *testing.T) {
+	t.Parallel()
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	body := `{"name":"hf","mode":"packet","modem_type":"afsk","bit_rate":1200,"mark_freq":1200,"space_freq":2200,"profile":"A","num_slicers":1,"fix_bits":"none","input_device_id":1}`
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/channels", strings.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got dto.ChannelResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != "packet" {
+		t.Fatalf("Mode=%q, want packet", got.Mode)
+	}
+}
+
 func TestChannelsDelete_RemovesRow(t *testing.T) {
 	srv, _ := newTestServer(t)
 	mux := http.NewServeMux()

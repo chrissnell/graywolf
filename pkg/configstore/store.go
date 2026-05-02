@@ -162,6 +162,11 @@ func (s *Store) Migrate() error {
 		&MapsConfig{},
 		&MapsDownload{},
 		&LogBufferConfig{},
+		&MessagesConfig{},
+		&AX25TerminalConfig{},
+		&AX25SessionProfile{},
+		&AX25TranscriptSession{},
+		&AX25TranscriptEntry{},
 	); err != nil {
 		_ = s.db.Exec("PRAGMA foreign_keys = ON").Error
 		return err
@@ -796,7 +801,18 @@ func (s *Store) DeletePttConfig(ctx context.Context, channelID uint32) error {
 // channel — every frame would double-transmit. Forbidden by design;
 // this validator walks the kiss_interfaces table and rejects the edit
 // with a clear error naming both rows when the combination is detected.
+//
+// An empty Mode is normalized in place to ChannelModeAPRS before
+// validation, so callers can omit the field on legacy code paths and
+// still get a valid persisted row.
 func (s *Store) validateChannel(ctx context.Context, c *Channel, excludeID uint32) error {
+	if c.Mode == "" {
+		c.Mode = ChannelModeAPRS
+	}
+	if !ValidChannelMode(c.Mode) {
+		return fmt.Errorf("channels: invalid mode %q (want aprs|packet|aprs+packet)", c.Mode)
+	}
+
 	// Validate input device when bound. A nil InputDeviceID means
 	// "KISS-only channel" — the modem subprocess is never told about
 	// this channel, so there is no audio device to validate.

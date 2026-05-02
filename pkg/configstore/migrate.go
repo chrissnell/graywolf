@@ -117,6 +117,21 @@ type migration struct {
 //	    these columns, so we re-add them here; on legacy installs they
 //	    already exist and the ADD COLUMN is guarded by a pragma probe.
 //	    See .context/2026-04-21-centralized-station-callsign.md §D4.
+//	12 — channels_mode: add the channels.mode column (default 'aprs')
+//	    so per-channel TX gating (beacon/digi/igate/messages) can route
+//	    on the new enum without breaking pre-existing databases. Runs in
+//	    the post-AutoMigrate stage so AutoMigrate has already created
+//	    (or verified) the channels table; on fresh installs AutoMigrate
+//	    adds the column from the Go struct and this migration is a
+//	    no-op via the columnExists guard.
+//	13 — messages_config_singleton: create messages_configs (id=1) and
+//	    seed TxChannel from the legacy IGateConfig.TxChannel value once.
+//	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §0.8.
+//	14 — ax25_terminal_tables: AutoMigrate creates the four ax25-terminal
+//	    tables (config, profiles, transcript sessions, transcript entries)
+//	    from the Go structs; this migration seeds the AX25TerminalConfig
+//	    singleton (id=1) so the REST GET handler always finds a row.
+//	    See docs/superpowers/plans/2026-05-01-ax25-terminal.md §3c.1.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -129,6 +144,9 @@ var schemaMigrations = []migration{
 	{version: 9, name: "kiss_interfaces_tx_flags", phase: preAutoMigrate, run: migrateKissInterfacesTxFlags},
 	{version: 10, name: "kiss_interfaces_tcp_client_fields", phase: preAutoMigrate, run: migrateKissInterfacesTcpClientFields},
 	{version: 11, name: "igate_config_retain_callsign_passcode", phase: postAutoMigrate, run: migrateIGateConfigRetainCallsignPasscode},
+	{version: 12, name: "channels_mode", phase: postAutoMigrate, run: migrateChannelsMode},
+	{version: 13, name: "messages_config_singleton", phase: postAutoMigrate, run: migrateMessagesConfigCopyFromIgate},
+	{version: 14, name: "ax25_terminal_tables", phase: postAutoMigrate, run: migrateAX25TerminalTables},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -666,6 +684,33 @@ func channelsTableColumns(db *gorm.DB, table string) ([]string, error) {
 		names = append(names, name)
 	}
 	return names, rows.Err()
+}
+
+// columnExists reports whether the named column exists in table using
+// PRAGMA table_info. The table name is a Go-source literal, not user
+// input, so fmt.Sprintf is safe here.
+func columnExists(tx *gorm.DB, table, col string) (bool, error) {
+	rows, err := tx.Raw(fmt.Sprintf(`PRAGMA table_info(%s)`, table)).Rows()
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == col {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func containsString(xs []string, target string) bool {

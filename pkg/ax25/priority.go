@@ -14,5 +14,6 @@ const (
 	PriorityBeacon     = 1 // scheduled beacons
 	PriorityDigipeated = 2 // digipeater-repeated traffic
 	PriorityClient     = 3 // KISS/AGW client-originated
-	PriorityIGateMsg   = 4 // iGate-delivered directed message
+	PriorityAX25Conn   = 4 // interactive AX.25 connected-mode (LAPB)
+	PriorityIGateMsg   = 5 // iGate-delivered directed message
 )
