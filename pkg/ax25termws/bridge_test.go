@@ -202,6 +202,46 @@ func TestBridge_ObserveStateChange(t *testing.T) {
 	}
 }
 
+func TestBridge_OnFirstConnectedFiresOnceWithConnectArgs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Envelope, 4)
+	mgr := ax25conn.NewManager(ax25conn.ManagerConfig{TxSink: nopSink{}, Logger: quietLogger()})
+	t.Cleanup(mgr.Close)
+	calls := make(chan ConnectArgs, 4)
+	b := New(BridgeConfig{
+		Manager:  mgr,
+		Logger:   quietLogger(),
+		Operator: "op1",
+		Ctx:      ctx,
+		Out:      out,
+		OnFirstConnected: func(args ConnectArgs) {
+			calls <- args
+		},
+	})
+	if err := b.Handle(ctx, Envelope{Kind: KindConnect, Connect: validConnect()}); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	// Two CONNECTED transitions back-to-back: callback must fire only
+	// for the first one.
+	b.observe(ax25conn.OutEvent{Kind: ax25conn.OutStateChange, State: ax25conn.StateConnected})
+	b.observe(ax25conn.OutEvent{Kind: ax25conn.OutStateChange, State: ax25conn.StateConnected})
+
+	select {
+	case got := <-calls:
+		if got.DestCall != "BBS" || got.LocalCall != "ke7xyz" {
+			t.Fatalf("connect args drifted: %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("OnFirstConnected never fired")
+	}
+	select {
+	case got := <-calls:
+		t.Fatalf("OnFirstConnected fired twice: %+v", got)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
 // observe is supposed to be non-blocking on every kind so the session
 // goroutine never stalls waiting on the WebSocket.
 func TestBridge_ObserveNeverBlocksOnDataRX(t *testing.T) {

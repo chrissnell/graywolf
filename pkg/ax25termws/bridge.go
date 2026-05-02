@@ -30,6 +30,12 @@ type BridgeConfig struct {
 	// the WebSocket handler drains it. The pump goroutine is the
 	// sole sender on this channel.
 	Out chan<- Envelope
+	// OnFirstConnected, if set, is invoked once per session the first
+	// time the link reaches CONNECTED. Wiring uses it to upsert a
+	// recent profile so the pre-connect form's recents list reflects
+	// the new connection. The callback runs on a fresh goroutine so
+	// it cannot stall the session loop.
+	OnFirstConnected func(args ConnectArgs)
 }
 
 // inboxSize bounds the observer-to-pump queue. The session goroutine
@@ -65,6 +71,14 @@ type Bridge struct {
 	inbox    chan ax25conn.OutEvent
 	pumpDone chan struct{}
 	closed   bool
+
+	// connect holds the args used for the most recent KindConnect, so
+	// OnFirstConnected can upsert a recent profile keyed by them.
+	connect ConnectArgs
+	// firedConnected guards OnFirstConnected against re-entry on
+	// repeated CONNECTED transitions (e.g. CONNECTED -> TIMER_RECOVERY
+	// -> CONNECTED).
+	firedConnected bool
 }
 
 // New constructs a Bridge and starts its pump goroutine. The session
@@ -217,6 +231,8 @@ func (b *Bridge) handleConnect(c *ConnectArgs) error {
 	}
 	b.session = sess
 	b.id = id
+	b.connect = *c
+	b.firedConnected = false
 	sess.Submit(ax25conn.Event{Kind: ax25conn.EventConnect})
 	return nil
 }
@@ -277,6 +293,7 @@ func (b *Bridge) pump() {
 		case <-b.ctx.Done():
 			return
 		case ev := <-b.inbox:
+			b.maybeFireConnected(ev)
 			env, ok := translateOutEvent(ev)
 			if !ok {
 				continue
@@ -288,6 +305,23 @@ func (b *Bridge) pump() {
 			}
 		}
 	}
+}
+
+// maybeFireConnected dispatches the OnFirstConnected callback once per
+// session the first time the link reaches CONNECTED. Runs on the pump
+// goroutine; spawns a side goroutine so a slow recorder cannot block
+// envelope delivery to the WebSocket.
+func (b *Bridge) maybeFireConnected(ev ax25conn.OutEvent) {
+	if b.firedConnected || b.cfg.OnFirstConnected == nil {
+		return
+	}
+	if ev.Kind != ax25conn.OutStateChange || ev.State != ax25conn.StateConnected {
+		return
+	}
+	b.firedConnected = true
+	args := b.connect
+	cb := b.cfg.OnFirstConnected
+	go cb(args)
 }
 
 // translateOutEvent maps a session OutEvent to its wire envelope.

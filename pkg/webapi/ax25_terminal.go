@@ -5,14 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 
 	"github.com/chrissnell/graywolf/pkg/ax25termws"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/webauth"
 	"github.com/chrissnell/graywolf/pkg/webtypes"
 )
+
+// maxRecentAX25Profiles caps the unpinned recents list. Pinned
+// profiles survive the trim. Plan §3d.2.
+const maxRecentAX25Profiles = 20
 
 const (
 	// terminalPingInterval is the keepalive ping cadence. Must be
@@ -77,11 +83,12 @@ func (s *Server) handleAX25Terminal(w http.ResponseWriter, r *http.Request) {
 
 	out := make(chan ax25termws.Envelope, terminalOutBuf)
 	bridge := ax25termws.New(ax25termws.BridgeConfig{
-		Manager:  s.ax25Mgr,
-		Logger:   s.logger.With("component", "ax25termws", "user", user.Username),
-		Operator: user.Username,
-		Ctx:      ctx,
-		Out:      out,
+		Manager:          s.ax25Mgr,
+		Logger:           s.logger.With("component", "ax25termws", "user", user.Username),
+		Operator:         user.Username,
+		Ctx:              ctx,
+		Out:              out,
+		OnFirstConnected: s.recordRecentAX25Connection,
 	})
 
 	// Writer + ping live in the same goroutine so we never have two
@@ -171,6 +178,49 @@ func (s *Server) runTerminalWriter(ctx context.Context, c *websocket.Conn, out <
 			}
 		}
 	}
+}
+
+// recordRecentAX25Connection upserts a recent AX25SessionProfile after
+// a WebSocket bridge first reaches CONNECTED. Failures are logged and
+// swallowed: a bookkeeping miss on the recents list is never worth
+// killing a healthy LAPB session over. Plan §3d.2.
+func (s *Server) recordRecentAX25Connection(args ax25termws.ConnectArgs) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	via := strings.Join(args.Via, ",")
+	var channelID *uint32
+	if args.ChannelID != 0 {
+		v := args.ChannelID
+		channelID = &v
+	}
+	row := configstore.AX25SessionProfile{
+		LocalCall: strings.ToUpper(strings.TrimSpace(args.LocalCall)),
+		LocalSSID: args.LocalSSID,
+		DestCall:  strings.ToUpper(strings.TrimSpace(args.DestCall)),
+		DestSSID:  args.DestSSID,
+		ViaPath:   via,
+		Mod128:    args.Mod128,
+		Paclen:    uint32Of(args.Paclen),
+		Maxframe:  uint32Of(args.Maxframe),
+		T1MS:      uint32Of(args.T1MS),
+		T2MS:      uint32Of(args.T2MS),
+		T3MS:      uint32Of(args.T3MS),
+		N2:        uint32Of(args.N2),
+		ChannelID: channelID,
+	}
+	if err := s.store.UpsertRecentAX25SessionProfile(ctx, &row, maxRecentAX25Profiles); err != nil {
+		s.logger.Warn("ax25 recents: upsert failed",
+			"err", err,
+			"peer", row.DestCall, "ssid", row.DestSSID,
+		)
+	}
+}
+
+func uint32Of(n int) uint32 {
+	if n <= 0 {
+		return 0
+	}
+	return uint32(n)
 }
 
 // isExpectedClose reports whether err signals a clean WebSocket

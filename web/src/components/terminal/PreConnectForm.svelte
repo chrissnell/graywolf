@@ -1,9 +1,17 @@
 <script>
-  import { Button, Input, Select, Collapsible, Box, EmptyState } from '@chrissnell/chonky-ui';
+  import { onMount } from 'svelte';
+  import { Button, Input, Select, Collapsible, Box, EmptyState, Icon } from '@chrissnell/chonky-ui';
   import { channelsStore } from '../../lib/stores/channels.svelte.js';
   import { terminalSessions } from '../../lib/terminal/sessions.svelte.js';
+  import { profilesStore, profileLabel } from '../../lib/terminal/profiles.svelte.js';
 
   let { onSubmit } = $props();
+
+  onMount(() => {
+    if (!profilesStore.loaded && !profilesStore.loading) {
+      profilesStore.load();
+    }
+  });
 
   // Channel selector. Phase-2 ships only the connected-mode capable
   // modes (packet, aprs+packet); APRS-only channels are filtered out
@@ -86,6 +94,42 @@
       .filter((s) => s.length > 0);
   }
 
+  function applyProfile(p) {
+    if (!p) return;
+    if (p.channel_id) channelId = String(p.channel_id);
+    localCall = p.local_call ?? '';
+    localSSID = p.local_ssid ?? 0;
+    destCall = p.dest_call ?? '';
+    destSSID = p.dest_ssid ?? 0;
+    viaPath = p.via_path ?? '';
+    mod128 = !!p.mod128;
+    paclen = p.paclen ?? 0;
+    maxframe = p.maxframe ?? 0;
+    n2 = p.n2 ?? 0;
+    t1ms = p.t1_ms ?? 0;
+    t2ms = p.t2_ms ?? 0;
+    t3ms = p.t3_ms ?? 0;
+    // Trigger validation to clear any prior errors.
+    onLocalCallBlur();
+    onDestCallBlur();
+  }
+
+  async function togglePin(p) {
+    try {
+      await profilesStore.setPinned(p.id, !p.pinned);
+    } catch (err) {
+      formError = String(err.message ?? err);
+    }
+  }
+
+  async function removeProfile(p) {
+    try {
+      await profilesStore.remove(p.id);
+    } catch (err) {
+      formError = String(err.message ?? err);
+    }
+  }
+
   function handleSubmit(e) {
     e?.preventDefault?.();
     formError = '';
@@ -131,10 +175,54 @@
     description="Connect to a remote BBS or KISS-aware station over the radio."
   />
 
-  <div class="recents-stub" aria-disabled="true">
-    <strong>Recents</strong>
-    <p>Recent connections will appear here once Phase 3 ships.</p>
-    <a href="#/terminal/transcripts">Browse saved transcripts</a>
+  <div class="profile-lists">
+    {#if profilesStore.pinned.length > 0}
+      <div class="profile-group">
+        <strong>Pinned</strong>
+        <ul>
+          {#each profilesStore.pinned as p (p.id)}
+            <li>
+              <button type="button" class="profile-link" onclick={() => applyProfile(p)} aria-label={`Use profile ${profileLabel(p)}`}>
+                {profileLabel(p)}
+              </button>
+              <Button size="sm" variant="ghost" onclick={() => togglePin(p)} aria-label="Unpin profile">
+                <Icon name="pin-off" size="sm" />
+              </Button>
+              <Button size="sm" variant="ghost" onclick={() => removeProfile(p)} aria-label="Remove profile">
+                <Icon name="trash" size="sm" />
+              </Button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+    {#if profilesStore.recents.length > 0}
+      <div class="profile-group">
+        <strong>Recents</strong>
+        <ul>
+          {#each profilesStore.recents as p (p.id)}
+            <li>
+              <button type="button" class="profile-link" onclick={() => applyProfile(p)} aria-label={`Use profile ${profileLabel(p)}`}>
+                {profileLabel(p)}
+              </button>
+              <Button size="sm" variant="ghost" onclick={() => togglePin(p)} aria-label="Pin profile">
+                <Icon name="pin" size="sm" />
+              </Button>
+              <Button size="sm" variant="ghost" onclick={() => removeProfile(p)} aria-label="Remove recent">
+                <Icon name="x" size="sm" />
+              </Button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+    {#if profilesStore.loaded && profilesStore.profiles.length === 0}
+      <p class="empty">
+        No saved or recent connections yet. Successful connects appear here automatically;
+        pin one to save it permanently.
+      </p>
+    {/if}
+    <a class="transcripts-link" href="#/terminal/transcripts">Browse saved transcripts</a>
   </div>
 
   <Box>
@@ -253,15 +341,51 @@
     gap: 12px;
     max-width: 720px;
   }
-  .recents-stub {
-    border: 1px dashed var(--color-border, #ddd);
-    padding: 10px 14px;
-    border-radius: 4px;
-    color: var(--color-text-muted, #666);
-    font-size: 13px;
+  .profile-lists {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
-  .recents-stub strong { display: block; margin-bottom: 4px; }
-  .recents-stub p { margin: 0 0 4px; }
+  .profile-group {
+    border: 1px solid var(--color-border, #ddd);
+    padding: 8px 12px;
+    border-radius: 4px;
+  }
+  .profile-group strong {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted, #666);
+  }
+  .profile-group ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .profile-group li {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .profile-link {
+    flex: 1 1 auto;
+    text-align: left;
+    border: none;
+    background: transparent;
+    padding: 4px 6px;
+    cursor: pointer;
+    font: inherit;
+    color: var(--color-text, #222);
+    border-radius: 3px;
+  }
+  .profile-link:hover { background: var(--color-surface, #f0f0f0); }
+  .empty { color: var(--color-text-muted, #666); margin: 0; font-size: 13px; }
+  .transcripts-link { font-size: 12px; }
   .grid {
     display: grid;
     grid-template-columns: 1fr 90px;
