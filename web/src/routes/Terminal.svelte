@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { location } from 'svelte-spa-router';
 
-  import { Button, Icon, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Icon, AlertDialog, Badge } from '@chrissnell/chonky-ui';
 
   // Error codes the bridge surfaces that warrant an AlertDialog rather
   // than just a StatusBar entry. The link-establish path and a peer
@@ -187,6 +187,17 @@
             <Icon name="chevron-left" size="sm" /> Back
           </Button>
         </div>
+        {#if rawTailChannel?.mode === 'aprs'}
+          <header class="aprs-warning" role="status">
+            <div class="aprs-warning-text">
+              <strong>Channel {rawTailChannel.name ?? rawTailChannel.id} is APRS-only.</strong>
+              Connected-mode AX.25 is disabled on this channel. Showing the live
+              packet feed instead.
+              <a href="#/channels">Change channel mode in settings -&gt;</a>
+            </div>
+            <Badge variant="info">APRS only</Badge>
+          </header>
+        {/if}
         <MacroToolbar session={null} onEdit={() => (macroEditorOpen = true)} />
         <RawPacketView channel={rawTailChannel} />
       </div>
@@ -251,8 +262,22 @@
     flex-direction: column;
     min-height: 0;
     padding-top: 12px;
+    gap: 10px;
   }
-  .session-back { padding: 0 14px 10px; }
+  .session-back { padding: 0 14px; }
+  .aprs-warning {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 14px;
+    padding: 10px 14px;
+    background: var(--color-info-bg, #fff8d4);
+    border: 1px solid var(--color-warning, #d6a800);
+    border-radius: 4px;
+  }
+  .aprs-warning-text { font-size: 13px; }
+  .aprs-warning a { margin-left: 6px; }
   .fatal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
   .terminal-header {
     display: flex;
