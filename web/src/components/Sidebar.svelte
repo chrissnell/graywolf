@@ -4,6 +4,7 @@
   import { location } from 'svelte-spa-router';
   import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
   import { messages } from '../lib/messagesStore.svelte.js';
+  import { terminalSidebar } from '../lib/stores/terminal.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
   import logoUrl from '../assets/graywolf.svg';
 
@@ -17,7 +18,8 @@
   // links are plain-label for now. Keeping them in the same group
   // visually without forcing every other label into an Icon treatment.
   const operationsItems = [
-    { path: '/messages', label: 'Messages', icon: 'message-square', badge: true },
+    { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
+    { path: '/terminal', label: 'Terminal', icon: 'terminal', badge: 'terminal' },
     { path: '/beacons', label: 'Beacons' },
     { path: '/digipeater', label: 'Digipeater' },
     { path: '/igate', label: 'iGate' },
@@ -61,6 +63,13 @@
   // Reactive global unread signal — recomputes when any thread's
   // unreadCount / muted / archived flag changes.
   let unreadTotal = $derived(messages.unreadTotal);
+  let terminalUnread = $derived(terminalSidebar.unreadTotal);
+
+  function badgeCount(kind) {
+    if (kind === 'terminal') return terminalUnread;
+    if (kind === 'messages') return unreadTotal;
+    return 0;
+  }
 
   // Update-check signal — true when a newer GitHub release exists and
   // the operator hasn't dismissed the banner. Drives both the About
@@ -166,7 +175,7 @@
               <span class="nav-label">{item.label}</span>
               {#if item.badge}
                 <span class="nav-badge">
-                  <NotificationBadge count={unreadTotal} />
+                  <NotificationBadge count={badgeCount(item.badge)} />
                 </span>
               {/if}
             </a>
