@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -92,9 +93,28 @@ type Session struct {
 	pendingTimers  atomic.Uint32 // OR-set by timer goroutines, drained by run loop
 	wakeup         chan struct{} // 1-slot signal that pendingTimers changed
 
+	statsMu sync.Mutex // guards stats; holders: session goroutine (writes via mutateStats); external readers (Snapshot)
 	stats   LinkStats
 	pending [128]*Frame // I-frame retransmit buffer keyed by NS
 	txBuf   []byte      // operator bytes pending TX
+}
+
+// Snapshot returns a goroutine-safe copy of the current LinkStats.
+// Callable from any goroutine; the session goroutine mutates stats
+// under the same mutex via mutateStats / setStateStats helpers.
+func (s *Session) Snapshot() LinkStats {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	return s.stats
+}
+
+// mutateStats applies fn under the stats mutex. Used by the session
+// goroutine for every stats update so external Snapshot() readers see
+// a consistent view.
+func (s *Session) mutateStats(fn func(*LinkStats)) {
+	s.statsMu.Lock()
+	fn(&s.stats)
+	s.statsMu.Unlock()
 }
 
 // NewSession constructs a Session. The returned Session is in
@@ -313,10 +333,11 @@ func (s *Session) setState(ns State) {
 		return
 	}
 	s.state = ns
-	s.stats.State = ns
+	s.mutateStats(func(st *LinkStats) { st.State = ns })
 	s.cfg.Logger.Info("ax25conn: state change",
 		"peer", s.cfg.Peer.String(), "to", ns)
 	s.emit(OutEvent{Kind: OutStateChange, State: ns})
+	s.emit(OutEvent{Kind: OutLinkStats, Stats: s.Snapshot()})
 }
 
 // State handlers live in transitions_<state>.go.

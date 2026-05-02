@@ -1,8 +1,7 @@
 package ax25conn
 
-// heartbeatTick is the 5-second housekeeping timer per cheat sheet §2
-// and net/ax25/ax25_std_timer.c:36-71. The kernel re-arms
-// unconditionally; we mirror that. The kernel also has two jobs:
+// heartbeatTick is the 5-second housekeeping timer mirroring
+// net/ax25/ax25_std_timer.c:36-71. The kernel has two jobs:
 //
 //  1. State 0/2 dead-listener cleanup. graywolf has no server side, so
 //     this case is unreachable for v1.
@@ -18,10 +17,13 @@ package ax25conn
 // (transcript throttling, SDR back-pressure) explicitly sets
 // CondOwnRxBusy from outside the heartbeat.
 func (s *Session) heartbeatTick() {
-	defer s.hb.reset()
 	if s.state != StateConnected && s.state != StateTimerRecovery {
+		// Outside CONNECTED/TIMER_RECOVERY the housekeeping job is
+		// unreachable; do not re-arm so a session disconnected by the
+		// peer stops generating perpetual 5s wakeups.
 		return
 	}
+	defer s.hb.reset()
 	if !s.v.Cond.Has(CondOwnRxBusy) {
 		return
 	}

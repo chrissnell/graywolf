@@ -8,9 +8,8 @@ import "context"
 // Linux v6.12.
 //
 // Kernel deviation from spec: inbound SABM does not transition us to
-// state 3 — we emit UA and keep waiting for our own SABM's UA. See
-// .context/2026-05-01-ax25-lapb-behavioral-reference.md §3
-// ("Connection collision").
+// state 3 — we emit UA and keep waiting for our own SABM's UA
+// (ax25_std_in.c:46-66, "Connection collision").
 func (s *Session) onAwaitingConnection(_ context.Context, ev Event) bool {
 	switch ev.Kind {
 	case EventFrameRX:

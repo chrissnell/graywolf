@@ -167,12 +167,12 @@ func TestManager_DispatchRoutes(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if s.stats.FramesTX > 0 {
+		if s.Snapshot().FramesTX > 0 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if s.stats.FramesTX == 0 {
+	if s.Snapshot().FramesTX == 0 {
 		t.Fatal("expected DM emission after SABM dispatch")
 	}
 }

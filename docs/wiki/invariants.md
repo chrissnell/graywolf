@@ -171,7 +171,7 @@ Source: `cmd/graywolf/flare.go`'s control flow: the network `client.Submit` call
 
 ### 23. Channel mode gates TX, not RX
 
-When a channel's `Mode` is `packet`, the beacon scheduler, digipeater engine, iGate IS→RF gate, and APRS messages sender all skip, refuse, or down-shift when asked to transmit on that channel. RX is unchanged: frames keep demodulating and fan out via the existing fanout; subscribers self-filter.
+When a channel's `Mode` is `packet`, the beacon scheduler, digipeater engine, iGate IS→RF gate, APRS messages sender, and `ax25conn.Manager.Open` (connected-mode session bring-up) all skip, refuse, or down-shift when asked to transmit on that channel. Conversely, `ax25conn.Manager.Open` rejects channels in `aprs`-only mode. RX is unchanged: frames keep demodulating and fan out via the existing fanout; subscribers self-filter.
 
 The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns an error or `nil`, callers behave as if the channel were `aprs` (preserves pre-Phase-0 behavior). The IS→RF runtime gate also fails open -- a transient DB error does not silently suppress beaconing or gating.
 

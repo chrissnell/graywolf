@@ -43,12 +43,14 @@ func (s *Session) onTimerRecovery(_ context.Context, ev Event) bool {
 			}
 			s.sendUA(f.Control.PF)
 			s.dropQueues()
+			s.stopAllTimers()
 			s.emit(OutEvent{Kind: OutError, ErrCode: "peer-disconnected",
 				ErrMsg: "peer sent DISC"})
 			s.setState(StateDisconnected)
 			return true
 		case FrameDM:
 			s.dropQueues()
+			s.stopAllTimers()
 			s.emit(OutEvent{Kind: OutError, ErrCode: "peer-reset",
 				ErrMsg: "DM in TIMER_RECOVERY"})
 			s.setState(StateDisconnected)
@@ -119,9 +121,13 @@ func (s *Session) onTimerRecovery(_ context.Context, ev Event) bool {
 				if len(f.Info) > 0 {
 					payload := append([]byte(nil), f.Info...)
 					s.emit(OutEvent{Kind: OutDataRX, Data: payload})
-					s.stats.BytesRX += uint64(len(payload))
+					s.mutateStats(func(st *LinkStats) {
+						st.BytesRX += uint64(len(payload))
+						st.FramesRX++
+					})
+				} else {
+					s.mutateStats(func(st *LinkStats) { st.FramesRX++ })
 				}
-				s.stats.FramesRX++
 				if f.Control.PF {
 					s.v.Cond.Clear(CondACKPending)
 					s.sendRROrRNR(true /*F=1*/, true /*rsp*/)
@@ -159,6 +165,7 @@ func (s *Session) onTimerRecovery(_ context.Context, ev Event) bool {
 			}
 			s.submit(f)
 			s.dropQueues()
+			s.stopAllTimers()
 			s.emit(OutEvent{Kind: OutError, ErrCode: "ack-timeout",
 				ErrMsg: "no response after N2 enquiries"})
 			s.setState(StateDisconnected)

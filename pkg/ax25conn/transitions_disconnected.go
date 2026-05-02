@@ -8,8 +8,8 @@ import (
 )
 
 // onDisconnected is the state-0 handler. The kernel has no input
-// handler for state 0; ax25_rcv() decides directly. Cheat sheet §1
-// state 0 / net/ax25/ax25_in.c:317-427.
+// handler for state 0; ax25_rcv() decides directly
+// (net/ax25/ax25_in.c:317-427).
 func (s *Session) onDisconnected(_ context.Context, ev Event) bool {
 	switch ev.Kind {
 	case EventConnect:
@@ -17,7 +17,7 @@ func (s *Session) onDisconnected(_ context.Context, ev Event) bool {
 		// (ax25_std_subr.c:35-50): zero condition, n2count=0, TX
 		// SABM(P=1, cmd), start T1, start heartbeat, seed RTT.
 		s.v = vars{}
-		s.stats = LinkStats{}
+		s.mutateStats(func(st *LinkStats) { *st = LinkStats{} })
 		s.sendSABM(s.cfg.Mod128)
 		s.resetT1()
 		s.hb.reset()
@@ -46,7 +46,7 @@ func (s *Session) onDisconnected(_ context.Context, ev Event) bool {
 // sendSABM emits SABM (mod-8) or SABME (mod-128) with P=1, cmd. The
 // kernel chooses by ax25->modulus in ax25_std_subr.c:35-50. We accept
 // the modulus arg explicitly so the state-1 N2-exhaustion fall-back
-// (cheat sheet §1 state 1) can downgrade in-place.
+// (ax25_std_timer.c:128-133) can downgrade in-place.
 func (s *Session) sendSABM(mod128 bool) {
 	kind := FrameSABM
 	if mod128 {
@@ -123,8 +123,10 @@ func (s *Session) submit(f *Frame) {
 		s.cfg.Logger.Warn("ax25conn: tx submit failed", "err", err)
 		return
 	}
-	s.stats.FramesTX++
-	if f.hasInfo() {
-		s.stats.BytesTX += uint64(len(f.Info))
-	}
+	s.mutateStats(func(st *LinkStats) {
+		st.FramesTX++
+		if f.hasInfo() {
+			st.BytesTX += uint64(len(f.Info))
+		}
+	})
 }

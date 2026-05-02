@@ -8,9 +8,6 @@ import "time"
 // AX25_DEF_BACKOFF, AX25_DEF_IDLE) at include/net/ax25.h:148-160 in
 // v6.12. Operators override per-session via the saved
 // AX25SessionProfile or the connect-time advanced panel.
-//
-// See .context/2026-05-01-ax25-lapb-behavioral-reference.md §9 for
-// the full table including sysctl ranges.
 const (
 	// DefaultT1 — outstanding-I-frame ack timer. Kernel AX25_DEF_T1=10s.
 	DefaultT1 = 10 * time.Second

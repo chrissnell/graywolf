@@ -5,7 +5,6 @@ import "context"
 // onAwaitingRelease — state 2, "DISC sent". Behavior matches
 // ax25_std_state2_machine in net/ax25/ax25_std_in.c:103-134 and
 // ax25_std_t1timer_expiry in ax25_std_timer.c:143-148 of Linux v6.12.
-// Cheat sheet §1 state 2.
 func (s *Session) onAwaitingRelease(_ context.Context, ev Event) bool {
 	switch ev.Kind {
 	case EventFrameRX:

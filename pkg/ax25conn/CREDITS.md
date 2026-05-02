@@ -27,17 +27,26 @@ function, and (when stable) line range. Default tuning constants
 (T1/T2/T3/N2/k/paclen/backoff) live in defaults.go with a citation
 block.
 
-## Behavioral cheat sheet
+## Behavioral source citations
 
-The graywolf-internal cheat sheet at
-`.context/2026-05-01-ax25-lapb-behavioral-reference.md` transcribes
-every state transition from the kernel sources at v6.12 with line
-citations. Phase 1 transition tasks reference its sections (`§1`
-state tables, `§2` timers, `§3` collision, `§4` FRMR, `§5`
-REJ/SREJ, `§6` busy/RNR, `§7` digi paths, `§8` SABME negotiation,
-`§9` defaults, `§10` pitfalls). Treat it as the primary source;
-re-derive directly from the kernel only when the cheat sheet is
-silent on the question at hand.
+State-transition handlers cite the kernel function and source-line
+range they derive from directly in the function's doc comment (e.g.
+`ax25_std_state3_machine` at `net/ax25/ax25_std_in.c:141-259`). The
+mapping from graywolf state name to kernel function:
+
+- `StateDisconnected` → `ax25_rcv` decision, `ax25_in.c:317-427`
+- `StateAwaitingConnection` → `ax25_std_state1_machine`,
+  `ax25_std_in.c:39-96`; T1 expiry at `ax25_std_timer.c:120-141`
+- `StateConnected` → `ax25_std_state3_machine`,
+  `ax25_std_in.c:141-259`; kick at `ax25_out.c:286-324`
+- `StateTimerRecovery` → `ax25_std_state4_machine`,
+  `ax25_std_in.c:266-414`; T1 expiry at `ax25_std_timer.c:155-165`
+- `StateAwaitingRelease` → `ax25_std_state2_machine`,
+  `ax25_std_in.c:103-134`; T1 expiry at `ax25_std_timer.c:143-148`
+
+Default constants (T1/T2/T3/N2/paclen/window/backoff) cite
+`include/net/ax25.h:148-160`. RTT calc and clamps cite
+`ax25_subr.c:220-258` and `include/net/ax25.h:20-21`.
 
 ## FRMR policy
 
@@ -50,11 +59,20 @@ and is simpler than maintaining an FRMR info-byte encoder that no
 Linux peer would ever accept anyway.
 
 If a future Phase wants spec-correct FRMR transmission, the v2.2
-info-field layout is documented in
-`.context/2026-05-01-ax25-lapb-behavioral-reference.md` §4 and AX.25
-v2.2 §4.3.3.9. Note: kernel peers will tear the link down on FRMR
-receipt regardless of info-field validity, so spec-correctness gains
-nothing on the wire.
+info-field layout is documented in AX.25 v2.2 §4.3.3.9. Note:
+kernel peers will tear the link down on FRMR receipt regardless of
+info-field validity, so spec-correctness gains nothing on the wire.
+
+## Test coverage debt — kernel-trace JSON replay (Phase 4 task 4.1b)
+
+Phase 1 ships with hand-coded Go integration scenarios in
+`integration_test.go` covering handshake/I-exchange, T1→TIMER_RECOVERY
+recovery, REJ requeue, and peer-DISC. These scenarios verify the
+implementation is internally consistent but do NOT verify byte-for-byte
+agreement with a real Linux peer on the wire. JSON-driven kernel-trace
+replay fixtures (originally Phase 1 task 1.15) are deferred to Phase 4
+task 4.1b. Until those land, first-time interop with a kernel BBS is
+the de-facto compliance test.
 
 ## Specification
 

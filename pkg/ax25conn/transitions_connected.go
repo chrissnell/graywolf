@@ -4,10 +4,10 @@ import "context"
 
 // onConnected — state 3, "Established". Behavior matches
 // ax25_std_state3_machine in net/ax25/ax25_std_in.c:141-259 of Linux
-// v6.12. See cheat sheet §1 state 3 for the full table.
+// v6.12.
 //
-// Per cheat sheet §10, every dispatch path that ends without exiting
-// must call s.kick() so newly available window slots actually drain.
+// Every dispatch path that ends without exiting falls through to
+// s.kick() so newly available window slots actually drain.
 func (s *Session) onConnected(_ context.Context, ev Event) bool {
 	switch ev.Kind {
 	case EventFrameRX:
@@ -43,12 +43,14 @@ func (s *Session) onConnected(_ context.Context, ev Event) bool {
 			}
 			s.sendUA(f.Control.PF)
 			s.dropQueues()
+			s.stopAllTimers()
 			s.emit(OutEvent{Kind: OutError, ErrCode: "peer-disconnected",
 				ErrMsg: "peer sent DISC"})
 			s.setState(StateDisconnected)
 			return true
 		case FrameDM:
 			s.dropQueues()
+			s.stopAllTimers()
 			s.emit(OutEvent{Kind: OutError, ErrCode: "peer-reset",
 				ErrMsg: "DM in CONNECTED"})
 			s.setState(StateDisconnected)
@@ -101,9 +103,13 @@ func (s *Session) onConnected(_ context.Context, ev Event) bool {
 				if len(f.Info) > 0 {
 					payload := append([]byte(nil), f.Info...)
 					s.emit(OutEvent{Kind: OutDataRX, Data: payload})
-					s.stats.BytesRX += uint64(len(payload))
+					s.mutateStats(func(st *LinkStats) {
+						st.BytesRX += uint64(len(payload))
+						st.FramesRX++
+					})
+				} else {
+					s.mutateStats(func(st *LinkStats) { st.FramesRX++ })
 				}
-				s.stats.FramesRX++
 				if f.Control.PF {
 					s.v.Cond.Clear(CondACKPending)
 					s.sendRROrRNR(true /*F=1*/, true /*rsp*/)
@@ -249,7 +255,7 @@ func (s *Session) framesAcked(nr uint8) {
 
 // requeueFromVA prepends pending[VA..VS-1] back onto txBuf so kick
 // re-sends them with fresh sequence numbers. Used by REJ recovery and
-// SABM rebind (cheat sheet §1 state 3 + §5).
+// SABM rebind (ax25_std_in.c:146-165 + REJ paths).
 func (s *Session) requeueFromVA() {
 	mod := uint8(s.modulus())
 	var buf []byte
@@ -275,6 +281,19 @@ func (s *Session) dropQueues() {
 		s.pending[i] = nil
 	}
 	s.txBuf = nil
+}
+
+// stopAllTimers stops T1/T2/T3/heartbeat. Used on peer-initiated
+// disconnect (DISC, DM, N2-exhaust DM) so the session goroutine isn't
+// woken by stale timers between teardown and ctx cancellation. Mirrors
+// the kernel's ax25_disconnect() which calls
+// ax25_stop_t1timer/_t2timer/_t3timer/_idletimer before transitioning
+// to state 0.
+func (s *Session) stopAllTimers() {
+	s.t1.stop()
+	s.t2.stop()
+	s.t3.stop()
+	s.hb.stop()
 }
 
 // establishDataLink mirrors ax25_std_establish_data_link
