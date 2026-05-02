@@ -173,9 +173,9 @@ Source: `cmd/graywolf/flare.go`'s control flow: the network `client.Submit` call
 
 When a channel's `Mode` is `packet`, the beacon scheduler, digipeater engine, iGate IS→RF gate, APRS messages sender, and `ax25conn.Manager.Open` (connected-mode session bring-up) all skip, refuse, or down-shift when asked to transmit on that channel. Conversely, `ax25conn.Manager.Open` rejects channels in `aprs`-only mode. RX is unchanged: frames keep demodulating and fan out via the existing fanout; subscribers self-filter.
 
-The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns an error or `nil`, callers behave as if the channel were `aprs` (preserves pre-Phase-0 behavior). The IS→RF runtime gate also fails open -- a transient DB error does not silently suppress beaconing or gating.
+The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns an error or `nil`, callers behave as if the channel were `aprs` (preserves the legacy any-channel-does-anything behavior). The IS→RF runtime gate also fails open -- a transient DB error does not silently suppress beaconing or gating.
 
-*Why:* Operators may want to dedicate a channel to AX.25 connected-mode (Phase 1+) without it accidentally absorbing APRS beacons, digipeated packets, IS→RF traffic, or outbound APRS messages. The `aprs+packet` value preserves the legacy "any channel does anything" behavior for setups that don't care about the split.
+*Why:* Operators may want to dedicate a channel to AX.25 connected-mode without it accidentally absorbing APRS beacons, digipeated packets, IS→RF traffic, or outbound APRS messages. The `aprs+packet` value preserves the legacy "any channel does anything" behavior for setups that don't care about the split.
 
 Source: [`../../pkg/configstore/channel_mode_lookup.go`](../../pkg/configstore/channel_mode_lookup.go),
 [`../../pkg/configstore/models.go`](../../pkg/configstore/models.go)

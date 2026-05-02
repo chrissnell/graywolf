@@ -1,10 +1,10 @@
 package ax25conn
 
-// Phase 1 baseline integration tests: a single Session is driven
-// through full handshake / I-frame exchange / disconnect against a
-// scripted peer. Production-grade replay against captured kernel
-// traces ships in Phase 4 (along with real captures); Phase 1 is
-// "spec-correct synthetic" only — see CREDITS.md.
+// Baseline integration tests: a single Session is driven through
+// full handshake / I-frame exchange / disconnect against a scripted
+// peer. These are spec-correct synthetic scenarios only.
+// Production-grade replay against captured kernel traces is deferred
+// (along with real captures); see CREDITS.md.
 
 import (
 	"context"

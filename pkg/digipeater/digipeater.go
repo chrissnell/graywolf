@@ -89,8 +89,9 @@ type Config struct {
 	// ChannelModes resolves Channel.Mode at RX time. Rules whose RX
 	// channel is "packet" cause Handle to short-circuit; rules whose
 	// ToChannel is "packet" are skipped per-rule. Nil = treat every
-	// channel as ChannelModeAPRS (preserves pre-Phase-0 behavior).
-	// Lookup errors are silently ignored (fail-open).
+	// channel as ChannelModeAPRS (preserves the legacy any-channel-
+	// does-anything behavior). Lookup errors are silently ignored
+	// (fail-open).
 	ChannelModes configstore.ChannelModeLookup
 }
 

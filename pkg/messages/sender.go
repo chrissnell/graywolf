@@ -95,9 +95,9 @@ type SenderConfig struct {
 	TxChannel uint32
 	// ChannelModes refuses outbound when the resolved TX channel mode
 	// is "packet". Nil = treat every channel as APRS-permissive
-	// (preserves pre-Phase-0 behavior). Lookup errors are silently
-	// ignored (fail-open at TX time; the operator's configured channel
-	// wins on transient DB issues).
+	// (preserves the legacy any-channel-does-anything behavior).
+	// Lookup errors are silently ignored (fail-open at TX time; the
+	// operator's configured channel wins on transient DB issues).
 	ChannelModes configstore.ChannelModeLookup
 	// IGatePasscode is the APRS-IS passcode; "-1" indicates read-only
 	// and disables IS transmits so the sender can short-circuit the

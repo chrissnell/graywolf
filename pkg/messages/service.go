@@ -64,8 +64,8 @@ type ServiceConfig struct {
 	// falls back to TxChannel.
 	AutoAckChannel uint32
 	// ChannelModes is forwarded to the Sender to refuse outbound when
-	// the TX channel is packet-mode. Nil disables the check (pre-Phase-0
-	// behavior).
+	// the TX channel is packet-mode. Nil disables the check (legacy
+	// any-channel-does-anything behavior).
 	ChannelModes configstore.ChannelModeLookup
 	// LocalTxRing / TacticalSet / EventHub can be injected for tests
 	// that need to observe them; if nil the Service constructs its

@@ -58,31 +58,29 @@ and re-SABM via `establishDataLink()`. This both matches the kernel
 and is simpler than maintaining an FRMR info-byte encoder that no
 Linux peer would ever accept anyway.
 
-If a future Phase wants spec-correct FRMR transmission, the v2.2
+If a future change wants spec-correct FRMR transmission, the v2.2
 info-field layout is documented in AX.25 v2.2 §4.3.3.9. Note:
 kernel peers will tear the link down on FRMR receipt regardless of
 info-field validity, so spec-correctness gains nothing on the wire.
 
-## Test coverage debt — kernel-trace JSON replay (Phase 4 task 4.1b)
+## Test coverage debt — kernel-trace JSON replay
 
-Phase 1 ships with hand-coded Go integration scenarios in
-`integration_test.go` covering handshake/I-exchange, T1→TIMER_RECOVERY
-recovery, REJ requeue, and peer-DISC. These scenarios verify the
-implementation is internally consistent but do NOT verify byte-for-byte
-agreement with a real Linux peer on the wire. JSON-driven kernel-trace
-replay fixtures (originally Phase 1 task 1.15) are deferred to Phase 4
-task 4.1b. Until those land, first-time interop with a kernel BBS is
+Hand-coded Go integration scenarios in `integration_test.go` cover
+handshake/I-exchange, T1→TIMER_RECOVERY recovery, REJ requeue, and
+peer-DISC. These scenarios verify the implementation is internally
+consistent but do NOT verify byte-for-byte agreement with a real
+Linux peer on the wire. JSON-driven kernel-trace replay fixtures are
+deferred. Until those land, first-time interop with a kernel BBS is
 the de-facto compliance test.
 
-## On-air fixture provenance — Phase 2 smoke test (pending)
+## On-air smoke test (pending)
 
-Phase 2 ships the WebSocket bridge (`pkg/ax25termws`), the
-`/api/ax25/terminal` endpoint, and the Svelte terminal route. None of
-that surface has been validated against a real kernel-AX.25 peer in
-this branch — the smoke test is left as an operator gate before the
-Phase-2/3 merge to main.
+The WebSocket bridge (`pkg/ax25termws`), the `/api/ax25/terminal`
+endpoint, and the Svelte terminal route have not yet been validated
+against a real kernel-AX.25 peer in this branch — the smoke test is
+left as an operator gate before merging to main.
 
-Recommended procedure (matches plan task 2.18):
+Recommended procedure:
 
 1. On a Linux box, bring up an AX.25 stack on a loopback radio. The
    minimal recipe is `axports` plus `kissattach` over a `mkfifo` /

@@ -75,9 +75,9 @@ type Options struct {
 	MaxConcurrentFires int
 	// ChannelModes resolves Channel.Mode at TX time. Beacons whose
 	// channel is "packet" are skipped silently. Nil = treat every
-	// channel as ChannelModeAPRS (preserves pre-Phase-0 behavior).
-	// Lookup errors are silently ignored (fail-open): a DB failure
-	// does not suppress beaconing.
+	// channel as ChannelModeAPRS (preserves the legacy any-channel-
+	// does-anything behavior). Lookup errors are silently ignored
+	// (fail-open): a DB failure does not suppress beaconing.
 	ChannelModes configstore.ChannelModeLookup
 }
 

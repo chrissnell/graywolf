@@ -1,8 +1,8 @@
 // Named ANSI palette presets. The operator selects one via
-// AX25TerminalConfig.Theme (added in Phase 3); TerminalViewport.svelte
-// emits a <style> block scoped to the viewport that sets the listed
-// CSS custom properties. Vars not listed here fall through to the
-// classic white-on-black defaults baked into ANSI_PALETTE / TERMINAL_DEFAULTS.
+// AX25TerminalConfig.Theme; TerminalViewport.svelte emits a <style>
+// block scoped to the viewport that sets the listed CSS custom
+// properties. Vars not listed here fall through to the classic
+// white-on-black defaults baked into ANSI_PALETTE / TERMINAL_DEFAULTS.
 
 export type PresetName = 'classic' | 'phosphor-green' | 'phosphor-amber' | 'high-contrast';
 

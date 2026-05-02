@@ -341,8 +341,8 @@ func (s *Server) SetMessagesStore(store MessagesStore) { s.messagesStore = store
 // it unset so the package default (messages.DefaultBotDirectory) wins.
 func (s *Server) SetMessagesBotDirectory(dir messages.BotDirectory) { s.messagesBotDir = dir }
 
-// SetAX25Manager installs the ax25conn session manager Phase 5 wiring
-// constructed. Until this is called the /api/ax25/terminal WebSocket
+// SetAX25Manager installs the ax25conn session manager wiring
+// constructs. Until this is called the /api/ax25/terminal WebSocket
 // handler returns 503 so an ordering bug in wiring fails loud rather
 // than letting the operator open a session that has nowhere to go.
 func (s *Server) SetAX25Manager(m *ax25conn.Manager) { s.ax25Mgr = m }

@@ -246,8 +246,8 @@ func TestTRACEInsertsMyCall(t *testing.T) {
 // TestDigipeaterChannelModeGating verifies that Handle respects the
 // channel mode: packet-mode RX channels short-circuit before any rule
 // evaluation; aprs and aprs+packet channels proceed normally; a nil
-// ChannelModes lookup is treated as all-APRS (preserve pre-Phase-0
-// behavior).
+// ChannelModes lookup is treated as all-APRS (preserves the legacy
+// any-channel-does-anything behavior).
 func TestDigipeaterChannelModeGating(t *testing.T) {
 	t.Parallel()
 
@@ -263,7 +263,7 @@ func TestDigipeaterChannelModeGating(t *testing.T) {
 		wantRepeat bool
 	}{
 		{
-			name:       "nil lookup permits (pre-Phase-0 behaviour)",
+			name:       "nil lookup permits (legacy behaviour)",
 			modes:      nil,
 			rxChannel:  3,
 			wantRepeat: true,

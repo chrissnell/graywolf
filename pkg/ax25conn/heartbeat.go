@@ -36,7 +36,8 @@ func (s *Session) heartbeatTick() {
 }
 
 // rxBufferBelowHalfFull returns true when our local RX buffer has
-// drained enough to clear OWN_RX_BUSY. graywolf v1 streams to the
+// drained enough to clear OWN_RX_BUSY. graywolf streams to the
 // WebSocket immediately and never asserts back-pressure, so this is
-// always true. Phase 3+ may replace this with a real check.
+// always true today. A future change can replace this with a real
+// buffer-occupancy check if back-pressure is ever wired up.
 func (s *Session) rxBufferBelowHalfFull() bool { return true }

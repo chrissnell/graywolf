@@ -10,7 +10,7 @@
  * until real woff2 files are dropped in next to this CSS and the
  * src: chain is updated to start with their url(...) entries.
  *
- * font-display: block is intentional (per the Phase 2 plan): xterm
+ * font-display: block is intentional: xterm
  * measures its cell box at Terminal() construction; a fallback-then-swap
  * causes glyph misalignment and clipped Nerd Font icons. block enforces
  * a 3-second blocking period -- appropriate here because fallback

@@ -119,9 +119,9 @@ type Config struct {
 	// ChannelModes resolves Channel.Mode at TX time. When the iGate's
 	// configured TxChannel is "packet"-mode, the IS->RF runtime gate
 	// drops the frame and logs a Warn (see handleISLine). Nil = treat
-	// every channel as ChannelModeAPRS (preserves pre-Phase-0
-	// behavior). Lookup errors are treated as APRS-mode at the gate
-	// point (fail-open).
+	// every channel as ChannelModeAPRS (preserves the legacy
+	// any-channel-does-anything behavior). Lookup errors are treated
+	// as APRS-mode at the gate point (fail-open).
 	ChannelModes configstore.ChannelModeLookup
 	// Governor is the TX governor for IS->RF submissions. Required for
 	// downlink; leave nil for IS->RF=disabled. Declared as the

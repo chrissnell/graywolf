@@ -22,7 +22,7 @@ func TestMigrateMessagesConfigCopiesFromIgateOnFirstRun(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed igate: %v", err)
 	}
-	// Simulate a pre-Phase-0 database: clear the messages_configs row
+	// Simulate a pre-v13 database: clear the messages_configs row
 	// the first migration just inserted, and reset user_version so the
 	// v13 migration runs again on the next Open.
 	if err := pre.DB().Exec(`DELETE FROM messages_configs`).Error; err != nil {

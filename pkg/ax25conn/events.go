@@ -27,7 +27,7 @@ type Event struct {
 }
 
 // OutEventKind enumerates events the session emits to its observer
-// (the WebSocket bridge in Phase 2 / a test sink in Phase 1).
+// (the WebSocket bridge in production, a test sink in unit tests).
 type OutEventKind uint8
 
 const (
