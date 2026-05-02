@@ -444,9 +444,63 @@
   function isWildcardPattern(p) {
     return typeof p === 'string' && p.trim().endsWith('*');
   }
+
+  // --- Live APRS-IS session status ---------------------------------------
+  // /api/igate exposes the runtime state (Connected, LastConnected,
+  // counters). When the iGate is disabled at boot the endpoint returns
+  // 503; we treat that as "off" rather than an error so the badge stays
+  // honest. Polled every 10s so the operator sees reconnects without a
+  // page reload.
+  let igateStatus = $state(/** @type {null | {connected:boolean, last_connected?:string, server?:string}} */ (null));
+  let igateStatusLoaded = $state(false);
+
+  async function loadIgateStatus() {
+    try {
+      const st = await api.get('/igate');
+      igateStatus = st || null;
+    } catch {
+      // 503 (disabled) or network error → render as "off".
+      igateStatus = null;
+    } finally {
+      igateStatusLoaded = true;
+    }
+  }
+
+  onMount(() => {
+    loadIgateStatus();
+    const t = setInterval(loadIgateStatus, 10_000);
+    return () => clearInterval(t);
+  });
+
+  const statusLabel = $derived.by(() => {
+    if (!igateStatusLoaded) return 'Loading…';
+    if (!igateStatus) return 'Disabled';
+    return igateStatus.connected ? 'Connected' : 'Disconnected';
+  });
+  const statusVariant = $derived.by(() => {
+    if (!igateStatusLoaded) return 'default';
+    if (!igateStatus) return 'default';
+    return igateStatus.connected ? 'success' : 'danger';
+  });
+  const statusDetail = $derived.by(() => {
+    if (!igateStatus) return '';
+    const parts = [];
+    if (igateStatus.server) parts.push(igateStatus.server);
+    if (igateStatus.last_connected && !igateStatus.last_connected.startsWith('0001-')) {
+      parts.push(`since ${new Date(igateStatus.last_connected).toLocaleString()}`);
+    }
+    return parts.join(' · ');
+  });
 </script>
 
 <PageHeader title="iGate" subtitle="Internet gateway configuration" />
+
+<div class="status-row" data-testid="igate-status">
+  <Badge variant={statusVariant}>{statusLabel}</Badge>
+  {#if statusDetail}
+    <span class="status-detail">{statusDetail}</span>
+  {/if}
+</div>
 
 <div class="tabs">
   <button class="tab" class:active={activeTab === 'config'} onclick={() => activeTab = 'config'}>Connection</button>
@@ -664,6 +718,17 @@
 />
 
 <style>
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .status-row .status-detail {
+    color: var(--text-secondary);
+  }
   .tabs {
     display: flex;
     gap: 0;
