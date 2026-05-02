@@ -13,13 +13,9 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-// counterValue reads a Prometheus counter's current value without
+// counterValue reads the current value of a Prometheus counter without
 // pulling in the testutil subpackage (which would promote several
-// indirect deps to direct).
+// indirect dependencies in go.mod).
 func counterValue(t *testing.T, c prometheus.Counter) float64 {
 	t.Helper()
 	m := &dto.Metric{}
@@ -27,6 +23,10 @@ func counterValue(t *testing.T, c prometheus.Counter) float64 {
 		t.Fatalf("counter write: %v", err)
 	}
 	return m.GetCounter().GetValue()
+}
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 // TestDcdPublisherPublishesToAllSubscribers verifies that every Publish
