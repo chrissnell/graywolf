@@ -11,7 +11,6 @@
   // (rx_overflow, transcript_*) stay inline.
   const FATAL_ERROR_CODES = new Set([
     'link-establish-timeout',
-    'link-setup-timeout',
     'peer-rejected',
   ]);
 
@@ -93,7 +92,7 @@
   });
 
   function fatalErrorTitle(code) {
-    if (code === 'link-establish-timeout' || code === 'link-setup-timeout') {
+    if (code === 'link-establish-timeout') {
       return 'Link did not come up';
     }
     if (code === 'peer-rejected') return 'Peer refused the connection';

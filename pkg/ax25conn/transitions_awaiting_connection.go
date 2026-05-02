@@ -77,7 +77,7 @@ func (s *Session) onAwaitingConnection(_ context.Context, ev Event) bool {
 				s.resetT1()
 				return true
 			}
-			s.emit(OutEvent{Kind: OutError, ErrCode: "link-setup-timeout",
+			s.emit(OutEvent{Kind: OutError, ErrCode: "link-establish-timeout",
 				ErrMsg: "no response to SABM after N2 retries"})
 			s.setState(StateDisconnected)
 			return true
