@@ -101,6 +101,13 @@ Recommended procedure (matches plan task 2.18):
    capture details (peer software + version, callsigns, anything that
    needed a fix in the bridge or state machine).
 
+## SREJ
+
+graywolf does not emit SREJ even when modulus is 128. AX.25 v2.2
+treats SREJ as optional, and the Linux kernel never emits or
+accepts it. Out-of-order recovery on mod-128 uses REJ + go-back-N,
+exactly as on mod-8. See cheat sheet §5 for verification grep.
+
 ## Specification
 
 - AX.25 v2.2 (Jul 1998): https://www.ax25.net/AX25.2.2-Jul%2098-2.pdf
