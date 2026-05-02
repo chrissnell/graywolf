@@ -18,6 +18,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app/txbackend"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -329,6 +330,16 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		OnClientReconnect: a.metrics.ObserveKissClientReconnect,
 	})
 
+	// --- AX.25 connected-mode session manager --------------------------
+	// Constructed after the governor exists (it is the TxSink) and
+	// after the store is open (ChannelModeLookup). Started below in
+	// startCore so its lifecycle is bound to ctx.
+	a.ax25Mgr = ax25conn.NewManager(ax25conn.ManagerConfig{
+		TxSink:       a.gov,
+		ChannelModes: a.store,
+		Logger:       a.logger.With("component", "ax25conn"),
+	})
+
 	// --- Digipeater ----------------------------------------------------
 	digi, err := digipeater.New(digipeater.Config{
 		DedupeWindow: 30 * time.Second,
@@ -447,6 +458,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		// frame flows. Stop order (reverse): dispatcher stops accepting
 		// new sends BEFORE governor goroutines wind down — see D15.
 		a.txBackendComponent(),
+		a.ax25connComponent(),
 		a.backgroundStatsComponent(),
 		a.updatesCheckComponent(),
 		a.kissComponent(),
@@ -1131,6 +1143,28 @@ func (a *App) governorComponent() namedComponent {
 			// Run exits when its parent ctx is cancelled, which already
 			// happened by the time shutdown started in Run. Just wait.
 			return waitGroup(shutdownCtx, &a.govWG, "tx governor")
+		},
+	}
+}
+
+// ax25connComponent runs the LAPB session manager. The manager's Run
+// loop is a no-op until Close — Open spawns a per-session goroutine
+// internally — but binding it to startOrder ensures Close fires when
+// the app shuts down so any live sessions cancel cleanly.
+func (a *App) ax25connComponent() namedComponent {
+	return namedComponent{
+		name: "ax25conn manager",
+		start: func(ctx context.Context) error {
+			a.ax25connWG.Add(1)
+			go func() {
+				defer a.ax25connWG.Done()
+				a.ax25Mgr.Run(ctx)
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			a.ax25Mgr.Close()
+			return waitGroup(shutdownCtx, &a.ax25connWG, "ax25conn manager")
 		},
 	}
 }

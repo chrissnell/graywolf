@@ -12,6 +12,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/app/txbackend"
 	"github.com/chrissnell/graywolf/pkg/aprs"
+	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
@@ -71,6 +72,11 @@ type App struct {
 	stationCache *stationcache.PersistentCache
 	bridge       *modembridge.Bridge
 	gov          *txgovernor.Governor
+	// ax25Mgr owns the per-process LAPB session table for the
+	// connected-mode terminal. Constructed in wireServices once the
+	// governor and store are available. Non-UI inbound frames are
+	// dispatched here from the rxfanout consumer.
+	ax25Mgr *ax25conn.Manager
 	// govHookUnregister releases the packetlog/stationcache TX hook on
 	// shutdown so later test runs in the same process don't accumulate
 	// stale hooks against a stopped governor.
@@ -174,6 +180,7 @@ type App struct {
 	// force every stop to wait for every other component to exit,
 	// defeating the ordered-teardown contract.
 	govWG               sync.WaitGroup
+	ax25connWG          sync.WaitGroup
 	statsWG             sync.WaitGroup
 	updatesWG           sync.WaitGroup
 	kissWG              sync.WaitGroup
