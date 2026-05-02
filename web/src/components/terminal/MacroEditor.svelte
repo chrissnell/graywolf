@@ -122,7 +122,7 @@
   }
 </script>
 
-<Modal bind:open onClose={() => (open = false)}>
+<Modal bind:open onClose={() => (open = false)} class="macro-editor-modal">
   <Modal.Header>
     <h3 class="modal-title">Edit macros</h3>
     <Modal.Close aria-label="Close">
@@ -130,55 +130,62 @@
     </Modal.Close>
   </Modal.Header>
   <Modal.Body>
-  <div class="editor">
-    <p class="hint">
-      Payload accepts <code>\r</code> <code>\n</code> <code>\t</code> <code>\\</code> and
-      <code>\xNN</code> escape sequences. Plain text is sent as UTF-8.
-    </p>
+    <div class="editor">
+      <p class="hint">
+        Payload accepts <code>\r</code> <code>\n</code> <code>\t</code> <code>\\</code> and
+        <code>\xNN</code> escape sequences. Plain text is sent as UTF-8.
+      </p>
 
-    {#each rows as row, i (i)}
-      <div class="row">
-        <Input bind:value={row.label} placeholder="Label (e.g. login)" aria-label={`Macro ${i + 1} label`} />
-        <textarea
-          class="payload"
-          rows="2"
-          aria-label={`Macro ${i + 1} payload`}
-          placeholder="hello\r"
-          bind:value={row.payloadText}
-        ></textarea>
-        <Button variant="ghost" size="sm" onclick={() => removeRow(i)} aria-label="Remove macro">
-          <Icon name="trash-2" size="sm" />
-        </Button>
-      </div>
-    {/each}
+      {#each rows as row, i (i)}
+        <div class="row">
+          <Input bind:value={row.label} placeholder="Label (e.g. login)" aria-label={`Macro ${i + 1} label`} />
+          <textarea
+            class="payload"
+            rows="2"
+            aria-label={`Macro ${i + 1} payload`}
+            placeholder="hello\r"
+            bind:value={row.payloadText}
+          ></textarea>
+          <Button variant="ghost" size="sm" onclick={() => removeRow(i)} aria-label="Remove macro">
+            <Icon name="trash-2" size="sm" />
+          </Button>
+        </div>
+      {/each}
 
-    {#if rows.length === 0}
-      <p class="empty">No macros yet. Click <strong>Add macro</strong> to start.</p>
-    {/if}
+      {#if rows.length === 0}
+        <p class="empty">No macros yet. Click <strong>Add macro</strong> to start.</p>
+      {/if}
 
-    {#if saveError}
-      <p class="err" role="alert">{saveError}</p>
-    {/if}
-
-    <div class="actions">
-      <Button variant="ghost" onclick={addRow}>Add macro</Button>
-      <span class="spacer"></span>
-      <Button onclick={() => (open = false)}>Cancel</Button>
-      <Button variant="primary" disabled={saving} onclick={save}>
-        {saving ? 'Saving...' : 'Save'}
-      </Button>
+      {#if saveError}
+        <p class="err" role="alert">{saveError}</p>
+      {/if}
     </div>
-  </div>
   </Modal.Body>
+  <Modal.Footer>
+    <Button variant="secondary" onclick={addRow}>+ Add macro</Button>
+    <span class="footer-spacer"></span>
+    <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
+    <Button variant="primary" disabled={saving} onclick={save}>
+      {saving ? 'Saving...' : 'Save'}
+    </Button>
+  </Modal.Footer>
 </Modal>
 
 <style>
   .modal-title { margin: 0; font-size: 15px; font-weight: 600; }
+
+  /* Override chonky-ui's default modal width (480px) -- the macro
+     editor needs room for label + payload textarea + delete button on
+     one line, plus the footer's four action buttons. */
+  :global(.macro-editor-modal) {
+    width: min(820px, 95vw);
+    max-width: 95vw;
+  }
+
   .editor {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    min-width: 480px;
+    gap: 12px;
   }
   .hint {
     margin: 0;
@@ -194,7 +201,7 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 200px 1fr auto;
+    grid-template-columns: 180px 1fr auto;
     gap: 8px;
     align-items: start;
   }
@@ -205,9 +212,21 @@
     border: 1px solid var(--color-border, #ccc);
     border-radius: 4px;
     resize: vertical;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
   }
-  .empty { color: var(--color-text-muted, #666); margin: 0; }
+  .empty { color: var(--color-text-muted, #666); margin: 0; font-style: italic; }
   .err { color: var(--color-danger, #c41010); margin: 0; }
-  .actions { display: flex; align-items: center; gap: 8px; }
-  .spacer { flex: 1 1 auto; }
+
+  /* Push Cancel + Save to the right edge, leave + Add macro on the
+     left. chonky-ui's .modal-footer defaults to flex-end alignment;
+     the spacer absorbs the slack. */
+  .footer-spacer { flex: 1 1 auto; }
+
+  @media (max-width: 600px) {
+    .row {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>

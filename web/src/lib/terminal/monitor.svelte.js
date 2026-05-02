@@ -54,25 +54,11 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
 
   let ws = null;
   let enc = new TextEncoder();
-  let backlog = [];
 
   function emit(text) {
     state.lineCount += 1;
-    if (state.onDataRX) {
-      try { state.onDataRX(enc.encode(text)); } catch { /* viewport disposed */ }
-    } else {
-      // Buffer until viewport attaches its callback.
-      backlog.push(text);
-      if (backlog.length > 200) backlog.shift();
-    }
-  }
-
-  function flushBacklog() {
-    if (!state.onDataRX || backlog.length === 0) return;
-    for (const line of backlog) {
-      try { state.onDataRX(enc.encode(line)); } catch { /* ignore */ }
-    }
-    backlog = [];
+    if (!state.onDataRX) return;
+    try { state.onDataRX(enc.encode(text)); } catch { /* viewport disposed */ }
   }
 
   function sendSubscribe() {
@@ -137,24 +123,6 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
   // would otherwise loop into the WS without any peer to receive them.
   function sendData(_bytes) {
     // intentionally empty
-  }
-
-  // Defer attaching the onDataRX side-effect: viewport sets
-  // state.onDataRX after construction; replay any pre-mount lines.
-  // A simple polling effect is overkill -- we instead expose
-  // flushBacklog() and call it when sendData/setFilter is invoked,
-  // and directly via this watcher.
-  if (typeof window !== 'undefined') {
-    queueMicrotask(() => {
-      const tick = () => {
-        if (state.onDataRX) {
-          flushBacklog();
-          return;
-        }
-        setTimeout(tick, 50);
-      };
-      tick();
-    });
   }
 
   open();

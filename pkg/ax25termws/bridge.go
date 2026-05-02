@@ -334,15 +334,18 @@ func (b *Bridge) observe(ev ax25conn.OutEvent) {
 	default:
 		b.cfg.Logger.Warn("ax25termws: observer inbox full; dropping event",
 			"kind", ev.Kind)
-		// Best-effort overflow signal to the operator. The error
-		// envelope itself can be dropped if Out is also full -- at
-		// that point the WS is hopelessly behind anyway.
+		// Best-effort overflow signal to the operator. Non-blocking
+		// send so a jammed Out cannot stall the session goroutine
+		// observe call. We deliberately do not race with ctx.Done()
+		// here: when ctx is already cancelled the select would
+		// otherwise pick the ctx case at random and silently drop
+		// the overflow envelope while Out still has room. Out being
+		// full has the same effect via the default arm.
 		select {
 		case b.cfg.Out <- Envelope{
 			Kind:  KindError,
 			Error: &ErrorPayload{Code: "rx_overflow", Message: "terminal too slow; bytes lost"},
 		}:
-		case <-b.ctx.Done():
 		default:
 		}
 	}

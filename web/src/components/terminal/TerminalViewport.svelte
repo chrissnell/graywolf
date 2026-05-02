@@ -23,7 +23,6 @@
   let viewportWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1024);
   let mo = null;
   let contrastMQ = null;
-  let ro = null;
 
   // Resize listener is a one-time subscription with no reactive
   // dependencies, so it lives in onMount rather than a $effect that
@@ -44,35 +43,6 @@
     term.options.theme = buildTheme(host);
   }
 
-  // Approximate cell metrics for resize math. xterm renders monospace
-  // glyphs in a fixed cell box; we don't have FitAddon installed, so
-  // we estimate cell width = fontSize * 0.6 (roughly the SauceCodePro
-  // advance) and cell height = fontSize * 1.2 (line height multiplier
-  // xterm applies internally). Conservative floor() avoids overdraw.
-  function computeCols(node, fontSize) {
-    if (!node) return 80;
-    const w = node.clientWidth || node.getBoundingClientRect().width || 0;
-    const cell = Math.max(6, fontSize * 0.6);
-    return Math.max(20, Math.floor((w - 4) / cell));
-  }
-
-  function computeRows(node, fontSize) {
-    if (!node) return 24;
-    const h = node.clientHeight || node.getBoundingClientRect().height || 0;
-    if (h < 1) return 24;
-    const line = Math.max(8, fontSize * 1.2);
-    return Math.max(8, Math.floor((h - 4) / line));
-  }
-
-  function refit() {
-    if (!term || !host || !fitToWidth) return;
-    const fs = term.options.fontSize ?? 18;
-    const cols = computeCols(host, fs);
-    const rows = computeRows(host, fs);
-    if (cols !== term.cols || rows !== term.rows) {
-      try { term.resize(cols, rows); } catch { /* ignore */ }
-    }
-  }
 
   onMount(async () => {
     mounted = true;
@@ -100,9 +70,12 @@
     }
 
     if (!mounted) return;
-    const fontSize = fitToWidth ? 18 : 18;
-    const initialCols = fitToWidth ? Math.max(40, computeCols(host, fontSize)) : 80;
-    const initialRows = fitToWidth ? Math.max(16, computeRows(host, fontSize)) : 24;
+    // Fixed grid: 80x24 for LAPB sessions (BBS convention), 100x24
+    // for monitor mode. Slight font bump from xterm's 14px default
+    // gives an easier read without stretching the canvas off-screen.
+    const fontSize = 18;
+    const initialCols = fitToWidth ? 100 : 80;
+    const initialRows = 24;
     term = new Terminal({
       cols: initialCols,
       rows: initialRows,
@@ -157,13 +130,6 @@
       catch { contrastMQ.addListener?.(reapplyTheme); /* legacy */ }
     }
 
-    // Watch the host element for size changes and refit the terminal
-    // grid. Only relevant in fitToWidth mode -- LAPB sessions stay at
-    // 80x24 by protocol convention.
-    if (fitToWidth && typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => refit());
-      ro.observe(host);
-    }
   });
 
   onDestroy(() => {
@@ -173,7 +139,6 @@
       resizeListener = null;
     }
     try { mo?.disconnect(); } catch { /* ignore */ }
-    try { ro?.disconnect(); } catch { /* ignore */ }
     try {
       if (contrastMQ) {
         try { contrastMQ.removeEventListener('change', reapplyTheme); }

@@ -166,7 +166,7 @@
   <div class="terminal-header">
     <TabBar onNew={onNewTab} onClose={onCloseTab} />
     <Button
-      variant="ghost"
+      variant="secondary"
       size="sm"
       aria-label="Edit macros"
       onclick={() => (macroEditorOpen = true)}
