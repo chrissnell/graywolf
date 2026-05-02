@@ -475,11 +475,6 @@
     padding: 0;
   }
 
-  .dashboard-list {
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border-color);
-  }
-
   .nav-group {
     padding: 0;
   }
@@ -572,10 +567,6 @@
     color: var(--accent);
     border-left: 3px solid var(--accent);
     padding-left: 21px;
-  }
-
-  .dashboard-link.active {
-    padding-left: 13px;
   }
 
   /* .nav-trailing pins About to the bottom of the sidebar
