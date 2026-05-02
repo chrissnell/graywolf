@@ -37,15 +37,16 @@
   </Button>
   <span class="divider" aria-hidden="true"></span>
   {#each macros as m (m.label)}
-    <Button
-      variant="primary"
+    <button
+      type="button"
+      class="macro-btn"
       disabled={!connected}
       onclick={() => fireMacro(m)}
       aria-label={`Send macro ${m.label}`}
       title={connected ? `Send macro: ${m.label}` : `${m.label} (connect to send)`}
     >
       {m.label}
-    </Button>
+    </button>
   {/each}
   {#if macros.length === 0 && macrosStore.loaded}
     <span class="hint">No macros yet. Click <em>Edit macros</em> to add one.</span>
@@ -78,5 +79,31 @@
     font-style: normal;
     font-weight: 600;
     color: var(--color-text, #111);
+  }
+  /* Macro buttons: solid yellow with black text. The chonky primary
+     variant ships outline-only-until-hover, which made the yellow
+     label barely readable on the light toolbar background. */
+  .macro-btn {
+    font: inherit;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--color-primary, #ffaa00);
+    background: var(--color-primary, #ffaa00);
+    color: var(--color-primary-fg, #000);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .macro-btn:hover:not(:disabled) {
+    background: var(--color-primary-hover, #ffbb33);
+    border-color: var(--color-primary-hover, #ffbb33);
+  }
+  .macro-btn:focus-visible {
+    outline: 2px solid var(--color-primary, #ffaa00);
+    outline-offset: 2px;
+  }
+  .macro-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 </style>
