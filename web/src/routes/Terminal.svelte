@@ -187,6 +187,7 @@
             <Icon name="chevron-left" size="sm" /> Back
           </Button>
         </div>
+        <MacroToolbar session={null} onEdit={() => (macroEditorOpen = true)} />
         <RawPacketView channel={rawTailChannel} />
       </div>
     {:else if showForm}
