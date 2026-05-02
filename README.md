@@ -10,7 +10,7 @@ Graywolf is a modern APRS station with a software modem, digipeater, iGate, and 
 
 **💬 [Graywolf APRS Discord](https://discord.gg/3r5brb7mjV)** — community chat for help, discussion, and development.
 
-🌎 Graywolf is used all around the world! ** [See a map of currently active stations](https://graywolf-users.nw5w.com/)**
+🌎 Graywolf is used all around the world! [See a map of currently active stations](https://graywolf-users.nw5w.com/)
 
 Written by Chris Snell, [NW5W](https://nw5w.com). 
 
