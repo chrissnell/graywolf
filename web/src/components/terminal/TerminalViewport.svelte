@@ -12,7 +12,10 @@
   // preset is one of the keys in PRESETS (defaults to 'classic').
   // narrowMin is the viewport-width threshold below which the canvas
   // is hidden in favor of a "screen too narrow" message.
-  let { session, preset = 'classic', narrowMin = 768 } = $props();
+  // fitToWidth=true grows the column count to fill the host container
+  // and dynamically resizes on window resize. Use for monitor-mode
+  // sessions where there is no LAPB peer enforcing 80-column screens.
+  let { session, preset = 'classic', narrowMin = 768, fitToWidth = false } = $props();
 
   let host = $state(null);
   let term = null;
@@ -20,6 +23,7 @@
   let viewportWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1024);
   let mo = null;
   let contrastMQ = null;
+  let ro = null;
 
   // Resize listener is a one-time subscription with no reactive
   // dependencies, so it lives in onMount rather than a $effect that
@@ -38,6 +42,36 @@
   function reapplyTheme() {
     if (!term || !host) return;
     term.options.theme = buildTheme(host);
+  }
+
+  // Approximate cell metrics for resize math. xterm renders monospace
+  // glyphs in a fixed cell box; we don't have FitAddon installed, so
+  // we estimate cell width = fontSize * 0.6 (roughly the SauceCodePro
+  // advance) and cell height = fontSize * 1.2 (line height multiplier
+  // xterm applies internally). Conservative floor() avoids overdraw.
+  function computeCols(node, fontSize) {
+    if (!node) return 80;
+    const w = node.clientWidth || node.getBoundingClientRect().width || 0;
+    const cell = Math.max(6, fontSize * 0.6);
+    return Math.max(20, Math.floor((w - 4) / cell));
+  }
+
+  function computeRows(node, fontSize) {
+    if (!node) return 24;
+    const h = node.clientHeight || node.getBoundingClientRect().height || 0;
+    if (h < 1) return 24;
+    const line = Math.max(8, fontSize * 1.2);
+    return Math.max(8, Math.floor((h - 4) / line));
+  }
+
+  function refit() {
+    if (!term || !host || !fitToWidth) return;
+    const fs = term.options.fontSize ?? 18;
+    const cols = computeCols(host, fs);
+    const rows = computeRows(host, fs);
+    if (cols !== term.cols || rows !== term.rows) {
+      try { term.resize(cols, rows); } catch { /* ignore */ }
+    }
   }
 
   onMount(async () => {
@@ -66,9 +100,12 @@
     }
 
     if (!mounted) return;
+    const fontSize = fitToWidth ? 18 : 18;
+    const initialCols = fitToWidth ? Math.max(40, computeCols(host, fontSize)) : 80;
+    const initialRows = fitToWidth ? Math.max(16, computeRows(host, fontSize)) : 24;
     term = new Terminal({
-      cols: 80,
-      rows: 24,
+      cols: initialCols,
+      rows: initialRows,
       // convertEol must be false: packet-radio BBSes (FBB, JNOS) emit
       // bare CR. xterm's convertEol: true rewrites bare LF to CRLF
       // and corrupts mixed-line-ending streams. Pass bytes through
@@ -79,7 +116,7 @@
       // tree for SR users.
       screenReaderMode: true,
       fontFamily: '"SauceCodeProNF", "Source Code Pro", Menlo, Consolas, monospace',
-      fontSize: 14,
+      fontSize,
       theme: buildTheme(host),
       scrollback: 5000,
     });
@@ -119,6 +156,14 @@
       try { contrastMQ.addEventListener('change', reapplyTheme); }
       catch { contrastMQ.addListener?.(reapplyTheme); /* legacy */ }
     }
+
+    // Watch the host element for size changes and refit the terminal
+    // grid. Only relevant in fitToWidth mode -- LAPB sessions stay at
+    // 80x24 by protocol convention.
+    if (fitToWidth && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => refit());
+      ro.observe(host);
+    }
   });
 
   onDestroy(() => {
@@ -128,6 +173,7 @@
       resizeListener = null;
     }
     try { mo?.disconnect(); } catch { /* ignore */ }
+    try { ro?.disconnect(); } catch { /* ignore */ }
     try {
       if (contrastMQ) {
         try { contrastMQ.removeEventListener('change', reapplyTheme); }
@@ -148,15 +194,16 @@
     <span>Rotate or resize this window to at least {narrowMin}px wide.</span>
   </div>
 {:else}
-  <div class="terminal-letterbox">
-    <div class="terminal-host" bind:this={host}></div>
+  <div class="terminal-letterbox" class:fit={fitToWidth}>
+    <div class="terminal-host" class:fit={fitToWidth} bind:this={host}></div>
   </div>
 {/if}
 
 <style>
-  /* Wide viewports get the canvas pinned at min-content so xterm's
-     intrinsic 80x24 size letterboxes against the surrounding chrome.
-     Avoids full-bleed empty space on 4K displays. */
+  /* LAPB sessions get an 80-column min-content canvas centered in the
+     gray container so xterm's intrinsic size letterboxes against the
+     surrounding chrome. Monitor sessions (fit) span the full width
+     since there is no protocol convention on column count. */
   .terminal-letterbox {
     display: flex;
     justify-content: center;
@@ -164,9 +211,21 @@
     background: var(--color-surface, #f8f8f8);
     padding: 8px 0;
   }
+  .terminal-letterbox.fit {
+    justify-content: stretch;
+    padding: 8px;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
   .terminal-host {
     max-width: min-content;
     margin: 0 auto;
+  }
+  .terminal-host.fit {
+    max-width: none;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 320px;
   }
   .terminal-narrow {
     display: flex;
