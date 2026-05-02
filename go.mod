@@ -3,6 +3,7 @@ module github.com/chrissnell/graywolf
 go 1.26.2
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/glebarez/go-sqlite v1.21.2
 	github.com/glebarez/sqlite v1.11.0
 	github.com/invopop/jsonschema v0.14.0

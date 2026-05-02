@@ -1,0 +1,172 @@
+package webapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/coder/websocket"
+
+	"github.com/chrissnell/graywolf/pkg/ax25termws"
+	"github.com/chrissnell/graywolf/pkg/webauth"
+	"github.com/chrissnell/graywolf/pkg/webtypes"
+)
+
+const (
+	// terminalPingInterval is the keepalive ping cadence. Must be
+	// shorter than terminalIdleTimeout so an idle peer is detected.
+	terminalPingInterval = 30 * time.Second
+	// terminalIdleTimeout bounds how long a single Ping round-trip
+	// may take before the bridge declares the link dead and tears
+	// down the WebSocket. Browsers and most middle boxes drop idle
+	// WebSockets after ~120s, so 90s gives the ping a generous
+	// detection window without going over that limit.
+	terminalIdleTimeout = 90 * time.Second
+	// terminalReadLimit caps each inbound JSON envelope. Operator
+	// keystrokes are tiny; 64 KiB is far above any realistic packet.
+	terminalReadLimit int64 = 64 * 1024
+	// terminalOutBuf is the buffered envelope queue between bridge
+	// observe callbacks and the writer goroutine. 32 absorbs typical
+	// state/stats bursts without back-pressuring the session goroutine
+	// for control envelopes; KindDataRX uses a blocking send and is
+	// the only kind that intentionally exerts back-pressure.
+	terminalOutBuf = 32
+)
+
+func (s *Server) registerAX25Terminal(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/ax25/terminal", s.handleAX25Terminal)
+}
+
+// handleAX25Terminal upgrades the request to a WebSocket and runs the
+// envelope read/write loops for one session bridge until the operator
+// disconnects, the link goes idle, or the request context is cancelled.
+//
+// The endpoint is mounted under webauth.RequireAuth in production
+// wiring (pkg/app/wiring.go); the explicit nil check here is defense
+// in depth so this handler also rejects an unauthenticated request if
+// it somehow reaches the inner mux directly (e.g. test harnesses that
+// skip RequireAuth, or a future wiring refactor).
+func (s *Server) handleAX25Terminal(w http.ResponseWriter, r *http.Request) {
+	user := webauth.AuthenticatedUser(r)
+	if user == nil {
+		writeJSON(w, http.StatusUnauthorized, webtypes.ErrorResponse{Error: "authentication required"})
+		return
+	}
+	if s.ax25Mgr == nil {
+		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: "ax25 manager not initialized"})
+		return
+	}
+
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		// OriginPatterns left empty -> coder/websocket enforces
+		// strict same-origin (Host header equality). The terminal
+		// is only intended to be opened from the graywolf SPA
+		// served by this same process; no cross-origin embed.
+	})
+	if err != nil {
+		// Accept already wrote a response on failure.
+		return
+	}
+	defer c.CloseNow()
+	c.SetReadLimit(terminalReadLimit)
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	out := make(chan ax25termws.Envelope, terminalOutBuf)
+	bridge := ax25termws.New(ax25termws.BridgeConfig{
+		Manager:  s.ax25Mgr,
+		Logger:   s.logger.With("component", "ax25termws", "user", user.Username),
+		Operator: user.Username,
+		Ctx:      ctx,
+		Out:      out,
+	})
+
+	// Writer + ping live in the same goroutine so we never have two
+	// goroutines writing the WebSocket concurrently. The reader runs
+	// inline below; on read error or ctx done both sides unwind.
+	writerDone := make(chan struct{})
+	go s.runTerminalWriter(ctx, c, out, writerDone, user.Username)
+
+	s.runTerminalReader(ctx, c, bridge, user.Username)
+
+	cancel()
+	<-writerDone
+	_ = c.Close(websocket.StatusNormalClosure, "session ended")
+}
+
+func (s *Server) runTerminalReader(ctx context.Context, c *websocket.Conn, bridge *ax25termws.Bridge, user string) {
+	for {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			if !isExpectedClose(err) {
+				s.logger.Debug("ax25termws: read loop ended",
+					"user", user, "err", err)
+			}
+			return
+		}
+		var env ax25termws.Envelope
+		if err := json.Unmarshal(data, &env); err != nil {
+			s.logger.Warn("ax25termws: bad envelope JSON", "user", user, "err", err)
+			continue
+		}
+		if err := bridge.Handle(ctx, env); err != nil {
+			s.logger.Warn("ax25termws: bridge handle failed",
+				"user", user, "kind", env.Kind, "err", err)
+		}
+	}
+}
+
+func (s *Server) runTerminalWriter(ctx context.Context, c *websocket.Conn, out <-chan ax25termws.Envelope, done chan<- struct{}, user string) {
+	defer close(done)
+	ticker := time.NewTicker(terminalPingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case env, ok := <-out:
+			if !ok {
+				return
+			}
+			payload, err := json.Marshal(env)
+			if err != nil {
+				s.logger.Warn("ax25termws: encode envelope failed",
+					"user", user, "kind", env.Kind, "err", err)
+				continue
+			}
+			wctx, cancel := context.WithTimeout(ctx, terminalIdleTimeout)
+			err = c.Write(wctx, websocket.MessageText, payload)
+			cancel()
+			if err != nil {
+				s.logger.Debug("ax25termws: write failed; closing",
+					"user", user, "err", err)
+				return
+			}
+		case <-ticker.C:
+			pctx, cancel := context.WithTimeout(ctx, terminalIdleTimeout)
+			err := c.Ping(pctx)
+			cancel()
+			if err != nil {
+				s.logger.Debug("ax25termws: ping failed; closing",
+					"user", user, "err", err)
+				return
+			}
+		}
+	}
+}
+
+// isExpectedClose reports whether err signals a clean WebSocket
+// shutdown so the read loop logs at debug instead of warning.
+func isExpectedClose(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	switch websocket.CloseStatus(err) {
+	case websocket.StatusNormalClosure, websocket.StatusGoingAway:
+		return true
+	}
+	return false
+}
