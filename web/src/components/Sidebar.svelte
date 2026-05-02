@@ -22,28 +22,23 @@
 
   const navGroups = [
     {
-      label: 'Station Functions',
-      items: [
-        { path: '/beacons', label: 'Beacons' },
-        { path: '/digipeater', label: 'Digipeater' },
-        { path: '/igate', label: 'iGate' },
-        { path: '/kiss', label: 'KISS' },
-        { path: '/agw', label: 'AGW' },
-      ],
-    },
-    {
       label: 'Settings',
       items: [
-        { path: '/callsign', label: 'Station Callsign' },
-        { path: '/channels', label: 'Channels' },
+        { path: '/agw', label: 'AGW' },
         { path: '/audio-devices', label: 'Audio Devices' },
-        { path: '/ptt', label: 'PTT' },
-        { path: '/gps', label: 'GPS' },
-        { path: '/position-log', label: 'Position Log' },
-        { path: '/simulation', label: 'Simulation' },
-        { path: '/preferences/maps', label: 'Maps' },
+        { path: '/beacons', label: 'Beacons' },
+        { path: '/channels', label: 'Channels' },
+        { path: '/digipeater', label: 'Digipeater' },
         { path: '/preferences', label: 'General' },
+        { path: '/gps', label: 'GPS' },
+        { path: '/igate', label: 'iGate' },
+        { path: '/kiss', label: 'KISS' },
         { path: '/logs', label: 'Logs' },
+        { path: '/preferences/maps', label: 'Maps' },
+        { path: '/position-log', label: 'Position Log' },
+        { path: '/ptt', label: 'PTT' },
+        { path: '/simulation', label: 'Simulation' },
+        { path: '/callsign', label: 'Station Callsign' },
       ],
     },
   ];
