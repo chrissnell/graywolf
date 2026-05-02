@@ -17,6 +17,7 @@
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
+  import { mapState } from '../lib/map/map-store.svelte.js';
   import { toMaidenhead } from '../lib/map/maidenhead.js';
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
 
@@ -36,10 +37,12 @@
   ];
 
   const dataStore = createDataStore();
-  // Auto-fit on first successful poll: planet view → bounds of stations
+  // Auto-fit on first successful poll: default view → bounds of stations
   // heard in the active timerange (default 1h). One-shot, so panning/zooming
-  // afterward sticks.
-  let didAutoFit = false;
+  // afterward sticks. Suppressed when the operator already has a persisted
+  // view from a prior session — restoring that view is what they want, not
+  // having it yanked to the station bounds on first poll.
+  let didAutoFit = mapState.hasSavedView;
   let stationsLayer = null;
   let trailsLayer = null;
   let weatherLayer = null;
@@ -235,6 +238,15 @@
     zoomLevel = map.getZoom();
     map.on('zoom', () => (zoomLevel = map.getZoom()));
 
+    // Persist center/zoom across reloads. moveend covers pan+zoom (MapLibre
+    // fires it after every camera change, including programmatic easeTo /
+    // fitBounds — so the auto-fit destination is captured too).
+    map.on('moveend', () => {
+      const c = map.getCenter();
+      mapState.mapCenter = [c.lat, c.lng];
+      mapState.mapZoom = map.getZoom();
+    });
+
     // Coord display: cheap (single $state assignment per move). MapLibre
     // already throttles mousemove to once per animation frame, so this
     // is fine without an explicit rAF gate.
@@ -377,7 +389,11 @@
 
 <div class="livemap-shell">
   <!-- Start at planet view; onMapReady fits to recent stations after first poll. -->
-  <MaplibreMap initialCenter={[0, 20]} initialZoom={1} oncreate={onMapReady} />
+  <MaplibreMap
+    initialCenter={[mapState.mapCenter[1], mapState.mapCenter[0]]}
+    initialZoom={mapState.mapZoom}
+    oncreate={onMapReady}
+  />
 
   {#snippet panelBody()}
     <div class="layer-toggles">

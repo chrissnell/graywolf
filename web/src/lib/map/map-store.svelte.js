@@ -19,6 +19,11 @@ function loadInt(key, fallback) {
 }
 
 const hasSavedCenter = localStorage.getItem('map-center-lat') != null;
+const hasSavedZoom = localStorage.getItem('map-zoom') != null;
+// Captured once at module load: did this browser already have a persisted
+// map view when the page loaded? Consumers (LiveMapV2) use this to decide
+// whether to apply the one-shot auto-fit-to-stations on first poll.
+const hasSavedView = hasSavedCenter && hasSavedZoom;
 
 export const mapState = (() => {
   let selectedStation = $state(null);
@@ -83,5 +88,7 @@ export const mapState = (() => {
       mapZoom = v;
       localStorage.setItem('map-zoom', String(v));
     },
+
+    hasSavedView,
   };
 })();
