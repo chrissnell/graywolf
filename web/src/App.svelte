@@ -31,6 +31,7 @@
   import Messages from './routes/Messages.svelte';
   import Terminal from './routes/Terminal.svelte';
   import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
+  import Actions from './routes/Actions.svelte';
 
   const routes = {
     '/login': Login,
@@ -40,6 +41,7 @@
     '/messages/*': Messages,
     '/terminal': Terminal,
     '/terminal/transcripts': TerminalTranscripts,
+    '/actions': Actions,
     '/channels': Channels,
     '/audio-devices': AudioDevices,
     '/ptt': Ptt,
