@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actions &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Actions</h1>
+    <p class="subtitle">Operator-defined remote commands triggered over APRS</p>
+
+    <p>
+      An <strong>Action</strong> turns a specially-formatted APRS message
+      into a local command or webhook call. You define the Action in the
+      web UI, hand out a one-time-password (OTP) credential to whoever is
+      allowed to fire it, and from then on a packet of the form
+      <code>@@123456#unlock</code> coming over the air can run a script,
+      hit a webhook, flip a relay, or whatever else you wire up. Every
+      attempt &mdash; successful, denied, malformed &mdash; is logged, and
+      the result is replied to the sender on the same band the request
+      arrived on.
+    </p>
+
+    <p>
+      Actions live on the <strong>Actions</strong> page in the sidebar.
+      Three sections share the page: a list of defined Actions, a list
+      of OTP credentials, and a live tail of recent invocations.
+    </p>
+
+    <div class="screenshot">
+      <img src="img/actions-page.png" alt="Actions page showing the Actions table at top, OTP Credentials table below it, and Recent Invocations panel at the bottom" />
+      <div class="caption">The Actions page. Each row in the upper table is an Action; the credentials table feeds the OTP requirement; the panel at the bottom updates live as Actions fire.</div>
+    </div>
+
+    <h2>Message grammar</h2>
+
+    <p>
+      Graywolf treats an inbound APRS text message as an Action invocation
+      when <em>both</em> are true:
+    </p>
+
+    <ul>
+      <li>
+        The message is addressed to your station &mdash; either your
+        primary callsign, an enabled tactical alias, or an additional
+        listener addressee you have defined for Actions.
+      </li>
+      <li>
+        The message body begins with <code>@@</code>.
+      </li>
+    </ul>
+
+    <p>
+      The body grammar is:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <pre><code>@@&lt;otp&gt;#&lt;action&gt; [k=v ...]</code></pre>
+      </div>
+    </div>
+
+    <ul>
+      <li>
+        <code>@@</code> is the sentinel that separates Actions traffic
+        from normal messages. Without it, the inbound goes to your
+        Messaging inbox unchanged.
+      </li>
+      <li>
+        <code>&lt;otp&gt;</code> is six ASCII digits when the Action
+        requires OTP, or empty when it does not. The Action&rsquo;s
+        <strong>Require OTP</strong> toggle is what decides.
+      </li>
+      <li>
+        <code>&lt;action&gt;</code> is the Action&rsquo;s name. Names are
+        case-sensitive, 1&ndash;32 characters of <code>[A-Za-z0-9._-]</code>.
+      </li>
+      <li>
+        <code>[k=v ...]</code> are zero or more space-separated key=value
+        tokens, validated against the Action&rsquo;s argument schema.
+      </li>
+    </ul>
+
+    <h3>Examples</h3>
+
+    <div class="box">
+      <div class="box-body">
+        <pre><code># An OTP-protected Action with no args:
+@@482103#unlock
+
+# Same Action, with a key=value arg:
+@@482103#unlock door=garage
+
+# Public Action that does not require OTP:
+@@#status
+
+# Public Action with two args:
+@@#bulb room=kitchen state=on</code></pre>
+      </div>
+    </div>
+
+    <p>
+      The <strong>Actions</strong> page shows the exact wire syntax under
+      every Action&rsquo;s name as a copy-paste-ready hint, so you can
+      verify the grammar without referring back to this page.
+    </p>
+
+    <h2>Defining an Action</h2>
+
+    <p>
+      Click <strong>+ New Action</strong> at the top of the Actions
+      table. The modal that opens covers every field of the Action in
+      one form; the form is type-aware, so the lower half changes shape
+      depending on whether you pick <strong>command</strong> or
+      <strong>webhook</strong>.
+    </p>
+
+    <div class="screenshot">
+      <img src="img/actions-edit-modal.png" alt="Edit Action modal with the type set to Command, showing fields for name, description, command path, working directory, timeout, queue depth, rate limit, OTP credential, sender allowlist, and argument schema" />
+      <div class="caption">The Edit/New Action modal. Fields above the divider apply to every Action; the block below it changes for command vs webhook.</div>
+    </div>
+
+    <p>
+      Common fields:
+    </p>
+
+    <ul>
+      <li>
+        <strong>Name.</strong> 1&ndash;32 characters, the token that goes
+        after <code>#</code> in the wire grammar. Case-sensitive.
+        Must be unique across your Actions.
+      </li>
+      <li>
+        <strong>Description.</strong> Free-form, shown in the Actions table
+        and in the Test dialog. Operator-facing only.
+      </li>
+      <li>
+        <strong>Type.</strong> <code>command</code> or <code>webhook</code>.
+        See the type-specific blocks below.
+      </li>
+      <li>
+        <strong>Enabled.</strong> Off-switch without deleting. A disabled
+        Action replies <code>disabled</code> to any inbound rather than
+        running.
+      </li>
+      <li>
+        <strong>Require OTP.</strong> When on, the wire body
+        <strong>must</strong> include a six-digit code that validates
+        against the assigned OTP credential. When off, the
+        <code>&lt;otp&gt;</code> slot in the message is empty.
+      </li>
+      <li>
+        <strong>OTP credential.</strong> Required when <em>Require OTP</em>
+        is on. Pick from the credentials in the lower table on the
+        Actions page; if you have not created any yet, do that first
+        (next section).
+      </li>
+      <li>
+        <strong>Sender allowlist.</strong> Comma-separated callsigns. When
+        set, only these callsigns may fire the Action. APRS callsigns
+        are spoofable, so treat this as defense-in-depth on top of OTP,
+        not a replacement for it. Leave it empty to allow any callsign
+        that knows the OTP.
+      </li>
+      <li>
+        <strong>Timeout (sec).</strong> Hard ceiling on how long the
+        command or webhook may run before graywolf cancels it. Default
+        10 seconds. After the cancel, the executor sends
+        <code>SIGTERM</code> to a command and waits up to two more
+        seconds before <code>SIGKILL</code>.
+      </li>
+      <li>
+        <strong>Queue depth.</strong> Per-Action FIFO. The default is
+        one in-flight invocation; further inbounds within the queue
+        cap reply <code>busy</code>.
+      </li>
+      <li>
+        <strong>Rate limit (sec).</strong> Minimum gap between successful
+        invocations. Default 5 seconds. An inbound inside the window
+        replies <code>rate_limited</code>.
+      </li>
+      <li>
+        <strong>Argument schema.</strong> A list of
+        <code>{key, regex, required}</code> rows. Every key/value token
+        on the wire must match a row in the schema, and the value must
+        match the row&rsquo;s regex. Required keys missing from the
+        wire reply <code>bad_arg: &lt;key&gt;</code>. Empty schema
+        means no args accepted.
+      </li>
+    </ul>
+
+    <h3>Command Actions</h3>
+
+    <p>
+      A command Action runs an executable on the graywolf host.
+      Specific fields:
+    </p>
+
+    <ul>
+      <li>
+        <strong>Command path.</strong> Absolute path to the executable.
+        Graywolf does <strong>not</strong> shell out &mdash; the binary
+        is invoked argv-style, so quoting and shell metacharacters in
+        argument values are inert. If you need a shell pipeline, write
+        a script and point the command path at it.
+      </li>
+      <li>
+        <strong>Working directory.</strong> Optional. Defaults to the
+        directory containing the command path.
+      </li>
+    </ul>
+
+    <h4>Execution environment</h4>
+
+    <p>
+      Each invocation runs as the <code>graywolf</code> service user.
+      Graywolf passes the inbound metadata two ways:
+    </p>
+
+    <p><strong>argv</strong> (in this order):</p>
+
+    <ol>
+      <li><code>argv[0]</code> &mdash; the binary itself</li>
+      <li><code>argv[1]</code> &mdash; action name</li>
+      <li><code>argv[2]</code> &mdash; sender callsign</li>
+      <li><code>argv[3]</code> &mdash; <code>true</code> or <code>false</code> (whether OTP was verified)</li>
+      <li>
+        <code>argv[4]</code> onwards &mdash; one literal
+        <code>key=value</code> token per argument, in the order they
+        appeared on the wire
+      </li>
+    </ol>
+
+    <p><strong>Environment variables</strong>:</p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Value</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>GW_ACTION_NAME</code></td><td>the Action&rsquo;s name</td></tr>
+            <tr><td><code>GW_SENDER_CALL</code></td><td>callsign that sent the inbound</td></tr>
+            <tr><td><code>GW_OTP_VERIFIED</code></td><td><code>true</code> / <code>false</code></td></tr>
+            <tr><td><code>GW_OTP_CRED_NAME</code></td><td>name of the OTP credential used (or empty)</td></tr>
+            <tr><td><code>GW_SOURCE</code></td><td><code>rf</code> or <code>is</code></td></tr>
+            <tr><td><code>GW_INVOCATION_ID</code></td><td>numeric ID of the audit row for this invocation</td></tr>
+            <tr><td><code>GW_ARG_&lt;KEY&gt;</code></td><td>one variable per arg; key uppercased, non-alphanumerics replaced with <code>_</code></td></tr>
+            <tr><td><code>PATH</code></td><td><code>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      The script&rsquo;s <strong>exit code 0</strong> is success;
+      anything else replies <code>error: exit N</code>. Stdout and
+      stderr are merged and captured up to 4 KiB; the first ~50
+      characters of the captured output are echoed in the on-air reply
+      as <code>ok: ...</code>. The full capture lives in the audit row.
+    </p>
+
+    <h4>Are my scripts safe from injection?</h4>
+
+    <p>
+      Short answer: <strong>yes, by default</strong>, and you don&rsquo;t
+      need to do anything special to keep it that way. The longer answer
+      is worth understanding so you don&rsquo;t accidentally undo it in
+      your own script.
+    </p>
+
+    <p>
+      A classic worry is &ldquo;what if someone sends me an arg like
+      <code>foo;rm&nbsp;-rf&nbsp;/</code>?&rdquo; Two things stop that
+      from being dangerous:
+    </p>
+
+    <ul>
+      <li>
+        <strong>Graywolf never runs your command through a shell.</strong>
+        Your script is invoked directly with each argument handed to it
+        as a separate parameter. There is no shell parsing the arguments
+        in between, so semicolons, pipes, redirects, backticks, dollar
+        signs, and the rest of the shell metacharacter set are inert
+        &mdash; they arrive at your script as ordinary bytes inside one
+        single argument string.
+      </li>
+      <li>
+        <strong>The default arg regex rejects them anyway.</strong>
+        Out of the box, every <code>k=v</code> value must match
+        <code>[A-Za-z0-9,_-]{1,32}</code>. Spaces, slashes, semicolons,
+        and quotes never make it past the parser &mdash; the inbound
+        replies <code>bad_arg: &lt;key&gt;</code> and your script never
+        runs. You can widen the regex per-argument in the schema
+        editor when you have a real need (filenames, URLs), but the
+        default is deliberately tight.
+      </li>
+    </ul>
+
+    <p>
+      <strong>The one way to undo all of this is to write a script that
+      hands its arguments back to a shell yourself.</strong> Anything
+      that builds a command line from <code>$1</code> / <code>$2</code>
+      / <code>$GW_ARG_*</code> and runs it through <code>eval</code>,
+      <code>bash -c</code>, <code>sh -c</code>, or
+      <code>os.system()</code> reintroduces the shell that graywolf
+      worked hard to keep out. So:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <pre><code># DANGEROUS &mdash; this re-introduces the shell:
+bash -c "do-thing $1"
+
+# SAFE &mdash; quote the variable, or use it directly as an argv slot:
+do-thing "$1"
+do-thing -- "$GW_ARG_ROOM"</code></pre>
+      </div>
+    </div>
+
+    <p>
+      The same rule applies in any language: pass arguments as separate
+      list items to the next process you invoke (e.g. Python&rsquo;s
+      <code>subprocess.run([...])</code> as a list, not as a single
+      string), and keep the value out of any text that you
+      <code>eval</code>, <code>format</code>, or otherwise reparse.
+      As long as your script doesn&rsquo;t go out of its way to glue
+      arguments back into a shell command, the layered defenses
+      &mdash; argv-only execution, the default regex, the per-Action
+      rate limit, OTP, and the audit log &mdash; combine into a safe
+      remote-control surface.
+    </p>
+
+    <h3>Webhook Actions</h3>
+
+    <p>
+      A webhook Action issues an HTTP request when fired. Specific
+      fields:
+    </p>
+
+    <ul>
+      <li>
+        <strong>URL.</strong> The endpoint. Token expansion (see below)
+        runs on the URL before the request goes out, with values
+        URL-encoded.
+      </li>
+      <li>
+        <strong>Method.</strong> <code>GET</code> or <code>POST</code>.
+      </li>
+      <li>
+        <strong>Headers.</strong> Optional key/value list. Header values
+        are token-expanded literally (no encoding).
+      </li>
+      <li>
+        <strong>Body template.</strong> Optional, <code>POST</code>
+        only. When present, the literal body is the template with
+        tokens expanded (no encoding). When absent, graywolf sends a
+        default form-encoded body (<code>application/x-www-form-urlencoded</code>)
+        with one field per metadata item plus one field per argument.
+      </li>
+    </ul>
+
+    <h4>Tokens</h4>
+
+    <p>
+      The URL, header values, and body template can reference invocation
+      metadata using <code>{{name}}</code> tokens. Tokens are
+      substituted in a single pass &mdash; substituted text is never
+      reconsidered, so an arg value containing
+      <code>{{action}}</code> cannot leak through to a second
+      expansion.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Token</th><th>Value</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>{{action}}</code></td><td>action name</td></tr>
+            <tr><td><code>{{sender-callsign}}</code></td><td>sender&rsquo;s callsign</td></tr>
+            <tr><td><code>{{otp-verified}}</code></td><td><code>true</code> / <code>false</code></td></tr>
+            <tr><td><code>{{otp-cred}}</code></td><td>OTP credential name (or empty)</td></tr>
+            <tr><td><code>{{source}}</code></td><td><code>rf</code> or <code>is</code></td></tr>
+            <tr><td><code>{{arg.&lt;key&gt;}}</code></td><td>value of the named arg</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Examples:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <pre><code># URL-template; values get URL-encoded:
+https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
+
+# JSON body template; values are inserted literally:
+{"action":"{{action}}","sender":"{{sender-callsign}}","room":"{{arg.room}}"}</code></pre>
+      </div>
+    </div>
+
+    <p>
+      An HTTP <strong>2xx</strong> response is success; anything else
+      replies <code>error: http NNN</code>. The first 1 KiB of the
+      response body is captured for the audit row; the first ~50
+      characters appear in the on-air reply.
+    </p>
+
+    <p>
+      Webhook requests <strong>do not follow redirects</strong>. A
+      <code>3xx</code> response surfaces as <code>error: http 3NN</code>
+      and the redirect target is not chased. This is deliberate &mdash;
+      a remote attacker who can influence webhook URLs (or persuade
+      your endpoint to issue a redirect) cannot pivot the request
+      against an internal address through your station.
+    </p>
+
+    <h2>Creating an OTP credential</h2>
+
+    <p>
+      An OTP credential is a TOTP secret (the same kind your bank or
+      GitHub generates 6-digit codes against), with a friendly name.
+      You attach the credential to one or more Actions, and the codes
+      it produces become the <code>&lt;otp&gt;</code> in the wire
+      grammar.
+    </p>
+
+    <p>
+      Click <strong>+ New Credential</strong> on the Actions page,
+      give it a descriptive name (e.g. <code>field-laptop</code>,
+      <code>repeater-tech</code>), and click <strong>Create</strong>.
+      Graywolf generates a fresh secret server-side and returns the
+      one-time reveal panel:
+    </p>
+
+    <div class="screenshot">
+      <img src="img/actions-credential-reveal.png" alt="New credential reveal panel showing a QR code on the left, the base32 secret on the right with a copy button, and an 'I have saved it' button at the bottom" />
+      <div class="caption">The reveal panel. The secret only ever appears here, exactly once. After you close the panel, the secret is gone for good &mdash; graywolf retains only what it needs to verify codes.</div>
+    </div>
+
+    <p>
+      Save the secret immediately:
+    </p>
+
+    <ol>
+      <li>
+        <strong>Scan the QR code</strong> with an authenticator app
+        (see the next section), or
+      </li>
+      <li>
+        <strong>Copy the base32 secret</strong> shown on the right and
+        type/paste it into your authenticator manually.
+      </li>
+    </ol>
+
+    <p>
+      Click <strong>I&rsquo;ve saved it</strong> to dismiss the panel.
+      Once dismissed the secret is unreadable from the UI &mdash; it is
+      stored only as the verification material that graywolf needs to
+      check 6-digit codes. If you lose the device, delete the
+      credential and create a new one.
+    </p>
+
+    <p class="note">
+      <strong>Single-station design.</strong> All credentials use
+      <code>graywolf</code> as the issuer and your station callsign as
+      the account label inside the authenticator app. The UI does not
+      expose the issuer/account fields because graywolf is a
+      single-operator station.
+    </p>
+
+    <h2>Authenticator apps</h2>
+
+    <p>
+      Any standard TOTP authenticator works. The QR code in the reveal
+      panel encodes the standard <code>otpauth://</code> URI, and the
+      base32 secret is plain RFC 4648.
+    </p>
+
+    <ul>
+      <li>
+        <strong>Google Authenticator</strong> &mdash; tap
+        <em>+</em> &rarr; <em>Scan a QR code</em>, point the camera at
+        the panel, done. Or <em>+</em> &rarr; <em>Enter a setup key</em>
+        and paste the base32 string.
+      </li>
+      <li>
+        <strong>Authy</strong> &mdash; <em>Add Account</em> &rarr;
+        <em>Scan QR Code</em>, or
+        <em>Enter Code Manually</em> for the base32 string. Authy
+        backs the account up to its cloud; if you do not want that,
+        prefer Google Authenticator or 1Password.
+      </li>
+      <li>
+        <strong>1Password</strong> &mdash; create a new login item, add
+        a One-Time Password field, click the QR icon and use either
+        the camera or paste the URL/secret. 1Password syncs across
+        devices through your vault, which is convenient if you operate
+        from multiple radios.
+      </li>
+      <li>
+        <strong>Bitwarden, KeePassXC, etc.</strong> &mdash; any TOTP-aware
+        password manager works the same way; either scan the QR or
+        paste the base32 secret.
+      </li>
+    </ul>
+
+    <p>
+      A code is valid for 30 seconds (the standard TOTP step), and
+      graywolf accepts the code from the previous and next step too,
+      giving each code a roughly 90-second window of validity. Once a
+      code has been used successfully, an in-memory replay ring rejects
+      that exact <code>(credential, step, code)</code> tuple for the
+      remainder of its window, so a sniffed RF code cannot be replayed
+      by a third party.
+    </p>
+
+    <h2>Sender allowlist and rate limits</h2>
+
+    <p>
+      Two soft layers sit on top of OTP:
+    </p>
+
+    <ul>
+      <li>
+        <strong>Sender allowlist.</strong> When set, the sender&rsquo;s
+        callsign must match one of the listed callsigns or the inbound
+        replies <code>denied</code>. The allowlist is checked
+        <em>before</em> the OTP is probed, so a denied sender cannot
+        use timing or replies to test whether a code is valid.
+      </li>
+      <li>
+        <strong>Rate limit.</strong> One successful invocation per
+        <code>rate_limit_sec</code> window per Action, default 5
+        seconds. An inbound inside the window replies
+        <code>rate_limited</code>. The window is per-Action, so two
+        different Actions do not share a single budget.
+      </li>
+    </ul>
+
+    <p>
+      Both are tunable per Action. APRS callsigns are spoofable, so
+      treat the allowlist as defense in depth on top of OTP, not as a
+      standalone gate.
+    </p>
+
+    <h2>Reply format</h2>
+
+    <p>
+      Every invocation produces an APRS reply on the band the request
+      arrived on:
+    </p>
+
+    <ul>
+      <li>
+        Inbound over RF &rarr; reply via RF first, with APRS-IS as
+        backup if RF cannot deliver.
+      </li>
+      <li>
+        Inbound over APRS-IS &rarr; reply via APRS-IS only (the sender
+        obviously has internet reach; RF is not guaranteed).
+      </li>
+    </ul>
+
+    <p>
+      The first word of the reply is always one of these status
+      tokens:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Status</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>ok</code></td><td>command exit 0 / HTTP 2xx; first ~50 chars of output follow after a colon</td></tr>
+            <tr><td><code>unknown</code></td><td>parse failure or no Action by that name</td></tr>
+            <tr><td><code>denied</code></td><td>sender not in the allowlist</td></tr>
+            <tr><td><code>no_credential</code></td><td>Action requires OTP but the assigned credential is missing or was deleted</td></tr>
+            <tr><td><code>bad_otp</code> / <code>bad_otp: missing</code> / <code>bad_otp: replay</code> / <code>bad_otp: verify</code></td><td>OTP wrong, empty when required, replayed within the ring window, or verifier rejection</td></tr>
+            <tr><td><code>bad_arg: &lt;key&gt;</code></td><td>argument failed the schema; first offending key reported</td></tr>
+            <tr><td><code>disabled</code></td><td>Action exists but is toggled off</td></tr>
+            <tr><td><code>busy</code></td><td>per-Action queue full</td></tr>
+            <tr><td><code>rate_limited</code></td><td>within the rate-limit window of the previous invocation</td></tr>
+            <tr><td><code>timeout</code></td><td>command/webhook exceeded its timeout</td></tr>
+            <tr><td><code>error: ...</code></td><td>command non-zero exit, HTTP non-2xx, or transport failure</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      The hard ceiling on the reply is the APRS message cap (~67
+      bytes). When the captured output exceeds the budget, graywolf
+      truncates and flags the reply with a trailing ellipsis &mdash;
+      the full capture remains in the audit log.
+    </p>
+
+    <h2>Audit log</h2>
+
+    <p>
+      Every attempt &mdash; successful, denied, malformed,
+      rate-limited &mdash; produces an audit row, surfaced as the
+      <strong>Recent Invocations</strong> panel at the bottom of the
+      Actions page. Filters at the top of the panel narrow by Action
+      name, sender callsign, status, and time range; the panel
+      live-polls every five seconds.
+    </p>
+
+    <div class="screenshot">
+      <img src="img/actions-invocations.png" alt="Recent Invocations panel showing a filterable table with columns for time, Action, sender, source, status, output snippet, and a details disclosure" />
+      <div class="caption">Recent Invocations. Each row carries the parsed args, the captured output, and the reply text that went on the air.</div>
+    </div>
+
+    <p>
+      Each row records:
+    </p>
+
+    <ul>
+      <li>Action name (denormalized so deleted Actions still read sensibly)</li>
+      <li>Sender callsign and source (<code>rf</code> or <code>is</code>)</li>
+      <li>OTP verification status and credential name used</li>
+      <li>Parsed args (each value capped at 64 characters in the row)</li>
+      <li>Status and a short detail string</li>
+      <li>Exit code (commands) or HTTP status (webhooks)</li>
+      <li>Output capture (first ~1 KiB of stdout / response body)</li>
+      <li>The exact reply text that went out on the air</li>
+    </ul>
+
+    <p>
+      <strong>Retention.</strong> The audit table is pruned daily.
+      Graywolf keeps the last 1000 rows or rows younger than 30 days,
+      whichever bound is reached first. There is currently no UI knob
+      to change those defaults; if you need longer retention, export
+      rows yourself periodically.
+    </p>
+
+    <h2>Security notes</h2>
+
+    <ul>
+      <li>
+        <strong>All inbound is hostile.</strong> Every value reaching
+        the executor has passed (a) the global allowed-arg regex or
+        per-key override and (b) a size cap. There is no path through
+        which a sender&rsquo;s message text reaches a shell parser.
+      </li>
+      <li>
+        <strong>No shell.</strong> Commands are exec&rsquo;d via argv;
+        webhook URL/header/body templates are token-expanded with
+        URL-encoding (URLs) or literal substitution (headers, body).
+        Quoting and metacharacters in arg values are inert.
+      </li>
+      <li>
+        <strong>TOTP replay protection.</strong> The 30-second TOTP step
+        plus &plusmn;1 window means a code is valid for ~90 seconds
+        end-to-end. The in-memory replay ring rejects reuse of the
+        exact <code>(credential, step, code)</code> tuple, so a sniffed
+        RF code cannot be replayed by a third party.
+      </li>
+      <li>
+        <strong>Sender allowlist is defense in depth, not a primary
+        gate.</strong> APRS callsigns are spoofable. Use it to limit
+        damage even when an OTP secret leaks.
+      </li>
+      <li>
+        <strong>Rate limit caps abuse.</strong> Even with a valid OTP,
+        an Action cannot fire more than once per
+        <code>rate_limit_sec</code> window. Default 5 seconds.
+      </li>
+      <li>
+        <strong>Per-Action queue caps concurrency.</strong> Default
+        depth one; overflow returns <code>busy</code> rather than
+        dropping silently.
+      </li>
+      <li>
+        <strong>Audit log records every attempt</strong> &mdash;
+        successful, denied, malformed, rate-limited &mdash; so abuse
+        patterns surface.
+      </li>
+      <li>
+        <strong>OTP secrets at rest are plaintext</strong> in the
+        graywolf config DB, sharing the same protection model as your
+        APRS-IS passcode and other graywolf credentials. The operator
+        is responsible for filesystem-level protection of the DB file.
+      </li>
+      <li>
+        <strong>Commands run as the <code>graywolf</code> service
+        user.</strong> Privileged operations require an out-of-band
+        sudo rule; there is no setuid knob in the Actions UI.
+      </li>
+      <li>
+        <strong>Webhooks do not follow redirects</strong> &mdash;
+        prevents an attacker-controlled
+        <code>3xx</code> from pivoting the request to internal
+        addresses (cloud metadata, RFC1918 hosts, loopback).
+      </li>
+    </ul>
+
+    <h2>Troubleshooting</h2>
+
+    <h3>Use the Test button before you go on the air</h3>
+
+    <p>
+      Each row in the Actions table has a <strong>Test</strong> button.
+      It opens a dialog that lets you enter values for the Action&rsquo;s
+      args (one input per schema row) and fire the executor through the
+      same code path as a real invocation. The Test path
+      <strong>bypasses OTP and the sender allowlist</strong> &mdash;
+      you are already authenticated to the web UI &mdash; but exercises
+      the full sanitization, executor, and audit-write path. The
+      dialog warns about the bypass in its subhead so you do not
+      conclude an Action is unprotected based on Test results.
+    </p>
+
+    <div class="screenshot">
+      <img src="img/actions-test-dialog.png" alt="Test Action dialog showing a warning about OTP/allowlist bypass at the top, a row of arg inputs, a Run button, and a status-badged result panel below" />
+      <div class="caption">Test dialog. The result panel shows the same status token, output snippet, and reply text the on-air sender would see.</div>
+    </div>
+
+    <h3>Reading invocation rows</h3>
+
+    <ul>
+      <li>
+        <strong>Status <code>unknown</code>.</strong> Either the Action
+        name is wrong or the wire grammar did not parse. Look at the
+        raw inbound on the <a href="messaging.html">Messaging</a> page
+        &mdash; remember that an inbound that does not match the
+        <code>@@</code> sentinel goes to the inbox unchanged.
+      </li>
+      <li>
+        <strong>Status <code>bad_otp: replay</code>.</strong> The exact
+        same code arrived twice within ~90 seconds. Wait for the next
+        code and resend.
+      </li>
+      <li>
+        <strong>Status <code>bad_arg: &lt;key&gt;</code>.</strong> The
+        wire value did not match the regex configured for that key
+        in the Action&rsquo;s argument schema. Open the Action,
+        check the row in the schema editor, and either widen the
+        regex or fix the sender&rsquo;s syntax.
+      </li>
+      <li>
+        <strong>Status <code>no_credential</code>.</strong> The Action
+        is set <em>Require OTP</em> but its assigned credential row
+        is missing &mdash; usually because the credential was deleted
+        in the Credentials table. Re-attach an existing credential or
+        create a new one.
+      </li>
+      <li>
+        <strong>Status <code>busy</code> on slow Actions.</strong> The
+        per-Action queue is at capacity. Either raise the queue depth,
+        shorten the executor&rsquo;s runtime, or accept that
+        back-to-back requests will be deferred.
+      </li>
+      <li>
+        <strong>Status <code>timeout</code>.</strong> The executor took
+        longer than <code>timeout_sec</code>. Raise the timeout or
+        speed up the underlying command/endpoint. Commands receive
+        <code>SIGTERM</code> on cancel and have a two-second grace
+        period before <code>SIGKILL</code>.
+      </li>
+    </ul>
+
+    <h3>Listener addressees</h3>
+
+    <p>
+      In addition to your primary callsign and tactical aliases, you
+      can register extra Actions-only addressees in the
+      <strong>Listener Addressees</strong> editor on the Actions page.
+      A listener addressee is exclusively a trigger surface for
+      Actions &mdash; messages addressed to a listener do
+      <strong>not</strong> appear in your Messaging inbox even when
+      they do not begin with <code>@@</code>; they are treated as
+      Actions traffic only. Use them when you want a public command
+      surface (for example <code>GW-CMD</code>) without overloading
+      your station&rsquo;s primary callsign.
+    </p>
+
+    <nav class="page-nav">
+      <a href="messaging.html">
+        <span class="label">Previous</span>
+        Messaging
+      </a>
+      <a href="livemap.html" class="next">
+        <span class="label">Next</span>
+        Live Map
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

@@ -220,7 +220,7 @@ results.
 
 - Plan / design intent:
   [`../superpowers/plans/2026-05-02-graywolf-actions.md`](../superpowers/plans/2026-05-02-graywolf-actions.md)
-- Operator handbook page: see Phase J (forthcoming).
+- Operator handbook page: [`../handbook/actions.html`](../handbook/actions.html).
 - Wire grammar lives only in
   [`../../pkg/actions/parser.go`](../../pkg/actions/parser.go); the
   classifier never reparses on its own.
