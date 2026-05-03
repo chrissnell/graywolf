@@ -14,14 +14,15 @@ import (
 // the messages.Service is up and parks it on App for the rxfanout
 // classifier hook to reach.
 type Service struct {
-	store      serviceStore
-	classifier *Classifier
-	runner     *Runner
-	verifier   *OTPVerifier
-	listeners  *AddresseeSet
-	registry   *ExecutorRegistry
-	stopAudit  func()
-	logger     *slog.Logger
+	store        serviceStore
+	classifier   *Classifier
+	runner       *Runner
+	verifier     *OTPVerifier
+	listeners    *AddresseeSet
+	registry     *ExecutorRegistry
+	stopAudit    func()
+	stopOTPSweep func()
+	logger       *slog.Logger
 }
 
 // ServiceConfig wires the subsystem to the host process.
@@ -114,16 +115,18 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	})
 
 	stop := StartAuditPruner(ctx, cfg.Store, cfg.AuditPruner)
+	stopSweep := StartOTPSweeper(ctx, verifier, 0)
 
 	s := &Service{
-		store:      cfg.Store,
-		classifier: classifier,
-		runner:     runner,
-		verifier:   verifier,
-		listeners:  listeners,
-		registry:   registry,
-		stopAudit:  stop,
-		logger:     logger,
+		store:        cfg.Store,
+		classifier:   classifier,
+		runner:       runner,
+		verifier:     verifier,
+		listeners:    listeners,
+		registry:     registry,
+		stopAudit:    stop,
+		stopOTPSweep: stopSweep,
+		logger:       logger,
 	}
 	if err := s.ReloadListeners(ctx); err != nil {
 		return nil, err
@@ -157,15 +160,17 @@ func newServiceForTest(ctx context.Context, store serviceStore, replies ReplySen
 		Runner:      runner,
 	})
 	stop := StartAuditPruner(ctx, store, AuditPrunerConfig{})
+	stopSweep := StartOTPSweeper(ctx, verifier, 0)
 	return &Service{
-		store:      store,
-		classifier: classifier,
-		runner:     runner,
-		verifier:   verifier,
-		listeners:  listeners,
-		registry:   registry,
-		stopAudit:  stop,
-		logger:     logger,
+		store:        store,
+		classifier:   classifier,
+		runner:       runner,
+		verifier:     verifier,
+		listeners:    listeners,
+		registry:     registry,
+		stopAudit:    stop,
+		stopOTPSweep: stopSweep,
+		logger:       logger,
 	}
 }
 
@@ -195,6 +200,9 @@ func (s *Service) ReloadListeners(ctx context.Context) error {
 
 // Stop releases background resources. Safe to call multiple times.
 func (s *Service) Stop() {
+	if s.stopOTPSweep != nil {
+		s.stopOTPSweep()
+	}
 	if s.stopAudit != nil {
 		s.stopAudit()
 	}

@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -72,8 +73,8 @@ func (v *OTPVerifier) Verify(credID uint, secretB32, code string) (bool, error) 
 }
 
 // Sweep purges expired ring entries. Safe to call from a background
-// goroutine. The composition root in Phase E owns the periodic ticker
-// that invokes this; NewOTPVerifier intentionally does not start one.
+// goroutine. Service owns the periodic ticker via StartOTPSweeper;
+// NewOTPVerifier intentionally does not start one.
 func (v *OTPVerifier) Sweep() {
 	now := v.now()
 	v.mu.Lock()
@@ -83,6 +84,38 @@ func (v *OTPVerifier) Sweep() {
 			delete(v.used, k)
 		}
 	}
+}
+
+// DefaultOTPSweepInterval is how often the Service-owned ticker
+// invokes Sweep. The replay-ring TTL is ~150s; 5 minutes is a small
+// constant multiple, keeping the residual entry count bounded
+// without burning a goroutine on a tight loop.
+const DefaultOTPSweepInterval = 5 * time.Minute
+
+// StartOTPSweeper runs Sweep at interval (or DefaultOTPSweepInterval
+// when zero) until the returned stop func is called or ctx is
+// cancelled. Idempotent stop.
+func StartOTPSweeper(ctx context.Context, v *OTPVerifier, interval time.Duration) func() {
+	if interval <= 0 {
+		interval = DefaultOTPSweepInterval
+	}
+	stopCh := make(chan struct{})
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopCh:
+				return
+			case <-t.C:
+				v.Sweep()
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(stopCh) }) }
 }
 
 func replayKey(credID uint, step int64, code string) string {
