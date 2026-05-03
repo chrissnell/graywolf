@@ -17,8 +17,8 @@
   });
 </script>
 
-<div class="qr-wrap" style:width="{size}px" style:height="{size}px">
-  <canvas bind:this={canvas} aria-label={alt} role="img"></canvas>
+<div class="qr-wrap" style:width="{size}px" style:height="{size}px" role="img" aria-label={alt}>
+  <canvas bind:this={canvas}></canvas>
 </div>
 
 <style>

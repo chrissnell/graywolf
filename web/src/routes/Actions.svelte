@@ -9,10 +9,9 @@
   import InvocationsPanel from '../components/actions/InvocationsPanel.svelte';
   import EditActionModal from '../components/actions/EditActionModal.svelte';
   import TestActionDialog from '../components/actions/TestActionDialog.svelte';
+  import NewCredentialModal from '../components/actions/NewCredentialModal.svelte';
 
-  // Modal-coordination state. NewCredential modal lands in Phase I;
-  // until then, the placeholder toast still fires so the operator gets
-  // visible feedback instead of a silent state flip.
+  // Modal-coordination state.
   let editingAction = $state(null);
   let testingAction = $state(null);
   let editOpen = $state(false);
@@ -37,7 +36,6 @@
 
   function openNewCred() {
     newCredOpen = true;
-    toast('New credential modal lands in the next release.', 'info');
   }
 
   onMount(() => actionsStore.loadAll());
@@ -85,6 +83,8 @@
   action={testingAction}
   onClose={() => (testingAction = null)}
 />
+
+<NewCredentialModal bind:open={newCredOpen} />
 
 <style>
   .actions-page {
