@@ -1,9 +1,10 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { Table, Badge, Button, Input, Select } from '@chrissnell/chonky-ui';
+  import { Table, Badge, Button, Input, Select, toast } from '@chrissnell/chonky-ui';
   import ConfirmDialog from '../ConfirmDialog.svelte';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { invocationsApi } from '../../lib/actions/api.js';
+  import { timeAgo } from '../../lib/actions/time.js';
 
   let clearOpen = $state(false);
 
@@ -29,20 +30,6 @@
   ];
 
   let pollTimer = $state(null);
-
-  function timeAgo(isoStr) {
-    if (!isoStr) return '—';
-    const ms = Date.now() - new Date(isoStr).getTime();
-    if (Number.isNaN(ms)) return '—';
-    const sec = Math.floor(ms / 1000);
-    if (sec < 60) return `${sec}s ago`;
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `${min} min ago`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr}h ${min % 60}m ago`;
-    const day = Math.floor(hr / 24);
-    return `${day}d ago`;
-  }
 
   function statusVariant(s) {
     switch (s) {
@@ -91,8 +78,9 @@
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
-    } catch {
-      // best-effort; older browsers will silently no-op
+      toast('Copied to clipboard.', 'success', 1500);
+    } catch (err) {
+      toast(`Copy failed: ${err?.message ?? 'clipboard not available'}`, 'error');
     }
   }
 
@@ -101,12 +89,29 @@
     ...actionsStore.actions.map((a) => ({ value: String(a.id), label: a.name })),
   ]);
 
+  // Free-text search debounces so typing doesn't fire one request per
+  // keystroke. Dropdown changes refresh immediately because they fire
+  // once per selection.
+  let searchTimer = null;
+  function onSearchInput() {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchTimer = null;
+      actionsStore.refreshInvocations();
+    }, 250);
+  }
+
   function onFilterChange() {
     actionsStore.refreshInvocations();
   }
 
   async function clearLog() {
-    await invocationsApi.clear();
+    const { error } = await invocationsApi.clear();
+    if (error) {
+      toast(`Clear failed: ${error.error ?? error.message ?? error}`, 'error');
+    } else {
+      toast('Invocation log cleared.', 'success');
+    }
     await actionsStore.refreshInvocations();
   }
 
@@ -140,7 +145,7 @@
       type="text"
       placeholder="Search messages, callsigns..."
       bind:value={actionsStore.invocationFilter.q}
-      oninput={onFilterChange}
+      oninput={onSearchInput}
     />
     <Select
       bind:value={actionsStore.invocationFilter.actionId}
@@ -210,7 +215,8 @@
                   <button
                     type="button"
                     class="detail"
-                    title="Copy"
+                    title="Click to copy"
+                    aria-label={`Copy reply: ${detail}`}
                     onclick={() => copy(detail)}
                   >
                     {detail.length > 80 ? detail.slice(0, 80) + '…' : detail}

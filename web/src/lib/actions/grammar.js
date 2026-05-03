@@ -11,3 +11,14 @@ export function exampleMessage({
     .join(' ');
   return `@@${otp}#${action}${argsStr ? ' ' + argsStr : ''}`;
 }
+
+// Split the comma/whitespace-separated callsign allowlist string the
+// backend stores into an array of trimmed callsigns. Empty input → [].
+// Phase H's modal validates the same field; keep parsing in one place.
+export function parseAllowlist(s) {
+  if (!s) return [];
+  return s
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}

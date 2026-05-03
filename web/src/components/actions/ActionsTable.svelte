@@ -1,8 +1,10 @@
 <script>
-  import { Table, Badge, Button, EmptyState } from '@chrissnell/chonky-ui';
+  import { Table, Badge, Button, EmptyState, toast } from '@chrissnell/chonky-ui';
   import ConfirmDialog from '../ConfirmDialog.svelte';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { actionsApi } from '../../lib/actions/api.js';
+  import { timeAgo } from '../../lib/actions/time.js';
+  import { parseAllowlist } from '../../lib/actions/grammar.js';
 
   // Callbacks from parent. onEdit(null) opens the modal in "create" mode;
   // passing an action opens it for editing.
@@ -14,28 +16,6 @@
   let confirmOpen = $state(false);
   let pendingDelete = $state(null);
 
-  function timeAgo(isoStr) {
-    if (!isoStr) return '—';
-    const ms = Date.now() - new Date(isoStr).getTime();
-    if (Number.isNaN(ms)) return '—';
-    const sec = Math.floor(ms / 1000);
-    if (sec < 60) return `${sec}s ago`;
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `${min} min ago`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr}h ${min % 60}m ago`;
-    const day = Math.floor(hr / 24);
-    return `${day}d ago`;
-  }
-
-  function parseAllowlist(s) {
-    if (!s) return [];
-    return s
-      .split(/[,\s]+/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-  }
-
   function askDelete(action) {
     pendingDelete = action;
     confirmOpen = true;
@@ -43,7 +23,12 @@
 
   async function confirmDelete() {
     if (!pendingDelete?.id) return;
-    await actionsApi.remove(pendingDelete.id);
+    const { error } = await actionsApi.remove(pendingDelete.id);
+    if (error) {
+      toast(`Delete failed: ${error.error ?? error.message ?? error}`, 'error');
+    } else {
+      toast(`Deleted action "${pendingDelete.name}".`, 'success');
+    }
     pendingDelete = null;
     await actionsStore.loadAll();
   }
