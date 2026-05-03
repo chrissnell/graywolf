@@ -241,8 +241,9 @@
   }
 
   function doClose() {
+    // Setting open=false triggers chonky's Modal onClose, which calls
+    // the parent's onClose. Don't double-fire it here.
     open = false;
-    onClose?.();
   }
 </script>
 

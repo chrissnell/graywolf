@@ -825,19 +825,21 @@ type Action struct {
 	WebhookHeaders      string `gorm:"type:text;default:'{}'"` // JSON map
 	WebhookBodyTemplate string `gorm:"type:text"`
 	TimeoutSec          int    `gorm:"not null;default:10"`
-	// gorm `default:true` on a Go bool: an explicit false from the
-	// wire is indistinguishable from omitted and the persisted row
-	// reads back true. Tests that round-trip a created action and
-	// then PUT it must override OTPRequired before the second write.
-	// Promote to `*bool` if the disambiguation matters for a future
-	// caller.
-	OTPRequired         bool   `gorm:"not null;default:true"`
+	// `default:true` on a gorm bool tag is a footgun: gorm uses it as
+	// the value to send when the Go field is its zero value, which makes
+	// a genuine `false` from the wire indistinguishable from "field not
+	// set". A fresh action created with the toggle off would silently
+	// persist as enabled. The DDL still carries DEFAULT 1 (see
+	// migrate_actions.go) for downgrade-safety; the application layer
+	// always provides an explicit value via the dto.Action wire shape,
+	// so dropping the gorm-side default here costs nothing.
+	OTPRequired         bool   `gorm:"not null"`
 	OTPCredentialID     *uint  `gorm:"column:otp_credential_id"` // FK to OTPCredential, nullable; ON DELETE SET NULL
 	SenderAllowlist     string // CSV
 	ArgSchema           string `gorm:"type:text;default:'[]'"` // JSON list
 	RateLimitSec        int    `gorm:"not null;default:5"`
 	QueueDepth          int    `gorm:"not null;default:8"`
-	Enabled             bool   `gorm:"not null;default:true"`
+	Enabled             bool   `gorm:"not null"`
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }
