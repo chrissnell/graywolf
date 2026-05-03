@@ -80,22 +80,50 @@
     }
   }
 
-  function finish() {
-    // The reveal panel is one-shot. Refresh the credentials table so
-    // the new row appears, then close the modal — `revealed` resets on
-    // the next open via the $effect above.
-    toast(`Credential "${revealed.name}" created.`, 'success');
-    actionsStore.loadAll();
-    open = false;
+  async function finish() {
+    // The reveal panel is one-shot. Wipe the secret from JS memory
+    // before doing anything async so a debugger pause / heap dump in
+    // the loadAll round-trip cannot surface it. Awaiting loadAll keeps
+    // us aligned with neighbor components (CredentialsTable, etc.) so
+    // the toast and table state agree.
+    const credName = revealed.name;
+    revealed = null;
+    toast(`Credential "${credName}" created.`, 'success');
+    try {
+      await actionsStore.loadAll();
+    } finally {
+      open = false;
+    }
   }
 
   function cancel() {
     if (revealed) return; // stage 2 has no Cancel
     open = false;
   }
+
+  // Any close path while `revealed` is set is a forfeiture. Wipe the
+  // secret immediately and refresh the credentials table so the row
+  // still appears even though the operator escaped via Esc / backdrop.
+  // The Esc/backdrop dismissal itself is suppressed via the chonky
+  // Modal `onEscapeKeydown` / `onInteractOutside` handlers below; this
+  // hook is the safety net for any other close path (e.g. the host
+  // page unmounting the modal).
+  function handleClose() {
+    if (revealed) {
+      revealed = null;
+      actionsStore.loadAll();
+    }
+    onClose?.();
+  }
 </script>
 
-<Modal bind:open onClose={() => onClose?.()} class="new-credential-modal">
+<Modal
+  bind:open
+  onClose={handleClose}
+  onEscapeKeydown={(e) => { if (revealed) e.preventDefault(); }}
+  onInteractOutside={(e) => { if (revealed) e.preventDefault(); }}
+  class="new-credential-modal"
+>
   <Modal.Header>
     <h3 class="modal-title">
       {revealed ? 'Save your one-time-password secret' : 'New OTP Credential'}

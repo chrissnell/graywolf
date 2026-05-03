@@ -12,20 +12,59 @@
   let copied = $state(false);
   let copyError = $state(null);
   let resetTimer = null;
+  let inputEl;
+
+  function markCopied() {
+    copied = true;
+    onCopied?.();
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => {
+      copied = false;
+    }, 1200);
+  }
+
+  // navigator.clipboard requires a secure context (HTTPS or localhost).
+  // Operators frequently access graywolf over plain HTTP on a LAN IP,
+  // where the call is undefined. Fall back to a hidden-textarea +
+  // execCommand('copy') path so the Copy button still works there.
+  function legacyCopy() {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'absolute';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    } finally {
+      document.body.removeChild(ta);
+    }
+    return ok;
+  }
 
   async function copy() {
     copyError = null;
-    try {
-      await navigator.clipboard.writeText(value);
-      copied = true;
-      onCopied?.();
-      clearTimeout(resetTimer);
-      resetTimer = setTimeout(() => {
-        copied = false;
-      }, 1200);
-    } catch (e) {
-      copyError = e?.message || 'Copy failed.';
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        markCopied();
+        return;
+      } catch {
+        // fall through to legacy path
+      }
     }
+    if (legacyCopy()) {
+      markCopied();
+      return;
+    }
+    copyError = 'Copy failed. Click the field, then press Cmd/Ctrl+C.';
+    const fallback = inputEl ?? (id ? document.getElementById(id) : null);
+    fallback?.focus?.();
+    fallback?.select?.();
   }
 </script>
 
@@ -40,7 +79,10 @@
       readonly
       {value}
       class={monospace ? 'mono' : ''}
-      onclick={(e) => e.currentTarget.select()}
+      onclick={(e) => {
+        inputEl = e.currentTarget;
+        e.currentTarget.select();
+      }}
     />
     <Button variant="secondary" onclick={copy} aria-label="Copy {label || 'value'} to clipboard">
       {copied ? 'Copied!' : 'Copy'}
