@@ -52,9 +52,33 @@ describe('isActionReply', () => {
     };
     assert.ok(!isActionReply(reply));
   });
-  it('exposes a non-empty STATUS_PREFIXES list', () => {
+  it('exposes a non-empty STATUS_PREFIXES list using on-air wire words', () => {
     assert.ok(STATUS_PREFIXES.includes('ok'));
-    assert.ok(STATUS_PREFIXES.includes('error:'));
-    assert.ok(STATUS_PREFIXES.includes('bad_otp'));
+    assert.ok(STATUS_PREFIXES.includes('error'));
+    assert.ok(STATUS_PREFIXES.includes('bad otp'));
+    assert.ok(STATUS_PREFIXES.includes('rate-limited'));
+    assert.ok(STATUS_PREFIXES.includes('no-credential'));
+  });
+  it('flags a "bad otp" reply (space, not underscore)', () => {
+    const now = Date.now();
+    recordOutboundFire('KK7XYZ-9', 'unlock', now);
+    const reply = {
+      from_call: 'KK7XYZ-9',
+      direction: 'in',
+      text: 'bad otp',
+      created_at: new Date(now + 1000).toISOString(),
+    };
+    assert.ok(isActionReply(reply));
+  });
+  it('flags an "error: detail" reply', () => {
+    const now = Date.now();
+    recordOutboundFire('KK7XYZ-9', 'unlock', now);
+    const reply = {
+      from_call: 'KK7XYZ-9',
+      direction: 'in',
+      text: 'error: timeout while running',
+      created_at: new Date(now + 1000).toISOString(),
+    };
+    assert.ok(isActionReply(reply));
   });
 });

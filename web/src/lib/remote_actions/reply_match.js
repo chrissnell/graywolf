@@ -6,10 +6,12 @@
 // MessageBubble can render the zap-reply adornment.
 //
 // Mitigation against false positives: a candidate reply is only
-// flagged when its body starts with one of STATUS_PREFIXES -- the same
-// status enum the receiver runner emits (pkg/actions/types.go). This
-// trades a small recall miss (a free-form remark from the peer that
-// happens to start with "ok") for the safer direction.
+// flagged when its body starts with one of STATUS_PREFIXES -- the
+// on-air words emitted by pkg/actions/reply.go statusWord(). Note
+// the wire form differs from the Go enum names: "bad otp" with a
+// space, "rate-limited" with a hyphen, etc. Keep this list in sync
+// with reply.go statusWord(); a Status value whose word doesn't
+// appear here will never correlate as an action reply.
 //
 // State is a per-tab Map keyed by (peer, action_name); each value is
 // the latest sent_at_ms. The map is bounded loosely -- keys self-expire
@@ -20,22 +22,25 @@ export const REPLY_WINDOW_MS = 60_000;
 
 export const STATUS_PREFIXES = [
   'ok',
-  'error:',
-  'bad_otp',
-  'bad_arg',
+  'error',          // also matches "error: <detail>"
+  'bad otp',
+  'bad arg',
   'denied',
   'unknown',
   'disabled',
   'busy',
-  'rate_limited',
+  'rate-limited',
   'timeout',
-  'no_credential',
+  'no-credential',
 ];
 
 const fires = new Map(); // key: peer, value: { lastSentAtMs }
 
 export function recordOutboundFire(peer, actionName, sentAtMs = Date.now()) {
   if (!peer) return;
+  for (const [k, v] of fires) {
+    if (sentAtMs - v.lastSentAtMs > REPLY_WINDOW_MS) fires.delete(k);
+  }
   fires.set(peer.toUpperCase(), { lastSentAtMs: sentAtMs, actionName });
 }
 
@@ -59,7 +64,7 @@ export function isActionReply(msg) {
 export function statusFromText(text) {
   const t = (text || '').trim().toLowerCase();
   for (const p of STATUS_PREFIXES) {
-    if (t.startsWith(p)) return p.replace(':', '');
+    if (t.startsWith(p)) return p;
   }
   return 'ok';
 }

@@ -66,7 +66,9 @@ class RemoteActionsStore {
     const remembered = this.lastUsedCredByTarget[target];
     if (remembered && this.creds.find((c) => c.id === remembered)) return remembered;
     if (this.creds.length === 0) return null;
-    const sorted = [...this.creds].sort((a, b) => a.name.localeCompare(b.name));
+    const sorted = [...this.creds].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? ''),
+    );
     return sorted[0]?.id ?? null;
   }
 }

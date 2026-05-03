@@ -29,9 +29,11 @@ export async function sendActionFire({
 }) {
   const text = assembleWireString({ otp, actionName, argsString });
   const result = await sendMessage({
-    to_call: target,
+    to: target,
     text,
   });
+  // Record only after a successful await: a thrown send didn't make it
+  // to the wire, so there's no inbound reply to correlate with.
   recordOutboundFire(target, actionName, Date.now());
   return result;
 }

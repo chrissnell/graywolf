@@ -57,7 +57,7 @@ describe('sendActionFire', () => {
     });
     assert.equal(sendMessage.mock.callCount(), 1);
     assert.deepEqual(sendMessage.mock.calls[0].arguments[0], {
-      to_call: 'KK7XYZ-9',
+      to: 'KK7XYZ-9',
       text: '@@418273#unlock',
     });
   });
