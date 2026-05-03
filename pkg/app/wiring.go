@@ -1007,6 +1007,15 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	apiSrv.SetAX25Manager(a.ax25Mgr)
 	apiSrv.SetPacketLog(a.plog)
 
+	// Actions service runs the listener-addressee reload + test-fire
+	// path the REST handlers reach for. Skipped when wireActions
+	// declined to construct one (e.g. headless RF-only mode without a
+	// messages.Service); the listener handlers no-op the reload and
+	// the test-fire endpoint returns 503.
+	if a.actions != nil {
+		apiSrv.SetActionsService(a.actions)
+	}
+
 	// Construct the GitHub-update checker and install it on the webapi
 	// server so GET /api/updates/status can project its cached Snapshot.
 	// The checker's Run goroutine is launched by updatesCheckComponent;
