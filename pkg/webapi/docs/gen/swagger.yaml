@@ -2010,6 +2010,8 @@ definitions:
         type: string
       status_detail:
         type: string
+      truncated:
+        type: boolean
     type: object
   dto.TestRigctldRequest:
     properties:

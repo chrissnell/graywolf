@@ -75,12 +75,13 @@ func (s *Server) testFireAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, invID := s.actions.TestFire(r.Context(), a, clean)
-	reply, _ := actions.FormatReply(res)
+	reply, truncated := actions.FormatReply(res)
 	writeJSON(w, http.StatusOK, dto.TestFireResponse{
 		Status:        string(res.Status),
 		StatusDetail:  res.StatusDetail,
 		OutputCapture: res.OutputCapture,
 		ReplyText:     reply,
+		Truncated:     truncated,
 		ExitCode:      res.ExitCode,
 		HTTPStatus:    res.HTTPStatus,
 		InvocationID:  invID,
