@@ -58,6 +58,7 @@ var tagOrder = []tagEntry{
 	{"preferences", "Operator display preferences stored server-side (units, etc.)."},
 	{"maps", "Offline PMTiles map downloads: per-state download lifecycle and status."},
 	{"actions", "On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire."},
+	{"remote-actions", "Outbound Actions: operator-curated macros plus remote-station TOTP credentials used to fire @@<otp>#<action> invocations from inside Messages."},
 
 	// --- Admin / auth / health ------------------------------------------
 	{"auth", "Session login, logout, and first-user setup."},

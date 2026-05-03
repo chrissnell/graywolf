@@ -99,6 +99,10 @@
             "description": "On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire."
         },
         {
+            "name": "remote-actions",
+            "description": "Outbound Actions: operator-curated macros plus remote-station TOTP credentials used to fire @@\u003cotp\u003e#\u003caction\u003e invocations from inside Messages."
+        },
+        {
             "name": "auth",
             "description": "Session login, logout, and first-user setup."
         },
@@ -5849,6 +5853,115 @@
                 }
             }
         },
+        "/remote-actions/credentials": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "List remote OTP credentials",
+                "operationId": "listRemoteOTPCredentials",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.RemoteOTPCredential"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Create remote OTP credential",
+                "operationId": "createRemoteOTPCredential",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteOTPCredential"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/remote-actions/credentials/{id}": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Update remote OTP credential",
+                "operationId": "updateRemoteOTPCredential",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteOTPCredential"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Delete remote OTP credential",
+                "operationId": "deleteRemoteOTPCredential",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/smart-beacon": {
             "get": {
                 "security": [
@@ -9106,6 +9219,38 @@
                 },
                 "schema_version": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.RemoteOTPCredential": {
+            "type": "object",
+            "properties": {
+                "algorithm": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "digits": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "period": {
+                    "type": "integer"
+                },
+                "used_by": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

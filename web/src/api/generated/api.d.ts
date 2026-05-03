@@ -1387,6 +1387,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/remote-actions/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List remote OTP credentials */
+        get: operations["listRemoteOTPCredentials"];
+        put?: never;
+        /** Create remote OTP credential */
+        post: operations["createRemoteOTPCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/remote-actions/credentials/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update remote OTP credential */
+        put: operations["updateRemoteOTPCredential"];
+        post?: never;
+        /** Delete remote OTP credential */
+        delete: operations["deleteRemoteOTPCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/smart-beacon": {
         parameters: {
             query?: never;
@@ -2593,6 +2629,16 @@ export interface components {
             last_seen?: string;
             notes?: components["schemas"]["dto.ReleaseNoteDTO"][];
             schema_version?: number;
+        };
+        "dto.RemoteOTPCredential": {
+            algorithm?: string;
+            created_at?: string;
+            digits?: number;
+            id?: number;
+            last_used_at?: string;
+            name?: string;
+            period?: number;
+            used_by?: string[];
         };
         "dto.SendMessageRequest": {
             /** @description Channel overrides the configured TX channel. Nil = use default. */
@@ -8342,6 +8388,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRemoteOTPCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.RemoteOTPCredential"][];
+                };
+            };
+        };
+    };
+    createRemoteOTPCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.RemoteOTPCredential"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateRemoteOTPCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.RemoteOTPCredential"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteRemoteOTPCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

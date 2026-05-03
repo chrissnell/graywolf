@@ -1799,6 +1799,27 @@ definitions:
       schema_version:
         type: integer
     type: object
+  dto.RemoteOTPCredential:
+    properties:
+      algorithm:
+        type: string
+      created_at:
+        type: string
+      digits:
+        type: integer
+      id:
+        type: integer
+      last_used_at:
+        type: string
+      name:
+        type: string
+      period:
+        type: integer
+      used_by:
+        items:
+          type: string
+        type: array
+    type: object
   dto.SendMessageRequest:
     properties:
       channel:
@@ -2716,6 +2737,8 @@ tags:
     description: 'Offline PMTiles map downloads: per-state download lifecycle and status.'
   - name: actions
     description: 'On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire.'
+  - name: remote-actions
+    description: 'Outbound Actions: operator-curated macros plus remote-station TOTP credentials used to fire @@<otp>#<action> invocations from inside Messages.'
   - name: auth
     description: Session login, logout, and first-user setup.
   - name: version
@@ -6351,6 +6374,78 @@ paths:
       summary: List unseen release notes for the caller
       tags:
         - release-notes
+  /remote-actions/credentials:
+    get:
+      operationId: listRemoteOTPCredentials
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.RemoteOTPCredential'
+            type: array
+      summary: List remote OTP credentials
+      tags:
+        - remote-actions
+    post:
+      consumes:
+        - application/json
+      operationId: createRemoteOTPCredential
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.RemoteOTPCredential'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      summary: Create remote OTP credential
+      tags:
+        - remote-actions
+  /remote-actions/credentials/{id}:
+    delete:
+      operationId: deleteRemoteOTPCredential
+      responses:
+        "204":
+          description: No Content
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      summary: Delete remote OTP credential
+      tags:
+        - remote-actions
+    put:
+      consumes:
+        - application/json
+      operationId: updateRemoteOTPCredential
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.RemoteOTPCredential'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      summary: Update remote OTP credential
+      tags:
+        - remote-actions
   /smart-beacon:
     get:
       description: |-
