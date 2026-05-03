@@ -81,11 +81,6 @@
       of OTP credentials, and a live tail of recent invocations.
     </p>
 
-    <div class="screenshot">
-      <img src="img/actions-page.png" alt="Actions page showing the Actions table at top, OTP Credentials table below it, and Recent Invocations panel at the bottom" />
-      <div class="caption">The Actions page. Each row in the upper table is an Action; the credentials table feeds the OTP requirement; the panel at the bottom updates live as Actions fire.</div>
-    </div>
-
     <h2>Message grammar</h2>
 
     <p>
@@ -168,11 +163,6 @@
       depending on whether you pick <strong>command</strong> or
       <strong>webhook</strong>.
     </p>
-
-    <div class="screenshot">
-      <img src="img/actions-edit-modal.png" alt="Edit Action modal with the type set to Command, showing fields for name, description, command path, working directory, timeout, queue depth, rate limit, OTP credential, sender allowlist, and argument schema" />
-      <div class="caption">The Edit/New Action modal. Fields above the divider apply to every Action; the block below it changes for command vs webhook.</div>
-    </div>
 
     <p>
       Common fields:
@@ -492,13 +482,10 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       one-time reveal panel:
     </p>
 
-    <div class="screenshot">
-      <img src="img/actions-credential-reveal.png" alt="New credential reveal panel showing a QR code on the left, the base32 secret on the right with a copy button, and an 'I have saved it' button at the bottom" />
-      <div class="caption">The reveal panel. The secret only ever appears here, exactly once. After you close the panel, the secret is gone for good &mdash; graywolf retains only what it needs to verify codes.</div>
-    </div>
-
     <p>
-      Save the secret immediately:
+      The reveal panel shows the secret only once. After you close it,
+      graywolf retains only what it needs to verify codes &mdash; the
+      secret itself is gone for good. Save it immediately:
     </p>
 
     <ol>
@@ -667,11 +654,6 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       live-polls every five seconds.
     </p>
 
-    <div class="screenshot">
-      <img src="img/actions-invocations.png" alt="Recent Invocations panel showing a filterable table with columns for time, Action, sender, source, status, output snippet, and a details disclosure" />
-      <div class="caption">Recent Invocations. Each row carries the parsed args, the captured output, and the reply text that went on the air.</div>
-    </div>
-
     <p>
       Each row records:
     </p>
@@ -683,7 +665,7 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       <li>Parsed args (each value capped at 64 characters in the row)</li>
       <li>Status and a short detail string</li>
       <li>Exit code (commands) or HTTP status (webhooks)</li>
-      <li>Output capture (first ~1 KiB of stdout / response body)</li>
+      <li>Output capture (up to 4 KiB of merged stdout/stderr for commands, ~1 KiB of response body for webhooks)</li>
       <li>The exact reply text that went out on the air</li>
     </ul>
 
@@ -772,11 +754,6 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       conclude an Action is unprotected based on Test results.
     </p>
 
-    <div class="screenshot">
-      <img src="img/actions-test-dialog.png" alt="Test Action dialog showing a warning about OTP/allowlist bypass at the top, a row of arg inputs, a Run button, and a status-badged result panel below" />
-      <div class="caption">Test dialog. The result panel shows the same status token, output snippet, and reply text the on-air sender would see.</div>
-    </div>
-
     <h3>Reading invocation rows</h3>
 
     <ul>
@@ -827,13 +804,18 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       In addition to your primary callsign and tactical aliases, you
       can register extra Actions-only addressees in the
       <strong>Listener Addressees</strong> editor on the Actions page.
-      A listener addressee is exclusively a trigger surface for
-      Actions &mdash; messages addressed to a listener do
-      <strong>not</strong> appear in your Messaging inbox even when
-      they do not begin with <code>@@</code>; they are treated as
-      Actions traffic only. Use them when you want a public command
-      surface (for example <code>GW-CMD</code>) without overloading
-      your station&rsquo;s primary callsign.
+      A listener addressee widens the Actions trigger surface so a
+      packet addressed to (say) <code>GW-CMD</code> with an
+      <code>@@</code>-prefixed body fires an Action just like one
+      addressed to your primary callsign would. A packet addressed to
+      a listener that does <strong>not</strong> begin with
+      <code>@@</code> doesn&rsquo;t fire an Action and also doesn&rsquo;t
+      land in your Messaging inbox &mdash; the Messaging router only
+      claims packets addressed to your station call or to a tactical
+      you&rsquo;ve enabled, so listener-targeted chatter without the
+      sentinel falls on the floor. Use listeners when you want a public
+      command surface without overloading your station&rsquo;s primary
+      callsign.
     </p>
 
     <nav class="page-nav">

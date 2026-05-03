@@ -54,10 +54,12 @@ Actions classifier inserts itself **ahead of** `aprsSubmit` (RF) and
 **ahead of** `Router.SendPacket` (IS) for messages whose addressee
 matches the trigger surface (station call + tactical aliases +
 operator-defined listener addressees) AND whose info-field begins with
-`@@`. Consumed packets do not produce `messages.in` rows; the auto-ACK
-still fires for inbound carrying a msg-id. See
-[invariant 26](invariants.md) and [`actions.md`](actions.md) for the
-full hot path.
+`@@`. Consumed packets do not produce `messages.in` rows. Because the
+auto-ACK is emitted from inside the messages router and the classifier
+short-circuits before it runs, the standard auto-ACK is NOT sent for
+consumed Actions packets — the on-air reply text is what the sender's
+client sees. See [invariant 26](invariants.md) and
+[`actions.md`](actions.md) for the full hot path.
 
 ## Hardware / local resources
 

@@ -244,9 +244,17 @@ authoring guide),
 When the Actions classifier matches an inbound APRS message (addressee
 in the trigger surface AND info-field begins with `@@`), the packet is
 consumed before the messages router sees it. No `messages.in` row is
-written for that packet. The auto-ACK is still emitted if the inbound
-carried a msg-id. Replies flow through `messages.Sender` so they appear
-in the operator's outbound view.
+written for that packet. Because the auto-ACK lives inside
+[`pkg/messages/router.go`](../../pkg/messages/router.go) (`Router.classify` /
+`sendAutoAck`) and the classifier short-circuits before the messages
+router runs, **the standard auto-ACK frame is NOT emitted** for
+consumed Actions packets — the on-air reply text (routed through
+`messages.Sender`) is what the sender sees, and a sender's APRS client
+that retries on missing-ACK will keep retrying until its retry budget
+is reached. The design spec at
+[`../superpowers/specs/2026-05-02-graywolf-actions-design.md`](../superpowers/specs/2026-05-02-graywolf-actions-design.md)
+(§8) calls for the auto-ACK to fire in addition to the reply; that is a
+known gap tracked as a follow-up.
 
 *Why:* Actions are operator-controlled command channels, not
 correspondence; surfacing every Action invocation in the inbox would
@@ -258,4 +266,6 @@ Source: [`../../pkg/actions/classifier.go`](../../pkg/actions/classifier.go),
 (`dispatchRxFrame`),
 [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
 (`onIGateIsRxPacket`),
+[`../../pkg/messages/router.go`](../../pkg/messages/router.go)
+(`Router.classify` / `sendAutoAck`),
 [`actions.md`](actions.md) ("Hot path" section).
