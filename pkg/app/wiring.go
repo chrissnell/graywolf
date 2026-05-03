@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/actions"
 	"github.com/chrissnell/graywolf/pkg/agw"
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/app/txbackend"
@@ -415,6 +416,15 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		return err
 	}
 
+	// --- Actions service ----------------------------------------------
+	// Runs after messages so the reply adapter can ride messages.Service
+	// (msg-id allocation, outbound view, retry ladder). The classifier
+	// is hooked into the rxfanout + IS paths in dispatchRxFrame and
+	// onIGateIsRxPacket.
+	if err := a.wireActions(ctx); err != nil {
+		return err
+	}
+
 	// --- AGW server (optional) -----------------------------------------
 	if err := a.wireAGW(ctx); err != nil {
 		return err
@@ -474,6 +484,11 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		// started service on first request; the 503 guard in the webapi
 		// layer covers the brief window between http bind and start.
 		a.messagesComponent(),
+		// actions runs after messages so the audit pruner stop signal
+		// races correctly against shutdown ordering. The classifier is
+		// already hooked into the rxfanout + IS paths at construction
+		// time; this component owns only the start/stop semantics.
+		a.actionsComponent(),
 		a.httpComponent(),
 	}
 	return nil
@@ -670,6 +685,14 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 	if entries := stationcache.ExtractEntry(pkt, "igate-is", "IS", uint32(pkt.Channel)); len(entries) > 0 {
 		a.stationCache.Update(entries)
 	}
+	// Actions classifier first: divert "@@"-prefixed messages
+	// addressed to our trigger surface into the Actions runner before
+	// the messages router can claim them. The classifier returns
+	// false for everything else, so normal IS-arrived messages still
+	// reach the inbox via Router.SendPacket below.
+	if a.actions != nil && a.actions.Classifier().Classify(context.Background(), pkt) {
+		return
+	}
 	if a.msgSvc != nil {
 		_ = a.msgSvc.Router().SendPacket(context.Background(), pkt)
 	}
@@ -765,6 +788,47 @@ func (a *App) wireMessages(ctx context.Context) error {
 		return fmt.Errorf("messages service init: %w", err)
 	}
 	a.msgSvc = svc
+	return nil
+}
+
+// wireActions constructs the actions.Service. Construction is
+// unconditional: when no Actions are defined the classifier is a
+// cheap addressee + prefix check on every inbound message and the
+// audit pruner ticks 24h apart against an empty table. Failure here
+// is non-fatal — actions stays nil and the rxfanout / IS hooks
+// gracefully fall through.
+//
+// Ordering: runs AFTER wireMessages so the reply adapter has a live
+// *messages.Service to push outbound rows through, and BEFORE the
+// rxfanout / igate components start firing — wireServicesInner
+// constructs all wires before startOrder is exercised, so the hooks
+// see a non-nil a.actions on the first inbound packet.
+func (a *App) wireActions(ctx context.Context) error {
+	if a.msgSvc == nil {
+		// No messages.Service means RF-only mode with no place to send
+		// replies. Actions still depend on it as the audit + outbound
+		// path, so leave actions nil rather than half-wire.
+		return nil
+	}
+	ourCall := func() string {
+		c, err := a.store.ResolveStationCallsign(context.Background())
+		if err != nil {
+			return ""
+		}
+		return c
+	}
+	svc, err := actions.NewService(ctx, actions.ServiceConfig{
+		Store:       a.store,
+		Messages:    a.msgSvc,
+		OurCall:     ourCall,
+		TacticalSet: a.msgSvc.TacticalSet(),
+		Logger:      a.logger.With("component", "actions"),
+	})
+	if err != nil {
+		a.logger.Error("actions service init", "err", err)
+		return nil
+	}
+	a.actions = svc
 	return nil
 }
 
@@ -2168,6 +2232,29 @@ func (a *App) messagesComponent() namedComponent {
 			// it via the select; the wait is only here for the narrow
 			// case where a signal and the cancel race.
 			return waitGroup(shutdownCtx, &a.messagesReloadWG, "messages reload")
+		},
+	}
+}
+
+// actionsComponent owns the lifecycle of the Actions subsystem. The
+// service's background work is the audit-log pruner (24h ticker) and
+// the per-Action runner queues; both stop on Stop(). Start is a
+// no-op — the classifier is hooked into rxfanout / IS hooks at
+// construction time and the runner's queues spawn lazily on first
+// Submit. Stop runs in reverse-startup order, BEFORE
+// messagesComponent's stop, so any in-flight reply send still has a
+// live messages.Service to push through.
+func (a *App) actionsComponent() namedComponent {
+	return namedComponent{
+		name: "actions",
+		start: func(ctx context.Context) error {
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			if a.actions != nil {
+				a.actions.Stop()
+			}
+			return nil
 		},
 	}
 }

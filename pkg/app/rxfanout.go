@@ -110,7 +110,21 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 			pkt.Direction = aprs.DirectionRF
 			e.Type = string(pkt.Type)
 			e.Decoded = pkt
-			aprsSubmit.submit(pkt)
+			// Actions classifier first: if this is a "@@"-prefixed
+			// message addressed to our trigger surface, divert it
+			// from the messages router into the Actions runner. The
+			// classifier returns false for everything else (non-message,
+			// not addressed to us, no @@ prefix), so the inbox keeps
+			// receiving normal traffic. Station cache still updates
+			// either way so action senders remain visible in the
+			// heard-station table.
+			consumed := false
+			if a.actions != nil {
+				consumed = a.actions.Classifier().Classify(ctx, pkt)
+			}
+			if !consumed {
+				aprsSubmit.submit(pkt)
+			}
 			if entries := stationcache.ExtractEntry(pkt, logSource, "RX", rf.Channel); len(entries) > 0 {
 				a.stationCache.Update(entries)
 			}

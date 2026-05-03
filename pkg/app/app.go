@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/chrissnell/graywolf/pkg/actions"
 	"github.com/chrissnell/graywolf/pkg/agw"
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/app/txbackend"
@@ -131,6 +132,14 @@ type App struct {
 	msgSvc       *messages.Service
 	msgStore     *messages.Store
 	msgLocalRing *messages.LocalTxRing
+
+	// --- Actions service ---------------------------------------------------
+	// actions is the inbound classifier + per-Action runner that diverts
+	// "@@"-prefixed APRS messages addressed to the trigger surface
+	// (station call, tactical aliases, listener addressees) away from the
+	// inbox and into the Actions executor pipeline. nil until wireActions
+	// runs; the rxfanout + IS hooks tolerate nil.
+	actions *actions.Service
 
 	// resolvedModem is the absolute path to the graywolf-modem binary
 	// after running through ResolveModemPath. Retained so diagnostic
