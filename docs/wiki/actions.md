@@ -155,7 +155,7 @@ AutoMigrate). Four tables:
 
 | Table | Notes |
 |---|---|
-| `actions` | unique `name`, FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL. `OTPRequired` column has gorm `default:true`; an explicit `false` from a `bool` wire field is indistinguishable from omitted, so the persisted row reads back `true`. Tests that round-trip a created action and then PUT it must override `OTPRequired` after the create response. |
+| `actions` | unique `name`, FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL. The `Enabled` and `OTPRequired` columns deliberately omit `default:true` from their gorm tags even though the SQL DDL keeps `DEFAULT 1` (downgrade-safety). Reason: gorm uses the gorm-tag default as the value to send when the Go field is its zero value, which would conflate a genuine `false` from the wire with "field not set" and silently flip a freshly-created disabled action back to enabled. Application layer always provides the explicit value. |
 | `otp_credentials` | unique `name`, plaintext `secret_b32` (per spec — UI surfaces it once at create time, never reads back) |
 | `action_listener_addressees` | unique `addressee` (uppercase, 1..9 chars) |
 | `action_invocations` | append-only audit; FK `action_id -> actions(id)` ON DELETE SET NULL; FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL; `action_name_at` and `OTPCredName` are denormalized so a row stays readable after deletion |

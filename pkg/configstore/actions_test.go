@@ -93,6 +93,36 @@ func TestActionCRUDAndFKSetNull(t *testing.T) {
 	}
 }
 
+// gorm cannot tell a Go bool zero from "field not set"; without
+// Select("*") on the insert, the column default (`true`) silently
+// overrides Enabled=false / OTPRequired=false on first save. This
+// guards the regression: a fresh Action created with both flags
+// false must read back with both flags false.
+func TestCreateActionPersistsBoolZero(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := &Action{
+		Name:        "Disabled",
+		Type:        "command",
+		CommandPath: "/bin/true",
+		OTPRequired: false,
+		Enabled:     false,
+	}
+	if err := s.CreateAction(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.GetActionByName(ctx, "Disabled")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.OTPRequired {
+		t.Errorf("OTPRequired flipped to true after Create")
+	}
+	if got.Enabled {
+		t.Errorf("Enabled flipped to true after Create")
+	}
+}
+
 func TestActionDuplicateName(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

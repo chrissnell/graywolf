@@ -71,7 +71,18 @@
       }
       const { data, error } = await actionsApi.testFire(action.id, args);
       if (error) {
-        topError = error?.error ?? error?.message ?? 'Test fire failed.';
+        const detail = error?.error ?? error?.message ?? 'Test fire failed.';
+        // The handler returns 400 with `{error: "bad arg: <key>"}` on
+        // sanitization failure (sanitization runs before TestFire).
+        // Outline the offending arg so the operator doesn't have to
+        // re-read the banner to find what broke.
+        const k = badArgKey(detail);
+        if (k) {
+          argErrors = { ...argErrors, [k]: detail };
+          topError = null;
+        } else {
+          topError = detail;
+        }
         view = 'input';
         return;
       }
@@ -100,7 +111,6 @@
 
   function doClose() {
     open = false;
-    onClose?.();
   }
 </script>
 
