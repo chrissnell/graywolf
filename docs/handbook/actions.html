@@ -509,7 +509,7 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
         (see the next section), or
       </li>
       <li>
-        <strong>Copy the base32 secret</strong> shown on the right and
+        <strong>Copy the Secret Key</strong> shown on the right and
         type/paste it into your authenticator manually.
       </li>
     </ol>
@@ -535,7 +535,7 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
     <p>
       Any standard TOTP authenticator works. The QR code in the reveal
       panel encodes the standard <code>otpauth://</code> URI, and the
-      base32 secret is plain RFC 4648.
+      Secret Key is plain RFC 4648 base32.
     </p>
 
     <ul>
@@ -543,12 +543,12 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
         <strong>Google Authenticator</strong> &mdash; tap
         <em>+</em> &rarr; <em>Scan a QR code</em>, point the camera at
         the panel, done. Or <em>+</em> &rarr; <em>Enter a setup key</em>
-        and paste the base32 string.
+        and paste the Secret Key.
       </li>
       <li>
         <strong>Authy</strong> &mdash; <em>Add Account</em> &rarr;
         <em>Scan QR Code</em>, or
-        <em>Enter Code Manually</em> for the base32 string. Authy
+        <em>Enter Code Manually</em> and paste the Secret Key. Authy
         backs the account up to its cloud; if you do not want that,
         prefer Google Authenticator or 1Password.
       </li>
@@ -562,7 +562,7 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       <li>
         <strong>Bitwarden, KeePassXC, etc.</strong> &mdash; any TOTP-aware
         password manager works the same way; either scan the QR or
-        paste the base32 secret.
+        paste the Secret Key.
       </li>
     </ul>
 

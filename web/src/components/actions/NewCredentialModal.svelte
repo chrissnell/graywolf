@@ -181,7 +181,7 @@
 
         <CopyableInput
           id="cred-secret"
-          label="Base32 secret"
+          label="Secret Key"
           value={revealed.secret_b32}
           monospace
         />
