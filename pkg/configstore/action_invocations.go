@@ -61,6 +61,18 @@ func (s *Store) ListActionInvocations(ctx context.Context, f ActionInvocationFil
 	return out, nil
 }
 
+// DeleteAllActionInvocations truncates the audit log. Operator-driven
+// only — surfaced via DELETE /api/actions/invocations and the UI's
+// "clear log" button. The retention pruner uses
+// PruneActionInvocations instead so the routine path stays bounded
+// without dropping recent rows.
+func (s *Store) DeleteAllActionInvocations(ctx context.Context) (int, error) {
+	res := s.db.WithContext(ctx).
+		Where("1 = 1").
+		Delete(&ActionInvocation{})
+	return int(res.RowsAffected), res.Error
+}
+
 // PruneActionInvocations enforces the audit-log retention contract:
 // rows older than maxAge are deleted unconditionally; if the post-age
 // row count still exceeds maxRows, the oldest excess rows are deleted
