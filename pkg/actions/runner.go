@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -20,24 +21,29 @@ type RunnerConfig struct {
 	Registry *ExecutorRegistry
 	Replies  ReplySender
 	Audit    AuditSink
+	Logger   *slog.Logger
 	Now      func() time.Time
 }
 
 // Runner owns one queue + worker per Action. Queues are created
 // lazily on first Submit.
 type Runner struct {
-	cfg RunnerConfig
-	now func() time.Time
+	cfg    RunnerConfig
+	now    func() time.Time
+	logger *slog.Logger
 
 	mu     sync.Mutex
 	queues map[uint]*actionQueue
 	closed bool
 }
 
+// actionQueue serializes submits + the channel push under mu so that
+// Stop can race with Submit without panicking on a closed channel.
 type actionQueue struct {
 	ch       chan workItem
 	mu       sync.Mutex
 	lastFire time.Time
+	closed   bool
 }
 
 type workItem struct {
@@ -51,18 +57,37 @@ func NewRunner(cfg RunnerConfig) *Runner {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Runner{cfg: cfg, now: cfg.Now, queues: map[uint]*actionQueue{}}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Runner{cfg: cfg, now: cfg.Now, logger: logger, queues: map[uint]*actionQueue{}}
 }
 
+// Stop drains state and closes every per-Action queue. Once Stop
+// returns, no further Submit will enqueue or spawn goroutines for new
+// queues; in-flight worker goroutines drain naturally as their
+// channels close.
 func (r *Runner) Stop() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.closed {
+		r.mu.Unlock()
 		return
 	}
 	r.closed = true
+	queues := make([]*actionQueue, 0, len(r.queues))
 	for _, q := range r.queues {
-		close(q.ch)
+		queues = append(queues, q)
+	}
+	r.mu.Unlock()
+
+	for _, q := range queues {
+		q.mu.Lock()
+		if !q.closed {
+			q.closed = true
+			close(q.ch)
+		}
+		q.mu.Unlock()
 	}
 }
 
@@ -92,28 +117,43 @@ func (r *Runner) Submit(ctx context.Context, inv Invocation, a *configstore.Acti
 
 	q := r.queueFor(a)
 	if q == nil {
-		// queue_depth == 0: bypass queue, run inline in a goroutine.
+		// Either queue_depth == 0 (run inline) or runner already
+		// stopped between the closed check above and queueFor.
+		if a.QueueDepth > 0 {
+			return
+		}
 		go r.runOne(ctx, workItem{ctx: ctx, inv: inv, action: a, channel: channel})
 		return
 	}
 
+	// Hold q.mu across the rate-limit check, the lastFire reservation,
+	// and the channel send so Stop() can close ch safely after seeing
+	// q.closed.
 	q.mu.Lock()
-	if a.RateLimitSec > 0 && !q.lastFire.IsZero() && r.now().Sub(q.lastFire) < time.Duration(a.RateLimitSec)*time.Second {
+	if q.closed {
+		q.mu.Unlock()
+		return
+	}
+	prev := q.lastFire
+	if a.RateLimitSec > 0 && !prev.IsZero() && r.now().Sub(prev) < time.Duration(a.RateLimitSec)*time.Second {
 		q.mu.Unlock()
 		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusRateLimited})
 		return
 	}
-	// Reserve the slot now: the rate-limit window must close even if
-	// the worker hasn't drained the previous item yet, otherwise rapid
-	// back-to-back submits all slip through with lastFire still zero.
 	if a.RateLimitSec > 0 {
 		q.lastFire = r.now()
 	}
-	q.mu.Unlock()
-
 	select {
 	case q.ch <- workItem{ctx: ctx, inv: inv, action: a, channel: channel}:
+		q.mu.Unlock()
 	default:
+		// Roll the rate-limit window back: a busy-rejected submit
+		// didn't actually consume the slot, so the next legitimate
+		// submit shouldn't be silently rate-limited by it.
+		if a.RateLimitSec > 0 {
+			q.lastFire = prev
+		}
+		q.mu.Unlock()
 		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusBusy})
 	}
 }
@@ -124,6 +164,9 @@ func (r *Runner) queueFor(a *configstore.Action) *actionQueue {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return nil
+	}
 	if q, ok := r.queues[a.ID]; ok {
 		return q
 	}
@@ -158,10 +201,15 @@ func (r *Runner) runOne(ctx context.Context, it workItem) {
 }
 
 func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint32, res Result) {
-	text := FormatReply(res)
-	truncated := len(res.OutputCapture) > 0 && !endsWithSnippet(text, res.OutputCapture)
+	text, truncated := FormatReply(res)
 	if r.cfg.Replies != nil {
-		_ = r.cfg.Replies.SendReply(ctx, channel, inv.Source, inv.SenderCall, text)
+		if err := r.cfg.Replies.SendReply(ctx, channel, inv.Source, inv.SenderCall, text); err != nil {
+			r.logger.Error("actions: reply send failed",
+				"action", inv.ActionName,
+				"sender", inv.SenderCall,
+				"status", string(res.Status),
+				"err", err)
+		}
 	}
 	if r.cfg.Audit != nil {
 		row := &configstore.ActionInvocation{
@@ -183,15 +231,14 @@ func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint
 			id := inv.ActionID
 			row.ActionID = &id
 		}
-		_ = r.cfg.Audit.Insert(ctx, row)
+		if err := r.cfg.Audit.Insert(ctx, row); err != nil {
+			r.logger.Error("actions: audit insert failed",
+				"action", inv.ActionName,
+				"sender", inv.SenderCall,
+				"status", string(res.Status),
+				"err", err)
+		}
 	}
-}
-
-func endsWithSnippet(big, small string) bool {
-	if len(small) > 50 {
-		small = small[:50]
-	}
-	return len(big) >= len(small) && big[len(big)-len(small):] == small
 }
 
 func marshalArgs(kvs []KeyValue) string {

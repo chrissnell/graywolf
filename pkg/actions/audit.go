@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -51,12 +52,6 @@ func StartAuditPruner(ctx context.Context, p InvocationPruner, cfg AuditPrunerCo
 			}
 		}
 	}()
-	return func() {
-		select {
-		case <-stopCh:
-			// already closed
-		default:
-			close(stopCh)
-		}
-	}
+	var once sync.Once
+	return func() { once.Do(func() { close(stopCh) }) }
 }

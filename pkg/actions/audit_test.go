@@ -26,3 +26,10 @@ func TestPrunerLoopFires(t *testing.T) {
 		t.Fatalf("expected ≥2 calls, got %d", p.calls.Load())
 	}
 }
+
+func TestPrunerStopIdempotent(t *testing.T) {
+	p := &fakePruner{}
+	stop := StartAuditPruner(context.Background(), p, AuditPrunerConfig{Interval: time.Hour})
+	stop()
+	stop() // must not panic on double-close
+}

@@ -43,32 +43,39 @@ func statusWord(s Status) string {
 	}
 }
 
-func FormatReply(r Result) string {
+// FormatReply produces the on-air reply text and reports whether any
+// truncation occurred (either the snippet was shortened to fit the
+// 50-char per-line cap, or the assembled reply exceeded MaxReplyLen).
+// The bool is what gets stored in ActionInvocation.Truncated.
+func FormatReply(r Result) (string, bool) {
 	word := statusWord(r.Status)
-	var detail string
+	var (
+		detail    string
+		truncated bool
+	)
 	switch r.Status {
 	case StatusOK:
-		detail = firstLineSnippet(r.OutputCapture)
+		detail, truncated = firstLineSnippet(r.OutputCapture)
 	case StatusBadArg, StatusError, StatusTimeout:
 		detail = sanitizeReplyText(r.StatusDetail)
 	}
 	if detail == "" {
-		return word
+		return word, truncated
 	}
 	full := word + ": " + detail
 	if utf8.RuneCountInString(full) <= MaxReplyLen {
-		return full
+		return full, truncated
 	}
-	return truncateReply(full)
+	return truncateReply(full), true
 }
 
-func firstLineSnippet(s string) string {
+func firstLineSnippet(s string) (string, bool) {
 	s = sanitizeReplyText(s)
 	if utf8.RuneCountInString(s) > 50 {
 		runes := []rune(s)
-		s = string(runes[:50]) + "…"
+		return string(runes[:50]) + "…", true
 	}
-	return s
+	return s, false
 }
 
 func sanitizeReplyText(s string) string {
