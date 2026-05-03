@@ -62,6 +62,20 @@ func TestCmdExecutorTimeout(t *testing.T) {
 	}
 }
 
+func TestCmdExecutorOutputCap(t *testing.T) {
+	exe := NewCommandExecutor()
+	a := &configstore.Action{Name: "Spam", Type: "command", CommandPath: absTestData(t, "spam.sh"), TimeoutSec: 5}
+	res := exe.Execute(context.Background(), ExecRequest{
+		Action: a, Invocation: Invocation{ActionName: a.Name}, Timeout: 5 * time.Second,
+	})
+	if res.Status != StatusOK {
+		t.Fatalf("status=%v detail=%q", res.Status, res.StatusDetail)
+	}
+	if got := len(res.OutputCapture); got != cmdOutputCap {
+		t.Fatalf("OutputCapture len = %d, want %d (cap)", got, cmdOutputCap)
+	}
+}
+
 func TestCmdExecutorNonZero(t *testing.T) {
 	exe := NewCommandExecutor()
 	a := &configstore.Action{Name: "F", Type: "command", CommandPath: absTestData(t, "fail.sh"), TimeoutSec: 5}

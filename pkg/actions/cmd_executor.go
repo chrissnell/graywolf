@@ -133,9 +133,15 @@ type cappedWriter struct {
 	n   int
 }
 
+// Write absorbs up to (max - n) bytes into the underlying writer and
+// pretends to consume the rest. Reporting the truncated count would
+// surface as io.ErrShortWrite to io.Copy, which closes the child's
+// stdout pipe and tears the process down with SIGPIPE — turning a
+// successful run into a spurious failure.
 func (c *cappedWriter) Write(p []byte) (int, error) {
+	full := len(p)
 	if c.n >= c.max {
-		return len(p), nil
+		return full, nil
 	}
 	room := c.max - c.n
 	if len(p) > room {
@@ -143,5 +149,8 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 	}
 	n, err := c.w.Write(p)
 	c.n += n
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	return full, nil
 }
