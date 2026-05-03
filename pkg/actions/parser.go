@@ -48,7 +48,7 @@ func Parse(body string) (*ParsedInvocation, error) {
 	if len(action) > MaxActionNameLen {
 		return nil, fmt.Errorf("%w: action name exceeds %d chars", ErrParse, MaxActionNameLen)
 	}
-	if !validActionName(action) {
+	if !ValidActionName(action) {
 		return nil, fmt.Errorf("%w: action name contains invalid characters", ErrParse)
 	}
 	args, err := parseArgs(argTail)
@@ -58,9 +58,11 @@ func Parse(body string) (*ParsedInvocation, error) {
 	return &ParsedInvocation{OTPDigits: otp, Action: action, Args: args}, nil
 }
 
-// validActionName enforces the spec charset for action names:
-// letters, digits, dot, dash, underscore. ASCII only, case-sensitive.
-func validActionName(s string) bool {
+// ValidActionName reports whether s is a legal action name. Mirrors the
+// inbound parser's grammar so outbound macro creation rejects names the
+// receiver would refuse. Charset: ASCII letters, digits, dot, dash,
+// underscore. Case-sensitive.
+func ValidActionName(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
