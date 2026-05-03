@@ -200,6 +200,15 @@ func (r *Runner) runOne(ctx context.Context, it workItem) {
 	r.replyAndAudit(ctx, it.inv, it.channel, res)
 }
 
+// Reply dispatches a synthetic reply + audit row without queueing
+// real work. Used by the classifier short-circuit paths
+// (denied, bad_otp, bad_arg, no_credential) so those outcomes still
+// flow through the normal reply + audit pipeline without exercising
+// the per-Action queue or executor.
+func (r *Runner) Reply(ctx context.Context, inv Invocation, channel uint32, res Result) {
+	r.replyAndAudit(ctx, inv, channel, res)
+}
+
 func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint32, res Result) {
 	text, truncated := FormatReply(res)
 	if r.cfg.Replies != nil {
