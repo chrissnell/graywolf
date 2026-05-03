@@ -381,3 +381,21 @@ const (
 	OpGetOTPCredential         = "getOTPCredential"
 	OpDeleteOTPCredential      = "deleteOTPCredential"
 )
+
+// Remote Actions resource — /api/remote-actions/* — outbound
+// Actions feature. Operator-curated macros + remote-station TOTP
+// credentials used to fire @@<otp>#<action> invocations from inside
+// Messages. Wire shape: pkg/webapi/dto/remote_actions.go. Composition
+// root: pkg/remoteactions/.
+const (
+	OpListRemoteOTPCredentials  = "listRemoteOTPCredentials"
+	OpCreateRemoteOTPCredential = "createRemoteOTPCredential"
+	OpUpdateRemoteOTPCredential = "updateRemoteOTPCredential"
+	OpDeleteRemoteOTPCredential = "deleteRemoteOTPCredential"
+	OpListRemoteActionMacros    = "listRemoteActionMacros"
+	OpCreateRemoteActionMacro   = "createRemoteActionMacro"
+	OpUpdateRemoteActionMacro   = "updateRemoteActionMacro"
+	OpDeleteRemoteActionMacro   = "deleteRemoteActionMacro"
+	OpReorderRemoteActionMacros = "reorderRemoteActionMacros"
+	OpGenerateRemoteOTPCode     = "generateRemoteOTPCode"
+)

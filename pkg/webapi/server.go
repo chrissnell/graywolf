@@ -44,6 +44,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
+	"github.com/chrissnell/graywolf/pkg/remoteactions"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
@@ -107,6 +108,12 @@ type Server struct {
 	// Nil until set; mutating handlers no-op the reload, test-fire
 	// returns 503.
 	actions ActionsService
+
+	// remoteActions is the outbound-Actions subsystem owning macro and
+	// remote-OTP credential CRUD. Wired post-construction via
+	// SetRemoteActions; nil until set, in which case the
+	// /api/remote-actions/* handlers return 503 via requireRemoteActions.
+	remoteActions *remoteactions.Service
 }
 
 // ActionsService is the narrow surface the webapi handlers consume
@@ -380,6 +387,10 @@ func (s *Server) SetPacketLog(l *packetlog.Log) { s.packetLog = l }
 // until pkg/app wiring sets it; mutating listener handlers skip the
 // reload signal when nil.
 func (s *Server) SetActionsService(svc ActionsService) { s.actions = svc }
+
+// SetRemoteActions installs the outbound-Actions service. Nil disables
+// the /api/remote-actions/* endpoints (they return 503).
+func (s *Server) SetRemoteActions(svc *remoteactions.Service) { s.remoteActions = svc }
 
 // SetIgateStatusFn installs the function used by /api/status to report
 // igate counters.
