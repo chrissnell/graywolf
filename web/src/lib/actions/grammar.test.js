@@ -16,7 +16,7 @@ try {
 
 describe('exampleMessage', () => {
   it('renders default values when called with no args', () => {
-    assert.equal(exampleMessage(), '@@482910#TurnOnGarageLights state=on');
+    assert.equal(exampleMessage(), '@@482910#SetGarageLights state=on');
   });
 
   it('omits args section when args object is empty', () => {

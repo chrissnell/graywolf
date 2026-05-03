@@ -7,10 +7,12 @@
   import ActionsTable from '../components/actions/ActionsTable.svelte';
   import CredentialsTable from '../components/actions/CredentialsTable.svelte';
   import InvocationsPanel from '../components/actions/InvocationsPanel.svelte';
+  import EditActionModal from '../components/actions/EditActionModal.svelte';
+  import TestActionDialog from '../components/actions/TestActionDialog.svelte';
 
-  // Modal-coordination state. Edit/Test/NewCredential modals land in
-  // Phase H/I; until those exist, clicks trigger a "coming soon" toast
-  // so the operator gets visible feedback instead of silent state flips.
+  // Modal-coordination state. NewCredential modal lands in Phase I;
+  // until then, the placeholder toast still fires so the operator gets
+  // visible feedback instead of a silent state flip.
   let editingAction = $state(null);
   let testingAction = $state(null);
   let editOpen = $state(false);
@@ -21,13 +23,11 @@
   function openEdit(action) {
     editingAction = action;
     editOpen = true;
-    toast('Action editor lands in the next release.', 'info');
   }
 
   function openTest(action) {
     testingAction = action;
     testOpen = true;
-    toast('Test dialog lands in the next release.', 'info');
   }
 
   function openAudit() {
@@ -62,15 +62,29 @@
 
   <div class="help-banner">
     Actions trigger when APRS messages addressed to this station begin with the prefix
-    <code>@@</code> followed by a six-digit TOTP code, then <code>#&lt;name&gt;</code>, then
-    optional <code>key=value</code> arguments. Example:
-    <code>{exampleMessage()}</code>
+    <code>@@</code> followed by an optional six-digit TOTP code, then
+    <code>#&lt;name&gt;</code>, then optional <code>key=value</code> arguments. The TOTP
+    code is required only for Actions configured with "Require valid one-time code".
+    Example: <code>{exampleMessage()}</code>
   </div>
 
   <ActionsTable onEdit={openEdit} onTest={openTest} />
   <CredentialsTable onNew={openNewCred} />
   <InvocationsPanel />
 </div>
+
+<EditActionModal
+  bind:open={editOpen}
+  action={editingAction}
+  onClose={() => (editingAction = null)}
+  onManageCredentials={openNewCred}
+/>
+
+<TestActionDialog
+  bind:open={testOpen}
+  action={testingAction}
+  onClose={() => (testingAction = null)}
+/>
 
 <style>
   .actions-page {
