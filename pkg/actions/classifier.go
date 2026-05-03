@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 
+	"gorm.io/gorm"
+
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/messages"
@@ -100,7 +102,16 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 	}
 
 	a, err := c.cfg.ActionStore.GetActionByName(ctx, parsed.Action)
-	if err != nil || a == nil {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Real store failure (DB outage, schema corruption). Don't
+		// hide the cause behind a misleading "unknown action" reply
+		// to operators trying legitimate OTP-authenticated requests.
+		c.cfg.Runner.Reply(ctx, Invocation{
+			ActionName: parsed.Action, SenderCall: sender, Source: source,
+		}, channel, Result{Status: StatusError, StatusDetail: "store"})
+		return true
+	}
+	if a == nil {
 		c.cfg.Runner.Reply(ctx, Invocation{
 			ActionName: parsed.Action, SenderCall: sender, Source: source,
 		}, channel, Result{Status: StatusUnknown})
@@ -128,7 +139,11 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 			return true
 		}
 		cred, cerr := c.cfg.CredStore.GetOTPCredential(ctx, *a.OTPCredentialID)
-		if cerr != nil || cred == nil {
+		if cerr != nil && !errors.Is(cerr, gorm.ErrRecordNotFound) {
+			c.cfg.Runner.Reply(ctx, inv, channel, Result{Status: StatusError, StatusDetail: "store"})
+			return true
+		}
+		if cred == nil {
 			c.cfg.Runner.Reply(ctx, inv, channel, Result{Status: StatusNoCredential})
 			return true
 		}
@@ -156,12 +171,16 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 		}
 		inv.OTPVerified = true
 		inv.OTPCredName = cred.Name
+		inv.OTPCredentialID = cred.ID
 	}
 
 	// Sanitize args against the action's schema.
 	schema, schemaErr := decodeArgSchema(a.ArgSchema)
 	if schemaErr != nil {
-		c.cfg.Runner.Reply(ctx, inv, channel, Result{Status: StatusError, StatusDetail: "schema"})
+		c.cfg.Runner.Reply(ctx, inv, channel, Result{
+			Status:       StatusError,
+			StatusDetail: "schema:" + a.Name,
+		})
 		return true
 	}
 	clean, sErr := Sanitize(schema, parsed.Args)

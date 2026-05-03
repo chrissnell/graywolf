@@ -194,10 +194,27 @@ func (r *Runner) runOne(ctx context.Context, it workItem) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	res := exe.Execute(ctx, ExecRequest{
+	res := r.executeWithRecover(ctx, exe, ExecRequest{
 		Action: it.action, Invocation: it.inv, Timeout: timeout,
 	})
 	r.replyAndAudit(ctx, it.inv, it.channel, res)
+}
+
+// executeWithRecover invokes the executor with a panic guard so a
+// buggy third-party Executor cannot kill the per-Action worker
+// goroutine and freeze the queue. Panics map to StatusError with a
+// safe detail and are logged with the action name. Built-in
+// executors (command, webhook) do not panic; this guard exists for
+// the registry's extension surface.
+func (r *Runner) executeWithRecover(ctx context.Context, exe Executor, req ExecRequest) (res Result) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.logger.Error("actions: executor panic",
+				"action", req.Action.Name, "type", req.Action.Type, "panic", rec)
+			res = Result{Status: StatusError, StatusDetail: "panic"}
+		}
+	}()
+	return exe.Execute(ctx, req)
 }
 
 // Reply dispatches a synthetic reply + audit row without queueing
@@ -239,6 +256,10 @@ func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint
 		if inv.ActionID != 0 {
 			id := inv.ActionID
 			row.ActionID = &id
+		}
+		if inv.OTPCredentialID != 0 {
+			id := inv.OTPCredentialID
+			row.OTPCredentialID = &id
 		}
 		if err := r.cfg.Audit.Insert(ctx, row); err != nil {
 			r.logger.Error("actions: audit insert failed",
