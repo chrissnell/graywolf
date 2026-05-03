@@ -99,11 +99,16 @@ type TestFireRequest struct {
 }
 
 // TestFireResponse is the body returned by POST /api/actions/{id}/test-fire.
+//
+// Truncated mirrors the value the audit row would have stored for a
+// real on-air invocation, so the UI can warn the operator that their
+// reply got chopped to fit the 67-char APRS message cap.
 type TestFireResponse struct {
 	Status        string `json:"status"`
 	StatusDetail  string `json:"status_detail,omitempty"`
 	OutputCapture string `json:"output_capture,omitempty"`
 	ReplyText     string `json:"reply_text"`
+	Truncated     bool   `json:"truncated"`
 	ExitCode      *int   `json:"exit_code,omitempty"`
 	HTTPStatus    *int   `json:"http_status,omitempty"`
 	InvocationID  uint   `json:"invocation_id"`

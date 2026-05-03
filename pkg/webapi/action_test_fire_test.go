@@ -94,6 +94,38 @@ func TestFireAction_Success(t *testing.T) {
 	}
 }
 
+func TestFireAction_TruncatedFlagPropagates(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	rec := &recordingTestFire{
+		// 80 chars of output → FormatReply truncates to fit the
+		// 67-char APRS message cap, so the response Truncated must
+		// be true.
+		result: actions.Result{
+			Status:        actions.StatusOK,
+			OutputCapture: strings.Repeat("a", 80),
+		},
+	}
+	srv.SetActionsService(rec)
+	id := makeTestFireAction(t, mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost,
+		"/api/actions/"+strconv.FormatUint(uint64(id), 10)+"/test-fire",
+		strings.NewReader(`{"args":{"k":"v"}}`)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var got dto.TestFireResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Truncated {
+		t.Fatalf("expected truncated=true, got %+v", got)
+	}
+}
+
 func TestFireAction_BadArgRejected(t *testing.T) {
 	srv, _ := newTestServer(t)
 	mux := http.NewServeMux()

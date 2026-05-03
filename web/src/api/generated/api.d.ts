@@ -2767,6 +2767,7 @@ export interface components {
             reply_text?: string;
             status?: string;
             status_detail?: string;
+            truncated?: boolean;
         };
         "dto.TestRigctldRequest": {
             host?: string;

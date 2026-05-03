@@ -125,30 +125,43 @@ func TestActionsCRUD_TypeValidation(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	bad := dto.Action{Name: "x", Type: "telegram", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}
-	body, _ := json.Marshal(bad)
+	cases := []struct {
+		name string
+		in   dto.Action
+	}{
+		{"unknown type", dto.Action{Name: "x", Type: "telegram", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}},
+		{"webhook missing url", dto.Action{Name: "x", Type: "webhook", WebhookMethod: "POST", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}},
+		{"webhook bad method", dto.Action{Name: "x", Type: "webhook", WebhookMethod: "PATCH", WebhookURL: "https://example.test/", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}},
+		{"webhook bad scheme", dto.Action{Name: "x", Type: "webhook", WebhookMethod: "GET", WebhookURL: "file:///etc/passwd", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}},
+		{"webhook unparseable", dto.Action{Name: "x", Type: "webhook", WebhookMethod: "GET", WebhookURL: "://not a url", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}},
+		{"webhook with userinfo", dto.Action{Name: "x", Type: "webhook", WebhookMethod: "GET", WebhookURL: "https://user:pass@example.test/", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}},
+		{"webhook missing host", dto.Action{Name: "x", Type: "webhook", WebhookMethod: "GET", WebhookURL: "https:///path", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}},
+	}
+	for _, tc := range cases {
+		body, _ := json.Marshal(tc.in)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/actions", bytes.NewReader(body)))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status=%d, want 400 (body=%s)", tc.name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestActionsCRUD_OTPRequiredNeedsCredential(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	cmd := writeExecScript(t)
+
+	in := newActionRequest("o", cmd)
+	in.OTPRequired = true
+	// OTPCredentialID intentionally nil — the runner would surface
+	// StatusNoCredential at dispatch; the API rejects on save.
+	body, _ := json.Marshal(in)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/actions", bytes.NewReader(body)))
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status=%d, want 400 (body=%s)", rec.Code, rec.Body.String())
-	}
-
-	// Webhook missing URL
-	bad = dto.Action{Name: "x", Type: "webhook", WebhookMethod: "POST", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}
-	body, _ = json.Marshal(bad)
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/actions", bytes.NewReader(body)))
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("missing url: status=%d, want 400", rec.Code)
-	}
-
-	// Webhook bad method
-	bad = dto.Action{Name: "x", Type: "webhook", WebhookMethod: "PATCH", WebhookURL: "https://example.test/", TimeoutSec: 5, ArgSchema: []dto.ArgSpec{}}
-	body, _ = json.Marshal(bad)
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/actions", bytes.NewReader(body)))
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("bad method: status=%d, want 400", rec.Code)
+		t.Fatalf("status=%d body=%s, want 400", rec.Code, rec.Body.String())
 	}
 }
 
@@ -221,9 +234,13 @@ func TestActionsCRUD_UpdateAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Update it.
+	// Update it. The configstore model has gorm default OTPRequired=true
+	// on Create, so the persisted row reads back true even though we
+	// posted false; override on the update so the validateAction
+	// cross-field check (OTPRequired ⇒ credential ref) passes.
 	created.Description = "edited"
 	created.TimeoutSec = 30
+	created.OTPRequired = false
 	body, _ = json.Marshal(created)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/actions/"+strconv.FormatUint(uint64(created.ID), 10), bytes.NewReader(body)))

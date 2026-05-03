@@ -63,6 +63,13 @@ func (s *Server) acceptTacticalInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// NOTE: createActionListener (pkg/webapi/action_listeners.go)
+	// refuses an addressee that collides with a tactical alias. The
+	// inverse — refusing a tactical that collides with an existing
+	// listener — is intentionally unenforced (plan §14 deferred) so
+	// that operators can rename tacticals freely. If we ever decide
+	// to symmetrize, the check goes here.
+	//
 	// Look up the existing row (if any) so we can distinguish the
 	// "create new" / "re-enable disabled" / "already a member" paths.
 	existing, err := s.store.GetTacticalCallsignByCallsign(r.Context(), callsign)

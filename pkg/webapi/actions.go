@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -241,7 +243,7 @@ func (s *Server) deleteAction(w http.ResponseWriter, r *http.Request) {
 
 // validateAction enforces the wire-shape invariants common to POST and PUT.
 func validateAction(in *dto.Action) error {
-	in.Name = sanitizeStr(in.Name)
+	in.Name = strings.TrimSpace(in.Name)
 	if !actionNameRE.MatchString(in.Name) {
 		return errors.New("name: must match ^[A-Za-z0-9._-]{1,32}$")
 	}
@@ -251,8 +253,8 @@ func validateAction(in *dto.Action) error {
 			return fmt.Errorf("command_path: %w", err)
 		}
 	case "webhook":
-		if in.WebhookURL == "" {
-			return errors.New("webhook_url: required")
+		if err := validateWebhookURL(in.WebhookURL); err != nil {
+			return fmt.Errorf("webhook_url: %w", err)
 		}
 		switch in.WebhookMethod {
 		case "GET", "POST":
@@ -271,6 +273,12 @@ func validateAction(in *dto.Action) error {
 	if in.QueueDepth < 0 {
 		return errors.New("queue_depth: must be >= 0")
 	}
+	if in.OTPRequired && in.OTPCredentialID == nil {
+		// The runner would surface StatusNoCredential at dispatch time;
+		// reject at save time so the operator sees the misconfiguration
+		// in the form rather than the audit log.
+		return errors.New("otp_credential_id: required when otp_required is true")
+	}
 	for i, a := range in.ArgSchema {
 		if a.Key == "" {
 			return fmt.Errorf("arg_schema[%d]: key required", i)
@@ -280,6 +288,35 @@ func validateAction(in *dto.Action) error {
 				return fmt.Errorf("arg_schema[%d]: invalid regex: %w", i, err)
 			}
 		}
+	}
+	return nil
+}
+
+// validateWebhookURL parses the operator-supplied URL and refuses
+// anything that isn't an http(s) absolute URL. Refusing user-info in
+// the URL avoids two surprises:
+//  1. exfiltrating credentials to an upstream log or proxy
+//  2. credentials surfacing in audit rows that quote the URL
+//
+// The webhook executor follows no redirects and caps the response
+// body, so the worst we accept is "an http(s) endpoint the operator
+// asked to reach". file:// and other non-network schemes are out.
+func validateWebhookURL(s string) error {
+	if s == "" {
+		return errors.New("required")
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return fmt.Errorf("parse: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("scheme %q: must be http or https", u.Scheme)
+	}
+	if u.Host == "" {
+		return errors.New("missing host")
+	}
+	if u.User != nil {
+		return errors.New("must not embed credentials")
 	}
 	return nil
 }
@@ -316,8 +353,6 @@ func validateCommandPath(p string) error {
 	}
 	return nil
 }
-
-func sanitizeStr(s string) string { return s }
 
 func actionToDTO(a *configstore.Action) dto.Action {
 	d := dto.Action{

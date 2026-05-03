@@ -9332,6 +9332,9 @@
                 },
                 "status_detail": {
                     "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
                 }
             }
         },
