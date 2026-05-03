@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Toaster } from '@chrissnell/chonky-ui';
+  import { Button, toast } from '@chrissnell/chonky-ui';
   import PageHeader from '../components/PageHeader.svelte';
   import { actionsStore } from '../lib/actions/store.svelte.js';
   import { exampleMessage } from '../lib/actions/grammar.js';
@@ -9,24 +9,35 @@
   import InvocationsPanel from '../components/actions/InvocationsPanel.svelte';
 
   // Modal-coordination state. Edit/Test/NewCredential modals land in
-  // Phase H/I; for now the page tracks intent so callbacks wire up
-  // cleanly and the modal slots can be filled without touching this
-  // file again.
-  let auditOpen = $state(false);
-  let editOpen = $state(false);
+  // Phase H/I; until those exist, clicks trigger a "coming soon" toast
+  // so the operator gets visible feedback instead of silent state flips.
   let editingAction = $state(null);
-  let testOpen = $state(false);
   let testingAction = $state(null);
+  let editOpen = $state(false);
+  let testOpen = $state(false);
+  let auditOpen = $state(false);
   let newCredOpen = $state(false);
 
   function openEdit(action) {
     editingAction = action;
     editOpen = true;
+    toast('Action editor lands in the next release.', 'info');
   }
 
   function openTest(action) {
     testingAction = action;
     testOpen = true;
+    toast('Test dialog lands in the next release.', 'info');
+  }
+
+  function openAudit() {
+    auditOpen = true;
+    toast('Full audit log view lands in the next release.', 'info');
+  }
+
+  function openNewCred() {
+    newCredOpen = true;
+    toast('New credential modal lands in the next release.', 'info');
   }
 
   onMount(() => actionsStore.loadAll());
@@ -37,11 +48,17 @@
     title="Actions"
     subtitle="Execute commands or call webhooks when authorized APRS messages arrive."
   >
-    <div class="header-buttons">
-      <Button variant="secondary" onclick={() => (auditOpen = true)}>View audit log</Button>
-      <Button variant="primary" onclick={() => openEdit(null)}>+ New Action</Button>
-    </div>
+    <Button variant="secondary" onclick={openAudit}>View audit log</Button>
+    <Button variant="primary" onclick={() => openEdit(null)}>+ New Action</Button>
   </PageHeader>
+
+  {#if actionsStore.error}
+    <div class="error-banner" role="alert">
+      <strong>Failed to load actions:</strong>
+      {actionsStore.error}
+      <button type="button" class="retry" onclick={() => actionsStore.loadAll()}>Retry</button>
+    </div>
+  {/if}
 
   <div class="help-banner">
     Actions trigger when APRS messages addressed to this station begin with the prefix
@@ -51,11 +68,9 @@
   </div>
 
   <ActionsTable onEdit={openEdit} onTest={openTest} />
-  <CredentialsTable bind:newCredOpen />
+  <CredentialsTable onNew={openNewCred} />
   <InvocationsPanel />
 </div>
-
-<Toaster />
 
 <style>
   .actions-page {
@@ -64,22 +79,39 @@
     flex-direction: column;
     gap: 1.5rem;
   }
-  .header-buttons {
+  .error-banner {
+    background: var(--color-danger-muted, rgba(220, 38, 38, 0.12));
+    color: var(--color-danger, #b91c1c);
+    border-left: 3px solid var(--color-danger, #b91c1c);
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
     align-items: center;
   }
+  .retry {
+    margin-left: auto;
+    background: none;
+    border: 1px solid currentColor;
+    color: inherit;
+    padding: 2px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font: inherit;
+  }
   .help-banner {
-    background: var(--gw-banner-bg, #fff8e1);
-    color: var(--gw-banner-fg, #5b4b1a);
-    border-left: 3px solid var(--gw-banner-accent, #f4b400);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-left: 3px solid var(--accent);
     padding: 0.75rem 1rem;
     border-radius: 4px;
     font-size: 0.9rem;
   }
   .help-banner code {
     font-family: 'SauceCodePro Nerd Font', ui-monospace, monospace;
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--accent-bg, rgba(0, 0, 0, 0.05));
+    color: var(--text-primary);
     padding: 1px 4px;
     border-radius: 3px;
   }

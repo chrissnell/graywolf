@@ -1,27 +1,14 @@
 <script>
-  import { Table, Button, EmptyState } from '@chrissnell/chonky-ui';
+  import { Table, Button, EmptyState, toast } from '@chrissnell/chonky-ui';
   import ConfirmDialog from '../ConfirmDialog.svelte';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { credsApi } from '../../lib/actions/api.js';
+  import { timeAgo } from '../../lib/actions/time.js';
 
-  let { newCredOpen = $bindable(false) } = $props();
+  let { onNew = () => {} } = $props();
 
   let confirmOpen = $state(false);
   let pendingDelete = $state(null);
-
-  function timeAgo(isoStr) {
-    if (!isoStr) return '—';
-    const ms = Date.now() - new Date(isoStr).getTime();
-    if (Number.isNaN(ms)) return '—';
-    const sec = Math.floor(ms / 1000);
-    if (sec < 60) return `${sec}s ago`;
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `${min} min ago`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr}h ${min % 60}m ago`;
-    const day = Math.floor(hr / 24);
-    return `${day}d ago`;
-  }
 
   function algoSummary(c) {
     const parts = [];
@@ -45,7 +32,12 @@
 
   async function confirmDelete() {
     if (!pendingDelete?.id) return;
-    await credsApi.remove(pendingDelete.id);
+    const { error } = await credsApi.remove(pendingDelete.id);
+    if (error) {
+      toast(`Delete failed: ${error.error ?? error.message ?? error}`, 'error');
+    } else {
+      toast(`Deleted credential "${pendingDelete.name}".`, 'success');
+    }
     pendingDelete = null;
     await actionsStore.loadAll();
   }
@@ -54,14 +46,14 @@
 <section class="creds-section">
   <div class="section-header">
     <h2 class="section-title">OTP Credentials</h2>
-    <Button variant="primary" onclick={() => (newCredOpen = true)}>+ New Credential</Button>
+    <Button variant="primary" onclick={onNew}>+ New Credential</Button>
   </div>
 
   {#if actionsStore.creds.length === 0}
     <EmptyState class="creds-empty">
       <h3>No credentials yet</h3>
       <p>Add an authenticator-app credential, then bind it to an action that requires OTP.</p>
-      <Button variant="primary" onclick={() => (newCredOpen = true)}>+ New Credential</Button>
+      <Button variant="primary" onclick={onNew}>+ New Credential</Button>
     </EmptyState>
   {:else}
     <div class="table-wrapper">

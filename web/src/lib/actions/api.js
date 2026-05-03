@@ -19,7 +19,7 @@ export const credsApi = {
 
 export const listenersApi = {
   list:   () => api.GET('/actions/listeners'),
-  create: (addressee) => api.POST('/actions/listeners', { body: { addressee } }),
+  create: (body) => api.POST('/actions/listeners', { body }),
   remove: (name) => api.DELETE('/actions/listeners/{name}', { params: { path: { name } } }),
 };
 
