@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@americana/maplibre-shield-generator": "^0.1.1",
-    "@chrissnell/chonky-ui": "^0.4.0",
+    "@chrissnell/chonky-ui": "^0.4.1",
     "@internationalized/date": "^3.8.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-serialize": "^0.14.0",
