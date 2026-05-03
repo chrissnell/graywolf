@@ -384,6 +384,13 @@ type SendMessageRequest struct {
 	// invite. Required and validated when Kind == "invite"; ignored
 	// otherwise. Uppercase, 1-9 of [A-Z0-9-].
 	InviteTactical string
+	// FallbackPolicyOverride is a one-shot per-send transport policy
+	// override. Empty means "use operator preference". Accepts the
+	// FallbackPolicy* constants. Set by callers that need source-
+	// aware routing (e.g. Actions replies that echo inbound RF/IS
+	// transport). Applies only to the initial dispatch — retry-manager
+	// re-attempts use the stored preference.
+	FallbackPolicyOverride string
 }
 
 // SendMessage persists the outbound row via store.Insert (allocating
@@ -466,12 +473,13 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 	// reflect writes). Without the copy, -race flags this as a data
 	// race between handler response-serialization and background send.
 	rowCopy := *row
+	policyOverride := req.FallbackPolicyOverride
 	go func() {
 		sendCtx := s.ctx
 		if sendCtx == nil {
 			sendCtx = context.Background()
 		}
-		result := s.sender.Send(sendCtx, &rowCopy)
+		result := s.sender.SendWithPolicy(sendCtx, &rowCopy, policyOverride)
 		if result.Err != nil {
 			s.logger.Warn("messages initial send failed",
 				"error", result.Err, "id", rowCopy.ID, "path", result.Path)

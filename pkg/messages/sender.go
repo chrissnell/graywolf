@@ -207,6 +207,19 @@ func NewSender(cfg SenderConfig) (*Sender, error) {
 // Returns a SendResult describing the outcome. RetryManager decides
 // whether to re-arm based on Result.Retryable.
 func (s *Sender) Send(ctx context.Context, row *configstore.Message) SendResult {
+	return s.SendWithPolicy(ctx, row, "")
+}
+
+// SendWithPolicy is Send with a one-shot fallback-policy override.
+// Pass an empty string to defer to the operator's stored preference
+// (identical to Send). Used by callers that need source-aware
+// transport selection — e.g. the Actions reply path, which echoes
+// inbound RF traffic back over RF and inbound IS traffic over IS.
+//
+// Note: the override applies to this single dispatch only. Retry
+// manager re-attempts use the stored preference, since by then the
+// inbound transport context has been lost.
+func (s *Sender) SendWithPolicy(ctx context.Context, row *configstore.Message, override string) SendResult {
 	if row == nil {
 		return SendResult{Err: errors.New("messages: Send requires non-nil row")}
 	}
@@ -229,7 +242,12 @@ func (s *Sender) Send(ctx context.Context, row *configstore.Message) SendResult 
 		return SendResult{Err: fmt.Errorf("%w: %d > %d", ErrMessageTextTooLong, len(row.Text), maxText), Retryable: false}
 	}
 
-	policy := NormalizeFallbackPolicy(s.cfg.Preferences.Current().FallbackPolicy)
+	var policy string
+	if override != "" {
+		policy = NormalizeFallbackPolicy(override)
+	} else {
+		policy = NormalizeFallbackPolicy(s.cfg.Preferences.Current().FallbackPolicy)
+	}
 	rfAvailable := s.rfAvailable()
 
 	switch policy {
