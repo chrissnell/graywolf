@@ -3,11 +3,19 @@ package actions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/messages"
 )
+
+// TestFireSenderCall is the synthetic SenderCall stamped on
+// invocations originated from the REST test-fire endpoint. It bypasses
+// any real callsign while still producing an audit row so operators
+// can see the dry-run history.
+const TestFireSenderCall = "(test-web)"
 
 // Service is the composition root for the Actions subsystem. One
 // instance per graywolf process. The wiring layer constructs it after
@@ -196,6 +204,74 @@ func (s *Service) ReloadListeners(ctx context.Context) error {
 	}
 	s.listeners.Replace(names)
 	return nil
+}
+
+// TestFire runs a one-shot invocation through the executor without
+// going through the classifier or the per-Action queue. The OTP
+// requirement and sender allowlist are intentionally bypassed — the
+// caller is operator-authenticated via the REST cookie, so the
+// dry-run is the point. The arg sanitizer still runs at the call
+// site (the handler invokes SanitizeFromMap before calling us). No
+// reply is dispatched to RF/IS; the result is returned synchronously
+// for the HTTP response.
+//
+// An audit row is written using SenderCall=TestFireSenderCall and
+// Source=SourceRF so operators can spot dry-runs separately from
+// real-air invocations. The persisted invocation id is returned for
+// the UI to deep-link into.
+func (s *Service) TestFire(ctx context.Context, a *configstore.Action, kvs []KeyValue) (Result, uint) {
+	res := s.runTestFireExecutor(ctx, a, kvs)
+	id := s.writeTestFireAudit(ctx, a, kvs, res)
+	return res, id
+}
+
+func (s *Service) runTestFireExecutor(ctx context.Context, a *configstore.Action, kvs []KeyValue) Result {
+	exe, ok := s.registry.Lookup(a.Type)
+	if !ok {
+		return Result{Status: StatusError, StatusDetail: fmt.Sprintf("no executor for type %q", a.Type)}
+	}
+	timeout := time.Duration(a.TimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	inv := Invocation{
+		ActionID: a.ID, ActionName: a.Name,
+		SenderCall: TestFireSenderCall, Source: SourceRF,
+		Args: kvs, StartedAt: time.Now(),
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.logger.Error("actions: test-fire executor panic",
+				"action", a.Name, "type", a.Type, "panic", rec)
+		}
+	}()
+	return exe.Execute(ctx, ExecRequest{Action: a, Invocation: inv, Timeout: timeout})
+}
+
+func (s *Service) writeTestFireAudit(ctx context.Context, a *configstore.Action, kvs []KeyValue, res Result) uint {
+	text, truncated := FormatReply(res)
+	aid := a.ID
+	row := &configstore.ActionInvocation{
+		ActionID:      &aid,
+		ActionNameAt:  a.Name,
+		SenderCall:    TestFireSenderCall,
+		Source:        string(SourceRF),
+		OTPVerified:   false,
+		RawArgsJSON:   marshalArgs(kvs),
+		Status:        string(res.Status),
+		StatusDetail:  res.StatusDetail,
+		ExitCode:      res.ExitCode,
+		HTTPStatus:    res.HTTPStatus,
+		OutputCapture: res.OutputCapture,
+		ReplyText:     text,
+		Truncated:     truncated,
+		CreatedAt:     time.Now().UTC(),
+	}
+	if err := s.store.InsertActionInvocation(ctx, row); err != nil {
+		s.logger.Error("actions: test-fire audit insert failed",
+			"action", a.Name, "err", err)
+	}
+	return row.ID
 }
 
 // Stop releases background resources. Safe to call multiple times.

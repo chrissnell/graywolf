@@ -9,17 +9,28 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/chrissnell/graywolf/pkg/actions"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
-// fakeActionsService records ReloadListeners calls so tests can assert
-// the listener mutations signaled the runtime.
-type fakeActionsService struct{ reloads atomic.Int32 }
+// fakeActionsService records ReloadListeners and TestFire calls so
+// tests can assert the listener mutations signaled the runtime and
+// the test-fire endpoint dispatches through the runtime path.
+type fakeActionsService struct {
+	reloads   atomic.Int32
+	testFires atomic.Int32
+	last      actions.Result
+}
 
 func (f *fakeActionsService) ReloadListeners(_ context.Context) error {
 	f.reloads.Add(1)
 	return nil
+}
+
+func (f *fakeActionsService) TestFire(_ context.Context, _ *configstore.Action, _ []actions.KeyValue) (actions.Result, uint) {
+	f.testFires.Add(1)
+	return f.last, 0
 }
 
 func TestListeners_CreateNormalizesUppercase(t *testing.T) {
