@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pquerna/otp/totp"
+	"gorm.io/gorm"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -281,6 +282,9 @@ func TestClassifyValidOTPDispatched(t *testing.T) {
 	if !sub.submits[0].inv.OTPVerified || sub.submits[0].inv.OTPCredName != "chris" {
 		t.Fatalf("expected OTPVerified=true and cred name set, got %+v", sub.submits[0].inv)
 	}
+	if sub.submits[0].inv.OTPCredentialID != credID {
+		t.Fatalf("expected OTPCredentialID=%d on dispatched invocation, got %d", credID, sub.submits[0].inv.OTPCredentialID)
+	}
 }
 
 func TestClassifyBadArgRepliesWithKey(t *testing.T) {
@@ -335,15 +339,51 @@ func TestClassifyISDirectionPassesSourceIS(t *testing.T) {
 	}
 }
 
-func TestClassifyStoreErrorTreatedAsUnknown(t *testing.T) {
+func TestClassifyStoreNotFoundTreatedAsUnknown(t *testing.T) {
 	sub := &stubSubmitter{}
-	c := newClassifierForTest(t, sub, &stubActionStore{err: errors.New("db")}, &stubCredStore{}, nil, nil)
+	c := newClassifierForTest(t, sub, &stubActionStore{err: gorm.ErrRecordNotFound}, &stubCredStore{}, nil, nil)
 	pkt := makeMessagePkt(aprs.DirectionRF, "OTHER", "N0CALL", "@@#ping", 0)
 	if !c.Classify(context.Background(), pkt) {
-		t.Fatal("store error path still consumes the packet")
+		t.Fatal("not-found path still consumes the packet")
 	}
 	if len(sub.replies) != 1 || sub.replies[0].res.Status != StatusUnknown {
-		t.Fatalf("expected StatusUnknown on store error, got %+v", sub.replies)
+		t.Fatalf("expected StatusUnknown on not-found, got %+v", sub.replies)
+	}
+}
+
+func TestClassifyStoreFailureRepliesError(t *testing.T) {
+	// A real DB failure (outage, corrupt page, etc.) must NOT come
+	// back as "unknown action" — that misleads operators trying
+	// legitimate OTP-authenticated requests during a partial outage.
+	sub := &stubSubmitter{}
+	c := newClassifierForTest(t, sub, &stubActionStore{err: errors.New("db down")}, &stubCredStore{}, nil, nil)
+	pkt := makeMessagePkt(aprs.DirectionRF, "OTHER", "N0CALL", "@@#ping", 0)
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("store-failure path still consumes the packet")
+	}
+	if len(sub.replies) != 1 || sub.replies[0].res.Status != StatusError {
+		t.Fatalf("expected StatusError on store failure, got %+v", sub.replies)
+	}
+	if sub.replies[0].res.StatusDetail != "store" {
+		t.Fatalf("expected detail=store, got %q", sub.replies[0].res.StatusDetail)
+	}
+}
+
+func TestClassifyCredentialStoreFailureRepliesError(t *testing.T) {
+	credID := uint(5)
+	a := &configstore.Action{ID: 1, Name: "ping", Type: "command", Enabled: true, OTPRequired: true, OTPCredentialID: &credID}
+	sub := &stubSubmitter{}
+	c := newClassifierForTest(t, sub,
+		&stubActionStore{byName: map[string]*configstore.Action{"ping": a}},
+		&stubCredStore{err: errors.New("db down")},
+		nil, nil,
+	)
+	pkt := makeMessagePkt(aprs.DirectionRF, "OTHER", "N0CALL", "@@123456#ping", 0)
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("credential-store failure path still consumes the packet")
+	}
+	if len(sub.replies) != 1 || sub.replies[0].res.Status != StatusError {
+		t.Fatalf("expected StatusError on credential store failure, got %+v", sub.replies)
 	}
 }
 

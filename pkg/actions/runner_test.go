@@ -76,6 +76,75 @@ func TestRunnerHappyPath(t *testing.T) {
 	}
 }
 
+func TestRunnerAuditStampsOTPCredentialID(t *testing.T) {
+	reg := NewExecutorRegistry()
+	_ = reg.Register("command", sleepyExecutor{dur: time.Millisecond})
+	sink := &fakeReplySink{}
+	audit := &fakeAudit{}
+	r := NewRunner(RunnerConfig{Registry: reg, Replies: sink, Audit: audit})
+	defer r.Stop()
+
+	a := &configstore.Action{ID: 1, Name: "Echo", Type: "command", QueueDepth: 4, Enabled: true}
+	r.Submit(context.Background(), Invocation{
+		ActionID: a.ID, ActionName: a.Name,
+		OTPVerified: true, OTPCredName: "chris", OTPCredentialID: 42,
+	}, a, 1)
+	waitFor(t, func() bool { return audit.count() == 1 })
+	audit.mu.Lock()
+	defer audit.mu.Unlock()
+	row := audit.rows[0]
+	if row.OTPCredentialID == nil || *row.OTPCredentialID != 42 {
+		t.Fatalf("expected audit row OTPCredentialID=42, got %v", row.OTPCredentialID)
+	}
+	if !row.OTPVerified {
+		t.Fatal("expected OTPVerified=true on audit row")
+	}
+}
+
+type panickyExecutor struct{}
+
+func (panickyExecutor) Execute(_ context.Context, _ ExecRequest) Result {
+	panic("oops")
+}
+
+func TestRunnerExecutorPanicMappedToStatusError(t *testing.T) {
+	reg := NewExecutorRegistry()
+	_ = reg.Register("command", panickyExecutor{})
+	sink := &fakeReplySink{}
+	audit := &fakeAudit{}
+	r := NewRunner(RunnerConfig{Registry: reg, Replies: sink, Audit: audit})
+	defer r.Stop()
+
+	a := &configstore.Action{ID: 1, Name: "Boom", Type: "command", QueueDepth: 4, Enabled: true}
+	r.Submit(context.Background(), Invocation{ActionID: a.ID, ActionName: a.Name}, a, 1)
+	waitFor(t, func() bool { return len(sink.snapshot()) == 1 && audit.count() == 1 })
+	if got := sink.snapshot()[0]; got != "error: panic" {
+		t.Fatalf("expected 'error: panic' reply, got %q", got)
+	}
+	// A second submit must still process — the worker goroutine
+	// survived the panic via defer recover.
+	r.Submit(context.Background(), Invocation{ActionID: a.ID, ActionName: a.Name}, a, 1)
+	waitFor(t, func() bool { return len(sink.snapshot()) == 2 })
+}
+
+func TestRunnerAuditOmitsOTPCredentialIDWhenZero(t *testing.T) {
+	reg := NewExecutorRegistry()
+	_ = reg.Register("command", sleepyExecutor{dur: time.Millisecond})
+	sink := &fakeReplySink{}
+	audit := &fakeAudit{}
+	r := NewRunner(RunnerConfig{Registry: reg, Replies: sink, Audit: audit})
+	defer r.Stop()
+
+	a := &configstore.Action{ID: 1, Name: "Echo", Type: "command", QueueDepth: 4, Enabled: true}
+	r.Submit(context.Background(), Invocation{ActionID: a.ID, ActionName: a.Name}, a, 1)
+	waitFor(t, func() bool { return audit.count() == 1 })
+	audit.mu.Lock()
+	defer audit.mu.Unlock()
+	if audit.rows[0].OTPCredentialID != nil {
+		t.Fatalf("expected nil OTPCredentialID for non-OTP action, got %v", audit.rows[0].OTPCredentialID)
+	}
+}
+
 func TestRunnerRateLimit(t *testing.T) {
 	reg := NewExecutorRegistry()
 	_ = reg.Register("command", sleepyExecutor{dur: time.Millisecond})

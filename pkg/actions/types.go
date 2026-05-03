@@ -49,15 +49,16 @@ type KeyValue struct {
 // runner constructs it from a ParsedInvocation plus the matched
 // configstore.Action and runtime context.
 type Invocation struct {
-	ID          uint64
-	ActionID    uint
-	ActionName  string
-	SenderCall  string
-	Source      Source
-	OTPVerified bool
-	OTPCredName string
-	Args        []KeyValue
-	StartedAt   time.Time
+	ID              uint64
+	ActionID        uint
+	ActionName      string
+	SenderCall      string
+	Source          Source
+	OTPCredentialID uint // 0 if no credential was consulted
+	OTPVerified     bool
+	OTPCredName     string
+	Args            []KeyValue
+	StartedAt       time.Time
 }
 
 // Result is the executor outcome consumed by the runner.

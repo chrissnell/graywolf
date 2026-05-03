@@ -3,12 +3,20 @@ package configstore
 import "gorm.io/gorm"
 
 // migrateActionsTables creates the Actions feature tables. Uses raw SQL
-// (not AutoMigrate) so the FK ON DELETE SET NULL clause on
-// actions.otp_credential_id and the audit-log indexes can be expressed
-// precisely. The four models (Action, OTPCredential,
+// (not AutoMigrate) so the FK ON DELETE SET NULL clauses
+// (actions.otp_credential_id, action_invocations.action_id,
+// action_invocations.otp_credential_id) and the audit-log indexes can
+// be expressed precisely. The four models (Action, OTPCredential,
 // ActionListenerAddressee, ActionInvocation) are deliberately *not*
 // added to the AutoMigrate list — this migration is the single source of
 // truth for their schema.
+//
+// Audit-row FK rationale: ActionID and OTPCredentialID are nullable on
+// ActionInvocation (the model declares *uint) so an unknown-action
+// row or post-deletion lookup still writes; ON DELETE SET NULL keeps
+// the audit row alive after operator deletes by nulling the dangling
+// reference rather than orphaning it. ActionNameAt / OTPCredName are
+// denormalized on the audit row for display continuity.
 func migrateActionsTables(tx *gorm.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS otp_credentials (
@@ -67,7 +75,9 @@ func migrateActionsTables(tx *gorm.DB) error {
 			output_capture TEXT NOT NULL DEFAULT '',
 			reply_text TEXT NOT NULL DEFAULT '',
 			truncated INTEGER NOT NULL DEFAULT 0,
-			created_at DATETIME NOT NULL
+			created_at DATETIME NOT NULL,
+			FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE SET NULL,
+			FOREIGN KEY (otp_credential_id) REFERENCES otp_credentials(id) ON DELETE SET NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_action_invocations_action_id ON action_invocations(action_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_action_invocations_sender_call ON action_invocations(sender_call)`,
