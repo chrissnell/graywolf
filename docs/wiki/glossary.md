@@ -41,6 +41,9 @@ background, the operator handbook is the starting point.
 | Callsign / SSID | Station identifier, optional `-N` suffix. | [`../../pkg/callsign/parse.go`](../../pkg/callsign/parse.go), [`../handbook/preferences.html`](../handbook/preferences.html) |
 | Tactical callsign | Operator-chosen alias mapped to a real callsign for chat / display. | [`../../pkg/messages/tactical_set.go`](../../pkg/messages/tactical_set.go), [`../handbook/messaging.html`](../handbook/messaging.html) |
 | Tactical chat invite | `!GW1 INVITE TAC` protocol for joining a tactical group. | [`../../pkg/messages/invite.go`](../../pkg/messages/invite.go) |
+| Action | Operator-defined trigger fired by an inbound APRS message of the form `@@<otp>#<name> [k=v ...]`; runs a command or webhook with optional TOTP auth, sender allowlist, arg schema, rate limit, and per-Action queue. See [`actions.md`](actions.md). | [`../../pkg/actions/`](../../pkg/actions/) |
+| Listener addressee | Operator-defined extra APRS addressee (e.g. `GWACT`) that the Actions classifier matches in addition to the station call and tactical aliases. | [`../../pkg/actions/addressees.go`](../../pkg/actions/addressees.go) |
+| TOTP credential | RFC 6238 secret stored in `otp_credentials` and referenced by Actions; UI surfaces the secret only at create time. Replay-protected with a per-(cred, step, code-hash) ring. | [`../../pkg/actions/otp.go`](../../pkg/actions/otp.go) |
 | APRS-IS passcode | Login auth code derived from callsign. | [`../../pkg/callsign/passcode.go`](../../pkg/callsign/passcode.go) |
 | IS->RF filter | Rule engine for gating internet traffic to RF; deny-by-default ([invariant 15](invariants.md)). | [`../../pkg/igate/filters/`](../../pkg/igate/filters/), [`../handbook/igate.html`](../handbook/igate.html) |
 | Server-side filter (`g/`) | Filter clause sent to the APRS-IS server to limit upstream feed. | [`../../pkg/igate/server_filter.go`](../../pkg/igate/server_filter.go) |

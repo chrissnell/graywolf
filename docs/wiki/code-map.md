@@ -76,6 +76,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 | `igate` | APRS-IS bidirectional gateway: client/login/filter, RF<->IS gating, third-party encap, TNC2 | [`../handbook/igate.html`](../handbook/igate.html) |
 | `igate/filters` | IS->RF rule engine (priority-ordered, deny by default) | [`../handbook/igate.html`](../handbook/igate.html) |
 | `messages` | APRS messaging domain: router, store (GORM), sender, retry, invite, tactical_set, bots, preferences, event_hub, local_tx_ring | [`../handbook/messaging.html`](../handbook/messaging.html) |
+| `actions` | `@@`-prefixed APRS message Actions: classifier, parser, OTP verifier, per-Action runner with rate limit + queue, command/webhook executors, source-aware reply, audit pruner | [`actions.md`](actions.md) |
 | `gps` | GPSD client + serial NMEA reader + cache + station-position layered cache + enumerate | [`../handbook/gps.html`](../handbook/gps.html) |
 | `callsign` | Callsign parsing, N0CALL detection, APRS-IS passcode | [`../handbook/preferences.html`](../handbook/preferences.html) |
 | `stationcache` | Heard-station cache (memory + persistent) and APRS-extract helpers | (no dedicated page) |

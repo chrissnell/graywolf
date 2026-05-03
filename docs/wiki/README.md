@@ -22,6 +22,7 @@ roles.
 - [`build-pipelines.md`](build-pipelines.md) -- per-artifact build recipes (Go binary, Rust modem, web UI, proto codegen, OpenAPI, goreleaser, packages, in-app release notes).
 - [`invariants.md`](invariants.md) -- cross-cutting "if X then also Y" rules with reasons.
 - [`glossary.md`](glossary.md) -- domain terms as graywolf uses them, with source pointers.
+- [`actions.md`](actions.md) -- the `@@`-prefixed APRS Actions subsystem: trigger surface, classifier topology, source-aware reply, lifecycle, schema.
 
 ## Maintenance
 
