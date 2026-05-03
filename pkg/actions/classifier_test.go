@@ -347,6 +347,89 @@ func TestClassifyStoreErrorTreatedAsUnknown(t *testing.T) {
 	}
 }
 
+func TestClassifyMissingOTPRepliesBadOTPMissing(t *testing.T) {
+	credID := uint(5)
+	cred := &configstore.OTPCredential{ID: credID, Name: "chris", SecretB32: "JBSWY3DPEHPK3PXP"}
+	a := &configstore.Action{ID: 1, Name: "ping", Type: "command", Enabled: true, OTPRequired: true, OTPCredentialID: &credID}
+	sub := &stubSubmitter{}
+	c := newClassifierForTest(t, sub,
+		&stubActionStore{byName: map[string]*configstore.Action{"ping": a}},
+		&stubCredStore{byID: map[uint]*configstore.OTPCredential{credID: cred}},
+		nil, nil,
+	)
+	pkt := makeMessagePkt(aprs.DirectionRF, "OTHER", "N0CALL", "@@#ping", 0)
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("missing OTP must still be consumed")
+	}
+	if len(sub.replies) != 1 || sub.replies[0].res.Status != StatusBadOTP {
+		t.Fatalf("expected StatusBadOTP, got %+v", sub.replies)
+	}
+	if sub.replies[0].res.StatusDetail != "missing" {
+		t.Fatalf("expected detail=missing, got %q", sub.replies[0].res.StatusDetail)
+	}
+}
+
+func TestClassifyThirdPartyEnvelopeIsUnwrapped(t *testing.T) {
+	// An action message gated through APRS101 ch 20 third-party
+	// arrives with the gating iGate as outer Source and the original
+	// author as ThirdParty.Source. The classifier must treat it as if
+	// it had arrived directly: addressee match, sender = author.
+	a := &configstore.Action{ID: 1, Name: "ping", Type: "command", Enabled: true, OTPRequired: false, SenderAllowlist: "K1ABC"}
+	sub := &stubSubmitter{}
+	c := newClassifierForTest(t, sub, &stubActionStore{byName: map[string]*configstore.Action{"ping": a}}, &stubCredStore{}, nil, nil)
+	pkt := &aprs.DecodedAPRSPacket{
+		Source:    "GATEWAY-1",
+		Type:      aprs.PacketThirdParty,
+		Direction: aprs.DirectionIS,
+		ThirdParty: &aprs.DecodedAPRSPacket{
+			Source: "K1ABC",
+			Type:   aprs.PacketMessage,
+			Message: &aprs.Message{
+				Addressee: "N0CALL",
+				Text:      "@@#ping",
+			},
+		},
+	}
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("third-party-wrapped action must be consumed")
+	}
+	if len(sub.submits) != 1 {
+		t.Fatalf("expected 1 submit, got %d (replies=%d)", len(sub.submits), len(sub.replies))
+	}
+	if sub.submits[0].inv.SenderCall != "K1ABC" {
+		t.Fatalf("expected inner author K1ABC, got %q", sub.submits[0].inv.SenderCall)
+	}
+	if sub.submits[0].inv.Source != SourceIS {
+		t.Fatalf("expected SourceIS, got %q", sub.submits[0].inv.Source)
+	}
+}
+
+func TestClassifyNilVerifierRepliesError(t *testing.T) {
+	credID := uint(5)
+	cred := &configstore.OTPCredential{ID: credID, Name: "chris", SecretB32: "JBSWY3DPEHPK3PXP"}
+	a := &configstore.Action{ID: 1, Name: "ping", Type: "command", Enabled: true, OTPRequired: true, OTPCredentialID: &credID}
+	sub := &stubSubmitter{}
+	cfg := ClassifierConfig{
+		OurCall:     ourCallProvider("N0CALL"),
+		TacticalSet: nil,
+		Listeners:   NewAddresseeSet(),
+		ActionStore: &stubActionStore{byName: map[string]*configstore.Action{"ping": a}},
+		CredStore:   &stubCredStore{byID: map[uint]*configstore.OTPCredential{credID: cred}},
+		OTPVerifier: nil,
+		Runner:      sub,
+	}
+	pkt := makeMessagePkt(aprs.DirectionRF, "OTHER", "N0CALL", "@@123456#ping", 0)
+	if !NewClassifier(cfg).Classify(context.Background(), pkt) {
+		t.Fatal("nil verifier path must still be consumed")
+	}
+	if len(sub.replies) != 1 || sub.replies[0].res.Status != StatusError {
+		t.Fatalf("expected StatusError, got %+v", sub.replies)
+	}
+	if sub.replies[0].res.StatusDetail != "no verifier" {
+		t.Fatalf("expected detail='no verifier', got %q", sub.replies[0].res.StatusDetail)
+	}
+}
+
 func TestSenderAllowed(t *testing.T) {
 	cases := []struct {
 		csv, sender string

@@ -1,7 +1,9 @@
 package actions
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -140,3 +142,60 @@ func TestVerifyOTPReplayBlockedAcrossFullWindow(t *testing.T) {
 type fakeClock struct{ t time.Time }
 
 func (f *fakeClock) Now() time.Time { return f.t }
+
+func TestStartOTPSweeperRunsAndStops(t *testing.T) {
+	// Seed an entry, then advance the clock past the TTL before
+	// starting the sweeper so the ticker reads a stable time. Using
+	// fakeClock without synchronization would race against the
+	// sweeper goroutine.
+	clk := &syncClock{}
+	clk.set(time.Now())
+	v := NewOTPVerifier(OTPVerifierConfig{Now: clk.Now})
+	secret := "JBSWY3DPEHPK3PXP"
+	code := generateAndVerify(t, secret, clk.Now())
+	if ok, _ := v.Verify(1, secret, code); !ok {
+		t.Fatal("seed verify failed")
+	}
+	clk.set(clk.Now().Add(10 * time.Minute))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop := StartOTPSweeper(ctx, v, 5*time.Millisecond)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		v.mu.Lock()
+		n := len(v.used)
+		v.mu.Unlock()
+		if n == 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	v.mu.Lock()
+	n := len(v.used)
+	v.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("expected sweeper to drain ring, %d entries remain", n)
+	}
+
+	stop()
+	stop() // idempotent
+}
+
+type syncClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *syncClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *syncClock) set(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = t
+}

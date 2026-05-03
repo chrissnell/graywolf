@@ -63,14 +63,22 @@ func NewClassifier(cfg ClassifierConfig) *Classifier { return &Classifier{cfg: c
 // on a consumed packet still return true — they emit an "unknown"
 // audit row + reply rather than leaking partial Actions noise into
 // the inbox.
+//
+// Third-party APRS101 ch 20 envelopes are unwrapped before
+// classification so an action gated from IS→RF (or vice-versa) is
+// claimed by Classify, not by the messages router.
 func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) bool {
-	if pkt == nil || pkt.Message == nil {
+	if pkt == nil {
 		return false
 	}
-	if !strings.HasPrefix(pkt.Message.Text, ActionPrefix) {
+	innerSource, innerMsg := effectiveMessage(pkt)
+	if innerMsg == nil {
 		return false
 	}
-	addr := pkt.Message.Addressee
+	if !strings.HasPrefix(innerMsg.Text, ActionPrefix) {
+		return false
+	}
+	addr := innerMsg.Addressee
 	match := messages.MatchAddressee(c.cfg.OurCall(), addr, c.cfg.TacticalSet)
 	if !match.IsForUs && !(c.cfg.Listeners != nil && c.cfg.Listeners.Contains(addr)) {
 		return false
@@ -80,10 +88,10 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 	if pkt.Direction == aprs.DirectionIS {
 		source = SourceIS
 	}
-	sender := strings.ToUpper(strings.TrimSpace(pkt.Source))
+	sender := strings.ToUpper(strings.TrimSpace(innerSource))
 	channel := uint32(pkt.Channel)
 
-	parsed, err := Parse(pkt.Message.Text)
+	parsed, err := Parse(innerMsg.Text)
 	if err != nil {
 		c.cfg.Runner.Reply(ctx, Invocation{
 			SenderCall: sender, Source: source,
@@ -125,7 +133,12 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 			return true
 		}
 		if c.cfg.OTPVerifier == nil {
-			c.cfg.Runner.Reply(ctx, inv, channel, Result{Status: StatusNoCredential})
+			// Wiring bug, not a missing operator credential.
+			c.cfg.Runner.Reply(ctx, inv, channel, Result{Status: StatusError, StatusDetail: "no verifier"})
+			return true
+		}
+		if parsed.OTPDigits == "" {
+			c.cfg.Runner.Reply(ctx, inv, channel, Result{Status: StatusBadOTP, StatusDetail: "missing"})
 			return true
 		}
 		ok, verr := c.cfg.OTPVerifier.Verify(cred.ID, cred.SecretB32, parsed.OTPDigits)
@@ -165,6 +178,26 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 
 	c.cfg.Runner.Submit(ctx, inv, a, channel)
 	return true
+}
+
+// effectiveMessage returns the (source, message) pair to classify
+// against, unwrapping a single layer of APRS101 ch 20 third-party
+// envelope. Returns (_, nil) when pkt is not a message and is not
+// a third-party-wrapped message.
+//
+// For third-party traffic the inner source is the original author
+// (the relaying iGate's call appears on pkt.Source instead). The
+// allowlist + audit rows must use the author, otherwise the
+// allowlist becomes "must be heard from this iGate".
+func effectiveMessage(pkt *aprs.DecodedAPRSPacket) (string, *aprs.Message) {
+	if pkt.Type == aprs.PacketThirdParty && pkt.ThirdParty != nil &&
+		pkt.ThirdParty.Type == aprs.PacketMessage && pkt.ThirdParty.Message != nil {
+		return pkt.ThirdParty.Source, pkt.ThirdParty.Message
+	}
+	if pkt.Type == aprs.PacketMessage && pkt.Message != nil {
+		return pkt.Source, pkt.Message
+	}
+	return "", nil
 }
 
 // senderAllowed reports whether sender (already uppercased) is
