@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/actions"
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/igate"
@@ -109,11 +110,11 @@ type Server struct {
 }
 
 // ActionsService is the narrow surface the webapi handlers consume
-// from pkg/actions.Service. Kept as an interface so the webapi package
-// doesn't drag in the full actions runner at import time and tests can
-// inject a fake.
+// from pkg/actions.Service. Listener-addressee mutations call
+// ReloadListeners; the test-fire endpoint calls TestFire.
 type ActionsService interface {
 	ReloadListeners(ctx context.Context) error
+	TestFire(ctx context.Context, a *configstore.Action, args []actions.KeyValue) (actions.Result, uint)
 }
 
 // MessagesService is the narrow surface the webapi handlers consume
@@ -260,6 +261,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerOTPCredentials(mux)
 	s.registerActionListeners(mux)
 	s.registerActionInvocations(mux)
+	s.registerActionTestFire(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)

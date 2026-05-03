@@ -64,6 +64,7 @@ func (f *fakeServiceStore) PruneActionInvocations(_ context.Context, _ int, _ ti
 func (f *fakeServiceStore) InsertActionInvocation(_ context.Context, row *configstore.ActionInvocation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	row.ID = uint(len(f.invocations) + 1)
 	f.invocations = append(f.invocations, row)
 	return nil
 }
@@ -223,6 +224,51 @@ func TestServiceReloadListenersUpdatesSnapshot(t *testing.T) {
 	}
 	if !svc.listeners.Contains("CABIN") {
 		t.Fatal("CABIN should be present after reload")
+	}
+}
+
+func TestServiceTestFireRunsExecutorAndAudits(t *testing.T) {
+	store := newFakeServiceStore()
+	replies := newCapturingReplies()
+	tac := messages.NewTacticalSet()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc := newServiceForTest(ctx, store, replies, func() string { return "N0CALL" }, tac, nil)
+	defer svc.Stop()
+
+	if err := svc.Registry().Register("fake", &fakeExecutor{res: Result{Status: StatusOK, OutputCapture: "fired"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &configstore.Action{
+		ID: 7, Name: "switch", Type: "fake",
+		Enabled: true, OTPRequired: true, // OTP required is bypassed by TestFire.
+		TimeoutSec: 5,
+	}
+	res, id := svc.TestFire(ctx, a, []KeyValue{{Key: "state", Value: "on"}})
+	if res.Status != StatusOK || res.OutputCapture != "fired" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if id == 0 {
+		t.Fatalf("expected non-zero invocation id")
+	}
+
+	// No reply must have been dispatched.
+	if got := replies.snapshot(); len(got) != 0 {
+		t.Fatalf("test-fire must not send a reply, got %+v", got)
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.invocations) != 1 {
+		t.Fatalf("expected 1 audit row, got %d", len(store.invocations))
+	}
+	row := store.invocations[0]
+	if row.SenderCall != TestFireSenderCall {
+		t.Fatalf("sender_call=%q, want %q", row.SenderCall, TestFireSenderCall)
+	}
+	if row.Status != string(StatusOK) || row.ActionNameAt != "switch" {
+		t.Fatalf("unexpected audit row: %+v", row)
 	}
 }
 

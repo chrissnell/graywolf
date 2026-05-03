@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -54,6 +55,46 @@ func compileRegex(pat string) (*regexp.Regexp, error) {
 	}
 	regexCache[pat] = re
 	return re, nil
+}
+
+// DecodeArgSchemaJSON parses the JSON wire form of an action's
+// arg_schema column into the runtime ArgSpec slice. Empty / "[]"
+// strings return (nil, nil).
+func DecodeArgSchemaJSON(s string) ([]ArgSpec, error) {
+	if s == "" || s == "[]" {
+		return nil, nil
+	}
+	var out []ArgSpec
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SanitizeFromMap is the map-keyed counterpart to Sanitize. The
+// Actions REST test-fire endpoint hands us a wire map; the classifier
+// hands us an ordered slice. Both paths need the same downstream
+// schema check, so this helper converts and delegates to Sanitize.
+//
+// The returned slice is in schema-declared order (not map iteration
+// order) so the executor argv stays stable.
+func SanitizeFromMap(schema []ArgSpec, args map[string]string) ([]KeyValue, error) {
+	raw := make([]KeyValue, 0, len(args))
+	for k, v := range args {
+		raw = append(raw, KeyValue{Key: k, Value: v})
+	}
+	return Sanitize(schema, raw)
+}
+
+// BadArgKey returns the offending key when err is a *BadArgError,
+// otherwise the empty string. Lets callers compose a "bad arg: KEY"
+// reply without importing the error type directly.
+func BadArgKey(err error) string {
+	var bae *BadArgError
+	if errors.As(err, &bae) {
+		return bae.Key
+	}
+	return ""
 }
 
 // Sanitize validates raw key/value pairs against the schema and
