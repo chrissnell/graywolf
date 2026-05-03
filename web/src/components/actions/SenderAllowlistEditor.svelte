@@ -9,8 +9,10 @@
   let input = $state('');
 
   // Single source of truth: derive chips from the bound CSV. Mutations
-  // rewrite `value`, which re-derives chips on the next pass.
-  let chips = $derived(parseAllowlist(value));
+  // rewrite `value`, which re-derives chips on the next pass. APRS
+  // callsigns are conventionally uppercase; normalize on display so a
+  // CSV stored as "nw5w" renders the same as freshly typed "NW5W".
+  let chips = $derived(parseAllowlist(value).map((c) => c.toUpperCase()));
 
   function commit(text) {
     const tokens = parseAllowlist(text);

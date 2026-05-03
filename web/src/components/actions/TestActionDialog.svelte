@@ -2,6 +2,7 @@
   import { Button, Input, Modal, Badge, toast } from '@chrissnell/chonky-ui';
   import { actionsApi } from '../../lib/actions/api.js';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
+  import { statusVariant, badArgKey } from '../../lib/actions/status.js';
 
   // `action` is the row whose Test button was clicked. Null while the
   // dialog is closed; the parent passes a fresh object on each open.
@@ -59,25 +60,6 @@
     }
   }
 
-  function statusVariant(s) {
-    switch (s) {
-      case 'ok':
-        return 'success';
-      case 'bad_otp':
-      case 'denied':
-      case 'error':
-      case 'timeout':
-      case 'bad_arg':
-        return 'danger';
-      case 'rate_limited':
-      case 'busy':
-      case 'disabled':
-        return 'warning';
-      default:
-        return 'default';
-    }
-  }
-
   async function fire() {
     if (!action?.id) return;
     topError = null;
@@ -94,6 +76,13 @@
         return;
       }
       result = data;
+      // bad_arg replies surface a per-key sanitization failure.
+      // Outline the offending input so "Run again" doesn't strand the
+      // operator without a hint.
+      if (data?.status === 'bad_arg') {
+        const k = badArgKey(data.reply_text);
+        if (k) argErrors = { ...argErrors, [k]: data.reply_text };
+      }
       view = 'result';
       // Refresh the invocation list so the test row appears live.
       actionsStore.refreshInvocations();
@@ -115,7 +104,7 @@
   }
 </script>
 
-<Modal bind:open onClose={doClose} class="test-action-dialog">
+<Modal bind:open onClose={() => onClose?.()} class="test-action-dialog">
   <Modal.Header>
     <h3 class="modal-title">Test "{action?.name ?? ''}"</h3>
     <Modal.Close aria-label="Close">x</Modal.Close>

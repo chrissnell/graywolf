@@ -163,6 +163,59 @@ AutoMigrate). Four tables:
 All four models are deliberately *not* in the AutoMigrate list — the
 migration is the single source of truth for their schema.
 
+## Operator UI
+
+Web entry: `/#/actions` (route file
+[`../../web/src/routes/Actions.svelte`](../../web/src/routes/Actions.svelte)).
+Page-level state (actions, credentials, listeners, invocations) lives
+in the singleton store
+[`../../web/src/lib/actions/store.svelte.js`](../../web/src/lib/actions/store.svelte.js)
+and is hydrated through the openapi-fetch wrappers in
+[`../../web/src/lib/actions/api.js`](../../web/src/lib/actions/api.js).
+
+### Components
+
+| File | Role |
+|---|---|
+| `web/src/components/actions/ActionsTable.svelte` | List of actions; per-row Edit / Test / Delete. Edit/Test buttons fan out to the modals below. |
+| `web/src/components/actions/CredentialsTable.svelte` | OTP credential list. New-credential modal lands in Phase I. |
+| `web/src/components/actions/InvocationsPanel.svelte` | Recent invocation log with filter bar + 5s live-poll. |
+| `web/src/components/actions/EditActionModal.svelte` | Single Edit/New form covering every field in `dto.Action`. Type-aware: command vs webhook sub-block swaps. Re-uses `ArgSchemaEditor`, `SenderAllowlistEditor`, `HeadersEditor`. |
+| `web/src/components/actions/ArgSchemaEditor.svelte` | Per-key arg-schema row editor. Validates each row's regex via `new RegExp` on blur and exposes `hasErrors()` so the parent can block save. |
+| `web/src/components/actions/SenderAllowlistEditor.svelte` | Chip-style callsign editor that round-trips a CSV string. |
+| `web/src/components/actions/HeadersEditor.svelte` | Two-column key/value grid for webhook headers. Validates header names, exposes `hasErrors()`. |
+| `web/src/components/actions/TestActionDialog.svelte` | Per-row Test dialog. Renders one input per arg in the action's `arg_schema`, calls `actionsApi.testFire(id, args)`, shows a status-badged result panel. OTP / sender-allowlist checks are bypassed because the operator is already authenticated to the web UI. |
+| `web/src/lib/actions/status.js` | Shared `statusVariant(status)` and `badArgKey(replyText)` helpers consumed by `InvocationsPanel` and `TestActionDialog` so colors and bad-arg parsing stay in lockstep. |
+| `web/src/lib/actions/grammar.js` | Tiny formatter for the example-message banner + the `parseAllowlist` CSV splitter shared with the chip editor. |
+
+### Test fire endpoint
+
+The Test dialog hits `POST /api/actions/{id}/test-fire` (handler in
+[`../../pkg/webapi/action_test_fire.go`](../../pkg/webapi/action_test_fire.go)).
+Per spec §11, this short-circuits OTP and sender-allowlist checks but
+exercises the full executor + sanitization + audit-row write path,
+making it the operator's primary debug surface for newly defined
+Actions. The dialog warns about the bypass in its subhead so the
+operator does not conclude their action is "unprotected" based on test
+results.
+
+### Things worth knowing
+
+- `dto.ArgSpec.regex` and `dto.ArgSpec.required` are JSON
+  `omitempty`. Wire payloads for the simplest valid row are
+  `{"key":"foo"}`. The Edit modal normalizes those undefined fields
+  to `''` / `false` on load before binding to chonky-ui's `Input` /
+  `Toggle`, which would otherwise crash with
+  `props_invalid_value`.
+- The OTP credential select binds to a string for chonky-ui
+  compatibility but the wire field is `*uint`. The mirroring effect
+  in `EditActionModal` translates between the two; do not bind the
+  Select directly to `form.otp_credential_id`.
+- Issuer / account fields are intentionally hidden from the
+  credentials table; per the single-user-station design, the issuer
+  is always Graywolf and the account is always the station callsign.
+  See `feedback_single_user_station` memory for the rationale.
+
 ## Cross-references
 
 - Plan / design intent:

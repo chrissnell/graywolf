@@ -5,6 +5,7 @@
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { invocationsApi } from '../../lib/actions/api.js';
   import { timeAgo } from '../../lib/actions/time.js';
+  import { statusVariant } from '../../lib/actions/status.js';
 
   let clearOpen = $state(false);
 
@@ -30,24 +31,6 @@
   ];
 
   let pollTimer = $state(null);
-
-  function statusVariant(s) {
-    switch (s) {
-      case 'ok':
-        return 'success';
-      case 'bad_otp':
-      case 'denied':
-      case 'error':
-      case 'timeout':
-        return 'danger';
-      case 'rate_limited':
-      case 'busy':
-      case 'disabled':
-        return 'warning';
-      default:
-        return 'default';
-    }
-  }
 
   function sourceLabel(s) {
     if (s === 'rf') return 'RF';

@@ -57,18 +57,44 @@
   // Reset the form whenever the modal transitions from closed → open or
   // the bound `action` changes. Doing it in $effect keeps state-on-open
   // consistent without leaking edits between sessions.
+  // Backend serializes ArgSpec.regex / required with `omitempty`, so a
+  // saved row like `{key: "foo"}` arrives with both fields undefined.
+  // Chonky `Input` and `Toggle` reject `undefined` for a bindable that
+  // has a default, so normalize before binding to avoid props_invalid_value.
+  function normalizeArgSchema(rows) {
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => ({
+      key: r?.key ?? '',
+      regex: r?.regex ?? '',
+      required: !!r?.required,
+    }));
+  }
+
   let prevOpen = false;
   $effect(() => {
     if (open && !prevOpen) {
       form = action ? { ...emptyForm(), ...structuredClone($state.snapshot(action)) } : emptyForm();
-      // arg_schema can arrive null from the backend on a fresh row.
-      if (!Array.isArray(form.arg_schema)) form.arg_schema = [];
+      form.arg_schema = normalizeArgSchema(form.arg_schema);
       if (!form.webhook_headers) form.webhook_headers = {};
+      // The backend may send blank webhook_method on a brand-new action;
+      // default it so the Select doesn't render empty when the operator
+      // toggles type to webhook.
+      if (form.type === 'webhook' && !form.webhook_method) form.webhook_method = 'GET';
       nameError = null;
       topError = null;
       fieldErrors = {};
     }
     prevOpen = open;
+  });
+
+  // Defaulting webhook_method is also needed when the operator switches
+  // type from command to webhook on an existing action: the saved
+  // webhook_method is blank because we strip it in buildBody for command
+  // type. Watch the type field and seed a sensible default.
+  $effect(() => {
+    if (form.type === 'webhook' && !form.webhook_method) {
+      form.webhook_method = 'GET';
+    }
   });
 
   let isEdit = $derived(!!action?.id);
@@ -139,13 +165,15 @@
 
   function applyServerError(err) {
     const msg = err?.error ?? err?.message ?? 'Save failed.';
-    // The webapi handlers return errors in `{error: "field_name: detail"}`
-    // shape. Map known prefixes to fieldErrors so the affected input
-    // shows a red outline; unknown shapes go to the top-of-modal banner.
+    // The webapi handlers return errors in `{error: "field: detail"}`
+    // shape. Indexed list prefixes like `arg_schema[0]` get stripped to
+    // their root field so the matching input gets a red outline; unknown
+    // shapes fall through to the top-of-modal banner.
     if (typeof msg === 'string' && msg.includes(':')) {
       const idx = msg.indexOf(':');
-      const field = msg.slice(0, idx).trim();
+      const raw = msg.slice(0, idx).trim();
       const detail = msg.slice(idx + 1).trim();
+      const field = raw.replace(/\[\d+\]$/, '');
       const known = [
         'name', 'description', 'type', 'command_path', 'working_dir',
         'webhook_method', 'webhook_url', 'webhook_body_template',
@@ -153,7 +181,10 @@
         'sender_allowlist', 'arg_schema', 'rate_limit_sec', 'queue_depth',
       ];
       if (known.includes(field)) {
-        fieldErrors = { ...fieldErrors, [field]: detail };
+        // Preserve the original index in the error text so the operator
+        // knows which row is broken (the editor doesn't yet outline
+        // individual rows from server-side errors).
+        fieldErrors = { ...fieldErrors, [field]: raw === field ? detail : `${raw}: ${detail}` };
         topError = null;
         return;
       }
@@ -215,7 +246,7 @@
   }
 </script>
 
-<Modal bind:open onClose={doClose} class="action-edit-modal">
+<Modal bind:open onClose={() => onClose?.()} class="action-edit-modal">
   <Modal.Header>
     <h3 class="modal-title">{title}</h3>
     <Modal.Close aria-label="Close">x</Modal.Close>
@@ -406,6 +437,12 @@
           <code>busy</code> reply. Set to 0 to allow parallel runs (use only for
           read-only commands).
         </p>
+      </div>
+
+      <div class="field">
+        <span class="label">Status</span>
+        <Toggle bind:checked={form.enabled} label="Action is enabled" />
+        <p class="hint">Disabled Actions still appear here but never fire; senders get a <code>disabled</code> reply.</p>
       </div>
 
       <div class="field">
