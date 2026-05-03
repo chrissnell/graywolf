@@ -266,6 +266,10 @@
   .filter-bar :global(input),
   .filter-bar :global(select) {
     min-width: 0;
+    /* Chonky's global rule sets margin-bottom:1rem on inputs, which
+       pushes the search box visually off-baseline from neighboring
+       buttons in flex rows. Flatten it here. */
+    margin: 0 !important;
   }
   .table-wrapper {
     overflow-x: auto;

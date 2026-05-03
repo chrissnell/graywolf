@@ -3,7 +3,7 @@
 // which is fine because operators read the example, not parse it.
 export function exampleMessage({
   otp = '482910',
-  action = 'TurnOnGarageLights',
+  action = 'SetGarageLights',
   args = { state: 'on' },
 } = {}) {
   const argsStr = Object.entries(args)

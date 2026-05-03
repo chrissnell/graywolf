@@ -18,6 +18,10 @@
     if (c.period) parts.push(`${c.period}s`);
     return parts.join(' / ');
   }
+  // Issuer/account intentionally omitted from the table per
+  // single-user-station design: the issuer is always Graywolf and the
+  // account is always the operator's own callsign, so the column would
+  // be visual noise.
 
   function usedBySummary(used) {
     if (!used || used.length === 0) return { count: 0, label: '—', tooltip: '' };
@@ -61,7 +65,6 @@
         <thead>
           <tr>
             <th>Name</th>
-            <th>Issuer / account</th>
             <th>Algorithm</th>
             <th>Created</th>
             <th>Last used</th>
@@ -74,13 +77,6 @@
             {@const used = usedBySummary(c.used_by)}
             <tr>
               <td><span class="cred-name">{c.name}</span></td>
-              <td>
-                <div class="issuer-cell">
-                  {#if c.issuer}<span>{c.issuer}</span>{/if}
-                  {#if c.account}<span class="muted">{c.account}</span>{/if}
-                  {#if !c.issuer && !c.account}<span class="muted">—</span>{/if}
-                </div>
-              </td>
               <td><span class="algo">{algoSummary(c)}</span></td>
               <td>{timeAgo(c.created_at)}</td>
               <td>{c.last_used_at ? timeAgo(c.last_used_at) : '—'}</td>
@@ -140,10 +136,6 @@
   }
   .cred-name {
     font-weight: 600;
-  }
-  .issuer-cell {
-    display: flex;
-    flex-direction: column;
   }
   .algo {
     font-family: ui-monospace, monospace;
