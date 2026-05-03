@@ -304,6 +304,40 @@
           />
           <p class="hint">Absolute path to the executable. Validated when you save.</p>
           {#if fieldErrors.command_path}<p class="field-error">{fieldErrors.command_path}</p>{/if}
+
+          <details class="exec-help">
+            <summary>How your command is invoked</summary>
+            <div class="exec-help-body">
+              <pre class="exec-cli">&lt;command&gt; &lt;action name&gt; &lt;sender callsign&gt; &lt;otp verified&gt; [&lt;key=value&gt; &lt;key=value&gt; ...]</pre>
+
+              <h4>Arguments (positional)</h4>
+              <dl>
+                <dt><code>$1</code></dt><dd>action name</dd>
+                <dt><code>$2</code></dt><dd>sender callsign</dd>
+                <dt><code>$3</code></dt><dd><code>true</code> or <code>false</code> -- whether the TOTP code validated</dd>
+                <dt><code>$4+</code></dt><dd>one <code>key=value</code> per arg-schema entry, in the order the sender supplied them</dd>
+              </dl>
+
+              <h4>Environment</h4>
+              <dl>
+                <dt><code>GW_ACTION_NAME</code></dt><dd>same as <code>$1</code></dd>
+                <dt><code>GW_SENDER_CALL</code></dt><dd>same as <code>$2</code></dd>
+                <dt><code>GW_OTP_VERIFIED</code></dt><dd>same as <code>$3</code></dd>
+                <dt><code>GW_OTP_CRED_NAME</code></dt><dd>name of the credential that validated the code (empty if OTP not required)</dd>
+                <dt><code>GW_SOURCE</code></dt><dd>where the trigger arrived from (e.g. <code>aprs</code>, <code>test</code>)</dd>
+                <dt><code>GW_INVOCATION_ID</code></dt><dd>numeric id of the audit row for this run</dd>
+                <dt><code>GW_ARG_&lt;KEY&gt;</code></dt><dd>one per arg, key uppercased, non-alphanumerics turned into <code>_</code></dd>
+                <dt><code>PATH</code></dt><dd>preset to <code>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</code>. The parent process environment is <strong>not</strong> inherited.</dd>
+              </dl>
+
+              <h4>Runtime</h4>
+              <ul>
+                <li>Working directory: the value above, otherwise the directory containing the command.</li>
+                <li>Timeout: the value above. SIGTERM on expiry, SIGKILL 2 seconds later.</li>
+                <li>Output: stdout and stderr are merged; the first 4 KiB are captured and the leading characters are echoed back to the sender as the APRS reply.</li>
+              </ul>
+            </div>
+          </details>
         </div>
 
         <div class="field">
@@ -520,6 +554,95 @@
     margin: 0;
     font-size: 11px;
     color: var(--color-danger, #b91c1c);
+  }
+  .exec-help {
+    margin-top: 4px;
+    border: 1px solid var(--color-border, var(--border));
+    border-radius: var(--radius, 4px);
+    background: var(--bg-tertiary, rgba(0, 0, 0, 0.02));
+    font-size: 12px;
+  }
+  .exec-help[open] > summary {
+    border-bottom: 1px solid var(--color-border, var(--border));
+  }
+  .exec-help > summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-dim, var(--text-muted));
+    list-style: none;
+    user-select: none;
+  }
+  .exec-help > summary::-webkit-details-marker {
+    display: none;
+  }
+  .exec-help > summary::before {
+    content: '▸';
+    display: inline-block;
+    width: 1em;
+    margin-right: 4px;
+    transition: transform 120ms ease;
+  }
+  .exec-help[open] > summary::before {
+    transform: rotate(90deg);
+  }
+  .exec-help-body {
+    padding: 8px 12px 10px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .exec-help-body h4 {
+    margin: 10px 0 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-dim, var(--text-muted));
+  }
+  .exec-help-body h4:first-of-type {
+    margin-top: 12px;
+  }
+  .exec-help-body code {
+    font-family: 'SauceCodePro Nerd Font', ui-monospace, monospace;
+    background: var(--accent-bg, rgba(0, 0, 0, 0.05));
+    color: var(--text-primary);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11.5px;
+  }
+  .exec-cli {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--bg-secondary, rgba(0, 0, 0, 0.05));
+    border-radius: 3px;
+    font-family: 'SauceCodePro Nerd Font', ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .exec-help-body dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 12px;
+    row-gap: 4px;
+    margin: 0;
+  }
+  .exec-help-body dt {
+    margin: 0;
+  }
+  .exec-help-body dd {
+    margin: 0;
+  }
+  .exec-help-body ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+  .exec-help-body li {
+    margin: 2px 0;
   }
   .error-banner {
     background: var(--color-danger-muted, rgba(220, 38, 38, 0.12));
