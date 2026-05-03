@@ -909,3 +909,29 @@ func unwrapThirdParty(pkt *aprs.DecodedAPRSPacket) (string, *aprs.Message) {
 	}
 	return innerSrc, out
 }
+
+// AddresseeMatch is the result of resolving an inbound addressee
+// against the local trigger surface (station call + tactical aliases).
+type AddresseeMatch struct {
+	IsForUs    bool
+	IsTactical bool
+}
+
+// MatchAddressee reports whether addressee is one we should handle.
+// ourCall is the primary station callsign (with or without SSID); the
+// match against ourCall is base-call only. tactical may be nil.
+func MatchAddressee(ourCall, addressee string, tactical *TacticalSet) AddresseeMatch {
+	addr := strings.ToUpper(strings.TrimSpace(addressee))
+	if addr == "" {
+		return AddresseeMatch{}
+	}
+	base := baseCall(addr)
+	our := baseCallUpper(ourCall)
+	if our != "" && base == our {
+		return AddresseeMatch{IsForUs: true}
+	}
+	if tactical != nil && tactical.Contains(addr) {
+		return AddresseeMatch{IsForUs: true, IsTactical: true}
+	}
+	return AddresseeMatch{}
+}
