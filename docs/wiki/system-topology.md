@@ -46,6 +46,19 @@ sibling of the graywolf binary, `./target/release/graywolf-modem`, `$PATH`
 | KISS over TCP (client, dial-out) | configurable | [`../../pkg/kiss/client.go`](../../pkg/kiss/client.go) | [`../handbook/remote-kiss-tnc.html`](../handbook/remote-kiss-tnc.html) |
 | AGWPE over TCP | `0.0.0.0:8000` (default when unset) | [`../../pkg/agw/`](../../pkg/agw/), [`../../pkg/webapi/dto/agw.go`](../../pkg/webapi/dto/agw.go) | [`../handbook/agwpe.html`](../handbook/agwpe.html) |
 
+## RX fanout
+
+Inbound APRS frames (RF or IS) flow through `pkg/app/rxfanout.go`
+(`dispatchRxFrame`) and `pkg/app/wiring.go` (`onIGateIsRxPacket`). The
+Actions classifier inserts itself **ahead of** `aprsSubmit` (RF) and
+**ahead of** `Router.SendPacket` (IS) for messages whose addressee
+matches the trigger surface (station call + tactical aliases +
+operator-defined listener addressees) AND whose info-field begins with
+`@@`. Consumed packets do not produce `messages.in` rows; the auto-ACK
+still fires for inbound carrying a msg-id. See
+[invariant 26](invariants.md) and [`actions.md`](actions.md) for the
+full hot path.
+
 ## Hardware / local resources
 
 | Resource | Owner | Code | Handbook |

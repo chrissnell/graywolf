@@ -238,3 +238,24 @@ Source: [`../../web/themes/graywolf.css`](../../web/themes/graywolf.css)
 authoring guide),
 [`../../web/node_modules/@chrissnell/chonky-ui/dist/css/chonky.css`](../../web/node_modules/@chrissnell/chonky-ui/dist/css/chonky.css)
 (`@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`).
+
+### 26. Actions classifier consumes the packet
+
+When the Actions classifier matches an inbound APRS message (addressee
+in the trigger surface AND info-field begins with `@@`), the packet is
+consumed before the messages router sees it. No `messages.in` row is
+written for that packet. The auto-ACK is still emitted if the inbound
+carried a msg-id. Replies flow through `messages.Sender` so they appear
+in the operator's outbound view.
+
+*Why:* Actions are operator-controlled command channels, not
+correspondence; surfacing every Action invocation in the inbox would
+clutter the operator's message view and break the audit-log-as-source-of-truth
+contract for Actions traffic. Consumption is the cleanest cut.
+
+Source: [`../../pkg/actions/classifier.go`](../../pkg/actions/classifier.go),
+[`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go)
+(`dispatchRxFrame`),
+[`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
+(`onIGateIsRxPacket`),
+[`actions.md`](actions.md) ("Hot path" section).

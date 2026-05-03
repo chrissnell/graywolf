@@ -85,7 +85,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 
 | Package | Purpose | Handbook |
 |---|---|---|
-| `configstore` | SQLite config DB (GORM, glebarez/sqlite, pure Go); migrations, seeds, models | [`../handbook/preferences.html`](../handbook/preferences.html) |
+| `configstore` | SQLite config DB (GORM, glebarez/sqlite, pure Go); migrations, seeds, models. Actions tables live here too: `actions`, `otp_credentials`, `action_listener_addressees`, `action_invocations` (migration 15, raw SQL — not AutoMigrate; see [`actions.md`](actions.md)) | [`../handbook/preferences.html`](../handbook/preferences.html) |
 | `historydb` | Position-history SQLite (separate DB, schema bootstrapped on `Open`) | [`../handbook/history-database.html`](../handbook/history-database.html) |
 | `packetlog` | In-memory ring of RX/TX/IS packet records with filter-query API. Live-tail fan-out (`Subscribe`) is in `subscribe.go`; per-subscriber bounded channel, drop-on-full -- backs the AX.25 terminal raw-tail mode and any future live monitor pages. | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
 | `metrics` | Prometheus metrics + helper to fold Rust-side StatusUpdate into them | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
