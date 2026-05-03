@@ -587,10 +587,11 @@ func TestRouterDedupWindowSuppressesInsertButStillACKs(t *testing.T) {
 }
 
 func TestRouterSelfFilterByCallsign(t *testing.T) {
-	r, store, sink, _, _, _, cleanup := buildRouter(t, "N0CALL", nil)
+	r, store, sink, _, _, _, cleanup := buildRouter(t, "N0CALL-7", nil)
 	defer cleanup()
 
-	// Our own packet heard via digipeater — must be dropped.
+	// Our own packet heard via digipeater — full-call match, must be
+	// dropped.
 	pkt := makeMessagePacket(t, "N0CALL-7", "N0CALL", "loopback", "001", aprs.DirectionRF)
 	_ = r.SendPacket(context.Background(), pkt)
 	time.Sleep(50 * time.Millisecond)
@@ -601,6 +602,28 @@ func TestRouterSelfFilterByCallsign(t *testing.T) {
 	}
 	if got := len(sink.list()); got != 0 {
 		t.Fatalf("self-filter auto-ACK leak: %d", got)
+	}
+}
+
+func TestRouterSameBaseDifferentSSIDDelivers(t *testing.T) {
+	// Two stations under the same base callsign with different SSIDs
+	// are distinct peers and must be able to message each other (e.g.
+	// NW5W-5 -> NW5W-13 Action reply). Regression: prior base-call
+	// self-filter dropped these, suppressing both inbox insert and
+	// auto-ACK, which then caused the sender to retry forever.
+	r, store, sink, _, _, _, cleanup := buildRouter(t, "NW5W-13", nil)
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "NW5W-5", "NW5W-13", "ok: ACT=ECHO SNDR=NW5W-13 OTP=true", "069", aprs.DirectionRF)
+	_ = r.SendPacket(context.Background(), pkt)
+
+	waitFor(t, time.Second, func() bool {
+		ms, _, _ := store.List(context.Background(), Filter{})
+		return len(ms) == 1
+	}, "inbox insert from same-base peer")
+
+	if got := len(sink.list()); got < 1 {
+		t.Fatalf("expected auto-ACK to NW5W-5, got %d", got)
 	}
 }
 

@@ -335,7 +335,8 @@ func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
 		return
 	}
 
-	ourCall := baseCallUpper(r.cfg.OurCall())
+	ourCallFull := strings.ToUpper(strings.TrimSpace(r.cfg.OurCall()))
+	ourCall := baseCall(ourCallFull)
 
 	// Third-party unwrap: if Message.Text begins with '}', parse the
 	// inner TNC-2 body and re-attribute the source. Outer path/via
@@ -345,10 +346,14 @@ func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
 	effSource, effMsg := unwrapThirdParty(pkt)
 
 	source := strings.ToUpper(strings.TrimSpace(effSource))
-	baseSource := baseCallUpper(effSource)
 
-	// Step 2 — self-filter. Direct base-call match or LocalTxRing hit.
-	if ourCall != "" && baseSource == ourCall {
+	// Step 2 — self-filter. Full-call match (SSID-aware) or LocalTxRing
+	// hit. Base-call match is intentionally NOT used: two stations under
+	// the same base callsign with different SSIDs are distinct peers and
+	// must be able to message each other (e.g. NW5W-5 ↔ NW5W-13). The
+	// LocalTxRing already covers the precise (source, msgid) loopback
+	// case if a same-base packet is genuinely our own echo.
+	if ourCallFull != "" && source == ourCallFull {
 		r.mClassified.WithLabelValues("self_filter").Inc()
 		return
 	}
