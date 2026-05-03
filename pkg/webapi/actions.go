@@ -27,6 +27,17 @@ func (s *Server) registerActions(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/actions/{id}", s.deleteAction)
 }
 
+// listActions returns every configured Action with the most-recent
+// invocation summary surfaced as last_invoked_at / last_invoked_by.
+//
+// @Summary  List actions
+// @Tags     actions
+// @ID       listActions
+// @Produce  json
+// @Success  200 {array}  dto.Action
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions [get]
 func (s *Server) listActions(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.store.ListActions(r.Context())
 	if err != nil {
@@ -51,6 +62,22 @@ func (s *Server) listActions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// createAction validates and persists a new Action. The command path
+// must be absolute and executable on disk; the webhook URL/method are
+// validated against a small allowlist.
+//
+// @Summary  Create action
+// @Tags     actions
+// @ID       createAction
+// @Accept   json
+// @Produce  json
+// @Param    body body     dto.Action true "Action definition"
+// @Success  201  {object} dto.Action
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  409  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions [post]
 func (s *Server) createAction(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeJSON[dto.Action](r)
 	if err != nil {
@@ -81,6 +108,20 @@ func (s *Server) createAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, actionToDTO(row))
 }
 
+// getAction returns a single Action, populated with last_invoked_*
+// from the most recent audit row.
+//
+// @Summary  Get action
+// @Tags     actions
+// @ID       getAction
+// @Produce  json
+// @Param    id  path     int true "Action id"
+// @Success  200 {object} dto.Action
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  404 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/{id} [get]
 func (s *Server) getAction(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r.PathValue("id"))
 	if err != nil {
@@ -108,6 +149,23 @@ func (s *Server) getAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, d)
 }
 
+// updateAction replaces an existing Action's mutable fields. The same
+// validation as createAction runs; created_at is preserved.
+//
+// @Summary  Update action
+// @Tags     actions
+// @ID       updateAction
+// @Accept   json
+// @Produce  json
+// @Param    id   path     int        true "Action id"
+// @Param    body body     dto.Action true "Action definition"
+// @Success  200  {object} dto.Action
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  404  {object} webtypes.ErrorResponse
+// @Failure  409  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/{id} [put]
 func (s *Server) updateAction(w http.ResponseWriter, r *http.Request) {
 	id32, err := parseID(r.PathValue("id"))
 	if err != nil {
@@ -155,6 +213,19 @@ func (s *Server) updateAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, actionToDTO(row))
 }
 
+// deleteAction removes the Action with the given id. Existing audit
+// rows are preserved (action_id is set null on cascade) so historical
+// invocations remain readable.
+//
+// @Summary  Delete action
+// @Tags     actions
+// @ID       deleteAction
+// @Param    id  path int true "Action id"
+// @Success  204 "No Content"
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/{id} [delete]
 func (s *Server) deleteAction(w http.ResponseWriter, r *http.Request) {
 	id32, err := parseID(r.PathValue("id"))
 	if err != nil {

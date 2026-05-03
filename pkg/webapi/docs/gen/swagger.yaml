@@ -564,6 +564,100 @@ definitions:
           Tactical is the post-accept state of the subscription. Always
           populated with Enabled=true (accept is the "turn it on" verb).
     type: object
+  dto.Action:
+    properties:
+      arg_schema:
+        items:
+          $ref: '#/definitions/dto.ArgSpec'
+        type: array
+      command_path:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_invoked_at:
+        type: string
+      last_invoked_by:
+        type: string
+      name:
+        type: string
+      otp_credential_id:
+        type: integer
+      otp_required:
+        type: boolean
+      queue_depth:
+        type: integer
+      rate_limit_sec:
+        type: integer
+      sender_allowlist:
+        type: string
+      timeout_sec:
+        type: integer
+      type:
+        description: '"command" | "webhook"'
+        type: string
+      webhook_body_template:
+        type: string
+      webhook_headers:
+        additionalProperties:
+          type: string
+        type: object
+      webhook_method:
+        type: string
+      webhook_url:
+        type: string
+      working_dir:
+        type: string
+    type: object
+  dto.ActionInvocation:
+    properties:
+      action_id:
+        type: integer
+      action_name:
+        type: string
+      args:
+        additionalProperties:
+          type: string
+        type: object
+      created_at:
+        type: string
+      exit_code:
+        type: integer
+      http_status:
+        type: integer
+      id:
+        type: integer
+      otp_credential_id:
+        type: integer
+      otp_verified:
+        type: boolean
+      output_capture:
+        type: string
+      reply_text:
+        type: string
+      sender_call:
+        type: string
+      source:
+        type: string
+      status:
+        type: string
+      status_detail:
+        type: string
+      truncated:
+        type: boolean
+    type: object
+  dto.ActionListenerAddressee:
+    properties:
+      addressee:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+    type: object
   dto.AgwRequest:
     properties:
       callsigns:
@@ -583,6 +677,17 @@ definitions:
         type: integer
       listen_addr:
         type: string
+    type: object
+  dto.ArgSpec:
+    properties:
+      key:
+        type: string
+      max_len:
+        type: integer
+      regex:
+        type: string
+      required:
+        type: boolean
     type: object
   dto.AudioDeviceDeleteConflict:
     properties:
@@ -1495,6 +1600,62 @@ definitions:
         description: 0 = auto-resolve
         type: integer
     type: object
+  dto.OTPCredential:
+    properties:
+      account:
+        type: string
+      algorithm:
+        type: string
+      created_at:
+        type: string
+      digits:
+        type: integer
+      id:
+        type: integer
+      issuer:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      period:
+        type: integer
+      used_by:
+        description: Action names that reference this cred
+        items:
+          type: string
+        type: array
+    type: object
+  dto.OTPCredentialCreated:
+    properties:
+      account:
+        type: string
+      algorithm:
+        type: string
+      created_at:
+        type: string
+      digits:
+        type: integer
+      id:
+        type: integer
+      issuer:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      otpauth_uri:
+        type: string
+      period:
+        type: integer
+      secret_b32:
+        type: string
+      used_by:
+        description: Action names that reference this cred
+        items:
+          type: string
+        type: array
+    type: object
   dto.ParticipantResponse:
     properties:
       callsign:
@@ -1824,6 +1985,30 @@ definitions:
       id:
         type: integer
       updated_at:
+        type: string
+    type: object
+  dto.TestFireRequest:
+    properties:
+      args:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  dto.TestFireResponse:
+    properties:
+      exit_code:
+        type: integer
+      http_status:
+        type: integer
+      invocation_id:
+        type: integer
+      output_capture:
+        type: string
+      reply_text:
+        type: string
+      status:
+        type: string
+      status_detail:
         type: string
     type: object
   dto.TestRigctldRequest:
@@ -2527,6 +2712,8 @@ tags:
     description: Operator display preferences stored server-side (units, etc.).
   - name: maps
     description: 'Offline PMTiles map downloads: per-state download lifecycle and status.'
+  - name: actions
+    description: 'On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire.'
   - name: auth
     description: Session login, logout, and first-user setup.
   - name: version
@@ -2536,6 +2723,357 @@ tags:
   - name: health
     description: Liveness probe for orchestration.
 paths:
+  /actions:
+    get:
+      operationId: listActions
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.Action'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List actions
+      tags:
+        - actions
+    post:
+      consumes:
+        - application/json
+      operationId: createAction
+      parameters:
+        - description: Action definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.Action'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.Action'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create action
+      tags:
+        - actions
+  /actions/{id}:
+    delete:
+      operationId: deleteAction
+      parameters:
+        - description: Action id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete action
+      tags:
+        - actions
+    get:
+      operationId: getAction
+      parameters:
+        - description: Action id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Action'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get action
+      tags:
+        - actions
+    put:
+      consumes:
+        - application/json
+      operationId: updateAction
+      parameters:
+        - description: Action id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Action definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.Action'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Action'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update action
+      tags:
+        - actions
+  /actions/{id}/test-fire:
+    post:
+      consumes:
+        - application/json
+      operationId: testFireAction
+      parameters:
+        - description: Action id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Args
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TestFireRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TestFireResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Test-fire an action
+      tags:
+        - actions
+  /actions/invocations:
+    delete:
+      operationId: clearActionInvocations
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Clear action invocations
+      tags:
+        - actions
+    get:
+      operationId: listActionInvocations
+      parameters:
+        - description: Filter by action id
+          in: query
+          name: action_id
+          type: integer
+        - description: Exact-match callsign
+          in: query
+          name: sender_call
+          type: string
+        - description: Status code (e.g. ok, denied)
+          in: query
+          name: status
+          type: string
+        - description: 'Transport: rf or is'
+          in: query
+          name: source
+          type: string
+        - description: Free-text substring search
+          in: query
+          name: q
+          type: string
+        - description: Max rows (default 100, max 1000)
+          in: query
+          name: limit
+          type: integer
+        - description: Offset for pagination
+          in: query
+          name: offset
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.ActionInvocation'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List action invocations
+      tags:
+        - actions
+  /actions/listeners:
+    get:
+      operationId: listActionListeners
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.ActionListenerAddressee'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List action listener addressees
+      tags:
+        - actions
+    post:
+      consumes:
+        - application/json
+      operationId: createActionListener
+      parameters:
+        - description: Addressee
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ActionListenerAddressee'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.ActionListenerAddressee'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create action listener addressee
+      tags:
+        - actions
+  /actions/listeners/{name}:
+    delete:
+      operationId: deleteActionListener
+      parameters:
+        - description: Addressee
+          in: path
+          name: name
+          required: true
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete action listener addressee
+      tags:
+        - actions
   /agw:
     get:
       operationId: getAgw
@@ -5085,6 +5623,119 @@ paths:
       summary: Delete message thread
       tags:
         - messages
+  /otp-credentials:
+    get:
+      operationId: listOTPCredentials
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.OTPCredential'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List OTP credentials
+      tags:
+        - actions
+    post:
+      consumes:
+        - application/json
+      operationId: createOTPCredential
+      parameters:
+        - description: Credential definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.OTPCredential'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.OTPCredentialCreated'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create OTP credential
+      tags:
+        - actions
+  /otp-credentials/{id}:
+    delete:
+      operationId: deleteOTPCredential
+      parameters:
+        - description: Credential id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete OTP credential
+      tags:
+        - actions
+    get:
+      operationId: getOTPCredential
+      parameters:
+        - description: Credential id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.OTPCredential'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get OTP credential
+      tags:
+        - actions
   /packets:
     get:
       operationId: listPackets

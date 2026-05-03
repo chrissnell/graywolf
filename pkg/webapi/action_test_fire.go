@@ -14,6 +14,25 @@ func (s *Server) registerActionTestFire(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/actions/{id}/test-fire", s.testFireAction)
 }
 
+// testFireAction runs the given Action through its executor inline,
+// bypassing the OTP requirement and sender allowlist (operator
+// authority is the cookie session). Sanitization still runs; an
+// audit row is written with sender_call="(test-web)".
+//
+// @Summary  Test-fire an action
+// @Tags     actions
+// @ID       testFireAction
+// @Accept   json
+// @Produce  json
+// @Param    id   path     int                  true "Action id"
+// @Param    body body     dto.TestFireRequest  true "Args"
+// @Success  200  {object} dto.TestFireResponse
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  404  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Failure  503  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/{id}/test-fire [post]
 func (s *Server) testFireAction(w http.ResponseWriter, r *http.Request) {
 	if s.actions == nil {
 		serviceUnavailable(w, "actions service not available")

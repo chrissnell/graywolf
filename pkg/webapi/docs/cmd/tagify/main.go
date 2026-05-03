@@ -57,6 +57,7 @@ var tagOrder = []tagEntry{
 	{"updates", "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."},
 	{"preferences", "Operator display preferences stored server-side (units, etc.)."},
 	{"maps", "Offline PMTiles map downloads: per-state download lifecycle and status."},
+	{"actions", "On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire."},
 
 	// --- Admin / auth / health ------------------------------------------
 	{"auth", "Session login, logout, and first-user setup."},

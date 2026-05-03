@@ -6,6 +6,113 @@
  */
 
 export interface paths {
+    "/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List actions */
+        get: operations["listActions"];
+        put?: never;
+        /** Create action */
+        post: operations["createAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/invocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List action invocations */
+        get: operations["listActionInvocations"];
+        put?: never;
+        post?: never;
+        /** Clear action invocations */
+        delete: operations["clearActionInvocations"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/listeners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List action listener addressees */
+        get: operations["listActionListeners"];
+        put?: never;
+        /** Create action listener addressee */
+        post: operations["createActionListener"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/listeners/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete action listener addressee */
+        delete: operations["deleteActionListener"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get action */
+        get: operations["getAction"];
+        /** Update action */
+        put: operations["updateAction"];
+        post?: never;
+        /** Delete action */
+        delete: operations["deleteAction"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/{id}/test-fire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test-fire an action */
+        post: operations["testFireAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agw": {
         parameters: {
             query?: never;
@@ -965,6 +1072,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/otp-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List OTP credentials */
+        get: operations["listOTPCredentials"];
+        put?: never;
+        /** Create OTP credential */
+        post: operations["createOTPCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/otp-credentials/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get OTP credential */
+        get: operations["getOTPCredential"];
+        put?: never;
+        post?: never;
+        /** Delete OTP credential */
+        delete: operations["deleteOTPCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packets": {
         parameters: {
             query?: never;
@@ -1759,6 +1902,56 @@ export interface components {
              */
             tactical?: components["schemas"]["dto.TacticalCallsignResponse"];
         };
+        "dto.Action": {
+            arg_schema?: components["schemas"]["dto.ArgSpec"][];
+            command_path?: string;
+            description?: string;
+            enabled?: boolean;
+            id?: number;
+            last_invoked_at?: string;
+            last_invoked_by?: string;
+            name?: string;
+            otp_credential_id?: number;
+            otp_required?: boolean;
+            queue_depth?: number;
+            rate_limit_sec?: number;
+            sender_allowlist?: string;
+            timeout_sec?: number;
+            /** @description "command" | "webhook" */
+            type?: string;
+            webhook_body_template?: string;
+            webhook_headers?: {
+                [key: string]: string;
+            };
+            webhook_method?: string;
+            webhook_url?: string;
+            working_dir?: string;
+        };
+        "dto.ActionInvocation": {
+            action_id?: number;
+            action_name?: string;
+            args?: {
+                [key: string]: string;
+            };
+            created_at?: string;
+            exit_code?: number;
+            http_status?: number;
+            id?: number;
+            otp_credential_id?: number;
+            otp_verified?: boolean;
+            output_capture?: string;
+            reply_text?: string;
+            sender_call?: string;
+            source?: string;
+            status?: string;
+            status_detail?: string;
+            truncated?: boolean;
+        };
+        "dto.ActionListenerAddressee": {
+            addressee?: string;
+            created_at?: string;
+            id?: number;
+        };
         "dto.AgwRequest": {
             callsigns?: string;
             enabled?: boolean;
@@ -1769,6 +1962,12 @@ export interface components {
             enabled?: boolean;
             id?: number;
             listen_addr?: string;
+        };
+        "dto.ArgSpec": {
+            key?: string;
+            max_len?: number;
+            regex?: string;
+            required?: boolean;
         };
         "dto.AudioDeviceDeleteConflict": {
             channels?: components["schemas"]["dto.ChannelResponse"][];
@@ -2276,6 +2475,34 @@ export interface components {
             /** @description 0 = auto-resolve */
             tx_channel?: number;
         };
+        "dto.OTPCredential": {
+            account?: string;
+            algorithm?: string;
+            created_at?: string;
+            digits?: number;
+            id?: number;
+            issuer?: string;
+            last_used_at?: string;
+            name?: string;
+            period?: number;
+            /** @description Action names that reference this cred */
+            used_by?: string[];
+        };
+        "dto.OTPCredentialCreated": {
+            account?: string;
+            algorithm?: string;
+            created_at?: string;
+            digits?: number;
+            id?: number;
+            issuer?: string;
+            last_used_at?: string;
+            name?: string;
+            otpauth_uri?: string;
+            period?: number;
+            secret_b32?: string;
+            /** @description Action names that reference this cred */
+            used_by?: string[];
+        };
         "dto.ParticipantResponse": {
             callsign?: string;
             last_active?: string;
@@ -2526,6 +2753,20 @@ export interface components {
             enabled?: boolean;
             id?: number;
             updated_at?: string;
+        };
+        "dto.TestFireRequest": {
+            args?: {
+                [key: string]: string;
+            };
+        };
+        "dto.TestFireResponse": {
+            exit_code?: number;
+            http_status?: number;
+            invocation_id?: number;
+            output_capture?: string;
+            reply_text?: string;
+            status?: string;
+            status_detail?: string;
         };
         "dto.TestRigctldRequest": {
             host?: string;
@@ -2934,6 +3175,12 @@ export interface components {
                 "application/json": components["schemas"]["dto.TxTimingRequest"];
             };
         };
+        /** @description Action definition */
+        "dto.Action": {
+            content: {
+                "application/json": components["schemas"]["dto.Action"];
+            };
+        };
         /** @description Audio device definition */
         "dto.AudioDeviceRequest": {
             content: {
@@ -2982,6 +3229,494 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.Action"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.Action"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.Action"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listActionInvocations: {
+        parameters: {
+            query?: {
+                /** @description Filter by action id */
+                action_id?: number;
+                /** @description Exact-match callsign */
+                sender_call?: string;
+                /** @description Status code (e.g. ok, denied) */
+                status?: string;
+                /** @description Transport: rf or is */
+                source?: string;
+                /** @description Free-text substring search */
+                q?: string;
+                /** @description Max rows (default 100, max 1000) */
+                limit?: number;
+                /** @description Offset for pagination */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ActionInvocation"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    clearActionInvocations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listActionListeners: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ActionListenerAddressee"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createActionListener: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Addressee */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.ActionListenerAddressee"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ActionListenerAddressee"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteActionListener: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Addressee */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Action id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.Action"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Action id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.Action"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.Action"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Action id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    testFireAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Action id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Args */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.TestFireRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TestFireResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
     getAgw: {
         parameters: {
             query?: never;
@@ -6584,6 +7319,176 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listOTPCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.OTPCredential"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createOTPCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Credential definition */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.OTPCredential"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.OTPCredentialCreated"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOTPCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Credential id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.OTPCredential"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteOTPCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Credential id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -23,6 +23,15 @@ func (s *Server) registerOTPCredentials(mux *http.ServeMux) {
 // listOTPCredentials returns every credential WITHOUT the secret.
 // Used-by is derived from a single scan of the actions table so the
 // list cost stays linear in the credential count.
+//
+// @Summary  List OTP credentials
+// @Tags     actions
+// @ID       listOTPCredentials
+// @Produce  json
+// @Success  200 {array}  dto.OTPCredential
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /otp-credentials [get]
 func (s *Server) listOTPCredentials(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.store.ListOTPCredentials(r.Context())
 	if err != nil {
@@ -41,6 +50,22 @@ func (s *Server) listOTPCredentials(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// createOTPCredential generates a fresh TOTP secret server-side and
+// returns it once on this response (secret_b32 + otpauth URI). The
+// secret is never readable from any other endpoint.
+//
+// @Summary  Create OTP credential
+// @Tags     actions
+// @ID       createOTPCredential
+// @Accept   json
+// @Produce  json
+// @Param    body body     dto.OTPCredential true "Credential definition"
+// @Success  201  {object} dto.OTPCredentialCreated
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  409  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /otp-credentials [post]
 func (s *Server) createOTPCredential(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeJSON[dto.OTPCredential](r)
 	if err != nil {
@@ -95,6 +120,19 @@ func (s *Server) createOTPCredential(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
+// getOTPCredential returns one credential without the secret.
+//
+// @Summary  Get OTP credential
+// @Tags     actions
+// @ID       getOTPCredential
+// @Produce  json
+// @Param    id  path     int true "Credential id"
+// @Success  200 {object} dto.OTPCredential
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  404 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /otp-credentials/{id} [get]
 func (s *Server) getOTPCredential(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r.PathValue("id"))
 	if err != nil {
@@ -118,6 +156,19 @@ func (s *Server) getOTPCredential(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, credentialToDTO(row, usedBy[row.ID]))
 }
 
+// deleteOTPCredential removes the credential. Actions referencing it
+// retain their otp_credential_id as null (FK on-delete-set-null) so
+// the action stays present and surfaces a "no credential" status.
+//
+// @Summary  Delete OTP credential
+// @Tags     actions
+// @ID       deleteOTPCredential
+// @Param    id  path int true "Credential id"
+// @Success  204 "No Content"
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /otp-credentials/{id} [delete]
 func (s *Server) deleteOTPCredential(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r.PathValue("id"))
 	if err != nil {

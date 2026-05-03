@@ -17,6 +17,18 @@ func (s *Server) registerActionListeners(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/actions/listeners/{name}", s.deleteActionListener)
 }
 
+// listActionListeners returns every extra APRS addressee that
+// triggers the Actions classifier (independent of the station call
+// and tactical aliases).
+//
+// @Summary  List action listener addressees
+// @Tags     actions
+// @ID       listActionListeners
+// @Produce  json
+// @Success  200 {array}  dto.ActionListenerAddressee
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/listeners [get]
 func (s *Server) listActionListeners(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.store.ListActionListenerAddressees(r.Context())
 	if err != nil {
@@ -34,6 +46,22 @@ func (s *Server) listActionListeners(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// createActionListener registers a new APRS addressee that the
+// Actions classifier will treat as an alias for the station. Refused
+// when the addressee already collides with a tactical alias.
+//
+// @Summary  Create action listener addressee
+// @Tags     actions
+// @ID       createActionListener
+// @Accept   json
+// @Produce  json
+// @Param    body body     dto.ActionListenerAddressee true "Addressee"
+// @Success  201  {object} dto.ActionListenerAddressee
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  409  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/listeners [post]
 func (s *Server) createActionListener(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeJSON[dto.ActionListenerAddressee](r)
 	if err != nil {
@@ -89,6 +117,17 @@ func (s *Server) createActionListener(w http.ResponseWriter, r *http.Request) {
 	s.internalError(w, r, "create listener", errors.New("row missing post-create"))
 }
 
+// deleteActionListener removes the named listener addressee.
+//
+// @Summary  Delete action listener addressee
+// @Tags     actions
+// @ID       deleteActionListener
+// @Param    name path string true "Addressee"
+// @Success  204  "No Content"
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/listeners/{name} [delete]
 func (s *Server) deleteActionListener(w http.ResponseWriter, r *http.Request) {
 	name := strings.ToUpper(strings.TrimSpace(r.PathValue("name")))
 	if name == "" {

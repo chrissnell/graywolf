@@ -15,6 +15,26 @@ func (s *Server) registerActionInvocations(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/actions/invocations", s.clearActionInvocations)
 }
 
+// listActionInvocations returns audit rows in newest-first order.
+// Filter via action_id, sender_call, status, source, q (free-text),
+// limit (1..1000), offset.
+//
+// @Summary  List action invocations
+// @Tags     actions
+// @ID       listActionInvocations
+// @Produce  json
+// @Param    action_id   query int    false "Filter by action id"
+// @Param    sender_call query string false "Exact-match callsign"
+// @Param    status      query string false "Status code (e.g. ok, denied)"
+// @Param    source      query string false "Transport: rf or is"
+// @Param    q           query string false "Free-text substring search"
+// @Param    limit       query int    false "Max rows (default 100, max 1000)"
+// @Param    offset      query int    false "Offset for pagination"
+// @Success  200 {array}  dto.ActionInvocation
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/invocations [get]
 func (s *Server) listActionInvocations(w http.ResponseWriter, r *http.Request) {
 	f := configstore.ActionInvocationFilter{
 		SenderCall: r.URL.Query().Get("sender_call"),
@@ -59,6 +79,16 @@ func (s *Server) listActionInvocations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// clearActionInvocations truncates the audit log. Operator-driven;
+// the retention pruner uses a separate path that drops only old rows.
+//
+// @Summary  Clear action invocations
+// @Tags     actions
+// @ID       clearActionInvocations
+// @Success  204 "No Content"
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /actions/invocations [delete]
 func (s *Server) clearActionInvocations(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.DeleteAllActionInvocations(r.Context()); err != nil {
 		s.internalError(w, r, "clear invocations", err)
