@@ -46,6 +46,15 @@ type RemoteActionMacro struct {
 
 // RemoteActionMacroRequest is the create / update body. TargetCall is
 // uppercased on the server; clients may send any case.
+//
+// Update (PUT) semantics:
+//
+//   - Label, ActionName: gated — empty string leaves the field unchanged.
+//   - ArgsString, RemoteOTPCredentialID: always overwrite. Empty string
+//     clears args; nil unbinds the credential. Clients must send the
+//     full update body.
+//   - Position: ignored on PUT. The /macros/reorder endpoint is the
+//     sole owner of macro ordering.
 type RemoteActionMacroRequest struct {
 	TargetCall            string `json:"target_call"`
 	Label                 string `json:"label"`

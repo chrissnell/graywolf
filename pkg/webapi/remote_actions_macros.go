@@ -144,15 +144,20 @@ func (s *Server) updateRemoteActionMacro(w http.ResponseWriter, r *http.Request)
 		}
 		cur.ActionName = in.ActionName
 	}
-	// ArgsString allowed to clear — distinguish absent from empty by
-	// requiring callers to send the full update body. Empty string is
-	// a valid value (no args).
+	// ArgsString and RemoteOTPCredentialID always overwrite. Empty
+	// string clears args; nil unbinds the credential. Callers must
+	// send the full update body (see RemoteActionMacroRequest doc).
 	cur.ArgsString = in.ArgsString
 	cur.RemoteOTPCredentialID = in.RemoteOTPCredentialID
-	if in.Position != 0 || cur.Position != 0 {
-		cur.Position = in.Position
-	}
+	// Position is intentionally not touched here: drag-reorder is the
+	// one path that should rewrite ordering, via POST /macros/reorder.
+	// A partial PUT that omits position (zero value) must not silently
+	// demote the macro.
 	if err := s.remoteActions.Macros().Update(r.Context(), cur); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			notFound(w)
+			return
+		}
 		s.internalError(w, r, "update macro", err)
 		return
 	}
@@ -202,6 +207,10 @@ func (s *Server) reorderRemoteActionMacros(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := s.remoteActions.Macros().Reorder(r.Context(), target, in.IDs); err != nil {
+		if errors.Is(err, remoteactions.ErrReorderUnknownID) {
+			badRequest(w, "reorder list contains an unknown macro id")
+			return
+		}
 		s.internalError(w, r, "reorder macros", err)
 		return
 	}

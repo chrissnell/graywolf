@@ -169,6 +169,10 @@ func (s *Server) updateRemoteOTPCredential(w http.ResponseWriter, r *http.Reques
 			conflict(w, "name already exists")
 			return
 		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			notFound(w)
+			return
+		}
 		s.internalError(w, r, "update remote cred", err)
 		return
 	}

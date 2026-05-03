@@ -59,6 +59,73 @@ func TestCreateRemoteOTPCredentialRejectsBadSecret(t *testing.T) {
 	}
 }
 
+// TestUpdateCredEmptySecretLeavesSecretAlone: PUT with SecretB32=""
+// must NOT clear the stored secret. The DTO doc says empty leaves it
+// untouched; this test pins that contract.
+func TestUpdateCredEmptySecretLeavesSecretAlone(t *testing.T) {
+	srv, cleanup := newTestServerWithRemoteActions(t)
+	defer cleanup()
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(dto.RemoteOTPCredentialRequest{
+		Name: "NW5W OTP", SecretB32: "JBSWY3DPEHPK3PXP",
+	})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest("POST", "/api/remote-actions/credentials", bytes.NewReader(body)))
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("seed: %d", rr.Code)
+	}
+
+	// PUT with new name only; secret_b32 omitted/empty.
+	body, _ = json.Marshal(dto.RemoteOTPCredentialRequest{
+		Name: "renamed",
+	})
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest("PUT", "/api/remote-actions/credentials/1", bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update: %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	got, err := srv.remoteActions.Creds().Get(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.SecretB32 != "JBSWY3DPEHPK3PXP" {
+		t.Fatalf("secret was rewritten: %q", got.SecretB32)
+	}
+	if got.Name != "renamed" {
+		t.Fatalf("name not applied: %q", got.Name)
+	}
+}
+
+// TestUpdateCredDuplicateNameReturns409: PUT that collides with
+// another credential's UNIQUE name must return 409.
+func TestUpdateCredDuplicateNameReturns409(t *testing.T) {
+	srv, cleanup := newTestServerWithRemoteActions(t)
+	defer cleanup()
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	for _, name := range []string{"first", "second"} {
+		body, _ := json.Marshal(dto.RemoteOTPCredentialRequest{
+			Name: name, SecretB32: "JBSWY3DPEHPK3PXP",
+		})
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest("POST", "/api/remote-actions/credentials", bytes.NewReader(body)))
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("seed %s: %d", name, rr.Code)
+		}
+	}
+
+	body, _ := json.Marshal(dto.RemoteOTPCredentialRequest{Name: "first"})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest("PUT", "/api/remote-actions/credentials/2", bytes.NewReader(body)))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestDeleteRemoteOTPCredentialBlockedWhenInUse(t *testing.T) {
 	srv, cleanup := newTestServerWithRemoteActions(t)
 	defer cleanup()

@@ -51,12 +51,14 @@ func (s *CredStore) List(ctx context.Context) ([]RemoteOTPCredential, error) {
 
 // Update writes the row identified by c.ID. The fields touched are
 // Name, SecretB32, Algorithm, Digits, Period — caller is responsible
-// for validation. CreatedAt and LastUsedAt are not modified.
+// for validation. CreatedAt and LastUsedAt are not modified. Returns
+// gorm.ErrRecordNotFound when no row matches c.ID so callers can map
+// to HTTP 404.
 func (s *CredStore) Update(ctx context.Context, c *RemoteOTPCredential) error {
 	if c == nil || c.ID == 0 {
 		return errors.New("remoteactions: nil credential or zero id")
 	}
-	return s.db.WithContext(ctx).Model(&RemoteOTPCredential{}).
+	res := s.db.WithContext(ctx).Model(&RemoteOTPCredential{}).
 		Where("id = ?", c.ID).
 		Updates(map[string]any{
 			"name":       c.Name,
@@ -64,7 +66,14 @@ func (s *CredStore) Update(ctx context.Context, c *RemoteOTPCredential) error {
 			"algorithm":  c.Algorithm,
 			"digits":     c.Digits,
 			"period":     c.Period,
-		}).Error
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // Delete removes the credential. Macros bound to it have their
