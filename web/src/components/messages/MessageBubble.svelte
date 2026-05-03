@@ -29,6 +29,8 @@
   import { tick } from 'svelte';
   import { push } from 'svelte-spa-router';
   import { Badge, Button, Icon, Tooltip } from '@chrissnell/chonky-ui';
+  import ReplyBubbleAdornment from './remote_actions/ReplyBubbleAdornment.svelte';
+  import { isActionReply } from '../../lib/remote_actions/reply_match.js';
   import { callsignColors, callsignMonogram } from '../../lib/callsignColor.js';
   import { messages as store } from '../../lib/messagesStore.svelte.js';
   import { acceptTactical } from '../../api/messages.js';
@@ -65,6 +67,7 @@
   } = $props();
 
   const isOut = $derived(msg?.direction === 'out');
+  const actionReply = $derived(isActionReply(msg));
   const sender = $derived(msg?.from_call || '');
   const colors = $derived(callsignColors(sender));
   const monogram = $derived(callsignMonogram(sender));
@@ -399,6 +402,7 @@
       bind:this={bubbleEl}
       class="bubble"
       class:has-stripe={isTactical && !isOut}
+      class:action-reply={actionReply && !isOut}
       style={isTactical && !isOut ? `--stripe-color:${colors.stripe}` : undefined}
       role="group"
       aria-label={isOut ? 'Your message' : `Message from ${sender}`}
@@ -509,6 +513,11 @@
       {/if}
     {:else}
       <p class="bubble-text">{bodyText}</p>
+      {#if actionReply && !isOut}
+        <div class="action-reply-footer">
+          <ReplyBubbleAdornment text={msg?.text ?? ''} />
+        </div>
+      {/if}
     {/if}
     </div>
   </div>
@@ -536,6 +545,8 @@
     max-width: 92%;
     margin: 2px 0;
   }
+  .action-reply { opacity: 0.85; background: var(--color-surface-raised); }
+  .action-reply-footer { margin-top: 4px; }
   .bubble-wrap.out {
     align-self: flex-end;
   }
