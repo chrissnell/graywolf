@@ -271,6 +271,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerActionTestFire(mux)
 	s.registerRemoteActionsCreds(mux)
 	s.registerRemoteActionsMacros(mux)
+	s.registerRemoteActionsOTP(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)

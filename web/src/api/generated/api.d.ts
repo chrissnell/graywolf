@@ -1476,6 +1476,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/remote-actions/otp/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate one-shot TOTP code for a remote credential */
+        post: operations["generateRemoteOTPCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/smart-beacon": {
         parameters: {
             query?: never;
@@ -2693,6 +2710,10 @@ export interface components {
             remote_otp_credential_id?: number;
             target_call?: string;
             updated_at?: string;
+        };
+        "dto.RemoteOTPCode": {
+            code?: string;
+            expires_at?: string;
         };
         "dto.RemoteOTPCredential": {
             algorithm?: string;
@@ -8711,6 +8732,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    generateRemoteOTPCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Credential id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.RemoteOTPCode"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
             };
         };
     };

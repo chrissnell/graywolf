@@ -6091,6 +6091,41 @@
                 }
             }
         },
+        "/remote-actions/otp/{id}": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Generate one-shot TOTP code for a remote credential",
+                "operationId": "generateRemoteOTPCode",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Credential id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteOTPCode"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/smart-beacon": {
             "get": {
                 "security": [
@@ -9379,6 +9414,17 @@
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RemoteOTPCode": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "expires_at": {
                     "type": "string"
                 }
             }

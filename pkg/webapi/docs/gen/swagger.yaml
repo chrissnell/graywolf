@@ -1820,6 +1820,13 @@ definitions:
       updated_at:
         type: string
     type: object
+  dto.RemoteOTPCode:
+    properties:
+      code:
+        type: string
+      expires_at:
+        type: string
+    type: object
   dto.RemoteOTPCredential:
     properties:
       algorithm:
@@ -6550,6 +6557,29 @@ paths:
           schema:
             $ref: '#/definitions/webtypes.ErrorResponse'
       summary: Reorder remote action macros for one target
+      tags:
+        - remote-actions
+  /remote-actions/otp/{id}:
+    post:
+      operationId: generateRemoteOTPCode
+      parameters:
+        - description: Credential id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.RemoteOTPCode'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      summary: Generate one-shot TOTP code for a remote credential
       tags:
         - remote-actions
   /smart-beacon:
