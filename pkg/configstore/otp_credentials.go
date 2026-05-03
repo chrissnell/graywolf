@@ -53,6 +53,30 @@ func (s *Store) TouchOTPCredentialUsed(ctx context.Context, id uint, when time.T
 		Update("last_used_at", when.UTC()).Error
 }
 
+// OTPCredentialUsedBy returns a map cred-id -> action names that
+// reference it. One scan over the actions table; callers iterate the
+// returned map per credential rather than issuing N queries.
+func (s *Store) OTPCredentialUsedBy(ctx context.Context) (map[uint][]string, error) {
+	type row struct {
+		CredID uint
+		Name   string
+	}
+	var rows []row
+	if err := s.db.WithContext(ctx).
+		Table("actions").
+		Select("otp_credential_id AS cred_id, name").
+		Where("otp_credential_id IS NOT NULL").
+		Order("name").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := map[uint][]string{}
+	for _, r := range rows {
+		out[r.CredID] = append(out[r.CredID], r.Name)
+	}
+	return out, nil
+}
+
 // IsNotFound mirrors gorm.ErrRecordNotFound for callers that want a
 // stable not-found check without importing gorm directly.
 func IsNotFound(err error) bool { return errors.Is(err, gorm.ErrRecordNotFound) }
