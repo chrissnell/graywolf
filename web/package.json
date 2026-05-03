@@ -32,6 +32,7 @@
     "maplibre-gl": "^5.24.0",
     "openapi-fetch": "0.17.0",
     "pmtiles": "^4.4.1",
+    "qrcode": "^1.5.4",
     "svelte-spa-router": "^4.0.0"
   },
   "optionalDependencies": {
