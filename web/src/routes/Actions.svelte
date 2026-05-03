@@ -8,9 +8,26 @@
   import CredentialsTable from '../components/actions/CredentialsTable.svelte';
   import InvocationsPanel from '../components/actions/InvocationsPanel.svelte';
 
+  // Modal-coordination state. Edit/Test/NewCredential modals land in
+  // Phase H/I; for now the page tracks intent so callbacks wire up
+  // cleanly and the modal slots can be filled without touching this
+  // file again.
   let auditOpen = $state(false);
   let editOpen = $state(false);
+  let editingAction = $state(null);
+  let testOpen = $state(false);
+  let testingAction = $state(null);
   let newCredOpen = $state(false);
+
+  function openEdit(action) {
+    editingAction = action;
+    editOpen = true;
+  }
+
+  function openTest(action) {
+    testingAction = action;
+    testOpen = true;
+  }
 
   onMount(() => actionsStore.loadAll());
 </script>
@@ -22,7 +39,7 @@
   >
     <div class="header-buttons">
       <Button variant="secondary" onclick={() => (auditOpen = true)}>View audit log</Button>
-      <Button variant="primary" onclick={() => (editOpen = true)}>+ New Action</Button>
+      <Button variant="primary" onclick={() => openEdit(null)}>+ New Action</Button>
     </div>
   </PageHeader>
 
@@ -33,7 +50,7 @@
     <code>{exampleMessage()}</code>
   </div>
 
-  <ActionsTable bind:editOpen />
+  <ActionsTable onEdit={openEdit} onTest={openTest} />
   <CredentialsTable bind:newCredOpen />
   <InvocationsPanel />
 </div>
