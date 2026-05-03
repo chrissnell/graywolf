@@ -200,10 +200,10 @@
   <Modal.Footer>
     {#if view === 'result'}
       <Button variant="ghost" onclick={doClose}>Close</Button>
-      <Button variant="primary" onclick={runAgain}>Run again</Button>
+      <Button variant="primary" class="actions-solid" onclick={runAgain}>Run again</Button>
     {:else}
       <Button variant="ghost" onclick={doClose} disabled={view === 'firing'}>Cancel</Button>
-      <Button variant="primary" onclick={fire} disabled={view === 'firing'}>
+      <Button variant="primary" class="actions-solid" onclick={fire} disabled={view === 'firing'}>
         {view === 'firing' ? 'Firing...' : 'Fire'}
       </Button>
     {/if}

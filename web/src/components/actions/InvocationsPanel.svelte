@@ -154,7 +154,7 @@
         onFilterChange();
       }}
     />
-    <Button variant="danger" onclick={() => (clearOpen = true)}>Clear log</Button>
+    <Button variant="danger" class="actions-solid" onclick={() => (clearOpen = true)}>Clear log</Button>
   </div>
 
   <div class="table-wrapper">

@@ -50,14 +50,14 @@
 <section class="creds-section">
   <div class="section-header">
     <h2 class="section-title">OTP Credentials</h2>
-    <Button variant="primary" onclick={onNew}>+ New Credential</Button>
+    <Button variant="primary" class="actions-solid" onclick={onNew}>+ New Credential</Button>
   </div>
 
   {#if actionsStore.creds.length === 0}
     <EmptyState class="creds-empty">
       <h3>No credentials yet</h3>
       <p>Add an authenticator-app credential, then bind it to an action that requires OTP.</p>
-      <Button variant="primary" onclick={onNew}>+ New Credential</Button>
+      <Button variant="primary" class="actions-solid" onclick={onNew}>+ New Credential</Button>
     </EmptyState>
   {:else}
     <div class="table-wrapper">

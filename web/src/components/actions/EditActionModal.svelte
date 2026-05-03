@@ -491,11 +491,11 @@
   <Modal.Footer>
     <Button variant="ghost" onclick={doClose} disabled={saving}>Cancel</Button>
     {#if isEdit}
-      <Button variant="danger" onclick={() => (confirmDeleteOpen = true)} disabled={saving}>
+      <Button variant="danger" class="actions-solid" onclick={() => (confirmDeleteOpen = true)} disabled={saving}>
         Delete
       </Button>
     {/if}
-    <Button variant="primary" onclick={save} disabled={saving}>
+    <Button variant="primary" class="actions-solid" onclick={save} disabled={saving}>
       {saving ? 'Saving...' : 'Save changes'}
     </Button>
   </Modal.Footer>

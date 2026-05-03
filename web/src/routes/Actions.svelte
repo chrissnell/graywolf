@@ -47,7 +47,7 @@
     subtitle="Execute commands or call webhooks when authorized APRS messages arrive."
   >
     <Button variant="secondary" onclick={openAudit}>View audit log</Button>
-    <Button variant="primary" onclick={() => openEdit(null)}>+ New Action</Button>
+    <Button variant="primary" class="actions-solid" onclick={() => openEdit(null)}>+ New Action</Button>
   </PageHeader>
 
   {#if actionsStore.error}
@@ -87,6 +87,7 @@
 <NewCredentialModal bind:open={newCredOpen} />
 
 <style>
+  @import '../lib/actions/buttons.css';
   .actions-page {
     padding: 1.5rem;
     display: flex;

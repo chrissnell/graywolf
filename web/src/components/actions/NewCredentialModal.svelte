@@ -197,11 +197,11 @@
   <Modal.Footer>
     {#if !revealed}
       <Button variant="ghost" onclick={cancel} disabled={saving}>Cancel</Button>
-      <Button variant="primary" onclick={create} disabled={saving}>
+      <Button variant="primary" class="actions-solid" onclick={create} disabled={saving}>
         {saving ? 'Creating...' : 'Create credential'}
       </Button>
     {:else}
-      <Button variant="primary" onclick={finish}>I've saved it -- close</Button>
+      <Button variant="accent" class="actions-solid" onclick={finish}>I've saved it -- close</Button>
     {/if}
   </Modal.Footer>
 </Modal>

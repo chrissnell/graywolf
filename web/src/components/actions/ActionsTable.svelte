@@ -41,7 +41,7 @@
     <EmptyState class="actions-empty">
       <h3>No actions yet</h3>
       <p>Define your first one to start triggering commands or webhooks from APRS messages.</p>
-      <Button variant="primary" onclick={() => onEdit(null)}>+ New Action</Button>
+      <Button variant="primary" class="actions-solid" onclick={() => onEdit(null)}>+ New Action</Button>
     </EmptyState>
   {:else}
     <div class="table-wrapper">

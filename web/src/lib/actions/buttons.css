@@ -1,0 +1,52 @@
+/* Solid-fill CTA modifier for the Actions page.
+ *
+ * chonky-ui's btn-primary / btn-danger / btn-accent are outlined at rest and
+ * fill on hover. The Actions mockup wants the primary CTAs (Save, + New
+ * Action, etc.), the destructive CTAs (modal Delete, Clear log), and the
+ * affirmative success CTA ("I've saved it") to read as solid filled buttons
+ * at rest, so the obvious next action is unmistakable.
+ *
+ * Same pattern as web/src/lib/maps/styles.css's .maps-cta override --
+ * scoped to actions-page surfaces by class so other chonky-ui consumers
+ * (Pagination's current-page indicator, AlertDialog destructive button)
+ * keep the upstream outline-on-hover-fill aesthetic. */
+
+:global(.btn.btn-primary.actions-solid) {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+  font-weight: 700;
+}
+:global(.btn.btn-primary.actions-solid:hover:not(:disabled)) {
+  background: var(--color-primary-hover);
+  color: var(--color-primary-fg);
+}
+:global(.btn.btn-primary.actions-solid:disabled) {
+  opacity: 0.65;
+}
+
+:global(.btn.btn-danger.actions-solid) {
+  background: var(--color-danger);
+  color: var(--color-danger-fg);
+  font-weight: 700;
+}
+:global(.btn.btn-danger.actions-solid:hover:not(:disabled)) {
+  background: var(--color-danger-hover);
+  color: var(--color-danger-fg);
+}
+:global(.btn.btn-danger.actions-solid:disabled) {
+  opacity: 0.65;
+}
+
+:global(.btn.btn-accent.actions-solid) {
+  background: var(--color-success);
+  color: var(--color-success-fg);
+  font-weight: 700;
+}
+:global(.btn.btn-accent.actions-solid:hover:not(:disabled)) {
+  background: var(--color-success);
+  color: var(--color-success-fg);
+  filter: brightness(1.1);
+}
+:global(.btn.btn-accent.actions-solid:disabled) {
+  opacity: 0.65;
+}
