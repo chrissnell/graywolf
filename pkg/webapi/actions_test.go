@@ -165,6 +165,35 @@ func TestActionsCRUD_OTPRequiredNeedsCredential(t *testing.T) {
 	}
 }
 
+func TestActionsCRUD_OTPRequiredNeedsCredentialOnUpdate(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	cmd := writeExecScript(t)
+
+	body, _ := json.Marshal(newActionRequest("u", cmd))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/actions", bytes.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var created dto.Action
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	created.OTPRequired = true
+	created.OTPCredentialID = nil
+	body, _ = json.Marshal(created)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPut,
+		"/api/actions/"+strconv.FormatUint(uint64(created.ID), 10),
+		bytes.NewReader(body)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", rec.Code, rec.Body.String())
+	}
+}
+
 func TestActionsCRUD_ArgSchemaRoundtrip(t *testing.T) {
 	srv, _ := newTestServer(t)
 	mux := http.NewServeMux()

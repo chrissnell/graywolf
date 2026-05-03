@@ -825,6 +825,12 @@ type Action struct {
 	WebhookHeaders      string `gorm:"type:text;default:'{}'"` // JSON map
 	WebhookBodyTemplate string `gorm:"type:text"`
 	TimeoutSec          int    `gorm:"not null;default:10"`
+	// gorm `default:true` on a Go bool: an explicit false from the
+	// wire is indistinguishable from omitted and the persisted row
+	// reads back true. Tests that round-trip a created action and
+	// then PUT it must override OTPRequired before the second write.
+	// Promote to `*bool` if the disambiguation matters for a future
+	// caller.
 	OTPRequired         bool   `gorm:"not null;default:true"`
 	OTPCredentialID     *uint  `gorm:"column:otp_credential_id"` // FK to OTPCredential, nullable; ON DELETE SET NULL
 	SenderAllowlist     string // CSV

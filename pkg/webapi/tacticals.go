@@ -64,11 +64,14 @@ func (s *Server) acceptTacticalInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// NOTE: createActionListener (pkg/webapi/action_listeners.go)
-	// refuses an addressee that collides with a tactical alias. The
-	// inverse — refusing a tactical that collides with an existing
-	// listener — is intentionally unenforced (plan §14 deferred) so
-	// that operators can rename tacticals freely. If we ever decide
-	// to symmetrize, the check goes here.
+	// refuses an addressee that collides with a tactical alias.
+	// Accepting an invite for a tactical that collides with an
+	// existing listener addressee is NOT refused here. Classifier.
+	// Classify checks tactical match before listener match, so an
+	// accepted tactical silently shadows any colliding listener —
+	// the listener will appear in /api/actions/listeners but never
+	// fire until the tactical is removed. Plan §14 deferred
+	// symmetrization. If we change our minds, the check goes here.
 	//
 	// Look up the existing row (if any) so we can distinguish the
 	// "create new" / "re-enable disabled" / "already a member" paths.

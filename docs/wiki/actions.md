@@ -155,7 +155,7 @@ AutoMigrate). Four tables:
 
 | Table | Notes |
 |---|---|
-| `actions` | unique `name`, FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL |
+| `actions` | unique `name`, FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL. `OTPRequired` column has gorm `default:true`; an explicit `false` from a `bool` wire field is indistinguishable from omitted, so the persisted row reads back `true`. Tests that round-trip a created action and then PUT it must override `OTPRequired` after the create response. |
 | `otp_credentials` | unique `name`, plaintext `secret_b32` (per spec — UI surfaces it once at create time, never reads back) |
 | `action_listener_addressees` | unique `addressee` (uppercase, 1..9 chars) |
 | `action_invocations` | append-only audit; FK `action_id -> actions(id)` ON DELETE SET NULL; FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL; `action_name_at` and `OTPCredName` are denormalized so a row stays readable after deletion |

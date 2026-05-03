@@ -305,6 +305,12 @@ func validateWebhookURL(s string) error {
 	if s == "" {
 		return errors.New("required")
 	}
+	if len(s) > 2048 {
+		return errors.New("too long (>2048)")
+	}
+	if strings.ContainsAny(s, " \t\r\n") {
+		return errors.New("must not contain whitespace")
+	}
 	u, err := url.Parse(s)
 	if err != nil {
 		return fmt.Errorf("parse: %w", err)
