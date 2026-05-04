@@ -1232,3 +1232,39 @@ func TestRouterInboundRFInviteNoSpecialHandling(t *testing.T) {
 		t.Errorf("Source = %q, want rf", row.Source)
 	}
 }
+
+// TestBuildAckTNC2 pins the TNC-2 wire format for outbound IS acks.
+// Two colons after APGRWO: the path-terminator and the message DTI.
+// Without both, APRS-IS consumers reject the line as unsupported.
+func TestBuildAckTNC2(t *testing.T) {
+	tests := []struct {
+		name     string
+		ourCall  string
+		peerCall string
+		msgID    string
+		want     string
+	}{
+		{
+			name:     "padded short peer",
+			ourCall:  "NW5W-13",
+			peerCall: "NW5W-5",
+			msgID:    "015",
+			want:     "NW5W-13>APGRWO::NW5W-5   :ack015",
+		},
+		{
+			name:     "9-char peer (no padding)",
+			ourCall:  "K1ABC",
+			peerCall: "WB6VVV-15",
+			msgID:    "001",
+			want:     "K1ABC>APGRWO::WB6VVV-15:ack001",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildAckTNC2(tc.ourCall, tc.peerCall, tc.msgID)
+			if got != tc.want {
+				t.Fatalf("buildAckTNC2 = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

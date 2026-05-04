@@ -700,6 +700,7 @@ func buildAckFrame(ourCall, peerCall, msgID string) (*ax25.Frame, error) {
 
 // buildAckTNC2 renders the TNC-2 text representation of an ack for
 // APRS-IS. Mirrors the format APRS-IS expects: SRC>DEST::PEER     :ack123
+// Wire-format glue is delegated to aprs.FormatTNC2.
 func buildAckTNC2(ourCall, peerCall, msgID string) string {
 	// Pad peer to 9 chars (APRS101 §14.1 addressee field width).
 	addr := peerCall
@@ -709,7 +710,8 @@ func buildAckTNC2(ourCall, peerCall, msgID string) string {
 	if len(addr) < 9 {
 		addr = addr + strings.Repeat(" ", 9-len(addr))
 	}
-	return fmt.Sprintf("%s>APGRWO::%s:ack%s", ourCall, addr, msgID)
+	info := ":" + addr + ":ack" + msgID
+	return aprs.FormatTNC2(ourCall, "APGRWO", nil, []byte(info))
 }
 
 // checkDedup consults the 30-second (from, msgid, text_hash) cache.
