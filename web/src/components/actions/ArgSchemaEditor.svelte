@@ -103,6 +103,12 @@
         </label>
       </div>
       <p class="explainer">
+        Default regex <code>{FREEFORM_DEFAULT_REGEX}</code> allows any
+        printable ASCII character (space through tilde, no control
+        bytes). Override when you need a tighter shape -- the payload
+        is rejected if it fails the regex or exceeds the max length.
+      </p>
+      <p class="explainer">
         The single freeform value is exposed to your handler as
         <code>$1</code> (positional argv) and <code>$GW_ARG</code>
         (env var). Webhooks see the bare token <code>{'{{arg}}'}</code>.
