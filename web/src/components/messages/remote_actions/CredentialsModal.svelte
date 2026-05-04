@@ -12,6 +12,7 @@
   import { remoteCredsApi } from '../../../lib/remote_actions/api.js';
   import { remoteActionsStore } from '../../../lib/remote_actions/store.svelte.js';
   import { timeAgo } from '../../../lib/actions/time.js';
+  import ScrollHint from '../../ScrollHint.svelte';
 
   let { open = $bindable(false) } = $props();
 
@@ -112,6 +113,7 @@
         </tbody>
       </table>
     {/if}
+    <ScrollHint />
   </Modal.Body>
 </Modal>
 

@@ -7,6 +7,7 @@
   import ArgModeSelect from './ArgModeSelect.svelte';
   import SenderAllowlistEditor from './SenderAllowlistEditor.svelte';
   import HeadersEditor from './HeadersEditor.svelte';
+  import ScrollHint from '../ScrollHint.svelte';
 
   // `action` is null when creating, or a fully-populated dto.Action
   // copy when editing. The parent passes a fresh object on each open
@@ -354,10 +355,44 @@
           />
           <p class="hint">Absolute path to the executable. Validated when you save.</p>
           {#if fieldErrors.command_path}<p class="field-error">{fieldErrors.command_path}</p>{/if}
+        </div>
 
-          <details class="exec-help">
-            <summary>How your command is invoked</summary>
-            <div class="exec-help-body">
+        <div class="field">
+          <span class="label">Allowed args</span>
+          <ArgModeSelect bind:value={form.arg_mode} />
+          <ArgSchemaEditor
+            bind:argSchema={form.arg_schema}
+            mode={form.arg_mode}
+            bind:this={argEditor}
+          />
+        </div>
+
+        <details class="exec-help">
+          <summary>How your command is invoked</summary>
+          <div class="exec-help-body">
+            {#if form.arg_mode === 'freeform'}
+              <pre class="exec-cli">&lt;command&gt; &lt;action name&gt; &lt;sender callsign&gt; &lt;otp verified&gt; &lt;freeform payload&gt;</pre>
+
+              <h4>Arguments (positional)</h4>
+              <dl>
+                <dt><code>$1</code></dt><dd>action name</dd>
+                <dt><code>$2</code></dt><dd>sender callsign</dd>
+                <dt><code>$3</code></dt><dd><code>true</code> or <code>false</code> -- whether the TOTP code validated</dd>
+                <dt><code>$4</code></dt><dd>the freeform payload (everything after the verb, as one string)</dd>
+              </dl>
+
+              <h4>Environment</h4>
+              <dl>
+                <dt><code>GW_ACTION_NAME</code></dt><dd>same as <code>$1</code></dd>
+                <dt><code>GW_SENDER_CALL</code></dt><dd>same as <code>$2</code></dd>
+                <dt><code>GW_OTP_VERIFIED</code></dt><dd>same as <code>$3</code></dd>
+                <dt><code>GW_OTP_CRED_NAME</code></dt><dd>name of the credential that validated the code (empty if OTP not required)</dd>
+                <dt><code>GW_SOURCE</code></dt><dd>where the trigger arrived from (e.g. <code>aprs</code>, <code>test</code>)</dd>
+                <dt><code>GW_INVOCATION_ID</code></dt><dd>numeric id of the audit row for this run</dd>
+                <dt><code>GW_ARG</code></dt><dd>same as <code>$4</code> -- the freeform payload</dd>
+                <dt><code>PATH</code></dt><dd>preset to <code>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</code>. The parent process environment is <strong>not</strong> inherited.</dd>
+              </dl>
+            {:else}
               <pre class="exec-cli">&lt;command&gt; &lt;action name&gt; &lt;sender callsign&gt; &lt;otp verified&gt; [&lt;key=value&gt; &lt;key=value&gt; ...]</pre>
 
               <h4>Arguments (positional)</h4>
@@ -379,16 +414,16 @@
                 <dt><code>GW_ARG_&lt;KEY&gt;</code></dt><dd>one per arg, key uppercased, non-alphanumerics turned into <code>_</code></dd>
                 <dt><code>PATH</code></dt><dd>preset to <code>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</code>. The parent process environment is <strong>not</strong> inherited.</dd>
               </dl>
+            {/if}
 
-              <h4>Runtime</h4>
-              <ul>
-                <li>Working directory: the value above, otherwise the directory containing the command.</li>
-                <li>Timeout: the value above. SIGTERM on expiry, SIGKILL 2 seconds later.</li>
-                <li>Output: stdout and stderr are merged; the first 4 KiB are captured and the leading characters are echoed back to the sender as the APRS reply.</li>
-              </ul>
-            </div>
-          </details>
-        </div>
+            <h4>Runtime</h4>
+            <ul>
+              <li>Working directory: the value above, otherwise the directory containing the command.</li>
+              <li>Timeout: the value above. SIGTERM on expiry, SIGKILL 2 seconds later.</li>
+              <li>Output: stdout and stderr are merged; the first 4 KiB are captured and the leading characters are echoed back to the sender as the APRS reply.</li>
+            </ul>
+          </div>
+        </details>
 
         <div class="field">
           <label for="action-wd">Working directory</label>
@@ -450,6 +485,16 @@
           </div>
         {/if}
 
+        <div class="field">
+          <span class="label">Allowed args</span>
+          <ArgModeSelect bind:value={form.arg_mode} />
+          <ArgSchemaEditor
+            bind:argSchema={form.arg_schema}
+            mode={form.arg_mode}
+            bind:this={argEditor}
+          />
+        </div>
+
         <div class="field narrow">
           <label for="action-wh-timeout">Timeout (s)</label>
           <Input
@@ -489,16 +534,6 @@
         <label for="action-allowlist">Sender allowlist</label>
         <SenderAllowlistEditor bind:value={form.sender_allowlist} />
         <p class="hint">Comma-separated callsigns or <code>CALL-*</code> wildcards. Empty = anyone (OTP still applies).</p>
-      </div>
-
-      <div class="field">
-        <span class="label">Allowed args</span>
-        <ArgModeSelect bind:value={form.arg_mode} />
-        <ArgSchemaEditor
-          bind:argSchema={form.arg_schema}
-          mode={form.arg_mode}
-          bind:this={argEditor}
-        />
       </div>
 
       <div class="field narrow">
@@ -542,6 +577,7 @@
         </p>
       </div>
     </div>
+    <ScrollHint />
   </Modal.Body>
   <Modal.Footer>
     <Button variant="ghost" onclick={doClose} disabled={saving}>Cancel</Button>
