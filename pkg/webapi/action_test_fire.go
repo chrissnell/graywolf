@@ -62,7 +62,26 @@ func (s *Server) testFireAction(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "decode arg schema", err)
 		return
 	}
-	clean, sErr := actions.SanitizeFromMap(schema, in.Args)
+	var clean []actions.KeyValue
+	var sErr error
+	switch a.ArgMode {
+	case "freeform":
+		if in.Text == nil {
+			badRequest(w, "text required for freeform action")
+			return
+		}
+		if in.Args != nil {
+			badRequest(w, "args not allowed for freeform action; use text")
+			return
+		}
+		clean, sErr = actions.SanitizeFreeform(schema, *in.Text, actions.FreeformValueCeiling)
+	default:
+		if in.Text != nil {
+			badRequest(w, "text not allowed for kv action; use args")
+			return
+		}
+		clean, sErr = actions.SanitizeFromMap(schema, in.Args)
+	}
 	if sErr != nil {
 		// Match the on-air reply wording so the UI presents the same
 		// failure shape.
