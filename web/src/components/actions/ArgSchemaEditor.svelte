@@ -24,6 +24,15 @@
   // `hasErrors()` to block save. Freeform mode reuses index 0.
   let errors = $state({});
 
+  // The parent (EditActionModal) overwrites argSchema wholesale on
+  // mode flips, so the row a stale error was indexed against may not
+  // exist anymore. Clear errors whenever mode toggles to keep the UI
+  // honest — fresh validation re-fires on next blur.
+  $effect(() => {
+    mode;
+    errors = {};
+  });
+
   function addRow() {
     argSchema = [
       ...argSchema,

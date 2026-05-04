@@ -73,6 +73,12 @@
     }));
   }
 
+  // Bookkeeping for the kv↔freeform mode-flip effect below. Plain
+  // `let`s (not `$state`) so they don't trigger reactivity; we just need
+  // them to survive across effect runs within one modal instance.
+  let prevArgMode = 'kv';
+  let kvSchemaCache = null;
+
   let prevOpen = false;
   $effect(() => {
     if (open && !prevOpen) {
@@ -86,6 +92,10 @@
       nameError = null;
       topError = null;
       fieldErrors = {};
+      // Sync the mode tracker so reopening a freeform action doesn't
+      // trigger the "leaving freeform" branch of the effect below.
+      prevArgMode = form.arg_mode || 'kv';
+      kvSchemaCache = null;
     }
     prevOpen = open;
   });
@@ -100,22 +110,40 @@
     }
   });
 
-  // Freeform mode requires exactly one ArgSpec keyed `arg`. When the
-  // operator flips into freeform, normalize the schema so the editor
-  // and backend agree on the single-row contract. The default regex
-  // `^[\x20-\x7E]+$` is printable-ASCII only (defense in depth alongside
-  // the server's control-char floor); 67 mirrors the APRS message cap.
+  // Mode-transition effect: keep arg_schema's shape consistent with
+  // arg_mode, and don't lose the operator's kv rows on a kv→freeform→kv
+  // round-trip. Freeform requires exactly one ArgSpec keyed `arg`; the
+  // default regex `^[\x20-\x7E]+$` is printable-ASCII only (defense in
+  // depth alongside the server's control-char floor); 67 mirrors the
+  // APRS message cap.
+  //
+  // The effect re-runs when arg_mode changes; the prevArgMode guard
+  // makes the branch logic edge-triggered (entry vs leave) so the
+  // synthetic freeform row isn't repeatedly rewritten on every other
+  // form mutation. The arg_schema read inside each branch tracks
+  // arg_schema as a dep too, but the next effect run early-exits via
+  // `next === prevArgMode`, so no loop.
   $effect(() => {
-    if (form.arg_mode === 'freeform') {
-      if (form.arg_schema.length !== 1 || form.arg_schema[0].key !== 'arg') {
-        form.arg_schema = [{
-          key: 'arg',
-          regex: '^[\\x20-\\x7E]+$',
-          max_len: 67,
-          required: true,
-        }];
-      }
+    const next = form.arg_mode;
+    if (next === prevArgMode) return;
+    if (next === 'freeform') {
+      // Stash kv rows so flipping back restores them verbatim instead
+      // of leaving the synthetic single-row schema (which would fail
+      // the backend's reserved-`arg`-key kv validator).
+      kvSchemaCache = $state.snapshot(form.arg_schema);
+      form.arg_schema = [{
+        key: 'arg',
+        regex: '^[\\x20-\\x7E]+$',
+        max_len: 67,
+        required: true,
+      }];
+    } else if (next === 'kv') {
+      form.arg_schema = kvSchemaCache
+        ? structuredClone(kvSchemaCache)
+        : [];
+      kvSchemaCache = null;
     }
+    prevArgMode = next;
   });
 
   let isEdit = $derived(!!action?.id);
@@ -187,14 +215,15 @@
   function applyServerError(err) {
     const msg = err?.error ?? err?.message ?? 'Save failed.';
     // The webapi handlers return errors in `{error: "field: detail"}`
-    // shape. Indexed list prefixes like `arg_schema[0]` get stripped to
-    // their root field so the matching input gets a red outline; unknown
+    // shape. Indexed list prefixes like `arg_schema[0]` and indexed
+    // sub-fields like `arg_schema[0].max_len` get stripped to their
+    // root field so the matching input gets a red outline; unknown
     // shapes fall through to the top-of-modal banner.
     if (typeof msg === 'string' && msg.includes(':')) {
       const idx = msg.indexOf(':');
       const raw = msg.slice(0, idx).trim();
       const detail = msg.slice(idx + 1).trim();
-      const field = raw.replace(/\[\d+\]$/, '');
+      const field = raw.replace(/\[\d+\](\.[a-z_]+)?$/, '');
       const known = [
         'name', 'description', 'type', 'command_path', 'working_dir',
         'webhook_method', 'webhook_url', 'webhook_body_template',
