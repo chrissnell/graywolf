@@ -422,7 +422,15 @@
 </PageHeader>
 
 {#if channels.length === 0}
-  <div class="empty-state">No channels configured. Add a channel to start decoding packets.</div>
+  <div class="empty-state">
+    No channels configured. Add a channel to start decoding RF packets.
+    <br />
+    <span class="empty-state-hint">
+      Running an APRS-IS-only station? You don't need a channel — set your
+      <a href="#/callsign">station callsign</a>, then enable the
+      <a href="#/igate">iGate</a>. Messages will route over APRS-IS automatically.
+    </span>
+  </div>
 {:else}
   <div class="channel-grid">
     {#each channels as ch}
@@ -777,6 +785,16 @@
     padding: 32px;
     border: 1px dashed var(--border-color);
     border-radius: var(--radius);
+  }
+  .empty-state-hint {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .empty-state-hint a {
+    color: var(--color-primary);
+    text-decoration: underline;
   }
 
   .channel-grid {
