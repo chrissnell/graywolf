@@ -57,3 +57,41 @@ func TestPreflightAutoAckChannelDefaultOne(t *testing.T) {
 		t.Fatalf("SetAutoAckChannel(0) must be ignored, got %d", got)
 	}
 }
+
+func TestPreflightCheckDedupFirstCallMisses(t *testing.T) {
+	p, _, _, _ := newPreflightForTest(t)
+	if hit := p.CheckDedup("W1ABC", "001", "hello"); hit {
+		t.Fatal("first call must not be a dedup hit")
+	}
+}
+
+func TestPreflightCheckDedupSecondCallHits(t *testing.T) {
+	p, _, _, _ := newPreflightForTest(t)
+	_ = p.CheckDedup("W1ABC", "001", "hello")
+	if hit := p.CheckDedup("W1ABC", "001", "hello"); !hit {
+		t.Fatal("second identical call must hit")
+	}
+}
+
+func TestPreflightCheckDedupExpiresAfterWindow(t *testing.T) {
+	p, _, _, clock := newPreflightForTest(t)
+	_ = p.CheckDedup("W1ABC", "001", "hello")
+	clock.now = clock.now.Add(DefaultRouterDedupWindow + time.Second)
+	if hit := p.CheckDedup("W1ABC", "001", "hello"); hit {
+		t.Fatal("expired entry must miss")
+	}
+}
+
+func TestPreflightCheckDedupKeyDistinct(t *testing.T) {
+	p, _, _, _ := newPreflightForTest(t)
+	_ = p.CheckDedup("W1ABC", "001", "hello")
+	if hit := p.CheckDedup("W1ABC", "002", "hello"); hit {
+		t.Fatal("different msgid must miss")
+	}
+	if hit := p.CheckDedup("W2XYZ", "001", "hello"); hit {
+		t.Fatal("different sender must miss")
+	}
+	if hit := p.CheckDedup("W1ABC", "001", "world"); hit {
+		t.Fatal("different text-hash must miss")
+	}
+}

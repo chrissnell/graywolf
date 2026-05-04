@@ -1,8 +1,11 @@
 package messages
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -140,3 +143,31 @@ func (p *Preflight) DedupHits() prometheus.Counter { return p.mDedupHits }
 
 // AutoAcksSent returns the live auto-ACK counter for tests.
 func (p *Preflight) AutoAcksSent() prometheus.Counter { return p.mAutoAckSent }
+
+// CheckDedup consults the (from, msg_id, text_hash) cache. Returns
+// true on a hit. Always records the current tuple so the next
+// identical packet within the window also hits. Expired entries are
+// evicted during the pass.
+func (p *Preflight) CheckDedup(fromCall, msgID, text string) bool {
+	key := preflightDedupKey(fromCall, msgID, text)
+	p.dedupMu.Lock()
+	defer p.dedupMu.Unlock()
+	now := p.clock.Now()
+	for k, exp := range p.dedupMap {
+		if now.After(exp) {
+			delete(p.dedupMap, k)
+		}
+	}
+	exp, hit := p.dedupMap[key]
+	p.dedupMap[key] = now.Add(p.dedupWin)
+	if hit && !now.After(exp) {
+		p.mDedupHits.Inc()
+		return true
+	}
+	return false
+}
+
+func preflightDedupKey(fromCall, msgID, text string) string {
+	h := sha1.Sum([]byte(text))
+	return strings.ToUpper(fromCall) + "|" + msgID + "|" + hex.EncodeToString(h[:8])
+}
