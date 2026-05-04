@@ -75,7 +75,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 | `digipeater` | WIDEn-N / TRACEn-N digipeater with preemptive digi and per-channel dedup | [`../handbook/digipeater.html`](../handbook/digipeater.html) |
 | `igate` | APRS-IS bidirectional gateway: client/login/filter, RF<->IS gating, third-party encap, TNC2 | [`../handbook/igate.html`](../handbook/igate.html) |
 | `igate/filters` | IS->RF rule engine (priority-ordered, deny by default) | [`../handbook/igate.html`](../handbook/igate.html) |
-| `messages` | APRS messaging domain: router, store (GORM), sender, retry, invite, tactical_set, bots, preferences, event_hub, local_tx_ring | [`../handbook/messaging.html`](../handbook/messaging.html) |
+| `messages` | APRS messaging domain: router, store (GORM), sender, retry, invite, tactical_set, bots, preferences, event_hub, local_tx_ring, **preflight** (shared auto-ACK + dedup transport, owned by `messages.Service`, consulted by both `messages.Router` and `actions.Classifier`) | [`../handbook/messaging.html`](../handbook/messaging.html) |
 | `actions` | `@@`-prefixed APRS message Actions: classifier, parser, OTP verifier, per-Action runner with rate limit + queue, command/webhook executors, source-aware reply, audit pruner | [`actions.md`](actions.md) |
 | `remoteactions` | OUTBOUND counterpart: macro + remote-OTP credential stores, base32/target-call/action-name validators, RFC 6238 TOTP generator, service composition root. Sibling, not fork, of `pkg/actions/` (shares only the wire grammar via exported `actions.ValidActionName`). | [`remote-actions.md`](remote-actions.md) |
 | `gps` | GPSD client + serial NMEA reader + cache + station-position layered cache + enumerate | [`../handbook/gps.html`](../handbook/gps.html) |

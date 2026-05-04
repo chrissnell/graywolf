@@ -244,28 +244,40 @@ authoring guide),
 When the Actions classifier matches an inbound APRS message (addressee
 in the trigger surface AND info-field begins with `@@`), the packet is
 consumed before the messages router sees it. No `messages.in` row is
-written for that packet. Because the auto-ACK lives inside
-[`pkg/messages/router.go`](../../pkg/messages/router.go) (`Router.classify` /
-`sendAutoAck`) and the classifier short-circuits before the messages
-router runs, **the standard auto-ACK frame is NOT emitted** for
-consumed Actions packets — the on-air reply text (routed through
-`messages.Sender`) is what the sender sees, and a sender's APRS client
-that retries on missing-ACK will keep retrying until its retry budget
-is reached. The design spec at
-[`../superpowers/specs/2026-05-02-graywolf-actions-design.md`](../superpowers/specs/2026-05-02-graywolf-actions-design.md)
-(§8) calls for the auto-ACK to fire in addition to the reply; that is a
-known gap tracked as a follow-up.
+written for that packet. The classifier and the messages router share
+one [`messages.Preflight`](../../pkg/messages/preflight.go) instance
+constructed by `messages.Service`, so a consumed Actions packet still
+gets an auto-ACK on every copy and a `(from, msgid, text_hash)` dedup
+verdict — the first copy reaches the runner, every subsequent copy
+within the dedup window is ACKed and silently dropped (APRS101 §14.2).
 
 *Why:* Actions are operator-controlled command channels, not
 correspondence; surfacing every Action invocation in the inbox would
 clutter the operator's message view and break the audit-log-as-source-of-truth
-contract for Actions traffic. Consumption is the cleanest cut.
+contract for Actions traffic. Consumption is the cleanest cut. Sharing
+the preflight closes the prior gap where action senders kept retrying
+because no ACK ever arrived, and where iGate fan-out delivered N copies
+that each fired the executor.
 
 Source: [`../../pkg/actions/classifier.go`](../../pkg/actions/classifier.go),
 [`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go)
 (`dispatchRxFrame`),
 [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
-(`onIGateIsRxPacket`),
+(`onIGateIsRxPacket`, `wireActions`),
+[`../../pkg/messages/preflight.go`](../../pkg/messages/preflight.go),
 [`../../pkg/messages/router.go`](../../pkg/messages/router.go)
-(`Router.classify` / `sendAutoAck`),
-[`actions.md`](actions.md) ("Hot path" section).
+(`Router.classify`),
+[`actions.md`](actions.md) ("Hot path", "Preflight" sections).
+
+### 27. Inbound dedup + auto-ACK is centralized in `messages.Preflight`
+
+Any new inbound discriminator that diverts traffic before
+`messages.Router` (today only `actions.Classifier`) MUST send an
+auto-ACK and consult the dedup ring via `messages.Preflight`, or
+iGate-relayed duplicates will re-fire its handlers and the original
+sender will retry forever.
+
+Source: [`../../pkg/messages/preflight.go`](../../pkg/messages/preflight.go),
+[`../../pkg/messages/service.go`](../../pkg/messages/service.go)
+(`(*Service).Preflight()`),
+[`actions.md`](actions.md) ("Preflight: shared auto-ACK + dedup").

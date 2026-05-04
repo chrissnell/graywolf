@@ -75,11 +75,38 @@ uses is exported precisely so the classifier and the router agree on
 RF or IS frame
   -> aprs.Parse
   -> classifier.Classify(pkt)
-       hit?  -> runner.Submit (or Reply for short-circuits)
-                -> executor.Execute
-                -> reply + audit
+       hit on @@ + addressed-to-us?
+         -> messages.Preflight.SendAutoAck (every copy)
+         -> messages.Preflight.CheckDedup
+              hit?  -> consumed, no Submit (first copy already replied)
+              miss? -> runner.Submit (or Reply for short-circuits)
+                       -> executor.Execute
+                       -> reply + audit
        miss? -> messages.Router (normal inbox)
+                -> messages.Preflight.SendAutoAck (same instance)
+                -> messages.Preflight.CheckDedup (same window)
+                -> persist + reply-ack correlation
 ```
+
+## Preflight: shared auto-ACK + dedup
+
+`messages.Preflight` (`pkg/messages/preflight.go`) owns the
+(from, msg_id, text_hash) dedup ring and the auto-ACK transport
+(RF via `txgovernor.TxSink`, IS via `IGateLineSender`). One instance
+is constructed by `messages.Service.NewService` and shared between
+`messages.Router` and `actions.Classifier`. This is the only place
+auto-ACK and dedup are implemented for inbound APRS messages -- both
+subsystems consult the same window so an `@@`-prefixed action and a
+plain DM with the same `(from, msgid, text)` would (in the
+hypothetical case of overlap) collapse into one ACK and one execution.
+
+Operational consequence: prior to this hookup, `@@` packets bypassed
+the router entirely, so the action sender never saw an ACK and kept
+retrying every 30 s for ~5 min. iGate fan-out compounded the problem
+by delivering 3-10 identical copies. Each copy executed the action
+(or, after the first, bounced as `rate_limited`). The preflight
+collapses the storm: every copy is acked (APRS101 §14.2), but only
+the first copy reaches the runner.
 
 Classifier hooks live in:
 - RF: [`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go)
@@ -146,6 +173,7 @@ the default. Tracked as a follow-up.
 
 | Concern | Mechanism | Source |
 |---|---|---|
+| Inbound preflight (auto-ACK + dedup) | shared `messages.Preflight` constructed by `messages.Service`, consulted by both `messages.Router` and `actions.Classifier` (mutex-guarded `dedupMap`, atomic auto-ACK channel). Default 5-min window. | `pkg/messages/preflight.go` |
 | Per-Action queue + worker | `actionQueue` in runner; lazily spawned on first `Submit`; `q.mu` held across rate-limit reservation and channel send | `pkg/actions/runner.go` |
 | Listener-addressee snapshot | `atomic.Pointer[map[string]struct{}]`, mirrors `messages.TacticalSet` semantics | `pkg/actions/addressees.go` |
 | OTP replay ring | per-(credID, step, sha256(code)) entry with TTL = 3 steps + 30s; ±1-step probe covers boundary | `pkg/actions/otp.go` |
@@ -251,8 +279,9 @@ results.
   [`../../pkg/actions/parser.go`](../../pkg/actions/parser.go); the
   classifier never reparses on its own.
 - The `@@` sentinel is the sole hot-path discriminator; if you add
-  another trigger, update this page and `pkg/actions/classifier.go`
-  in the same change.
+  another trigger, update this page, `pkg/actions/classifier.go`,
+  and ensure the new path also calls into `messages.Preflight` so
+  duplicates do not slip past dedup.
 - Outbound counterpart (macro/credential CRUD + Messages drawer):
   [`remote-actions.md`](remote-actions.md). The two subsystems share
   only `parser.go` (exported `ValidActionName`, `MaxActionNameLen`).
