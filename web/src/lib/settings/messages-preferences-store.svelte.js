@@ -44,6 +44,21 @@ function normalizeOverride(v) {
   return 0;
 }
 
+// Build the full preferences PUT payload from a hydrated baseline plus a
+// per-setter patch. The five-field shape is enumerated explicitly so that
+// adding a sixth field forces every setter to opt in (vs. silently
+// inheriting via spread). Always normalizes max_message_text_override.
+function buildPayload(baseline, patch) {
+  const merged = { ...baseline, ...patch };
+  return {
+    default_path: merged.default_path,
+    fallback_policy: merged.fallback_policy,
+    retention_days: merged.retention_days,
+    retry_max_attempts: merged.retry_max_attempts,
+    max_message_text_override: normalizeOverride(merged.max_message_text_override),
+  };
+}
+
 export const messagesPreferencesState = (() => {
   // Full preferences payload, so PUTs can round-trip sibling fields
   // without dropping them. Populated by fetchPreferences; `null` until
@@ -109,14 +124,7 @@ export const messagesPreferencesState = (() => {
     saving = true;
     error = null;
     try {
-      const payload = {
-        default_path: baseline.default_path,
-        fallback_policy: baseline.fallback_policy,
-        retention_days: baseline.retention_days,
-        retry_max_attempts: baseline.retry_max_attempts,
-        max_message_text_override: normalized,
-      };
-      const resp = await putPreferences(payload);
+      const resp = await putPreferences(buildPayload(baseline, { max_message_text_override: normalized }));
       const next = resp ?? optimistic;
       next.max_message_text_override = normalizeOverride(next.max_message_text_override);
       prefs = next;
@@ -152,14 +160,7 @@ export const messagesPreferencesState = (() => {
     saving = true;
     error = null;
     try {
-      const payload = {
-        default_path: baseline.default_path,
-        fallback_policy: policy,
-        retention_days: baseline.retention_days,
-        retry_max_attempts: baseline.retry_max_attempts,
-        max_message_text_override: normalizeOverride(baseline.max_message_text_override),
-      };
-      const resp = await putPreferences(payload);
+      const resp = await putPreferences(buildPayload(baseline, { fallback_policy: policy }));
       const next = resp ?? optimistic;
       next.max_message_text_override = normalizeOverride(next.max_message_text_override);
       prefs = next;
