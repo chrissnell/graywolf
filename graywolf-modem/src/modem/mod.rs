@@ -159,6 +159,14 @@ pub struct Modem {
     // hardware, so these must be resolved while the device is idle.
     output_devices: HashMap<u32, cpal::Device>,
 
+    // Pre-negotiated output stream params (channels + sample_format),
+    // cached at start_audio time when the device is idle. The test-
+    // tone path uses these to avoid calling supported_output_configs()
+    // on a device cpal has lost the ability to enumerate (e.g. while a
+    // capture stream is active on the same AIOC hardware, or after a
+    // USB-EMI hub event invalidates the cached handle).
+    output_configs_cache: HashMap<u32, (u16, cpal::SampleFormat)>,
+
     // Active audio pipelines, keyed by device_id
     active_devices: HashMap<u32, DevicePipeline>,
 
@@ -200,6 +208,7 @@ impl Modem {
             dcd_transitions: HashMap::new(),
             last_status_tx: Instant::now(),
             last_level_tx: HashMap::new(),
+            output_configs_cache: HashMap::new(),
         })
     }
 
@@ -364,8 +373,13 @@ impl Modem {
 
         // Pre-resolve output devices before opening input streams.
         // This lets the TX worker and test-tone path use cached Device
-        // handles without enumerating at transmit time.
+        // handles without enumerating at transmit time. Also pre-
+        // negotiate channel count + sample format while the device is
+        // idle, so later test-tone clicks don't have to call
+        // supported_output_configs() (which fails once an input capture
+        // stream holds the same hardware).
         self.output_devices.clear();
+        self.output_configs_cache.clear();
         let mut seen_outputs = std::collections::HashSet::new();
         for ccfg in self.channel_configs.values() {
             let dev_id = ccfg.output_device_id;
@@ -375,6 +389,29 @@ impl Modem {
             if let Some(acfg) = self.audio_configs.get(&dev_id) {
                 match audio::soundcard::resolve_output_device(&acfg.device_name) {
                     Ok(device) => {
+                        // Pre-negotiate the (channels, sample_format) pair
+                        // while the device is idle. supported_output_configs()
+                        // tends to fail later when the AIOC's input PCM is
+                        // actively captured. negotiate_channels() falls back
+                        // gracefully if the configured channel count isn't
+                        // supported (e.g. stereo-only USB cards).
+                        let preferred_ch = acfg.channels.max(1) as u16;
+                        let neg = audio::soundcard::negotiate_channels(
+                            &device, acfg.sample_rate, preferred_ch, "output",
+                            |d| { use cpal::traits::DeviceTrait; d.supported_output_configs() },
+                        );
+                        let fmt = {
+                            use cpal::traits::DeviceTrait;
+                            device.default_output_config().ok().map(|c| c.sample_format())
+                        };
+                        if let (Ok(ch), Some(f)) = (neg, fmt) {
+                            self.output_configs_cache.insert(dev_id, (ch, f));
+                        } else {
+                            eprintln!(
+                                "graywolf-modem: failed to pre-negotiate output configs for device_id={} ({}); test-tone may fail later if device gets busy",
+                                dev_id, acfg.device_name
+                            );
+                        }
                         self.tx_worker.prepare_output(dev_id, device.clone());
                         self.output_devices.insert(dev_id, device);
                     }
@@ -671,10 +708,13 @@ impl Modem {
             .unwrap_or_else(|| Arc::new(AtomicU32::new(0f32.to_bits())));
         let handle = self.handle.clone();
         let cached_device = self.output_devices.get(&device_id).cloned();
+        let cached_config = self.output_configs_cache.get(&device_id).copied();
         std::thread::Builder::new()
             .name("test-tone".into())
             .spawn(move || {
-                let result = play_test_tone_blocking(&req, &handle, device_id, &gain_atom, cached_device);
+                let result = play_test_tone_blocking(
+                    &req, &handle, device_id, &gain_atom, cached_device, cached_config,
+                );
                 let msg = IpcMessage::test_tone_result(result);
                 let _ = handle.send(&msg);
             })
@@ -1662,16 +1702,22 @@ fn play_test_tone_blocking(
     device_id: u32,
     gain_atom: &Arc<AtomicU32>,
     cached_device: Option<cpal::Device>,
+    cached_config: Option<(u16, cpal::SampleFormat)>,
 ) -> TestToneResult {
     use cpal::traits::{DeviceTrait, StreamTrait};
     use std::sync::atomic::{AtomicBool, AtomicU64};
 
-    // Use a pre-resolved device if available (resolved before input
-    // streams opened). When the cached handle is stale -- e.g. after a
-    // USB EMI event has reset the hub bus and reassigned the AIOC's
-    // device number -- supported_output_configs() fails with "device no
-    // longer available". Re-enumerate to pick up the new handle so the
-    // operator's test-tone click survives the bus shock.
+    // Resolve the cpal Device + channel count for the test tone.
+    //
+    // The cpal supported_output_configs() call fails with "device no
+    // longer available" when called while another stream (input
+    // capture) is already active on the same hardware (e.g. AIOC's
+    // shared input/output PCM). For that reason we prefer the
+    // pre-negotiated channel count cached at start_audio time, when
+    // the device was idle and queryable. Falls back to runtime
+    // negotiation only when no cached config exists (e.g. fresh
+    // ConfigureAudio for a device that hadn't been part of any
+    // channel yet).
     let sample_rate = if req.sample_rate > 0 { req.sample_rate } else { 48000 };
     let preferred_ch = req.channels.max(1) as u16;
 
@@ -1684,38 +1730,41 @@ fn play_test_tone_blocking(
             .ok_or_else(|| format!("output device not found: {}", name))
     }
 
-    let (device, channels) = {
-        let attempt = |dev: cpal::Device| -> Result<(cpal::Device, u16), String> {
-            let ch = audio::soundcard::negotiate_channels(
-                &dev,
+    let device = match cached_device {
+        Some(d) => d,
+        None => match resolve_fresh(&req.device_name) {
+            Ok(d) => d,
+            Err(e) => return TestToneResult {
+                request_id: req.request_id,
+                success: false,
+                error: e,
+            },
+        },
+    };
+
+    let channels = match cached_config {
+        Some((ch, _fmt)) => ch,
+        None => {
+            // No cached config -- either device wasn't pre-resolved
+            // (legacy path) or pre-negotiation failed at start_audio.
+            // Fall back to a live supported_output_configs probe;
+            // this is the path that fails when the device is busy,
+            // but it is also the only path that can recover for
+            // configurations the cache doesn't cover.
+            match audio::soundcard::negotiate_channels(
+                &device,
                 sample_rate,
                 preferred_ch,
                 "output",
                 |d| d.supported_output_configs(),
-            )?;
-            Ok((dev, ch))
-        };
-
-        match cached_device {
-            Some(d) => match attempt(d) {
-                Ok(pair) => pair,
-                Err(_) => match resolve_fresh(&req.device_name).and_then(attempt) {
-                    Ok(pair) => pair,
-                    Err(e) => return TestToneResult {
-                        request_id: req.request_id,
-                        success: false,
-                        error: e,
-                    },
-                },
-            },
-            None => match resolve_fresh(&req.device_name).and_then(attempt) {
-                Ok(pair) => pair,
+            ) {
+                Ok(c) => c,
                 Err(e) => return TestToneResult {
                     request_id: req.request_id,
                     success: false,
                     error: e,
                 },
-            },
+            }
         }
     };
 
