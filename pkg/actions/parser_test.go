@@ -18,6 +18,7 @@ func TestParseOTPPresent(t *testing.T) {
 			{Key: "room", Value: "garage"},
 			{Key: "state", Value: "on"},
 		},
+		RawArgTail: "room=garage state=on",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("\n got: %+v\nwant: %+v", got, want)
@@ -119,6 +120,49 @@ func TestParseEmptyArgValueAllowed(t *testing.T) {
 	}
 	if len(got.Args) != 1 || got.Args[0].Key != "k" || got.Args[0].Value != "" {
 		t.Fatalf("expected single empty-value arg, got %+v", got.Args)
+	}
+}
+
+func TestParseCapturesRawArgTail(t *testing.T) {
+	cases := []struct {
+		name     string
+		body     string
+		wantTail string
+	}{
+		{"no args", "@@123456#act", ""},
+		{"single kv", "@@123456#act k=v", "k=v"},
+		{"freeform-shaped", "@@123456#sms +15555551212 hello world", "+15555551212 hello world"},
+		{"trailing whitespace preserved", "@@123456#act   x  ", "  x  "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := Parse(tc.body)
+			if got == nil {
+				t.Fatalf("Parse returned nil result for %q", tc.body)
+			}
+			if got.RawArgTail != tc.wantTail {
+				t.Fatalf("RawArgTail = %q, want %q", got.RawArgTail, tc.wantTail)
+			}
+		})
+	}
+}
+
+func TestParseFreeformShapedReturnsPartial(t *testing.T) {
+	// kv tokenization fails (`+15555551212` has no `=`) but the action
+	// name is valid. Parser must return a partial ParsedInvocation with
+	// RawArgTail populated so the freeform classifier path can recover.
+	got, err := Parse("@@#sms +15555551212 hello world")
+	if err == nil {
+		t.Fatal("expected kv-tokenization error")
+	}
+	if got == nil {
+		t.Fatal("expected partial result, got nil")
+	}
+	if got.Action != "sms" {
+		t.Fatalf("Action = %q, want %q", got.Action, "sms")
+	}
+	if got.RawArgTail != "+15555551212 hello world" {
+		t.Fatalf("RawArgTail = %q, want freeform tail", got.RawArgTail)
 	}
 }
 

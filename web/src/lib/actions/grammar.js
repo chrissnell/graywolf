@@ -1,11 +1,19 @@
 // Build an example "@@<otp>#<action> k=v" message string for help banners
 // and modal previews. Argument insertion order follows Object.entries(),
 // which is fine because operators read the example, not parse it.
+//
+// `mode` selects the wire grammar: 'kv' (default) renders k=v tokens;
+// 'freeform' takes args.arg as the single payload after the verb.
 export function exampleMessage({
   otp = '482910',
   action = 'SetGarageLights',
+  mode = 'kv',
   args = { state: 'on' },
 } = {}) {
+  if (mode === 'freeform') {
+    const value = args?.arg ?? '';
+    return value ? `@@${otp}#${action} ${value}` : `@@${otp}#${action}`;
+  }
   const argsStr = Object.entries(args)
     .map(([k, v]) => `${k}=${v}`)
     .join(' ');

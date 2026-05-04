@@ -5,7 +5,7 @@
 # Reply:    "ISS <lat>,<lon> alt <km>km vel <kph>kph"
 # Source:   wheretheiss.at v1 (free, no key)
 # Deps:     curl, jq
-set -eu
+set -euo pipefail
 
 resp=$(curl -fsSL --max-time 6 https://api.wheretheiss.at/v1/satellites/25544) \
   || { echo "fetch failed" >&2; exit 1; }

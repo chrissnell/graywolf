@@ -3,6 +3,7 @@
 # Args:     none
 # Reply:    "up <Xd Yh> load <pct cpu> root <pct used>"
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $os = Get-CimInstance Win32_OperatingSystem

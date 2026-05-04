@@ -3,7 +3,7 @@
 # Grammar:  @@<otp>#echo msg=<text>
 # Args:     msg  (required) -- text to echo
 # Reply:    "<sender> said: <msg>"
-set -eu
+set -euo pipefail
 
 msg="${GW_ARG_MSG:-}"
 sender="${GW_SENDER_CALL:-?}"

@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/chrissnell/graywolf/pkg/actions"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
@@ -279,15 +280,36 @@ func validateAction(in *dto.Action) error {
 		// in the form rather than the audit log.
 		return errors.New("otp_credential_id: required when otp_required is true")
 	}
+	switch in.ArgMode {
+	case "":
+		in.ArgMode = "kv"
+	case "kv", "freeform":
+		// ok
+	default:
+		return errors.New("arg_mode: must be 'kv' or 'freeform'")
+	}
+	// Structural shape check for freeform must come before per-spec
+	// validation: zero specs would silently skip the loop without it.
+	if in.ArgMode == "freeform" && len(in.ArgSchema) != 1 {
+		return errors.New("arg_mode=freeform requires exactly one arg_schema entry")
+	}
 	for i, a := range in.ArgSchema {
 		if a.Key == "" {
 			return fmt.Errorf("arg_schema[%d]: key required", i)
+		}
+		if in.ArgMode == "kv" && a.Key == actions.FreeformArgKey {
+			return fmt.Errorf("arg_schema[%d]: key %q is reserved (freeform mode synthetic value)", i, actions.FreeformArgKey)
 		}
 		if a.Regex != "" {
 			if _, err := regexp.Compile(a.Regex); err != nil {
 				return fmt.Errorf("arg_schema[%d]: invalid regex: %w", i, err)
 			}
 		}
+	}
+	// Freeform value-ceiling cap applies to the single (now validated)
+	// spec.
+	if in.ArgMode == "freeform" && in.ArgSchema[0].MaxLen > actions.FreeformValueCeiling {
+		return fmt.Errorf("arg_schema[0].max_len: cannot exceed %d", actions.FreeformValueCeiling)
 	}
 	return nil
 }
@@ -375,9 +397,13 @@ func actionToDTO(a *configstore.Action) dto.Action {
 		OTPRequired:         a.OTPRequired,
 		OTPCredentialID:     a.OTPCredentialID,
 		SenderAllowlist:     a.SenderAllowlist,
+		ArgMode:             a.ArgMode,
 		RateLimitSec:        a.RateLimitSec,
 		QueueDepth:          a.QueueDepth,
 		Enabled:             a.Enabled,
+	}
+	if d.ArgMode == "" {
+		d.ArgMode = "kv"
 	}
 	if a.WebhookHeaders != "" {
 		_ = json.Unmarshal([]byte(a.WebhookHeaders), &d.WebhookHeaders)
@@ -423,6 +449,7 @@ func actionFromDTO(d *dto.Action) (*configstore.Action, error) {
 		OTPCredentialID:     d.OTPCredentialID,
 		SenderAllowlist:     d.SenderAllowlist,
 		ArgSchema:           string(schema),
+		ArgMode:             d.ArgMode,
 		RateLimitSec:        d.RateLimitSec,
 		QueueDepth:          d.QueueDepth,
 		Enabled:             d.Enabled,

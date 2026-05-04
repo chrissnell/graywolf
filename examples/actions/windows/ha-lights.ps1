@@ -6,6 +6,7 @@
 # Reply:    "<entity> <state>"
 # Config:   HA_URL, HA_TOKEN
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $entity = $env:GW_ARG_ENTITY

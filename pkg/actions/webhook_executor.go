@@ -132,22 +132,16 @@ type tokenEncoder func(s string) string
 func urlEncoder(s string) string      { return url.QueryEscape(s) }
 func identityEncoder(s string) string { return s }
 
-// expandToken substitutes {{name}} tokens in `in` using a single-pass
-// replacer. Single-pass is load-bearing: a naive loop of strings.ReplaceAll
-// re-feeds output as input, so a per-key arg regex permitting `{` / `}`
-// would let one arg's value reference another's token. NewReplacer scans
-// once, left-to-right, never reconsidering substituted text — and gives
-// deterministic output regardless of map iteration order.
+// expandToken substitutes operator-template tokens. Two-stage:
+//
+//  1. tokenRE matches {{name}} and {{name|filter}}.
+//  2. lookupTokenValue resolves the name; applyFilter handles the
+//     filter (or the legacy URL-vs-identity baseEncoder if absent).
+//
+// The single regex pass guarantees substituted output is never
+// re-scanned: a value containing literal "{{x}}" does not trigger a
+// second substitution. This was load-bearing in the previous
+// strings.NewReplacer implementation and remains so.
 func expandToken(in string, inv Invocation, enc tokenEncoder) string {
-	pairs := []string{
-		"{{action}}", enc(inv.ActionName),
-		"{{sender-callsign}}", enc(inv.SenderCall),
-		"{{otp-verified}}", enc(boolStr(inv.OTPVerified)),
-		"{{otp-cred}}", enc(inv.OTPCredName),
-		"{{source}}", enc(string(inv.Source)),
-	}
-	for _, kv := range inv.Args {
-		pairs = append(pairs, "{{arg."+kv.Key+"}}", enc(kv.Value))
-	}
-	return strings.NewReplacer(pairs...).Replace(in)
+	return expandTokenFiltered(in, inv, enc)
 }

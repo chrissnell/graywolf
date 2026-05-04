@@ -53,9 +53,23 @@ func Parse(body string) (*ParsedInvocation, error) {
 	}
 	args, err := parseArgs(argTail)
 	if err != nil {
-		return nil, err
+		// kv tokenization failed but the action name is valid. Return a
+		// partial ParsedInvocation so freeform consumers (which read
+		// RawArgTail directly) can still dispatch — the classifier
+		// branches on Action.ArgMode to decide whether the kv error is
+		// fatal. Args is nil to signal "tokenization failed".
+		return &ParsedInvocation{
+			OTPDigits:  otp,
+			Action:     action,
+			RawArgTail: argTail,
+		}, err
 	}
-	return &ParsedInvocation{OTPDigits: otp, Action: action, Args: args}, nil
+	return &ParsedInvocation{
+		OTPDigits:  otp,
+		Action:     action,
+		Args:       args,
+		RawArgTail: argTail,
+	}, nil
 }
 
 // ValidActionName reports whether s is a legal action name. Mirrors the

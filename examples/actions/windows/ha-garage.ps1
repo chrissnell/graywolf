@@ -6,6 +6,7 @@
 #
 # DO NOT install without OTPRequired=true and a sender allowlist.
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $action = $env:GW_ARG_ACTION

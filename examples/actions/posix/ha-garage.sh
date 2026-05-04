@@ -7,7 +7,7 @@
 # Deps:     curl
 #
 # DO NOT install without OTPRequired=true and a sender allowlist.
-set -eu
+set -euo pipefail
 
 action="${GW_ARG_ACTION:-}"
 if [[ -z "$action" ]]; then

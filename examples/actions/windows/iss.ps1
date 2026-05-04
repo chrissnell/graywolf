@@ -4,6 +4,7 @@
 # Reply:    "ISS <lat>,<lon> alt <km>km vel <kph>kph"
 # Source:   wheretheiss.at v1 (free, no key)
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 try {

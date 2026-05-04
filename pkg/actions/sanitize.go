@@ -11,6 +11,13 @@ import (
 const (
 	defaultArgRegex  = `^[A-Za-z0-9,_-]{1,32}$`
 	defaultArgMaxLen = 32
+
+	// FreeformValueCeiling is the absolute server-side cap on a single
+	// freeform payload, regardless of operator MaxLen. Matches the APRS
+	// message body limit comfortably and prevents an over-permissive
+	// schema from accepting payloads larger than the message subsystem
+	// can stage.
+	FreeformValueCeiling = 200
 )
 
 // ArgSpec is one entry in an Action's arg_schema, decoded from JSON.

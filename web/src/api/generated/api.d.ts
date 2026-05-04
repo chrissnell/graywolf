@@ -2009,6 +2009,8 @@ export interface components {
             tactical?: components["schemas"]["dto.TacticalCallsignResponse"];
         };
         "dto.Action": {
+            /** @description "kv" (default) | "freeform" */
+            arg_mode?: string;
             arg_schema?: components["schemas"]["dto.ArgSpec"][];
             command_path?: string;
             description?: string;
@@ -2889,6 +2891,7 @@ export interface components {
             args?: {
                 [key: string]: string;
             };
+            text?: string;
         };
         "dto.TestFireResponse": {
             exit_code?: number;

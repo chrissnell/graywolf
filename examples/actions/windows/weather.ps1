@@ -4,6 +4,7 @@
 # Reply:    raw METAR observation, snipped to 50 chars on-air
 # Source:   aviationweather.gov (free, no key, worldwide)
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $station = $env:GW_ARG_STATION

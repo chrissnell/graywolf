@@ -159,6 +159,98 @@ func TestFireAction_NoActionsService(t *testing.T) {
 	}
 }
 
+func makeFreeformTestFireAction(t *testing.T, mux *http.ServeMux) uint {
+	t.Helper()
+	in := dto.Action{
+		Name: "tffree", Type: "webhook", WebhookMethod: "GET",
+		WebhookURL: "https://example.test/", TimeoutSec: 5,
+		Enabled:   true,
+		ArgMode:   "freeform",
+		ArgSchema: []dto.ArgSpec{{Key: "arg", Regex: `.+`, MaxLen: 100, Required: true}},
+	}
+	body, _ := json.Marshal(in)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/actions", bytes.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create freeform: %d %s", rec.Code, rec.Body.String())
+	}
+	var got dto.Action
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	return got.ID
+}
+
+func TestFireAction_FreeformAcceptsText(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	rec := &recordingTestFire{invID: 7}
+	srv.SetActionsService(rec)
+	id := makeFreeformTestFireAction(t, mux)
+
+	body := strings.NewReader(`{"text":"+15555551212 hello world"}`)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/actions/"+strconv.FormatUint(uint64(id), 10)+"/test-fire", body))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(rec.gotArgs) != 1 || rec.gotArgs[0].Key != actions.FreeformArgKey || rec.gotArgs[0].Value != "+15555551212 hello world" {
+		t.Fatalf("freeform args not forwarded: %+v", rec.gotArgs)
+	}
+}
+
+func TestFireAction_FreeformRejectsArgs(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	rec := &recordingTestFire{}
+	srv.SetActionsService(rec)
+	id := makeFreeformTestFireAction(t, mux)
+
+	body := strings.NewReader(`{"args":{"arg":"+15555551212 hello"}}`)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/actions/"+strconv.FormatUint(uint64(id), 10)+"/test-fire", body))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", rr.Code, rr.Body.String())
+	}
+	if rec.testFires.Load() != 0 {
+		t.Fatal("TestFire dispatched despite mismatched payload shape")
+	}
+}
+
+func TestFireAction_FreeformRequiresText(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	rec := &recordingTestFire{}
+	srv.SetActionsService(rec)
+	id := makeFreeformTestFireAction(t, mux)
+
+	body := strings.NewReader(`{}`)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/actions/"+strconv.FormatUint(uint64(id), 10)+"/test-fire", body))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFireAction_KVRejectsText(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	rec := &recordingTestFire{}
+	srv.SetActionsService(rec)
+	id := makeTestFireAction(t, mux)
+
+	body := strings.NewReader(`{"text":"hello"}`)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/actions/"+strconv.FormatUint(uint64(id), 10)+"/test-fire", body))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", rr.Code, rr.Body.String())
+	}
+}
+
 func TestFireAction_NotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
 	mux := http.NewServeMux()

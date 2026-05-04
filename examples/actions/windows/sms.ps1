@@ -8,6 +8,7 @@
 # Config:   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM,
 #           APRSFI_API_KEY (optional)
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $to = $env:GW_ARG_TO

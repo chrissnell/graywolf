@@ -275,8 +275,16 @@ func marshalArgs(kvs []KeyValue) string {
 	m := make(map[string]string, len(kvs))
 	for _, kv := range kvs {
 		v := kv.Value
-		if len(v) > 64 {
-			v = v[:64]
+		// kv values cap at 64; freeform values cap at the schema
+		// ceiling so the audit row preserves what the operator
+		// actually sent (kv args max out at 32 in practice; freeform
+		// payloads can run to 200).
+		limit := 64
+		if kv.Key == FreeformArgKey {
+			limit = FreeformValueCeiling
+		}
+		if len(v) > limit {
+			v = v[:limit]
 		}
 		m[kv.Key] = v
 	}

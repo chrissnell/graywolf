@@ -41,6 +41,44 @@ describe('exampleMessage', () => {
   });
 });
 
+describe('exampleMessage freeform mode', () => {
+  it('formats without key=value tokens', () => {
+    assert.equal(
+      exampleMessage({
+        otp: '482910',
+        action: 'sms',
+        mode: 'freeform',
+        args: { arg: '+15555551212 hello world' },
+      }),
+      '@@482910#sms +15555551212 hello world',
+    );
+  });
+
+  it('omits the trailing space when freeform value is empty', () => {
+    assert.equal(
+      exampleMessage({
+        otp: '482910',
+        action: 'ping',
+        mode: 'freeform',
+        args: {},
+      }),
+      '@@482910#ping',
+    );
+  });
+
+  it('uses args.arg even if other keys are present', () => {
+    assert.equal(
+      exampleMessage({
+        otp: '111111',
+        action: 'echo',
+        mode: 'freeform',
+        args: { arg: 'hello world', state: 'on' },
+      }),
+      '@@111111#echo hello world',
+    );
+  });
+});
+
 describe('parseAllowlist', () => {
   it('returns [] for null/undefined/empty', () => {
     assert.deepEqual(parseAllowlist(null), []);

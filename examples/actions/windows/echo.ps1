@@ -3,6 +3,7 @@
 # Args:     msg  (required) -- text to echo
 # Reply:    "<sender> said: <msg>"
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $msg = $env:GW_ARG_MSG

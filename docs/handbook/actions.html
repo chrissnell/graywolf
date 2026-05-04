@@ -38,6 +38,10 @@
       <a href="messaging.html">Messaging</a>
       <a href="actions.html">Actions</a>
       <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
       <a href="livemap.html">Live Map</a>
       <div class="sidebar-section">Packet</div>
       <a href="ax25-terminal.html">AX.25 Terminal</a>
@@ -85,6 +89,15 @@
     <div class="screenshot">
       <img src="img/actions.png" alt="Actions page showing the Actions table, OTP Credentials table, and Recent Invocations log" />
       <div class="caption">The Actions page: the top table holds your Actions, the middle table holds OTP credentials, and the bottom panel tails every invocation in real time.</div>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-body">
+        <strong>Before writing a handler:</strong> read
+        <a href="actions-handler-safety.html">Writing safe Action handlers</a>.
+        Action handlers run with the privileges of the graywolf service
+        user; safe defaults are not automatic.
+      </div>
     </div>
 
     <h2>Message grammar</h2>
@@ -158,6 +171,47 @@
       The <strong>Actions</strong> page shows the exact wire syntax under
       every Action&rsquo;s name as a copy-paste-ready hint, so you can
       verify the grammar without referring back to this page.
+    </p>
+
+    <h3>Argument mode: <code>kv</code> vs <code>freeform</code></h3>
+
+    <p>
+      Each Action has an <strong>argument mode</strong> that decides how
+      the part of the wire body after the verb is parsed:
+    </p>
+
+    <ul>
+      <li>
+        <code>kv</code> (default) &mdash; the rest of the body is split
+        into space-separated <code>key=value</code> tokens, each
+        validated against the Action&rsquo;s argument schema. Use this
+        when an Action has multiple structured fields.
+      </li>
+      <li>
+        <code>freeform</code> &mdash; everything after the action name is
+        one untokenized payload, validated against a single-row schema.
+        Use this when the natural form of the input is one chunk of
+        text (an SMS body, a notification body, a message-to-be-spoken).
+      </li>
+    </ul>
+
+    <div class="box">
+      <div class="box-body">
+        <pre><code># kv mode (default):
+@@482103#sms to=+15555551212 msg="hello there"
+
+# freeform mode:
+@@482103#sms +15555551212 hello there</code></pre>
+      </div>
+    </div>
+
+    <p>
+      Freeform shifts more responsibility to the handler &mdash; the
+      operator parses and revalidates the payload inside the script or
+      receiver. The
+      <a href="actions-handler-safety.html">handler safety guide</a>
+      walks through both modes with worked examples and is required
+      reading before deploying a freeform Action.
     </p>
 
     <h2>Defining an Action</h2>
@@ -235,12 +289,23 @@
         replies <code>rate_limited</code>.
       </li>
       <li>
+        <strong>Argument mode.</strong> A radio between <code>kv</code>
+        (default) and <code>freeform</code>. In freeform mode the
+        multi-row schema editor collapses to a single-row editor for
+        the lone payload field, since the whole post-verb body becomes
+        one value. Switching to freeform requires reading the
+        <a href="actions-handler-safety.html">handler safety guide</a>
+        first &mdash; the operator (you) becomes responsible for
+        splitting and revalidating the payload inside the handler.
+      </li>
+      <li>
         <strong>Argument schema.</strong> A list of
         <code>{key, regex, required}</code> rows. Every key/value token
         on the wire must match a row in the schema, and the value must
         match the row&rsquo;s regex. Required keys missing from the
         wire reply <code>bad_arg: &lt;key&gt;</code>. Empty schema
-        means no args accepted.
+        means no args accepted. In freeform mode the editor shows a
+        single row whose key is fixed to <code>arg</code>.
       </li>
     </ul>
 

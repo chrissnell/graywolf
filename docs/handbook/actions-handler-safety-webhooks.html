@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actions: Webhook Handler Safety &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Safe webhook Action handlers</h1>
+
+<p>This page walks through a complete worked example of a webhook
+receiver &mdash; a Python Flask app &mdash; and explains the safety
+patterns line by line. The receiver is also shipped at
+<code>examples/actions/python/webhook_receiver_flask.py</code>.
+The page also covers custom webhook body templates and the filter
+syntax you should use when templating user data.</p>
+
+<p>The general modes-and-contract overview lives at
+<a href="actions-handler-safety.html">Actions: handler safety</a>;
+read it first if you haven't.</p>
+
+<h2 id="webhook">SMS as a webhook Action</h2>
+
+<p>graywolf POSTs the form-encoded body to your URL. The Action is
+configured as:</p>
+
+<ul>
+  <li><strong>Type:</strong> webhook</li>
+  <li><strong>Method:</strong> POST</li>
+  <li><strong>URL:</strong> <code>https://your-host/aprs-webhook</code></li>
+  <li><strong>Headers:</strong>
+      <code>X-Graywolf-Auth: 0123456789abcdef0123456789abcdef</code></li>
+  <li><strong>Body template:</strong> empty (use the default form encoding)</li>
+</ul>
+
+<p>The receiver (this is
+<code>examples/actions/python/webhook_receiver_flask.py</code>):</p>
+
+<pre><code class="language-python">from flask import Flask, abort, render_template_string, request
+import hmac, os, re, sqlite3
+
+SHARED_SECRET = os.environ["GW_WEBHOOK_SECRET"]
+MAX_BODY_BYTES = 8 * 1024
+MAX_ARG_LEN = 200
+CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+app = Flask(__name__)
+
+def verify_secret(provided):
+    if not provided:
+        return False
+    return hmac.compare_digest(provided.encode(), SHARED_SECRET.encode())
+
+@app.before_request
+def cap_body_size():
+    if (request.content_length or 0) &gt; MAX_BODY_BYTES:
+        abort(413)
+
+@app.post("/aprs-webhook")
+def aprs_webhook():
+    if not verify_secret(request.headers.get("X-Graywolf-Auth")):
+        abort(401)
+    payload = request.form.get("arg", "")
+    if len(payload) &gt; MAX_ARG_LEN or CONTROL_CHARS.search(payload):
+        abort(400)
+    sender = request.form.get("sender_callsign", "")
+    with sqlite3.connect(os.environ["GW_RECEIVER_DB"]) as db:
+        db.execute(
+            "INSERT INTO deliveries (sender, payload) VALUES (?, ?)",
+            (sender, payload),
+        )
+    return render_template_string(
+        "&lt;p&gt;received from &lt;strong&gt;{{ sender }}&lt;/strong&gt;: {{ payload }}&lt;/p&gt;",
+        sender=sender, payload=payload,
+    )
+</code></pre>
+
+<h3>Explanation</h3>
+
+<p><strong>Authenticate the inbound POST.</strong> Your webhook URL
+is in graywolf's database, and graywolf is the only thing that knows
+the shared secret you set in <code>X-Graywolf-Auth</code>. Anything
+else hitting your endpoint should get a 401 immediately.
+<code>hmac.compare_digest</code> compares in constant time so an
+attacker can't measure timing to brute-force the secret one byte at a
+time.</p>
+
+<p><strong>Cap the body size <em>before</em> parsing it.</strong>
+graywolf already limits payload bytes, but a bug or downgrade attack
+on graywolf's side shouldn't be able to OOM your receiver. The
+<code>before_request</code> hook bails on
+<code>Content-Length</code> too high.</p>
+
+<p><strong>Use form-encoded input, not JSON.</strong> graywolf's
+default body is <code>application/x-www-form-urlencoded</code>, which
+the framework parses for you with no eval involved. JSON parsing is
+also fine, but only because Python's <code>json.loads</code> doesn't
+eval &mdash; never <code>eval(request.body)</code>.</p>
+
+<p><strong>Revalidate.</strong> Same length-and-control-char floor
+as the shell example. Even though graywolf already validated, your
+receiver shouldn't depend on graywolf staying bug-free forever.</p>
+
+<p><strong>Parameterized SQL.</strong> The two <code>?</code>
+placeholders are bound by the SQLite driver. The string
+<code>"INSERT INTO deliveries..."</code> is constant &mdash; there is no
+f-string, no <code>%</code>-format, no concatenation involving
+<code>payload</code>. SQL injection cannot happen here, regardless of
+what bytes <code>payload</code> contains.</p>
+
+<p><strong>Auto-escaped templating.</strong> Jinja escapes
+<code>&lt;</code>, <code>&gt;</code>, <code>&amp;</code>, and quotes
+by default in <code>{{ payload }}</code>. If <code>payload</code> were
+<code>&lt;script&gt;alert(1)&lt;/script&gt;</code>, the rendered HTML
+would contain <code>&amp;lt;script&amp;gt;</code>, not a real
+<code>script</code> tag. Never use <code>{{ payload|safe }}</code> or
+<code>Markup(payload)</code>.</p>
+
+<h3>Anti-patterns to avoid in webhook receivers</h3>
+
+<table>
+  <thead><tr><th>Anti-pattern</th><th>Attack it enables</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>f"INSERT ... ('{payload}')"</code></td>
+      <td>SQL injection.</td>
+    </tr>
+    <tr>
+      <td><code>render_template_string("{{ msg|safe }}", ...)</code></td>
+      <td>Stored XSS.</td>
+    </tr>
+    <tr>
+      <td><code>os.system(f"send {payload}")</code></td>
+      <td>Shell injection on the receiver host.</td>
+    </tr>
+    <tr>
+      <td><code>requests.get(payload)</code></td>
+      <td>SSRF &mdash; payload becomes a URL the server fetches.</td>
+    </tr>
+    <tr>
+      <td>No auth on the endpoint</td>
+      <td>Anyone on the internet can POST as if they were graywolf.</td>
+    </tr>
+    <tr>
+      <td>Logging payload without escaping CR/LF</td>
+      <td>Log forging &mdash; fake log entries, terminal escape attacks.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="custom-template">Custom webhook body templates</h2>
+
+<p>Most operators should leave the body template blank and use
+graywolf's default form encoding &mdash; the framework handles escaping
+correctly and there's nothing to get wrong. If you need a custom
+template (e.g., a downstream API expects JSON), use the filter
+syntax:</p>
+
+<pre><code>{
+  "to": "{{arg.to|json}}",
+  "msg": "{{arg.msg|json}}"
+}</code></pre>
+
+<p>The <code>|json</code> filter performs JSON-string escaping so the
+value can sit safely between the surrounding quotes. Never write:</p>
+
+<pre><code>{
+  "msg": "{{arg.msg}}"   &larr; UNSAFE -- a quote or backslash in the
+                           value will break the JSON.
+}</code></pre>
+
+<p>Available filters:</p>
+
+<table>
+  <thead><tr><th>Filter</th><th>Use when templating into</th></tr></thead>
+  <tbody>
+    <tr><td><code>|json</code></td><td>JSON string contents</td></tr>
+    <tr><td><code>|url</code></td><td>URL paths or query strings</td></tr>
+    <tr><td><code>|html</code></td><td>HTML attribute values or text content</td></tr>
+  </tbody>
+</table>
+
+    <nav class="page-nav">
+      <a href="actions-handler-safety-powershell.html">
+        <span class="label">Previous</span>
+        PowerShell handlers
+      </a>
+      <a href="livemap.html" class="next">
+        <span class="label">Next</span>
+        Live Map
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

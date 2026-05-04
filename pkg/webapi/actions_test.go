@@ -398,3 +398,70 @@ func TestActionsCRUD_ListLastInvoked(t *testing.T) {
 		t.Fatalf("last_invoked_* not populated: %+v", list)
 	}
 }
+
+func validBaseAction(t *testing.T) dto.Action {
+	t.Helper()
+	return dto.Action{
+		Name:        "okname",
+		Type:        "command",
+		CommandPath: writeExecScript(t),
+		TimeoutSec:  5,
+		Enabled:     true,
+		ArgSchema:   []dto.ArgSpec{{Key: "k1", Regex: `^[a-z]+$`, MaxLen: 8}},
+	}
+}
+
+func TestValidateActionRejectsBadArgMode(t *testing.T) {
+	in := validBaseAction(t)
+	in.ArgMode = "yolo"
+	if err := validateAction(&in); err == nil {
+		t.Fatal("expected error for unknown arg_mode")
+	}
+}
+
+func TestValidateActionDefaultsKVArgMode(t *testing.T) {
+	in := validBaseAction(t)
+	in.ArgMode = ""
+	if err := validateAction(&in); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if in.ArgMode != "kv" {
+		t.Fatalf("ArgMode = %q, want kv", in.ArgMode)
+	}
+}
+
+func TestValidateActionFreeformRequiresExactlyOneArgSpec(t *testing.T) {
+	in := validBaseAction(t)
+	in.ArgMode = "freeform"
+	in.ArgSchema = []dto.ArgSpec{}
+	if err := validateAction(&in); err == nil {
+		t.Fatal("expected error for empty schema in freeform mode")
+	}
+
+	in.ArgSchema = []dto.ArgSpec{
+		{Key: "arg", Regex: `.+`, MaxLen: 100},
+		{Key: "arg2", Regex: `.+`, MaxLen: 100},
+	}
+	if err := validateAction(&in); err == nil {
+		t.Fatal("expected error for two-spec schema in freeform mode")
+	}
+}
+
+func TestValidateActionFreeformCapsMaxLen(t *testing.T) {
+	in := validBaseAction(t)
+	in.ArgMode = "freeform"
+	in.ArgSchema = []dto.ArgSpec{{Key: "arg", Regex: `.+`, MaxLen: 9999}}
+	if err := validateAction(&in); err == nil {
+		t.Fatal("expected error: max_len above ceiling")
+	}
+}
+
+func TestValidateActionRejectsArgKeyInKVMode(t *testing.T) {
+	// "arg" is reserved as the freeform synthetic key.
+	in := validBaseAction(t)
+	in.ArgMode = "kv"
+	in.ArgSchema = []dto.ArgSpec{{Key: "arg", Regex: `.+`, MaxLen: 32}}
+	if err := validateAction(&in); err == nil {
+		t.Fatal("expected error: 'arg' reserved in kv mode")
+	}
+}

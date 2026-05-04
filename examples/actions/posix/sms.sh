@@ -10,7 +10,7 @@
 # Config:   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM (E.164),
 #           APRSFI_API_KEY (optional)
 # Deps:     curl, jq
-set -eu
+set -euo pipefail
 
 to="${GW_ARG_TO:-}"
 msg="${GW_ARG_MSG:-}"

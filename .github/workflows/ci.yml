@@ -79,6 +79,59 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
+  example-scripts:
+    name: Example Scripts Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install shellcheck
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+
+      - name: shellcheck POSIX example scripts
+        run: shellcheck examples/actions/posix/*.sh
+
+      - name: Forbid eval / sh -c in example scripts
+        run: |
+          set -euo pipefail
+          # Skip pure comment lines so safety prose like "no eval"
+          # in script headers doesn't trip the gate.
+          hits=$(grep -rnE '(\beval\b|\bsh -c\b)' examples/actions/posix/ \
+                 | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::examples must not use eval or sh -c" >&2
+            echo "$hits" >&2
+            exit 1
+          fi
+
+      - name: Forbid unquoted GW_* expansions
+        run: |
+          set -euo pipefail
+          # Best-effort gate: matches $GW_* not preceded by a quote
+          # char. Quoted forms like "$GW_*", '$GW_*' pass. Known
+          # blind spots: bare ${GW_*} (brace form) and $GW_* glued
+          # after a quoted prefix (e.g. "x"$GW_Y). Treat as a first
+          # line of defense, not a substitute for shellcheck + review.
+          if grep -rnE '(^|[^"'"'"'])\$GW_[A-Z_]+' examples/actions/posix/; then
+            echo "::error::examples must quote GW_* variable expansions" >&2
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: pip install -r examples/actions/python/requirements.txt ruff
+
+      - name: ruff check Python examples
+        run: ruff check examples/actions/python/
+
+      - name: pytest Python examples
+        run: pytest examples/actions/python/
+
   rust-ci:
     name: Rust Check + Clippy
     runs-on: ubuntu-latest

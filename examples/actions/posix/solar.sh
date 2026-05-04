@@ -5,7 +5,7 @@
 # Reply:    "SFI <n> A <n> K <n> SN <n>"
 # Source:   hamqsl.com solar XML feed (free)
 # Deps:     curl
-set -eu
+set -euo pipefail
 
 xml=$(curl -fsSL --max-time 8 https://www.hamqsl.com/solarxml.php) \
   || { echo "fetch failed" >&2; exit 1; }

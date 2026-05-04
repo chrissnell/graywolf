@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actions: Handler Safety &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Writing safe Action handlers</h1>
+
+<p>An Action handler is a handler &mdash; a shell script, a PowerShell
+script, a webhook receiver &mdash; that you control. graywolf gives
+it a payload from a remote APRS sender. Your handler decides what to
+do with that payload. Anything an attacker can persuade your handler
+to do, they can do over the air.</p>
+
+<p>This page is the overview: the two argument modes, the contract
+graywolf passes to your handler, and the final safety checklist that
+applies to every handler.</p>
+
+<p>Three sub-pages drill into worked examples
+for each handler kind, with line-by-line explanations and
+anti-patterns to avoid:</p>
+
+<ul>
+  <li><a href="actions-handler-safety-shell.html"><strong>Shell
+      handlers</strong></a> &mdash; bash freeform and kv worked examples,
+      shellcheck guidance.</li>
+  <li><a href="actions-handler-safety-powershell.html"><strong>PowerShell
+      handlers</strong></a> &mdash; the freeform SMS Action wired for a
+      Windows host, PSScriptAnalyzer guidance.</li>
+  <li><a href="actions-handler-safety-webhooks.html"><strong>Webhook
+      handlers</strong></a> &mdash; a Python Flask receiver, custom body
+      templates and the filter syntax for templated user data.</li>
+</ul>
+
+<p>Every example is also shipped in <code>examples/actions/</code> in
+the source tree.</p>
+
+<h2 id="modes">Two argument modes</h2>
+
+<p>Each Action has a mode that controls how the wire-format arguments
+reach your handler:</p>
+
+<table>
+  <thead><tr><th>Mode</th><th>Wire format</th><th>Use when</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>kv</code> (default)</td>
+      <td><code>@@&lt;otp&gt;#name k1=v1 k2=v2</code></td>
+      <td>You have multiple, named, individually-validated arguments.</td>
+    </tr>
+    <tr>
+      <td><code>freeform</code></td>
+      <td><code>@@&lt;otp&gt;#name &lt;raw text&gt;</code></td>
+      <td>Everything after the verb is one payload (e.g. an SMS).</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Pick freeform when you want a sender to type something natural like
+<code>@@482910#sms +15555551212 hello there</code> instead of
+<code>@@482910#sms to=+15555551212 msg=&quot;hello there&quot;</code>.
+The cost: the operator (you) takes on more responsibility for
+parsing and revalidating the payload. The sub-pages are about
+discharging that responsibility correctly.</p>
+
+<h3 id="kv-vs-freeform">kv vs freeform &mdash; when to pick which</h3>
+
+<ul>
+  <li>If your Action has 2+ structured fields each with their own
+      regex (an entity ID and a state, a phone number and a message),
+      <strong>kv is friendlier</strong>. Each field gets its own
+      validator. Mistakes from senders are reported per-field
+      ("bad arg: state").</li>
+  <li>If the natural form of the input is one chunk of text (an SMS
+      body, a notification body, a message-to-be-spoken),
+      <strong>freeform reads better</strong> on-air. The cost is that
+      you do the splitting.</li>
+  <li>If the value is going to be passed through your handler to a
+      downstream API that already accepts it as one string,
+      <strong>freeform avoids needless ceremony</strong>.</li>
+  <li><strong>Freeform is much easier on the sender</strong>,
+      especially from a limited user interface like an HT keypad.
+      <code>@@482103#sms +15555551212 hello there</code> is realistic
+      to thumb in on a radio's number-pad multi-tap;
+      <code>@@482103#sms to=+15555551212 msg=&quot;hello there&quot;</code>
+      &mdash; with the <code>=</code>, the quotes, and the second key
+      &mdash; is not. If your senders are likely to be on portables,
+      prefer freeform whenever the input is naturally one chunk.</li>
+</ul>
+
+<h2 id="contract">What graywolf passes to your handler</h2>
+
+<h3>Command Actions (shell or PowerShell)</h3>
+
+<p>The runner exec's your binary directly &mdash; no shell, no PATH
+lookup funkiness, no <code>system()</code>. argv layout depends on
+mode:</p>
+
+<table>
+  <thead><tr><th></th><th><code>kv</code></th><th><code>freeform</code></th></tr></thead>
+  <tbody>
+    <tr><td>$1 / $args[0]</td><td>action name</td><td>action name</td></tr>
+    <tr><td>$2 / $args[1]</td><td>sender callsign</td><td>sender callsign</td></tr>
+    <tr><td>$3 / $args[2]</td><td><code>true</code> | <code>false</code> (OTP verified)</td><td>same</td></tr>
+    <tr><td>$4..$N / $args[3..N]</td><td><code>k=v</code> tokens, schema order</td><td>the entire raw payload, one token</td></tr>
+  </tbody>
+</table>
+
+<p>Environment variables are also set:</p>
+
+<ul>
+  <li><code>GW_ACTION_NAME</code>, <code>GW_SENDER_CALL</code>,
+      <code>GW_OTP_VERIFIED</code>, <code>GW_OTP_CRED_NAME</code>,
+      <code>GW_SOURCE</code>, <code>GW_INVOCATION_ID</code> &mdash; always.</li>
+  <li>kv: <code>GW_ARG_&lt;KEY&gt;=&lt;value&gt;</code> per declared arg.</li>
+  <li>freeform: <code>GW_ARG=&lt;raw payload&gt;</code> (single var, no key suffix).</li>
+</ul>
+
+<h3>Webhook Actions</h3>
+
+<p>graywolf POSTs URL-encoded form data by default (or your custom
+template body if you set one). Default form fields:</p>
+
+<ul>
+  <li><code>action</code>, <code>sender_callsign</code>,
+      <code>otp_verified</code>, <code>otp_cred</code>, <code>source</code></li>
+  <li>kv: one field per declared arg (key = your schema key).</li>
+  <li>freeform: one field named <code>arg</code> with the raw payload.</li>
+</ul>
+
+<p>Custom body templates support these tokens:</p>
+
+<ul>
+  <li><code>{{action}}</code>, <code>{{sender-callsign}}</code>,
+      <code>{{otp-verified}}</code>, <code>{{otp-cred}}</code>,
+      <code>{{source}}</code></li>
+  <li>kv: <code>{{arg.&lt;key&gt;}}</code></li>
+  <li>freeform: <code>{{arg}}</code> (bare)</li>
+  <li>Filters: <code>{{arg|json}}</code>, <code>{{arg|url}}</code>,
+      <code>{{arg|html}}</code> &mdash; same for any token. Use these.
+      See the
+      <a href="actions-handler-safety-webhooks.html#custom-template">webhook
+      handlers page</a> for worked examples.</li>
+</ul>
+
+<h2 id="checklist">Final safety checklist</h2>
+
+<p>Before deploying any Action handler:</p>
+
+<ol>
+  <li>Run <code>shellcheck</code> (shell), <code>Invoke-ScriptAnalyzer</code>
+      (PowerShell), or <code>ruff</code> (Python). Fix everything it
+      flags. Don't disable rules.</li>
+  <li>Quote every variable expansion. Search for
+      <code>$GW_</code> not preceded by <code>"</code>.</li>
+  <li>Confirm there is no <code>eval</code>, no
+      <code>sh -c</code> with user data, no
+      <code>Invoke-Expression</code>.</li>
+  <li>Confirm any external command takes user data via
+      <code>--</code>-terminated argv (or array
+      <code>-ArgumentList</code> in PowerShell), not concatenated
+      strings.</li>
+  <li>Confirm any database write uses parameterized placeholders.</li>
+  <li>Confirm any HTML render uses framework auto-escape.</li>
+  <li>For webhooks: confirm the receiver authenticates
+      (HMAC / shared secret), caps body size, and is reachable only
+      via TLS.</li>
+  <li>Test the handler with payloads designed to break it: leading
+      <code>-</code>, embedded <code>'</code> and <code>"</code>,
+      <code>&amp;</code> and <code>=</code>, max-length values.
+      Use the <strong>Test</strong> dialog in the operator UI for
+      this &mdash; it runs the handler bypassing OTP and the sender
+      allowlist.</li>
+</ol>
+
+    <nav class="page-nav">
+      <a href="actions.html">
+        <span class="label">Previous</span>
+        Actions
+      </a>
+      <a href="actions-handler-safety-shell.html" class="next">
+        <span class="label">Next</span>
+        Shell handlers
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

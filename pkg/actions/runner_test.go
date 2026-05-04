@@ -2,6 +2,8 @@ package actions
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -242,4 +244,32 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatal("timeout waiting for condition")
+}
+
+func TestMarshalArgsKVTruncatesAt64(t *testing.T) {
+	long := strings.Repeat("a", 100)
+	got := marshalArgs([]KeyValue{{Key: "k", Value: long}})
+	// Decode and verify the kv value was clipped to 64 bytes.
+	var m map[string]string
+	if err := json.Unmarshal([]byte(got), &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m["k"]) != 64 {
+		t.Fatalf("kv truncation: len=%d want 64", len(m["k"]))
+	}
+}
+
+func TestMarshalArgsFreeformKeepsFullCeiling(t *testing.T) {
+	// Freeform Actions can ship up to FreeformValueCeiling (200) bytes
+	// — clipping at 64 in the audit log would hide most of the
+	// operator's payload.
+	long := strings.Repeat("a", FreeformValueCeiling)
+	got := marshalArgs([]KeyValue{{Key: FreeformArgKey, Value: long}})
+	var m map[string]string
+	if err := json.Unmarshal([]byte(got), &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m[FreeformArgKey]) != FreeformValueCeiling {
+		t.Fatalf("freeform truncation: len=%d want %d", len(m[FreeformArgKey]), FreeformValueCeiling)
+	}
 }

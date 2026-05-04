@@ -18,8 +18,12 @@
   let view = $state('input');
   let argValues = $state({});
   let argErrors = $state({});
+  let freeformText = $state('');
   let result = $state(null);
   let topError = $state(null);
+
+  let isFreeform = $derived(action?.arg_mode === 'freeform');
+  let freeformMaxLen = $derived(action?.arg_schema?.[0]?.max_len || 200);
 
   let prevOpen = false;
   $effect(() => {
@@ -34,6 +38,7 @@
     argErrors = {};
     topError = null;
     result = null;
+    freeformText = '';
     const seed = {};
     if (action?.arg_schema) {
       for (const a of action.arg_schema) seed[a.key] = '';
@@ -65,11 +70,17 @@
     topError = null;
     view = 'firing';
     try {
-      const args = {};
-      for (const [k, v] of Object.entries(argValues)) {
-        if (v !== '' && v != null) args[k] = String(v);
+      let body;
+      if (isFreeform) {
+        body = { text: freeformText };
+      } else {
+        const args = {};
+        for (const [k, v] of Object.entries(argValues)) {
+          if (v !== '' && v != null) args[k] = String(v);
+        }
+        body = { args };
       }
-      const { data, error } = await actionsApi.testFire(action.id, args);
+      const { data, error } = await actionsApi.testFire(action.id, body);
       if (error) {
         const detail = error?.error ?? error?.message ?? 'Test fire failed.';
         // The handler returns 400 with `{error: "bad arg: <key>"}` on
@@ -170,7 +181,20 @@
       </div>
     {:else}
       <div class="form">
-        {#if !action?.arg_schema || action.arg_schema.length === 0}
+        {#if isFreeform}
+          <div class="field">
+            <label for="test-freeform-text">Payload</label>
+            <textarea
+              id="test-freeform-text"
+              class="textarea"
+              rows="3"
+              maxlength={freeformMaxLen}
+              bind:value={freeformText}
+              placeholder={`everything after @@<otp>#${action?.name ?? 'name'} (no key=value, just the raw text)`}
+            ></textarea>
+            <p class="hint">Max length: {freeformMaxLen} characters.</p>
+          </div>
+        {:else if !action?.arg_schema || action.arg_schema.length === 0}
           <p class="muted">This action accepts no args.</p>
         {:else}
           {#each action.arg_schema as spec (spec.key)}
@@ -269,6 +293,22 @@
     margin: 0;
     color: var(--color-text-muted, var(--text-muted));
     font-size: 13px;
+  }
+  .textarea {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border, var(--border));
+    border-radius: var(--radius, 4px);
+    background: var(--color-bg);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    resize: vertical;
+  }
+  .hint {
+    margin: 0;
+    font-size: 11px;
+    color: var(--color-text-muted, var(--text-muted));
   }
   .result {
     display: flex;

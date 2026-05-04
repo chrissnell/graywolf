@@ -4,6 +4,7 @@
 # Reply:    "SFI <n> A <n> K <n> SN <n>"
 # Source:   hamqsl.com solar XML feed (free)
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 try {

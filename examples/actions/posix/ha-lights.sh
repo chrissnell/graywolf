@@ -8,7 +8,7 @@
 # Config:   HA_URL    -- e.g. http://homeassistant.local:8123
 #           HA_TOKEN  -- long-lived access token
 # Deps:     curl
-set -eu
+set -euo pipefail
 
 entity="${GW_ARG_ENTITY:-}"
 state="${GW_ARG_STATE:-}"

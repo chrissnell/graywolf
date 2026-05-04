@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actions: Shell Handler Safety &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Safe shell-script Action handlers</h1>
+
+<p>This page walks through two complete worked examples of bash
+handlers &mdash; one freeform, one kv &mdash; and explains the safety
+patterns line by line. Both scripts are also shipped in
+<code>examples/actions/posix/</code>.</p>
+
+<p>The general modes-and-contract overview lives at
+<a href="actions-handler-safety.html">Actions: handler safety</a>;
+read it first if you haven't.</p>
+
+<h2 id="freeform">Worked example 1: SMS as a freeform shell Action</h2>
+
+<p>The Action sender writes:</p>
+
+<pre><code>@@482910#sms +15555551212 hello there</code></pre>
+
+<p>graywolf invokes:</p>
+
+<pre><code>/usr/local/bin/sms-freeform.sh sms KE0XYZ true "+15555551212 hello there"</code></pre>
+
+<p>Here is the complete script (also at
+<code>examples/actions/posix/sms-freeform.sh</code>):</p>
+
+<pre><code class="language-bash">#!/bin/bash
+# sms-freeform.sh &mdash; Send an SMS via Twilio. Freeform Action variant.
+
+# Abort on any error, unset variable, or failed pipeline stage.
+set -euo pipefail
+
+# Positional args from the runner. Only PAYLOAD is used here.
+ACTION="$1"
+SENDER="$2"
+OTP_VERIFIED="$3"
+PAYLOAD="$4"
+
+# Validate format AND split into number + message in one regex match.
+# Group 1 = E.164 number, group 2 = message body.
+if [[ ! "$PAYLOAD" =~ ^(\+[1-9][0-9]{6,14})[[:space:]]+(.+)$ ]]; then
+    echo "expected '+&lt;E164&gt; &lt;message&gt;'" &gt;&amp;2
+    exit 64
+fi
+NUMBER="${BASH_REMATCH[1]}"
+MESSAGE="${BASH_REMATCH[2]}"
+
+# Defense in depth: graywolf already strips control characters, but
+# re-check so this script stays safe if the operator widens the regex.
+if [[ "$MESSAGE" =~ [[:cntrl:]] ]]; then
+    echo "message contains control characters" &gt;&amp;2
+    exit 65
+fi
+if (( ${#MESSAGE} &lt; 1 || ${#MESSAGE} &gt; 160 )); then
+    echo "message length out of range (1..160)" &gt;&amp;2
+    exit 65
+fi
+
+# Required Twilio credentials. Fail fast with a clear message if unset.
+: "${TWILIO_ACCOUNT_SID:?TWILIO_ACCOUNT_SID not set}"
+: "${TWILIO_AUTH_TOKEN:?TWILIO_AUTH_TOKEN not set}"
+: "${TWILIO_FROM:?TWILIO_FROM not set}"
+
+# curl invoked argv-style; --data-urlencode lets curl URL-encode each
+# value so we never concatenate user data into the request body.
+response=$(curl -sS --max-time 8 -X POST \
+    --data-urlencode "From=${TWILIO_FROM}" \
+    --data-urlencode "To=${NUMBER}" \
+    --data-urlencode "Body=${MESSAGE}" \
+    -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
+    -- "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json")
+
+# Success heuristic: Twilio returns JSON with a "sid" field on success.
+# Echo it so the on-air reply ("ok: SM&lt;sid&gt;...") confirms delivery.
+if printf '%s' "$response" | grep -q '"sid"'; then
+    sid=$(printf '%s' "$response" | grep -o '"sid":"SM[A-Za-z0-9]*"' | head -n1 | sed 's/.*"\(SM[^"]*\)"/\1/')
+    echo "sent ${sid:-?}"
+    exit 0
+fi
+
+echo "twilio rejected: $(printf '%s' "$response" | head -c 80)" &gt;&amp;2
+exit 1
+</code></pre>
+
+<h3>Explanation</h3>
+
+<pre><code class="language-bash">set -euo pipefail</code></pre>
+
+<p>Three flags in one line. <code>-e</code> aborts on any non-zero
+exit. <code>-u</code> treats unset variables as errors (so a typo in
+<code>$GW_ARG_NUMER</code> doesn't silently expand to empty string).
+<code>-o pipefail</code> makes a pipeline fail if any stage fails, not
+just the last one. Always at the top of every shell handler.</p>
+
+<pre><code class="language-bash">if [[ ! "$PAYLOAD" =~ ^(\+[1-9][0-9]{6,14})[[:space:]]+(.+)$ ]]; then</code></pre>
+
+<p>One POSIX extended regex match validates the format
+<em>and</em> splits the payload in a single step. Bash's
+<code>[[ =~ ]]</code> operator runs the match and populates the
+<code>BASH_REMATCH</code> array with the capture groups on success.
+The pattern reads:</p>
+
+<ul>
+  <li><code>^</code> &mdash; anchor at start.</li>
+  <li><code>(\+[1-9][0-9]{6,14})</code> &mdash; group 1: an E.164
+      number. A literal <code>+</code>, then a leading digit 1..9
+      (E.164 forbids <code>0</code>), then 6 to 14 more digits.</li>
+  <li><code>[[:space:]]+</code> &mdash; one or more whitespace
+      separators between the number and the message.</li>
+  <li><code>(.+)</code> &mdash; group 2: the message body, at least
+      one character.</li>
+  <li><code>$</code> &mdash; anchor at end.</li>
+</ul>
+
+<p>If the match fails, the branch fires and we exit before any value
+is bound &mdash; there is no partial state, no separate "missing
+separator" branch to forget. We <em>revalidate</em> in the script
+even though the Action's own arg_schema regex should already have
+rejected malformed numbers, because this script's safety contract
+should not depend on the operator setting a strict regex.</p>
+
+<p>The match is a pure in-process string operation: no
+<code>eval</code>, no command substitution, no subshell. An attacker
+sending <code>; rm -rf ~ #</code> as the payload cannot trigger any
+shell command &mdash; those characters are just bytes the regex tries
+(and fails) to match.</p>
+
+<pre><code class="language-bash">NUMBER="${BASH_REMATCH[1]}"
+MESSAGE="${BASH_REMATCH[2]}"</code></pre>
+
+<p>After the previous <code>=~</code> match against the
+<code>^(\+[1-9][0-9]{6,14})[[:space:]]+(.+)$</code> pattern,
+bash populates the <code>BASH_REMATCH</code> array from that match's
+capture groups. <code>BASH_REMATCH[0]</code> holds the whole match;
+<code>BASH_REMATCH[1]</code> holds group 1 (the E.164 number) and
+<code>BASH_REMATCH[2]</code> holds group 2 (the message body), in
+the order the parentheses appear in the regex. Reading them into
+named variables happens entirely inside the bash process &mdash; no
+fork, no exec.</p>
+
+<pre><code class="language-bash">[[ "$MESSAGE" =~ [[:cntrl:]] ]]</code></pre>
+
+<p><code>[:cntrl:]</code> is the POSIX character class for ASCII
+control characters (0x00&ndash;0x1F plus 0x7F). graywolf's sanitizer
+already strips these unconditionally for freeform Actions, but
+checking again here keeps the script self-contained.</p>
+
+<pre><code class="language-bash">: "${VAR:?msg}"</code></pre>
+
+<p>The colon is the no-op builtin. The expansion
+<code>${VAR:?msg}</code> exits with <code>msg</code> if
+<code>VAR</code> is unset or empty. Combined, this is a one-liner
+"abort with a clear error if the operator forgot to set this env
+var".</p>
+
+<pre><code class="language-bash">--data-urlencode "From=${TWILIO_FROM}"</code></pre>
+
+<p><code>curl</code> performs the URL-encoding for us. Critically,
+this means we never construct the request body by string-concatenation
+&mdash; which would risk smuggling <code>&amp;Foo=bar</code> into the
+form if the message contained an ampersand.</p>
+
+<pre><code class="language-bash">-- "https://...Messages.json"</code></pre>
+
+<p>The double-dash is a convention curl supports to terminate option
+parsing. Habit: always put it before any positional argument that could
+conceivably begin with a <code>-</code>.</p>
+
+<h3>Anti-patterns to avoid</h3>
+
+<p>Each of these would compromise the script's safety:</p>
+
+<table>
+  <thead><tr><th>Anti-pattern</th><th>Attack it enables</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>curl ... -d to=$TEXT</code> (unquoted)</td>
+      <td>Word-splitting smuggles extra fields or flags.</td>
+    </tr>
+    <tr>
+      <td><code>eval "twilio send $TEXT"</code></td>
+      <td>Re-parses the payload as shell &mdash; full command injection.</td>
+    </tr>
+    <tr>
+      <td><code>sh -c "twilio send $TEXT"</code></td>
+      <td>Same as eval. Anything in the payload becomes shell.</td>
+    </tr>
+    <tr>
+      <td>String-concat into <code>--data</code></td>
+      <td><code>&amp;</code> in the payload smuggles extra form fields.</td>
+    </tr>
+    <tr>
+      <td><code>twilio send-sms "$NUMBER" "$MESSAGE"</code> with no <code>--</code></td>
+      <td>Payload starting with <code>-</code> becomes a flag.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Run it through shellcheck</h3>
+
+<p>Before deploying any Action handler, run:</p>
+
+<pre><code>shellcheck /path/to/your-handler.sh</code></pre>
+
+<p>shellcheck catches every common quoting and word-splitting mistake.
+If your script is failing checks, fix the script &mdash; don't add
+<code>#shellcheck disable</code> directives.</p>
+
+<h2 id="kv-shell">Worked example 2: SMS as a kv-mode shell Action</h2>
+
+<p>Same outcome, different wire format:</p>
+
+<pre><code>@@482910#sms to=+15555551212 msg="hello there"</code></pre>
+
+<p>graywolf invokes:</p>
+
+<pre><code>/usr/local/bin/sms.sh sms KE0XYZ true "to=+15555551212" "msg=hello there"</code></pre>
+
+<p>And the script (also at
+<code>examples/actions/posix/sms.sh</code>):</p>
+
+<pre><code class="language-bash">#!/bin/bash
+set -euo pipefail
+
+# kv mode: graywolf sets GW_ARG_TO and GW_ARG_MSG.
+
+NUMBER="${GW_ARG_TO:?missing to=}"
+MESSAGE="${GW_ARG_MSG:?missing msg=}"
+
+if [[ ! "$NUMBER" =~ ^\+[1-9][0-9]{6,14}$ ]]; then
+    echo "invalid E.164: $NUMBER" &gt;&amp;2
+    exit 65
+fi
+if [[ "$MESSAGE" =~ [[:cntrl:]] ]]; then
+    echo "message contains control characters" &gt;&amp;2
+    exit 65
+fi
+
+curl -sS --max-time 8 -X POST \
+    --data-urlencode "From=${TWILIO_FROM}" \
+    --data-urlencode "To=${NUMBER}" \
+    --data-urlencode "Body=${MESSAGE}" \
+    -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
+    -- "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json"
+</code></pre>
+
+<p>The script body is shorter because graywolf has already split the
+payload for us &mdash; <code>GW_ARG_TO</code> and <code>GW_ARG_MSG</code>
+arrive as separate variables, each individually validated by the
+Action's <code>arg_schema</code> regex. The same revalidation pattern
+still applies (defense in depth), but the splitting work moves up to
+graywolf's parser.</p>
+
+<p>For when to pick kv vs freeform, see
+<a href="actions-handler-safety.html#kv-vs-freeform">kv vs freeform
+&mdash; when to pick which</a> on the overview page.</p>
+
+    <nav class="page-nav">
+      <a href="actions-handler-safety.html">
+        <span class="label">Previous</span>
+        Actions: handler safety
+      </a>
+      <a href="actions-handler-safety-powershell.html" class="next">
+        <span class="label">Next</span>
+        PowerShell handlers
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

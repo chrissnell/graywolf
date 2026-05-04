@@ -8,7 +8,9 @@ export const actionsApi = {
   create:   (body) => api.POST('/actions', { body }),
   update:   (id, body) => api.PUT('/actions/{id}', { params: { path: { id } }, body }),
   remove:   (id) => api.DELETE('/actions/{id}', { params: { path: { id } } }),
-  testFire: (id, args) => api.POST('/actions/{id}/test-fire', { params: { path: { id } }, body: { args } }),
+  // body is `{ args }` for kv-mode actions or `{ text }` for freeform
+  // actions; the handler branches on the Action's stored arg_mode.
+  testFire: (id, body) => api.POST('/actions/{id}/test-fire', { params: { path: { id } }, body }),
 };
 
 export const credsApi = {

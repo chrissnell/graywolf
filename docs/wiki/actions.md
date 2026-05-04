@@ -26,6 +26,32 @@ hooks in [`../../pkg/app/`](../../pkg/app/).
 Source: [`../../pkg/actions/parser.go`](../../pkg/actions/parser.go),
 [`../../pkg/actions/sanitize.go`](../../pkg/actions/sanitize.go).
 
+### Argument mode
+
+Each Action has an `arg_mode` column with values `kv` (default) or
+`freeform`:
+
+| Mode | Wire grammar | After-the-verb shape |
+|---|---|---|
+| `kv` | `@@<otp>#<action> [k=v ...]` | tokenized, validated per-key against `arg_schema` |
+| `freeform` | `@@<otp>#<action> <text>` | one untokenized payload, validated against a single-row schema |
+
+The classifier branches in `Classify` (`pkg/actions/classifier.go`):
+`kv` calls `Sanitize`, `freeform` calls `SanitizeFreeform`. The
+freeform path applies a server-side ceiling of 200 bytes and an
+unconditional control-character floor (0x00..0x1F, 0x7F) regardless
+of operator regex.
+
+The cmd executor (`buildArgv`/`buildEnv` in `cmd_executor.go`)
+detects freeform via the synthetic `FreeformArgKey == "arg"` and
+emits a bare positional argv plus `GW_ARG=<value>`. Webhook
+templates expose the value as the bare `{{arg}}` token; the new
+filter syntax (`|json` / `|url` / `|html`) covers escaping for
+operator-set body templates.
+
+Operator-facing documentation lives in
+[`../handbook/actions-handler-safety.html`](../handbook/actions-handler-safety.html).
+
 ## Trigger surface
 
 An inbound message is a candidate when its addressee matches **any**
