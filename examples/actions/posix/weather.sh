@@ -6,7 +6,7 @@
 # Reply:    raw METAR observation, snipped to 50 chars on-air
 # Source:   aviationweather.gov (free, no key, worldwide METAR coverage)
 # Deps:     curl, jq
-set -eu
+set -euo pipefail
 
 station="${GW_ARG_STATION:-}"
 if [[ -z "$station" ]]; then
@@ -26,4 +26,5 @@ fi
 
 # Strip leading "METAR " / "SPECI " so the on-air 50-char snippet
 # starts with the ICAO + observation time.
-echo "${raw#METAR }" | sed 's/^SPECI //'
+trimmed="${raw#METAR }"
+echo "${trimmed#SPECI }"
