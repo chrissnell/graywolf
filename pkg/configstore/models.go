@@ -312,7 +312,7 @@ type IGateConfig struct {
 	SimulationMode  bool      `gorm:"not null;default:false" json:"simulation_mode"`
 	GateRfToIs      bool      `gorm:"not null;default:true" json:"gate_rf_to_is"`
 	GateIsToRf      bool      `gorm:"not null;default:false" json:"gate_is_to_rf"`
-	RfChannel       uint32    `gorm:"not null;default:1" json:"rf_channel"`             // channel used when gating IS->RF
+	RfChannel       uint32    `gorm:"not null;default:0" json:"rf_channel"`             // channel used when gating IS->RF; 0 = unset
 	MaxMsgHops      uint32    `gorm:"not null;default:2" json:"max_msg_hops"`           // WIDE hops for IS->RF messages
 	SoftwareName    string    `gorm:"not null;default:'graywolf'" json:"software_name"` // APRS-IS login banner software name
 	SoftwareVersion string    `gorm:"not null;default:'0.1'" json:"software_version"`   // APRS-IS login banner version
@@ -322,7 +322,7 @@ type IGateConfig struct {
 	// run to seed MessagesConfig. Do not remove without first deleting
 	// that migration -- operators upgrading from older builds will
 	// silently lose their messages TX channel otherwise.
-	TxChannel       uint32    `gorm:"not null;default:1" json:"tx_channel"`             // radio channel for IS->RF submissions
+	TxChannel       uint32    `gorm:"not null;default:0" json:"tx_channel"`             // radio channel for IS->RF submissions; 0 = unset
 	CreatedAt       time.Time `json:"-"`
 	UpdatedAt       time.Time `json:"-"`
 }

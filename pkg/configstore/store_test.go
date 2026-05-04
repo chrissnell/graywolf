@@ -830,3 +830,29 @@ func TestUpdateChannelModeRoundTrip(t *testing.T) {
 		t.Fatalf("ModeForChannel = %q, want %q", mode, ChannelModePacket)
 	}
 }
+
+// TestIGateConfigDefaults_ZeroChannels verifies that a freshly upserted
+// IGateConfig with no explicit channel fields lands rf_channel=0 and
+// tx_channel=0. The 0 sentinel is what every consumer (sender, igate,
+// dto.ValidateChannelRef) treats as "unset" -- non-zero defaults trap an
+// IS-only operator who has no channels yet on the very first iGate save.
+func TestIGateConfigDefaults_ZeroChannels(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.UpsertIGateConfig(ctx, &IGateConfig{
+		Server: "rotate.aprs2.net", Port: 14580,
+		MaxMsgHops: 2, SoftwareName: "graywolf", SoftwareVersion: "0.1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetIGateConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RfChannel != 0 {
+		t.Errorf("RfChannel default = %d, want 0", got.RfChannel)
+	}
+	if got.TxChannel != 0 {
+		t.Errorf("TxChannel default = %d, want 0", got.TxChannel)
+	}
+}
