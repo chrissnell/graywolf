@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actions: PowerShell Handler Safety &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Safe PowerShell Action handlers</h1>
+
+<p>This page walks through a complete worked example of a PowerShell
+handler &mdash; the freeform SMS Action wired for a Windows host &mdash;
+and explains the safety patterns line by line. The script is also
+shipped at <code>examples/actions/windows/sms-freeform.ps1</code>.</p>
+
+<p>The general modes-and-contract overview lives at
+<a href="actions-handler-safety.html">Actions: handler safety</a>;
+read it first if you haven't.</p>
+
+<h2 id="freeform-ps">SMS as a freeform PowerShell Action</h2>
+
+<p>The Action sender writes:</p>
+
+<pre><code>@@482910#sms +15555551212 hello there</code></pre>
+
+<p>graywolf invokes:</p>
+
+<pre><code>powershell.exe -NoProfile -File C:\graywolf\sms-freeform.ps1 sms KE0XYZ true "+15555551212 hello there"</code></pre>
+
+<p>Here is the complete script (also at
+<code>examples/actions/windows/sms-freeform.ps1</code>):</p>
+
+<pre><code class="language-powershell"># sms-freeform.ps1 &mdash; Send an SMS via Twilio. Freeform Action variant.
+
+# Strict mode catches typos, uninitialized variables, and out-of-bounds
+# indexing. Stop on any cmdlet error so failures don't get swallowed.
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# Positional args from the runner. Only $payload is used here.
+$action      = $args[0]
+$sender      = $args[1]
+$otpVerified = $args[2]
+$payload     = $args[3]
+
+if (-not $payload) {
+    [Console]::Error.WriteLine("payload missing")
+    exit 64
+}
+
+# Validate format AND split into number + message in one regex match.
+# Named groups: 'num' = E.164 number, 'msg' = message body.
+$rx = '^(?&lt;num&gt;\+[1-9][0-9]{6,14})\s+(?&lt;msg&gt;.+)$'
+$match = [regex]::Match($payload, $rx)
+if (-not $match.Success) {
+    [Console]::Error.WriteLine("expected '+&lt;E164&gt; &lt;message&gt;'")
+    exit 64
+}
+$number  = $match.Groups['num'].Value
+$message = $match.Groups['msg'].Value
+
+# Defense in depth: graywolf already strips control characters, but
+# re-check so this script stays safe if the operator widens the regex.
+# \p{Cc} is the Unicode "Other, Control" category.
+if ($message -match '\p{Cc}') {
+    [Console]::Error.WriteLine("message contains control characters")
+    exit 65
+}
+if ($message.Length -lt 1 -or $message.Length -gt 160) {
+    [Console]::Error.WriteLine("message length out of range (1..160)")
+    exit 65
+}
+
+# Required Twilio credentials. Fail fast with a clear message if unset.
+foreach ($v in 'TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','TWILIO_FROM') {
+    if (-not (Get-Item "env:$v" -ErrorAction SilentlyContinue)) {
+        [Console]::Error.WriteLine("$v not set")
+        exit 1
+    }
+}
+
+$sid  = $env:TWILIO_ACCOUNT_SID
+$tok  = $env:TWILIO_AUTH_TOKEN
+$auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${sid}:${tok}"))
+$headers = @{ Authorization = "Basic $auth" }
+$uri = "https://api.twilio.com/2010-04-01/Accounts/$sid/Messages.json"
+
+# Hashtable -Body causes Invoke-RestMethod to URL-encode each value
+# correctly. Never build the request body via string concatenation.
+$form = @{
+    From = $env:TWILIO_FROM
+    To   = $number
+    Body = $message
+}
+
+try {
+    $resp = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers `
+        -Body $form -TimeoutSec 8
+    if ($resp.sid) {
+        "sent $($resp.sid)"
+        exit 0
+    }
+} catch {
+    [Console]::Error.WriteLine("twilio rejected: $($_.Exception.Message)")
+    exit 1
+}
+
+[Console]::Error.WriteLine("twilio rejected: no sid in response")
+exit 1
+</code></pre>
+
+<h3>Explanation</h3>
+
+<pre><code class="language-powershell">Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'</code></pre>
+
+<p>The PowerShell equivalent of <code>set -euo pipefail</code>.
+<code>Set-StrictMode -Version Latest</code> turns reading an undefined
+variable, calling a non-existent property, and out-of-range index
+access into hard errors &mdash; so a typo like <code>$payloud</code>
+fails loudly instead of being silently <code>$null</code>.
+<code>$ErrorActionPreference = 'Stop'</code> upgrades non-terminating
+cmdlet errors to terminating ones, so the first failure halts the
+script. Both belong at the top of every PowerShell handler.</p>
+
+<pre><code class="language-powershell">$match = [regex]::Match($payload, '^(?&lt;num&gt;\+[1-9][0-9]{6,14})\s+(?&lt;msg&gt;.+)$')</code></pre>
+
+<p>One .NET regex match validates the format <em>and</em> splits the
+payload in a single step. The pattern reads:</p>
+
+<ul>
+  <li><code>^</code> &mdash; anchor at start.</li>
+  <li><code>(?&lt;num&gt;\+[1-9][0-9]{6,14})</code> &mdash; named group
+      <code>num</code>: an E.164 number. A literal <code>+</code>, a
+      leading digit 1..9 (E.164 forbids <code>0</code>), then 6 to 14
+      more digits.</li>
+  <li><code>\s+</code> &mdash; one or more whitespace separators
+      between the number and the message.</li>
+  <li><code>(?&lt;msg&gt;.+)</code> &mdash; named group <code>msg</code>:
+      the message body, at least one character.</li>
+  <li><code>$</code> &mdash; anchor at end.</li>
+</ul>
+
+<p>If the match fails, <code>$match.Success</code> is
+<code>$false</code> and the script exits before any value is bound.
+Like the bash variant, this is pure in-process string matching: no
+<code>Invoke-Expression</code>, no subshell, no command substitution.
+Bytes in <code>$payload</code> are bytes the regex tries (and fails)
+to match &mdash; they cannot become PowerShell.</p>
+
+<pre><code class="language-powershell">$number  = $match.Groups['num'].Value
+$message = $match.Groups['msg'].Value</code></pre>
+
+<p>After the previous successful <code>[regex]::Match</code> against
+the <code>^(?&lt;num&gt;\+[1-9][0-9]{6,14})\s+(?&lt;msg&gt;.+)$</code>
+pattern, the <code>Match</code> object's <code>Groups</code>
+collection holds the captures. Indexing by name
+(<code>['num']</code>, <code>['msg']</code>) is more durable than
+indexing by position because adding a non-capturing group later
+won't shift the indices. Reading the values is purely in-process.</p>
+
+<pre><code class="language-powershell">if ($message -match '\p{Cc}') { ... }</code></pre>
+
+<p><code>\p{Cc}</code> is the Unicode "Other, Control" category &mdash;
+the .NET regex equivalent of POSIX <code>[:cntrl:]</code>. graywolf's
+sanitizer already strips control characters for freeform Actions,
+but checking again here keeps the script self-contained.</p>
+
+<pre><code class="language-powershell">$form = @{ From = $env:TWILIO_FROM; To = $number; Body = $message }
+Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $form -TimeoutSec 8</code></pre>
+
+<p>When <code>-Body</code> is a hashtable on a
+<code>POST</code>/<code>PUT</code>, <code>Invoke-RestMethod</code>
+serializes it as <code>application/x-www-form-urlencoded</code> and
+URL-encodes each value for us. Critically, this means we never
+construct the request body by string-concatenation &mdash; an
+<code>&amp;</code> in <code>$message</code> can't smuggle extra form
+fields, and a <code>"</code> can't break out of a quoted value. This
+is the PowerShell counterpart of curl's
+<code>--data-urlencode</code>.</p>
+
+<h3>Anti-patterns to avoid in PowerShell handlers</h3>
+
+<table>
+  <thead><tr><th>Anti-pattern</th><th>Attack it enables</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>Invoke-Expression $payload</code> (or <code>iex</code>)</td>
+      <td>Re-parses the payload as PowerShell &mdash; full code injection.</td>
+    </tr>
+    <tr>
+      <td><code>cmd.exe /c "send.exe $payload"</code></td>
+      <td>Same as <code>eval</code>, but with cmd's own quoting traps.</td>
+    </tr>
+    <tr>
+      <td><code>Start-Process send.exe -ArgumentList $payload</code> (string)</td>
+      <td>String form of <code>-ArgumentList</code> re-splits on whitespace and re-parses quotes; pass an array instead.</td>
+    </tr>
+    <tr>
+      <td><code>Invoke-RestMethod -Body "From=$from&amp;To=$to"</code></td>
+      <td>String concatenation: <code>&amp;</code> in the value smuggles extra form fields.</td>
+    </tr>
+    <tr>
+      <td>Omitting <code>Set-StrictMode</code></td>
+      <td>Typoed variable names silently expand to <code>$null</code>, bypassing validation.</td>
+    </tr>
+    <tr>
+      <td><code>Invoke-RestMethod $url</code> with <code>$url</code> from the payload</td>
+      <td>SSRF &mdash; the payload becomes a URL the handler fetches.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Run it through PSScriptAnalyzer</h3>
+
+<p>Before deploying any PowerShell Action handler, run:</p>
+
+<pre><code>Invoke-ScriptAnalyzer -Path .\your-handler.ps1</code></pre>
+
+<p>PSScriptAnalyzer flags the most common PowerShell footguns &mdash;
+unapproved verbs, unused variables, plain-text passwords,
+<code>Invoke-Expression</code> on user input. Fix what it flags;
+don't disable rules.</p>
+
+    <nav class="page-nav">
+      <a href="actions-handler-safety-shell.html">
+        <span class="label">Previous</span>
+        Shell handlers
+      </a>
+      <a href="actions-handler-safety-webhooks.html" class="next">
+        <span class="label">Next</span>
+        Webhook handlers
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
