@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actions: Handler Safety &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Writing safe Action handlers</h1>
+
+<p>An Action handler is a handler &mdash; a shell script, a webhook
+receiver &mdash; that you control. graywolf gives it a payload from a
+remote APRS sender. Your handler decides what to do with that
+payload. Anything an attacker can persuade your handler to do, they
+can do over the air.</p>
+
+<p>This page walks through two complete worked examples &mdash; one
+shell-script Action, one webhook Action &mdash; and explains the safety
+patterns line by line. Every example here is also shipped in
+<code>examples/actions/</code> in the source tree, fully commented,
+shellcheck-clean, ruff-clean, and exercised by CI.</p>
+
+<h2 id="modes">Two argument modes</h2>
+
+<p>Each Action has a mode that controls how the wire-format arguments
+reach your handler:</p>
+
+<table>
+  <thead><tr><th>Mode</th><th>Wire format</th><th>Use when</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>kv</code> (default)</td>
+      <td><code>@@&lt;otp&gt;#name k1=v1 k2=v2</code></td>
+      <td>You have multiple, named, individually-validated arguments.</td>
+    </tr>
+    <tr>
+      <td><code>freeform</code></td>
+      <td><code>@@&lt;otp&gt;#name &lt;raw text&gt;</code></td>
+      <td>Everything after the verb is one payload (e.g. an SMS).</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Pick freeform when you want a sender to type something natural like
+<code>@@482910#sms +15555551212 hello there</code> instead of
+<code>@@482910#sms to=+15555551212 msg=&quot;hello there&quot;</code>.
+The cost: the operator (you) takes on more responsibility for
+parsing and revalidating the payload. The rest of this page is about
+discharging that responsibility correctly.</p>
+
+<h2 id="contract">What graywolf passes to your handler</h2>
+
+<h3>Command Actions (shell script)</h3>
+
+<p>The runner exec's your binary directly &mdash; no shell, no PATH lookup
+funkiness, no <code>system()</code>. argv layout depends on mode:</p>
+
+<table>
+  <thead><tr><th></th><th><code>kv</code></th><th><code>freeform</code></th></tr></thead>
+  <tbody>
+    <tr><td>$1</td><td>action name</td><td>action name</td></tr>
+    <tr><td>$2</td><td>sender callsign</td><td>sender callsign</td></tr>
+    <tr><td>$3</td><td><code>true</code> | <code>false</code> (OTP verified)</td><td>same</td></tr>
+    <tr><td>$4..$N</td><td><code>k=v</code> tokens, schema order</td><td>the entire raw payload, one token</td></tr>
+  </tbody>
+</table>
+
+<p>Environment variables are also set:</p>
+
+<ul>
+  <li><code>GW_ACTION_NAME</code>, <code>GW_SENDER_CALL</code>,
+      <code>GW_OTP_VERIFIED</code>, <code>GW_OTP_CRED_NAME</code>,
+      <code>GW_SOURCE</code>, <code>GW_INVOCATION_ID</code> &mdash; always.</li>
+  <li>kv: <code>GW_ARG_&lt;KEY&gt;=&lt;value&gt;</code> per declared arg.</li>
+  <li>freeform: <code>GW_ARG=&lt;raw payload&gt;</code> (single var, no key suffix).</li>
+</ul>
+
+<h3>Webhook Actions</h3>
+
+<p>graywolf POSTs URL-encoded form data by default (or your custom
+template body if you set one). Default form fields:</p>
+
+<ul>
+  <li><code>action</code>, <code>sender_callsign</code>,
+      <code>otp_verified</code>, <code>otp_cred</code>, <code>source</code></li>
+  <li>kv: one field per declared arg (key = your schema key).</li>
+  <li>freeform: one field named <code>arg</code> with the raw payload.</li>
+</ul>
+
+<p>Custom body templates support these tokens:</p>
+
+<ul>
+  <li><code>{{action}}</code>, <code>{{sender-callsign}}</code>,
+      <code>{{otp-verified}}</code>, <code>{{otp-cred}}</code>,
+      <code>{{source}}</code></li>
+  <li>kv: <code>{{arg.&lt;key&gt;}}</code></li>
+  <li>freeform: <code>{{arg}}</code> (bare)</li>
+  <li>Filters: <code>{{arg|json}}</code>, <code>{{arg|url}}</code>,
+      <code>{{arg|html}}</code> &mdash; same for any token. Use these.</li>
+</ul>
+
+<h2 id="freeform">Worked example 1: SMS as a freeform shell Action</h2>
+
+<p>The Action sender writes:</p>
+
+<pre><code>@@482910#sms +15555551212 hello there</code></pre>
+
+<p>graywolf invokes:</p>
+
+<pre><code>/usr/local/bin/sms-freeform.sh sms KE0XYZ true "+15555551212 hello there"</code></pre>
+
+<p>Here is the complete script (also at
+<code>examples/actions/posix/sms-freeform.sh</code>, shellcheck-clean,
+exercised by CI):</p>
+
+<pre><code class="language-bash">#!/bin/bash
+# sms-freeform.sh &mdash; Send an SMS via Twilio. Freeform Action variant.
+
+set -euo pipefail
+
+ACTION="$1"
+SENDER="$2"
+OTP_VERIFIED="$3"
+PAYLOAD="$4"
+
+NUMBER="${PAYLOAD%% *}"
+MESSAGE="${PAYLOAD#* }"
+
+if [[ "$NUMBER" == "$PAYLOAD" ]]; then
+    echo "expected '+&lt;E164&gt; &lt;message&gt;'" &gt;&amp;2
+    exit 64
+fi
+if [[ ! "$NUMBER" =~ ^\+[1-9][0-9]{6,14}$ ]]; then
+    echo "invalid E.164: $NUMBER" &gt;&amp;2
+    exit 65
+fi
+if [[ "$MESSAGE" =~ [[:cntrl:]] ]]; then
+    echo "message contains control characters" &gt;&amp;2
+    exit 65
+fi
+if (( ${#MESSAGE} &lt; 1 || ${#MESSAGE} &gt; 160 )); then
+    echo "message length out of range (1..160)" &gt;&amp;2
+    exit 65
+fi
+
+: "${TWILIO_ACCOUNT_SID:?TWILIO_ACCOUNT_SID not set}"
+: "${TWILIO_AUTH_TOKEN:?TWILIO_AUTH_TOKEN not set}"
+: "${TWILIO_FROM:?TWILIO_FROM not set}"
+
+response=$(curl -sS --max-time 8 -X POST \
+    --data-urlencode "From=${TWILIO_FROM}" \
+    --data-urlencode "To=${NUMBER}" \
+    --data-urlencode "Body=${MESSAGE}" \
+    -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
+    -- "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json")
+
+if printf '%s' "$response" | grep -q '"sid"'; then
+    sid=$(printf '%s' "$response" | grep -o '"sid":"SM[A-Za-z0-9]*"' | head -n1 | sed 's/.*"\(SM[^"]*\)"/\1/')
+    echo "sent ${sid:-?}"
+    exit 0
+fi
+
+echo "twilio rejected: $(printf '%s' "$response" | head -c 80)" &gt;&amp;2
+exit 1
+</code></pre>
+
+<h3>Walkthrough</h3>
+
+<p><strong><code>set -euo pipefail</code></strong>. Three flags in one
+line. <code>-e</code> aborts on any non-zero exit. <code>-u</code>
+treats unset variables as errors (so a typo in
+<code>$GW_ARG_NUMER</code> doesn't silently expand to empty string).
+<code>-o pipefail</code> makes a pipeline fail if any stage fails, not
+just the last one. Always at the top of every shell handler.</p>
+
+<p><strong><code>NUMBER="${PAYLOAD%% *}"</code></strong>. This is bash
+parameter expansion, not a regex. <code>${VAR%% PATTERN}</code> removes
+the longest suffix of <code>$VAR</code> that matches
+<code>PATTERN</code>. Here the pattern is <code>* </code> &mdash; anything
+followed by a space &mdash; which removes everything from the first space to
+the end. What's left is everything <em>before</em> the first space,
+which is the phone number.</p>
+
+<p><strong><code>MESSAGE="${PAYLOAD#* }"</code></strong>. The mirror.
+<code>${VAR#PATTERN}</code> removes the shortest prefix matching
+<code>PATTERN</code>. <code>* </code> matches "anything plus a space"
+non-greedily, so the shortest match is "the first word plus its
+trailing space". What's left is everything after the first space.</p>
+
+<p>Concretely, with <code>PAYLOAD="+15555551212 hello world"</code>:</p>
+
+<pre><code>"${PAYLOAD%% *}"  -&gt;  "+15555551212"
+"${PAYLOAD#* }"   -&gt;  "hello world"
+</code></pre>
+
+<p>This is pure shell string manipulation. There is no
+<code>eval</code>, no command substitution, no subshell. An attacker
+sending <code>; rm -rf ~ #</code> as the payload cannot trigger
+any shell command &mdash; those characters are just bytes in the strings
+<code>NUMBER</code> and <code>MESSAGE</code>.</p>
+
+<p><strong><code>if [[ ! "$NUMBER" =~ ^\+[1-9][0-9]{6,14}$ ]]</code></strong>.
+Bash's <code>[[ =~ ]]</code> operator runs a POSIX extended regex
+match. The pattern says: a literal <code>+</code>, one digit 1..9, then
+6 to 14 more digits. We <em>revalidate</em> in the script even though
+the Action's own arg_schema regex should have already rejected
+malformed numbers. The reason: this script's safety contract should
+not depend on the operator setting a strict regex.</p>
+
+<p><strong><code>[[ "$MESSAGE" =~ [[:cntrl:]] ]]</code></strong>.
+<code>[:cntrl:]</code> is the POSIX character class for ASCII control
+characters (0x00&ndash;0x1F plus 0x7F). graywolf's sanitizer already strips
+these unconditionally for freeform Actions, but checking again here
+keeps the script self-contained.</p>
+
+<p><strong><code>: "${VAR:?msg}"</code></strong>. The colon is the
+no-op builtin. The expansion <code>${VAR:?msg}</code> exits with
+<code>msg</code> if <code>VAR</code> is unset or empty. Combined, this
+is a one-liner "abort with a clear error if the operator forgot to set
+this env var".</p>
+
+<p><strong><code>--data-urlencode "From=${TWILIO_FROM}"</code></strong>.
+<code>curl</code> performs the URL-encoding for us. Critically, this
+means we never construct the request body by string-concatenation &mdash;
+which would risk smuggling <code>&amp;Foo=bar</code> into the form if
+the message contained an ampersand.</p>
+
+<p><strong><code>-- "https://...Messages.json"</code></strong>. The
+double-dash is a convention curl supports to terminate option parsing.
+Habit: always put it before any positional argument that could
+conceivably begin with a <code>-</code>.</p>
+
+<h3>Anti-patterns to avoid</h3>
+
+<p>Each of these would compromise the script's safety:</p>
+
+<table>
+  <thead><tr><th>Anti-pattern</th><th>Attack it enables</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>curl ... -d to=$TEXT</code> (unquoted)</td>
+      <td>Word-splitting smuggles extra fields or flags.</td>
+    </tr>
+    <tr>
+      <td><code>eval "twilio send $TEXT"</code></td>
+      <td>Re-parses the payload as shell &mdash; full command injection.</td>
+    </tr>
+    <tr>
+      <td><code>sh -c "twilio send $TEXT"</code></td>
+      <td>Same as eval. Anything in the payload becomes shell.</td>
+    </tr>
+    <tr>
+      <td>String-concat into <code>--data</code></td>
+      <td><code>&amp;</code> in the payload smuggles extra form fields.</td>
+    </tr>
+    <tr>
+      <td><code>twilio send-sms "$NUMBER" "$MESSAGE"</code> with no <code>--</code></td>
+      <td>Payload starting with <code>-</code> becomes a flag.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Run it through shellcheck</h3>
+
+<p>Before deploying any Action handler, run:</p>
+
+<pre><code>shellcheck /path/to/your-handler.sh</code></pre>
+
+<p>shellcheck catches every common quoting and word-splitting mistake.
+The graywolf example scripts pass shellcheck cleanly; if your script
+is failing checks, fix the script &mdash; don't add <code>#shellcheck
+disable</code> directives.</p>
+
+<h2 id="kv-shell">Worked example 2: SMS as a kv-mode shell Action</h2>
+
+<p>Same outcome, different wire format:</p>
+
+<pre><code>@@482910#sms to=+15555551212 msg="hello there"</code></pre>
+
+<p>graywolf invokes:</p>
+
+<pre><code>/usr/local/bin/sms.sh sms KE0XYZ true "to=+15555551212" "msg=hello there"</code></pre>
+
+<p>And the script (existing
+<code>examples/actions/posix/sms.sh</code>, abridged for the
+walkthrough):</p>
+
+<pre><code class="language-bash">#!/bin/bash
+set -euo pipefail
+
+# kv mode: graywolf sets GW_ARG_TO and GW_ARG_MSG.
+
+NUMBER="${GW_ARG_TO:?missing to=}"
+MESSAGE="${GW_ARG_MSG:?missing msg=}"
+
+if [[ ! "$NUMBER" =~ ^\+[1-9][0-9]{6,14}$ ]]; then
+    echo "invalid E.164: $NUMBER" &gt;&amp;2
+    exit 65
+fi
+if [[ "$MESSAGE" =~ [[:cntrl:]] ]]; then
+    echo "message contains control characters" &gt;&amp;2
+    exit 65
+fi
+
+curl -sS --max-time 8 -X POST \
+    --data-urlencode "From=${TWILIO_FROM}" \
+    --data-urlencode "To=${NUMBER}" \
+    --data-urlencode "Body=${MESSAGE}" \
+    -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
+    -- "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json"
+</code></pre>
+
+<p>The script body is shorter because graywolf has already split the
+payload for us &mdash; <code>GW_ARG_TO</code> and <code>GW_ARG_MSG</code>
+arrive as separate variables, each individually validated by the
+Action's <code>arg_schema</code> regex. The same revalidation pattern
+still applies (defense in depth), but the splitting work moves up to
+graywolf's parser.</p>
+
+<p><strong>kv vs freeform &mdash; when to pick which?</strong></p>
+
+<ul>
+  <li>If your Action has 2+ structured fields each with their own
+      regex (an entity ID and a state, a phone number and a message),
+      <strong>kv is friendlier</strong>. Each field gets its own
+      validator. Mistakes from senders are reported per-field
+      ("bad arg: state").</li>
+  <li>If the natural form of the input is one chunk of text (an SMS
+      body, a notification body, a message-to-be-spoken),
+      <strong>freeform reads better</strong> on-air. The cost is that
+      you do the splitting.</li>
+  <li>If the value is going to be passed through your handler to a
+      downstream API that already accepts it as one string,
+      <strong>freeform avoids needless ceremony</strong>.</li>
+</ul>
+
+<h2 id="webhook">Worked example 3: SMS as a webhook Action</h2>
+
+<p>graywolf POSTs the form-encoded body to your URL. The Action is
+configured as:</p>
+
+<ul>
+  <li><strong>Type:</strong> webhook</li>
+  <li><strong>Method:</strong> POST</li>
+  <li><strong>URL:</strong> <code>https://your-host/aprs-webhook</code></li>
+  <li><strong>Headers:</strong>
+      <code>X-Graywolf-Auth: 0123456789abcdef0123456789abcdef</code></li>
+  <li><strong>Body template:</strong> empty (use the default form encoding)</li>
+</ul>
+
+<p>The receiver (this is
+<code>examples/actions/python/webhook_receiver_flask.py</code>):</p>
+
+<pre><code class="language-python">from flask import Flask, abort, render_template_string, request
+import hmac, os, re, sqlite3
+
+SHARED_SECRET = os.environ["GW_WEBHOOK_SECRET"]
+MAX_BODY_BYTES = 8 * 1024
+MAX_ARG_LEN = 200
+CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+app = Flask(__name__)
+
+def verify_secret(provided):
+    if not provided:
+        return False
+    return hmac.compare_digest(provided.encode(), SHARED_SECRET.encode())
+
+@app.before_request
+def cap_body_size():
+    if (request.content_length or 0) &gt; MAX_BODY_BYTES:
+        abort(413)
+
+@app.post("/aprs-webhook")
+def aprs_webhook():
+    if not verify_secret(request.headers.get("X-Graywolf-Auth")):
+        abort(401)
+    payload = request.form.get("arg", "")
+    if len(payload) &gt; MAX_ARG_LEN or CONTROL_CHARS.search(payload):
+        abort(400)
+    sender = request.form.get("sender_callsign", "")
+    with sqlite3.connect(os.environ["GW_RECEIVER_DB"]) as db:
+        db.execute(
+            "INSERT INTO deliveries (sender, payload) VALUES (?, ?)",
+            (sender, payload),
+        )
+    return render_template_string(
+        "&lt;p&gt;received from &lt;strong&gt;{{ sender }}&lt;/strong&gt;: {{ payload }}&lt;/p&gt;",
+        sender=sender, payload=payload,
+    )
+</code></pre>
+
+<h3>Walkthrough</h3>
+
+<p><strong>Authenticate the inbound POST.</strong> Your webhook URL
+is in graywolf's database, and graywolf is the only thing that knows
+the shared secret you set in <code>X-Graywolf-Auth</code>. Anything
+else hitting your endpoint should get a 401 immediately.
+<code>hmac.compare_digest</code> compares in constant time so an
+attacker can't measure timing to brute-force the secret one byte at a
+time.</p>
+
+<p><strong>Cap the body size <em>before</em> parsing it.</strong>
+graywolf already limits payload bytes, but a bug or downgrade attack
+on graywolf's side shouldn't be able to OOM your receiver. The
+<code>before_request</code> hook bails on
+<code>Content-Length</code> too high.</p>
+
+<p><strong>Use form-encoded input, not JSON.</strong> graywolf's
+default body is <code>application/x-www-form-urlencoded</code>, which
+the framework parses for you with no eval involved. JSON parsing is
+also fine, but only because Python's <code>json.loads</code> doesn't
+eval &mdash; never <code>eval(request.body)</code>.</p>
+
+<p><strong>Revalidate.</strong> Same length-and-control-char floor
+as the shell example. Even though graywolf already validated, your
+receiver shouldn't depend on graywolf staying bug-free forever.</p>
+
+<p><strong>Parameterized SQL.</strong> The two <code>?</code>
+placeholders are bound by the SQLite driver. The string
+<code>"INSERT INTO deliveries..."</code> is constant &mdash; there is no
+f-string, no <code>%</code>-format, no concatenation involving
+<code>payload</code>. SQL injection cannot happen here, regardless of
+what bytes <code>payload</code> contains.</p>
+
+<p><strong>Auto-escaped templating.</strong> Jinja escapes
+<code>&lt;</code>, <code>&gt;</code>, <code>&amp;</code>, and quotes
+by default in <code>{{ payload }}</code>. If <code>payload</code> were
+<code>&lt;script&gt;alert(1)&lt;/script&gt;</code>, the rendered HTML
+would contain <code>&amp;lt;script&amp;gt;</code>, not a real
+<code>script</code> tag. Never use <code>{{ payload|safe }}</code> or
+<code>Markup(payload)</code>.</p>
+
+<h3>Anti-patterns to avoid in webhook receivers</h3>
+
+<table>
+  <thead><tr><th>Anti-pattern</th><th>Attack it enables</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>f"INSERT ... ('{payload}')"</code></td>
+      <td>SQL injection.</td>
+    </tr>
+    <tr>
+      <td><code>render_template_string("{{ msg|safe }}", ...)</code></td>
+      <td>Stored XSS.</td>
+    </tr>
+    <tr>
+      <td><code>os.system(f"send {payload}")</code></td>
+      <td>Shell injection on the receiver host.</td>
+    </tr>
+    <tr>
+      <td><code>requests.get(payload)</code></td>
+      <td>SSRF &mdash; payload becomes a URL the server fetches.</td>
+    </tr>
+    <tr>
+      <td>No auth on the endpoint</td>
+      <td>Anyone on the internet can POST as if they were graywolf.</td>
+    </tr>
+    <tr>
+      <td>Logging payload without escaping CR/LF</td>
+      <td>Log forging &mdash; fake log entries, terminal escape attacks.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="custom-template">Custom webhook body templates</h2>
+
+<p>Most operators should leave the body template blank and use
+graywolf's default form encoding &mdash; the framework handles escaping
+correctly and there's nothing to get wrong. If you need a custom
+template (e.g., a downstream API expects JSON), use the filter
+syntax:</p>
+
+<pre><code>{
+  "to": "{{arg.to|json}}",
+  "msg": "{{arg.msg|json}}"
+}</code></pre>
+
+<p>The <code>|json</code> filter performs JSON-string escaping so the
+value can sit safely between the surrounding quotes. Never write:</p>
+
+<pre><code>{
+  "msg": "{{arg.msg}}"   &larr; UNSAFE -- a quote or backslash in the
+                           value will break the JSON.
+}</code></pre>
+
+<p>Available filters:</p>
+
+<table>
+  <thead><tr><th>Filter</th><th>Use when templating into</th></tr></thead>
+  <tbody>
+    <tr><td><code>|json</code></td><td>JSON string contents</td></tr>
+    <tr><td><code>|url</code></td><td>URL paths or query strings</td></tr>
+    <tr><td><code>|html</code></td><td>HTML attribute values or text content</td></tr>
+  </tbody>
+</table>
+
+<h2 id="checklist">Final safety checklist</h2>
+
+<p>Before deploying any Action handler:</p>
+
+<ol>
+  <li>Run <code>shellcheck</code> (shell) or <code>ruff</code>
+      (Python). Fix everything it flags. Don't disable rules.</li>
+  <li>Quote every variable expansion. Search for
+      <code>$GW_</code> not preceded by <code>"</code>.</li>
+  <li>Confirm there is no <code>eval</code>, no
+      <code>sh -c</code> with user data, no
+      <code>Invoke-Expression</code>.</li>
+  <li>Confirm any external command takes user data via
+      <code>--</code>-terminated argv, not concatenated strings.</li>
+  <li>Confirm any database write uses parameterized placeholders.</li>
+  <li>Confirm any HTML render uses framework auto-escape.</li>
+  <li>For webhooks: confirm the receiver authenticates
+      (HMAC / shared secret), caps body size, and is reachable only
+      via TLS.</li>
+  <li>Test the handler with payloads designed to break it: leading
+      <code>-</code>, embedded <code>'</code> and <code>"</code>,
+      <code>&amp;</code> and <code>=</code>, max-length values.
+      Use the <strong>Test</strong> dialog in the operator UI for
+      this &mdash; it runs the handler bypassing OTP and the sender
+      allowlist.</li>
+</ol>
+
+    <nav class="page-nav">
+      <a href="actions.html">
+        <span class="label">Previous</span>
+        Actions
+      </a>
+      <a href="livemap.html" class="next">
+        <span class="label">Next</span>
+        Live Map
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
