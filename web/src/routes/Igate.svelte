@@ -24,7 +24,7 @@
     enabled: true, server: 'rotate.aprs2.net', port: '14580',
     server_filter: '', tx_channel: 0,
     simulation_mode: false, gate_rf_to_is: true, gate_is_to_rf: false,
-    rf_channel: 1, max_msg_hops: 2, software_name: 'graywolf', software_version: '0.1',
+    rf_channel: 0, max_msg_hops: 2, software_name: 'graywolf', software_version: '0.1',
   });
   let loading = $state(false);
 
