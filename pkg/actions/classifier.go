@@ -93,13 +93,18 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 	sender := strings.ToUpper(strings.TrimSpace(innerSource))
 	channel := uint32(pkt.Channel)
 
-	parsed, err := Parse(innerMsg.Text)
-	if err != nil {
+	parsed, parseErr := Parse(innerMsg.Text)
+	if parseErr != nil && parsed == nil {
+		// Truly malformed (no @@, no #, bad action name). Reply unknown.
 		c.cfg.Runner.Reply(ctx, Invocation{
 			SenderCall: sender, Source: source,
 		}, channel, Result{Status: StatusUnknown})
 		return true
 	}
+	// A non-nil parsed with a non-nil parseErr means kv tokenization
+	// failed but the action name is valid. Defer the decision: a
+	// freeform Action will recover via RawArgTail; a kv Action will
+	// surface this as StatusBadArg below.
 
 	a, err := c.cfg.ActionStore.GetActionByName(ctx, parsed.Action)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -174,7 +179,9 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 		inv.OTPCredentialID = cred.ID
 	}
 
-	// Sanitize args against the action's schema.
+	// Sanitize args against the action's schema. Branches on
+	// ArgMode: kv (default) tokenizes raw key=value pairs, freeform
+	// validates the single RawArgTail payload.
 	schema, schemaErr := decodeArgSchema(a.ArgSchema)
 	if schemaErr != nil {
 		c.cfg.Runner.Reply(ctx, inv, channel, Result{
@@ -183,7 +190,21 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 		})
 		return true
 	}
-	clean, sErr := Sanitize(schema, parsed.Args)
+	var clean []KeyValue
+	var sErr error
+	switch ArgMode(a.ArgMode) {
+	case ArgModeFreeform:
+		// Freeform ignores kv parseErr — it reads RawArgTail directly.
+		clean, sErr = SanitizeFreeform(schema, parsed.RawArgTail, FreeformValueCeiling)
+	default:
+		// kv mode (and any unknown value, forward-compat). A kv
+		// tokenization failure surfaces as StatusBadArg here.
+		if parseErr != nil {
+			c.cfg.Runner.Reply(ctx, inv, channel, Result{Status: StatusBadArg, StatusDetail: "parse"})
+			return true
+		}
+		clean, sErr = Sanitize(schema, parsed.Args)
+	}
 	if sErr != nil {
 		var bae *BadArgError
 		detail := "bad arg"

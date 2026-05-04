@@ -470,6 +470,66 @@ func TestClassifyNilVerifierRepliesError(t *testing.T) {
 	}
 }
 
+func TestClassifyFreeformDispatchesRawTail(t *testing.T) {
+	a := &configstore.Action{
+		ID: 7, Name: "sms", Type: "command", Enabled: true, OTPRequired: false,
+		ArgMode:   "freeform",
+		ArgSchema: `[{"key":"arg","regex":"^\\+[1-9][0-9]{6,14} .+$","max_len":120,"required":true}]`,
+	}
+	sub := &stubSubmitter{}
+	c := newClassifierForTest(t, sub, &stubActionStore{byName: map[string]*configstore.Action{"sms": a}}, &stubCredStore{}, nil, nil)
+	pkt := makeMessagePkt(aprs.DirectionRF, "KE0XYZ", "N0CALL", "@@#sms +15555551212 hello world", 0)
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("freeform action must be consumed")
+	}
+	if len(sub.submits) != 1 {
+		t.Fatalf("expected 1 submit, got submits=%d replies=%+v", len(sub.submits), sub.replies)
+	}
+	got := sub.submits[0].inv.Args
+	if len(got) != 1 || got[0].Key != FreeformArgKey || got[0].Value != "+15555551212 hello world" {
+		t.Fatalf("freeform args wrong: %+v", got)
+	}
+}
+
+func TestClassifyFreeformBadArgRepliesBadArg(t *testing.T) {
+	a := &configstore.Action{
+		ID: 7, Name: "sms", Type: "command", Enabled: true, OTPRequired: false,
+		ArgMode:   "freeform",
+		ArgSchema: `[{"key":"arg","regex":"^[A-Z]+$","max_len":50,"required":true}]`,
+	}
+	sub := &stubSubmitter{}
+	c := newClassifierForTest(t, sub, &stubActionStore{byName: map[string]*configstore.Action{"sms": a}}, &stubCredStore{}, nil, nil)
+	pkt := makeMessagePkt(aprs.DirectionRF, "KE0XYZ", "N0CALL", "@@#sms lowercase payload", 0)
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("freeform bad-arg must be consumed")
+	}
+	if len(sub.submits) != 0 {
+		t.Fatalf("expected no submit, got %+v", sub.submits)
+	}
+	if len(sub.replies) != 1 || sub.replies[0].res.Status != StatusBadArg {
+		t.Fatalf("expected StatusBadArg, got %+v", sub.replies)
+	}
+}
+
+func TestClassifyKVActionWithFreeformPayloadRepliesBadArg(t *testing.T) {
+	// kv-mode Action receiving a non-key=value payload must surface
+	// StatusBadArg, not StatusUnknown — the action exists, the args
+	// are wrong.
+	a := &configstore.Action{
+		ID: 1, Name: "ping", Type: "command", Enabled: true, OTPRequired: false,
+		ArgSchema: `[{"key":"room","regex":"^[a-z]+$"}]`,
+	}
+	sub := &stubSubmitter{}
+	c := newClassifierForTest(t, sub, &stubActionStore{byName: map[string]*configstore.Action{"ping": a}}, &stubCredStore{}, nil, nil)
+	pkt := makeMessagePkt(aprs.DirectionRF, "OTHER", "N0CALL", "@@#ping bareword", 0)
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("kv parse-fail with valid action name must be consumed")
+	}
+	if len(sub.replies) != 1 || sub.replies[0].res.Status != StatusBadArg {
+		t.Fatalf("expected StatusBadArg, got %+v", sub.replies)
+	}
+}
+
 func TestSenderAllowed(t *testing.T) {
 	cases := []struct {
 		csv, sender string
