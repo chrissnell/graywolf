@@ -76,6 +76,89 @@ func TestCmdExecutorOutputCap(t *testing.T) {
 	}
 }
 
+func TestBuildArgvFreeformShape(t *testing.T) {
+	inv := Invocation{
+		ActionName:  "sms",
+		SenderCall:  "KE0XYZ",
+		OTPVerified: true,
+		Args:        []KeyValue{{Key: FreeformArgKey, Value: "+15555551212 hello world"}},
+	}
+	got := buildArgv(inv)
+	want := []string{"sms", "KE0XYZ", "true", "+15555551212 hello world"}
+	if len(got) != len(want) {
+		t.Fatalf("argv = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("argv[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestBuildArgvKVShapeUnchanged(t *testing.T) {
+	inv := Invocation{
+		ActionName:  "echo",
+		SenderCall:  "KE0XYZ",
+		OTPVerified: false,
+		Args:        []KeyValue{{Key: "msg", Value: "hi"}, {Key: "to", Value: "+1"}},
+	}
+	got := buildArgv(inv)
+	want := []string{"echo", "KE0XYZ", "false", "msg=hi", "to=+1"}
+	if len(got) != len(want) {
+		t.Fatalf("argv = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("argv[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestBuildEnvFreeform(t *testing.T) {
+	req := ExecRequest{
+		Invocation: Invocation{
+			ActionName:  "sms",
+			SenderCall:  "KE0XYZ",
+			OTPVerified: true,
+			Args:        []KeyValue{{Key: FreeformArgKey, Value: "+15555551212 hello"}},
+		},
+	}
+	env := buildEnv(req)
+	var sawArg bool
+	for _, kv := range env {
+		if kv == "GW_ARG=+15555551212 hello" {
+			sawArg = true
+		}
+		if strings.HasPrefix(kv, "GW_ARG_ARG=") {
+			t.Fatalf("freeform must not double-name as GW_ARG_ARG: %q", kv)
+		}
+	}
+	if !sawArg {
+		t.Fatalf("expected GW_ARG=... in env, got %v", env)
+	}
+}
+
+func TestBuildEnvKVUnchanged(t *testing.T) {
+	req := ExecRequest{
+		Invocation: Invocation{
+			ActionName: "echo",
+			Args:       []KeyValue{{Key: "msg", Value: "hi"}, {Key: "to", Value: "+1"}},
+		},
+	}
+	env := buildEnv(req)
+	want := map[string]bool{"GW_ARG_MSG=hi": false, "GW_ARG_TO=+1": false}
+	for _, kv := range env {
+		if _, ok := want[kv]; ok {
+			want[kv] = true
+		}
+	}
+	for k, v := range want {
+		if !v {
+			t.Fatalf("missing %q in env: %v", k, env)
+		}
+	}
+}
+
 func TestCmdExecutorNonZero(t *testing.T) {
 	exe := NewCommandExecutor()
 	a := &configstore.Action{Name: "F", Type: "command", CommandPath: absTestData(t, "fail.sh"), TimeoutSec: 5}

@@ -83,10 +83,22 @@ func buildArgv(inv Invocation) []string {
 		inv.SenderCall,
 		boolStr(inv.OTPVerified),
 	}
+	if isFreeformInvocation(inv) {
+		out = append(out, inv.Args[0].Value)
+		return out
+	}
 	for _, kv := range inv.Args {
 		out = append(out, kv.Key+"="+kv.Value)
 	}
 	return out
+}
+
+// isFreeformInvocation returns true when Args is the single-entry shape
+// produced by SanitizeFreeform. We detect by Key rather than threading
+// ArgMode down to the executor — the synthetic key is reserved
+// (validateAction rejects "arg" as a kv-mode key).
+func isFreeformInvocation(inv Invocation) bool {
+	return len(inv.Args) == 1 && inv.Args[0].Key == FreeformArgKey
 }
 
 func buildEnv(req ExecRequest) []string {
@@ -99,6 +111,10 @@ func buildEnv(req ExecRequest) []string {
 		"GW_SOURCE=" + string(inv.Source),
 		fmt.Sprintf("GW_INVOCATION_ID=%d", inv.ID),
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}
+	if isFreeformInvocation(inv) {
+		env = append(env, "GW_ARG="+inv.Args[0].Value)
+		return env
 	}
 	for _, kv := range inv.Args {
 		env = append(env, "GW_ARG_"+envSafe(kv.Key)+"="+kv.Value)
