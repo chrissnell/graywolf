@@ -12,6 +12,13 @@
 
   const themeOptions = THEMES.map((t) => ({ value: t.id, label: t.name }));
 
+  const fallbackPolicyOptions = [
+    { value: 'is_fallback', label: 'Try RF first, fall back to APRS-IS' },
+    { value: 'is_only', label: 'APRS-IS only' },
+    { value: 'rf_only', label: 'RF only' },
+    { value: 'both', label: 'Send on RF and APRS-IS' },
+  ];
+
   let txChannel = $state(0);
 
   onMount(async () => {
@@ -112,6 +119,19 @@
   <p class="messages-hint">
     Where graywolf sends outbound APRS messages. Auto picks the first
     APRS-eligible channel at send time.
+  </p>
+  <p class="tx-channel-label">Send path</p>
+  <Select
+    value={messagesPreferencesState.fallbackPolicy}
+    onValueChange={(v) => messagesPreferencesState.setFallbackPolicy(v)}
+    options={fallbackPolicyOptions}
+    aria-label="Message send path"
+    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+  />
+  <p class="messages-hint">
+    Choose APRS-IS only if you have no radio channel configured. The
+    default tries RF first and silently falls back to APRS-IS when no
+    modem is available.
   </p>
 </Box>
 
