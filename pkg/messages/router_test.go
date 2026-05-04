@@ -1261,9 +1261,9 @@ func TestBuildAckTNC2(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := buildAckTNC2(tc.ourCall, tc.peerCall, tc.msgID)
+			got := preflightAckTNC2(tc.ourCall, tc.peerCall, tc.msgID)
 			if got != tc.want {
-				t.Fatalf("buildAckTNC2 = %q, want %q", got, tc.want)
+				t.Fatalf("preflightAckTNC2 = %q, want %q", got, tc.want)
 			}
 		})
 	}

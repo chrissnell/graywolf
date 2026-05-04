@@ -2,10 +2,7 @@ package messages
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -15,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
-	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -50,29 +46,34 @@ type RouterConfig struct {
 	Registerer    prometheus.Registerer
 	Clock         RouterClock
 	// AutoAckChannel is the RF channel used when submitting auto-ACKs.
-	// Defaults to 1 (mirrors IGateConfig.TxChannel semantics).
+	// Defaults to 1 (mirrors IGateConfig.TxChannel semantics). Forwarded
+	// into Preflight when Preflight is nil.
 	AutoAckChannel uint32
 	// QueueCapacity overrides the internal packet-queue capacity. <= 0
 	// uses DefaultRouterQueueCapacity.
 	QueueCapacity int
 	// DedupWindow overrides the (from_call, msg_id, text_hash) dedup
-	// window. <= 0 uses DefaultRouterDedupWindow.
+	// window forwarded into Preflight when Preflight is nil. <= 0 uses
+	// DefaultRouterDedupWindow.
 	DedupWindow time.Duration
+	// Preflight is the shared auto-ACK + dedup component. When nil the
+	// router constructs a private one from the OurCall/TxSink/etc fields
+	// for backward compatibility with standalone callers (tests).
+	Preflight *Preflight
 }
 
 // AutoAckChannel returns the live RF channel ID used for auto-ACKs
 // when the inbound was IS-sourced (RF-sourced packets reuse pkt.Channel).
-// Reads are lock-free.
-func (r *Router) AutoAckChannel() uint32 { return r.autoAckCh.Load() }
+// Reads are lock-free. Delegates to the shared Preflight.
+func (r *Router) AutoAckChannel() uint32 { return r.preflight.AutoAckChannel() }
 
 // SetAutoAckChannel updates the IS-fallback auto-ACK channel. Zero is
 // ignored. Safe to call concurrently with the consumer goroutine.
-func (r *Router) SetAutoAckChannel(ch uint32) {
-	if ch == 0 {
-		return
-	}
-	r.autoAckCh.Store(ch)
-}
+func (r *Router) SetAutoAckChannel(ch uint32) { r.preflight.SetAutoAckChannel(ch) }
+
+// Preflight returns the shared auto-ACK + dedup component the router
+// is using.
+func (r *Router) Preflight() *Preflight { return r.preflight }
 
 // Defaults for the router.
 const (
@@ -109,8 +110,7 @@ type Router struct {
 	logger    *slog.Logger
 	clock     RouterClock
 	queueCap  int
-	dedupWin  time.Duration
-	autoAckCh atomic.Uint32
+	preflight *Preflight
 
 	queue chan *aprs.DecodedAPRSPacket
 
@@ -124,16 +124,10 @@ type Router struct {
 	// drop-log throttle.
 	lastDropLog atomic.Int64
 
-	// Pre-insert dedup cache: keyed by "from|msgid|texthash" → expiry
-	// nanos.
-	dedupMu   sync.Mutex
-	dedupMap  map[string]time.Time
-
-	// Metrics.
+	// Metrics owned by the router. The dedup + auto-ACK metrics live on
+	// Preflight now.
 	mDropped       prometheus.Counter
 	mClassified    *prometheus.CounterVec
-	mAutoAckSent   prometheus.Counter
-	mDedupHits     prometheus.Counter
 	mAckCorrelated prometheus.Counter
 }
 
@@ -171,26 +165,34 @@ func NewRouter(cfg RouterConfig) (*Router, error) {
 	if qcap <= 0 {
 		qcap = DefaultRouterQueueCapacity
 	}
-	dedupWin := cfg.DedupWindow
-	if dedupWin <= 0 {
-		dedupWin = DefaultRouterDedupWindow
-	}
-	ch := cfg.AutoAckChannel
-	if ch == 0 {
-		ch = 1
+
+	pf := cfg.Preflight
+	if pf == nil {
+		var err error
+		pf, err = NewPreflight(PreflightConfig{
+			OurCall:        cfg.OurCall,
+			TxSink:         cfg.TxSink,
+			IGateSender:    cfg.IGateSender,
+			Logger:         logger,
+			Registerer:     cfg.Registerer,
+			Clock:          clock,
+			AutoAckChannel: cfg.AutoAckChannel,
+			DedupWindow:    cfg.DedupWindow,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	r := &Router{
-		cfg:      cfg,
-		logger:   logger,
-		clock:    clock,
-		queueCap: qcap,
-		dedupWin: dedupWin,
-		queue:    make(chan *aprs.DecodedAPRSPacket, qcap),
-		stopped:  make(chan struct{}),
-		dedupMap: make(map[string]time.Time),
+		cfg:       cfg,
+		logger:    logger,
+		clock:     clock,
+		queueCap:  qcap,
+		preflight: pf,
+		queue:     make(chan *aprs.DecodedAPRSPacket, qcap),
+		stopped:   make(chan struct{}),
 	}
-	r.autoAckCh.Store(ch)
 	if err := r.initMetrics(cfg.Registerer); err != nil {
 		return nil, err
 	}
@@ -206,14 +208,6 @@ func (r *Router) initMetrics(reg prometheus.Registerer) error {
 		Name: "messages_router_classified_total",
 		Help: "Inbound APRS message packets classified by the router, by outcome.",
 	}, []string{"outcome"})
-	r.mAutoAckSent = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "messages_router_autoack_sent_total",
-		Help: "Auto-ACK frames submitted by the router.",
-	})
-	r.mDedupHits = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "messages_router_dedup_hits_total",
-		Help: "Inbound APRS message packets suppressed by the router's pre-insert (from,msgid,text_hash) dedup window.",
-	})
 	r.mAckCorrelated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "messages_router_ack_correlated_total",
 		Help: "Inbound ack/rej packets that matched an outstanding outbound row.",
@@ -221,7 +215,7 @@ func (r *Router) initMetrics(reg prometheus.Registerer) error {
 	if reg == nil {
 		return nil
 	}
-	collectors := []prometheus.Collector{r.mDropped, r.mClassified, r.mAutoAckSent, r.mDedupHits, r.mAckCorrelated}
+	collectors := []prometheus.Collector{r.mDropped, r.mClassified, r.mAckCorrelated}
 	for _, c := range collectors {
 		if err := reg.Register(c); err != nil {
 			are := prometheus.AlreadyRegisteredError{}
@@ -396,10 +390,7 @@ func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
 	// Insert but still emits auto-ACK (APRS101 §14.2: ack every copy).
 	dedupHit := false
 	if effMsg.MessageID != "" {
-		if r.checkDedup(source, effMsg.MessageID, effMsg.Text) {
-			dedupHit = true
-			r.mDedupHits.Inc()
-		}
+		dedupHit = r.preflight.CheckDedup(source, effMsg.MessageID, effMsg.Text)
 	}
 
 	if !dedupHit {
@@ -426,7 +417,7 @@ func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
 		effMsg.MessageID != "" &&
 		!effMsg.IsAck && !effMsg.IsRej &&
 		!effMsg.IsBulletin && !effMsg.IsNWS {
-		r.sendAutoAck(ctx, pkt, source, effMsg.MessageID)
+		r.preflight.SendAutoAck(ctx, pkt, source, effMsg.MessageID)
 	}
 
 	if dedupHit {
@@ -621,127 +612,6 @@ func (r *Router) correlateReplyAck(ctx context.Context, peerCall, replyAckID str
 			})
 		}
 	}
-}
-
-// sendAutoAck builds and submits an auto-ACK for an inbound DM. The
-// ack follows the path the message arrived on: RF inbound acks over
-// RF (on the receiving channel), IS inbound acks over APRS-IS only.
-// Mirroring an IS-sourced ack onto RF would waste local airtime on a
-// channel the correspondent cannot hear, since IS peers are by
-// definition not RF-reachable from our station.
-func (r *Router) sendAutoAck(
-	ctx context.Context,
-	pkt *aprs.DecodedAPRSPacket,
-	peerCall, msgID string,
-) {
-	if msgID == "" {
-		return
-	}
-	ourCall := r.cfg.OurCall()
-	if ourCall == "" {
-		r.logger.Debug("messages router skipping auto-ACK: our_call empty")
-		return
-	}
-	if pkt.Direction == aprs.DirectionIS {
-		if r.cfg.IGateSender == nil {
-			return
-		}
-		line := buildAckTNC2(ourCall, peerCall, msgID)
-		if err := r.cfg.IGateSender.SendLine(line); err != nil {
-			r.logger.Debug("messages router auto-ACK IS mirror failed",
-				"error", err, "peer", peerCall, "msgid", msgID)
-			return
-		}
-		r.mAutoAckSent.Inc()
-		return
-	}
-	frame, err := buildAckFrame(ourCall, peerCall, msgID)
-	if err != nil {
-		r.logger.Warn("messages router auto-ACK encode failed",
-			"error", err, "peer", peerCall, "msgid", msgID)
-		return
-	}
-	ch := r.autoAckCh.Load()
-	if pkt.Direction == aprs.DirectionRF && pkt.Channel > 0 {
-		ch = uint32(pkt.Channel)
-	}
-	src := txgovernor.SubmitSource{
-		Kind:      "messages-autoack",
-		Priority:  txgovernor.PriorityIGateMsg,
-		SkipDedup: true,
-	}
-	if err := r.cfg.TxSink.Submit(ctx, ch, frame, src); err != nil {
-		r.logger.Warn("messages router auto-ACK submit failed",
-			"error", err, "peer", peerCall, "msgid", msgID)
-		return
-	}
-	r.mAutoAckSent.Inc()
-}
-
-// buildAckFrame constructs a ready-to-submit ax25.Frame carrying the
-// ack info field. Uses APGRWO as the destination (graywolf's APRS
-// software identifier) and no digipeater path — auto-ACKs reply
-// directly to the sender.
-func buildAckFrame(ourCall, peerCall, msgID string) (*ax25.Frame, error) {
-	info, err := aprs.EncodeMessageAck(peerCall, msgID)
-	if err != nil {
-		return nil, err
-	}
-	src, err := ax25.ParseAddress(ourCall)
-	if err != nil {
-		return nil, fmt.Errorf("messages: ack source: %w", err)
-	}
-	dest, err := ax25.ParseAddress("APGRWO")
-	if err != nil {
-		return nil, fmt.Errorf("messages: ack dest: %w", err)
-	}
-	return ax25.NewUIFrame(src, dest, nil, info)
-}
-
-// buildAckTNC2 renders the TNC-2 text representation of an ack for
-// APRS-IS. Mirrors the format APRS-IS expects: SRC>DEST::PEER     :ack123
-// Wire-format glue is delegated to aprs.FormatTNC2.
-func buildAckTNC2(ourCall, peerCall, msgID string) string {
-	// Pad peer to 9 chars (APRS101 §14.1 addressee field width).
-	addr := peerCall
-	if len(addr) > 9 {
-		addr = addr[:9]
-	}
-	if len(addr) < 9 {
-		addr = addr + strings.Repeat(" ", 9-len(addr))
-	}
-	info := ":" + addr + ":ack" + msgID
-	return aprs.FormatTNC2(ourCall, "APGRWO", nil, []byte(info))
-}
-
-// checkDedup consults the 30-second (from, msgid, text_hash) cache.
-// Returns true on a hit. Always records the current tuple so the
-// next identical packet within the window also hits. Expired entries
-// are evicted during the pass.
-func (r *Router) checkDedup(fromCall, msgID, text string) bool {
-	key := dedupKey(fromCall, msgID, text)
-	r.dedupMu.Lock()
-	defer r.dedupMu.Unlock()
-	now := r.clock.Now()
-	// Lazy eviction: walk the map and drop expired entries. The map
-	// stays small (one entry per live dedup window) so a linear pass
-	// is cheap.
-	for k, exp := range r.dedupMap {
-		if now.After(exp) {
-			delete(r.dedupMap, k)
-		}
-	}
-	exp, hit := r.dedupMap[key]
-	r.dedupMap[key] = now.Add(r.dedupWin)
-	if hit && !now.After(exp) {
-		return true
-	}
-	return false
-}
-
-func dedupKey(fromCall, msgID, text string) string {
-	h := sha1.Sum([]byte(text))
-	return strings.ToUpper(fromCall) + "|" + msgID + "|" + hex.EncodeToString(h[:8])
 }
 
 // --- helpers -----------------------------------------------------------------

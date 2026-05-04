@@ -88,13 +88,14 @@ type Service struct {
 	logger *slog.Logger
 	ctx    context.Context
 
-	router  *Router
-	sender  *Sender
-	retry   *RetryManager
-	prefs   *Preferences
-	hub     *EventHub
-	ring    *LocalTxRing
-	tactSet *TacticalSet
+	router    *Router
+	sender    *Sender
+	retry     *RetryManager
+	prefs     *Preferences
+	hub       *EventHub
+	ring      *LocalTxRing
+	tactSet   *TacticalSet
+	preflight *Preflight
 
 	// TxHook unregister closure — nil before Start, set in Start.
 	unregTxHook func()
@@ -159,6 +160,18 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		autoAckCh = txCh
 	}
 
+	pf, err := NewPreflight(PreflightConfig{
+		OurCall:        cfg.OurCall,
+		TxSink:         cfg.TxSink,
+		IGateSender:    cfg.IGate,
+		Logger:         logger.With("component", "messages-preflight"),
+		Clock:          clock,
+		AutoAckChannel: autoAckCh,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	sender, err := NewSender(SenderConfig{
 		Store:         cfg.Store,
 		TxSink:        cfg.TxSink,
@@ -190,31 +203,32 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 
 	router, err := NewRouter(RouterConfig{
-		Store:          cfg.Store,
-		TxSink:         cfg.TxSink,
-		IGateSender:    cfg.IGate,
-		OurCall:        cfg.OurCall,
-		LocalTxRing:    ring,
-		TacticalSet:    tactSet,
-		EventHub:       hub,
-		Logger:         logger.With("component", "messages-router"),
-		Clock:          clock,
-		AutoAckChannel: autoAckCh,
+		Store:       cfg.Store,
+		TxSink:      cfg.TxSink,
+		IGateSender: cfg.IGate,
+		OurCall:     cfg.OurCall,
+		LocalTxRing: ring,
+		TacticalSet: tactSet,
+		EventHub:    hub,
+		Logger:      logger.With("component", "messages-router"),
+		Clock:       clock,
+		Preflight:   pf,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &Service{
-		cfg:     cfg,
-		logger:  logger,
-		router:  router,
-		sender:  sender,
-		retry:   retry,
-		prefs:   prefs,
-		hub:     hub,
-		ring:    ring,
-		tactSet: tactSet,
+		cfg:       cfg,
+		logger:    logger,
+		router:    router,
+		sender:    sender,
+		retry:     retry,
+		prefs:     prefs,
+		hub:       hub,
+		ring:      ring,
+		tactSet:   tactSet,
+		preflight: pf,
 	}, nil
 }
 
@@ -284,6 +298,10 @@ func (s *Service) LocalTxRing() *LocalTxRing { return s.ring }
 // TacticalSet returns the live tactical-set snapshot (read-only).
 // Tests use it to observe reload results.
 func (s *Service) TacticalSet() *TacticalSet { return s.tactSet }
+
+// Preflight returns the shared inbound preflight (auto-ACK + dedup),
+// safe to share across subsystems that consume inbound APRS messages.
+func (s *Service) Preflight() *Preflight { return s.preflight }
 
 // ReloadConfig re-resolves the TX channel via the configured
 // TxChannelResolver and pushes the new value into the live Sender +
