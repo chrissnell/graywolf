@@ -237,6 +237,7 @@ impl Modem {
             // Periodic status push
             if self.last_status_tx.elapsed() >= status_interval {
                 self.emit_status(false);
+                self.emit_idle_output_levels();
                 self.last_status_tx = Instant::now();
             }
 
@@ -741,6 +742,43 @@ impl Modem {
         }
     }
 
+    /// Emit a -60 dBFS DeviceLevelUpdate for each configured output
+    /// device that hasn't had a TX-driven update in the last ~750ms.
+    /// The TX path emits a real peak per transmission and bumps
+    /// last_level_tx for the output device; this idle-silence ticker
+    /// fills the gap between transmissions so the operator's per-device
+    /// meter on the Audio Devices page falls back to silence when the
+    /// radio is idle instead of staying at the last TX peak forever.
+    /// Without this the output bar shows stale data after each beacon
+    /// or test tone -- operator-misleading.
+    fn emit_idle_output_levels(&mut self) {
+        let now = Instant::now();
+        let stale_after = Duration::from_millis(750);
+        let mut output_ids: HashSet<u32> = HashSet::new();
+        for ccfg in self.channel_configs.values() {
+            if ccfg.output_device_id != 0 {
+                output_ids.insert(ccfg.output_device_id);
+            }
+        }
+        for id in output_ids {
+            let stale = self.last_level_tx
+                .get(&id)
+                .map(|t| now.duration_since(*t) >= stale_after)
+                .unwrap_or(true);
+            if !stale {
+                continue;
+            }
+            let msg = IpcMessage::device_level_update(DeviceLevelUpdate {
+                device_id: id,
+                peak_dbfs: -60.0,
+                rms_dbfs: -60.0,
+                clipping: false,
+            });
+            let _ = self.handle.send(&msg);
+            self.last_level_tx.insert(id, now);
+        }
+    }
+
     fn channel_audio_state(&self, channel: u32) -> (f32, f32, f32, bool) {
         for pipe in self.active_devices.values() {
             for cp in &pipe.channels {
@@ -907,6 +945,10 @@ impl Modem {
                 clipping,
             });
             let _ = self.handle.send(&msg);
+            // Mark this output device's level as freshly emitted so the
+            // idle-silence ticker doesn't immediately overwrite this real
+            // TX peak with -60 dBFS on its next pass.
+            self.last_level_tx.insert(ccfg.output_device_id, Instant::now());
         }
 
         let job = tx_worker::TxJob {
@@ -1621,58 +1663,59 @@ fn play_test_tone_blocking(
     gain_atom: &Arc<AtomicU32>,
     cached_device: Option<cpal::Device>,
 ) -> TestToneResult {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use cpal::traits::{DeviceTrait, StreamTrait};
     use std::sync::atomic::{AtomicBool, AtomicU64};
 
     // Use a pre-resolved device if available (resolved before input
-    // streams opened). Falls back to runtime enumeration which may fail
-    // on Linux/ALSA when a capture stream holds the hardware device.
-    let device = match cached_device {
-        Some(d) => d,
-        None => {
-            let host = cpal::default_host();
-            let found = match host.output_devices() {
-                Ok(devs) => audio::soundcard::find_device_by_id(devs, &req.device_name),
-                Err(e) => {
-                    return TestToneResult {
-                        request_id: req.request_id,
-                        success: false,
-                        error: format!("enumerate output devices: {}", e),
-                    };
-                }
-            };
-            match found {
-                Some(d) => d,
-                None => {
-                    return TestToneResult {
-                        request_id: req.request_id,
-                        success: false,
-                        error: format!("output device not found: {}", req.device_name),
-                    };
-                }
-            }
-        }
-    };
-
+    // streams opened). When the cached handle is stale -- e.g. after a
+    // USB EMI event has reset the hub bus and reassigned the AIOC's
+    // device number -- supported_output_configs() fails with "device no
+    // longer available". Re-enumerate to pick up the new handle so the
+    // operator's test-tone click survives the bus shock.
     let sample_rate = if req.sample_rate > 0 { req.sample_rate } else { 48000 };
-    // Fall back to the device's smallest supported channel count when the
-    // configured count isn't available (e.g. stereo-only USB sound cards
-    // when the operator picked mono). The tone is written identically to
-    // every channel in the frame, so stereo output is in-phase mono.
-    let channels = match audio::soundcard::negotiate_channels(
-        &device,
-        sample_rate,
-        req.channels.max(1) as u16,
-        "output",
-        |d| d.supported_output_configs(),
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            return TestToneResult {
-                request_id: req.request_id,
-                success: false,
-                error: e,
-            };
+    let preferred_ch = req.channels.max(1) as u16;
+
+    fn resolve_fresh(name: &str) -> Result<cpal::Device, String> {
+        use cpal::traits::HostTrait;
+        let host = cpal::default_host();
+        let devs = host.output_devices()
+            .map_err(|e| format!("enumerate output devices: {}", e))?;
+        audio::soundcard::find_device_by_id(devs, name)
+            .ok_or_else(|| format!("output device not found: {}", name))
+    }
+
+    let (device, channels) = {
+        let attempt = |dev: cpal::Device| -> Result<(cpal::Device, u16), String> {
+            let ch = audio::soundcard::negotiate_channels(
+                &dev,
+                sample_rate,
+                preferred_ch,
+                "output",
+                |d| d.supported_output_configs(),
+            )?;
+            Ok((dev, ch))
+        };
+
+        match cached_device {
+            Some(d) => match attempt(d) {
+                Ok(pair) => pair,
+                Err(_) => match resolve_fresh(&req.device_name).and_then(attempt) {
+                    Ok(pair) => pair,
+                    Err(e) => return TestToneResult {
+                        request_id: req.request_id,
+                        success: false,
+                        error: e,
+                    },
+                },
+            },
+            None => match resolve_fresh(&req.device_name).and_then(attempt) {
+                Ok(pair) => pair,
+                Err(e) => return TestToneResult {
+                    request_id: req.request_id,
+                    success: false,
+                    error: e,
+                },
+            },
         }
     };
 
