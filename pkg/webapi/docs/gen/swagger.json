@@ -7609,6 +7609,10 @@
         "dto.Action": {
             "type": "object",
             "properties": {
+                "arg_mode": {
+                    "description": "\"kv\" (default) | \"freeform\"",
+                    "type": "string"
+                },
                 "arg_schema": {
                     "type": "array",
                     "items": {
@@ -9658,6 +9662,9 @@
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "text": {
+                    "type": "string"
                 }
             }
         },

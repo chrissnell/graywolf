@@ -24,6 +24,7 @@ type Action struct {
 	OTPCredentialID     *uint             `json:"otp_credential_id,omitempty"`
 	SenderAllowlist     string            `json:"sender_allowlist"`
 	ArgSchema           []ArgSpec         `json:"arg_schema"`
+	ArgMode             string            `json:"arg_mode"` // "kv" (default) | "freeform"
 	RateLimitSec        int               `json:"rate_limit_sec"`
 	QueueDepth          int               `json:"queue_depth"`
 	Enabled             bool              `json:"enabled"`
@@ -94,8 +95,13 @@ type ActionInvocation struct {
 }
 
 // TestFireRequest is the body accepted by POST /api/actions/{id}/test-fire.
+//
+// Args is used for kv-mode actions; Text is used for freeform-mode
+// actions. The handler rejects requests that mix shapes against the
+// Action's mode.
 type TestFireRequest struct {
-	Args map[string]string `json:"args"`
+	Args map[string]string `json:"args,omitempty"`
+	Text *string           `json:"text,omitempty"`
 }
 
 // TestFireResponse is the body returned by POST /api/actions/{id}/test-fire.

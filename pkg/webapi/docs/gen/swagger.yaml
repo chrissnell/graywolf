@@ -566,6 +566,9 @@ definitions:
     type: object
   dto.Action:
     properties:
+      arg_mode:
+        description: '"kv" (default) | "freeform"'
+        type: string
       arg_schema:
         items:
           $ref: '#/definitions/dto.ArgSpec'
@@ -2042,6 +2045,8 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      text:
+        type: string
     type: object
   dto.TestFireResponse:
     properties:

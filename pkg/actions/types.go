@@ -28,16 +28,40 @@ const (
 	SourceIS Source = "is"
 )
 
+// ArgMode controls how argv after the action verb is interpreted.
+//
+//	kv:       "@@<otp>#name k1=v1 k2=v2"  (current behavior, default)
+//	freeform: "@@<otp>#name <one untokenized payload>"
+type ArgMode string
+
+const (
+	ArgModeKV       ArgMode = "kv"
+	ArgModeFreeform ArgMode = "freeform"
+)
+
+// FreeformArgKey is the synthetic key used for the single freeform
+// value. Stable so executors, audit log, and webhook templates can
+// refer to it as `arg` (env var GW_ARG, token {{arg}}). Not operator-
+// settable.
+const FreeformArgKey = "arg"
+
 // ParsedInvocation is the output of parser.Parse. Args preserve key
 // order as parsed off the wire so executors can present a stable argv.
 //
 // Args contains raw, untrusted key=value tokens straight off the wire.
 // Callers MUST run them through the runner's sanitizer (Phase C) before
 // passing them to an Executor.
+//
+// RawArgTail is the raw bytes after the action name and the first
+// space, with no trimming or tokenization. Freeform consumers read it
+// directly; kv consumers ignore it. May be populated even when Args is
+// nil (kv tokenization failed but the action name parsed cleanly), so
+// the classifier can still dispatch a freeform Action.
 type ParsedInvocation struct {
-	OTPDigits string // empty if message had no OTP digits
-	Action    string
-	Args      []KeyValue
+	OTPDigits  string // empty if message had no OTP digits
+	Action     string
+	Args       []KeyValue
+	RawArgTail string
 }
 
 type KeyValue struct {
