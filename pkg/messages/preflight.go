@@ -1,9 +1,11 @@
 package messages
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/chrissnell/graywolf/pkg/aprs"
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
@@ -170,4 +174,87 @@ func (p *Preflight) CheckDedup(fromCall, msgID, text string) bool {
 func preflightDedupKey(fromCall, msgID, text string) string {
 	h := sha1.Sum([]byte(text))
 	return strings.ToUpper(fromCall) + "|" + msgID + "|" + hex.EncodeToString(h[:8])
+}
+
+// SendAutoAck builds and submits an auto-ACK for an inbound message.
+// The ack follows the path the message arrived on: RF inbound acks
+// over RF (on the receiving channel when known, configured fallback
+// otherwise); IS inbound acks via IGateSender. Empty msgID is a
+// no-op. Mirroring an IS-sourced ack onto RF would waste local
+// airtime on a channel the correspondent cannot hear.
+func (p *Preflight) SendAutoAck(
+	ctx context.Context,
+	pkt *aprs.DecodedAPRSPacket,
+	peerCall, msgID string,
+) {
+	if msgID == "" {
+		return
+	}
+	ourCall := p.cfg.OurCall()
+	if ourCall == "" {
+		p.logger.Debug("preflight skipping auto-ACK: our_call empty")
+		return
+	}
+	if pkt.Direction == aprs.DirectionIS {
+		if p.cfg.IGateSender == nil {
+			return
+		}
+		line := preflightAckTNC2(ourCall, peerCall, msgID)
+		if err := p.cfg.IGateSender.SendLine(line); err != nil {
+			p.logger.Debug("preflight auto-ACK IS mirror failed",
+				"error", err, "peer", peerCall, "msgid", msgID)
+			return
+		}
+		p.mAutoAckSent.Inc()
+		return
+	}
+	frame, err := preflightAckFrame(ourCall, peerCall, msgID)
+	if err != nil {
+		p.logger.Warn("preflight auto-ACK encode failed",
+			"error", err, "peer", peerCall, "msgid", msgID)
+		return
+	}
+	ch := p.autoAckCh.Load()
+	if pkt.Direction == aprs.DirectionRF && pkt.Channel > 0 {
+		ch = uint32(pkt.Channel)
+	}
+	src := txgovernor.SubmitSource{
+		Kind:      "messages-autoack",
+		Priority:  txgovernor.PriorityIGateMsg,
+		SkipDedup: true,
+	}
+	if err := p.cfg.TxSink.Submit(ctx, ch, frame, src); err != nil {
+		p.logger.Warn("preflight auto-ACK submit failed",
+			"error", err, "peer", peerCall, "msgid", msgID)
+		return
+	}
+	p.mAutoAckSent.Inc()
+}
+
+func preflightAckFrame(ourCall, peerCall, msgID string) (*ax25.Frame, error) {
+	info, err := aprs.EncodeMessageAck(peerCall, msgID)
+	if err != nil {
+		return nil, err
+	}
+	src, err := ax25.ParseAddress(ourCall)
+	if err != nil {
+		return nil, fmt.Errorf("messages: ack source: %w", err)
+	}
+	dest, err := ax25.ParseAddress("APGRWO")
+	if err != nil {
+		return nil, fmt.Errorf("messages: ack dest: %w", err)
+	}
+	return ax25.NewUIFrame(src, dest, nil, info)
+}
+
+func preflightAckTNC2(ourCall, peerCall, msgID string) string {
+	addr := peerCall
+	if len(addr) > 9 {
+		addr = addr[:9]
+	}
+	if len(addr) < 9 {
+		addr = addr + strings.Repeat(" ", 9-len(addr))
+	}
+	info := ":" + addr + ":ack" + msgID
+	return aprs.FormatTNC2(ourCall, "APGRWO", nil, []byte(info))
 }
