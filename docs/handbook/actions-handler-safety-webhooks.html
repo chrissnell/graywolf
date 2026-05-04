@@ -77,6 +77,72 @@ syntax you should use when templating user data.</p>
 <a href="actions-handler-safety.html">Actions: handler safety</a>;
 read it first if you haven't.</p>
 
+<h2 id="argument-passing">How webhook arguments are passed</h2>
+
+<p>How graywolf hands the sender's data to your endpoint depends on
+the HTTP method and whether you supplied a custom body template.</p>
+
+<h3 id="argument-passing-get">GET</h3>
+
+<p>graywolf does not send a request body for GET. The only place to
+inject sender data is in the URL itself, via template tokens. Always
+pipe argument values through the <code>|url</code> filter so reserved
+characters (spaces, ampersands, equals signs) get percent-encoded:</p>
+
+<pre><code>https://example.com/hook?to={{arg.to|url}}&amp;msg={{arg.msg|url}}</code></pre>
+
+<p>Header values support the same token syntax, so you can also
+forward sender data through a custom header
+(<code>X-Graywolf-Sender: {{sender-callsign}}</code>). Header values
+are <em>not</em> automatically URL-encoded; use them for ASCII-only
+metadata such as a callsign or correlation id.</p>
+
+<h3 id="argument-passing-post-default">POST (default form body)</h3>
+
+<p>If you leave the body template blank, graywolf sends an
+<code>application/x-www-form-urlencoded</code> body. The framework on
+your receiver will parse it for you and you do not need to template
+anything. The form fields are:</p>
+
+<table>
+  <thead><tr><th>Form key</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>action</code></td><td>Action name (the keyword the sender typed).</td></tr>
+    <tr><td><code>sender_callsign</code></td><td>Sender's callsign with SSID.</td></tr>
+    <tr><td><code>otp_verified</code></td><td><code>true</code> or <code>false</code> &mdash; whether the TOTP code validated.</td></tr>
+    <tr><td><code>otp_cred</code></td><td>Name of the credential that validated the code (empty if OTP was not required).</td></tr>
+    <tr><td><code>source</code></td><td>Where the trigger arrived from: <code>aprs</code> (live RF/igate) or <code>test</code> (the dashboard's Test dialog).</td></tr>
+    <tr><td><code>(arg keys)</code></td><td>One form field per kv argument, keyed by the argument name. Freeform mode collapses to a single field named <code>arg</code> holding the entire payload.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="argument-passing-post-template">POST (custom body template)</h3>
+
+<p>Fill in the body template field on the Action when your downstream
+expects something other than form encoding (e.g. JSON). graywolf
+substitutes these tokens before sending the body:</p>
+
+<table>
+  <thead><tr><th>Token</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{action}}</code></td><td>Action name.</td></tr>
+    <tr><td><code>{{sender-callsign}}</code></td><td>Sender's callsign.</td></tr>
+    <tr><td><code>{{otp-verified}}</code></td><td><code>true</code> / <code>false</code>.</td></tr>
+    <tr><td><code>{{otp-cred}}</code></td><td>OTP credential name (empty if OTP not required).</td></tr>
+    <tr><td><code>{{source}}</code></td><td><code>aprs</code> / <code>test</code>.</td></tr>
+    <tr><td><code>{{arg}}</code></td><td>Freeform payload &mdash; only present when the Action's argument mode is freeform.</td></tr>
+    <tr><td><code>{{arg.&lt;key&gt;}}</code></td><td>One per kv argument, looked up by name.</td></tr>
+  </tbody>
+</table>
+
+<p>Filters (<code>|json</code>, <code>|url</code>, <code>|html</code>)
+go after the token name with a pipe:
+<code>{{arg.msg|json}}</code>. Always pick the filter that matches
+the surrounding context &mdash; raw substitution into a JSON string,
+URL, or HTML attribute is unsafe. The
+<a href="#custom-template">custom template</a> section below covers
+the filter list and worked examples.</p>
+
 <h2 id="webhook">SMS as a webhook Action</h2>
 
 <p>graywolf POSTs the form-encoded body to your URL. The Action is
