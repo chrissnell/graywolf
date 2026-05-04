@@ -709,12 +709,27 @@ impl AfskDemodulator {
         std::mem::take(&mut self.decoded_frames)
     }
 
-    /// Sum of bad-FCS events across every slicer since the last call.
-    /// Each slicer decodes the same bit stream differently, so a single
-    /// corrupted transmission may bump this by up to num_slicers.
+    /// Bad-FCS events for one physical RF event, taken from slicer 0
+    /// only. Other slicers are still drained (so their internal counters
+    /// don't run away) but their counts are dropped.
+    ///
+    /// Summing across slicers multiplied a single noise-shaped flag
+    /// candidate by the slicer count -- 9 on the default 9-slicer
+    /// Profile A. Combined with the triple ensemble that was already
+    /// reduced to its primary sub-demod (see MultiAfskDemodulator::
+    /// take_bad_fcs), the operator-visible counter would still bump up
+    /// to 9x per event, dominating the actual decode rate by an order
+    /// of magnitude on noisy USB-EMI environments. Operators interpret
+    /// bad-FCS as a signal-quality trend, not an absolute count, so
+    /// the slicer-0 sample is a faithful single-decoder approximation.
     #[must_use]
     pub fn take_bad_fcs(&mut self) -> u64 {
-        self.hdlc.iter_mut().map(|d| d.take_bad_fcs()).sum()
+        let mut iter = self.hdlc.iter_mut();
+        let primary = iter.next().map(|d| d.take_bad_fcs()).unwrap_or(0);
+        for d in iter {
+            let _ = d.take_bad_fcs();
+        }
+        primary
     }
 
     /// Number of decoded frames accumulated so far.
