@@ -75,6 +75,20 @@
       and from the internet back to RF.
     </p>
 
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Running APRS-IS only (no radio)?</strong> You don't need a
+          radio channel to send and receive APRS Messages. Set your station
+          callsign, enable the iGate, and skip the Channels page. On the
+          Preferences page, set <em>Messages &rarr; Send path</em> to
+          <em>APRS-IS only</em> if you want graywolf to skip the RF-first
+          attempt.
+        </p>
+      </div>
+    </div>
+
     <h2>RF &rarr; APRS-IS (Connection)</h2>
 
     <div class="screenshot">
@@ -117,8 +131,8 @@
             </tr>
             <tr>
               <td>Passcode</td>
-              <td><code>-1</code></td>
-              <td>APRS-IS passcode. <code>-1</code> = receive-only (no TX to IS).</td>
+              <td>&mdash;</td>
+              <td>Computed automatically from your station callsign. Set the callsign on the Callsign page; graywolf derives the passcode at startup. A station callsign of <code>N0CALL</code> (the unset sentinel) yields the read-only passcode <code>-1</code>, which disables APRS-IS transmits.</td>
             </tr>
           </tbody>
         </table>
@@ -129,10 +143,10 @@
       <span class="callout-icon">&#9432;</span>
       <div class="callout-body">
         <p>
-          The APRS-IS passcode authenticates your station for sending data
-          to the network. Use <code>-1</code> for a receive-only iGate that
-          monitors APRS-IS without contributing. To generate a valid passcode,
-          use an APRS passcode calculator with your callsign (without SSID).
+          graywolf computes the APRS-IS passcode from your station callsign at
+          startup; you do not enter it manually. To run a receive-only station
+          that listens to APRS-IS without contributing, leave the station
+          callsign as <code>N0CALL</code> or disable the iGate entirely.
         </p>
       </div>
     </div>

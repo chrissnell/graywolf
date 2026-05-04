@@ -78,6 +78,22 @@
       are split into numbered segments and reassembled on receive.
     </p>
 
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>APRS-IS only operation.</strong> You can run a Messages-only
+          station with no radio channel: set your station callsign, enable
+          the iGate, and leave the Channels page empty. Outbound messages
+          ride APRS-IS via the default <em>Try RF first, fall back to
+          APRS-IS</em> policy, or set Preferences &rarr; Messages &rarr;
+          Send path to <em>APRS-IS only</em> to skip the RF-first attempt.
+          DM acks delivered over APRS-IS terminate as
+          <code>awaiting_ack</code> until the peer replies.
+        </p>
+      </div>
+    </div>
+
     <p>
       The conversation list is always sectioned: <strong>Tactical</strong>
       chats first, then <strong>Direct Messages</strong>. A
