@@ -546,13 +546,11 @@ func parsePath(p string) ([]ax25.Address, error) {
 }
 
 // buildMessageTNC2 renders the TNC-2 text line for APRS-IS. Uses
-// APGRWO as the destination (software identifier) and TCPIP as the
+// APGRWO as the destination (software identifier) and TCPIP* as the
 // digipeater path (APRS-IS convention for locally-originated traffic).
-// Addressee is padded to 9 chars. The line carries two colons between
-// the path and the addressee: the first is the AX.25 path/data
-// separator, the second is the APRS message data-type identifier.
-// Without both, APRS-IS consumers reject the line as an unsupported
-// packet format.
+// Addressee is padded to 9 chars. Wire-format glue (the path-terminator
+// colon, the message DTI colon) lives in aprs.FormatTNC2 — both
+// encoders share that helper so neither can drop a structural byte.
 func buildMessageTNC2(row *configstore.Message) string {
 	addr := row.ToCall
 	if len(addr) > 9 {
@@ -561,11 +559,11 @@ func buildMessageTNC2(row *configstore.Message) string {
 	if len(addr) < 9 {
 		addr = addr + strings.Repeat(" ", 9-len(addr))
 	}
-	body := ":" + addr + ":" + row.Text
+	info := ":" + addr + ":" + row.Text
 	if row.MsgID != "" {
-		body = body + "{" + row.MsgID
+		info = info + "{" + row.MsgID
 	}
-	return fmt.Sprintf("%s>APGRWO,TCPIP*:%s", row.FromCall, body)
+	return aprs.FormatTNC2(row.FromCall, "APGRWO", []string{"TCPIP*"}, []byte(info))
 }
 
 // recordPending stores metadata keyed by frame pointer for the TxHook.

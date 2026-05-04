@@ -10,10 +10,12 @@ import (
 )
 
 // encodeTNC2 renders a decoded APRS packet as a TNC2-monitor line suitable
-// for APRS-IS uplink, WITHOUT the trailing CRLF. The qAR construct and
-// iGate callsign are appended by the caller (the APRS-IS convention is
-// to replace the last path element or append ",qAR,IGATECALL" before the
-// colon).
+// for APRS-IS uplink, WITHOUT the trailing CRLF. The path has its
+// trailing `*` H-bit markers stripped and a `,qAR,IGATECALL` construct
+// appended (APRS-IS convention identifying the gating station).
+// Wire-format glue is delegated to aprs.FormatTNC2 so this encoder
+// shares structural rules with the originating-side encoder in
+// pkg/messages.
 func encodeTNC2(pkt *aprs.DecodedAPRSPacket, igateCall string) (string, error) {
 	if pkt == nil {
 		return "", errors.New("igate: nil packet")
@@ -25,25 +27,15 @@ func encodeTNC2(pkt *aprs.DecodedAPRSPacket, igateCall string) (string, error) {
 	if len(info) == 0 {
 		return "", errors.New("igate: packet has no info field")
 	}
-	var b strings.Builder
-	b.WriteString(pkt.Source)
-	b.WriteByte('>')
-	b.WriteString(pkt.Dest)
+	path := make([]string, 0, len(pkt.Path)+2)
 	for _, p := range pkt.Path {
 		if p == "" {
 			continue
 		}
-		// Strip any trailing '*' H-bit markers; APRS-IS wants the
-		// unmarked path with a qAR construct appended.
-		p = strings.TrimSuffix(p, "*")
-		b.WriteByte(',')
-		b.WriteString(p)
+		path = append(path, strings.TrimSuffix(p, "*"))
 	}
-	b.WriteString(",qAR,")
-	b.WriteString(igateCall)
-	b.WriteByte(':')
-	b.Write(info)
-	return b.String(), nil
+	path = append(path, "qAR", igateCall)
+	return aprs.FormatTNC2(pkt.Source, pkt.Dest, path, info), nil
 }
 
 // infoBytes returns the AX.25 info field for a decoded packet. Prefer
