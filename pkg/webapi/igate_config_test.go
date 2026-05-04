@@ -262,3 +262,28 @@ func TestIGateConfig_AllowsNonTxCapableChannelWhenDisabled(t *testing.T) {
 		t.Fatalf("expected 200 (disabled escape hatch), got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestIGateConfig_NoChannelsISOnlySaveSucceeds covers the IS-only
+// operator flow: an enabled iGate must save when rf_channel=0 and
+// tx_channel=0 (the canonical "unset" sentinel that
+// dto.ValidateChannelRef short-circuits on). Before the
+// default-channel-id change, GORM seeded 1/1 and the UI's first save
+// 400'd on "channel 1 does not exist" for fresh installs.
+func TestIGateConfig_NoChannelsISOnlySaveSucceeds(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+
+	if err := srv.store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "N0CAL"}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":0,"tx_channel":0,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
