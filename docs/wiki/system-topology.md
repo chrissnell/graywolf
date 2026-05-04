@@ -129,6 +129,30 @@ PMTiles infra (manifest gen, R2 sync, origin Worker) lives in `~/dev/graywolf-ma
 not here. Integration spec: `~/dev/graywolf-maps/.context/graywolf-client-integration.md`.
 See [invariant 7](invariants.md).
 
+### IS-only station
+
+A graywolf station can send and receive APRS Messages over APRS-IS
+without any RF channel configured. The minimum setup:
+
+1. Set the station callsign on the Callsign page.
+2. Enable the iGate on the iGate page (TX channel = none / `0`, RF
+   channel = none / `0` — the form defaults to those when no channels
+   exist, and [`pkg/webapi/dto/channel_refs.go`](../../pkg/webapi/dto/channel_refs.go)
+   short-circuits validation on `0`).
+3. (Optional) On the Preferences page, set the Messages send path to
+   `is_only` to skip the RF-first attempt. The default `is_fallback`
+   already degrades to APRS-IS when no modem is running, but the
+   explicit setting silences the "RF unavailable" log line on every
+   send.
+
+The APRS-IS passcode is auto-derived from the callsign by
+[`pkg/callsign/passcode.go`](../../pkg/callsign/passcode.go); operators
+do not enter it. A station with callsign `N0CALL` (the unset sentinel)
+gets passcode `-1` and the sender's `readOnlyIS` gate at
+[`pkg/messages/sender.go`](../../pkg/messages/sender.go) refuses IS
+transmits, which is what makes "set a real callsign" the meaningful
+gate on outbound IS messages.
+
 ### Offline maps catalog
 
 The Worker exposes `GET /manifest.json` (auth-gated) returning the
