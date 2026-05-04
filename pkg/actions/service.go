@@ -48,6 +48,10 @@ type ServiceConfig struct {
 	// TacticalSet is the live tactical-alias set; the classifier
 	// matches against it on every inbound packet. Required.
 	TacticalSet *messages.TacticalSet
+	// Preflight is the shared messages preflight (auto-ACK + dedup).
+	// Required when running inside the wired app; tests may pass nil
+	// to opt out of preflight integration.
+	Preflight *messages.Preflight
 	// Logger is optional; nil falls back to slog.Default().
 	Logger *slog.Logger
 	// AuditPruner overrides the audit-log retention defaults. Zero
@@ -120,6 +124,7 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		CredStore:   cfg.Store,
 		OTPVerifier: verifier,
 		Runner:      runner,
+		Preflight:   cfg.Preflight,
 	})
 
 	stop := StartAuditPruner(ctx, cfg.Store, cfg.AuditPruner)

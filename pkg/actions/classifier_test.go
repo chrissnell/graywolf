@@ -3,7 +3,10 @@ package actions
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,8 +14,10 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/messages"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
 type stubSubmitter struct {
@@ -550,5 +555,154 @@ func TestSenderAllowed(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("senderAllowed(%q,%q)=%v want %v", tc.sender, tc.csv, got, tc.want)
 		}
+	}
+}
+
+// classifierTxSink captures Submit calls for the preflight integration
+// tests. Mirrors the pkg/messages fakeTxSink, redefined here because Go
+// scopes test fakes per-package.
+type classifierTxSink struct {
+	mu     sync.Mutex
+	frames []classifierSubmit
+}
+
+type classifierSubmit struct {
+	Channel uint32
+	Frame   *ax25.Frame
+	Src     txgovernor.SubmitSource
+}
+
+func (f *classifierTxSink) Submit(_ context.Context, ch uint32, frame *ax25.Frame, src txgovernor.SubmitSource) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.frames = append(f.frames, classifierSubmit{Channel: ch, Frame: frame, Src: src})
+	return nil
+}
+
+func (f *classifierTxSink) list() []classifierSubmit {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]classifierSubmit, len(f.frames))
+	copy(out, f.frames)
+	return out
+}
+
+type classifierIGate struct {
+	mu sync.Mutex
+	ll []string
+}
+
+func (f *classifierIGate) SendLine(line string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ll = append(f.ll, line)
+	return nil
+}
+
+// newClassifierTestPreflight builds a real messages.Preflight wired
+// over package-local fakes so the classifier's auto-ACK path is
+// exercised end to end.
+func newClassifierTestPreflight(t *testing.T) (*messages.Preflight, *classifierTxSink, *classifierIGate) {
+	t.Helper()
+	sink := &classifierTxSink{}
+	igs := &classifierIGate{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	pf, err := messages.NewPreflight(messages.PreflightConfig{
+		OurCall:        func() string { return "N0CALL" },
+		TxSink:         sink,
+		IGateSender:    igs,
+		Logger:         logger,
+		AutoAckChannel: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewPreflight: %v", err)
+	}
+	return pf, sink, igs
+}
+
+// newClassifierWithPreflight wires a Classifier with a Preflight and
+// the OTP-free "unlock" action. Returns the classifier and its
+// stubSubmitter so tests can assert on Submit count.
+func newClassifierWithPreflight(t *testing.T, pf *messages.Preflight) (*Classifier, *stubSubmitter) {
+	t.Helper()
+	a := &configstore.Action{
+		ID: 1, Name: "unlock", Type: "command",
+		Enabled: true, OTPRequired: false,
+	}
+	sub := &stubSubmitter{}
+	c := NewClassifier(ClassifierConfig{
+		OurCall:     ourCallProvider("N0CALL"),
+		TacticalSet: messages.NewTacticalSet(),
+		Listeners:   NewAddresseeSet(),
+		ActionStore: &stubActionStore{byName: map[string]*configstore.Action{"unlock": a}},
+		CredStore:   &stubCredStore{},
+		OTPVerifier: NewOTPVerifier(OTPVerifierConfig{Now: time.Now}),
+		Runner:      sub,
+		Preflight:   pf,
+	})
+	return c, sub
+}
+
+func makeActionPacket(sender, addressee, body, msgID string, dir aprs.Direction) *aprs.DecodedAPRSPacket {
+	return &aprs.DecodedAPRSPacket{
+		Source:    sender,
+		Type:      aprs.PacketMessage,
+		Direction: dir,
+		Channel:   1,
+		Message: &aprs.Message{
+			Addressee: addressee,
+			Text:      body,
+			MessageID: msgID,
+		},
+	}
+}
+
+func TestClassifierFiresAutoAckOnFirstCopy(t *testing.T) {
+	pf, sink, _ := newClassifierTestPreflight(t)
+	c, sub := newClassifierWithPreflight(t, pf)
+
+	pkt := makeActionPacket("W1ABC", "N0CALL", "@@#unlock", "042", aprs.DirectionRF)
+	if !c.Classify(context.Background(), pkt) {
+		t.Fatal("classifier must consume @@-prefixed packet")
+	}
+	if got := len(sink.list()); got != 1 {
+		t.Fatalf("auto-ACK count = %d, want 1", got)
+	}
+	if got := len(sub.submits); got != 1 {
+		t.Fatalf("Submit call count = %d, want 1", got)
+	}
+}
+
+func TestClassifierDedupSecondCopyNoSubmit(t *testing.T) {
+	pf, sink, _ := newClassifierTestPreflight(t)
+	c, sub := newClassifierWithPreflight(t, pf)
+
+	pkt := makeActionPacket("W1ABC", "N0CALL", "@@#unlock", "042", aprs.DirectionRF)
+	_ = c.Classify(context.Background(), pkt)
+
+	dup := makeActionPacket("W1ABC", "N0CALL", "@@#unlock", "042", aprs.DirectionRF)
+	if !c.Classify(context.Background(), dup) {
+		t.Fatal("dup must still be consumed")
+	}
+	// APRS101 §14.2 — every copy is acked.
+	if got := len(sink.list()); got != 2 {
+		t.Fatalf("auto-ACK count after dup = %d, want 2", got)
+	}
+	if got := len(sub.submits); got != 1 {
+		t.Fatalf("Submit count after dup = %d, want 1 (dedup must suppress)", got)
+	}
+}
+
+func TestClassifierMissingMsgIDSkipsACKAndDedup(t *testing.T) {
+	pf, sink, _ := newClassifierTestPreflight(t)
+	c, sub := newClassifierWithPreflight(t, pf)
+
+	pkt := makeActionPacket("W1ABC", "N0CALL", "@@#unlock", "", aprs.DirectionRF)
+	_ = c.Classify(context.Background(), pkt)
+	if got := len(sink.list()); got != 0 {
+		t.Fatalf("no msgID must skip auto-ACK, got %d", got)
+	}
+	if got := len(sub.submits); got != 1 {
+		t.Fatalf("no msgID must still Submit (no dedup key), got %d", got)
 	}
 }

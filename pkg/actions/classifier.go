@@ -46,6 +46,12 @@ type ClassifierConfig struct {
 	CredStore   CredentialLookup
 	OTPVerifier *OTPVerifier
 	Runner      Submitter
+	// Preflight is the shared auto-ACK + dedup component owned by
+	// messages.Service. When non-nil, every consumed @@ packet sends an
+	// auto-ACK before any executor work and a duplicate (same from, msg
+	// id, text hash) within the dedup window short-circuits without
+	// re-submitting. Nil disables the hookup (test-only).
+	Preflight *messages.Preflight
 }
 
 // Classifier inspects inbound APRS messages and decides whether they
@@ -92,6 +98,17 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 	}
 	sender := strings.ToUpper(strings.TrimSpace(innerSource))
 	channel := uint32(pkt.Channel)
+
+	// Preflight: send auto-ACK on every copy (APRS101 §14.2 — ack each
+	// retry/duplicate so the sender stops resending). Then dedup on
+	// (from, msgid, text_hash). A dedup hit consumes the packet without
+	// running the executor again — the first copy already replied.
+	if c.cfg.Preflight != nil {
+		c.cfg.Preflight.SendAutoAck(ctx, pkt, sender, innerMsg.MessageID)
+		if innerMsg.MessageID != "" && c.cfg.Preflight.CheckDedup(sender, innerMsg.MessageID, innerMsg.Text) {
+			return true
+		}
+	}
 
 	parsed, parseErr := Parse(innerMsg.Text)
 	if parseErr != nil && parsed == nil {
