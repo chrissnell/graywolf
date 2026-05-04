@@ -837,6 +837,7 @@ type Action struct {
 	OTPCredentialID     *uint  `gorm:"column:otp_credential_id"` // FK to OTPCredential, nullable; ON DELETE SET NULL
 	SenderAllowlist     string // CSV
 	ArgSchema           string `gorm:"type:text;default:'[]'"` // JSON list
+	ArgMode             string `gorm:"size:16;not null;default:'kv'"`
 	RateLimitSec        int    `gorm:"not null;default:5"`
 	QueueDepth          int    `gorm:"not null;default:8"`
 	Enabled             bool   `gorm:"not null"`

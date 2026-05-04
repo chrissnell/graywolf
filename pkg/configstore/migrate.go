@@ -168,6 +168,7 @@ var schemaMigrations = []migration{
 	{version: 14, name: "ax25_terminal_tables", phase: postAutoMigrate, run: migrateAX25TerminalTables},
 	{version: 15, name: "actions_tables", phase: postAutoMigrate, run: migrateActionsTables},
 	{version: 16, name: "remote_actions_tables", phase: postAutoMigrate, run: migrateRemoteActionsTables},
+	{version: 17, name: "actions_arg_mode", phase: postAutoMigrate, run: migrateActionsArgMode},
 }
 
 // runMigrations applies every pending migration in the given phase,
