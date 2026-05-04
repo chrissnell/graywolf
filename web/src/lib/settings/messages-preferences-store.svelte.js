@@ -31,6 +31,8 @@ import { getPreferences, putPreferences } from '../../api/messages.js';
 const DEFAULT_CAP = 67;
 const UNSAFE_CAP = 200;
 
+const VALID_FALLBACK_POLICIES = new Set(['rf_only', 'is_fallback', 'is_only', 'both']);
+
 // Normalize a value from the wire into a valid override:
 //   0          -> 0 (default enforced)
 //   68..200    -> itself (raised cap)
@@ -133,6 +135,44 @@ export const messagesPreferencesState = (() => {
     return setOverride(allow ? UNSAFE_CAP : 0);
   }
 
+  async function setFallbackPolicy(policy) {
+    if (!VALID_FALLBACK_POLICIES.has(policy)) return;
+    if (!hydrated) {
+      await fetchPreferences();
+      if (!hydrated) {
+        toasts.error("Couldn't load preferences — try again in a moment.");
+        return;
+      }
+    }
+    if (prefs?.fallback_policy === policy) return;
+    const baseline = prefs;
+    const prev = baseline;
+    const optimistic = { ...baseline, fallback_policy: policy };
+    prefs = optimistic;
+    saving = true;
+    error = null;
+    try {
+      const payload = {
+        default_path: baseline.default_path,
+        fallback_policy: policy,
+        retention_days: baseline.retention_days,
+        retry_max_attempts: baseline.retry_max_attempts,
+        max_message_text_override: normalizeOverride(baseline.max_message_text_override),
+      };
+      const resp = await putPreferences(payload);
+      const next = resp ?? optimistic;
+      next.max_message_text_override = normalizeOverride(next.max_message_text_override);
+      prefs = next;
+      toasts.success('Saved');
+    } catch (e) {
+      prefs = prev;
+      error = e?.message || String(e);
+      toasts.error("Couldn't save fallback policy — try again.");
+    } finally {
+      saving = false;
+    }
+  }
+
   return {
     get loaded() { return loaded; },
     get saving() { return saving; },
@@ -147,6 +187,7 @@ export const messagesPreferencesState = (() => {
     get allowLong() {
       return normalizeOverride(prefs?.max_message_text_override) > 0;
     },
+    get fallbackPolicy() { return prefs?.fallback_policy || 'is_fallback'; },
     // Effective cap the compose bar should enforce. Mirrors the server's
     // sender gate: 0 => 67, otherwise => the override value itself.
     get maxMessageText() {
@@ -157,6 +198,7 @@ export const messagesPreferencesState = (() => {
     fetchPreferences,
     setOverride,
     setAllowLong,
+    setFallbackPolicy,
   };
 })();
 
