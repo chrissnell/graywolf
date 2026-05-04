@@ -22,7 +22,7 @@
       Senders write <code>@@&lt;otp&gt;#name &lt;anything&gt;</code> and
       everything after the verb is one payload. Your handler is
       responsible for parsing and revalidating it.
-      <a href="/handbook/actions-handler-safety.html#freeform" target="_blank" rel="noopener">
+      <a href="/handbook/actions-handler-safety-shell.html#freeform" target="_blank" rel="noopener">
         Read the safety guide before enabling.
       </a>
     {/if}
