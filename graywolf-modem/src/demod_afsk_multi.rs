@@ -243,12 +243,23 @@ impl MultiAfskDemodulator {
         std::mem::take(&mut self.out)
     }
 
-    /// Sum of bad-FCS events across every contained demod configuration.
-    /// One RF event may bump this by (num_configs * num_slicers) since
-    /// each inner decoder attempts its own decode independently, and
-    /// unlike successful frames the ensemble does not dedup failures.
+    /// Bad-FCS events for one physical RF event, taken from the primary
+    /// sub-demod only. Other sub-demods are still drained (so their
+    /// internal counters don't run away) but their counts are dropped:
+    /// summing across the ensemble multiplied a single noise-shaped
+    /// candidate by `num_configs * num_slicers`, which on the default
+    /// triple-9 ensemble is 27. Operators interpret bad-FCS as a
+    /// signal-quality indicator and the 27x amplification made it
+    /// useless. The primary sub-demod's count is a faithful single-
+    /// decoder approximation; absolute parity across all sub-demods is
+    /// not the goal -- relative trend is.
     pub fn take_bad_fcs(&mut self) -> u64 {
-        self.demods.iter_mut().map(|d| d.take_bad_fcs()).sum()
+        let mut iter = self.demods.iter_mut();
+        let primary = iter.next().map(|d| d.take_bad_fcs()).unwrap_or(0);
+        for d in iter {
+            let _ = d.take_bad_fcs();
+        }
+        primary
     }
 
     /// Total deduped frames currently buffered (not yet drained).
@@ -256,9 +267,22 @@ impl MultiAfskDemodulator {
         self.out.len()
     }
 
-    /// Whether any underlying demodulator reports Data Carrier Detect.
+    /// Whether the ensemble currently sees a carrier. Returns true when
+    /// at least a majority (`ceil(N/2)`) of sub-demods report DCD --
+    /// stricter than "any one slicer asserts" because the OR-of-27-
+    /// slicers form latches near-permanent on noise floor, blocking TX
+    /// at the governor. Real APRS signal locks every sub-demod and
+    /// easily clears the majority threshold; sustained noise rarely
+    /// trips two profiles at once. Method name kept for API stability;
+    /// semantics are now "any meaningful detection" rather than literal
+    /// any-of-any.
     pub fn data_detect_any(&self) -> bool {
-        self.demods.iter().any(|d| d.data_detect_any())
+        let n = self.demods.len();
+        if n == 0 {
+            return false;
+        }
+        let quorum = n.div_ceil(2);
+        self.demods.iter().filter(|d| d.data_detect_any()).count() >= quorum
     }
 }
 
