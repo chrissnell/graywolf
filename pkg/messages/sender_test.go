@@ -731,3 +731,39 @@ func TestSender_AprsModeChannel_Permits(t *testing.T) {
 		t.Fatalf("sink got %d frames, want 1", got)
 	}
 }
+
+// TestBuildMessageTNC2 verifies the line carries the path-terminator
+// colon AND the message DTI colon (two colons between the path and
+// the addressee). Without both, APRS-IS consumers like aprs.fi reject
+// the packet as "Unsupported packet format".
+func TestBuildMessageTNC2(t *testing.T) {
+	tests := []struct {
+		name string
+		row  *configstore.Message
+		want string
+	}{
+		{
+			name: "padded addressee with msg id",
+			row:  &configstore.Message{FromCall: "NW5W-13", ToCall: "NW5W-5", Text: "TEST", MsgID: "015"},
+			want: "NW5W-13>APGRWO,TCPIP*::NW5W-5   :TEST{015",
+		},
+		{
+			name: "no msg id",
+			row:  &configstore.Message{FromCall: "N0CAL", ToCall: "W1ABC", Text: "hi"},
+			want: "N0CAL>APGRWO,TCPIP*::W1ABC    :hi",
+		},
+		{
+			name: "9-char addressee (no padding)",
+			row:  &configstore.Message{FromCall: "K1ABC", ToCall: "WB6VVV-15", Text: "x", MsgID: "001"},
+			want: "K1ABC>APGRWO,TCPIP*::WB6VVV-15:x{001",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildMessageTNC2(tc.row)
+			if got != tc.want {
+				t.Fatalf("buildMessageTNC2 = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
