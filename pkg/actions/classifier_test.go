@@ -706,3 +706,26 @@ func TestClassifierMissingMsgIDSkipsACKAndDedup(t *testing.T) {
 		t.Fatalf("no msgID must still Submit (no dedup key), got %d", got)
 	}
 }
+
+// TestClassifierThreeIdenticalCopiesACKThriceFireOnce models the
+// operational failure: an action sender retries while iGate fan-out
+// delivers extra copies. The classifier must ACK every copy (so the
+// sender stops retrying) but only fire the executor on the first copy.
+func TestClassifierThreeIdenticalCopiesACKThriceFireOnce(t *testing.T) {
+	pf, sink, _ := newClassifierTestPreflight(t)
+	c, sub := newClassifierWithPreflight(t, pf)
+
+	for i := 0; i < 3; i++ {
+		pkt := makeActionPacket("W1ABC", "N0CALL", "@@#unlock", "042", aprs.DirectionRF)
+		if !c.Classify(context.Background(), pkt) {
+			t.Fatalf("copy %d not consumed", i)
+		}
+	}
+
+	if got := len(sink.list()); got != 3 {
+		t.Fatalf("auto-ACK count after 3 copies = %d, want 3", got)
+	}
+	if got := len(sub.submits); got != 1 {
+		t.Fatalf("Submit count after 3 copies = %d, want 1", got)
+	}
+}
