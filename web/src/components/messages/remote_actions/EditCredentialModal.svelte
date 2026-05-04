@@ -8,6 +8,7 @@
   import { Button, Input, Modal, toast } from '@chrissnell/chonky-ui';
   import { remoteCredsApi } from '../../../lib/remote_actions/api.js';
   import { remoteActionsStore } from '../../../lib/remote_actions/store.svelte.js';
+  import ScrollHint from '../../ScrollHint.svelte';
 
   let { open = $bindable(false), cred = null, onSaved = () => {} } = $props();
 
@@ -82,6 +83,7 @@
       </div>
       {#if err}<p class="err" role="alert">{err}</p>{/if}
     </div>
+    <ScrollHint />
   </Modal.Body>
   <Modal.Footer>
     <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>

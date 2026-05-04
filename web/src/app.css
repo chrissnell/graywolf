@@ -60,6 +60,25 @@ input, select, textarea, button {
 .modal-body {
   overflow-y: auto;
   min-height: 0;
+  position: relative;
+  scrollbar-width: auto;
+  scrollbar-color: var(--color-text-dim, #6b7280) var(--color-bg);
+}
+.modal-body::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.modal-body::-webkit-scrollbar-track {
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background: var(--color-text-dim, #6b7280);
+  border-radius: 6px;
+  border: 2px solid var(--color-bg);
+}
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text, #111827);
 }
 
 /* Messages: when a thread is open on mobile, hide the sidebar bottom-nav

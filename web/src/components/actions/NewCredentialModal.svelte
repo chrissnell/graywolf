@@ -4,6 +4,7 @@
   import { credsApi } from '../../lib/actions/api.js';
   import QRDisplay from './QRDisplay.svelte';
   import CopyableInput from './CopyableInput.svelte';
+  import ScrollHint from '../ScrollHint.svelte';
 
   let { open = $bindable(false), onClose } = $props();
 
@@ -193,6 +194,7 @@
         />
       </div>
     {/if}
+    <ScrollHint />
   </Modal.Body>
   <Modal.Footer>
     {#if !revealed}

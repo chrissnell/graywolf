@@ -3,6 +3,7 @@
   import { actionsApi } from '../../lib/actions/api.js';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { statusVariant, badArgKey } from '../../lib/actions/status.js';
+  import ScrollHint from '../ScrollHint.svelte';
 
   // `action` is the row whose Test button was clicked. Null while the
   // dialog is closed; the parent passes a fresh object on each open.
@@ -220,6 +221,7 @@
         {/if}
       </div>
     {/if}
+    <ScrollHint />
   </Modal.Body>
   <Modal.Footer>
     {#if view === 'result'}
