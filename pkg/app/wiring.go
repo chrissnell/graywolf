@@ -830,6 +830,7 @@ func (a *App) wireActions(ctx context.Context) error {
 		Messages:    a.msgSvc,
 		OurCall:     ourCall,
 		TacticalSet: a.msgSvc.TacticalSet(),
+		Preflight:   a.msgSvc.Preflight(),
 		Logger:      a.logger.With("component", "actions"),
 	})
 	if err != nil {
