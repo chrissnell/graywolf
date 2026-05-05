@@ -49,7 +49,7 @@ SWAGGER_UI_VENDOR := $(DOCS_HANDBOOK)/vendor/swagger-ui
 # api-client-check guards catch.
 GENERATED_SPEC_FILES := $(DOCS_GEN_DIR)/swagger.json $(DOCS_GEN_DIR)/swagger.yaml $(WEB_DIR)/src/api/generated/api.d.ts
 
-.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf graywolf-quick version bump-minor bump-point bump-beta handbook-sync docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks
+.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf graywolf-quick version bump-minor bump-point bump-beta handbook-sync handbook-sync-ssh docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks
 
 all: release web
 	mkdir -p bin
@@ -229,6 +229,19 @@ bump-beta:
 
 handbook-sync:
 	rsync -av --delete docs/handbook/ /Volumes/NFS/static-sites/chrissnell.com/software/graywolf
+
+# Push handbook over SSH when the NFS share isn't mounted locally.
+# `--exclude='@eaDir'` leaves Synology's thumbnail cache alone so
+# `--delete` doesn't churn it. Synology requires `rsync service`
+# enabled in Control Panel -> File Services -> rsync, even when the
+# transport is SSH (the binary checks a DSM flag and otherwise errors
+# `rsync service is no running` (sic)). macOS ships openrsync, which
+# misbehaves against DSM rsync 3.0.9; install GNU rsync via
+# `brew install rsync` and ensure `/opt/homebrew/bin` precedes
+# `/usr/bin` in PATH so this target picks it up.
+HANDBOOK_SSH_DEST ?= cjs@10.50.0.110:/volume1/NFS/static-sites/chrissnell.com/software/graywolf
+handbook-sync-ssh:
+	rsync -av --delete --exclude='@eaDir' docs/handbook/ $(HANDBOOK_SSH_DEST)/
 
 # --- OpenAPI documentation pipeline --------------------------------------
 #
