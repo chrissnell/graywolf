@@ -98,22 +98,27 @@ func (s *Server) clearActionInvocations(w http.ResponseWriter, r *http.Request) 
 }
 
 func invocationToDTO(row *configstore.ActionInvocation) dto.ActionInvocation {
+	count := row.ReplyLineCount
+	if count <= 0 {
+		count = 1
+	}
 	d := dto.ActionInvocation{
-		ID:            row.ID,
-		ActionID:      row.ActionID,
-		ActionName:    row.ActionNameAt,
-		SenderCall:    row.SenderCall,
-		Source:        row.Source,
-		OTPCredID:     row.OTPCredentialID,
-		OTPVerified:   row.OTPVerified,
-		Status:        row.Status,
-		StatusDetail:  row.StatusDetail,
-		ExitCode:      row.ExitCode,
-		HTTPStatus:    row.HTTPStatus,
-		OutputCapture: row.OutputCapture,
-		ReplyText:     row.ReplyText,
-		Truncated:     row.Truncated,
-		CreatedAt:     row.CreatedAt.UTC().Format(time.RFC3339),
+		ID:             row.ID,
+		ActionID:       row.ActionID,
+		ActionName:     row.ActionNameAt,
+		SenderCall:     row.SenderCall,
+		Source:         row.Source,
+		OTPCredID:      row.OTPCredentialID,
+		OTPVerified:    row.OTPVerified,
+		Status:         row.Status,
+		StatusDetail:   row.StatusDetail,
+		ExitCode:       row.ExitCode,
+		HTTPStatus:     row.HTTPStatus,
+		OutputCapture:  row.OutputCapture,
+		ReplyText:      row.ReplyText,
+		ReplyLineCount: count,
+		Truncated:      row.Truncated,
+		CreatedAt:      row.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if row.RawArgsJSON != "" {
 		_ = json.Unmarshal([]byte(row.RawArgsJSON), &d.Args)

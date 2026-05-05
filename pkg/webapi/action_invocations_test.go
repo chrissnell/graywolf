@@ -158,3 +158,45 @@ func TestInvocations_ArgsRoundtrip(t *testing.T) {
 		t.Fatalf("args lost on read: %+v", got)
 	}
 }
+
+func TestListActionInvocationsSurfacesReplyLineCount(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	row := &configstore.ActionInvocation{
+		ActionNameAt:   "MULTI",
+		SenderCall:     "N0CALL",
+		Source:         "rf",
+		Status:         "ok",
+		ReplyText:      "ok: alpha\nbravo\ncharlie\ndelta",
+		ReplyLineCount: 4,
+		CreatedAt:      time.Now(),
+	}
+	if err := srv.store.InsertActionInvocation(context.Background(), row); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/actions/invocations", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+	}
+	var got []dto.ActionInvocation
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	var found *dto.ActionInvocation
+	for i := range got {
+		if got[i].ID == row.ID {
+			found = &got[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("inserted row %d not present in listing", row.ID)
+	}
+	if found.ReplyLineCount != 4 {
+		t.Fatalf("reply_line_count=%d, want 4", found.ReplyLineCount)
+	}
+}
