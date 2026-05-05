@@ -5,8 +5,11 @@
 #                                   "39.7,-105.0")
 # Reply:    two-line current conditions in plain English. Set the
 #           Action's MaxReplyLines >= 2 or only the first line ships.
-#           Line 1: "<location>: <condition> <temp>"
-#           Line 2: "wind <wind> hum <hum> <pressure>"
+#           Line 1: "<label>: <condition> <temp>"  (label = "<input>
+#                   (<city>)" when wttr.in resolves a different city
+#                   name and it fits, else just <input> or <city>)
+#           Line 2: "wind <dir><speed>mph hum <hum>% <pressure>hPa"
+#           Unknown location -> single-line helpful message.
 # Source:   wttr.in (free, no key, worldwide)
 
 Set-StrictMode -Version Latest
@@ -26,27 +29,68 @@ if ($location -notmatch '^[A-Za-z0-9.,_ -]+$') {
 }
 
 $encoded = [System.Uri]::EscapeDataString($location)
-# %C condition, %t temp, %w wind, %h humidity, %P pressure; &u forces
-# USCS units. The literal "|" splits the response into the two on-air
-# lines; wttr.in passes it through verbatim and "|" never appears in
-# any of these fields.
-$url = "https://wttr.in/${encoded}?format=%C+%t|wind+%w+hum+%h+%P&u"
+# j1 returns full JSON: current_condition + nearest_area (resolved city).
+# &u forces USCS units. wttr.in returns HTTP 500 with body "location not
+# found: location not found" for unknown ICAO/ZIP/etc.
+$url = "https://wttr.in/${encoded}?format=j1&u"
 
+$content = $null
 try {
-  $resp = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri $url).Content.Trim()
+  $content = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri $url).Content
 } catch {
+  $errResp = $null
+  try { $errResp = $_.Exception.Response } catch {}
+  if ($errResp -and ($errResp.StatusCode.value__ -eq 500)) {
+    $errBody = ''
+    try {
+      $reader = [System.IO.StreamReader]::new($errResp.GetResponseStream())
+      $errBody = $reader.ReadToEnd()
+      $reader.Dispose()
+    } catch {}
+    if ($errBody -match 'location not found') {
+      "unknown location '$location'. Try city, ZIP, ICAO, or lat,lon"
+      exit 0
+    }
+  }
   [Console]::Error.WriteLine('fetch failed')
   exit 1
 }
 
-if (-not $resp) {
+if (-not $content) {
   "${location}: no data"
   exit 0
 }
 
-$parts = $resp.Split('|', 2)
-"${location}: $($parts[0])"
-# Drop line 2 if the delimiter was missing.
-if ($parts.Length -eq 2) {
-  $parts[1]
+try {
+  $j = $content | ConvertFrom-Json
+} catch {
+  [Console]::Error.WriteLine('parse failed')
+  exit 1
 }
+
+$c = $j.current_condition[0]
+$a = $j.nearest_area[0]
+$city = if ($a -and $a.areaName) { $a.areaName[0].value.Trim() } else { '' }
+$desc = if ($c.weatherDesc) { $c.weatherDesc[0].value.Trim() } else { '' }
+$tF   = $c.temp_F
+$wd   = $c.winddir16Point
+$ws   = $c.windspeedMiles
+$hum  = $c.humidity
+$pr   = $c.pressure
+
+if (-not $desc -or -not $tF) {
+  "${location}: no data"
+  exit 0
+}
+
+# Prefer "<input> (<city>)" when wttr.in resolved a different city name
+# and the combined label fits in 28 chars (leaves room for conditions on
+# a 67-char APRS line). Otherwise fall back to just <input> or <city>.
+$label = $location
+if ($city -and ($location.ToLower() -ne $city.ToLower())) {
+  $combined = "$location ($city)"
+  if ($combined.Length -le 28) { $label = $combined } else { $label = $city }
+}
+
+"${label}: $desc ${tF}°F"
+"wind ${wd}${ws}mph hum ${hum}% ${pr}hPa"
