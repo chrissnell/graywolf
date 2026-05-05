@@ -351,7 +351,9 @@ func TestRunnerSingleLineDispatchUnchanged(t *testing.T) {
 
 	waitFor(t, func() bool { return len(sink.snapshot()) == 1 && audit.count() == 1 })
 	got := sink.snapshot()
-	if got[0] != "ok: lights on" {
+	// Single-line dispatch preserves legacy semantics: newlines in
+	// stdout collapse to spaces and the whole thing rides one frame.
+	if got[0] != "ok: lights on ignored second line" {
 		t.Fatalf("got %q", got[0])
 	}
 	if len(got) != 1 {
@@ -362,6 +364,77 @@ func TestRunnerSingleLineDispatchUnchanged(t *testing.T) {
 	audit.mu.Unlock()
 	if row.ReplyLineCount != 1 {
 		t.Fatalf("ReplyLineCount: want 1, got %d", row.ReplyLineCount)
+	}
+}
+
+// failingAfterReplySink rejects every line past the first, simulating a
+// transport that dies mid-burst. Used to pin "ReplyLineCount records
+// what actually went out, not the formatter's intent."
+type failingAfterReplySink struct {
+	mu      sync.Mutex
+	replies []string
+	limit   int
+}
+
+func (f *failingAfterReplySink) SendReply(_ context.Context, _ uint32, _ Source, _ string, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.replies) >= f.limit {
+		return errSinkClosed
+	}
+	f.replies = append(f.replies, text)
+	return nil
+}
+
+func (f *failingAfterReplySink) snapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.replies))
+	copy(out, f.replies)
+	return out
+}
+
+var errSinkClosed = &sinkError{msg: "transport closed"}
+
+type sinkError struct{ msg string }
+
+func (e *sinkError) Error() string { return e.msg }
+
+func TestRunnerReplyLineCountReflectsTransportFailure(t *testing.T) {
+	sink := &failingAfterReplySink{limit: 2}
+	audit := &fakeAudit{}
+	reg := NewExecutorRegistry()
+	_ = reg.Register("command", staticExecutor{
+		res: Result{Status: StatusOK, OutputCapture: "alpha\nbravo\ncharlie\ndelta"},
+	})
+	r := NewRunner(RunnerConfig{Registry: reg, Replies: sink, Audit: audit})
+	defer r.Stop()
+
+	a := &configstore.Action{
+		// MaxReplyLines=3 against 4-line source: formatter clips
+		// delta (Truncated=true), transport limit clips again to 2
+		// (ReplyLineCount=2). The two truncations are independent.
+		ID: 9, Name: "PARTIAL", Type: "command", CommandPath: "/bin/true",
+		Enabled: true, MaxReplyLines: 3, QueueDepth: 0, TimeoutSec: 5,
+	}
+	r.Submit(context.Background(), Invocation{
+		ActionID: 9, ActionName: "PARTIAL", SenderCall: "N0CALL", Source: SourceRF,
+	}, a, 0)
+
+	waitFor(t, func() bool { return audit.count() == 1 })
+	if got := len(sink.snapshot()); got != 2 {
+		t.Fatalf("transport dispatched %d, want 2", got)
+	}
+	audit.mu.Lock()
+	row := audit.rows[0]
+	audit.mu.Unlock()
+	if row.ReplyLineCount != 2 {
+		t.Fatalf("ReplyLineCount: want 2 (sent), got %d", row.ReplyLineCount)
+	}
+	// Truncated stays true because the formatter clipped 4 lines from
+	// the source — that fact is independent of the transport failure.
+	if !row.Truncated {
+		t.Fatalf("Truncated should reflect formatter clipping")
 	}
 }
 
