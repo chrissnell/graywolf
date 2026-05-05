@@ -742,6 +742,31 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       the full capture remains in the audit log.
     </p>
 
+    <h3>Multi-line replies</h3>
+
+    <p>
+      Each Action carries a <strong>Max reply lines</strong> setting
+      (defaults to 1, hard ceiling 5). Leave it at 1 and the on-air
+      reply is the single legacy frame described above. Raise it and
+      stdout lines 2..N each ride an additional APRS message, capped
+      at 67 runes per line; the <code>ok:</code> prefix only rides
+      the first frame. Lines past the cap are silently dropped and
+      <code>Truncated</code> is set on the audit row.
+    </p>
+
+    <p>
+      <strong>Airtime cost is real.</strong> Every extra line is one
+      more RF frame plus its own ack and retries on a shared channel.
+      An Action set to 5 turns one trigger into five outbound frames
+      back-to-back, which is antisocial on 144.39 even if it works.
+      Reach for multi-line only when the operator genuinely needs
+      structured output (a multi-field weather summary, a short
+      status block); single-line is the right default for almost
+      every Action. Failure replies (<code>denied</code>,
+      <code>bad_arg</code>, <code>timeout</code>, etc.) always
+      collapse to one frame regardless of the setting.
+    </p>
+
     <h2>Audit log</h2>
 
     <p>
@@ -765,7 +790,8 @@ https://hass.local:8123/api/services/light/turn_on?room={{arg.room}}
       <li>Status and a short detail string</li>
       <li>Exit code (commands) or HTTP status (webhooks)</li>
       <li>Output capture (up to 4 KiB of merged stdout/stderr for commands, ~1 KiB of response body for webhooks)</li>
-      <li>The exact reply text that went out on the air</li>
+      <li>The exact reply text that went out on the air, newline-joined when the Action ran multi-line</li>
+      <li>Reply line count (how many APRS frames actually reached the transport for this invocation)</li>
     </ul>
 
     <p>
