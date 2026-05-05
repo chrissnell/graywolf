@@ -72,6 +72,12 @@ func FormatReplies(r Result, maxLines int) ([]string, bool) {
 	if maxLines <= 0 {
 		maxLines = 1
 	}
+	// Defense in depth: even if a row escaped the validator (raw SQL,
+	// migration glitch, future schema bug) the dispatch chokepoint
+	// must never fan out more frames than the airtime ceiling allows.
+	if maxLines > MaxReplyLinesCeiling {
+		maxLines = MaxReplyLinesCeiling
+	}
 
 	// Non-OK paths surface a single-line reply with the status-word
 	// detail. Multi-line is meaningful only for executor success
@@ -81,14 +87,12 @@ func FormatReplies(r Result, maxLines int) ([]string, bool) {
 	}
 
 	if maxLines == 1 {
-		rawLines := splitNonEmptyLines(r.OutputCapture)
-		if len(rawLines) == 0 {
-			return []string{statusWord(StatusOK)}, false
-		}
-		line, tr := formatOKSingle(rawLines[0])
-		if len(rawLines) > 1 {
-			tr = true
-		}
+		// Legacy single-line semantics: collapse newlines to spaces,
+		// prefix with "ok: ", clamp to MaxReplyLen. An Action whose
+		// stdout already had multiple lines used to ship as one
+		// joined frame; preserve that so toggling MaxReplyLines==1
+		// stays bug-for-bug identical to the pre-multi-line path.
+		line, tr := formatOKSingle(r.OutputCapture)
 		return []string{line}, tr
 	}
 

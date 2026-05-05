@@ -149,12 +149,56 @@ func TestFormatRepliesStripsControlChars(t *testing.T) {
 }
 
 func TestFormatRepliesMaxLinesZeroDefaultsToOne(t *testing.T) {
+	// maxLines==0 falls through to maxLines==1, which uses legacy
+	// single-line semantics: newlines collapse to spaces, the whole
+	// string joins under one "ok: " prefix.
 	out := "a\nb"
 	lines, tr := FormatReplies(Result{Status: StatusOK, OutputCapture: out}, 0)
-	if len(lines) != 1 || lines[0] != "ok: a" {
+	if len(lines) != 1 || lines[0] != "ok: a b" {
 		t.Fatalf("got %#v", lines)
 	}
+	if tr {
+		t.Fatalf("unexpected truncation flag")
+	}
+}
+
+func TestFormatRepliesClampsToCeiling(t *testing.T) {
+	// Even if a row stores a corrupt MaxReplyLines (e.g. raw SQL
+	// edit), the dispatcher must never emit more frames than the
+	// airtime ceiling.
+	out := "a\nb\nc\nd\ne\nf\ng\nh\ni\nj"
+	lines, tr := FormatReplies(Result{Status: StatusOK, OutputCapture: out}, 100)
+	if len(lines) != MaxReplyLinesCeiling {
+		t.Fatalf("want %d lines, got %d: %#v", MaxReplyLinesCeiling, len(lines), lines)
+	}
 	if !tr {
-		t.Fatalf("expected truncation flag (b dropped)")
+		t.Fatalf("expected truncation flag (10 of 5 lines)")
+	}
+}
+
+func TestFormatRepliesBoundaryLineLengths(t *testing.T) {
+	// Pin the off-by-one boundary on the per-line clamp.
+	exactlyAtCap := strings.Repeat("x", MaxReplyLen)            // 67
+	oneOverCap := strings.Repeat("x", MaxReplyLen+1)            // 68
+	short := "y"
+	out := exactlyAtCap + "\n" + oneOverCap + "\n" + short
+	lines, tr := FormatReplies(Result{Status: StatusOK, OutputCapture: out}, 3)
+	if len(lines) != 3 {
+		t.Fatalf("want 3, got %d", len(lines))
+	}
+	// Line 0 wears "ok: " prefix → 67-char input gets truncated.
+	if !strings.HasSuffix(lines[0], "…") {
+		t.Fatalf("line 0 should be truncated by prefix overflow: %q", lines[0])
+	}
+	// Line 1: 68 chars over the per-line cap → ellipsis.
+	if !strings.HasSuffix(lines[1], "…") || utf8.RuneCountInString(lines[1]) != MaxReplyLen {
+		t.Fatalf("line 1 should clamp to cap with ellipsis: %q (len=%d)", lines[1], utf8.RuneCountInString(lines[1]))
+	}
+	// Line 2 unchanged.
+	if lines[2] != short {
+		t.Fatalf("line 2: got %q want %q", lines[2], short)
+	}
+	if !tr {
+		t.Fatalf("expected truncation flag")
 	}
 }
