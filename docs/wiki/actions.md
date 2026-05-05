@@ -169,9 +169,13 @@ ceiling `actions.MaxReplyLinesCeiling = 5` enforced by `validateAction`.
   independently because each `SendReply` call constructs its own
   `messages.SendMessageRequest`.
 - Audit row stores `\n`-joined text in `ReplyText` and the count of
-  produced lines in `ReplyLineCount`. The audit row reflects what
-  the runner formatted and dispatched; per-line transport ack state
-  lives in the messages thread, not in the invocation row.
+  lines actually handed to the transport in `ReplyLineCount`. If a
+  `SendReply` call fails partway through the burst the runner stops
+  fanning further frames and `ReplyLineCount` reflects only what
+  reached the transport — `Truncated` still marks formatter-side
+  clipping (source had more lines than `MaxReplyLines` allowed) and
+  is independent of transport failures. Per-line transport ack
+  state lives in the messages thread, not in the invocation row.
 
 Source:
 [`../../pkg/actions/reply.go`](../../pkg/actions/reply.go) `FormatReplies`,
@@ -252,7 +256,7 @@ AutoMigrate). Four tables:
 | `actions` | unique `name`, FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL. The `Enabled` and `OTPRequired` columns deliberately omit `default:true` from their gorm tags even though the SQL DDL keeps `DEFAULT 1` (downgrade-safety). Reason: gorm uses the gorm-tag default as the value to send when the Go field is its zero value, which would conflate a genuine `false` from the wire with "field not set" and silently flip a freshly-created disabled action back to enabled. Application layer always provides the explicit value. Also carries a per-Action `MaxReplyLines` column (1..5; default 1) gating the multi-line on-air reply fan-out. |
 | `otp_credentials` | unique `name`, plaintext `secret_b32` (per spec — UI surfaces it once at create time, never reads back) |
 | `action_listener_addressees` | unique `addressee` (uppercase, 1..9 chars) |
-| `action_invocations` | append-only audit; FK `action_id -> actions(id)` ON DELETE SET NULL; FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL; `action_name_at` and `OTPCredName` are denormalized so a row stays readable after deletion. Also carries a `ReplyLineCount` column tracking the number of reply lines the runner produced for this invocation. |
+| `action_invocations` | append-only audit; FK `action_id -> actions(id)` ON DELETE SET NULL; FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL; `action_name_at` and `OTPCredName` are denormalized so a row stays readable after deletion. Also carries a `ReplyLineCount` column tracking the number of reply lines actually dispatched to the transport for this invocation (a transport failure mid-burst lowers the count; formatter-side clipping is recorded in `Truncated`). |
 
 All four models are deliberately *not* in the AutoMigrate list — the
 migration is the single source of truth for their schema.

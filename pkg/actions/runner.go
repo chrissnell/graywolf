@@ -232,7 +232,12 @@ func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint
 		maxLines = DefaultMaxReplyLines
 	}
 	lines, truncated := FormatReplies(res, maxLines)
+	// sent is the count of lines that actually made it onto the wire.
+	// When Replies is nil (audit-only test path) there is no transport
+	// to fail, so the audit row reflects the formatter's full output.
+	sent := len(lines)
 	if r.cfg.Replies != nil {
+		sent = 0
 		for _, line := range lines {
 			if err := r.cfg.Replies.SendReply(ctx, channel, inv.Source, inv.SenderCall, line); err != nil {
 				r.logger.Error("actions: reply send failed",
@@ -244,6 +249,7 @@ func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint
 				// frames after a transport-level error.
 				break
 			}
+			sent++
 		}
 	}
 	if r.cfg.Audit != nil {
@@ -260,7 +266,7 @@ func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint
 			OutputCapture:  res.OutputCapture,
 			ReplyText:      strings.Join(lines, "\n"),
 			Truncated:      truncated,
-			ReplyLineCount: len(lines),
+			ReplyLineCount: sent,
 			CreatedAt:      r.now(),
 		}
 		if inv.ActionID != 0 {
