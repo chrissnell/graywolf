@@ -273,3 +273,115 @@ func TestMarshalArgsFreeformKeepsFullCeiling(t *testing.T) {
 		t.Fatalf("freeform truncation: len=%d want %d", len(m[FreeformArgKey]), FreeformValueCeiling)
 	}
 }
+
+type staticExecutor struct{ res Result }
+
+func (s staticExecutor) Execute(_ context.Context, _ ExecRequest) Result { return s.res }
+
+func TestRunnerMultiLineDispatch(t *testing.T) {
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	sink := &fakeReplySink{}
+	audit := &fakeAudit{}
+	reg := NewExecutorRegistry()
+	_ = reg.Register("command", staticExecutor{
+		res: Result{
+			Status:        StatusOK,
+			OutputCapture: "line one\nline two\nline three",
+		},
+	})
+
+	r := NewRunner(RunnerConfig{
+		Registry: reg, Replies: sink, Audit: audit,
+		Now: func() time.Time { return now },
+	})
+	defer r.Stop()
+
+	a := &configstore.Action{
+		ID: 1, Name: "MULTI", Type: "command", CommandPath: "/bin/true",
+		Enabled: true, MaxReplyLines: 3, QueueDepth: 0, TimeoutSec: 5,
+	}
+	r.Submit(context.Background(),
+		Invocation{ActionID: 1, ActionName: "MULTI", SenderCall: "N0CALL", Source: SourceRF},
+		a, 0)
+
+	waitFor(t, func() bool { return len(sink.snapshot()) == 3 })
+
+	got := sink.snapshot()
+	if got[0] != "ok: line one" {
+		t.Fatalf("call 0: %q", got[0])
+	}
+	if got[1] != "line two" {
+		t.Fatalf("call 1: %q", got[1])
+	}
+	if got[2] != "line three" {
+		t.Fatalf("call 2: %q", got[2])
+	}
+
+	if audit.count() != 1 {
+		t.Fatalf("want 1 audit row, got %d", audit.count())
+	}
+	audit.mu.Lock()
+	row := audit.rows[0]
+	audit.mu.Unlock()
+	if row.ReplyLineCount != 3 {
+		t.Fatalf("ReplyLineCount: want 3, got %d", row.ReplyLineCount)
+	}
+	if !strings.Contains(row.ReplyText, "\n") {
+		t.Fatalf("ReplyText should be newline-joined: %q", row.ReplyText)
+	}
+}
+
+func TestRunnerSingleLineDispatchUnchanged(t *testing.T) {
+	sink := &fakeReplySink{}
+	audit := &fakeAudit{}
+	reg := NewExecutorRegistry()
+	_ = reg.Register("command", staticExecutor{
+		res: Result{Status: StatusOK, OutputCapture: "lights on\nignored second line"},
+	})
+	r := NewRunner(RunnerConfig{Registry: reg, Replies: sink, Audit: audit})
+	defer r.Stop()
+
+	a := &configstore.Action{
+		ID: 2, Name: "SINGLE", Type: "command", CommandPath: "/bin/true",
+		Enabled: true, MaxReplyLines: 1, QueueDepth: 0, TimeoutSec: 5,
+	}
+	r.Submit(context.Background(), Invocation{
+		ActionID: 2, ActionName: "SINGLE", SenderCall: "N0CALL", Source: SourceRF,
+	}, a, 0)
+
+	waitFor(t, func() bool { return len(sink.snapshot()) == 1 && audit.count() == 1 })
+	got := sink.snapshot()
+	if got[0] != "ok: lights on" {
+		t.Fatalf("got %q", got[0])
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 reply, got %d", len(got))
+	}
+	audit.mu.Lock()
+	row := audit.rows[0]
+	audit.mu.Unlock()
+	if row.ReplyLineCount != 1 {
+		t.Fatalf("ReplyLineCount: want 1, got %d", row.ReplyLineCount)
+	}
+}
+
+func TestRunnerNonOKAlwaysSingleLine(t *testing.T) {
+	sink := &fakeReplySink{}
+	audit := &fakeAudit{}
+	r := NewRunner(RunnerConfig{Registry: NewExecutorRegistry(), Replies: sink, Audit: audit})
+	defer r.Stop()
+
+	a := &configstore.Action{
+		ID: 3, Name: "DIS", Type: "command", CommandPath: "/bin/true",
+		Enabled: false, MaxReplyLines: 5, QueueDepth: 0, TimeoutSec: 5,
+	}
+	r.Submit(context.Background(), Invocation{
+		ActionID: 3, ActionName: "DIS", SenderCall: "N0CALL", Source: SourceRF,
+	}, a, 0)
+
+	waitFor(t, func() bool { return len(sink.snapshot()) == 1 })
+	got := sink.snapshot()
+	if got[0] != "disabled" {
+		t.Fatalf("got %q", got[0])
+	}
+}

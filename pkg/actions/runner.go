@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,15 +104,15 @@ func (r *Runner) Submit(ctx context.Context, inv Invocation, a *configstore.Acti
 		return
 	}
 	if a == nil {
-		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusUnknown})
+		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusUnknown}, 1)
 		return
 	}
 	if !a.Enabled {
-		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusDisabled})
+		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusDisabled}, 1)
 		return
 	}
 	if a.OTPRequired && a.OTPCredentialID == nil {
-		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusNoCredential})
+		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusNoCredential}, 1)
 		return
 	}
 
@@ -137,7 +138,7 @@ func (r *Runner) Submit(ctx context.Context, inv Invocation, a *configstore.Acti
 	prev := q.lastFire
 	if a.RateLimitSec > 0 && !prev.IsZero() && r.now().Sub(prev) < time.Duration(a.RateLimitSec)*time.Second {
 		q.mu.Unlock()
-		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusRateLimited})
+		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusRateLimited}, 1)
 		return
 	}
 	if a.RateLimitSec > 0 {
@@ -154,7 +155,7 @@ func (r *Runner) Submit(ctx context.Context, inv Invocation, a *configstore.Acti
 			q.lastFire = prev
 		}
 		q.mu.Unlock()
-		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusBusy})
+		r.replyAndAudit(ctx, inv, channel, Result{Status: StatusBusy}, 1)
 	}
 }
 
@@ -187,7 +188,7 @@ func (r *Runner) runOne(ctx context.Context, it workItem) {
 	if !ok {
 		r.replyAndAudit(ctx, it.inv, it.channel, Result{
 			Status: StatusError, StatusDetail: fmt.Sprintf("no executor for type %q", it.action.Type),
-		})
+		}, 1)
 		return
 	}
 	timeout := time.Duration(it.action.TimeoutSec) * time.Second
@@ -197,7 +198,7 @@ func (r *Runner) runOne(ctx context.Context, it workItem) {
 	res := r.executeWithRecover(ctx, exe, ExecRequest{
 		Action: it.action, Invocation: it.inv, Timeout: timeout,
 	})
-	r.replyAndAudit(ctx, it.inv, it.channel, res)
+	r.replyAndAudit(ctx, it.inv, it.channel, res, it.action.MaxReplyLines)
 }
 
 // executeWithRecover invokes the executor with a panic guard so a
@@ -223,35 +224,44 @@ func (r *Runner) executeWithRecover(ctx context.Context, exe Executor, req ExecR
 // flow through the normal reply + audit pipeline without exercising
 // the per-Action queue or executor.
 func (r *Runner) Reply(ctx context.Context, inv Invocation, channel uint32, res Result) {
-	r.replyAndAudit(ctx, inv, channel, res)
+	r.replyAndAudit(ctx, inv, channel, res, 1)
 }
 
-func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint32, res Result) {
-	text, truncated := FormatReply(res)
+func (r *Runner) replyAndAudit(ctx context.Context, inv Invocation, channel uint32, res Result, maxLines int) {
+	if maxLines <= 0 {
+		maxLines = DefaultMaxReplyLines
+	}
+	lines, truncated := FormatReplies(res, maxLines)
 	if r.cfg.Replies != nil {
-		if err := r.cfg.Replies.SendReply(ctx, channel, inv.Source, inv.SenderCall, text); err != nil {
-			r.logger.Error("actions: reply send failed",
-				"action", inv.ActionName,
-				"sender", inv.SenderCall,
-				"status", string(res.Status),
-				"err", err)
+		for _, line := range lines {
+			if err := r.cfg.Replies.SendReply(ctx, channel, inv.Source, inv.SenderCall, line); err != nil {
+				r.logger.Error("actions: reply send failed",
+					"action", inv.ActionName,
+					"sender", inv.SenderCall,
+					"status", string(res.Status),
+					"err", err)
+				// Stop on first failure so we don't fan out further
+				// frames after a transport-level error.
+				break
+			}
 		}
 	}
 	if r.cfg.Audit != nil {
 		row := &configstore.ActionInvocation{
-			ActionNameAt:  inv.ActionName,
-			SenderCall:    inv.SenderCall,
-			Source:        string(inv.Source),
-			OTPVerified:   inv.OTPVerified,
-			RawArgsJSON:   marshalArgs(inv.Args),
-			Status:        string(res.Status),
-			StatusDetail:  res.StatusDetail,
-			ExitCode:      res.ExitCode,
-			HTTPStatus:    res.HTTPStatus,
-			OutputCapture: res.OutputCapture,
-			ReplyText:     text,
-			Truncated:     truncated,
-			CreatedAt:     r.now(),
+			ActionNameAt:   inv.ActionName,
+			SenderCall:     inv.SenderCall,
+			Source:         string(inv.Source),
+			OTPVerified:    inv.OTPVerified,
+			RawArgsJSON:    marshalArgs(inv.Args),
+			Status:         string(res.Status),
+			StatusDetail:   res.StatusDetail,
+			ExitCode:       res.ExitCode,
+			HTTPStatus:     res.HTTPStatus,
+			OutputCapture:  res.OutputCapture,
+			ReplyText:      strings.Join(lines, "\n"),
+			Truncated:      truncated,
+			ReplyLineCount: len(lines),
+			CreatedAt:      r.now(),
 		}
 		if inv.ActionID != 0 {
 			id := inv.ActionID
