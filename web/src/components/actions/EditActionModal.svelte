@@ -43,6 +43,7 @@
       arg_mode: 'kv',
       rate_limit_sec: 5,
       queue_depth: 8,
+      max_reply_lines: 1,
       enabled: true,
     };
   }
@@ -213,6 +214,10 @@
     out.timeout_sec = Number(out.timeout_sec) || 10;
     out.rate_limit_sec = Number(out.rate_limit_sec) || 0;
     out.queue_depth = Number(out.queue_depth) || 0;
+    let maxLines = Number(out.max_reply_lines);
+    if (!Number.isFinite(maxLines) || maxLines < 1) maxLines = 1;
+    if (maxLines > 5) maxLines = 5;
+    out.max_reply_lines = maxLines;
     return out;
   }
 
@@ -233,6 +238,7 @@
         'webhook_method', 'webhook_url', 'webhook_body_template',
         'timeout_sec', 'otp_required', 'otp_credential_id',
         'sender_allowlist', 'arg_schema', 'arg_mode', 'rate_limit_sec', 'queue_depth',
+        'max_reply_lines',
       ];
       if (known.includes(field)) {
         // Preserve the original index in the error text so the operator
@@ -605,6 +611,28 @@
               read-only commands).
             </p>
           </div>
+
+          <div class="field narrow">
+            <label for="action-max-reply-lines">Max reply lines</label>
+            <Input
+              id="action-max-reply-lines"
+              type="number"
+              min="1"
+              max="5"
+              bind:value={form.max_reply_lines}
+              class={fieldErrors.max_reply_lines ? 'field-invalid' : ''}
+            />
+            <p class="hint">
+              Maximum number of stdout lines this Action's command may
+              return as separate APRS messages. Default 1. Hard ceiling 5.
+              <strong>Each line is one extra RF frame plus its own ack
+              and retries</strong> — keep this at 1 unless your script
+              genuinely needs to reply with multiple short messages.
+            </p>
+            {#if fieldErrors.max_reply_lines}
+              <p class="field-error">{fieldErrors.max_reply_lines}</p>
+            {/if}
+          </div>
         </div>
       </section>
 
@@ -620,7 +648,7 @@
           <div class="field">
             <span class="label">Reply policy</span>
             <p class="readonly-summary">
-              Always replies; reply may include the first ~50 chars of stdout/response.
+              Always replies. Up to {form.max_reply_lines} APRS message{form.max_reply_lines === 1 ? '' : 's'} per invocation; each line is capped at 67 characters.
             </p>
           </div>
         </div>
