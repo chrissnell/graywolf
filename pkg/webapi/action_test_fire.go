@@ -3,6 +3,7 @@ package webapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -94,15 +95,21 @@ func (s *Server) testFireAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, invID := s.actions.TestFire(r.Context(), a, clean)
-	reply, truncated := actions.FormatReply(res)
+	maxLines := a.MaxReplyLines
+	if maxLines <= 0 {
+		maxLines = actions.DefaultMaxReplyLines
+	}
+	lines, truncated := actions.FormatReplies(res, maxLines)
 	writeJSON(w, http.StatusOK, dto.TestFireResponse{
-		Status:        string(res.Status),
-		StatusDetail:  res.StatusDetail,
-		OutputCapture: res.OutputCapture,
-		ReplyText:     reply,
-		Truncated:     truncated,
-		ExitCode:      res.ExitCode,
-		HTTPStatus:    res.HTTPStatus,
-		InvocationID:  invID,
+		Status:         string(res.Status),
+		StatusDetail:   res.StatusDetail,
+		OutputCapture:  res.OutputCapture,
+		ReplyText:      strings.Join(lines, "\n"),
+		ReplyLines:     lines,
+		ReplyLineCount: len(lines),
+		Truncated:      truncated,
+		ExitCode:       res.ExitCode,
+		HTTPStatus:     res.HTTPStatus,
+		InvocationID:   invID,
 	})
 }
