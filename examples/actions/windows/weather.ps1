@@ -1,33 +1,41 @@
 # Action: weather
-# Grammar:  @@<otp>#weather station=<ICAO>
-# Args:     station  (required) -- 4-letter ICAO airport code
-# Reply:    raw METAR observation, snipped to 50 chars on-air
-# Source:   aviationweather.gov (free, no key, worldwide)
+# Grammar:  @@<otp>#weather location=<place>
+# Args:     location  (required) -- city name, ZIP, ICAO airport, or
+#                                   "lat,lon" (Denver, 80202, KDEN,
+#                                   "39.7,-105.0")
+# Reply:    one-line current conditions in plain English
+# Source:   wttr.in (free, no key, worldwide)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$station = $env:GW_ARG_STATION
-if (-not $station) {
-  [Console]::Error.WriteLine('station required')
+$location = $env:GW_ARG_LOCATION
+if (-not $location) {
+  [Console]::Error.WriteLine('location required')
   exit 1
 }
-$station = $station.ToUpper()
+
+# Whitelist input so URL/shell metacharacters can't be smuggled into the
+# request. Allow letters, digits, space, comma, dot, underscore, hyphen.
+if ($location -notmatch '^[A-Za-z0-9.,_ -]+$') {
+  [Console]::Error.WriteLine('invalid location')
+  exit 64
+}
+
+$encoded = [System.Uri]::EscapeDataString($location)
+# %C condition, %t temperature, %w wind, %h humidity; &u forces USCS units.
+$url = "https://wttr.in/${encoded}?format=%C+%t+%w+%h&u"
 
 try {
-  $resp = Invoke-RestMethod -TimeoutSec 8 `
-    "https://aviationweather.gov/api/data/metar?ids=$station&format=json&taf=false&hours=2"
+  $resp = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri $url).Content.Trim()
 } catch {
   [Console]::Error.WriteLine('fetch failed')
   exit 1
 }
 
-if (-not $resp -or $resp.Count -eq 0 -or -not $resp[0].rawOb) {
-  "$station no recent METAR"
+if (-not $resp) {
+  "${location}: no data"
   exit 0
 }
 
-# Strip leading "METAR " / "SPECI " so the on-air 50-char snippet
-# starts with the ICAO + observation time.
-$raw = $resp[0].rawOb -replace '^(METAR|SPECI)\s+', ''
-$raw
+"${location}: $resp"

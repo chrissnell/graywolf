@@ -73,7 +73,7 @@ not** put secrets in the script itself or pass them as Action args.
 - `msg` — required, regex `.+`
 
 `weather`:
-- `station` — required, regex `^[A-Za-z0-9]{4}$` (ICAO airport code)
+- `location` — required, regex `^[A-Za-z0-9 ,.\-_]{1,64}$` (city name, ZIP, ICAO airport, or "lat,lon")
 
 `sms`:
 - `to` — required, regex `^\+[1-9][0-9]{6,14}$`
@@ -95,8 +95,8 @@ not** put secrets in the script itself or pass them as Action args.
 > @@123456#echo msg=hello
 < ok: KE0XYZ said: hello
 
-> @@123456#weather station=KDEN
-< ok: KDEN 030253Z 27008KT 10SM CLR 22/M01 A3025
+> @@123456#weather location=Denver
+< ok: Denver: Partly cloudy +63°F ↓19mph 28%
 
 > @@123456#solar
 < ok: SFI 142 A 8 K 2 SN 78

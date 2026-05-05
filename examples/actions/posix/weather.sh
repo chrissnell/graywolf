@@ -1,34 +1,35 @@
 #!/usr/bin/env bash
 # Action: weather
-# Grammar:  @@<otp>#weather station=<ICAO>
-# Args:     station  (required) -- 4-letter ICAO airport code
-#                                   (KDEN, EGLL, RJTT, YSSY ...)
-# Reply:    raw METAR observation, snipped to 50 chars on-air
-# Source:   aviationweather.gov (free, no key, worldwide METAR coverage)
-# Deps:     curl, jq
+# Grammar:  @@<otp>#weather location=<place>
+# Args:     location  (required) -- city name, ZIP, ICAO airport, or
+#                                   "lat,lon"  (Denver, 80202, KDEN,
+#                                   "39.7,-105.0")
+# Reply:    one-line current conditions in plain English
+# Source:   wttr.in (free, no key, worldwide)
+# Deps:     curl
 set -euo pipefail
 
-station="${GW_ARG_STATION:-}"
-if [[ -z "$station" ]]; then
-  echo "station required" >&2
+location="${GW_ARG_LOCATION:-}"
+if [[ -z "$location" ]]; then
+  echo "location required" >&2
   exit 1
 fi
-station=$(printf '%s' "$station" | tr '[:lower:]' '[:upper:]')
 
-url="https://aviationweather.gov/api/data/metar?ids=${station}&format=json&taf=false&hours=2"
-resp=$(curl -fsSL --max-time 8 "$url") || { echo "fetch failed" >&2; exit 1; }
+# Whitelist input so URL/shell metacharacters can't be smuggled into the
+# request. Allow letters, digits, space, comma, dot, underscore, hyphen.
+if [[ ! "$location" =~ ^[A-Za-z0-9.,_\ -]+$ ]]; then
+  echo "invalid location" >&2
+  exit 64
+fi
+encoded=$(printf '%s' "$location" | tr ' ' '+')
 
-raw=$(printf '%s' "$resp" | jq -r 'if length==0 then "" else .[0].rawOb // "" end')
-if [[ -z "$raw" ]]; then
-  echo "$station: no recent METAR"
+# %C condition, %t temperature, %w wind, %h humidity; &u forces USCS units.
+url="https://wttr.in/${encoded}?format=%C+%t+%w+%h&u"
+resp=$(curl -fsSL --max-time 8 -- "$url") || { echo "fetch failed" >&2; exit 1; }
+
+resp=$(printf '%s' "$resp" | tr -d '\r\n')
+if [[ -z "$resp" ]]; then
+  echo "$location: no data"
   exit 0
 fi
-
-# Strip leading "METAR " / "SPECI " so the on-air 50-char snippet
-# starts with the ICAO + observation time. Bash regex captures the
-# tail in BASH_REMATCH[2]; if neither prefix matches, echo raw as-is.
-if [[ "$raw" =~ ^(METAR|SPECI)\ (.+)$ ]]; then
-  echo "${BASH_REMATCH[2]}"
-else
-  echo "$raw"
-fi
+echo "${location}: ${resp}"
