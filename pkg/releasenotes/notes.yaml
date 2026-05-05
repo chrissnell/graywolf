@@ -7,6 +7,25 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.1"
+  date: "2026-05-05"
+  style: info
+  schema_version: 1
+  title: "Actions: longer replies across multiple APRS messages"
+  link: "#/actions"
+  body: |
+    An Action's reply can now span more than one APRS message. Open
+    an Action and set Max reply lines to anywhere from 1 to 5. Each
+    line of your script's output above the first is sent as its own
+    on-air message.
+
+    Heads up: every extra line is one more RF frame plus its own
+    ack and retries, so multi-message replies cost real airtime on
+    a shared channel. Keep the count low for chatty scripts.
+
+    Existing Actions are unchanged. They keep returning a single
+    line until you raise the limit yourself.
+
 - version: "0.13.0"
   date: "2026-05-03"
   style: info
