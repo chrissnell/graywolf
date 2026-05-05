@@ -168,7 +168,14 @@
         {/if}
         <div class="result-row stacked">
           <span class="result-label">Reply</span>
-          <pre class="block reply" class:truncated={result.truncated}>{result.reply_text || '(no reply text)'}</pre>
+          <div class="reply-block">
+            {#if result.reply_line_count > 1}
+              <p class="reply-meta">
+                <strong>{result.reply_line_count}</strong> APRS messages will be sent (one per line)
+              </p>
+            {/if}
+            <pre class="block reply" class:truncated={result.truncated}>{result.reply_text || '(no reply text)'}</pre>
+          </div>
           {#if result.truncated}
             <span class="hint">Trimmed to fit the 67-char APRS reply cap.</span>
           {/if}
@@ -370,5 +377,13 @@
   :global(.test-action-dialog) {
     max-width: 560px;
     width: calc(100% - 32px);
+  }
+  .reply-meta {
+    margin: 0 0 4px;
+    font-size: 11px;
+    color: var(--color-text-muted, var(--text-muted));
+  }
+  .reply-meta strong {
+    color: var(--color-accent, var(--color-primary, #6366f1));
   }
 </style>
