@@ -195,6 +195,9 @@
               </td>
               <td>
                 {#if detail}
+                  {#if inv.reply_line_count > 1}
+                    <span class="msg-count" title="{inv.reply_line_count} APRS messages">×{inv.reply_line_count}</span>
+                  {/if}
                   <button
                     type="button"
                     class="detail"
@@ -292,5 +295,15 @@
   .muted {
     color: var(--text-muted);
     font-size: 12px;
+  }
+  .msg-count {
+    display: inline-block;
+    margin-right: 4px;
+    padding: 0 5px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-accent, var(--color-primary, #6366f1));
+    background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+    border-radius: 3px;
   }
 </style>
