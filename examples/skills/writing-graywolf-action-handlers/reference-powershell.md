@@ -230,6 +230,13 @@ exit 0
 exit 1
 ```
 
+When the Action's `Max reply lines` is raised above 1 (hard ceiling 5),
+extra stdout lines ride additional APRS frames (≤67 runes each, no
+`ok: ` prefix on the follow-up frames). Each extra line costs an RF
+frame plus its own ack and retries, so default to one line and only
+reach for multi-line replies when the operator genuinely needs
+structured output. Lines past the cap are silently dropped.
+
 Same exit-code conventions as POSIX (`64` usage, `65` data,
 `69` service unavailable, `75` retry hint).
 

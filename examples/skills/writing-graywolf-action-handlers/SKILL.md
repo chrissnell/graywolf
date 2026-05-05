@@ -427,6 +427,15 @@ the local idiom.
    `Markup(...)`, never `|safe`, never `{{ ...|safe }}`.
 8. **Reply on the first line of stdout, ≤50 runes** (graywolf snippets
    it for the on-air `ok: <snippet>` reply). Diagnostics go to stderr.
+   An Action's `Max reply lines` defaults to 1; raising it (up to a
+   hard ceiling of 5) lets stdout lines 2..N ride additional APRS
+   frames without the `ok: ` prefix. Each extra line is one more RF
+   frame plus its own ack and retries, so multi-line is for cases
+   where the operator genuinely needs structured output (e.g. a
+   short weather summary). Default to one line; reach for two or
+   three only when you can defend the airtime. Never rely on lines
+   above the cap arriving — anything beyond `Max reply lines` is
+   silently dropped and `Truncated` is set on the audit row.
 9. **Exit non-zero on failure** with a short stderr line. Graywolf
    echoes the snippet as `error: <detail>` on-air.
 10. **Run the linter for the language.** `shellcheck` for bash,
@@ -621,7 +630,11 @@ alternative. Do not generate the unsafe form.
 
 ## Final checklist (run before showing the script)
 
-- [ ] First line of stdout is the on-air reply, ≤50 runes.
+- [ ] First line of stdout is the on-air reply, ≤50 runes. If the
+      Action sets `Max reply lines > 1`, additional stdout lines (each
+      ≤67 runes) ride extra APRS frames; keep the count as low as the
+      use case allows because every extra line costs an RF frame plus
+      its own ack and retries.
 - [ ] Every error path writes a short stderr line and exits non-zero.
 - [ ] Every external command receives user data via argv, not concatenation.
 - [ ] Every regex is anchored with `^` and `$`.
