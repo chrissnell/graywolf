@@ -2018,6 +2018,7 @@ export interface components {
             id?: number;
             last_invoked_at?: string;
             last_invoked_by?: string;
+            max_reply_lines?: number;
             name?: string;
             otp_credential_id?: number;
             otp_required?: boolean;
@@ -2048,6 +2049,7 @@ export interface components {
             otp_credential_id?: number;
             otp_verified?: boolean;
             output_capture?: string;
+            reply_line_count?: number;
             reply_text?: string;
             sender_call?: string;
             source?: string;
@@ -2898,6 +2900,8 @@ export interface components {
             http_status?: number;
             invocation_id?: number;
             output_capture?: string;
+            reply_line_count?: number;
+            reply_lines?: string[];
             reply_text?: string;
             status?: string;
             status_detail?: string;

@@ -585,6 +585,8 @@ definitions:
         type: string
       last_invoked_by:
         type: string
+      max_reply_lines:
+        type: integer
       name:
         type: string
       otp_credential_id:
@@ -639,6 +641,8 @@ definitions:
         type: boolean
       output_capture:
         type: string
+      reply_line_count:
+        type: integer
       reply_text:
         type: string
       sender_call:
@@ -2058,6 +2062,12 @@ definitions:
         type: integer
       output_capture:
         type: string
+      reply_line_count:
+        type: integer
+      reply_lines:
+        items:
+          type: string
+        type: array
       reply_text:
         type: string
       status:

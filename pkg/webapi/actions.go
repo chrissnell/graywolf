@@ -274,6 +274,15 @@ func validateAction(in *dto.Action) error {
 	if in.QueueDepth < 0 {
 		return errors.New("queue_depth: must be >= 0")
 	}
+	if in.MaxReplyLines < 0 {
+		return errors.New("max_reply_lines: must be >= 0")
+	}
+	if in.MaxReplyLines == 0 {
+		in.MaxReplyLines = 1
+	}
+	if in.MaxReplyLines > actions.MaxReplyLinesCeiling {
+		return fmt.Errorf("max_reply_lines: must be <= %d", actions.MaxReplyLinesCeiling)
+	}
 	if in.OTPRequired && in.OTPCredentialID == nil {
 		// The runner would surface StatusNoCredential at dispatch time;
 		// reject at save time so the operator sees the misconfiguration
@@ -400,7 +409,11 @@ func actionToDTO(a *configstore.Action) dto.Action {
 		ArgMode:             a.ArgMode,
 		RateLimitSec:        a.RateLimitSec,
 		QueueDepth:          a.QueueDepth,
+		MaxReplyLines:       a.MaxReplyLines,
 		Enabled:             a.Enabled,
+	}
+	if d.MaxReplyLines == 0 {
+		d.MaxReplyLines = 1
 	}
 	if d.ArgMode == "" {
 		d.ArgMode = "kv"
@@ -452,6 +465,7 @@ func actionFromDTO(d *dto.Action) (*configstore.Action, error) {
 		ArgMode:             d.ArgMode,
 		RateLimitSec:        d.RateLimitSec,
 		QueueDepth:          d.QueueDepth,
+		MaxReplyLines:       d.MaxReplyLines,
 		Enabled:             d.Enabled,
 	}, nil
 }

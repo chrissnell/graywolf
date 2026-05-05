@@ -7637,6 +7637,9 @@
                 "last_invoked_by": {
                     "type": "string"
                 },
+                "max_reply_lines": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -7717,6 +7720,9 @@
                 },
                 "output_capture": {
                     "type": "string"
+                },
+                "reply_line_count": {
+                    "type": "integer"
                 },
                 "reply_text": {
                     "type": "string"
@@ -9682,6 +9688,15 @@
                 },
                 "output_capture": {
                     "type": "string"
+                },
+                "reply_line_count": {
+                    "type": "integer"
+                },
+                "reply_lines": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "reply_text": {
                     "type": "string"

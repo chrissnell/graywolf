@@ -27,6 +27,7 @@ type Action struct {
 	ArgMode             string            `json:"arg_mode"` // "kv" (default) | "freeform"
 	RateLimitSec        int               `json:"rate_limit_sec"`
 	QueueDepth          int               `json:"queue_depth"`
+	MaxReplyLines       int               `json:"max_reply_lines"`
 	Enabled             bool              `json:"enabled"`
 	LastInvokedAt       *string           `json:"last_invoked_at,omitempty"`
 	LastInvokedBy       string            `json:"last_invoked_by,omitempty"`
@@ -76,22 +77,23 @@ type ActionListenerAddressee struct {
 
 // ActionInvocation is one audit row.
 type ActionInvocation struct {
-	ID            uint              `json:"id"`
-	ActionID      *uint             `json:"action_id,omitempty"`
-	ActionName    string            `json:"action_name"`
-	SenderCall    string            `json:"sender_call"`
-	Source        string            `json:"source"`
-	OTPCredID     *uint             `json:"otp_credential_id,omitempty"`
-	OTPVerified   bool              `json:"otp_verified"`
-	Args          map[string]string `json:"args"`
-	Status        string            `json:"status"`
-	StatusDetail  string            `json:"status_detail,omitempty"`
-	ExitCode      *int              `json:"exit_code,omitempty"`
-	HTTPStatus    *int              `json:"http_status,omitempty"`
-	OutputCapture string            `json:"output_capture,omitempty"`
-	ReplyText     string            `json:"reply_text"`
-	Truncated     bool              `json:"truncated"`
-	CreatedAt     string            `json:"created_at"`
+	ID             uint              `json:"id"`
+	ActionID       *uint             `json:"action_id,omitempty"`
+	ActionName     string            `json:"action_name"`
+	SenderCall     string            `json:"sender_call"`
+	Source         string            `json:"source"`
+	OTPCredID      *uint             `json:"otp_credential_id,omitempty"`
+	OTPVerified    bool              `json:"otp_verified"`
+	Args           map[string]string `json:"args"`
+	Status         string            `json:"status"`
+	StatusDetail   string            `json:"status_detail,omitempty"`
+	ExitCode       *int              `json:"exit_code,omitempty"`
+	HTTPStatus     *int              `json:"http_status,omitempty"`
+	OutputCapture  string            `json:"output_capture,omitempty"`
+	ReplyText      string            `json:"reply_text"`
+	ReplyLineCount int               `json:"reply_line_count"`
+	Truncated      bool              `json:"truncated"`
+	CreatedAt      string            `json:"created_at"`
 }
 
 // TestFireRequest is the body accepted by POST /api/actions/{id}/test-fire.
@@ -110,12 +112,14 @@ type TestFireRequest struct {
 // real on-air invocation, so the UI can warn the operator that their
 // reply got chopped to fit the 67-char APRS message cap.
 type TestFireResponse struct {
-	Status        string `json:"status"`
-	StatusDetail  string `json:"status_detail,omitempty"`
-	OutputCapture string `json:"output_capture,omitempty"`
-	ReplyText     string `json:"reply_text"`
-	Truncated     bool   `json:"truncated"`
-	ExitCode      *int   `json:"exit_code,omitempty"`
-	HTTPStatus    *int   `json:"http_status,omitempty"`
-	InvocationID  uint   `json:"invocation_id"`
+	Status         string   `json:"status"`
+	StatusDetail   string   `json:"status_detail,omitempty"`
+	OutputCapture  string   `json:"output_capture,omitempty"`
+	ReplyText      string   `json:"reply_text"`
+	ReplyLines     []string `json:"reply_lines"`
+	ReplyLineCount int      `json:"reply_line_count"`
+	Truncated      bool     `json:"truncated"`
+	ExitCode       *int     `json:"exit_code,omitempty"`
+	HTTPStatus     *int     `json:"http_status,omitempty"`
+	InvocationID   uint     `json:"invocation_id"`
 }

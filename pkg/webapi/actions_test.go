@@ -466,3 +466,46 @@ func TestValidateActionRejectsArgKeyInKVMode(t *testing.T) {
 		t.Fatal("expected error: 'arg' reserved in kv mode")
 	}
 }
+
+func TestValidateActionMaxReplyLinesCeiling(t *testing.T) {
+	cases := []struct {
+		name    string
+		max     int
+		wantErr bool
+	}{
+		{"zero coerces", 0, false},
+		{"one ok", 1, false},
+		{"five ok (ceiling)", 5, false},
+		{"six rejected", 6, true},
+		{"negative rejected", -1, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := validBaseAction(t)
+			in.MaxReplyLines = c.max
+			err := validateAction(&in)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("max=%d: err=%v, wantErr=%v", c.max, err, c.wantErr)
+			}
+			if c.max == 0 && err == nil && in.MaxReplyLines != 1 {
+				t.Fatalf("expected coercion to 1, got %d", in.MaxReplyLines)
+			}
+		})
+	}
+}
+
+func TestActionRoundTripMaxReplyLines(t *testing.T) {
+	d := validBaseAction(t)
+	d.MaxReplyLines = 3
+	model, err := actionFromDTO(&d)
+	if err != nil {
+		t.Fatalf("from dto: %v", err)
+	}
+	if model.MaxReplyLines != 3 {
+		t.Fatalf("model.MaxReplyLines: want 3, got %d", model.MaxReplyLines)
+	}
+	back := actionToDTO(model)
+	if back.MaxReplyLines != 3 {
+		t.Fatalf("dto.MaxReplyLines: want 3, got %d", back.MaxReplyLines)
+	}
+}
