@@ -80,7 +80,6 @@
   const typeOptions = [
     { value: 'tcp', label: 'TCP (server)' },
     { value: 'tcp-client', label: 'TCP Client' },
-    { value: 'serial', label: 'Serial' },
   ];
 
   const modeOptions = [
