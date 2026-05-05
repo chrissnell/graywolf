@@ -3,6 +3,7 @@ package configstore
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -32,9 +33,13 @@ func (s *Store) GetAction(ctx context.Context, id uint) (*Action, error) {
 	return &a, nil
 }
 
+// GetActionByName returns the Action with the given name. Matching is
+// case-insensitive — Action.Name is stored uppercase (see BeforeSave),
+// so an inbound `@@otp#unlock` resolves to the row created as `Unlock`.
 func (s *Store) GetActionByName(ctx context.Context, name string) (*Action, error) {
 	var a Action
-	if err := s.db.WithContext(ctx).Where("name = ?", name).First(&a).Error; err != nil {
+	canonical := strings.ToUpper(strings.TrimSpace(name))
+	if err := s.db.WithContext(ctx).Where("name = ?", canonical).First(&a).Error; err != nil {
 		return nil, err
 	}
 	return &a, nil

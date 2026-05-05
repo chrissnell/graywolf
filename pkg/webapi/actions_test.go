@@ -58,7 +58,8 @@ func TestActionsCRUD_Create(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ID == 0 || got.Name != "foo" || got.Type != "command" {
+	// Name is normalized to uppercase by the configstore BeforeSave hook.
+	if got.ID == 0 || got.Name != "FOO" || got.Type != "command" {
 		t.Fatalf("unexpected response: %+v", got)
 	}
 }

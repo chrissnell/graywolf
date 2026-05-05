@@ -54,11 +54,19 @@ func (s *stubActionStore) GetActionByName(_ context.Context, name string) (*conf
 	if s.err != nil {
 		return nil, s.err
 	}
-	a, ok := s.byName[name]
-	if !ok {
-		return nil, nil
+	// Mirror configstore.Store.GetActionByName: lookup is case-insensitive
+	// because action names are stored uppercase. Tests can populate byName
+	// using either casing.
+	canonical := strings.ToUpper(strings.TrimSpace(name))
+	if a, ok := s.byName[canonical]; ok {
+		return a, nil
 	}
-	return a, nil
+	for k, a := range s.byName {
+		if strings.EqualFold(k, name) {
+			return a, nil
+		}
+	}
+	return nil, nil
 }
 
 type stubCredStore struct {
@@ -183,6 +191,29 @@ func TestClassifyParseErrorRepliesUnknown(t *testing.T) {
 	}
 	if len(sub.submits) != 0 {
 		t.Fatal("must not submit a parse-failed invocation")
+	}
+}
+
+// Action names are case-insensitive on the wire. The configured action
+// is "PING" (uppercase, the canonical form). A sender that types
+// "@@#ping", "@@#Ping", or "@@#PING" must all dispatch to the same
+// action, and the resulting Invocation.ActionName must be uppercase.
+func TestClassifyActionNameCaseInsensitive(t *testing.T) {
+	a := &configstore.Action{ID: 1, Name: "PING", Type: "command", Enabled: true}
+	for _, body := range []string{"@@#ping", "@@#Ping", "@@#PING", "@@#pInG"} {
+		sub := &stubSubmitter{}
+		c := newClassifierForTest(t, sub, &stubActionStore{byName: map[string]*configstore.Action{"PING": a}}, &stubCredStore{}, nil, nil)
+		pkt := makeMessagePkt(aprs.DirectionRF, "OTHER", "N0CALL", body, 0)
+		if !c.Classify(context.Background(), pkt) {
+			t.Fatalf("%q: expected consumed", body)
+		}
+		if len(sub.submits) != 1 {
+			t.Fatalf("%q: expected 1 submit, got %d (replies=%+v)", body, len(sub.submits), sub.replies)
+		}
+		if sub.submits[0].inv.ActionName != "PING" {
+			t.Fatalf("%q: invocation should carry uppercase canonical name, got %q",
+				body, sub.submits[0].inv.ActionName)
+		}
 	}
 }
 

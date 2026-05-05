@@ -77,7 +77,12 @@
     <div class="cmd-row">
       <div class="field">
         <label for={`mer-action-${macro.id ?? 'new'}`}>Action</label>
-        <Input id={`mer-action-${macro.id ?? 'new'}`} bind:value={actionName} onblur={commit} />
+        <Input
+          id={`mer-action-${macro.id ?? 'new'}`}
+          bind:value={actionName}
+          oninput={(e) => { actionName = e.currentTarget.value.toUpperCase(); }}
+          onblur={commit}
+        />
       </div>
       <div class="field">
         <label for={`mer-args-${macro.id ?? 'new'}`}>Args (k=v ...)</label>

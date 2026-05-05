@@ -151,6 +151,15 @@ type migration struct {
 //	    for their schema. See
 //	    docs/superpowers/plans/2026-05-03-messages-action-sender.md
 //	    Phase A.
+//	17 — actions_arg_mode: add the actions.arg_mode column with the
+//	    default 'kv' so existing rows behave identically; the column is
+//	    NOT NULL so application code never has to check a sentinel.
+//	18 — actions_uppercase_names: canonicalize existing actions.name,
+//	    remote_action_macros.action_name, and
+//	    action_invocations.action_name_at to UPPER(...). Inbound and
+//	    outbound paths now treat action names case-insensitively and
+//	    normalize to uppercase on save; this backfills any pre-change
+//	    rows so case-normalized lookups still hit them.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -169,6 +178,7 @@ var schemaMigrations = []migration{
 	{version: 15, name: "actions_tables", phase: postAutoMigrate, run: migrateActionsTables},
 	{version: 16, name: "remote_actions_tables", phase: postAutoMigrate, run: migrateRemoteActionsTables},
 	{version: 17, name: "actions_arg_mode", phase: postAutoMigrate, run: migrateActionsArgMode},
+	{version: 18, name: "actions_uppercase_names", phase: postAutoMigrate, run: migrateActionsUppercaseNames},
 }
 
 // runMigrations applies every pending migration in the given phase,

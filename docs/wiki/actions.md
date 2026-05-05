@@ -19,7 +19,12 @@ hooks in [`../../pkg/app/`](../../pkg/app/).
 - `<otp>` is empty (when the matching Action has `OTPRequired = false`)
   or exactly six ASCII digits. `@@123456#unlock`.
 - `<action>` is the Action's `name` (1..32 chars,
-  `[A-Za-z0-9._-]`). Case-sensitive.
+  `[A-Za-z0-9._-]`). **Case-insensitive on the wire** — senders may
+  type any case; the classifier uppercases before lookup, the
+  configstore stores names uppercase (Action.BeforeSave hook), and the
+  case-insensitive `GetActionByName` resolves any case to the
+  canonical row. Audit rows and on-air replies always carry the
+  uppercase form. Migration 18 backfills any pre-change rows.
 - `[k=v ...]` is space-separated key/value tokens, validated against
   the Action's `arg_schema` (a JSON list of `ArgSpec`).
 
