@@ -280,6 +280,49 @@ func TestServiceTestFireRunsExecutorAndAudits(t *testing.T) {
 	}
 }
 
+func TestServiceTestFireMultiLineAudit(t *testing.T) {
+	store := newFakeServiceStore()
+	replies := newCapturingReplies()
+	tac := messages.NewTacticalSet()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc := newServiceForTest(ctx, store, replies, func() string { return "N0CALL" }, tac, nil)
+	defer svc.Stop()
+
+	if err := svc.Registry().Register("fake", &fakeExecutor{res: Result{
+		Status:        StatusOK,
+		OutputCapture: "alpha\nbravo\ncharlie",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &configstore.Action{
+		ID: 11, Name: "MULTI", Type: "fake",
+		Enabled: true, MaxReplyLines: 3, TimeoutSec: 5,
+	}
+	res, invID := svc.TestFire(ctx, a, nil)
+	if res.Status != StatusOK {
+		t.Fatalf("status: %s (%s)", res.Status, res.StatusDetail)
+	}
+	if invID == 0 {
+		t.Fatalf("expected non-zero invocation id")
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.invocations) != 1 {
+		t.Fatalf("want 1 audit row, got %d", len(store.invocations))
+	}
+	row := store.invocations[0]
+	if row.ReplyLineCount != 3 {
+		t.Fatalf("ReplyLineCount: want 3, got %d", row.ReplyLineCount)
+	}
+	want := "ok: alpha\nbravo\ncharlie"
+	if row.ReplyText != want {
+		t.Fatalf("ReplyText: want %q, got %q", want, row.ReplyText)
+	}
+}
+
 func TestServiceStopIsIdempotent(t *testing.T) {
 	store := newFakeServiceStore()
 	replies := newCapturingReplies()

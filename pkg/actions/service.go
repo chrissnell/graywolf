@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -254,23 +255,28 @@ func (s *Service) runTestFireExecutor(ctx context.Context, a *configstore.Action
 }
 
 func (s *Service) writeTestFireAudit(ctx context.Context, a *configstore.Action, kvs []KeyValue, res Result) uint {
-	text, truncated := FormatReply(res)
+	maxLines := a.MaxReplyLines
+	if maxLines <= 0 {
+		maxLines = DefaultMaxReplyLines
+	}
+	lines, truncated := FormatReplies(res, maxLines)
 	aid := a.ID
 	row := &configstore.ActionInvocation{
-		ActionID:      &aid,
-		ActionNameAt:  a.Name,
-		SenderCall:    TestFireSenderCall,
-		Source:        string(SourceRF),
-		OTPVerified:   false,
-		RawArgsJSON:   marshalArgs(kvs),
-		Status:        string(res.Status),
-		StatusDetail:  res.StatusDetail,
-		ExitCode:      res.ExitCode,
-		HTTPStatus:    res.HTTPStatus,
-		OutputCapture: res.OutputCapture,
-		ReplyText:     text,
-		Truncated:     truncated,
-		CreatedAt:     time.Now().UTC(),
+		ActionID:       &aid,
+		ActionNameAt:   a.Name,
+		SenderCall:     TestFireSenderCall,
+		Source:         string(SourceRF),
+		OTPVerified:    false,
+		RawArgsJSON:    marshalArgs(kvs),
+		Status:         string(res.Status),
+		StatusDetail:   res.StatusDetail,
+		ExitCode:       res.ExitCode,
+		HTTPStatus:     res.HTTPStatus,
+		OutputCapture:  res.OutputCapture,
+		ReplyText:      strings.Join(lines, "\n"),
+		Truncated:      truncated,
+		ReplyLineCount: len(lines),
+		CreatedAt:      time.Now().UTC(),
 	}
 	if err := s.store.InsertActionInvocation(ctx, row); err != nil {
 		s.logger.Error("actions: test-fire audit insert failed",
