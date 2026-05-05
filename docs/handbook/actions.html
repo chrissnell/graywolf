@@ -140,8 +140,12 @@
         <strong>Require OTP</strong> toggle is what decides.
       </li>
       <li>
-        <code>&lt;action&gt;</code> is the Action&rsquo;s name. Names are
-        case-sensitive, 1&ndash;32 characters of <code>[A-Za-z0-9._-]</code>.
+        <code>&lt;action&gt;</code> is the Action&rsquo;s name, 1&ndash;32
+        characters of <code>[A-Za-z0-9._-]</code>. Names are
+        <strong>case-insensitive</strong> on the wire and stored
+        uppercase &mdash; senders may type any case, and the
+        <code>$GW_ACTION_NAME</code> / <code>argv[0]</code> values that
+        reach your script always arrive uppercase.
       </li>
       <li>
         <code>[k=v ...]</code> are zero or more space-separated key=value
@@ -236,8 +240,11 @@
     <ul>
       <li>
         <strong>Name.</strong> 1&ndash;32 characters, the token that goes
-        after <code>#</code> in the wire grammar. Case-sensitive.
-        Must be unique across your Actions.
+        after <code>#</code> in the wire grammar.
+        <strong>Case-insensitive</strong> on the wire, stored uppercase.
+        Must be unique across your Actions (case-insensitive
+        uniqueness &mdash; <code>Unlock</code> and <code>UNLOCK</code>
+        collide).
       </li>
       <li>
         <strong>Description.</strong> Free-form, shown in the Actions table

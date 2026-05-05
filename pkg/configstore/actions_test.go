@@ -135,3 +135,33 @@ func TestActionDuplicateName(t *testing.T) {
 		t.Fatal("expected unique-violation on duplicate name")
 	}
 }
+
+// Action.Name is normalized to uppercase on save and GetActionByName
+// matches case-insensitively. Mixed-case create + any-case lookup must
+// resolve to the same row, and the persisted Name must be uppercase.
+func TestActionNameUppercaseNormalization(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := &Action{Name: "  Unlock  ", Type: "command", CommandPath: "/bin/true"}
+	if err := s.CreateAction(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if a.Name != "UNLOCK" {
+		t.Fatalf("BeforeSave should uppercase + trim; got %q", a.Name)
+	}
+	for _, q := range []string{"unlock", "UNLOCK", "Unlock", "  unlock"} {
+		got, err := s.GetActionByName(ctx, q)
+		if err != nil {
+			t.Fatalf("GetActionByName(%q): %v", q, err)
+		}
+		if got.ID != a.ID || got.Name != "UNLOCK" {
+			t.Fatalf("lookup %q returned %+v", q, got)
+		}
+	}
+	// A second insert that differs only in case must collide on the
+	// unique index because both normalize to the same canonical form.
+	dup := &Action{Name: "unlock", Type: "command", CommandPath: "/bin/true"}
+	if err := s.CreateAction(ctx, dup); err == nil {
+		t.Fatal("expected unique-violation on case-only-different name")
+	}
+}

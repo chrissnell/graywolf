@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,11 +33,18 @@ func newFakeServiceStore() *fakeServiceStore {
 func (f *fakeServiceStore) GetActionByName(_ context.Context, name string) (*configstore.Action, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	a, ok := f.actions[name]
-	if !ok {
-		return nil, nil
+	// Mirror configstore.Store.GetActionByName: case-insensitive lookup
+	// because action names are stored uppercase.
+	canonical := strings.ToUpper(strings.TrimSpace(name))
+	if a, ok := f.actions[canonical]; ok {
+		return a, nil
 	}
-	return a, nil
+	for k, a := range f.actions {
+		if strings.EqualFold(k, name) {
+			return a, nil
+		}
+	}
+	return nil, nil
 }
 
 func (f *fakeServiceStore) GetOTPCredential(_ context.Context, id uint) (*configstore.OTPCredential, error) {

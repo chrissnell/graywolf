@@ -118,6 +118,10 @@ func (c *Classifier) Classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) 
 		}, channel, Result{Status: StatusUnknown})
 		return true
 	}
+	// Action names are case-insensitive on the wire; canonicalize to
+	// uppercase so audit rows and replies use one form regardless of
+	// what the sender typed.
+	parsed.Action = strings.ToUpper(parsed.Action)
 	// A non-nil parsed with a non-nil parseErr means kv tokenization
 	// failed but the action name is valid. Defer the decision: a
 	// freeform Action will recover via RawArgTail; a kv Action will

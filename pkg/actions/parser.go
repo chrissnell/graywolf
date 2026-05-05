@@ -75,7 +75,9 @@ func Parse(body string) (*ParsedInvocation, error) {
 // ValidActionName reports whether s is a legal action name. Mirrors the
 // inbound parser's grammar so outbound macro creation rejects names the
 // receiver would refuse. Charset: ASCII letters, digits, dot, dash,
-// underscore. Case-sensitive.
+// underscore. The character-class check accepts both cases; lookup is
+// case-insensitive (configstore.Store.GetActionByName uppercases the
+// query) and storage is uppercase (Action.BeforeSave).
 func ValidActionName(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]

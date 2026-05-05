@@ -845,6 +845,16 @@ type Action struct {
 	UpdatedAt           time.Time
 }
 
+// BeforeSave normalizes Name to uppercase and trims whitespace before
+// insert or update. The on-air Action grammar treats names as
+// case-insensitive; canonical form on the wire and in the audit log is
+// uppercase. Normalizing on write keeps the unique index on `name`
+// collision-free across mixed-case operator input.
+func (a *Action) BeforeSave(_ *gorm.DB) error {
+	a.Name = strings.ToUpper(strings.TrimSpace(a.Name))
+	return nil
+}
+
 // OTPCredential is one TOTP secret. Stored plaintext; UI surfaces
 // the secret only once at create time and never reads it back.
 type OTPCredential struct {
