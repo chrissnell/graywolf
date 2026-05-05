@@ -208,6 +208,15 @@ echo "twilio rejected: ..." >&2   # failure: stderr
 exit 1
 ```
 
+If the Action's `Max reply lines` is raised above 1 (hard ceiling 5),
+stdout lines 2..N each ride an additional APRS frame (≤67 runes per
+line, no `ok: ` prefix on the follow-up frames). Each extra line
+costs one RF frame plus its own ack and retries, so reach for it only
+when the operator genuinely needs structured output — a short
+weather summary, a multi-field status. Default to one line and stay
+there unless you can defend the airtime. Anything past `Max reply
+lines` is silently dropped.
+
 Standard exit codes (loosely follow `sysexits.h`):
 
 | Exit | Meaning |
