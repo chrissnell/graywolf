@@ -120,6 +120,11 @@
 <EditCredentialModal bind:open={editOpen} cred={editTarget} onSaved={() => remoteActionsStore.loadCreds()} />
 
 <style>
+  /* Override chonky's default 480px modal width -- the credentials
+     table needs more horizontal room so Algo, Last used, and the
+     action buttons stop wrapping. */
+  :global(.modal.remote-creds-modal) { width: min(900px, 95vw); }
+
   .modal-title { margin: 0; font-size: 14px; font-weight: 600; }
   .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
   .hint { color: var(--color-text-muted); font-size: 0.875rem; max-width: 60ch; margin: 0; }
@@ -128,6 +133,7 @@
     text-align: left;
     padding: 6px 8px;
     border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
   }
   .creds-table th {
     font-size: 11px;
