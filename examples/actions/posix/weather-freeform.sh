@@ -59,7 +59,7 @@ encoded=$(printf '%s' "$location" | tr ' ' '+')
 # &u forces USCS units. wttr.in returns HTTP 500 with body "location not
 # found: location not found" for unknown ICAO/ZIP, so capture status.
 url="https://wttr.in/${encoded}?format=j1&u"
-raw=$(curl -sSL --max-time 8 -w $'\n__HTTP__%{http_code}' "$url") \
+raw=$(curl -sSL --max-time 8 -w $'\n__HTTP__%{http_code}' -- "$url") \
     || { echo "fetch failed" >&2; exit 1; }
 status="${raw##*__HTTP__}"
 body="${raw%$'\n'__HTTP__*}"
