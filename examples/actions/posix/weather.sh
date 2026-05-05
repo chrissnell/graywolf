@@ -4,7 +4,10 @@
 # Args:     location  (required) -- city name, ZIP, ICAO airport, or
 #                                   "lat,lon"  (Denver, 80202, KDEN,
 #                                   "39.7,-105.0")
-# Reply:    one-line current conditions in plain English
+# Reply:    two-line current conditions in plain English. Set the
+#           Action's MaxReplyLines >= 2 or only the first line ships.
+#           Line 1: "<location>: <condition> <temp>"
+#           Line 2: "wind <wind> hum <hum> <pressure>"
 # Source:   wttr.in (free, no key, worldwide)
 # Deps:     curl
 set -euo pipefail
@@ -23,8 +26,11 @@ if [[ ! "$location" =~ ^[A-Za-z0-9.,_\ -]+$ ]]; then
 fi
 encoded=$(printf '%s' "$location" | tr ' ' '+')
 
-# %C condition, %t temperature, %w wind, %h humidity; &u forces USCS units.
-url="https://wttr.in/${encoded}?format=%C+%t+%w+%h&u"
+# %C condition, %t temp, %w wind, %h humidity, %P pressure; &u forces
+# USCS units. The literal "|" splits the response into the two on-air
+# lines; wttr.in passes it through verbatim and "|" never appears in
+# any of these fields.
+url="https://wttr.in/${encoded}?format=%C+%t|wind+%w+hum+%h+%P&u"
 resp=$(curl -fsSL --max-time 8 -- "$url") || { echo "fetch failed" >&2; exit 1; }
 
 resp=$(printf '%s' "$resp" | tr -d '\r\n')
@@ -32,4 +38,12 @@ if [[ -z "$resp" ]]; then
   echo "$location: no data"
   exit 0
 fi
-echo "${location}: ${resp}"
+
+line1="${resp%%|*}"
+line2="${resp#*|}"
+echo "${location}: ${line1}"
+# Drop line 2 if the delimiter was missing (no "|" in resp leaves
+# line2 == resp, which would duplicate line 1).
+if [[ "$line2" != "$resp" ]]; then
+  echo "$line2"
+fi
