@@ -152,6 +152,81 @@ func TestParseMicEAmbiguousLonRejected(t *testing.T) {
 	}
 }
 
+// TestParseMicEDelInLonRejected covers a pattern reported in graywolf
+// issue #76: PicoAPRS-class hardware (DL8XI, DL9DAK, others) emits
+// 0x7f (DEL) in the Mic-E info-field longitude when GPS has not yet
+// locked, while still asserting the destination's +100° offset bit.
+// Raw lon byte 0 = 0x7f → d = 99; combined with offset 100 → 199°,
+// which wraps to ~-161° and drops a German station off Alaska. The
+// SPACE (0x20) check from the previous fix did not catch it.
+func TestParseMicEDelInLonRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		dest string
+		info []byte
+	}{
+		{
+			// 2026-05-05 DL9DAK>U3SUY8: '<7f>Uhl <1c>-/>
+			name: "DL9DAK",
+			src:  "DL9DAK",
+			dest: "U3SUY8",
+			info: []byte{'\'', 0x7f, 'U', 'h', 'l', 0x20, 0x1c, '-', '/', '>'},
+		},
+		{
+			// 2026-05-05 DL8XI>US3XQ4: `<7f>(<7f>l<1f>L-/"3u}Ingo
+			name: "DL8XI",
+			src:  "DL8XI",
+			dest: "US3XQ4",
+			info: []byte{'`', 0x7f, '(', 0x7f, 'l', 0x1f, 'L', '-', '/', '"', '3', 'u', '}'},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srcAddr, err := ax25.ParseAddress(tc.src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			destAddr, err := ax25.ParseAddress(tc.dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, tc.info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkt, err := Parse(f)
+			if err == nil {
+				t.Fatalf("expected error, got pkt %+v", pkt.MicE)
+			}
+			if !errors.Is(err, ErrMicELonAmbiguous) {
+				t.Fatalf("wrong error: %v (want ErrMicELonAmbiguous)", err)
+			}
+		})
+	}
+}
+
+// TestParseMicELonOverflowRejected covers the post-offset range guard
+// independently of the sentinel-byte check. A radio that encodes raw
+// degrees 80..99 with the +100° offset bit set produces 180..199 — a
+// value the spec does not allow. Reject rather than wrap to the
+// antimeridian.
+func TestParseMicELonOverflowRejected(t *testing.T) {
+	srcAddr, _ := ax25.ParseAddress("N0CALL")
+	destAddr, _ := ax25.ParseAddress("U3SUY8") // offset bit set on dest[4]='Y'
+	// Raw degrees byte = 80 + 28 = 108 ('l'). With offset +100 = 180,
+	// out of range. Use printable bytes so the sentinel check does not
+	// fire first.
+	info := []byte{'`', 'l', 'A', 'A', 'A', 'A', 'A', '-', '/'}
+	f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(f); !errors.Is(err, ErrMicELonAmbiguous) {
+		t.Fatalf("wrong error: %v", err)
+	}
+}
+
 func abs(x float64) float64 {
 	if x < 0 {
 		return -x
