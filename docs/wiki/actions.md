@@ -148,6 +148,41 @@ Source:
 [`../../pkg/actions/classifier.go`](../../pkg/actions/classifier.go),
 [`../../pkg/actions/runner.go`](../../pkg/actions/runner.go).
 
+## Multi-line replies
+
+Actions can emit up to `Action.MaxReplyLines` separate APRS messages
+on success. Each non-empty stdout line becomes one outbound DM with
+its own message id, ack ladder, and retry budget. Default 1; hard
+ceiling `actions.MaxReplyLinesCeiling = 5` enforced by `validateAction`.
+
+- Only `Status == ok` paths fan out. Failure statuses (`bad_arg`,
+  `timeout`, `error`, `denied`, `bad_otp`, `disabled`, `unknown`,
+  `no_credential`, `busy`, `rate_limited`) always collapse to a
+  single reply — multi-line is meaningful only for executor success
+  output.
+- Line 1 carries the `ok: ` prefix; lines 2..N are bare. Each line
+  is sanitized of control chars and capped at `MaxReplyLen = 67`
+  runes; longer lines are truncated with the `…` rune and
+  `Truncated = true` on the audit row. Blank lines are dropped.
+- Source-aware reply transport (RF inbound → IS-fallback override;
+  IS inbound → IS-only override) is applied to every line
+  independently because each `SendReply` call constructs its own
+  `messages.SendMessageRequest`.
+- Audit row stores `\n`-joined text in `ReplyText` and the count of
+  produced lines in `ReplyLineCount`. The audit row reflects what
+  the runner formatted and dispatched; per-line transport ack state
+  lives in the messages thread, not in the invocation row.
+
+Source:
+[`../../pkg/actions/reply.go`](../../pkg/actions/reply.go) `FormatReplies`,
+[`../../pkg/actions/runner.go`](../../pkg/actions/runner.go) `replyAndAudit`.
+
+**Airtime warning surfaced in the operator UI:** an Action set to 5
+lines turns one trigger into 5 outbound RF frames plus per-line acks
+and retries. Operators should keep `MaxReplyLines` at 1 unless the
+script genuinely needs to deliver multiple short messages (e.g.
+weather summaries).
+
 ## Source-aware reply transport
 
 `MessagesReplySender` echoes the inbound transport back to the
@@ -214,10 +249,10 @@ AutoMigrate). Four tables:
 
 | Table | Notes |
 |---|---|
-| `actions` | unique `name`, FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL. The `Enabled` and `OTPRequired` columns deliberately omit `default:true` from their gorm tags even though the SQL DDL keeps `DEFAULT 1` (downgrade-safety). Reason: gorm uses the gorm-tag default as the value to send when the Go field is its zero value, which would conflate a genuine `false` from the wire with "field not set" and silently flip a freshly-created disabled action back to enabled. Application layer always provides the explicit value. |
+| `actions` | unique `name`, FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL. The `Enabled` and `OTPRequired` columns deliberately omit `default:true` from their gorm tags even though the SQL DDL keeps `DEFAULT 1` (downgrade-safety). Reason: gorm uses the gorm-tag default as the value to send when the Go field is its zero value, which would conflate a genuine `false` from the wire with "field not set" and silently flip a freshly-created disabled action back to enabled. Application layer always provides the explicit value. Also carries a per-Action `MaxReplyLines` column (1..5; default 1) gating the multi-line on-air reply fan-out. |
 | `otp_credentials` | unique `name`, plaintext `secret_b32` (per spec — UI surfaces it once at create time, never reads back) |
 | `action_listener_addressees` | unique `addressee` (uppercase, 1..9 chars) |
-| `action_invocations` | append-only audit; FK `action_id -> actions(id)` ON DELETE SET NULL; FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL; `action_name_at` and `OTPCredName` are denormalized so a row stays readable after deletion |
+| `action_invocations` | append-only audit; FK `action_id -> actions(id)` ON DELETE SET NULL; FK `otp_credential_id -> otp_credentials(id)` ON DELETE SET NULL; `action_name_at` and `OTPCredName` are denormalized so a row stays readable after deletion. Also carries a `ReplyLineCount` column tracking the number of reply lines the runner produced for this invocation. |
 
 All four models are deliberately *not* in the AutoMigrate list — the
 migration is the single source of truth for their schema.

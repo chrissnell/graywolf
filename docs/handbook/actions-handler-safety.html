@@ -203,6 +203,23 @@ template body if you set one). Default form fields:</p>
       handlers page</a> for worked examples.</li>
 </ul>
 
+<h2 id="reply">Reply policy and multi-line output</h2>
+
+<p>For successful invocations (status <code>ok</code>) graywolf may
+emit up to the Action's <code>Max reply lines</code> setting (default
+1, ceiling 5) as separate APRS messages. Each non-empty stdout line
+becomes one outbound DM with its own message id, ack, and retries.
+Lines are capped at 67 characters; longer lines are truncated with
+<code>&hellip;</code>. Blank lines are dropped.</p>
+
+<p>Failure statuses (bad_arg, timeout, denied, etc.) always collapse
+to a single reply regardless of <code>Max reply lines</code> &mdash;
+fanning out a failure across multiple frames is never useful.</p>
+
+<p>Each extra line is one extra RF frame plus its own ack and retry
+window. Keep <code>Max reply lines</code> at 1 unless your handler
+genuinely needs to deliver multiple short messages.</p>
+
 <h2 id="checklist">Final safety checklist</h2>
 
 <p>Before deploying any Action handler:</p>

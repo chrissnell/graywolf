@@ -319,6 +319,30 @@ graywolf's parser.</p>
 <a href="actions-handler-safety.html#kv-vs-freeform">kv vs freeform
 &mdash; when to pick which</a> on the overview page.</p>
 
+<h2 id="multi-line-reply">Multi-line replies</h2>
+
+<p>If the operator sets <code>Max reply lines</code> to a value
+greater than 1 in the action's settings, each non-empty stdout line
+your script writes becomes a separate outbound APRS message (up to
+the configured maximum, ceiling 5).</p>
+
+<p>Example: a three-line weather snapshot.</p>
+
+<pre><code class="language-bash">#!/bin/bash
+# Configure Max reply lines = 3 in the UI for this Action.
+set -euo pipefail
+echo "temp 72F"
+echo "wind 5mph N"
+echo "baro 30.10"
+</code></pre>
+
+<p>Each line is capped at 67 characters and stripped of control
+characters. Lines beyond <code>Max reply lines</code> are dropped
+and the audit row's <code>Truncated</code> flag is set. Default is
+1; the ceiling is 5. Each extra line costs one RF frame plus its
+own ack and retry budget &mdash; keep this at 1 unless multiple
+short messages are genuinely needed.</p>
+
     <nav class="page-nav">
       <a href="actions-handler-safety.html">
         <span class="label">Previous</span>
