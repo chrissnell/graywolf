@@ -1,5 +1,5 @@
 <script>
-  import { Button, Input, Select, Toggle, RadioGroup, Radio, Modal, toast } from '@chrissnell/chonky-ui';
+  import { Button, Icon, Input, Select, Toggle, RadioGroup, Radio, Modal, toast } from '@chrissnell/chonky-ui';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { actionsApi } from '../../lib/actions/api.js';
   import ConfirmDialog from '../ConfirmDialog.svelte';
@@ -304,7 +304,7 @@
 <Modal bind:open onClose={() => onClose?.()} class="action-edit-modal">
   <Modal.Header>
     <h3 class="modal-title">{title}</h3>
-    <Modal.Close aria-label="Close">x</Modal.Close>
+    <Modal.Close aria-label="Close"><Icon name="x" size="lg" /></Modal.Close>
   </Modal.Header>
   <Modal.Body>
     {#if topError}

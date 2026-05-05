@@ -5,7 +5,7 @@
   // is "Secret Key", not "Base32 secret". The handbook explains that
   // the value is the same RFC 4648 base32 string an authenticator app
   // would consume.
-  import { Button, Input, Modal, toast } from '@chrissnell/chonky-ui';
+  import { Button, Icon, Input, Modal, toast } from '@chrissnell/chonky-ui';
   import { remoteCredsApi } from '../../../lib/remote_actions/api.js';
   import { remoteActionsStore } from '../../../lib/remote_actions/store.svelte.js';
   import ScrollHint from '../../ScrollHint.svelte';
@@ -63,7 +63,7 @@
 <Modal bind:open>
   <Modal.Header>
     <h3 class="modal-title">{isEdit ? 'Edit Credential' : 'New Credential'}</h3>
-    <Modal.Close aria-label="Close">x</Modal.Close>
+    <Modal.Close aria-label="Close"><Icon name="x" size="lg" /></Modal.Close>
   </Modal.Header>
   <Modal.Body>
     <div class="form">

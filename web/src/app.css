@@ -103,9 +103,7 @@ input, select, textarea, button {
   align-items: center;
   justify-content: center;
   padding: 0;
-  font-size: 1.5rem;
   line-height: 1;
-  font-weight: 600;
 }
 
 /* Scrollbar */

@@ -1,5 +1,5 @@
 <script>
-  import { Button, Input, Modal, Badge, toast } from '@chrissnell/chonky-ui';
+  import { Button, Icon, Input, Modal, Badge, toast } from '@chrissnell/chonky-ui';
   import { actionsApi } from '../../lib/actions/api.js';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { statusVariant, badArgKey } from '../../lib/actions/status.js';
@@ -129,7 +129,7 @@
 <Modal bind:open onClose={() => onClose?.()} class="test-action-dialog">
   <Modal.Header>
     <h3 class="modal-title">Test "{action?.name ?? ''}"</h3>
-    <Modal.Close aria-label="Close">x</Modal.Close>
+    <Modal.Close aria-label="Close"><Icon name="x" size="lg" /></Modal.Close>
   </Modal.Header>
   <Modal.Body>
     <p class="subhead">

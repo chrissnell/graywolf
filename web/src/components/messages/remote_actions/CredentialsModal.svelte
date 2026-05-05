@@ -7,7 +7,7 @@
   //
   // Mirrors the inbound CredentialsTable.svelte pattern but the data
   // path is remoteCredsApi (separate table, separate URLs).
-  import { Button, EmptyState, Modal, Tooltip, toast } from '@chrissnell/chonky-ui';
+  import { Button, EmptyState, Icon, Modal, Tooltip, toast } from '@chrissnell/chonky-ui';
   import EditCredentialModal from './EditCredentialModal.svelte';
   import { remoteCredsApi } from '../../../lib/remote_actions/api.js';
   import { remoteActionsStore } from '../../../lib/remote_actions/store.svelte.js';
@@ -50,7 +50,7 @@
 <Modal bind:open class="remote-creds-modal">
   <Modal.Header>
     <h3 class="modal-title">OTP Secrets</h3>
-    <Modal.Close aria-label="Close">x</Modal.Close>
+    <Modal.Close aria-label="Close"><Icon name="x" size="lg" /></Modal.Close>
   </Modal.Header>
   <Modal.Body>
     <div class="header">

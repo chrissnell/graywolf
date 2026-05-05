@@ -1,5 +1,5 @@
 <script>
-  import { Button, Input, Modal, toast } from '@chrissnell/chonky-ui';
+  import { Button, Icon, Input, Modal, toast } from '@chrissnell/chonky-ui';
   import { actionsStore } from '../../lib/actions/store.svelte.js';
   import { credsApi } from '../../lib/actions/api.js';
   import QRDisplay from './QRDisplay.svelte';
@@ -130,7 +130,7 @@
       {revealed ? 'Save your one-time-password secret' : 'New OTP Credential'}
     </h3>
     {#if !revealed}
-      <Modal.Close aria-label="Close">x</Modal.Close>
+      <Modal.Close aria-label="Close"><Icon name="x" size="lg" /></Modal.Close>
     {/if}
   </Modal.Header>
   <Modal.Body>
