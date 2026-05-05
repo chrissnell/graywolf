@@ -62,6 +62,31 @@ func makeTestFireAction(t *testing.T, mux *http.ServeMux) uint {
 	return got.ID
 }
 
+// makeTestFireActionWithMaxLines is like makeTestFireAction but
+// configures MaxReplyLines on the persisted Action so the handler can
+// emit multi-line replies.
+func makeTestFireActionWithMaxLines(t *testing.T, mux *http.ServeMux, maxLines int) uint {
+	t.Helper()
+	in := dto.Action{
+		Name: "tfm", Type: "webhook", WebhookMethod: "GET",
+		WebhookURL: "https://example.test/", TimeoutSec: 5,
+		Enabled:       true,
+		MaxReplyLines: maxLines,
+		ArgSchema:     []dto.ArgSpec{{Key: "k", MaxLen: 8}},
+	}
+	body, _ := json.Marshal(in)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/actions", bytes.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var got dto.Action
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	return got.ID
+}
+
 func TestFireAction_Success(t *testing.T) {
 	srv, _ := newTestServer(t)
 	mux := http.NewServeMux()
@@ -248,6 +273,45 @@ func TestFireAction_KVRejectsText(t *testing.T) {
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/actions/"+strconv.FormatUint(uint64(id), 10)+"/test-fire", body))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s, want 400", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFireAction_MultipleReplyLines(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	rec := &recordingTestFire{
+		invID: 7,
+		result: actions.Result{
+			Status:        actions.StatusOK,
+			OutputCapture: "alpha\nbravo\ncharlie",
+		},
+	}
+	srv.SetActionsService(rec)
+	id := makeTestFireActionWithMaxLines(t, mux, 3)
+
+	body := strings.NewReader(`{"args":{"k":"v"}}`)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost,
+		"/api/actions/"+strconv.FormatUint(uint64(id), 10)+"/test-fire", body))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var got dto.TestFireResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ReplyLineCount != 3 {
+		t.Fatalf("ReplyLineCount=%d, want 3", got.ReplyLineCount)
+	}
+	if len(got.ReplyLines) != 3 {
+		t.Fatalf("ReplyLines len=%d, want 3", len(got.ReplyLines))
+	}
+	if got.ReplyLines[0] != "ok: alpha" || got.ReplyLines[1] != "bravo" || got.ReplyLines[2] != "charlie" {
+		t.Fatalf("ReplyLines: %#v", got.ReplyLines)
+	}
+	if got.ReplyText != "ok: alpha\nbravo\ncharlie" {
+		t.Fatalf("ReplyText=%q", got.ReplyText)
 	}
 }
 
