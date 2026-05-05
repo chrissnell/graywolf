@@ -160,6 +160,10 @@ type migration struct {
 //	    outbound paths now treat action names case-insensitively and
 //	    normalize to uppercase on save; this backfills any pre-change
 //	    rows so case-normalized lookups still hit them.
+//	19 — actions_max_reply_lines: add actions.max_reply_lines and
+//	    action_invocations.reply_line_count columns. Defaults 1 so
+//	    existing rows behave identically to the single-reply era.
+//	    Both NOT NULL so application code never sees NULL.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -179,6 +183,7 @@ var schemaMigrations = []migration{
 	{version: 16, name: "remote_actions_tables", phase: postAutoMigrate, run: migrateRemoteActionsTables},
 	{version: 17, name: "actions_arg_mode", phase: postAutoMigrate, run: migrateActionsArgMode},
 	{version: 18, name: "actions_uppercase_names", phase: postAutoMigrate, run: migrateActionsUppercaseNames},
+	{version: 19, name: "actions_max_reply_lines", phase: postAutoMigrate, run: migrateActionsMaxReplyLines},
 }
 
 // runMigrations applies every pending migration in the given phase,
