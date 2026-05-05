@@ -1,7 +1,7 @@
 <script>
   // CredentialPicker -- dropdown over the credentials cache + a final
   // "None" option (no OTP, or enter at fire time) + an inline "Manage
-  // secrets..." link that opens the credentials modal.
+  // One-Time Passwords..." link that opens the credentials modal.
   //
   // Bound `value` is the credential id (number) or null for None. The
   // chonky Select itself only handles string values; we coerce at the
@@ -43,7 +43,7 @@
     value={stringValue}
     onValueChange={handleChange}
   />
-  <button type="button" class="manage" onclick={() => (modalOpen = true)}>Manage secrets...</button>
+  <button type="button" class="manage" onclick={() => (modalOpen = true)}>Manage One-time Passwords...</button>
 </div>
 
 <CredentialsModal bind:open={modalOpen} />
