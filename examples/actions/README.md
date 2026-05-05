@@ -46,6 +46,10 @@ short stderr/stdout to surface as `error: <detail>`.
    - **Sender allowlist**: also recommended.
    - **Timeout**: 10s default; bump for SMS/HA round-trips if your
      network is slow.
+   - **Max reply lines**: 1 by default. Bump to 2 for `weather`
+     (line 1: condition + temp; line 2: wind + humidity + pressure).
+     Each extra line is one extra RF frame, so leave it at 1 for
+     scripts that emit a single line.
 4. **Test** with the per-row Test dialog before letting it loose
    on-air. Test bypasses OTP + allowlist but exercises the executor.
 
@@ -96,7 +100,8 @@ not** put secrets in the script itself or pass them as Action args.
 < ok: KE0XYZ said: hello
 
 > @@123456#weather location=Denver
-< ok: Denver: Partly cloudy +63°F ↓19mph 28%
+< ok: Denver: Partly cloudy +63°F
+< wind ↓19mph hum 28% 1016hPa
 
 > @@123456#solar
 < ok: SFI 142 A 8 K 2 SN 78

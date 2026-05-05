@@ -3,7 +3,10 @@
 # Args:     location  (required) -- city name, ZIP, ICAO airport, or
 #                                   "lat,lon" (Denver, 80202, KDEN,
 #                                   "39.7,-105.0")
-# Reply:    one-line current conditions in plain English
+# Reply:    two-line current conditions in plain English. Set the
+#           Action's MaxReplyLines >= 2 or only the first line ships.
+#           Line 1: "<location>: <condition> <temp>"
+#           Line 2: "wind <wind> hum <hum> <pressure>"
 # Source:   wttr.in (free, no key, worldwide)
 
 Set-StrictMode -Version Latest
@@ -23,8 +26,11 @@ if ($location -notmatch '^[A-Za-z0-9.,_ -]+$') {
 }
 
 $encoded = [System.Uri]::EscapeDataString($location)
-# %C condition, %t temperature, %w wind, %h humidity; &u forces USCS units.
-$url = "https://wttr.in/${encoded}?format=%C+%t+%w+%h&u"
+# %C condition, %t temp, %w wind, %h humidity, %P pressure; &u forces
+# USCS units. The literal "|" splits the response into the two on-air
+# lines; wttr.in passes it through verbatim and "|" never appears in
+# any of these fields.
+$url = "https://wttr.in/${encoded}?format=%C+%t|wind+%w+hum+%h+%P&u"
 
 try {
   $resp = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri $url).Content.Trim()
@@ -38,4 +44,9 @@ if (-not $resp) {
   exit 0
 }
 
-"${location}: $resp"
+$parts = $resp.Split('|', 2)
+"${location}: $($parts[0])"
+# Drop line 2 if the delimiter was missing.
+if ($parts.Length -eq 2) {
+  $parts[1]
+}
