@@ -27,7 +27,7 @@
 #        Line 2: "wind <dir><speed>mph hum <hum>% <pressure>hPa"
 #        Unknown location -> single-line helpful message.
 # Source: wttr.in (free, no key, worldwide).
-# Deps:   curl, awk, sed (all standard POSIX)
+# Deps:   curl, jq
 
 set -euo pipefail
 
@@ -55,9 +55,9 @@ if [[ ! "$location" =~ ^[A-Za-z0-9.,_\ -]+$ ]]; then
 fi
 encoded=$(printf '%s' "$location" | tr ' ' '+')
 
-# j1 returns pretty-printed JSON: current_condition + nearest_area
-# (resolved city). &u forces USCS units. wttr.in returns HTTP 500 with
-# body "location not found: location not found" for unknown ICAO/ZIP.
+# j1 returns full JSON: current_condition + nearest_area (resolved city).
+# &u forces USCS units. wttr.in returns HTTP 500 with body "location not
+# found: location not found" for unknown ICAO/ZIP, so capture status.
 url="https://wttr.in/${encoded}?format=j1&u"
 raw=$(curl -sSL --max-time 8 -w $'\n__HTTP__%{http_code}' "$url") \
     || { echo "fetch failed" >&2; exit 1; }
@@ -73,44 +73,20 @@ if [[ "$status" != "200" ]]; then
     exit 1
 fi
 
-# Pull a top-level scalar string out of wttr.in's pretty-printed JSON.
-# Each scalar sits on its own line as: `    "key": "value",`. The first
-# match wins; current_condition is emitted before forecast sections, so
-# fields like "humidity" / "pressure" resolve to the current values.
-scalar() {
-    awk -v k="\"$1\":" '
-        index($0, k) {
-            sub(/^[^"]*"[^"]*":[[:space:]]*"/, "")
-            sub(/".*$/, "")
-            print
-            exit
-        }
-    ' <<<"$body"
-}
+# Pull the seven fields we need as a single tab-separated line.
+parsed=$(printf '%s' "$body" | jq -r '
+    [
+      (.nearest_area[0].areaName[0].value     // ""),
+      (.current_condition[0].weatherDesc[0].value // ""),
+      (.current_condition[0].temp_F           // ""),
+      (.current_condition[0].winddir16Point   // ""),
+      (.current_condition[0].windspeedMiles   // ""),
+      (.current_condition[0].humidity         // ""),
+      (.current_condition[0].pressure         // "")
+    ] | @tsv
+') || { echo "parse failed" >&2; exit 1; }
 
-# Pull the first {"value": "..."} child of an array key (e.g. weatherDesc
-# inside current_condition, or areaName inside nearest_area). Anchor on
-# the parent so we skip unrelated "value" lines.
-nested_value() {
-    awk -v parent="\"$1\":" -v section="\"$2\":" '
-        index($0, parent) { in_p = 1 }
-        in_p && index($0, section) { in_s = 1; next }
-        in_s && /"value"[[:space:]]*:/ {
-            sub(/^[^"]*"value"[[:space:]]*:[[:space:]]*"/, "")
-            sub(/".*$/, "")
-            print
-            exit
-        }
-    ' <<<"$body"
-}
-
-city=$(nested_value nearest_area areaName)
-desc=$(nested_value current_condition weatherDesc)
-tF=$(scalar temp_F)
-wd=$(scalar winddir16Point)
-ws=$(scalar windspeedMiles)
-hum=$(scalar humidity)
-pr=$(scalar pressure)
+IFS=$'\t' read -r city desc tF wd ws hum pr <<<"$parsed"
 
 if [[ -z "$desc" || -z "$tF" ]]; then
     echo "$location: no data"
