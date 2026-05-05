@@ -172,6 +172,9 @@
   ];
 
   function validateName() {
+    // The name input's `oninput` handler is the single source of truth
+    // for canonicalization (live uppercase). validateName only reads.
+    // buildBody() does a final defensive trim+toUpperCase before POST.
     const v = form.name.trim();
     if (!v) {
       nameError = 'Name is required.';
@@ -193,7 +196,7 @@
     delete out.id;
     delete out.last_invoked_at;
     delete out.last_invoked_by;
-    out.name = out.name.trim();
+    out.name = out.name.trim().toUpperCase();
     out.description = out.description.trim();
     if (out.type === 'command') {
       out.webhook_method = '';
@@ -318,10 +321,11 @@
               id="action-name"
               type="text"
               bind:value={form.name}
+              oninput={(e) => { form.name = e.currentTarget.value.toUpperCase(); }}
               onblur={validateName}
               class={nameError || fieldErrors.name ? 'field-invalid' : ''}
             />
-            <p class="hint">Used as keyword in the message. Letters, digits, dot, dash, underscore.</p>
+            <p class="hint">Used as keyword in the message. Letters, digits, dot, dash, underscore. Stored uppercase; case-insensitive on the wire.</p>
             {#if nameError}<p class="field-error">{nameError}</p>{/if}
             {#if fieldErrors.name}<p class="field-error">{fieldErrors.name}</p>{/if}
           </div>

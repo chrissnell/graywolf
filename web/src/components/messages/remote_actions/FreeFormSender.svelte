@@ -38,12 +38,14 @@
     }
   });
 
-  // Split cmd into actionName + argsString at the first space.
+  // Split cmd into actionName + argsString at the first space. Action
+  // names are case-insensitive on the wire and stored uppercase
+  // server-side, so canonicalize here too.
   const parsed = $derived.by(() => {
     const trimmed = cmd.trim();
     const sp = trimmed.indexOf(' ');
-    if (sp < 0) return { actionName: trimmed, argsString: '' };
-    return { actionName: trimmed.slice(0, sp), argsString: trimmed.slice(sp + 1) };
+    if (sp < 0) return { actionName: trimmed.toUpperCase(), argsString: '' };
+    return { actionName: trimmed.slice(0, sp).toUpperCase(), argsString: trimmed.slice(sp + 1) };
   });
 
   const otpToUse = $derived(credId == null ? manualOtp : code);
@@ -104,7 +106,7 @@
   <CredentialPicker bind:value={credId} label="Active OTP" />
   <div class="field">
     <label for="ff-cmd">Command</label>
-    <Input id="ff-cmd" bind:value={cmd} placeholder="unlock door=front" />
+    <Input id="ff-cmd" bind:value={cmd} placeholder="UNLOCK door=front" />
     <p class="hint">Enter command and optional args -- no @@ prefix needed.</p>
   </div>
   {#if credId == null}

@@ -1,6 +1,11 @@
 package remoteactions
 
-import "time"
+import (
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // RemoteOTPCredential is one named TOTP secret used to fire macros at a
 // remote station. Stored plaintext per the single-user-station design;
@@ -52,3 +57,16 @@ type RemoteActionMacro struct {
 }
 
 func (*RemoteActionMacro) TableName() string { return "remote_action_macros" }
+
+// BeforeSave normalizes ActionName to uppercase so outbound fires send
+// the canonical wire form. The receiver treats names case-insensitively
+// (see pkg/configstore Action.BeforeSave) but storing the canonical
+// uppercase form here keeps the audit/inspection surface consistent.
+//
+// This hook fires for Create. The Update path uses gorm's map-based
+// Updates which bypasses model hooks; the webapi handler uppercases
+// in.ActionName before calling MacroStore.Update.
+func (m *RemoteActionMacro) BeforeSave(_ *gorm.DB) error {
+	m.ActionName = strings.ToUpper(strings.TrimSpace(m.ActionName))
+	return nil
+}

@@ -151,7 +151,8 @@ func TestOTPCredentials_UsedByPopulated(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || len(got[0].UsedBy) != 1 || got[0].UsedBy[0] != "ref" {
+	// Action.Name is canonicalized to uppercase on save.
+	if len(got) != 1 || len(got[0].UsedBy) != 1 || got[0].UsedBy[0] != "REF" {
 		t.Fatalf("used_by mismatch: %+v", got)
 	}
 }

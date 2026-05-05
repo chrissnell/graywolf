@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -142,7 +143,7 @@ func (s *Server) updateRemoteActionMacro(w http.ResponseWriter, r *http.Request)
 			badRequest(w, err.Error())
 			return
 		}
-		cur.ActionName = in.ActionName
+		cur.ActionName = strings.ToUpper(strings.TrimSpace(in.ActionName))
 	}
 	// ArgsString and RemoteOTPCredentialID always overwrite. Empty
 	// string clears args; nil unbinds the credential. Callers must

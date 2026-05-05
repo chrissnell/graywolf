@@ -75,6 +75,23 @@ func TestMacroStoreReorder(t *testing.T) {
 	}
 }
 
+// RemoteActionMacro.BeforeSave normalizes ActionName to uppercase so
+// outbound fires send the canonical wire form. Mixed-case input must
+// round-trip as uppercase regardless of how the operator typed it.
+func TestMacroStoreUppercasesActionName(t *testing.T) {
+	db := newTestDB(t)
+	ms := NewMacroStore(db)
+	ctx := context.Background()
+	m := &RemoteActionMacro{TargetCall: "KK7XYZ-9", Label: "x", ActionName: "  Unlock  "}
+	if err := ms.Create(ctx, m); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, _ := ms.Get(ctx, m.ID)
+	if got.ActionName != "UNLOCK" {
+		t.Fatalf("ActionName = %q, want UNLOCK", got.ActionName)
+	}
+}
+
 func TestMacroStoreDelete(t *testing.T) {
 	db := newTestDB(t)
 	ms := NewMacroStore(db)

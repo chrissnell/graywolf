@@ -41,7 +41,8 @@ func TestMigration17AddsArgModeColumn(t *testing.T) {
 		t.Fatalf("create freeform action: %v", err)
 	}
 	var got Action
-	if err := s.DB().Where("name = ?", "fm").First(&got).Error; err != nil {
+	// Action.BeforeSave canonicalizes Name to uppercase.
+	if err := s.DB().Where("name = ?", "FM").First(&got).Error; err != nil {
 		t.Fatalf("read back: %v", err)
 	}
 	if got.ArgMode != "freeform" {
