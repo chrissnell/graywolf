@@ -840,6 +840,7 @@ type Action struct {
 	ArgMode             string `gorm:"size:16;not null;default:'kv'"`
 	RateLimitSec        int    `gorm:"not null;default:5"`
 	QueueDepth          int    `gorm:"not null;default:8"`
+	MaxReplyLines       int    `gorm:"not null;default:1"`
 	Enabled             bool   `gorm:"not null"`
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
@@ -899,5 +900,6 @@ type ActionInvocation struct {
 	OutputCapture   string `gorm:"type:text"`
 	ReplyText       string
 	Truncated       bool
+	ReplyLineCount  int       `gorm:"not null;default:1"`
 	CreatedAt       time.Time `gorm:"index"`
 }
