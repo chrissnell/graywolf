@@ -14,14 +14,23 @@ import (
 // explicitly save these fields as zero will see them overwritten on the
 // next GET; this is acceptable for singleton config where "no row yet"
 // and "saved as zero" are not meaningfully distinguishable anyway.
+//
+// rf_channel and tx_channel are deliberately NOT defaulted here. Both
+// are soft-FKs onto configstore.Channel.ID and there is no guarantee
+// any specific ID exists (channels can be created/deleted, leaving
+// non-contiguous IDs). Defaulting to "1" caused a write-time validation
+// failure when the operator saved an unrelated change: the response
+// echoed rf_channel=1, the UI round-tripped it back, and the handler's
+// non-idempotent ValidateChannelRef path 400'd with "rf_channel:
+// channel 1 does not exist". Passing 0 (the documented "unset"
+// sentinel) lets the UI's defaultCh fallback pick the lowest live
+// channel for tx_channel and lets idempotent-skip absorb rf_channel.
 const (
 	DefaultIGateServer          = "rotate.aprs2.net"
 	DefaultIGatePort            = 14580
-	DefaultIGateRfChannel       = 1
 	DefaultIGateMaxMsgHops      = 2
 	DefaultIGateSoftwareName    = "graywolf"
 	DefaultIGateSoftwareVersion = "0.1"
-	DefaultIGateTxChannel       = 1
 )
 
 // IGateConfigRequest is the body accepted by PUT /api/igate/config.
@@ -91,10 +100,6 @@ func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
 	if port == 0 {
 		port = DefaultIGatePort
 	}
-	rfChannel := m.RfChannel
-	if rfChannel == 0 {
-		rfChannel = DefaultIGateRfChannel
-	}
 	maxMsgHops := m.MaxMsgHops
 	if maxMsgHops == 0 {
 		maxMsgHops = DefaultIGateMaxMsgHops
@@ -107,10 +112,6 @@ func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
 	if softwareVersion == "" {
 		softwareVersion = DefaultIGateSoftwareVersion
 	}
-	txChannel := m.TxChannel
-	if txChannel == 0 {
-		txChannel = DefaultIGateTxChannel
-	}
 	return IGateConfigResponse{
 		ID: m.ID,
 		IGateConfigRequest: IGateConfigRequest{
@@ -121,11 +122,11 @@ func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
 			SimulationMode:  m.SimulationMode,
 			GateRfToIs:      m.GateRfToIs,
 			GateIsToRf:      m.GateIsToRf,
-			RfChannel:       rfChannel,
+			RfChannel:       m.RfChannel,
 			MaxMsgHops:      maxMsgHops,
 			SoftwareName:    softwareName,
 			SoftwareVersion: softwareVersion,
-			TxChannel:       txChannel,
+			TxChannel:       m.TxChannel,
 		},
 	}
 }
