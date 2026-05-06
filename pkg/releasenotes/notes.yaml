@@ -7,6 +7,16 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.1"
+  date: "2026-05-05"
+  style: info
+  schema_version: 1
+  title: "APRS: fix Mic-E longitude decoding bug"
+  body: |
+    Fixes a bug in Mic-E position decoding that could produce
+    bogus longitudes on certain packets. Stations using Mic-E
+    encoding (most mobile rigs) will now plot correctly.
+
 - version: "0.13.0"
   date: "2026-05-05"
   style: info
