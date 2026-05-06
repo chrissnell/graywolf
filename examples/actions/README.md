@@ -77,7 +77,7 @@ not** put secrets in the script itself or pass them as Action args.
 - `msg` — required, regex `.+`
 
 `weather`:
-- `location` — required, regex `^[A-Za-z0-9 ,.\-_]{1,64}$` (city name, ZIP, ICAO airport, or "lat,lon")
+- `location` — required, regex `^[A-Za-z0-9,-]{1,64}$` (city name, ZIP, ICAO airport, or integer "lat,lon"; matches the script-side whitelist and the default sanitizer)
 
 `sms`:
 - `to` — required, regex `^\+[1-9][0-9]{6,14}$`
@@ -100,7 +100,7 @@ not** put secrets in the script itself or pass them as Action args.
 < ok: KE0XYZ said: hello
 
 > @@123456#weather location=Denver
-< ok: Denver: Partly cloudy +63°F
+< ok: Denver, CO: Partly cloudy +63°F
 < wind ↓19mph hum 28% 1016hPa
 
 > @@123456#solar
