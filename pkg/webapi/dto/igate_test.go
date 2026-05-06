@@ -18,8 +18,18 @@ func TestIGateConfigFromModel_EmptyModelSeedsDefaults(t *testing.T) {
 	if got.Port != DefaultIGatePort {
 		t.Errorf("Port = %d, want %d", got.Port, DefaultIGatePort)
 	}
-	if got.RfChannel != DefaultIGateRfChannel {
-		t.Errorf("RfChannel = %d, want %d", got.RfChannel, DefaultIGateRfChannel)
+	// rf_channel and tx_channel must pass through 0 (sentinel "unset"),
+	// NOT a hardcoded "1". Soft-FK references onto channels.id have no
+	// safe default — channel 1 may not exist on systems where channels
+	// were created and deleted, leaving non-contiguous IDs. The UI
+	// substitutes the lowest live channel for tx_channel when the
+	// response is 0; rf_channel has no UI surface and round-trips 0
+	// through to the idempotent-skip branch in the PUT handler.
+	if got.RfChannel != 0 {
+		t.Errorf("RfChannel = %d, want 0 (no default)", got.RfChannel)
+	}
+	if got.TxChannel != 0 {
+		t.Errorf("TxChannel = %d, want 0 (no default)", got.TxChannel)
 	}
 	if got.MaxMsgHops != DefaultIGateMaxMsgHops {
 		t.Errorf("MaxMsgHops = %d, want %d", got.MaxMsgHops, DefaultIGateMaxMsgHops)
@@ -29,9 +39,6 @@ func TestIGateConfigFromModel_EmptyModelSeedsDefaults(t *testing.T) {
 	}
 	if got.SoftwareVersion != DefaultIGateSoftwareVersion {
 		t.Errorf("SoftwareVersion = %q, want %q", got.SoftwareVersion, DefaultIGateSoftwareVersion)
-	}
-	if got.TxChannel != DefaultIGateTxChannel {
-		t.Errorf("TxChannel = %d, want %d", got.TxChannel, DefaultIGateTxChannel)
 	}
 
 	// Booleans intentionally stay zero-valued: the UI needs to
