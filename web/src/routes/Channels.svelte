@@ -92,9 +92,7 @@
 
   const modemOptions = [
     { value: 'afsk', label: 'AFSK' },
-    { value: 'gfsk', label: 'GFSK' },
     { value: 'psk', label: 'PSK' },
-    { value: 'fsk', label: 'FSK' },
   ];
 
   const channelOptions = [

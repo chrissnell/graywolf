@@ -64,7 +64,7 @@ function delay(data) {
 
 const mockChannels = [
   { id: 1, name: 'VHF APRS', frequency: '144.390', modem_type: 'afsk1200', baud_rate: 1200, device: 'hw:0', enabled: true },
-  { id: 2, name: '9600 Data', frequency: '445.925', modem_type: 'gfsk9600', baud_rate: 9600, device: 'hw:1', enabled: false },
+  { id: 2, name: '9600 Data', frequency: '445.925', modem_type: 'afsk', baud_rate: 1200, device: 'hw:1', enabled: false },
 ];
 
 const mockAudioDevices = [
@@ -128,7 +128,7 @@ const mockStatus = {
   uptime_seconds: 3600,
   channels: [
     { id: 1, name: 'VHF APRS', modem_type: 'afsk', bit_rate: 1200, rx_frames: 142, tx_frames: 23, dcd_state: false, audio_peak: -12.0, input_device_id: 1, device_peak_dbfs: -18.0, device_rms_dbfs: -24.0, device_clipping: false },
-    { id: 2, name: '9600 Data', modem_type: 'gfsk', bit_rate: 9600, rx_frames: 0, tx_frames: 0, dcd_state: false, audio_peak: 0, input_device_id: 1, device_peak_dbfs: 0, device_rms_dbfs: 0, device_clipping: false },
+    { id: 2, name: '9600 Data', modem_type: 'afsk', bit_rate: 1200, rx_frames: 0, tx_frames: 0, dcd_state: false, audio_peak: 0, input_device_id: 1, device_peak_dbfs: 0, device_rms_dbfs: 0, device_clipping: false },
   ],
   igate: { connected: true, server: 'rotate.aprs2.net', callsign: 'N0CALL-10', rf_to_is_gated: 89, is_to_rf_gated: 0, packets_filtered: 12, rf_to_is_dropped: 0 },
 };
