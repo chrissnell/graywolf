@@ -1,16 +1,18 @@
-FROM alpine:latest
+FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.title="graywolf" \
   org.opencontainers.image.vendor="chrissnell" \
   org.opencontainers.image.description="APRS radio transceiver, digipeater, and Internet gateway"
 
-RUN apk add --no-cache alsa-lib && \
-    adduser -D -u 1000 graywolf
+RUN apt-get install --update -y --no-install-recommends libasound2 ca-certificates && \
+    apt-get dist-clean && \
+    mkdir /data && chown 1000:1000 /data
 
 COPY graywolf /usr/bin/graywolf
 COPY graywolf-modem-arm64 /usr/bin/graywolf-modem
 
-USER graywolf
+WORKDIR /data
+USER 1000:1000
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/bin/graywolf", "-modem", "/usr/bin/graywolf-modem"]
+ENTRYPOINT ["/usr/bin/graywolf", "-modem", "/usr/bin/graywolf-modem", "-config", "/data/graywolf.db", "-http", "0.0.0.0:8080"]
