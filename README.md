@@ -10,7 +10,7 @@ Graywolf is a modern APRS station with a software modem, digipeater, iGate, and 
 
 [**Known-Working Configurations**](https://chrissnell.com/software/graywolf/configurations.html) — community-tested hardware setups with exact settings. Check here for your device, and submit a PR if yours isn't listed.
 
-[**Graywolf APRS Discord****](https://discord.gg/3r5brb7mjV) — community chat for help, discussion, and development.
+[**Graywolf APRS Discord**](https://discord.gg/3r5brb7mjV) — community chat for help, discussion, and development.
 
 Graywolf is used all around the world! **[See a map of currently active stations](https://graywolf-users.nw5w.com/)**
 
