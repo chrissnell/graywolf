@@ -94,8 +94,15 @@ pub mod modem_9600;
 pub mod fx25;
 pub mod il2p;
 pub mod tx;
+// CM108 HID PTT and USB topology enumeration depend on hidapi / nusb,
+// which require host-OS facilities (libudev / IOKit / SetupAPI) that
+// aren't present on Android. The Android target uses different audio
+// routing entirely (USB-Audio class via OTG), so neither module is
+// reachable from the POC-A binary.
+#[cfg(not(target_os = "android"))]
 pub mod cm108;
 pub mod list_audio;
+#[cfg(not(target_os = "android"))]
 pub mod list_usb;
 pub mod rxonly;
 

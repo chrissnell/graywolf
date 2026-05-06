@@ -10,12 +10,15 @@ claxon = "0.4"
 prost = "0.13"
 bytes = "1"
 cpal = "0.17"
-hidapi = "2.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# USB topology enumeration for `--list-audio`'s sibling --list-usb.
-# Pure-Rust, no libusb dependency, and works cross-platform without
-# requiring privileged kernel APIs.
+
+# hidapi (CM108 HID PTT) and nusb (USB topology enumeration) require host
+# OS facilities (libudev / IOKit / SetupAPI) that aren't available on
+# Android, and CM108 PTT isn't a target for Android anyway. Limit them
+# to desktop targets so the POC-A cross-compile doesn't drag in libudev.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+hidapi = "2.6"
 nusb = "0.1"
 
 [target.'cfg(unix)'.dependencies]
