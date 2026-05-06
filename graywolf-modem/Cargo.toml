@@ -22,6 +22,10 @@ nusb = "0.1"
 # Direct POSIX access for serial PTT: fcntl::open + libc TIOCMSET ioctls.
 # Matches direwolf's approach (no termios calls at all on PTT-only fds).
 nix = { version = "0.29", features = ["fs", "ioctl"] }
+# Direct libc for poc_a_rxonly's SIGINT/SIGTERM handler. Already present
+# transitively via nix; naming it as a direct dep so the bin can call
+# libc::signal without relying on transitive re-exports.
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Linux GPIO PTT via gpiochip chardev v2 API. Pure-Rust; no CGo, no raw
@@ -78,3 +82,11 @@ path = "src/bin/demod_multi.rs"
 [[bin]]
 name = "demod-ipc-bench"
 path = "src/bin/demod_ipc_bench.rs"
+
+# POC-A Android RX-only bring-up binary. Cross-compiled with cargo-ndk for
+# arm64-v8a; on Android cpal 0.17 uses AAudio via the NDK (the modern
+# successor to Oboe), so no extra feature flag is needed. On desktop the
+# default cpal host (CoreAudio / ALSA / WASAPI) is used for smoke testing.
+[[bin]]
+name = "poc_a_rxonly"
+path = "src/bin/poc_a_rxonly.rs"

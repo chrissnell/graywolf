@@ -472,6 +472,7 @@ dependencies = [
  "gpiocdev",
  "gpiocdev-uapi",
  "hidapi",
+ "libc",
  "nix",
  "nusb",
  "prost",
