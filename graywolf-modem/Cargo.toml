@@ -5,6 +5,7 @@ edition = "2021"
 description = "Rust port of the Dire Wolf AFSK demodulator"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 claxon = "0.4"
 prost = "0.13"
 bytes = "1"
