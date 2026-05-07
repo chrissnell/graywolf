@@ -39,15 +39,13 @@ fn android_main(app: AndroidApp) {
             .with_tag(LOG_TAG),
     );
 
-    // Bridge: cpal's Android backend reads the global JavaVM + Context via
-    // `ndk_context::android_context()`. android-activity owns those pointers
-    // but does not auto-publish them. Without this call, cpal panics with
-    // "android context was not initialized" the first time it tries to
-    // build an input stream — the original blocker for raw /data/local/tmp
-    // exec, now resolved by virtue of being inside an APK.
-    unsafe {
-        ndk_context::initialize_android_context(app.vm_as_ptr(), app.activity_as_ptr());
-    }
+    // android-activity 0.6.1 already calls
+    // `ndk_context::initialize_android_context()` from its NativeActivity
+    // glue (init.rs:285) before invoking us. Calling it again would panic
+    // — ndk-context's slot is OnceCell-backed. cpal's Android backend
+    // reads the same global slot and now finds it populated, so the
+    // `android context was not initialized` panic seen on raw exec
+    // is resolved by virtue of running inside an APK with this glue.
     info!(
         "poc_a_rxonly {} starting (NativeActivity)",
         graywolf_demod::full_version()
