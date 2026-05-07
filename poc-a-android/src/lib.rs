@@ -106,8 +106,13 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
         .sample_rate(TARGET_SAMPLE_RATE as i32)
         .channel_count(1)
         .format(AudioFormat::PCM_I16)
-        // AGC + noise suppression OFF; we want the raw modulated audio.
-        .input_preset(AudioInputPreset::Unprocessed)
+        // VoiceRecognition matches MediaRecorder.AudioSource.VOICE_RECOGNITION,
+        // which is what aprsdroid (the established Android AFSK app) uses
+        // via AudioRecord. The HAL applies modest gain shaping suitable
+        // for mid-amplitude voice/audio sources, which keeps the modulated
+        // tones inside the i16 range better than Unprocessed does on this
+        // hardware combo (UV5R + Digirig CM108).
+        .input_preset(AudioInputPreset::VoiceRecognition)
         .data_callback(Box::new(
             move |_stream, data: *mut c_void, num_frames: i32| {
                 let n = num_frames.max(0) as usize;
