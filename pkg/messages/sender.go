@@ -66,17 +66,22 @@ type SenderClock interface {
 	Now() time.Time
 }
 
-// RFAvailability reports whether the RF modem is currently considered
-// reachable. *modembridge.Bridge satisfies it via IsRunning().
+// RFAvailability reports whether an RF transport is currently
+// reachable for the given channel. The modem subprocess is one such
+// transport; a KISS-TNC backend (TCP server / TCP client / serial) is
+// another. The wiring layer composes a single implementation that
+// returns true when *any* registered backend for the channel is
+// usable, so KISS-only channels (no audio device) can submit even
+// though the modem subprocess is not running.
 type RFAvailability interface {
-	IsRunning() bool
+	IsRunningForChannel(channel uint32) bool
 }
 
 // alwaysRF is the no-op RFAvailability used when the caller doesn't
 // inject a bridge (e.g. tests that never exercise the RF fallback).
 type alwaysRF struct{}
 
-func (alwaysRF) IsRunning() bool { return true }
+func (alwaysRF) IsRunningForChannel(uint32) bool { return true }
 
 // SenderConfig captures the sender's collaborators. All fields except
 // Logger, Clock, Bridge, and IGate are required.
@@ -487,13 +492,16 @@ func (s *Sender) readOnlyIS() bool {
 	return p == "" || p == "-1"
 }
 
-// rfAvailable folds the bridge's IsRunning into the sender's view.
-// Returns true when the caller didn't inject a bridge (tests).
+// rfAvailable folds the per-channel availability signal into the
+// sender's view. Returns true when the caller didn't inject a bridge
+// (tests). The channel argument lets the wiring layer answer
+// "yes" when a KISS-TNC backend is attached even if the modem
+// subprocess isn't running.
 func (s *Sender) rfAvailable() bool {
 	if s.bridge == nil {
 		return true
 	}
-	return s.bridge.IsRunning()
+	return s.bridge.IsRunningForChannel(s.txChannel.Load())
 }
 
 // buildFrame constructs the AX.25 UI frame carrying the APRS message

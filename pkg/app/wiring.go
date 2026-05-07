@@ -720,6 +720,47 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 // Service is NOT started here — Service.Start happens inside
 // messagesComponent so the TxHook registration and the Router / retry
 // goroutines fire in the right lifecycle slot.
+// rfAvailabilityAdapter satisfies messages.RFAvailability with a
+// channel-aware view: a channel is reachable when the modem subprocess
+// is running OR the dispatcher's snapshot has any non-modem backend
+// (KISS-TNC TCP server / TCP client / serial) registered for it. Issue
+// #81: a KISS-only channel (no audio device) was permanently refused
+// by the sender because the modem bridge was never running.
+type rfAvailabilityAdapter struct {
+	bridge *modembridge.Bridge
+	reg    *txbackend.Registry
+}
+
+// IsRunningForChannel reports whether the channel has any usable TX
+// path. Backend-specific health (e.g. KISS tcp-client connected vs
+// backoff) is intentionally NOT checked here — the backend's Submit
+// surfaces transport errors itself, and queuing during a brief
+// reconnect is the desired behaviour. The only role of this gate is
+// to skip RF entirely when neither the modem nor any KISS-TNC backend
+// could possibly carry the frame, so the IS fallback fires immediately.
+func (r rfAvailabilityAdapter) IsRunningForChannel(ch uint32) bool {
+	if r.bridge != nil && r.bridge.IsRunning() {
+		return true
+	}
+	if r.reg == nil {
+		return false
+	}
+	for _, b := range r.reg.Load().ByChannel[ch] {
+		if b.Name() != "modem" {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) rfAvailability() messages.RFAvailability {
+	var reg *txbackend.Registry
+	if a.txDispatcher != nil {
+		reg = a.txDispatcher.Registry()
+	}
+	return rfAvailabilityAdapter{bridge: a.bridge, reg: reg}
+}
+
 func (a *App) wireMessages(ctx context.Context) error {
 	a.msgStore = messages.NewStore(a.store.DB())
 	a.messagesReload = make(chan struct{}, 1)
@@ -776,7 +817,7 @@ func (a *App) wireMessages(ctx context.Context) error {
 		TxSink:        a.gov,
 		TxHookReg:     a.gov,
 		IGate:         igSender,
-		Bridge:        a.bridge,
+		Bridge:        a.rfAvailability(),
 		StationCache:  a.stationCache,
 		Logger:        a.logger.With("component", "messages"),
 		TxChannel:     txChannel,

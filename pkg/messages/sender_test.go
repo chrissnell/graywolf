@@ -25,7 +25,7 @@ type fakeBridge struct {
 	mu      sync.Mutex
 }
 
-func (b *fakeBridge) IsRunning() bool {
+func (b *fakeBridge) IsRunningForChannel(uint32) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.running
