@@ -153,21 +153,36 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
     let mut demod = MultiAfskDemodulator::new(sample_rate, 1200, 1200, 2200, 0, &RECOMMENDED_3DEMOD);
     let mut chunks_seen: u64 = 0;
     let mut frames_seen: u64 = 0;
+    let mut samples_total: u64 = 0;
+    let mut peak_abs: i32 = 0;
     let mut last_heartbeat = std::time::Instant::now();
     let heartbeat_period = Duration::from_secs(10);
     while !stop.load(Ordering::Relaxed) {
         if last_heartbeat.elapsed() >= heartbeat_period {
+            // Peak amplitude as % of i16 full-scale tells us if real audio
+            // is reaching the DSP. <2% = silence (likely opened wrong device
+            // or cable disconnected). 30-60% = healthy APRS RX level. >85%
+            // = clipping; demod will fail on edges.
+            let peak_pct = peak_abs as f32 * 100.0 / i16::MAX as f32;
             info!(
-                "heartbeat: chunks={} frames={} elapsed={}s",
+                "heartbeat: chunks={} frames={} samples={} peak={:.1}% elapsed={}s",
                 chunks_seen,
                 frames_seen,
+                samples_total,
+                peak_pct,
                 last_heartbeat.elapsed().as_secs()
             );
             last_heartbeat = std::time::Instant::now();
+            peak_abs = 0;
         }
         match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(chunk) => {
                 chunks_seen += 1;
+                samples_total += chunk.len() as u64;
+                for &s in &chunk {
+                    let a = (s as i32).abs();
+                    if a > peak_abs { peak_abs = a; }
+                }
                 for frame in feed_chunk(&mut demod, &chunk) {
                     let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
                     match format_ax25_ui_frame(&frame.data) {
