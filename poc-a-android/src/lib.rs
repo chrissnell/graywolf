@@ -49,7 +49,7 @@ fn android_main(app: AndroidApp) {
         graywolf_demod::full_version()
     );
 
-    if let Err(e) = usb::enumerate_and_set_volume(&app, -15.0) {
+    if let Err(e) = usb::enumerate_and_set_volume(&app, -35.0) {
         warn!("USB capture-gain setup failed: {}", e);
     }
 
