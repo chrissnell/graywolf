@@ -111,6 +111,15 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
     let (tx, rx) = sync_channel::<Vec<i16>>(64);
     let want_channel = 0usize;
     let n_channels = channels as usize;
+    // AAudio on Android delivers a USB-Audio-class input stream with no
+    // capture-side gain control applied (cpal 0.17 takes the AAudio
+    // default). Linux + ALSA on the same Digirig + UV5R chain runs at
+    // -35 dB capture gain (graywolf desktop convention). Apply the same
+    // attenuation in software so radio volume / DAC pot positions are
+    // portable across platforms.
+    let gain_db: f32 = -35.0;
+    let gain_lin: f32 = 10f32.powf(gain_db / 20.0);
+    info!("software input gain: {:.1} dB ({:.4}x)", gain_db, gain_lin);
 
     let err_fn = |e| error!("cpal stream error: {}", e);
     let stream = match sample_format {
@@ -121,7 +130,7 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
                     let mono: Vec<i16> = data
                         .chunks(n_channels)
                         .map(|frame| {
-                            let s = frame[want_channel.min(frame.len() - 1)];
+                            let s = frame[want_channel.min(frame.len() - 1)] * gain_lin;
                             (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
                         })
                         .collect();
@@ -137,7 +146,10 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
                 move |data: &[i16], _| {
                     let mono: Vec<i16> = data
                         .chunks(n_channels)
-                        .map(|frame| frame[want_channel.min(frame.len() - 1)])
+                        .map(|frame| {
+                            let s = frame[want_channel.min(frame.len() - 1)] as f32 * gain_lin;
+                            s.clamp(i16::MIN as f32, i16::MAX as f32) as i16
+                        })
                         .collect();
                     let _ = tx.try_send(mono);
                 },
