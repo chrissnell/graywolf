@@ -1,20 +1,15 @@
 //! POC-A Android NativeActivity entry. RX-only.
 //!
-//! Lifecycle:
-//!  1. Bridge `android-activity`'s `AndroidApp` (which holds the JavaVM
-//!     and Activity context pointers) into the global `ndk_context` slot
-//!     that cpal's Android backend reads at first stream-build.
-//!  2. Initialize `android_logger` so `log::info!` / `eprintln!`-style
-//!     messages route to logcat under tag `poc_a_rxonly`.
-//!  3. Open the default cpal input stream at 48 kHz mono via cpal's
-//!     Android backend (AAudio under the hood).
-//!  4. Push samples into a triple-ensemble AFSK demodulator and log
-//!     each decoded UI frame as one line, prefixed with UTC ISO8601.
-//!  5. Park `android_main` polling lifecycle events; exit when the OS
-//!     destroys the activity (back press, swipe-away, system-kill).
+//! Audio path uses ndk::audio (AAudio) directly rather than cpal because
+//! cpal 0.17 takes the AAudio default input preset (`GENERIC`), which
+//! enables AGC + noise suppression and crushes the modulated 1200/2200 Hz
+//! AFSK tones APRS depends on. The `Unprocessed` preset gives raw line
+//! audio; we apply the same -35 dB attenuation graywolf-modem uses on
+//! ALSA so the radio + DAC level conventions transfer unchanged.
 
 #![cfg(target_os = "android")]
 
+use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, TryRecvError};
 use std::sync::Arc;
@@ -22,11 +17,12 @@ use std::time::Duration;
 
 use android_activity::{AndroidApp, MainEvent, PollEvent};
 use chrono::Utc;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, StreamConfig};
 use graywolf_demod::demod_afsk_multi::{MultiAfskDemodulator, RECOMMENDED_3DEMOD};
 use graywolf_demod::rxonly::{feed_chunk, format_ax25_ui_frame};
 use log::{error, info, warn};
+use ndk::audio::{
+    AudioCallbackResult, AudioDirection, AudioFormat, AudioInputPreset, AudioStreamBuilder,
+};
 
 const TARGET_SAMPLE_RATE: u32 = 48_000;
 const LOG_TAG: &str = "poc_a_rxonly";
@@ -80,92 +76,65 @@ fn android_main(app: AndroidApp) {
 }
 
 fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "no default input device".to_string())?;
-    info!(
-        "input device: {:?}",
-        device.name().unwrap_or_else(|_| "<unknown>".into())
-    );
-
-    // Pick an input config close to 48 kHz mono i16. AAudio on Android
-    // typically returns f32 streams; we convert in-callback.
-    let supported = device
-        .default_input_config()
-        .map_err(|e| format!("default_input_config: {}", e))?;
-    let sample_format = supported.sample_format();
-    let sample_rate = pick_sample_rate(&device, TARGET_SAMPLE_RATE);
-    let channels = supported.channels();
-    info!(
-        "stream config: {} Hz, {} ch, format {:?}",
-        sample_rate, channels, sample_format
-    );
-
-    let config = StreamConfig {
-        channels,
-        sample_rate,
-        buffer_size: cpal::BufferSize::Default,
-    };
-
     let (tx, rx) = sync_channel::<Vec<i16>>(64);
-    let want_channel = 0usize;
-    let n_channels = channels as usize;
-    // AAudio on Android delivers a USB-Audio-class input stream with no
-    // capture-side gain control applied (cpal 0.17 takes the AAudio
-    // default). Linux + ALSA on the same Digirig + UV5R chain runs at
-    // -35 dB capture gain (graywolf desktop convention). Apply the same
-    // attenuation in software so radio volume / DAC pot positions are
-    // portable across platforms.
+
+    // -35 dB matches the ALSA capture gain graywolf-modem operators
+    // configure on this Digirig + UV5R chain. Q15 fixed-point so the
+    // realtime audio thread does no float math.
     let gain_db: f32 = -35.0;
     let gain_lin: f32 = 10f32.powf(gain_db / 20.0);
-    info!("software input gain: {:.1} dB ({:.4}x)", gain_db, gain_lin);
+    let gain_q15: i32 = (gain_lin * (1 << 15) as f32) as i32;
+    info!(
+        "software input gain: {:.1} dB ({:.4}x, q15={})",
+        gain_db, gain_lin, gain_q15
+    );
 
-    let err_fn = |e| error!("cpal stream error: {}", e);
-    let stream = match sample_format {
-        SampleFormat::F32 => device
-            .build_input_stream(
-                &config,
-                move |data: &[f32], _| {
-                    let mono: Vec<i16> = data
-                        .chunks(n_channels)
-                        .map(|frame| {
-                            let s = frame[want_channel.min(frame.len() - 1)] * gain_lin;
-                            (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
-                        })
-                        .collect();
-                    let _ = tx.try_send(mono);
-                },
-                err_fn,
-                None,
-            )
-            .map_err(|e| format!("build_input_stream f32: {}", e))?,
-        SampleFormat::I16 => device
-            .build_input_stream(
-                &config,
-                move |data: &[i16], _| {
-                    let mono: Vec<i16> = data
-                        .chunks(n_channels)
-                        .map(|frame| {
-                            let s = frame[want_channel.min(frame.len() - 1)] as f32 * gain_lin;
-                            s.clamp(i16::MIN as f32, i16::MAX as f32) as i16
-                        })
-                        .collect();
-                    let _ = tx.try_send(mono);
-                },
-                err_fn,
-                None,
-            )
-            .map_err(|e| format!("build_input_stream i16: {}", e))?,
-        other => return Err(format!("unsupported sample format: {:?}", other)),
-    };
-    stream.play().map_err(|e| format!("stream play: {}", e))?;
+    let tx_cb = tx.clone();
+    let stream = AudioStreamBuilder::new()
+        .map_err(|e| format!("AudioStreamBuilder::new: {:?}", e))?
+        .direction(AudioDirection::Input)
+        .sample_rate(TARGET_SAMPLE_RATE as i32)
+        .channel_count(1)
+        .format(AudioFormat::PCM_I16)
+        // AGC + noise suppression OFF; we want the raw modulated audio.
+        .input_preset(AudioInputPreset::Unprocessed)
+        .data_callback(Box::new(
+            move |_stream, data: *mut c_void, num_frames: i32| {
+                let n = num_frames.max(0) as usize;
+                if n == 0 {
+                    return AudioCallbackResult::Continue;
+                }
+                let raw = unsafe { std::slice::from_raw_parts(data as *const i16, n) };
+                let mut out: Vec<i16> = Vec::with_capacity(n);
+                for &s in raw {
+                    let scaled = (s as i32 * gain_q15) >> 15;
+                    out.push(scaled.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
+                }
+                // Non-blocking send; the demod loop drains on its own thread.
+                // Dropping a chunk here is preferable to stalling AAudio's
+                // realtime thread.
+                let _ = tx_cb.try_send(out);
+                AudioCallbackResult::Continue
+            },
+        ))
+        .open_stream()
+        .map_err(|e| format!("open_stream: {:?}", e))?;
+    drop(tx); // only the callback should hold a sender now.
+
+    let actual_rate = stream.sample_rate() as u32;
+    let actual_channels = stream.channel_count();
+    info!(
+        "AAudio stream open: {} Hz, {} ch, preset Unprocessed",
+        actual_rate, actual_channels
+    );
+    stream
+        .request_start()
+        .map_err(|e| format!("request_start: {:?}", e))?;
     info!("audio stream started");
 
-    let mut demod = MultiAfskDemodulator::new(sample_rate, 1200, 1200, 2200, 0, &RECOMMENDED_3DEMOD);
+    let mut demod = MultiAfskDemodulator::new(actual_rate, 1200, 1200, 2200, 0, &RECOMMENDED_3DEMOD);
     let mut chunks_seen: u64 = 0;
     let mut frames_seen: u64 = 0;
-    let mut samples_total: u64 = 0;
     let mut peak_abs: i32 = 0;
     let mut sumsq: u64 = 0;
     let mut window_samples: u64 = 0;
@@ -200,7 +169,6 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
         match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(chunk) => {
                 chunks_seen += 1;
-                samples_total += chunk.len() as u64;
                 window_samples += chunk.len() as u64;
                 for &s in &chunk {
                     let a = (s as i32).abs();
@@ -235,28 +203,12 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
         "demod loop exiting; chunks={} frames={}",
         chunks_seen, frames_seen
     );
-    drop(stream);
-    // Drain anything left so we don't leak heap on next run.
-    while let Err(TryRecvError::Empty) | Ok(_) = rx.try_recv() {
-        if let Err(TryRecvError::Disconnected) = rx.try_recv() {
+    let _ = stream.request_stop();
+    drop(stream); // releases the AAudio callback closure (and its tx).
+    while let Ok(_) | Err(TryRecvError::Empty) = rx.try_recv() {
+        if matches!(rx.try_recv(), Err(TryRecvError::Disconnected)) {
             break;
         }
     }
     Ok(())
-}
-
-fn pick_sample_rate(device: &cpal::Device, target: u32) -> u32 {
-    if let Ok(configs) = device.supported_input_configs() {
-        for cfg in configs {
-            let min = cfg.min_sample_rate();
-            let max = cfg.max_sample_rate();
-            if min <= target && target <= max {
-                return target;
-            }
-        }
-    }
-    device
-        .default_input_config()
-        .map(|c| c.sample_rate())
-        .unwrap_or(target)
 }
