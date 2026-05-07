@@ -404,25 +404,21 @@ pub fn enumerate_and_set_volume(app: &AndroidApp, target_db: f32) -> Result<(), 
 
     // Claim the Audio Control interface so SET_CUR doesn't conflict with
     // the AAudio HAL's open. Some Android builds will refuse the control
-    // transfer otherwise.
+    // transfer otherwise. Re-resolve the AC interface from the device.
+    let ac_iface_obj = env
+        .call_method(
+            &device,
+            "getInterface",
+            "(I)Landroid/hardware/usb/UsbInterface;",
+            &[JValue::Int(ac_iface as i32)],
+        )
+        .and_then(|v| v.l())
+        .map_err(|e| format!("getInterface(ac): {}", e))?;
     let _ = env.call_method(
         &connection,
         "claimInterface",
         "(Landroid/hardware/usb/UsbInterface;Z)Z",
-        &[
-            // Re-resolve the AC interface from the device by index.
-            (&env
-                .call_method(
-                    &device,
-                    "getInterface",
-                    "(I)Landroid/hardware/usb/UsbInterface;",
-                    &[JValue::Int(ac_iface as i32)],
-                )
-                .and_then(|v| v.l())
-                .map_err(|e| format!("getInterface(ac): {}", e))?)
-                .into(),
-            JValue::Bool(1),
-        ],
+        &[(&ac_iface_obj).into(), JValue::Bool(1)],
     );
 
     // Volume value: 1/256 dB units, signed 16-bit little-endian.
