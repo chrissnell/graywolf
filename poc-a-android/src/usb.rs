@@ -29,8 +29,14 @@ use log::{info, warn};
 const USB_AUDIO_CLASS: i32 = 0x01;
 // USB Audio Class spec, table A-9: SET_CUR request.
 const UAC_SET_CUR: i32 = 0x01;
+const UAC_GET_CUR: i32 = 0x81;
+const UAC_GET_MIN: i32 = 0x82;
+const UAC_GET_MAX: i32 = 0x83;
+const UAC_GET_RES: i32 = 0x84;
 // Class-specific request, recipient interface, host-to-device.
 const UAC_CONTROL_OUT: i32 = 0x21;
+// Class-specific request, recipient interface, device-to-host.
+const UAC_CONTROL_IN: i32 = 0xa1;
 // Volume Control Selector inside a Feature Unit (UAC1 spec, Appendix A.10).
 const VOLUME_CONTROL: i32 = 0x02;
 // USB Audio Class descriptor types (Appendix A.4).
@@ -407,6 +413,57 @@ pub fn enumerate_and_set_volume(app: &AndroidApp, target_db: f32) -> Result<(), 
     // the AC interface detaches the snd-usb-audio kernel driver, which
     // is what AAudio depends on. Hijacking the interface gave us a
     // silent capture stream (all-zero samples) on the first attempt.
+
+    // Probe device-supported range so we don't ask for an unreachable dB.
+    // wValue = (control_selector << 8) | channel. Use master (0).
+    let probe_w_value: i32 = (VOLUME_CONTROL << 8) | 0x00;
+    let probe_w_index: i32 = ((fu_id as i32) << 8) | (ac_iface as i32);
+    for (label, req) in [
+        ("MIN", UAC_GET_MIN),
+        ("MAX", UAC_GET_MAX),
+        ("RES", UAC_GET_RES),
+        ("CUR", UAC_GET_CUR),
+    ] {
+        let arr = match env.new_byte_array(2) {
+            Ok(a) => JByteArray::from(a),
+            Err(_) => continue,
+        };
+        let rc = env
+            .call_method(
+                &connection,
+                "controlTransfer",
+                "(IIII[BII)I",
+                &[
+                    JValue::Int(UAC_CONTROL_IN),
+                    JValue::Int(req),
+                    JValue::Int(probe_w_value),
+                    JValue::Int(probe_w_index),
+                    (&arr).into(),
+                    JValue::Int(2),
+                    JValue::Int(2000),
+                ],
+            )
+            .and_then(|v| v.i())
+            .unwrap_or(-1);
+        if rc < 2 {
+            info!("FU_VOLUME GET_{} -> rc={}", label, rc);
+            continue;
+        }
+        let bytes = env
+            .convert_byte_array(&arr)
+            .map(|v| v.into_iter().take(2).collect::<Vec<u8>>())
+            .unwrap_or_default();
+        if bytes.len() == 2 {
+            let val = i16::from_le_bytes([bytes[0], bytes[1]]);
+            info!(
+                "FU_VOLUME GET_{} = 0x{:04x} ({} q8.8 = {:.2} dB)",
+                label,
+                val as u16,
+                val,
+                val as f32 / 256.0
+            );
+        }
+    }
 
     // Volume value: 1/256 dB units, signed 16-bit little-endian.
     let q8_8 = (target_db * 256.0) as i16;

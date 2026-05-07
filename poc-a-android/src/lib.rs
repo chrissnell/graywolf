@@ -49,7 +49,7 @@ fn android_main(app: AndroidApp) {
         graywolf_demod::full_version()
     );
 
-    if let Err(e) = usb::enumerate_and_set_volume(&app, -35.0) {
+    if let Err(e) = usb::enumerate_and_set_volume(&app, -15.0) {
         warn!("USB capture-gain setup failed: {}", e);
     }
 
@@ -84,16 +84,14 @@ fn android_main(app: AndroidApp) {
 fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
     let (tx, rx) = sync_channel::<Vec<i16>>(64);
 
-    // -35 dB matches the ALSA capture gain graywolf-modem operators
-    // configure on this Digirig + UV5R chain. Q15 fixed-point so the
-    // realtime audio thread does no float math.
-    let gain_db: f32 = -35.0;
-    let gain_lin: f32 = 10f32.powf(gain_db / 20.0);
-    let gain_q15: i32 = (gain_lin * (1 << 15) as f32) as i32;
-    info!(
-        "software input gain: {:.1} dB ({:.4}x, q15={})",
-        gain_db, gain_lin, gain_q15
-    );
+    // Hardware FU_VOLUME is now applied via JNI before AAudio opens; no
+    // post-ADC software attenuation needed in steady-state. Keep the
+    // multiply path (gain_q15 = unity) so the per-sample loop and
+    // amplitude diagnostic are unchanged.
+    let gain_db: f32 = 0.0;
+    let gain_lin: f32 = 1.0;
+    let gain_q15: i32 = 1 << 15;
+    info!("software input gain: {:.1} dB (passthrough)", gain_db);
 
     let tx_cb = tx.clone();
     let cb_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
