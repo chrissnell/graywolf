@@ -23,7 +23,6 @@ cpal = "0.17"
 [package.metadata.android]
 package = "com.chrissnell.graywolf.poca"
 build_targets = ["aarch64-linux-android"]
-runtime_libs = "../scratch/poc-a/runtime-libs"
 
 [package.metadata.android.sdk]
 min_sdk_version = 26
