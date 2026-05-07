@@ -39,6 +39,7 @@ const UAC_CONTROL_OUT: i32 = 0x21;
 const UAC_CONTROL_IN: i32 = 0xa1;
 // Volume Control Selector inside a Feature Unit (UAC1 spec, Appendix A.10).
 const VOLUME_CONTROL: i32 = 0x02;
+const MUTE_CONTROL: i32 = 0x01;
 // USB Audio Class descriptor types (Appendix A.4).
 const CS_INTERFACE: u8 = 0x24;
 const FEATURE_UNIT: u8 = 0x06;
@@ -496,6 +497,41 @@ pub fn enumerate_and_set_volume(app: &AndroidApp, target_db: f32) -> Result<(), 
         "selected mic FU: bUnitID={} (bma_master=0x{:02x})",
         mic_fu.unit_id, mic_fu.bma_master
     );
+
+    // Belt-and-suspenders: clear MUTE on every volume-capable FU before
+    // touching volume. Some CM108-class codecs flip an internal mute bit
+    // when SET_CUR Volume gets a value outside the legal range, and a
+    // subsequent in-range SET_CUR doesn't auto-clear it.
+    for fu in &fus {
+        if fu.bma_master & 0x01 == 0 {
+            continue;
+        }
+        let mute_payload: Vec<u8> = vec![0u8];
+        let arr = match env.byte_array_from_slice(&mute_payload) {
+            Ok(a) => JByteArray::from(a),
+            Err(_) => continue,
+        };
+        let w_value: i32 = (MUTE_CONTROL << 8) | 0x00;
+        let w_index: i32 = ((fu.unit_id as i32) << 8) | (fu.ac_iface as i32);
+        let rc = env
+            .call_method(
+                &connection,
+                "controlTransfer",
+                "(IIII[BII)I",
+                &[
+                    JValue::Int(UAC_CONTROL_OUT),
+                    JValue::Int(UAC_SET_CUR),
+                    JValue::Int(w_value),
+                    JValue::Int(w_index),
+                    (&arr).into(),
+                    JValue::Int(1),
+                    JValue::Int(2000),
+                ],
+            )
+            .and_then(|v| v.i())
+            .unwrap_or(-1);
+        info!("FU {} MUTE=0 rc={}", fu.unit_id, rc);
+    }
 
     // Restore the other FUs to a neutral 0 dB so prior debug runs that
     // pushed them out of band don't leave the device in a silent state.
