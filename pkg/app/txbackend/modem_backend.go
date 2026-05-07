@@ -42,13 +42,13 @@ func (m *ModemBackend) Submit(_ context.Context, tf *pb.TransmitFrame) error {
 }
 
 // Name returns the metric label for this backend kind.
-func (m *ModemBackend) Name() string { return "modem" }
+func (m *ModemBackend) Name() string { return BackendNameModem }
 
 // InstanceID returns a process-wide-unique identifier for this
-// backend. There is only ever one modem backend, so the literal
-// "modem" is fine — per-channel labelling already lives in the
-// `channel` metric label.
-func (m *ModemBackend) InstanceID() string { return "modem" }
+// backend. There is only ever one modem backend, so the kind label
+// doubles as the instance label — per-channel labelling already lives
+// in the `channel` metric label.
+func (m *ModemBackend) InstanceID() string { return BackendNameModem }
 
 // AttachedChannels returns the channel IDs this backend serves.
 func (m *ModemBackend) AttachedChannels() []uint32 { return m.channels }

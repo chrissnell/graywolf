@@ -746,7 +746,7 @@ func (r rfAvailabilityAdapter) IsRunningForChannel(ch uint32) bool {
 		return false
 	}
 	for _, b := range r.reg.Load().ByChannel[ch] {
-		if b.Name() != "modem" {
+		if b.Name() != txbackend.BackendNameModem {
 			return true
 		}
 	}

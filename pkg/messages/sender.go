@@ -257,7 +257,7 @@ func (s *Sender) SendWithPolicy(ctx context.Context, row *configstore.Message, o
 
 	switch policy {
 	case FallbackPolicyRFOnly:
-		return s.sendRF(ctx, row, rfAvailable, false)
+		return s.sendRF(ctx, row, rfAvailable)
 	case FallbackPolicyISOnly:
 		return s.sendIS(ctx, row)
 	case FallbackPolicyBoth:
@@ -269,15 +269,16 @@ func (s *Sender) SendWithPolicy(ctx context.Context, row *configstore.Message, o
 	}
 }
 
-// sendRF attempts an RF submission. If allowFallback is true and the
-// RF path is unavailable (or the governor rejects synchronously), the
-// caller upgrades to IS; otherwise this is a single-shot RF attempt.
+// sendRF attempts a single-shot RF submission. The IS-fallback upgrade
+// is owned by sendRFWithISFallback, which inspects this function's
+// SendResult and decides whether to retry on IS — sendRF itself is
+// transport-agnostic about callers.
 //
 // Precedence: length cap (caller) -> packet-mode refusal (here) -> RF
 // availability -> governor submit. The packet-mode refusal must come
 // before the rfAvailable check because a misconfigured TxChannel is an
 // operator error that shouldn't be hidden by a transient bridge stop.
-func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailable, allowFallback bool) SendResult {
+func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailable bool) SendResult {
 	if s.cfg.ChannelModes != nil {
 		mode, _ := s.cfg.ChannelModes.ModeForChannel(ctx, s.txChannel.Load())
 		if mode == configstore.ChannelModePacket {
@@ -289,7 +290,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 	}
 	if !rfAvailable {
 		err := errors.New("messages: RF unavailable")
-		return s.finalizeRFFailure(ctx, row, err, allowFallback)
+		return s.finalizeRFFailure(ctx, row, err)
 	}
 	frame, err := s.buildFrame(row)
 	if err != nil {
@@ -352,7 +353,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 		return SendResult{Path: SendPathRF, Err: submitErr, Retryable: true}
 	case errors.Is(submitErr, txgovernor.ErrStopped):
 		// Governor shut down — RF will not recover on its own.
-		return s.finalizeRFFailure(ctx, row, submitErr, allowFallback)
+		return s.finalizeRFFailure(ctx, row, submitErr)
 	default:
 		row.FailureReason = truncReason(fmt.Sprintf("submit: %v", submitErr))
 		_ = s.cfg.Store.Update(ctx, row)
@@ -360,16 +361,15 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 	}
 }
 
-// finalizeRFFailure records a terminal RF failure on row. When
-// allowFallback is true, the caller upgrades to IS; otherwise the
-// failure is surfaced immediately.
-func (s *Sender) finalizeRFFailure(ctx context.Context, row *configstore.Message, cause error, allowFallback bool) SendResult {
-	reason := fmt.Sprintf("rf unavailable: %v", cause)
-	row.FailureReason = truncReason(reason)
+// finalizeRFFailure records a terminal RF failure on row. The caller
+// decides what to do with the returned SendResult — the IS-fallback
+// upgrade lives in sendRFWithISFallback, which inspects the result
+// rather than instructing this function. Always non-retryable: the
+// underlying cause (RF unavailable, governor stopped) does not recover
+// without operator intervention.
+func (s *Sender) finalizeRFFailure(ctx context.Context, row *configstore.Message, cause error) SendResult {
+	row.FailureReason = truncReason(fmt.Sprintf("rf unavailable: %v", cause))
 	_ = s.cfg.Store.Update(ctx, row)
-	if allowFallback {
-		return SendResult{Path: SendPathRF, Err: cause, Retryable: false}
-	}
 	return SendResult{Path: SendPathRF, Err: cause, Retryable: false}
 }
 
@@ -429,7 +429,7 @@ func (s *Sender) sendIS(ctx context.Context, row *configstore.Message) SendResul
 // decides whether to re-fan or narrow to RF-only — the sender does
 // not track attempt state directly, it relies on the RetryManager.
 func (s *Sender) sendBoth(ctx context.Context, row *configstore.Message, rfAvailable bool) SendResult {
-	rf := s.sendRF(ctx, row, rfAvailable, false)
+	rf := s.sendRF(ctx, row, rfAvailable)
 	// Re-read the row in case sendRF mutated persisted state. We pass
 	// a shallow copy so IS updates don't clobber RF timestamps.
 	rowForIS := *row
@@ -469,7 +469,7 @@ func (s *Sender) sendRFWithISFallback(ctx context.Context, row *configstore.Mess
 	if !rfAvailable {
 		return s.sendIS(ctx, row)
 	}
-	result := s.sendRF(ctx, row, true, true)
+	result := s.sendRF(ctx, row, true)
 	// If RF succeeded (queue accepted) return as-is — IS does not
 	// duplicate the send. Retry manager will re-try RF on ack
 	// timeout.
