@@ -1,0 +1,48 @@
+[package]
+name = "poc-a-android"
+version = "0.1.0"
+edition = "2021"
+description = "Android NativeActivity APK shell for graywolf-modem POC-A RX-only bring-up"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "android")'.dependencies]
+graywolf-demod = { path = "../graywolf-modem" }
+android-activity = { version = "0.6", features = ["native-activity"] }
+ndk-context = "0.1"
+android_logger = "0.15"
+log = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+cpal = "0.17"
+
+# cargo-apk metadata. cargo-apk reads this to generate AndroidManifest.xml
+# and assemble the APK from the cross-compiled cdylib. Zero hand-written
+# Kotlin / Java / XML; the tool fills in a NativeActivity manifest.
+[package.metadata.android]
+package = "com.chrissnell.graywolf.poca"
+build_targets = ["aarch64-linux-android"]
+runtime_libs = "../scratch/poc-a/runtime-libs"
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 33
+
+# RECORD_AUDIO is required by Android for any audio input, including
+# USB-Audio class devices on most builds. The user grants it on first run.
+[[package.metadata.android.uses_permission]]
+name = "android.permission.RECORD_AUDIO"
+
+# USB host-mode access for the OTG DAC. Some OEM builds require this
+# despite USB-Audio being a standard class.
+[[package.metadata.android.uses_feature]]
+name = "android.hardware.usb.host"
+required = true
+
+[package.metadata.android.application]
+label = "graywolf POC-A"
+debuggable = true
+
+[package.metadata.android.application.activity]
+config_changes = "orientation|keyboardHidden|screenSize"
