@@ -153,7 +153,18 @@ fn run_demod(stop: Arc<AtomicBool>) -> Result<(), String> {
     let mut demod = MultiAfskDemodulator::new(sample_rate, 1200, 1200, 2200, 0, &RECOMMENDED_3DEMOD);
     let mut chunks_seen: u64 = 0;
     let mut frames_seen: u64 = 0;
+    let mut last_heartbeat = std::time::Instant::now();
+    let heartbeat_period = Duration::from_secs(10);
     while !stop.load(Ordering::Relaxed) {
+        if last_heartbeat.elapsed() >= heartbeat_period {
+            info!(
+                "heartbeat: chunks={} frames={} elapsed={}s",
+                chunks_seen,
+                frames_seen,
+                last_heartbeat.elapsed().as_secs()
+            );
+            last_heartbeat = std::time::Instant::now();
+        }
         match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(chunk) => {
                 chunks_seen += 1;
