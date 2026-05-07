@@ -51,13 +51,13 @@ func (k *KissTncBackend) Submit(_ context.Context, tf *pb.TransmitFrame) error {
 }
 
 // Name returns the metric label for this backend kind.
-func (k *KissTncBackend) Name() string { return "kiss" }
+func (k *KissTncBackend) Name() string { return BackendNameKiss }
 
 // InstanceID returns the per-interface identifier used as the
 // `instance` metric label so operators can attribute drops to a
 // specific KissInterface row.
 func (k *KissTncBackend) InstanceID() string {
-	return fmt.Sprintf("kiss-%d", k.interfaceID)
+	return fmt.Sprintf("%s-%d", BackendNameKiss, k.interfaceID)
 }
 
 // AttachedChannels returns the single channel this interface serves.

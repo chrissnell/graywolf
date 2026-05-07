@@ -24,6 +24,15 @@ import (
 // must be idempotent and respect ctx cancellation. No-op is valid for
 // backends whose underlying transport owns its own lifecycle (the
 // ModemBackend is a thin wrapper and returns nil immediately).
+// Backend.Name() label values. Exported so callers (e.g. the messages
+// wiring adapter) can identify backend kinds without coupling to a
+// magic string. New backend kinds must define and export their label
+// here.
+const (
+	BackendNameModem = "modem"
+	BackendNameKiss  = "kiss"
+)
+
 type Backend interface {
 	// Submit hands tf to the backend's transport. Returns ErrBackendBusy
 	// if the backend's internal queue is momentarily full, ErrBackendDown

@@ -29,7 +29,7 @@ func TestRFAvailabilityAdapter_KissOnlyChannel(t *testing.T) {
 	reg := txbackend.NewRegistry()
 	snap := &txbackend.Snapshot{
 		ByChannel: map[uint32][]txbackend.Backend{
-			1: {fakeBackend{name: "kiss", channels: []uint32{1}}},
+			1: {fakeBackend{name: txbackend.BackendNameKiss, channels: []uint32{1}}},
 		},
 		CsmaSkip: map[uint32]bool{1: true},
 	}
@@ -52,7 +52,7 @@ func TestRFAvailabilityAdapter_ModemOnlyChannel(t *testing.T) {
 	reg := txbackend.NewRegistry()
 	snap := &txbackend.Snapshot{
 		ByChannel: map[uint32][]txbackend.Backend{
-			1: {fakeBackend{name: "modem", channels: []uint32{1}}},
+			1: {fakeBackend{name: txbackend.BackendNameModem, channels: []uint32{1}}},
 		},
 	}
 	reg.Publish(snap)
