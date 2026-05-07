@@ -51,14 +51,6 @@ fn android_main(app: AndroidApp) {
         graywolf_demod::full_version()
     );
 
-    // Diagnostic-only USB enumeration; we no longer try to set FU_VOLUME
-    // because the audio HAL claims the device exclusively once
-    // AudioRecord opens it, and our SET_CUR control transfers were being
-    // refused. Logged for future reference.
-    if let Err(e) = usb::enumerate_only(&app) {
-        warn!("USB enumeration failed: {}", e);
-    }
-
     let stop = Arc::new(AtomicBool::new(false));
     let stop_for_demod = stop.clone();
 
@@ -71,6 +63,17 @@ fn android_main(app: AndroidApp) {
             return;
         }
     };
+
+    // Diagnostic-only USB enumeration on a worker thread. Used to live
+    // on the main thread, but the permission-grant polling loop pushed
+    // it past Android's ANR ceiling.
+    let vm_for_usb = vm.clone();
+    let activity_ptr_usize = app.activity_as_ptr() as usize;
+    std::thread::spawn(move || {
+        if let Err(e) = usb::enumerate_only(vm_for_usb, activity_ptr_usize) {
+            warn!("USB enumeration failed: {}", e);
+        }
+    });
 
     std::thread::spawn(move || {
         if let Err(e) = run_demod(vm, stop_for_demod) {

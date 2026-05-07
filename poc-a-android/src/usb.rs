@@ -21,7 +21,8 @@
 //! Stage 1 (this commit): just enumerate + log. Stages 2-4 follow
 //! once we know what the device descriptors look like.
 
-use android_activity::AndroidApp;
+use std::sync::Arc;
+
 use jni::objects::{JByteArray, JObject, JString, JValue};
 use jni::JavaVM;
 use log::{info, warn};
@@ -104,20 +105,21 @@ fn find_all_feature_units(desc: &[u8]) -> Vec<FuInfo> {
 /// We do not attempt FU_VOLUME control here — once the audio HAL claims
 /// the USB-Audio device for AudioRecord, control transfers from
 /// user-space are refused (rc=-1 on every SET_CUR attempt).
-pub fn enumerate_only(app: &AndroidApp) -> Result<(), String> {
-    enumerate_and_set_volume(app, 0.0)?;
+pub fn enumerate_only(vm: Arc<JavaVM>, activity_ptr_usize: usize) -> Result<(), String> {
+    enumerate_and_set_volume(vm, activity_ptr_usize, 0.0)?;
     Ok(())
 }
 
 #[allow(dead_code)]
-fn enumerate_and_set_volume(app: &AndroidApp, target_db: f32) -> Result<(), String> {
-    let vm_ptr = app.vm_as_ptr() as *mut jni::sys::JavaVM;
-    let activity_ptr = app.activity_as_ptr() as jni::sys::jobject;
-    if vm_ptr.is_null() || activity_ptr.is_null() {
-        return Err("AndroidApp has null VM or Activity pointer".into());
+fn enumerate_and_set_volume(
+    vm: Arc<JavaVM>,
+    activity_ptr_usize: usize,
+    target_db: f32,
+) -> Result<(), String> {
+    let activity_ptr = activity_ptr_usize as jni::sys::jobject;
+    if activity_ptr.is_null() {
+        return Err("activity ptr is null".into());
     }
-
-    let vm = unsafe { JavaVM::from_raw(vm_ptr) }.map_err(|e| format!("JavaVM::from_raw: {}", e))?;
     let mut env = vm
         .attach_current_thread()
         .map_err(|e| format!("attach_current_thread: {}", e))?;
