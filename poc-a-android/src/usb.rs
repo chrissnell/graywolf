@@ -47,13 +47,20 @@ const DESCRIPTOR_TYPE_CONFIG: u8 = 0x02;
 const REQ_GET_DESCRIPTOR: i32 = 0x06;
 const REQ_TYPE_STANDARD_IN: i32 = 0x80;
 
-/// Walk the configuration descriptor returned by GET_DESCRIPTOR and
-/// find the first Feature Unit (subtype 0x06) inside the Audio Control
-/// interface (class 0x01, sub 0x01) whose `bmaControls(0)` (master
-/// channel) advertises Volume Control (bit 1).
-///
-/// Returns `(audio_control_iface_number, feature_unit_id)` if found.
-fn find_feature_unit_with_volume(desc: &[u8]) -> Option<(u8, u8)> {
+/// Description of one Feature Unit found in the descriptor.
+#[derive(Debug)]
+struct FuInfo {
+    ac_iface: u8,
+    unit_id: u8,
+    source_id: u8,
+    bma_master: u8,
+}
+
+/// Walk the configuration descriptor and list every Feature Unit with
+/// Volume Control on the master channel that lives inside an Audio
+/// Control interface (class 0x01, sub 0x01).
+fn find_all_feature_units(desc: &[u8]) -> Vec<FuInfo> {
+    let mut out = Vec::new();
     let mut i = 0;
     let mut current_ac_iface: Option<u8> = None;
     while i + 2 <= desc.len() {
@@ -62,34 +69,33 @@ fn find_feature_unit_with_volume(desc: &[u8]) -> Option<(u8, u8)> {
             break;
         }
         let b_descriptor_type = desc[i + 1];
-        // Standard Interface descriptor (0x04) — track AC interface number.
         if b_descriptor_type == 0x04 && b_length >= 9 {
-            let b_interface_number = desc[i + 2];
-            let b_interface_class = desc[i + 5];
-            let b_interface_subclass = desc[i + 6];
-            if b_interface_class == 0x01 && b_interface_subclass == 0x01 {
-                current_ac_iface = Some(b_interface_number);
-            } else {
-                current_ac_iface = None;
-            }
+            let n = desc[i + 2];
+            let c = desc[i + 5];
+            let s = desc[i + 6];
+            current_ac_iface = if c == 0x01 && s == 0x01 { Some(n) } else { None };
         }
-        // Class-specific AC descriptor (0x24) of subtype FEATURE_UNIT (0x06).
         if b_descriptor_type == CS_INTERFACE && b_length >= 7 && desc[i + 2] == FEATURE_UNIT {
             if let Some(ac_iface) = current_ac_iface {
-                let b_unit_id = desc[i + 3];
+                let unit_id = desc[i + 3];
+                let source_id = desc[i + 4];
                 let b_control_size = desc[i + 5] as usize;
-                if b_control_size > 0 && i + 6 + b_control_size <= i + b_length {
+                if b_control_size > 0 && 6 + b_control_size <= b_length {
                     let bma_master = desc[i + 6];
-                    // Bit 1 = Volume Control per UAC1 spec table A-7.
                     if bma_master & 0x02 != 0 {
-                        return Some((ac_iface, b_unit_id));
+                        out.push(FuInfo {
+                            ac_iface,
+                            unit_id,
+                            source_id,
+                            bma_master,
+                        });
                     }
                 }
             }
         }
         i += b_length;
     }
-    None
+    out
 }
 
 /// Best-effort: list USB devices, locate the USB-Audio class device,
@@ -396,15 +402,113 @@ pub fn enumerate_and_set_volume(app: &AndroidApp, target_db: f32) -> Result<(), 
         desc[j] = *b as u8;
     }
 
-    let (ac_iface, fu_id) = match find_feature_unit_with_volume(&desc) {
-        Some(t) => t,
-        None => {
-            warn!("no Feature Unit with Volume Control found in descriptor");
-            return Ok(());
+    let fus = find_all_feature_units(&desc);
+    if fus.is_empty() {
+        warn!("no Feature Unit with Volume Control found in descriptor");
+        return Ok(());
+    }
+    info!("found {} Feature Unit(s) with Volume Control:", fus.len());
+    for fu in &fus {
+        info!(
+            "  FU: ac_iface={} bUnitID={} bSourceID={} bma_master=0x{:02x}",
+            fu.ac_iface, fu.unit_id, fu.source_id, fu.bma_master
+        );
+    }
+    // Probe each FU's MIN/MAX/CUR so we can identify which is the
+    // capture path (typically the one whose range goes negative).
+    for fu in &fus {
+        let probe_w_value: i32 = (VOLUME_CONTROL << 8) | 0x00;
+        let probe_w_index: i32 = ((fu.unit_id as i32) << 8) | (fu.ac_iface as i32);
+        let mut snapshot = String::new();
+        for (label, req) in [
+            ("MIN", UAC_GET_MIN),
+            ("MAX", UAC_GET_MAX),
+            ("CUR", UAC_GET_CUR),
+        ] {
+            let arr = match env.new_byte_array(2) {
+                Ok(a) => JByteArray::from(a),
+                Err(_) => continue,
+            };
+            let rc = env
+                .call_method(
+                    &connection,
+                    "controlTransfer",
+                    "(IIII[BII)I",
+                    &[
+                        JValue::Int(UAC_CONTROL_IN),
+                        JValue::Int(req),
+                        JValue::Int(probe_w_value),
+                        JValue::Int(probe_w_index),
+                        (&arr).into(),
+                        JValue::Int(2),
+                        JValue::Int(2000),
+                    ],
+                )
+                .and_then(|v| v.i())
+                .unwrap_or(-1);
+            if rc < 2 {
+                snapshot.push_str(&format!(" {}=ERR", label));
+                continue;
+            }
+            let bytes = env
+                .convert_byte_array(&arr)
+                .map(|v| v.into_iter().take(2).collect::<Vec<u8>>())
+                .unwrap_or_default();
+            if bytes.len() == 2 {
+                let val = i16::from_le_bytes([bytes[0], bytes[1]]);
+                snapshot.push_str(&format!(" {}={:.1}dB", label, val as f32 / 256.0));
+            }
         }
-    };
+        info!("  FU {}:{}", fu.unit_id, snapshot);
+    }
+    // Heuristic pick: the first FU whose MIN is negative (capture-side
+    // attenuation makes sense in negative-dB territory; mic-boost FUs
+    // typically only have positive ranges 0..+30 dB).
+    let chosen = fus
+        .iter()
+        .find(|fu| {
+            let probe_w_value: i32 = (VOLUME_CONTROL << 8) | 0x00;
+            let probe_w_index: i32 = ((fu.unit_id as i32) << 8) | (fu.ac_iface as i32);
+            let arr = match env.new_byte_array(2) {
+                Ok(a) => JByteArray::from(a),
+                Err(_) => return false,
+            };
+            let rc = env
+                .call_method(
+                    &connection,
+                    "controlTransfer",
+                    "(IIII[BII)I",
+                    &[
+                        JValue::Int(UAC_CONTROL_IN),
+                        JValue::Int(UAC_GET_MIN),
+                        JValue::Int(probe_w_value),
+                        JValue::Int(probe_w_index),
+                        (&arr).into(),
+                        JValue::Int(2),
+                        JValue::Int(2000),
+                    ],
+                )
+                .and_then(|v| v.i())
+                .unwrap_or(-1);
+            if rc < 2 {
+                return false;
+            }
+            let bytes = env
+                .convert_byte_array(&arr)
+                .map(|v| v.into_iter().take(2).collect::<Vec<u8>>())
+                .unwrap_or_default();
+            if bytes.len() != 2 {
+                return false;
+            }
+            let val = i16::from_le_bytes([bytes[0], bytes[1]]);
+            val < 0
+        })
+        .or_else(|| fus.first())
+        .unwrap();
+    let ac_iface = chosen.ac_iface;
+    let fu_id = chosen.unit_id;
     info!(
-        "found Feature Unit: AC iface={} bUnitID={} (target {} dB)",
+        "chosen Feature Unit: AC iface={} bUnitID={} (target {} dB)",
         ac_iface, fu_id, target_db
     );
 
@@ -414,59 +518,69 @@ pub fn enumerate_and_set_volume(app: &AndroidApp, target_db: f32) -> Result<(), 
     // is what AAudio depends on. Hijacking the interface gave us a
     // silent capture stream (all-zero samples) on the first attempt.
 
-    // Probe device-supported range so we don't ask for an unreachable dB.
-    // wValue = (control_selector << 8) | channel. Use master (0).
+    // Re-query MIN/MAX of chosen FU and clamp target into range.
     let probe_w_value: i32 = (VOLUME_CONTROL << 8) | 0x00;
     let probe_w_index: i32 = ((fu_id as i32) << 8) | (ac_iface as i32);
-    for (label, req) in [
-        ("MIN", UAC_GET_MIN),
-        ("MAX", UAC_GET_MAX),
-        ("RES", UAC_GET_RES),
-        ("CUR", UAC_GET_CUR),
-    ] {
-        let arr = match env.new_byte_array(2) {
-            Ok(a) => JByteArray::from(a),
-            Err(_) => continue,
-        };
-        let rc = env
-            .call_method(
-                &connection,
-                "controlTransfer",
-                "(IIII[BII)I",
-                &[
-                    JValue::Int(UAC_CONTROL_IN),
-                    JValue::Int(req),
-                    JValue::Int(probe_w_value),
-                    JValue::Int(probe_w_index),
-                    (&arr).into(),
-                    JValue::Int(2),
-                    JValue::Int(2000),
-                ],
-            )
-            .and_then(|v| v.i())
-            .unwrap_or(-1);
-        if rc < 2 {
-            info!("FU_VOLUME GET_{} -> rc={}", label, rc);
-            continue;
-        }
-        let bytes = env
-            .convert_byte_array(&arr)
-            .map(|v| v.into_iter().take(2).collect::<Vec<u8>>())
-            .unwrap_or_default();
-        if bytes.len() == 2 {
-            let val = i16::from_le_bytes([bytes[0], bytes[1]]);
+    let mut clamped_db = target_db;
+    let arr_min = JByteArray::from(env.new_byte_array(2).unwrap());
+    let arr_max = JByteArray::from(env.new_byte_array(2).unwrap());
+    let _ = env
+        .call_method(
+            &connection,
+            "controlTransfer",
+            "(IIII[BII)I",
+            &[
+                JValue::Int(UAC_CONTROL_IN),
+                JValue::Int(UAC_GET_MIN),
+                JValue::Int(probe_w_value),
+                JValue::Int(probe_w_index),
+                (&arr_min).into(),
+                JValue::Int(2),
+                JValue::Int(2000),
+            ],
+        )
+        .and_then(|v| v.i());
+    let _ = env
+        .call_method(
+            &connection,
+            "controlTransfer",
+            "(IIII[BII)I",
+            &[
+                JValue::Int(UAC_CONTROL_IN),
+                JValue::Int(UAC_GET_MAX),
+                JValue::Int(probe_w_value),
+                JValue::Int(probe_w_index),
+                (&arr_max).into(),
+                JValue::Int(2),
+                JValue::Int(2000),
+            ],
+        )
+        .and_then(|v| v.i());
+    let min_bytes = env
+        .convert_byte_array(&arr_min)
+        .map(|v| v.into_iter().take(2).collect::<Vec<u8>>())
+        .unwrap_or_default();
+    let max_bytes = env
+        .convert_byte_array(&arr_max)
+        .map(|v| v.into_iter().take(2).collect::<Vec<u8>>())
+        .unwrap_or_default();
+    if min_bytes.len() == 2 && max_bytes.len() == 2 {
+        let min_val = i16::from_le_bytes([min_bytes[0], min_bytes[1]]) as f32 / 256.0;
+        let max_val = i16::from_le_bytes([max_bytes[0], max_bytes[1]]) as f32 / 256.0;
+        if clamped_db < min_val {
             info!(
-                "FU_VOLUME GET_{} = 0x{:04x} ({} q8.8 = {:.2} dB)",
-                label,
-                val as u16,
-                val,
-                val as f32 / 256.0
+                "target {} dB below FU min {:.2} dB; clamping to min",
+                clamped_db, min_val
             );
+            clamped_db = min_val;
+        }
+        if clamped_db > max_val {
+            clamped_db = max_val;
         }
     }
 
     // Volume value: 1/256 dB units, signed 16-bit little-endian.
-    let q8_8 = (target_db * 256.0) as i16;
+    let q8_8 = (clamped_db * 256.0) as i16;
     let payload: [i8; 2] = [(q8_8 & 0xff) as i8, ((q8_8 >> 8) & 0xff) as i8];
     let payload_jarr = env
         .byte_array_from_slice(&payload.iter().map(|&b| b as u8).collect::<Vec<u8>>())
@@ -525,8 +639,8 @@ pub fn enumerate_and_set_volume(app: &AndroidApp, target_db: f32) -> Result<(), 
         }
     } else {
         info!(
-            "SET_CUR FU_VOLUME master={} dB applied (rc={})",
-            target_db, rc
+            "SET_CUR FU_VOLUME master={:.1} dB applied (rc={})",
+            clamped_db, rc
         );
     }
 
