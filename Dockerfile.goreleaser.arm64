@@ -6,13 +6,14 @@ LABEL org.opencontainers.image.title="graywolf" \
 
 RUN apt-get install --update -y --no-install-recommends libasound2 ca-certificates && \
     apt-get dist-clean && \
-    mkdir /data && chown 1000:1000 /data
+    useradd -u 1000 -G audio,dialout,plugdev graywolf && \
+    mkdir /data && chown graywolf:graywolf /data
 
 COPY graywolf /usr/bin/graywolf
 COPY graywolf-modem-arm64 /usr/bin/graywolf-modem
 
 WORKDIR /data
-USER 1000:1000
+USER graywolf
 EXPOSE 8080
 
 ENTRYPOINT ["/usr/bin/graywolf", "-modem", "/usr/bin/graywolf-modem", "-config", "/data/graywolf.db", "-http", "0.0.0.0:8080"]
