@@ -298,7 +298,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 	}
 	if !rfAvailable {
 		err := errors.New("messages: RF unavailable")
-		return s.finalizeRFFailure(ctx, row, err)
+		return s.finalizeRFFailure(ctx, row, "rf unavailable", err)
 	}
 	frame, err := s.buildFrame(row)
 	if err != nil {
@@ -369,7 +369,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 		return SendResult{Path: SendPathRF, Err: submitErr, Retryable: true}
 	case errors.Is(submitErr, txgovernor.ErrStopped):
 		// Governor shut down — RF will not recover on its own.
-		return s.finalizeRFFailure(ctx, row, submitErr)
+		return s.finalizeRFFailure(ctx, row, "governor stopped", submitErr)
 	default:
 		row.FailureReason = truncReason(fmt.Sprintf("submit: %v", submitErr))
 		_ = s.cfg.Store.Update(ctx, row)
@@ -387,11 +387,11 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 // rather than instructing this function. Always non-retryable: the
 // underlying cause (RF unavailable, governor stopped) does not recover
 // without operator intervention.
-func (s *Sender) finalizeRFFailure(ctx context.Context, row *configstore.Message, cause error) SendResult {
+func (s *Sender) finalizeRFFailure(ctx context.Context, row *configstore.Message, reason string, cause error) SendResult {
 	row.FailureReason = truncReason(fmt.Sprintf("rf unavailable: %v", cause))
 	_ = s.cfg.Store.Update(ctx, row)
 	s.logger.Warn("message rf send failed",
-		"reason", "rf unavailable",
+		"reason", reason,
 		"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
 		"kind", row.ThreadKind, "channel", s.txChannel.Load(), "error", cause)
 	return SendResult{Path: SendPathRF, Err: cause, Retryable: false}

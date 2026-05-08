@@ -86,8 +86,24 @@ func TestSender_RF_GovernorStopped_LogsWarn(t *testing.T) {
 	if !strings.Contains(out, "message rf send failed") {
 		t.Errorf("expected failed line, got:\n%s", out)
 	}
-	if !strings.Contains(out, "rf unavailable") {
-		t.Errorf("expected 'rf unavailable' reason for stopped governor, got:\n%s", out)
+	if !strings.Contains(out, "governor stopped") {
+		t.Errorf("expected 'governor stopped' reason, got:\n%s", out)
+	}
+}
+
+func TestSender_RFUnavailable_LogsWarn(t *testing.T) {
+	rig, buf := buildSenderWithLog(t, FallbackPolicyRFOnly, false /* bridge not running */)
+	defer rig.close()
+	row := newOutboundDM(t, rig, "N0CALL", "W1ABC", "hi")
+
+	_ = rig.sender.Send(context.Background(), row)
+
+	out := buf.String()
+	if !strings.Contains(out, "message rf send failed") {
+		t.Errorf("expected failed line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "reason=\"rf unavailable\"") {
+		t.Errorf("expected 'rf unavailable' reason, got:\n%s", out)
 	}
 }
 
