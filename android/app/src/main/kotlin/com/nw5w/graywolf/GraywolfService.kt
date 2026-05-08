@@ -9,6 +9,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import com.nw5w.graywolf.jni.ModemBridge
 
 class GraywolfService : Service() {
     override fun onCreate() {
@@ -30,12 +31,17 @@ class GraywolfService : Service() {
             startForeground(
                 NOTIF_ID, notif,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                    or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             )
         } else {
             startForeground(NOTIF_ID, notif)
         }
-        Log.i(TAG, "service created (skeleton)")
+        val v = try {
+            ModemBridge.modemVersion()
+        } catch (t: Throwable) {
+            Log.e(TAG, "modemVersion threw: $t")
+            "ERROR"
+        }
+        Log.i(TAG, "modem cdylib version=$v")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
