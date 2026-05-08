@@ -2,10 +2,20 @@ package igate
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
 )
+
+// ErrNotEnabled is the sentinel returned by adapters that wrap a
+// runtime-toggleable iGate (the IGateLineSender adapter passed to
+// messages.Service, the simulation toggle closure registered with
+// webapi.RegisterIgate, etc.) when the operator has the iGate disabled.
+// Webapi handlers map this to 503 "igate not available" instead of a
+// generic 500 so a deliberately-off iGate does not surface as an
+// internal error in operator dashboards.
+var ErrNotEnabled = errors.New("igate not enabled")
 
 // IgateOutput adapts the iGate's RF->IS gating to the aprs.PacketOutput
 // interface so it can be wired into the decoder's fanout alongside

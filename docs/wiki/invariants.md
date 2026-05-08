@@ -293,9 +293,11 @@ flag. `App.reloadIgate` then handles three transitions on every signal
 from `signalIgateReload`:
 
 1. **disabled → enabled**: build a fresh `*igate.Igate` via
-   `App.buildIgateInstance`, `Start` it, store the pointer into `a.ig`,
-   propagate to `a.igateOut.SetIgate` and `beaconSched.SetISSink`, and
-   seed `lastAppliedIgateFilter`.
+   `App.buildIgateInstance`, store the pointer + propagate to
+   `a.igateOut.SetIgate` and `beaconSched.SetISSink` BEFORE calling
+   `Start`, then seed `lastAppliedIgateFilter`. A `Start` failure rolls
+   all of those back to nil so a subsequent toggle gets a fresh build
+   instead of trying to re-Start the dead instance.
 2. **enabled → disabled**: `Stop` the current iGate, clear `a.ig` /
    `a.igateOut` / beacon ISSink, reset `lastAppliedIgateFilter`.
 3. **enabled → enabled**: re-read filters/rules and call `Reconfigure`
@@ -309,6 +311,21 @@ forbidden because they freeze a stale instance across toggles. The
 status / simulation REST routes at `/api/igate*` and the
 `SetIgateStatusFn` callback are registered unconditionally with
 closures that re-load `a.ig` on every call.
+
+The disabled-state HTTP contract is **503 "igate not available"**, not
+200 with a Connected=false snapshot. `GET /api/igate` and the
+`/api/status` aggregate's `igate` field both omit the body when the
+status callback returns nil, and the simulation toggle returns
+`igate.ErrNotEnabled` which `setIgateSimulation` maps to 503. The Svelte
+"Disabled" badge logic in `web/src/routes/Igate.svelte` keys off a
+non-2xx response — a 200 with `connected:false` would render a red
+"Disconnected" badge for an iGate the operator deliberately turned off.
+
+Repeated enable cycles must not orphan Prometheus collectors. On a
+second-and-later `igate.New`, `initMetrics` rebinds `ig.m*` to the
+already-registered collector via `prometheus.AlreadyRegisteredError.ExistingCollector`
+so `/metrics` keeps reflecting live counter increments instead of
+freezing at the first instance's values.
 
 *Why:* graywolf issue #84 — toggling the Enable iGate switch on the
 iGate page used to require a daemon restart. The reload signal

@@ -682,18 +682,19 @@ func (a *App) buildIgateInstance(ctx context.Context, igCfg *configstore.IGateCo
 // liveIGateLineSender is the always-allocated adapter passed to
 // messages.Service so the IGate ref captured into Sender / Router /
 // Preflight stays live across runtime enable/disable toggles. SendLine
-// loads a.ig on every call; when the iGate is disabled the call returns
-// an explicit error which the messages.Sender already handles by
-// marking the row failed.
+// loads a.ig on every call; when the iGate is disabled it returns
+// igate.ErrNotEnabled, which messages.Sender handles by marking the
+// row failed. The l == nil / l.a == nil guards are wiring-bug
+// defenses — wireIGate always allocates this adapter on a.
 type liveIGateLineSender struct{ a *App }
 
 func (l *liveIGateLineSender) SendLine(line string) error {
 	if l == nil || l.a == nil {
-		return errors.New("igate not enabled")
+		return igate.ErrNotEnabled
 	}
 	ig := l.a.ig.Load()
 	if ig == nil {
-		return errors.New("igate not enabled")
+		return igate.ErrNotEnabled
 	}
 	return ig.SendLine(line)
 }
@@ -1069,15 +1070,16 @@ func (a *App) wireHTTP(ctx context.Context) error {
 
 	// Status fn loads a.ig on each call so an iGate constructed at
 	// runtime (via the enable toggle) becomes visible to /api/status
-	// without rewiring. Returns a zero-value Status (Connected=false)
-	// while disabled, matching the disabled-at-boot behavior the UI
-	// expects.
-	apiSrv.SetIgateStatusFn(func() igate.Status {
+	// without rewiring. Returns nil while disabled so the UI's
+	// "Disabled" badge logic (which treats a non-2xx /api/igate as
+	// "off") and the /api/status field-omission both work.
+	apiSrv.SetIgateStatusFn(func() *igate.Status {
 		ig := a.ig.Load()
 		if ig == nil {
-			return igate.Status{}
+			return nil
 		}
-		return ig.Status()
+		st := ig.Status()
+		return &st
 	})
 	// Reload signal channel is allocated unconditionally in wireIGate
 	// so the operator's enable toggle is delivered even when the iGate
@@ -1183,23 +1185,26 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
 	// Always register /api/igate routes; the closures below load a.ig
 	// on each request so the operator's runtime enable toggle lights
-	// the endpoints up without rewiring. While disabled, the simulation
-	// toggle returns 503 (igate not available) and status reports
-	// Connected=false.
+	// the endpoints up without rewiring. While disabled, the status
+	// closure returns nil so the handler responds 503 (preserving the
+	// pre-fix wire contract the UI's "Disabled" badge depends on);
+	// the simulation closure returns igate.ErrNotEnabled, which the
+	// handler maps to 503 instead of a generic 500.
 	webapi.RegisterIgate(apiSrv, apiMux,
 		func(b bool) error {
 			ig := a.ig.Load()
 			if ig == nil {
-				return errors.New("igate not enabled")
+				return igate.ErrNotEnabled
 			}
 			return ig.SetSimulationMode(b)
 		},
-		func() igate.Status {
+		func() *igate.Status {
 			ig := a.ig.Load()
 			if ig == nil {
-				return igate.Status{}
+				return nil
 			}
-			return ig.Status()
+			st := ig.Status()
+			return &st
 		},
 	)
 	// Stations autocomplete is an out-of-band registrar (matches the
@@ -2286,16 +2291,28 @@ func (a *App) reloadIgate(ctx context.Context) {
 			// logged. Leave a.ig nil; the next save retries.
 			return
 		}
-		if err := ig.Start(ctx); err != nil {
-			a.logger.Error("igate reload: start", "err", err)
-			return
-		}
+		// Install the live pointer + adapters BEFORE Start so a
+		// status fetch / RX packet that races against the supervise
+		// goroutine's first connect cannot observe a.ig as nil while
+		// the iGate is already wiring up.
 		a.ig.Store(ig)
 		a.igateOut.SetIgate(ig)
 		if a.beaconSched != nil {
 			a.beaconSched.SetISSink(ig)
 		}
 		a.lastAppliedIgateFilter = composed
+		if err := ig.Start(ctx); err != nil {
+			a.logger.Error("igate reload: start", "err", err)
+			// Roll back so a subsequent toggle gets a fresh build
+			// instead of trying to re-Start the dead instance.
+			a.ig.Store(nil)
+			a.igateOut.SetIgate(nil)
+			if a.beaconSched != nil {
+				a.beaconSched.SetISSink(nil)
+			}
+			a.lastAppliedIgateFilter = ""
+			return
+		}
 		a.logger.Info("igate enabled at runtime")
 		return
 	}

@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/chrissnell/graywolf/pkg/igate"
@@ -32,7 +33,7 @@ type IgateSimulationResponse struct {
 // Operation IDs in the swag annotation blocks below are frozen against
 // constants in pkg/webapi/docs/op_ids.go; `make docs-lint` enforces the
 // correspondence.
-func RegisterIgate(srv *Server, mux *http.ServeMux, toggle func(bool) error, status func() igate.Status) {
+func RegisterIgate(srv *Server, mux *http.ServeMux, toggle func(bool) error, status func() *igate.Status) {
 	if srv == nil || mux == nil {
 		return
 	}
@@ -40,7 +41,10 @@ func RegisterIgate(srv *Server, mux *http.ServeMux, toggle func(bool) error, sta
 	mux.HandleFunc("POST /api/igate/simulation", setIgateSimulation(srv, toggle))
 }
 
-// getIgateStatus returns the current igate runtime status.
+// getIgateStatus returns the current igate runtime status. The status
+// callback returns nil when the iGate is currently disabled; the
+// handler maps that to 503 so the UI's "Disabled" badge logic (which
+// keys off a non-2xx response) keeps working.
 //
 // @Summary  Get igate status
 // @Tags     igate
@@ -50,13 +54,18 @@ func RegisterIgate(srv *Server, mux *http.ServeMux, toggle func(bool) error, sta
 // @Failure  503 {object} webtypes.ErrorResponse
 // @Security CookieAuth
 // @Router   /igate [get]
-func getIgateStatus(status func() igate.Status) http.HandlerFunc {
+func getIgateStatus(status func() *igate.Status) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if status == nil {
 			writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: "igate not available"})
 			return
 		}
-		writeJSON(w, http.StatusOK, status())
+		st := status()
+		if st == nil {
+			writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: "igate not available"})
+			return
+		}
+		writeJSON(w, http.StatusOK, *st)
 	}
 }
 
@@ -91,6 +100,14 @@ func setIgateSimulation(srv *Server, toggle func(bool) error) http.HandlerFunc {
 			return
 		}
 		if err := toggle(req.Enabled); err != nil {
+			// igate.ErrNotEnabled means the operator has the iGate
+			// turned off at runtime. Return 503 so the UI / metrics
+			// don't see this perfectly-normal state as a 500
+			// internal error.
+			if errors.Is(err, igate.ErrNotEnabled) {
+				writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: "igate not available"})
+				return
+			}
 			srv.internalError(w, r, "igate toggle", err)
 			return
 		}
