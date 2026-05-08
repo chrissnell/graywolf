@@ -25,6 +25,12 @@ serde_json = "1"
 hidapi = "2.6"
 nusb = "0.1"
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+android_logger = "0.15"
+log = "0.4"
+ndk-context = "0.1"
+
 [target.'cfg(unix)'.dependencies]
 # Direct POSIX access for serial PTT: fcntl::open + libc TIOCMSET ioctls.
 # Matches direwolf's approach (no termios calls at all on PTT-only fds).

@@ -530,6 +530,7 @@ dependencies = [
 name = "graywolf-demod"
 version = "0.13.2"
 dependencies = [
+ "android_logger",
  "bytes",
  "chrono",
  "claxon",
@@ -538,7 +539,10 @@ dependencies = [
  "gpiocdev",
  "gpiocdev-uapi",
  "hidapi",
+ "jni 0.21.1",
  "libc",
+ "log",
+ "ndk-context",
  "nix",
  "nusb",
  "prost",
