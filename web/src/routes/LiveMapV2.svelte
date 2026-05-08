@@ -339,6 +339,13 @@
 
   // ---- Status bar derivations ----
   let stationCount = $derived(dataStore.stations.size);
+  let rfStationCount = $derived.by(() => {
+    let n = 0;
+    for (const s of dataStore.stations.values()) {
+      if (isDirectRx(s)) n++;
+    }
+    return n;
+  });
   let timerangeLabel = $derived(
     TIMERANGES_S.find((o) => o.value === timerangeSec)?.label || '',
   );
@@ -525,7 +532,11 @@
     <span class="status-dot {pollDotClass}" aria-hidden="true"></span>
     <span>{pollLabel}</span>
     <span class="status-sep">&middot;</span>
-    <span>{stationCount} station{stationCount !== 1 ? 's' : ''}</span>
+    {#if layerToggles.directRxOnly}
+      <span>{rfStationCount} of {stationCount} station{stationCount !== 1 ? 's' : ''} heard direct</span>
+    {:else}
+      <span>{stationCount} station{stationCount !== 1 ? 's' : ''}</span>
+    {/if}
     <span class="status-sep">&middot;</span>
     <span>{timerangeLabel}</span>
     {#if lastFetchAgo}
