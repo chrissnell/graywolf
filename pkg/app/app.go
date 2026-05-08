@@ -107,7 +107,20 @@ type App struct {
 	stationPos  *gps.StationPos
 	gpsMgr      *gpsManager
 	beaconSched *beacon.Scheduler
-	ig          *igate.Igate // nil if iGate is disabled in config
+	// ig is the live *igate.Igate; nil while the iGate is disabled.
+	// Held in an atomic pointer so the runtime enable/disable toggle
+	// (reloadIgate) can swap it without coordinating with consumers
+	// (RF->IS fanout adapter, status fn closures, beacon ISSink).
+	ig          atomic.Pointer[igate.Igate]
+	// igateOut is the always-allocated aprs.PacketOutput adapter for the
+	// RF->IS fanout. Its inner *igate.Igate is set/cleared by reloadIgate
+	// so the bridge fanout doesn't need to be torn down on toggle.
+	igateOut    *igate.IgateOutput
+	// igateLineSender is the always-allocated IGateLineSender adapter
+	// passed to messages.Service. It loads a.ig on every SendLine call
+	// so a runtime enable lights up the IS path without rebuilding the
+	// Service.
+	igateLineSender *liveIGateLineSender
 	apiSrv      *webapi.Server
 	httpSrv     *http.Server
 	// updatesChecker polls GitHub once a day for a newer release tag and

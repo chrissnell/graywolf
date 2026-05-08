@@ -281,3 +281,42 @@ Source: [`../../pkg/messages/preflight.go`](../../pkg/messages/preflight.go),
 [`../../pkg/messages/service.go`](../../pkg/messages/service.go)
 (`(*Service).Preflight()`),
 [`actions.md`](actions.md) ("Preflight: shared auto-ACK + dedup").
+
+### 28. iGate enable/disable is hot-reloadable; reload plumbing is unconditional
+
+The iGate's reload signal channel (`a.igateReload`), the reload-drainer
+goroutine, the RF→IS fanout adapter (`a.igateOut`, an `*igate.IgateOutput`
+holding an `atomic.Pointer[Igate]`), and the live `IGateLineSender`
+adapter passed to `messages.Service` (`a.igateLineSender`) are ALL
+allocated at boot regardless of the persisted `IGateConfig.Enabled`
+flag. `App.reloadIgate` then handles three transitions on every signal
+from `signalIgateReload`:
+
+1. **disabled → enabled**: build a fresh `*igate.Igate` via
+   `App.buildIgateInstance`, `Start` it, store the pointer into `a.ig`,
+   propagate to `a.igateOut.SetIgate` and `beaconSched.SetISSink`, and
+   seed `lastAppliedIgateFilter`.
+2. **enabled → disabled**: `Stop` the current iGate, clear `a.ig` /
+   `a.igateOut` / beacon ISSink, reset `lastAppliedIgateFilter`.
+3. **enabled → enabled**: re-read filters/rules and call `Reconfigure`
+   on the running iGate (skipping the reconnect when the composed
+   filter is unchanged).
+
+Consequence: `a.ig` is `atomic.Pointer[igate.Igate]`. Code paths that
+read it MUST go through `a.ig.Load()` and tolerate a nil result —
+captured method values (`a.ig.Status`, `a.ig.SetSimulationMode`) are
+forbidden because they freeze a stale instance across toggles. The
+status / simulation REST routes at `/api/igate*` and the
+`SetIgateStatusFn` callback are registered unconditionally with
+closures that re-load `a.ig` on every call.
+
+*Why:* graywolf issue #84 — toggling the Enable iGate switch on the
+iGate page used to require a daemon restart. The reload signal
+silently no-op'd (channel was nil when boot-time config was disabled)
+and the reload path only ever ran `Reconfigure`, never `Stop` or build.
+
+Source: [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
+(`wireIGate`, `buildIgateInstance`, `igateComponent`, `reloadIgate`),
+[`../../pkg/igate/output.go`](../../pkg/igate/output.go)
+(`IgateOutput.SetIgate`),
+[`../../pkg/app/igate_toggle_test.go`](../../pkg/app/igate_toggle_test.go).

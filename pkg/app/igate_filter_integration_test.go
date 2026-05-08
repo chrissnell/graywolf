@@ -268,10 +268,10 @@ func tfSetup(t *testing.T, baseFilter string, preseed []configstore.TacticalCall
 		logger:                 logger,
 		store:                  store,
 		metrics:                m,
-		ig:                     ig,
 		igateReload:            make(chan struct{}, 1),
 		lastAppliedIgateFilter: composed,
 	}
+	a.ig.Store(ig)
 
 	// Start the igate supervisor so the first connection (and any
 	// subsequent reconnects triggered by Reconfigure) actually reach

@@ -2,30 +2,51 @@ package igate
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
 )
 
 // IgateOutput adapts the iGate's RF->IS gating to the aprs.PacketOutput
 // interface so it can be wired into the decoder's fanout alongside
-// LogOutput and the packet log sink.
+// LogOutput and the packet log sink. The inner *Igate is held in an
+// atomic pointer so it can be swapped at runtime when the operator
+// toggles the iGate enable flag.
 type IgateOutput struct {
-	ig *Igate
+	ig atomic.Pointer[Igate]
 }
 
-// NewIgateOutput returns a PacketOutput bound to ig.
+// NewIgateOutput returns a PacketOutput bound to ig. ig may be nil; the
+// inner pointer can be replaced later via SetIgate.
 func NewIgateOutput(ig *Igate) *IgateOutput {
-	return &IgateOutput{ig: ig}
+	o := &IgateOutput{}
+	if ig != nil {
+		o.ig.Store(ig)
+	}
+	return o
+}
+
+// SetIgate swaps the inner *Igate. Pass nil to disable forwarding (used
+// when the operator turns the iGate off at runtime).
+func (o *IgateOutput) SetIgate(ig *Igate) {
+	if o == nil {
+		return
+	}
+	o.ig.Store(ig)
 }
 
 // SendPacket feeds a decoded RF packet into the iGate for possible
 // forwarding to APRS-IS. Always returns nil — gating errors are logged
 // internally and counted in metrics; they are not caller-visible.
 func (o *IgateOutput) SendPacket(_ context.Context, pkt *aprs.DecodedAPRSPacket) error {
-	if o == nil || o.ig == nil {
+	if o == nil {
 		return nil
 	}
-	o.ig.gateRFToIS(pkt)
+	ig := o.ig.Load()
+	if ig == nil {
+		return nil
+	}
+	ig.gateRFToIS(pkt)
 	return nil
 }
 

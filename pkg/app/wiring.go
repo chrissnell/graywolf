@@ -408,8 +408,8 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	if err := a.wireIGate(ctx); err != nil {
 		return err
 	}
-	if a.ig != nil {
-		a.beaconSched.SetISSink(a.ig)
+	if ig := a.ig.Load(); ig != nil {
+		a.beaconSched.SetISSink(ig)
 	}
 
 	// --- Messages service ---------------------------------------------
@@ -552,27 +552,56 @@ func (a *App) applyFlacOverride(ctx context.Context) error {
 	return nil
 }
 
-// wireIGate constructs a.ig from configstore. A disabled or missing
-// iGate config leaves a.ig nil, which the igateComponent stop closure
-// handles via a nil-check. Per D7 the webapi layer refuses to save
-// Enabled=true without a station callsign set, so the resolve-below
-// should succeed in the happy path. If it doesn't (hand-edited DB,
-// migration anomaly), we log a warning and leave the iGate nil rather
-// than panicking — graceful degradation matches the rest of the wiring.
+// wireIGate sets up the always-allocated iGate plumbing (reload signal
+// channel, RF->IS fanout adapter, live IGateLineSender adapter) and,
+// when the operator has the iGate enabled at boot, constructs the
+// concrete *igate.Igate and stores it into a.ig. A disabled or missing
+// iGate config leaves a.ig nil — reloadIgate will build the instance
+// when the operator flips the toggle on at runtime.
+//
+// Per D7 the webapi layer refuses to save Enabled=true without a
+// station callsign set, so the resolve inside buildIgateInstance should
+// succeed in the happy path. If it doesn't (hand-edited DB, migration
+// anomaly), we log a warning and leave the iGate nil rather than
+// panicking — graceful degradation matches the rest of the wiring.
 func (a *App) wireIGate(ctx context.Context) error {
+	a.igateReload = make(chan struct{}, 1)
+	a.igateOut = igate.NewIgateOutput(nil)
+	a.igateLineSender = &liveIGateLineSender{a: a}
+
 	igCfg, err := a.store.GetIGateConfig(ctx)
 	if err != nil || igCfg == nil || !igCfg.Enabled {
 		return nil
 	}
 
+	ig, composed, err := a.buildIgateInstance(ctx, igCfg)
+	if err != nil {
+		return err
+	}
+	if ig == nil {
+		return nil
+	}
+	a.ig.Store(ig)
+	a.igateOut.SetIgate(ig)
+	a.lastAppliedIgateFilter = composed
+	return nil
+}
+
+// buildIgateInstance constructs a fresh *igate.Igate from the supplied
+// IGateConfig. Returns (nil, "", nil) when construction is benignly
+// skipped (callsign empty/N0CALL or igate.New init failure); both cases
+// log and let the caller treat the iGate as unavailable. Used by both
+// wireIGate at startup and reloadIgate when the operator toggles the
+// iGate on at runtime.
+func (a *App) buildIgateInstance(ctx context.Context, igCfg *configstore.IGateConfig) (*igate.Igate, string, error) {
 	stationCall, err := a.store.ResolveStationCallsign(ctx)
 	if err != nil {
 		if errors.Is(err, callsign.ErrCallsignEmpty) || errors.Is(err, callsign.ErrCallsignN0Call) {
 			a.logger.Warn("iGate will not start: station callsign unset or N0CALL — set it on the Station Callsign page",
 				"reason", err.Error())
-			return nil
+			return nil, "", nil
 		}
-		return fmt.Errorf("resolve station callsign: %w", err)
+		return nil, "", fmt.Errorf("resolve station callsign: %w", err)
 	}
 
 	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
@@ -598,15 +627,10 @@ func (a *App) wireIGate(ctx context.Context) error {
 
 	txCh := a.resolveTxChannel(ctx, igCfg.TxChannel)
 
-	// Compose the APRS-IS server filter via the single entry point so
-	// enabled tactical callsigns are auto-appended as g/ clauses. Any
-	// raw read of igCfg.ServerFilter outside buildIgateFilter is
-	// guarded by an enforcement test.
 	composedFilter, err := buildIgateFilter(ctx, a.store)
 	if err != nil {
-		return fmt.Errorf("compose igate server filter: %w", err)
+		return nil, "", fmt.Errorf("compose igate server filter: %w", err)
 	}
-	a.lastAppliedIgateFilter = composedFilter
 
 	ig, err := igate.New(igate.Config{
 		Server:          serverAddr,
@@ -641,25 +665,37 @@ func (a *App) wireIGate(ctx context.Context) error {
 				Decoded:   pkt,
 				Notes:     "rf2is",
 			})
-			// RF-heard station uploaded to IS — cache as via=rf,
-			// direction=RX (we heard them on the air, even though we
-			// also forwarded the packet onto APRS-IS).
 			if entries := stationcache.ExtractEntry(pkt, "igate", "RX", uint32(pkt.Channel)); len(entries) > 0 {
 				a.stationCache.Update(entries)
 			}
 		},
 		IsRxHook:     a.onIGateIsRxPacket,
-		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
+		ChannelModes: a.store,
 	})
 	if err != nil {
-		// Matches the old main.go behavior: init failure is logged but
-		// does not take out the whole app. The iGate just stays nil.
 		a.logger.Error("igate init", "err", err)
-		return nil
+		return nil, "", nil
 	}
-	a.ig = ig
-	a.igateReload = make(chan struct{}, 1)
-	return nil
+	return ig, composedFilter, nil
+}
+
+// liveIGateLineSender is the always-allocated adapter passed to
+// messages.Service so the IGate ref captured into Sender / Router /
+// Preflight stays live across runtime enable/disable toggles. SendLine
+// loads a.ig on every call; when the iGate is disabled the call returns
+// an explicit error which the messages.Sender already handles by
+// marking the row failed.
+type liveIGateLineSender struct{ a *App }
+
+func (l *liveIGateLineSender) SendLine(line string) error {
+	if l == nil || l.a == nil {
+		return errors.New("igate not enabled")
+	}
+	ig := l.a.ig.Load()
+	if ig == nil {
+		return errors.New("igate not enabled")
+	}
+	return ig.SendLine(line)
 }
 
 // onIGateIsRxPacket is the IsRxHook body for the iGate: it records the
@@ -803,13 +839,12 @@ func (a *App) wireMessages(ctx context.Context) error {
 		passcode = strconv.Itoa(callsign.APRSPasscode(stationCall))
 	}
 
-	// iGate line-sender: only when the iGate is wired. A nil IGate in
-	// ServiceConfig means the IS path logs + emits message.failed and
-	// falls back per policy; the Service tolerates nil.
-	var igSender messages.IGateLineSender
-	if a.ig != nil {
-		igSender = a.ig
-	}
+	// iGate line-sender: always the live adapter so a runtime
+	// enable/disable toggle (reloadIgate) is reflected on every
+	// SendLine call without rebuilding messages.Service. The adapter
+	// returns "igate not enabled" when the iGate is currently disabled,
+	// which Sender already handles by marking the row failed.
+	var igSender messages.IGateLineSender = a.igateLineSender
 
 	svc, err := messages.NewService(messages.ServiceConfig{
 		Store:         a.msgStore,
@@ -1032,10 +1067,22 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	}
 	a.apiSrv = apiSrv
 
-	if a.ig != nil {
-		apiSrv.SetIgateStatusFn(a.ig.Status)
-		apiSrv.SetIgateReload(a.igateReload)
-	}
+	// Status fn loads a.ig on each call so an iGate constructed at
+	// runtime (via the enable toggle) becomes visible to /api/status
+	// without rewiring. Returns a zero-value Status (Connected=false)
+	// while disabled, matching the disabled-at-boot behavior the UI
+	// expects.
+	apiSrv.SetIgateStatusFn(func() igate.Status {
+		ig := a.ig.Load()
+		if ig == nil {
+			return igate.Status{}
+		}
+		return ig.Status()
+	})
+	// Reload signal channel is allocated unconditionally in wireIGate
+	// so the operator's enable toggle is delivered even when the iGate
+	// was disabled at boot.
+	apiSrv.SetIgateReload(a.igateReload)
 	apiSrv.SetGPSReload(a.gpsReload)
 	apiSrv.SetBeaconReload(a.beaconReload)
 	apiSrv.SetSmartBeaconReload(a.smartBeaconReload)
@@ -1134,9 +1181,27 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
 	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
-	if a.ig != nil {
-		webapi.RegisterIgate(apiSrv, apiMux, a.ig.SetSimulationMode, a.ig.Status)
-	}
+	// Always register /api/igate routes; the closures below load a.ig
+	// on each request so the operator's runtime enable toggle lights
+	// the endpoints up without rewiring. While disabled, the simulation
+	// toggle returns 503 (igate not available) and status reports
+	// Connected=false.
+	webapi.RegisterIgate(apiSrv, apiMux,
+		func(b bool) error {
+			ig := a.ig.Load()
+			if ig == nil {
+				return errors.New("igate not enabled")
+			}
+			return ig.SetSimulationMode(b)
+		},
+		func() igate.Status {
+			ig := a.ig.Load()
+			if ig == nil {
+				return igate.Status{}
+			}
+			return ig.Status()
+		},
+	)
 	// Stations autocomplete is an out-of-band registrar (matches the
 	// RegisterPackets / RegisterStations shape). Needs the messages
 	// store for history-prefix lookups and the station cache for
@@ -1926,11 +1991,13 @@ func (a *App) bridgeComponent() namedComponent {
 			aprsOut := aprs.NewLogOutput(a.logger)
 			aprsSubmit := newAPRSSubmitter(a.aprsQueue, a.metrics.AprsOutDropped, a.logger)
 
-			// iGate output adapter for the fan-out (nil if iGate is off).
-			var igateOut *igate.IgateOutput
-			if a.ig != nil {
-				igateOut = igate.NewIgateOutput(a.ig)
-			}
+			// iGate output adapter for the fan-out. The adapter is
+			// always allocated (see wireIGate); its inner *Igate is
+			// nil while the iGate is disabled and SendPacket returns
+			// nil silently in that state. Toggling the iGate on at
+			// runtime swaps a non-nil instance into the adapter via
+			// reloadIgate without rebuilding the fanout.
+			igateOut := a.igateOut
 
 			// Messages router output: classifies inbound APRS text
 			// messages into DM / tactical / auto-ACK responses. Nil
@@ -2128,14 +2195,9 @@ func (a *App) igateComponent() namedComponent {
 	return namedComponent{
 		name: "igate",
 		start: func(ctx context.Context) error {
-			if a.ig == nil {
-				return nil
-			}
-			if err := a.ig.Start(ctx); err != nil {
-				a.logger.Error("igate start", "err", err)
-				// Match old main.go behavior: don't abort startup on
-				// an iGate connection error, just log it.
-			}
+			// The reload-drainer is spawned unconditionally so the
+			// operator's enable toggle reaches reloadIgate even when
+			// the iGate was disabled at boot (issue #84).
 			if a.igateReload != nil {
 				a.igateReloadWG.Add(1)
 				go func() {
@@ -2150,30 +2212,96 @@ func (a *App) igateComponent() namedComponent {
 					}
 				}()
 			}
+			ig := a.ig.Load()
+			if ig == nil {
+				return nil
+			}
+			if err := ig.Start(ctx); err != nil {
+				a.logger.Error("igate start", "err", err)
+				// Match old main.go behavior: don't abort startup on
+				// an iGate connection error, just log it.
+			}
 			return nil
 		},
 		stop: func(shutdownCtx context.Context) error {
-			if a.ig == nil {
-				return nil
+			if ig := a.ig.Load(); ig != nil {
+				ig.Stop()
 			}
-			a.ig.Stop()
 			return waitGroup(shutdownCtx, &a.igateReloadWG, "igate reload")
 		},
 	}
 }
 
-// reloadIgate re-reads igate config, rf filters, and tactical callsigns
-// from the database and pushes them into the running igate. When the
-// composed filter is unchanged we still call Reconfigure (so rule and
-// governor changes on the same signal propagate) but skip the metric
-// and debug log; Reconfigure's own filter-changed check prevents the
-// reconnect.
+// reloadIgate handles the three transitions an iGate config save can
+// produce:
+//   - disabled → enabled: build a fresh *igate.Igate via
+//     buildIgateInstance, Start it, install into a.ig + a.igateOut +
+//     beacon ISSink, and seed lastAppliedIgateFilter.
+//   - enabled → disabled: Stop the current iGate, clear a.ig +
+//     a.igateOut + beacon ISSink, reset lastAppliedIgateFilter so a
+//     subsequent enable rebuilds cleanly.
+//   - enabled → enabled: re-read filters/rules and push them into the
+//     running iGate via Reconfigure. When the composed filter is
+//     unchanged the reconnect is skipped but Reconfigure still runs so
+//     rule/governor changes propagate.
+//
+// Issue #84: prior to this rewrite the function only handled the third
+// case, so toggling the enable flag at runtime had no effect until the
+// next daemon restart.
 func (a *App) reloadIgate(ctx context.Context) {
-	var configuredTxCh uint32
-	if igCfg, _ := a.store.GetIGateConfig(ctx); igCfg != nil {
-		configuredTxCh = igCfg.TxChannel
+	igCfg, err := a.store.GetIGateConfig(ctx)
+	if err != nil {
+		a.logger.Warn("igate reload: read config", "err", err)
+		return
 	}
-	a.ig.SetTxChannel(a.resolveTxChannel(ctx, configuredTxCh))
+	enabled := igCfg != nil && igCfg.Enabled
+	cur := a.ig.Load()
+
+	// enabled → disabled.
+	if !enabled {
+		if cur == nil {
+			return
+		}
+		a.logger.Info("igate disabled at runtime, stopping")
+		cur.Stop()
+		a.ig.Store(nil)
+		a.igateOut.SetIgate(nil)
+		if a.beaconSched != nil {
+			a.beaconSched.SetISSink(nil)
+		}
+		a.lastAppliedIgateFilter = ""
+		return
+	}
+
+	// disabled → enabled.
+	if cur == nil {
+		ig, composed, err := a.buildIgateInstance(ctx, igCfg)
+		if err != nil {
+			a.logger.Warn("igate reload: build", "err", err)
+			return
+		}
+		if ig == nil {
+			// Build benignly skipped (callsign empty/N0CALL or
+			// igate.New init failure); buildIgateInstance already
+			// logged. Leave a.ig nil; the next save retries.
+			return
+		}
+		if err := ig.Start(ctx); err != nil {
+			a.logger.Error("igate reload: start", "err", err)
+			return
+		}
+		a.ig.Store(ig)
+		a.igateOut.SetIgate(ig)
+		if a.beaconSched != nil {
+			a.beaconSched.SetISSink(ig)
+		}
+		a.lastAppliedIgateFilter = composed
+		a.logger.Info("igate enabled at runtime")
+		return
+	}
+
+	// enabled → enabled (TX channel + filter / rules push-through).
+	cur.SetTxChannel(a.resolveTxChannel(ctx, igCfg.TxChannel))
 	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
 	rules := make([]filters.Rule, 0, len(rfFilters))
 	for _, f := range rfFilters {
@@ -2201,14 +2329,14 @@ func (a *App) reloadIgate(ctx context.Context) {
 	}
 
 	if composed == a.lastAppliedIgateFilter {
-		a.ig.Reconfigure(composed, rules, gov)
+		cur.Reconfigure(composed, rules, gov)
 		return
 	}
 
 	a.logger.Debug("igate filter recomposed, reconnecting",
 		"filter", composed,
 		"previous", a.lastAppliedIgateFilter)
-	a.ig.Reconfigure(composed, rules, gov)
+	cur.Reconfigure(composed, rules, gov)
 	a.lastAppliedIgateFilter = composed
 	if a.metrics != nil {
 		a.metrics.IgateFilterRecompositions.Inc()
