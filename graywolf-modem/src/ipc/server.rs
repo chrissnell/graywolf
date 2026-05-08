@@ -18,7 +18,9 @@
 //! Only a single client is supported — if one disconnects the server should
 //! be torn down and the modem process exits (the Go side will relaunch us).
 
-use std::io::{self, Write};
+use std::io;
+#[cfg(any(windows, all(unix, not(target_os = "android"))))]
+use std::io::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
