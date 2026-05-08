@@ -105,6 +105,8 @@ pub mod list_audio;
 #[cfg(not(target_os = "android"))]
 pub mod list_usb;
 pub mod rxonly;
+#[cfg(target_os = "android")]
+pub mod android;
 
 /// Base semver string ("0.7.13"), injected at build time from the repo's
 /// VERSION file (via the GRAYWOLF_VERSION env var set by the Makefile / CI).
