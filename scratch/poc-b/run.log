@@ -1,0 +1,35 @@
+--------- beginning of main
+05-08 11:29:10.539  6366  6366 I graywolfmodem: graywolfmodem::android: JNI_OnLoad: v0.13.2-99ea0dd-dirty
+05-08 11:29:10.539  6366  6366 I GraywolfService: modem cdylib version=v0.13.2-99ea0dd-dirty
+05-08 11:29:10.540  6366  6458 I graywolfmodem: graywolfmodem::android: ipc server bound at /data/user/0/com.nw5w.graywolf/cache/graywolf-modem.sock
+05-08 11:29:10.590  6366  6366 I GraywolfService: modemAwaitReady=true
+05-08 11:29:10.605  6366  6366 I AudioPump: AudioRecord init rate=22050 bufBytes=7056 (min=1764)
+05-08 11:29:10.642  6366  6458 I graywolfmodem: graywolfmodem::android: poc-b: ipc_client_connected
+05-08 11:29:10.643  6366  6366 I GraywolfService: poc-b: go_child_up
+05-08 11:29:10.643  6366  6467 W graywolf-pocb-err: 2026/05/08 17:29:10 graywolf-pocb listening on 127.0.0.1:8080
+05-08 11:29:10.644  6366  6467 W graywolf-pocb-err: 2026/05/08 17:29:10 modem ready version=v0.13.2-99ea0dd-dirty pid=6366
+05-08 11:29:10.678  6366  6475 I graywolfmodem: graywolfmodem::android: gain set to -6.0 dB
+05-08 11:29:10.678  6366  6475 I GraywolfService: poc-b: gain_applied db=-6.0
+05-08 11:29:10.923  6366  6366 I MainActivity: poc-b: webview_loaded
+05-08 11:29:29.062  6366  6459 I graywolfmodem: graywolfmodem::android: poc-b: first_frame_decoded
+05-08 11:34:51.886  6366  6475 I graywolfmodem: graywolfmodem::android: gain set to -30.0 dB
+05-08 11:34:51.887  6366  6475 I GraywolfService: poc-b: gain_applied db=-30.0
+05-08 11:36:09.371  6366  6475 I graywolfmodem: graywolfmodem::android: gain set to -6.0 dB
+05-08 11:36:09.372  6366  6475 I GraywolfService: poc-b: gain_applied db=-6.0
+05-08 11:37:43.479  6366  6476 W Supervisor: poc-b: go_child_died rc=143
+05-08 11:37:43.899  6366  6366 W MainActivity: webview error code=-6 desc=net::ERR_CONNECTION_REFUSED
+05-08 11:37:43.904  6366  6366 W MainActivity: webview error code=-6 desc=net::ERR_CONNECTION_REFUSED
+05-08 11:37:44.494  6366  6478 I GraywolfService: poc-b: supervisor_restart_begin
+05-08 11:37:44.653  6366  6463 I AudioPump: audio pump exited
+05-08 11:37:44.654  6366  6459 I graywolfmodem: graywolfmodem::android: dsp thread exiting
+05-08 11:37:44.655  6366  6458 I graywolfmodem: graywolfmodem::android: demod loop exiting
+05-08 11:37:44.656  6366  6478 I graywolfmodem: graywolfmodem::android: modem stopped
+05-08 11:37:44.659  6366  6671 I graywolfmodem: graywolfmodem::android: ipc server bound at /data/user/0/com.nw5w.graywolf/cache/graywolf-modem.sock
+05-08 11:37:44.709  6366  6478 I GraywolfService: modemAwaitReady=true
+05-08 11:37:44.744  6366  6478 I AudioPump: AudioRecord init rate=22050 bufBytes=7056 (min=1764)
+05-08 11:37:44.798  6366  6671 I graywolfmodem: graywolfmodem::android: poc-b: ipc_client_connected
+05-08 11:37:44.801  6366  6478 I GraywolfService: poc-b: go_child_up
+05-08 11:37:44.801  6366  6478 I Supervisor: poc-b: supervisor_restart_succeeded
+05-08 11:37:44.801  6366  6681 W graywolf-pocb-err: 2026/05/08 17:37:44 graywolf-pocb listening on 127.0.0.1:8080
+05-08 11:37:44.802  6366  6681 W graywolf-pocb-err: 2026/05/08 17:37:44 modem ready version=v0.13.2-99ea0dd-dirty pid=6366
+05-08 11:37:55.717  6366  6672 I graywolfmodem: graywolfmodem::android: poc-b: first_frame_decoded

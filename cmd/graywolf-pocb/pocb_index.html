@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>graywolf POC-B</title>
+<style>
+  body { font-family: -apple-system, system-ui, monospace; margin: 0; padding: 12px; background: #111; color: #eee; }
+  .row { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; }
+  .stat { background: #222; padding: 8px 12px; border-radius: 4px; }
+  .stat b { color: #4af; }
+  input[type="range"] { flex: 1; }
+  pre { background: #000; padding: 8px; border-radius: 4px; max-height: 70vh; overflow: auto; white-space: pre-wrap; }
+  .gain { font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="stat">frames decoded: <b id="fc">0</b></div>
+  <div class="stat">uptime: <b id="up">0s</b></div>
+  <div class="stat" id="conn">connecting</div>
+</div>
+<div class="row">
+  <label>gain</label>
+  <input id="g" type="range" min="-30" max="20" step="1" value="-6">
+  <span class="gain" id="gv">-6 dB</span>
+</div>
+<pre id="log"></pre>
+<script>
+  const token = window.GraywolfWebInterface ? window.GraywolfWebInterface.getBearerToken() : "";
+  // loopback-only; do not reuse for remote endpoints
+  const auth = { headers: { "Authorization": "Bearer " + token } };
+  let lastOkMs = 0;
+  function fmtUptime(s) {
+    const h = Math.floor(s/3600), m = Math.floor(s%3600/60), sec = s%60;
+    return `${h}h ${m}m ${sec}s`;
+  }
+  function refreshConn() {
+    const conn = document.getElementById("conn");
+    if (lastOkMs === 0) { conn.textContent = "connecting"; conn.style.color = "#aaa"; return; }
+    const ageMs = Date.now() - lastOkMs;
+    if (ageMs > 3000) {
+      conn.textContent = `stale ${Math.floor(ageMs/1000)}s`;
+      conn.style.color = "#f55";
+    } else {
+      conn.textContent = "live";
+      conn.style.color = "#5f5";
+    }
+  }
+  async function pollStatus() {
+    try {
+      const r = await fetch("/api/_internal/status", auth);
+      if (!r.ok) return;
+      const j = await r.json();
+      document.getElementById("fc").textContent = j.frames_decoded;
+      document.getElementById("up").textContent = fmtUptime(j.uptime_seconds);
+      lastOkMs = Date.now();
+    } catch {}
+  }
+  async function pollFrames() {
+    try {
+      const r = await fetch("/api/_internal/last-frames", auth);
+      if (!r.ok) return;
+      const lines = await r.json();
+      document.getElementById("log").textContent = lines.map(l => l.stamp + " " + l.text).join("\n");
+    } catch {}
+  }
+  const g = document.getElementById("g");
+  const gv = document.getElementById("gv");
+  // input fires while dragging -- keeps readout live so operator can see
+  // the value before committing on release.
+  g.addEventListener("input", () => { gv.textContent = g.value + " dB"; });
+  g.addEventListener("change", async () => {
+    gv.textContent = g.value + " dB";
+    await fetch("/api/_internal/gain", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ db: parseFloat(g.value) }),
+    });
+  });
+  setInterval(pollStatus, 1000);
+  setInterval(pollFrames, 1000);
+  setInterval(refreshConn, 500);
+</script>
+</body>
+</html>

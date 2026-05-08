@@ -19,17 +19,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use graywolf_demod::audio::soundcard::{spawn as soundcard_spawn, SoundcardConfig};
-use graywolf_demod::audio::{AudioChunk, CHUNK_QUEUE_DEPTH};
-use graywolf_demod::demod_afsk_multi::{MultiAfskDemodulator, RECOMMENDED_3DEMOD};
-use graywolf_demod::rxonly::{feed_chunk, format_ax25_ui_frame};
+use graywolfmodem::audio::soundcard::{spawn as soundcard_spawn, SoundcardConfig};
+use graywolfmodem::audio::{AudioChunk, CHUNK_QUEUE_DEPTH};
+use graywolfmodem::demod_afsk_multi::{MultiAfskDemodulator, RECOMMENDED_3DEMOD};
+use graywolfmodem::rxonly::{feed_chunk, format_ax25_ui_frame};
 
 const SAMPLE_RATE_HZ: u32 = 48_000;
 
 fn main() -> std::process::ExitCode {
     eprintln!(
         "INFO: poc_a_rxonly {} starting",
-        graywolf_demod::full_version()
+        graywolfmodem::full_version()
     );
     eprintln!(
         "INFO: opening default input device @ {} Hz mono",

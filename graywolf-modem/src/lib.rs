@@ -54,8 +54,8 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use graywolf_demod::demod_afsk::AfskDemodulator;
-//! use graywolf_demod::types::AfskProfile;
+//! use graywolfmodem::demod_afsk::AfskDemodulator;
+//! use graywolfmodem::types::AfskProfile;
 //!
 //! let mut demod = AfskDemodulator::new(
 //!     44100,  // sample rate
@@ -105,6 +105,8 @@ pub mod list_audio;
 #[cfg(not(target_os = "android"))]
 pub mod list_usb;
 pub mod rxonly;
+#[cfg(target_os = "android")]
+pub mod android;
 
 /// Base semver string ("0.7.13"), injected at build time from the repo's
 /// VERSION file (via the GRAYWOLF_VERSION env var set by the Makefile / CI).

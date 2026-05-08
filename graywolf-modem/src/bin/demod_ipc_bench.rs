@@ -25,8 +25,8 @@ use std::os::unix::net::UnixStream;
 #[cfg(windows)]
 use std::net::TcpStream;
 
-use graywolf_demod::ipc::framing::{read_frame, write_frame};
-use graywolf_demod::ipc::proto::{
+use graywolfmodem::ipc::framing::{read_frame, write_frame};
+use graywolfmodem::ipc::proto::{
     ipc_message::Payload, ConfigureAudio, ConfigureChannel, IpcMessage, StartAudio,
 };
 

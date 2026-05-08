@@ -14,8 +14,8 @@ use std::os::unix::net::UnixStream;
 #[cfg(windows)]
 use std::net::TcpStream;
 
-use graywolf_demod::ipc::framing::{read_frame, write_frame};
-use graywolf_demod::ipc::proto::{
+use graywolfmodem::ipc::framing::{read_frame, write_frame};
+use graywolfmodem::ipc::proto::{
     ipc_message::Payload, ConfigureAudio, ConfigureChannel, IpcMessage, StartAudio,
 };
 
@@ -190,7 +190,7 @@ fn flac_end_to_end_yields_frames() {
     // Shutdown.
     let shutdown = IpcMessage {
         payload: Some(Payload::Shutdown(
-            graywolf_demod::ipc::proto::Shutdown { timeout_ms: 1000 },
+            graywolfmodem::ipc::proto::Shutdown { timeout_ms: 1000 },
         )),
     };
     let _ = write_frame(&mut client, &shutdown);

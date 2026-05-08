@@ -27,10 +27,10 @@ use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::time::Instant;
 
-use graywolf_demod::demod_afsk::AfskDemodulator;
-use graywolf_demod::demod_afsk_multi::{MultiAfskDemodulator, MultiConfig};
-use graywolf_demod::hdlc::DecodedFrame;
-use graywolf_demod::types::*;
+use graywolfmodem::demod_afsk::AfskDemodulator;
+use graywolfmodem::demod_afsk_multi::{MultiAfskDemodulator, MultiConfig};
+use graywolfmodem::hdlc::DecodedFrame;
+use graywolfmodem::types::*;
 
 /// Sample window used to merge identical-content frames into a single event.
 /// Matches Direwolf's `multi_modem.c` PROCESS_AFTER_BITS = 3 — three symbol

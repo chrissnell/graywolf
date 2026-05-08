@@ -32,7 +32,7 @@ const BUF_LEN: usize = BUF_CAPACITY * 2;
 /// # Usage
 ///
 /// ```
-/// use graywolf_demod::filter_buf::FilterBuf;
+/// use graywolfmodem::filter_buf::FilterBuf;
 ///
 /// let mut buf = FilterBuf::new();
 /// buf.push(1.0);

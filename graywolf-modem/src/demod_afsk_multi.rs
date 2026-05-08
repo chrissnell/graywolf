@@ -55,8 +55,8 @@
 //! # Typical use
 //!
 //! ```no_run
-//! use graywolf_demod::demod_afsk_multi::{MultiAfskDemodulator, MultiConfig};
-//! use graywolf_demod::types::AfskProfile;
+//! use graywolfmodem::demod_afsk_multi::{MultiAfskDemodulator, MultiConfig};
+//! use graywolfmodem::types::AfskProfile;
 //!
 //! let mut demod = MultiAfskDemodulator::new(
 //!     44100, 1200, 1200, 2200,

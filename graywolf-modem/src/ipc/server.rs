@@ -6,7 +6,8 @@
 //! Lifecycle:
 //!  1. [`IpcServer::bind`] creates the listener and writes a readiness signal
 //!     to stdout — the Go parent waits on this before connecting.
-//!     - Unix: writes `\n` (the parent already knows the socket path).
+//!     - Unix (non-Android): writes `\n` (the parent already knows the socket path).
+//!     - Android: no stdout write; `modemAwaitReady` JNI return is the signal.
 //!     - Windows: writes `<port>\n` so the parent knows where to dial.
 //!  2. [`IpcServer::accept`] blocks until the Go client connects, then sends
 //!     a `ModemReady` message.
@@ -17,7 +18,9 @@
 //! Only a single client is supported — if one disconnects the server should
 //! be torn down and the modem process exits (the Go side will relaunch us).
 
-use std::io::{self, Write};
+use std::io;
+#[cfg(any(windows, all(unix, not(target_os = "android"))))]
+use std::io::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -125,13 +128,18 @@ impl IpcServer {
     #[cfg(unix)]
     pub fn bind<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let socket_path = path.as_ref().to_path_buf();
-        if socket_path.exists() {
-            fs::remove_file(&socket_path)?;
-        }
+        // Survive supervisor restarts: a previous run's socket file may
+        // still exist at `path` and would cause EADDRINUSE on bind. Unix
+        // domain sockets don't reuse like SO_REUSEADDR; the path itself
+        // is the lock. Best-effort remove, ignore ENOENT.
+        let _ = fs::remove_file(&socket_path);
         let listener = UnixListener::bind(&socket_path)?;
 
         // Readiness handshake: Go parent reads exactly one byte from our
         // stdout pipe to know the socket is accepting connections.
+        // On Android the modem is in-process to the Kotlin Service; the
+        // JNI `modemAwaitReady` return takes this role (design §3.4).
+        #[cfg(not(target_os = "android"))]
         {
             let stdout = io::stdout();
             let mut lock = stdout.lock();

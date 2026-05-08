@@ -1,7 +1,7 @@
-use graywolf_demod::demod_afsk::AfskDemodulator;
-use graywolf_demod::dsp;
-use graywolf_demod::hdlc;
-use graywolf_demod::types::*;
+use graywolfmodem::demod_afsk::AfskDemodulator;
+use graywolfmodem::dsp;
+use graywolfmodem::hdlc;
+use graywolfmodem::types::*;
 
 #[test]
 fn test_fcs_calc_known_values() {

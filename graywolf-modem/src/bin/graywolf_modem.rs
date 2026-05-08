@@ -38,20 +38,20 @@
 
 use std::process::ExitCode;
 
-use graywolf_demod::ipc::server::IpcServer;
-use graywolf_demod::modem::Modem;
+use graywolfmodem::ipc::server::IpcServer;
+use graywolfmodem::modem::Modem;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 2 && args[1] == "--version" {
         // Go parent parses this exact string to compare against its own
         // build version; keep the format stable.
-        println!("{}", graywolf_demod::full_version());
+        println!("{}", graywolfmodem::full_version());
         return ExitCode::SUCCESS;
     }
 
     if args.len() == 2 && args[1] == "--list-cm108" {
-        match graywolf_demod::cm108::enumerate_cm108() {
+        match graywolfmodem::cm108::enumerate_cm108() {
             Ok(json) => {
                 println!("{}", json);
                 return ExitCode::SUCCESS;
@@ -64,12 +64,12 @@ fn main() -> ExitCode {
     }
 
     if args.len() == 2 && args[1] == "--list-audio" {
-        println!("{}", graywolf_demod::list_audio::run());
+        println!("{}", graywolfmodem::list_audio::run());
         return ExitCode::SUCCESS;
     }
 
     if args.len() == 2 && args[1] == "--list-usb" {
-        println!("{}", graywolf_demod::list_usb::run());
+        println!("{}", graywolfmodem::list_usb::run());
         return ExitCode::SUCCESS;
     }
 

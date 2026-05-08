@@ -1,5 +1,5 @@
 [workspace]
-members = ["graywolf-modem", "poc-a-android"]
+members = ["graywolf-modem"]
 resolver = "2"
 
 # This workspace manifest declares the repo root as a cargo workspace whose
