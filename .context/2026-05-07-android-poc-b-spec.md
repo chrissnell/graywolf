@@ -242,6 +242,11 @@ The stub:
    - `GET /api/_internal/last-frames` → JSON array of recent
      decoded frames, gated by `Authorization: Bearer
      ${GRAYWOLF_LISTEN_TOKEN}`.
+   - `GET /api/_internal/status` → JSON
+     `{"frames_decoded": <int>, "uptime_seconds": <int>}`. Counter
+     monotonically increments per `RxFrame` received from the modem
+     UDS (no dedup, no filtering). `uptime_seconds` is wall-clock
+     since the Go stub bound its listener. Same bearer-token gate.
    - `POST /api/_internal/gain` (body `{"db": -6.0}`), pushes the
      value to Rust over the existing modem-config message, gated by
      the same bearer token.
@@ -262,12 +267,29 @@ Single hand-written HTML file embedded in the Go stub:
 var pocbIndex []byte
 ```
 
-The page polls `last-frames` every 1 s, renders newest-on-top in a
-`<pre>`, and includes a `<input type="range" min="-30" max="20"
-step="1">` slider that POSTs to `/api/_internal/gain` on change.
+The page renders four things:
+
+1. **Status row at top.** Two read-outs, refreshed every 1 s from
+   `GET /api/_internal/status`:
+   - **Frames decoded:** monotonic count since the Go stub started.
+   - **Uptime:** elapsed time since the Go stub bound its listener,
+     formatted `Hh Mm Ss`.
+   These act as the "is anything happening?" signal during a 10-min
+   capture without staring at the frame log. A static counter +
+   non-incrementing uptime points at a Go-side hang; an
+   incrementing uptime with a flatline frame counter points at
+   silence on-air or an audio-path break.
+2. **Gain slider.** `<input type="range" min="-30" max="20"
+   step="1">` POSTing to `/api/_internal/gain` on change.
+3. **Frame log.** `<pre>` polling `last-frames` every 1 s,
+   newest-on-top.
+4. **Bearer-token-gated `fetch`.** All three endpoints use
+   `Authorization: Bearer <token>`; token comes from
+   `WebAppInterface` at page load.
 
 Stylistic minimum. No SPA framework. No build step. Plain HTML +
-two short `<script>` blocks. This page is thrown away in phase 3.
+two short `<script>` blocks (one for status polling, one for
+frames + gain). This page is thrown away in phase 3.
 
 ### 4.3 Build invocations
 
@@ -390,11 +412,14 @@ welcome to reshape; intent is what matters.
    token. Service waits for the readiness `\n` byte. Modem-UDS
    path between Rust (in-process) and Go (child) confirmed
    working.
-7. **WebView + bearer token + frame rendering.** `MainActivity`
-   owns the WebView, gets the token from `WebAppInterface`
-   handoff, loads the Go stub's HTTP endpoint, renders frames in
-   real time from `last-frames` polling. Gain slider POSTs to
-   `gain`.
+7. **WebView + bearer token + frame rendering + status counters.**
+   `MainActivity` owns the WebView, gets the token from
+   `WebAppInterface` handoff, loads the Go stub's HTTP endpoint,
+   renders frames in real time from `last-frames` polling, renders
+   `frames_decoded` + `uptime_seconds` from `status` polling at
+   the top of the page, gain slider POSTs to `gain`. Counters
+   double as the runtime liveness signal during the 10-min
+   capture.
 8. **Supervisor smoke.** Service detects Go child crash, restarts
    with backoff. Service detects modem JNI panic (catch
    `RuntimeException` from JNI calls), restarts.
