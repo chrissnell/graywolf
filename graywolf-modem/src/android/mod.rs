@@ -64,8 +64,13 @@ pub extern "system" fn Java_com_nw5w_graywolf_jni_ModemBridge_modemVersion<'loca
 }
 
 /// Boot the modem. Binds the existing IPC server at `socket_path`, applies
-/// initial gain (dB), spawns the demod worker. Returns 0 on success or a
-/// negative error code.
+/// initial gain (dB), spawns the demod worker.
+///
+/// Return values (Kotlin caller):
+/// - `0`  — success
+/// - `-1` — already running (refused)
+/// - `-2` — invalid `socket_path` argument
+/// - `-3` — thread spawn failure
 #[no_mangle]
 pub extern "system" fn Java_com_nw5w_graywolf_jni_ModemBridge_modemStart<'local>(
     mut env: JNIEnv<'local>,
@@ -272,7 +277,7 @@ fn run_demod(
     // IPC accept on the original thread. Blocks until the Go child
     // connects; while blocked, the DSP thread is already running and
     // dropping frames into frames_rx (bounded → silent drop on full).
-    let (handle, ipc_rx, _ipc_join) =
+    let (handle, ipc_rx, ipc_join) =
         server.accept().map_err(|e| format!("accept: {}", e))?;
     info!("poc-b: ipc_client_connected");
 
@@ -291,6 +296,10 @@ fn run_demod(
         // POC-B doesn't act on configure messages — phase 3 wires them in.
         while let Ok(_msg) = ipc_rx.try_recv() {}
     }
+
+    // Close the write side so the reader thread observes EOF and exits.
+    drop(handle);
+    let _ = ipc_join.join();
 
     // On exit (any path), flip ready to false so the supervisor's
     // modem-health poll (Task 15) detects modem death even if the Go
