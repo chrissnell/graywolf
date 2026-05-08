@@ -10,11 +10,13 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import com.nw5w.graywolf.audio.AudioPump
+import com.nw5w.graywolf.binaries.GoLauncher
 import com.nw5w.graywolf.jni.ModemBridge
 import java.io.File
 
 class GraywolfService : Service() {
     private val audioPump = AudioPump()
+    private var goLauncher: GoLauncher? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -63,6 +65,28 @@ class GraywolfService : Service() {
             return
         }
         audioPump.start()
+
+        val bearerToken = (application as GraywolfApp).bearerToken
+        val goPath = File(applicationInfo.nativeLibraryDir, "libgraywolf.so").absolutePath
+        val launcher = GoLauncher(
+            executablePath = goPath,
+            env = mapOf(
+                "GRAYWOLF_MODEM_SOCKET" to socketPath,
+                "GRAYWOLF_LISTEN" to "127.0.0.1:8080",
+                "GRAYWOLF_LISTEN_TOKEN" to bearerToken,
+            ),
+        )
+        val ok = launcher.startAndAwaitReady(10_000)
+        if (!ok) {
+            Log.e(TAG, "go child did not signal readiness")
+            audioPump.stop()
+            ModemBridge.modemStop()
+            stopSelf()
+            return
+        }
+        goLauncher = launcher
+        goListenerReady = true
+        Log.i(TAG, "poc-b: go_child_up")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -70,6 +94,8 @@ class GraywolfService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        goListenerReady = false
+        goLauncher?.stop()
         audioPump.stop()
         ModemBridge.modemStop()
         super.onDestroy()
@@ -78,5 +104,9 @@ class GraywolfService : Service() {
     companion object {
         private const val TAG = "GraywolfService"
         private const val NOTIF_ID = 0x6757
+
+        @Volatile
+        var goListenerReady: Boolean = false
+            private set
     }
 }
