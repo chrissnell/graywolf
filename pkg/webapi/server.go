@@ -60,7 +60,7 @@ type Server struct {
 	startedAt         time.Time
 	historyDBPath     string // read-only; set by -history-db flag
 	version           string // build-time version string returned by GET /api/version
-	igateStatusFn     func() igate.Status
+	igateStatusFn     func() *igate.Status
 	gpsReload         chan struct{} // signalled when GPS config changes
 	beaconReload      chan struct{} // signalled when beacon config changes
 	digipeaterReload  chan struct{} // signalled when digipeater config/rules change
@@ -396,8 +396,10 @@ func (s *Server) SetActionsService(svc ActionsService) { s.actions = svc }
 func (s *Server) SetRemoteActions(svc *remoteactions.Service) { s.remoteActions = svc }
 
 // SetIgateStatusFn installs the function used by /api/status to report
-// igate counters.
-func (s *Server) SetIgateStatusFn(fn func() igate.Status) { s.igateStatusFn = fn }
+// igate counters. The callback should return nil when the iGate is
+// currently disabled so the aggregate status omits the field rather
+// than embedding a deceptive Connected=false snapshot.
+func (s *Server) SetIgateStatusFn(fn func() *igate.Status) { s.igateStatusFn = fn }
 
 // SetUpdatesChecker installs the updates checker post-construction.
 // Called by pkg/app wiring once the checker has been built with the

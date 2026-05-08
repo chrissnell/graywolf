@@ -244,6 +244,10 @@ func (s *Sender) SendWithPolicy(ctx context.Context, row *configstore.Message, o
 	if maxText := s.cfg.Preferences.EffectiveMaxMessageText(); len(row.Text) > maxText {
 		row.FailureReason = truncReason(fmt.Sprintf("text exceeds %d-char cap (got %d)", maxText, len(row.Text)))
 		_ = s.cfg.Store.Update(ctx, row)
+		s.logger.Warn("message tx failed",
+			"reason", "text too long",
+			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+			"kind", row.ThreadKind, "len", len(row.Text), "max", maxText)
 		return SendResult{Err: fmt.Errorf("%w: %d > %d", ErrMessageTextTooLong, len(row.Text), maxText), Retryable: false}
 	}
 
@@ -285,17 +289,25 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 			err := errors.New("messages: tx channel is packet-mode")
 			row.FailureReason = truncReason(err.Error())
 			_ = s.cfg.Store.Update(ctx, row)
+			s.logger.Warn("message rf send failed",
+				"reason", "tx channel is packet-mode",
+				"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+				"kind", row.ThreadKind, "channel", s.txChannel.Load())
 			return SendResult{Path: SendPathRF, Err: err, Retryable: false}
 		}
 	}
 	if !rfAvailable {
 		err := errors.New("messages: RF unavailable")
-		return s.finalizeRFFailure(ctx, row, err)
+		return s.finalizeRFFailure(ctx, row, "rf unavailable", err)
 	}
 	frame, err := s.buildFrame(row)
 	if err != nil {
 		row.FailureReason = truncReason(fmt.Sprintf("encode: %v", err))
 		_ = s.cfg.Store.Update(ctx, row)
+		s.logger.Warn("message rf send failed",
+			"reason", "frame encode error",
+			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+			"kind", row.ThreadKind, "channel", s.txChannel.Load(), "error", err)
 		return SendResult{Path: SendPathRF, Err: err}
 	}
 	// Record (source, msg_id) in the LocalTxRing BEFORE submit so a
@@ -350,13 +362,21 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 		// retry outside the attempt budget.
 		row.FailureReason = truncReason("governor queue full")
 		_ = s.cfg.Store.Update(ctx, row)
+		s.logger.Warn("message rf send deferred",
+			"reason", "governor queue full",
+			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+			"kind", row.ThreadKind, "channel", s.txChannel.Load())
 		return SendResult{Path: SendPathRF, Err: submitErr, Retryable: true}
 	case errors.Is(submitErr, txgovernor.ErrStopped):
 		// Governor shut down — RF will not recover on its own.
-		return s.finalizeRFFailure(ctx, row, submitErr)
+		return s.finalizeRFFailure(ctx, row, "governor stopped", submitErr)
 	default:
 		row.FailureReason = truncReason(fmt.Sprintf("submit: %v", submitErr))
 		_ = s.cfg.Store.Update(ctx, row)
+		s.logger.Warn("message rf send failed",
+			"reason", "governor submit error",
+			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+			"kind", row.ThreadKind, "channel", s.txChannel.Load(), "error", submitErr)
 		return SendResult{Path: SendPathRF, Err: submitErr, Retryable: row.ThreadKind == ThreadKindDM}
 	}
 }
@@ -367,9 +387,13 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 // rather than instructing this function. Always non-retryable: the
 // underlying cause (RF unavailable, governor stopped) does not recover
 // without operator intervention.
-func (s *Sender) finalizeRFFailure(ctx context.Context, row *configstore.Message, cause error) SendResult {
+func (s *Sender) finalizeRFFailure(ctx context.Context, row *configstore.Message, reason string, cause error) SendResult {
 	row.FailureReason = truncReason(fmt.Sprintf("rf unavailable: %v", cause))
 	_ = s.cfg.Store.Update(ctx, row)
+	s.logger.Warn("message rf send failed",
+		"reason", reason,
+		"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+		"kind", row.ThreadKind, "channel", s.txChannel.Load(), "error", cause)
 	return SendResult{Path: SendPathRF, Err: cause, Retryable: false}
 }
 
@@ -382,18 +406,30 @@ func (s *Sender) sendIS(ctx context.Context, row *configstore.Message) SendResul
 		err := errors.New("messages: iGate not configured")
 		row.FailureReason = truncReason(err.Error())
 		_ = s.cfg.Store.Update(ctx, row)
+		s.logger.Warn("message is send failed",
+			"reason", "igate not configured",
+			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+			"kind", row.ThreadKind)
 		return SendResult{Path: SendPathIS, Err: err}
 	}
 	if s.readOnlyIS() {
 		err := errors.New("messages: iGate passcode is read-only (-1)")
 		row.FailureReason = truncReason(err.Error())
 		_ = s.cfg.Store.Update(ctx, row)
+		s.logger.Warn("message is send failed",
+			"reason", "igate passcode is read-only",
+			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+			"kind", row.ThreadKind)
 		return SendResult{Path: SendPathIS, Err: err}
 	}
 	line := buildMessageTNC2(row)
 	if err := s.cfg.IGateSender.SendLine(line); err != nil {
 		row.FailureReason = truncReason(fmt.Sprintf("igate: %v", err))
 		_ = s.cfg.Store.Update(ctx, row)
+		s.logger.Warn("message is send failed",
+			"reason", "igate sendline error",
+			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+			"kind", row.ThreadKind, "error", err)
 		return SendResult{Path: SendPathIS, Err: err, Retryable: false}
 	}
 	// IS accepted. Flip SentAt inline — IS has no TxHook analogue
@@ -421,6 +457,9 @@ func (s *Sender) sendIS(ctx context.Context, row *configstore.Message) SendResul
 		ThreadKey:  row.ThreadKey,
 		Timestamp:  now,
 	})
+	s.logger.Info("message sent on aprs-is",
+		"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+		"kind", row.ThreadKind)
 	return SendResult{Path: SendPathIS, Err: nil, Retryable: false}
 }
 
@@ -598,7 +637,7 @@ func (s *Sender) clearPending(frame *ax25.Frame) {
 // flips SentAt, transitions to awaiting_ack (DM) or broadcast
 // (tactical), and emits a sent_rf event. Safe to call for frames we
 // did not originate — the lookup misses and we return immediately.
-func (s *Sender) onTxComplete(_ uint32, frame *ax25.Frame, src txgovernor.SubmitSource) {
+func (s *Sender) onTxComplete(channel uint32, frame *ax25.Frame, src txgovernor.SubmitSource) {
 	if src.Kind != SubmitKindMessages {
 		return
 	}
@@ -646,6 +685,9 @@ func (s *Sender) onTxComplete(_ uint32, frame *ax25.Frame, src txgovernor.Submit
 		ThreadKey:  row.ThreadKey,
 		Timestamp:  now,
 	})
+	s.logger.Info("message sent on rf",
+		"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
+		"kind", row.ThreadKind, "channel", channel)
 }
 
 // truncReason clips a failure reason to the FailureReason column's

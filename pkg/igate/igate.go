@@ -306,21 +306,61 @@ func (ig *Igate) initMetrics() error {
 		Name: "igate_is_to_rf_fanout_dropped_total",
 		Help: "IS->RF frames dropped from the PacketInput fan-out because no consumer was ready.",
 	})
-	if ig.cfg.Registry != nil {
-		for _, c := range []prometheus.Collector{
-			ig.mGatedTotal, ig.mFilteredTotal, ig.mConnectedGauge, ig.mDroppedOffline, ig.mSubmitDropped, ig.mFanoutDropped,
-		} {
-			if err := ig.cfg.Registry.Register(c); err != nil {
-				// An AlreadyRegisteredError is fine (tests may call
-				// New twice); anything else is a real problem.
-				are := prometheus.AlreadyRegisteredError{}
-				if !errors.As(err, &are) {
-					return err
-				}
-			}
-		}
+	if ig.cfg.Registry == nil {
+		return nil
+	}
+	// On a re-construction (operator toggled the iGate off then on again
+	// — see graywolf issue #84), the original collectors are still
+	// registered; without rebinding to ExistingCollector below, every
+	// .Inc on the new instance would target an orphan collector and
+	// /metrics would freeze at the first instance's values forever.
+	if c, err := registerOrExisting(ig.cfg.Registry, ig.mGatedTotal); err != nil {
+		return err
+	} else if v, ok := c.(*prometheus.CounterVec); ok {
+		ig.mGatedTotal = v
+	}
+	if c, err := registerOrExisting(ig.cfg.Registry, ig.mFilteredTotal); err != nil {
+		return err
+	} else if v, ok := c.(prometheus.Counter); ok {
+		ig.mFilteredTotal = v
+	}
+	if c, err := registerOrExisting(ig.cfg.Registry, ig.mConnectedGauge); err != nil {
+		return err
+	} else if v, ok := c.(prometheus.Gauge); ok {
+		ig.mConnectedGauge = v
+	}
+	if c, err := registerOrExisting(ig.cfg.Registry, ig.mDroppedOffline); err != nil {
+		return err
+	} else if v, ok := c.(prometheus.Counter); ok {
+		ig.mDroppedOffline = v
+	}
+	if c, err := registerOrExisting(ig.cfg.Registry, ig.mSubmitDropped); err != nil {
+		return err
+	} else if v, ok := c.(prometheus.Counter); ok {
+		ig.mSubmitDropped = v
+	}
+	if c, err := registerOrExisting(ig.cfg.Registry, ig.mFanoutDropped); err != nil {
+		return err
+	} else if v, ok := c.(prometheus.Counter); ok {
+		ig.mFanoutDropped = v
 	}
 	return nil
+}
+
+// registerOrExisting registers c with reg, returning c on success or the
+// already-registered collector on AlreadyRegisteredError. Any other
+// error is propagated. Used by initMetrics so a rebuilt *Igate (issue
+// #84 enable cycle) shares the originally-registered collector instead
+// of orphaning a fresh one that /metrics will never scrape.
+func registerOrExisting(reg prometheus.Registerer, c prometheus.Collector) (prometheus.Collector, error) {
+	if err := reg.Register(c); err != nil {
+		are := prometheus.AlreadyRegisteredError{}
+		if errors.As(err, &are) {
+			return are.ExistingCollector, nil
+		}
+		return nil, err
+	}
+	return c, nil
 }
 
 // Start opens the APRS-IS session and launches the supervising

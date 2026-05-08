@@ -124,8 +124,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.igateStatusFn != nil {
-		st := s.igateStatusFn()
-		out.Igate = newStatusIgateDTO(st)
+		// nil result means the iGate is currently disabled — leave
+		// out.Igate unset so /api/status callers can distinguish
+		// "off" from "on but disconnected".
+		if st := s.igateStatusFn(); st != nil {
+			out.Igate = newStatusIgateDTO(*st)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, out)
