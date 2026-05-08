@@ -533,7 +533,7 @@
     <span>{pollLabel}</span>
     <span class="status-sep">&middot;</span>
     {#if layerToggles.directRxOnly}
-      <span>{rfStationCount} of {stationCount} station{stationCount !== 1 ? 's' : ''} heard direct</span>
+      <span>{rfStationCount} heard direct / {stationCount} total</span>
     {:else}
       <span>{stationCount} station{stationCount !== 1 ? 's' : ''}</span>
     {/if}
