@@ -62,6 +62,11 @@ func Open(path string) (*DB, error) {
 	_ = db.Exec("PRAGMA journal_mode=WAL").Error
 	_ = db.Exec("PRAGMA busy_timeout=5000").Error
 	_ = db.Exec("PRAGMA foreign_keys=ON").Error
+	// Cap the per-connection page cache at 1 MiB. historydb sees more
+	// data than configstore (per-position writes) but reads are mostly
+	// recent rows that fit in the working set; trimming from the
+	// driver's 2 MiB default saves another ~1 MiB resident.
+	_ = db.Exec("PRAGMA cache_size=-1000").Error
 
 	if err := bootstrap(db); err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)

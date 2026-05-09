@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	httppprof "net/http/pprof"
 	"os"
 	"path/filepath"
 	"sort"
@@ -498,6 +499,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		// time; this component owns only the start/stop semantics.
 		a.actionsComponent(),
 		a.httpComponent(),
+		a.pprofComponent(),
 	}
 	return nil
 }
@@ -2486,6 +2488,61 @@ func (a *App) actionsComponent() namedComponent {
 				a.actions.Stop()
 			}
 			return nil
+		},
+	}
+}
+
+// pprofComponent runs the optional Go pprof debug listener on a
+// dedicated mux + http.Server. Disabled (returns a no-op component)
+// when cfg.PprofAddr is empty. The handlers are registered explicitly
+// against a fresh mux so we never expose /debug/pprof on the main UI
+// listener (no auth on these endpoints — they hand out heap profiles
+// and goroutine stacks). A non-loopback bind logs a warning at startup
+// but is still allowed for cases where the operator is profiling from
+// another host on a trusted LAN.
+func (a *App) pprofComponent() namedComponent {
+	return namedComponent{
+		name: "pprof",
+		start: func(ctx context.Context) error {
+			if a.cfg.PprofAddr == "" {
+				return nil
+			}
+			host, _, _ := net.SplitHostPort(a.cfg.PprofAddr)
+			if host != "" && host != "127.0.0.1" && host != "localhost" && host != "::1" {
+				a.logger.Warn(fmt.Sprintf("pprof listener binding to %s — exposes unauthenticated /debug/pprof endpoints (heap, goroutine, profile)", a.cfg.PprofAddr))
+			}
+			mux := http.NewServeMux()
+			mux.HandleFunc("/debug/pprof/", httppprof.Index)
+			mux.HandleFunc("/debug/pprof/cmdline", httppprof.Cmdline)
+			mux.HandleFunc("/debug/pprof/profile", httppprof.Profile)
+			mux.HandleFunc("/debug/pprof/symbol", httppprof.Symbol)
+			mux.HandleFunc("/debug/pprof/trace", httppprof.Trace)
+			a.pprofSrv = &http.Server{
+				Addr:    a.cfg.PprofAddr,
+				Handler: mux,
+			}
+			ln, err := net.Listen("tcp", a.cfg.PprofAddr)
+			if err != nil {
+				return fmt.Errorf("pprof listen %s: %w", a.cfg.PprofAddr, err)
+			}
+			a.logger.Info("pprof listener started", "addr", a.cfg.PprofAddr, "url", fmt.Sprintf("http://%s/debug/pprof/", a.cfg.PprofAddr))
+			a.pprofWG.Add(1)
+			go func() {
+				defer a.pprofWG.Done()
+				if err := a.pprofSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					a.logger.Error("pprof server", "err", err)
+				}
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			if a.pprofSrv == nil {
+				return nil
+			}
+			if err := a.pprofSrv.Shutdown(shutdownCtx); err != nil {
+				a.logger.Warn("pprof shutdown", "err", err)
+			}
+			return waitGroup(shutdownCtx, &a.pprofWG, "pprof server")
 		},
 	}
 }

@@ -10,6 +10,18 @@ ExecStart=/usr/bin/graywolf -config /var/lib/graywolf/graywolf.db -history-db /v
 Restart=on-failure
 RestartSec=5
 
+# Optional: cap the Go heap with a soft memory limit. The Go runtime
+# pressures GC harder as the heap approaches this value, which is
+# useful on memory-constrained hosts (Pi Zero 2W class, small VPSes)
+# where you want to bound RSS in exchange for a small CPU/GC cost.
+# Steady-state graywolf RSS is ~70 MiB; 128 MiB leaves comfortable
+# headroom for bursts. Uncomment to enable.
+#Environment=GOMEMLIMIT=128MiB
+# To pair with a tighter GC target on the same constrained hosts,
+# uncomment GOGC=50. The default is GOGC=100 (heap doubles between
+# collections); 50 halves that, trading CPU for a lower heap floor.
+#Environment=GOGC=50
+
 User=graywolf
 Group=graywolf
 SupplementaryGroups=audio dialout plugdev gpio

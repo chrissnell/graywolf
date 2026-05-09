@@ -298,6 +298,69 @@
 
 <pre><code>GET /api/status</code></pre>
 
+    <h2>pprof Debug Profiles</h2>
+
+    <p>
+      Graywolf can expose Go's <code>net/http/pprof</code> endpoints on a
+      separate listener for diagnosing memory growth, goroutine leaks, and
+      CPU hotspots. The listener is <strong>off by default</strong>; enable it
+      by passing <code>-pprof &lt;addr&gt;</code>.
+    </p>
+
+    <div class="callout warning">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          The pprof listener has <strong>no authentication</strong>. The
+          endpoints reveal heap layout, goroutine stacks, and process command
+          line. <strong>Always bind to loopback</strong>
+          (<code>127.0.0.1:6060</code>). A non-loopback bind logs a warning
+          at startup but is still permitted for trusted-network profiling.
+          Disable the flag (omit it) when not actively investigating.
+        </p>
+      </div>
+    </div>
+
+    <div class="code-file">enable pprof on loopback</div>
+<pre><code>graywolf -pprof 127.0.0.1:6060</code></pre>
+
+    <h3>Common captures</h3>
+
+<pre><code># Heap snapshot (live allocation)
+curl -o heap.prof http://127.0.0.1:6060/debug/pprof/heap
+
+# Goroutine stack dump (human-readable)
+curl http://127.0.0.1:6060/debug/pprof/goroutine?debug=2
+
+# 30 s CPU profile
+curl -o cpu.prof http://127.0.0.1:6060/debug/pprof/profile?seconds=30
+
+# 5 s execution trace
+curl -o trace.out http://127.0.0.1:6060/debug/pprof/trace?seconds=5
+
+# Interactive web UI for any profile
+go tool pprof -http=:8081 heap.prof</code></pre>
+
+    <h3>Memory leak workflow</h3>
+
+    <ol>
+      <li>Capture a baseline heap profile after warmup
+        (<code>curl -o base.heap ...</code>).</li>
+      <li>Wait through a representative workload window (30+ minutes).</li>
+      <li>Capture a second profile (<code>later.heap</code>).</li>
+      <li>Diff with <code>go tool pprof -http=:8081 -base base.heap later.heap</code>
+        and look at the <em>inuse_space</em> view. The diff highlights
+        what <strong>grew</strong> between snapshots, which is what a leak
+        looks like.</li>
+    </ol>
+
+    <p>
+      Note: the Rust modem child process is a separate PID and is not visible
+      to Go pprof. Watch its memory through
+      <code>process_resident_memory_bytes</code> on the Prometheus side or
+      <code>ps -o rss</code> against the modem PID.
+    </p>
+
     <h2>Logging</h2>
 
     <p>

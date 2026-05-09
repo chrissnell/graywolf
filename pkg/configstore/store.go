@@ -71,6 +71,12 @@ func openDSN(dsn string) (*Store, error) {
 	_ = db.Exec("PRAGMA journal_mode=WAL").Error
 	_ = db.Exec("PRAGMA busy_timeout=5000").Error
 	_ = db.Exec("PRAGMA foreign_keys=ON").Error
+	// cache_size = -1000 caps the per-connection page cache at 1 MiB
+	// (negative values are KiB). The driver default is -2000 (2 MiB);
+	// configstore is a small DB and the working set fits in well under
+	// 1 MiB. Saves ~1 MiB of resident memory at the cost of slightly
+	// more page faults on cold reads.
+	_ = db.Exec("PRAGMA cache_size=-1000").Error
 
 	s := &Store{db: db}
 	if err := s.Migrate(); err != nil {
