@@ -1066,10 +1066,30 @@ pub mod listing {
             // which returns a structured DeviceDescription. We carry
             // its `.name()` field (an owned String) on the wire — the
             // JSON field stays `name` for the schema contract.
+            //
+            // Windows exception: `description().name()` returns only the
+            // device class label (e.g. `"Speakers"` / Hungarian
+            // `"Hangszórók"`), shared by every soundcard of that class,
+            // which would tag every output device as the system default.
+            // The deprecated `name()` on WASAPI returns the friendly
+            // `"Speakers (Realtek(R) Audio)"` form which uniquely
+            // identifies the device — use that on Windows so the
+            // `default_*` source matches what `collect_devices` writes
+            // into `name` below. Issue #100.
+            #[cfg(target_os = "windows")]
+            let default_input = host
+                .default_input_device()
+                .and_then(|d| { #[allow(deprecated)] d.name().ok() });
+            #[cfg(target_os = "windows")]
+            let default_output = host
+                .default_output_device()
+                .and_then(|d| { #[allow(deprecated)] d.name().ok() });
+            #[cfg(not(target_os = "windows"))]
             let default_input = host
                 .default_input_device()
                 .and_then(|d| d.description().ok())
                 .map(|desc| desc.name().to_string());
+            #[cfg(not(target_os = "windows"))]
             let default_output = host
                 .default_output_device()
                 .and_then(|d| d.description().ok())
@@ -1131,16 +1151,30 @@ pub mod listing {
         };
 
         for dev in iter {
-            let name = dev
-                .description()
-                .map(|d| d.name().to_string())
-                .unwrap_or_else(|_| "<unknown>".to_string());
-            let is_default = default_name.map(|d| d == name).unwrap_or(false);
             // pcm_id (cpal `name()`) is the ALSA hw identifier on Linux
             // (e.g. `plughw:CARD=Foo,DEV=0`). On macOS / Windows the
             // recommendation heuristic does not apply and `recommended`
-            // stays false.
-            let pcm_id = dev.name().unwrap_or_default();
+            // stays false. On Windows, pcm_id is the WASAPI friendly
+            // name (e.g. `"Speakers (Realtek(R) Audio)"`) which we also
+            // surface as the device `name` so two cards of the same
+            // class are distinguishable in the flare bundle. Issue #100.
+            //
+            // Skip devices that fail to report a pcm_id, matching the
+            // modem-side `collect_devices`: a phantom `<unknown>` row
+            // confuses operator triage when comparing the live UI to
+            // the flare bundle.
+            let pcm_id = match dev.name() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            #[cfg(target_os = "windows")]
+            let name = pcm_id.clone();
+            #[cfg(not(target_os = "windows"))]
+            let name = dev
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| pcm_id.clone());
+            let is_default = default_name.map(|d| d == name).unwrap_or(false);
             let recommended = super::is_recommended_pcm_id(&pcm_id);
 
             let configs = match direction {

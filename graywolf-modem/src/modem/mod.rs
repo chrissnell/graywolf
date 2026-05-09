@@ -1289,7 +1289,20 @@ fn read_sysfs(path: &std::path::Path) -> String {
         .unwrap_or_default()
 }
 
-#[cfg(not(target_os = "linux"))]
+/// On Windows, cpal's deprecated `DeviceTrait::name()` returns the WASAPI
+/// friendly name (e.g. `"Speakers (Realtek(R) Audio)"`) which already
+/// disambiguates multiple devices of the same class. The newer
+/// `description().name()` returns only the device class label
+/// (`"Speakers"` / Hungarian `"Hangszórók"`), making two distinct cards
+/// look identical in the UI. Surfacing the WASAPI friendly name as the
+/// description lets the UI render a disambiguated label without changing
+/// the schema. Issue #100.
+#[cfg(target_os = "windows")]
+fn alsa_card_description(cpal_name: &str) -> String {
+    cpal_name.to_string()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 fn alsa_card_description(_cpal_name: &str) -> String {
     String::new()
 }
@@ -1378,6 +1391,15 @@ where
             continue;
         }
 
+        // Default-device match is keyed on the device class label
+        // (`description().name()`) on every platform except Windows. On
+        // Windows that label is the same shared string for every device
+        // of a class (e.g. `"Speakers"`) so the comparison would flag
+        // every output as default; pcm_id is the WASAPI friendly name
+        // and uniquely identifies the device. Issue #100.
+        #[cfg(target_os = "windows")]
+        let is_default = default_display_name == Some(pcm_id.as_str());
+        #[cfg(not(target_os = "windows"))]
         let is_default = default_display_name == Some(display_name.as_str());
         let description = alsa_card_description(&pcm_id);
         // Prefer plughw: devices that use a stable card name (CARD=Foo)
@@ -1407,8 +1429,19 @@ fn enumerate_audio_devices(include_output: bool) -> Vec<AudioDeviceInfo> {
     let host = cpal::default_host();
     let host_name = format!("{:?}", host.id());
 
+    // Source the default-device identifier the same way `collect_devices`
+    // keys its `is_default` comparison: pcm_id on Windows (uniquely
+    // identifies the device via the WASAPI friendly name), description
+    // name elsewhere. The function-level `#[allow(deprecated)]` covers
+    // the Windows `d.name()` calls below. Issue #100.
+    #[cfg(target_os = "windows")]
+    let default_input_name = host.default_input_device().and_then(|d| d.name().ok());
+    #[cfg(target_os = "windows")]
+    let default_output_name = host.default_output_device().and_then(|d| d.name().ok());
+    #[cfg(not(target_os = "windows"))]
     let default_input_name = host.default_input_device()
         .and_then(|d| d.description().ok().map(|desc| desc.name().to_string()));
+    #[cfg(not(target_os = "windows"))]
     let default_output_name = host.default_output_device()
         .and_then(|d| d.description().ok().map(|desc| desc.name().to_string()));
 
