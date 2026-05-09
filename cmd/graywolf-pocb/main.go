@@ -35,6 +35,12 @@ func main() {
 	listen := mustEnv("GRAYWOLF_LISTEN")
 	token := mustEnv("GRAYWOLF_LISTEN_TOKEN")
 
+	if sock := os.Getenv("GRAYWOLF_PLATFORM_SOCKET"); sock != "" {
+		if err := dialPlatformAndHello(sock); err != nil {
+			log.Printf("platformsvc handshake failed: %v", err)
+		}
+	}
+
 	ring := newFrameRing(50)
 	startedAt := time.Now()
 

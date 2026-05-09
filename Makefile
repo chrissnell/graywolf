@@ -102,14 +102,15 @@ distclean: clean
 	rm -f $(DOCS_HANDBOOK)/api.html $(DOCS_HANDBOOK)/openapi.json $(DOCS_HANDBOOK)/openapi.yaml
 	rm -rf $(WEB_DIR)/src/api/generated
 
-# Regenerate Go protobuf bindings from proto/graywolf.proto. Requires protoc
-# and protoc-gen-go on PATH. Install the latter with:
+# Regenerate Go protobuf bindings. Requires protoc and protoc-gen-go on PATH.
+# Install protoc-gen-go with:
 #   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 proto:
 	protoc \
 		--proto_path=proto \
 		--go_out=. --go_opt=module=github.com/chrissnell/graywolf \
-		proto/graywolf.proto
+		proto/graywolf.proto \
+		proto/platform.proto
 
 NODE_STAMP := $(WEB_DIR)/node_modules/.stamp-$(shell uname -s)-$(shell uname -m)
 
