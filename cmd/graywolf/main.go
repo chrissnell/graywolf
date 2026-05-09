@@ -1,3 +1,5 @@
+//go:build !android
+
 // graywolf entry point. All runtime wiring lives in pkg/app; this file
 // is a thin dispatch shim responsible for build-time version injection,
 // subcommand routing, and signal handling. The normal-path main() body

@@ -1,0 +1,9 @@
+--------- beginning of main
+05-09 11:23:41.181 18307 18307 I GraywolfService: modem cdylib version=v0.13.3-6b6cef7-dirty
+05-09 11:23:41.185 18307 18307 I PlatformServer: PlatformServer bound at /data/user/0/com.nw5w.graywolf/cache/platform.sock
+05-09 11:23:41.236 18307 18307 I GraywolfService: modemAwaitReady=true
+05-09 11:23:41.314 18307 18409 W graywolf-pocb-err: 2026/05/09 17:23:41 platformsvc: connected, server=0.0.1-pocb schema=1
+05-09 11:23:41.315 18307 18307 I GraywolfService: poc-b: go_child_up
+05-09 11:23:41.315 18307 18409 W graywolf-pocb-err: 2026/05/09 17:23:41 modem ready version=v0.13.3-6b6cef7-dirty pid=18307
+05-09 11:23:41.315 18307 18409 W graywolf-pocb-err: 2026/05/09 17:23:41 graywolf-pocb listening on 127.0.0.1:8080
+05-09 11:23:41.334 18307 18417 I GraywolfService: poc-b: gain_applied db=-6.0

@@ -1,0 +1,5 @@
+-rw-r--r--@ 1 cjs  staff    27M May  9 11:16 android/app/build/outputs/apk/debug/app-debug.apk
+ 13636925  01-01-1981 01:01   lib/arm64-v8a/libgraywolf.so
+  1184000  01-01-1981 01:01   lib/arm64-v8a/libgraywolfmodem.so
+ 13596744  01-01-1981 01:01   lib/x86_64/libgraywolf.so
+  1102424  01-01-1981 01:01   lib/x86_64/libgraywolfmodem.so

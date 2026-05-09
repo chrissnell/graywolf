@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package graywolf.platform;
+
+option go_package = "github.com/chrissnell/graywolf/pkg/platformproto;platformproto";
+option java_package = "com.nw5w.graywolf.platformproto";
+option java_multiple_files = true;
+
+// Top-level envelope. Every message on the wire is a PlatformMessage.
+// Wire framing (matches pkg/modembridge/framing.go):
+//   [4 BE bytes length][serialized PlatformMessage bytes]
+message PlatformMessage {
+  oneof body {
+    Hello hello = 1;
+    GpsFix gps_fix = 2;
+    BatteryState battery_state = 3;
+    UsbAttach usb_attach = 4;
+    UsbDetach usb_detach = 5;
+    UsbDeviceListRequest usb_list_req = 6;
+    UsbDeviceListResponse usb_list_resp = 7;
+    UsbSelectRequest usb_select_req = 8;
+    UsbSelectResponse usb_select_resp = 9;
+    PttKeyRequest ptt_key_req = 10;
+    PttUnkeyRequest ptt_unkey_req = 11;
+    PttAck ptt_ack = 12;
+    AudioDeviceListRequest audio_list_req = 13;
+    AudioDeviceListResponse audio_list_resp = 14;
+    AudioRouteChanged audio_route_changed = 15;
+    Error error = 16;
+  }
+}
+
+message Hello {
+  uint32 schema_version = 1;
+  string client_version = 2;
+  string server_version = 3;  // populated in the response only
+}
+
+enum GpsSource {
+  GPS_SOURCE_UNKNOWN = 0;
+  GPS_SOURCE_ANDROID_FUSED = 1;
+  GPS_SOURCE_ANDROID_GPS = 2;
+  GPS_SOURCE_ANDROID_NETWORK = 3;
+}
+
+message GpsFix {
+  double lat = 1;
+  double lon = 2;
+  double alt_m = 3;
+  double speed_mps = 4;
+  double course_deg = 5;
+  int64 time_unix_ms = 6;
+  double hdop = 7;
+  uint32 num_sats = 8;
+  GpsSource source = 9;
+}
+
+message BatteryState {
+  float percent = 1;
+  bool charging = 2;
+  int32 temp_decic = 3;  // tenths of a degree C
+}
+
+enum UsbClass {
+  USB_CLASS_UNKNOWN = 0;
+  USB_CLASS_AUDIO = 1;
+  USB_CLASS_HID = 2;
+  USB_CLASS_CDC_ACM = 3;
+  USB_CLASS_VENDOR = 4;
+}
+
+message UsbDevice {
+  uint32 vid = 1;
+  uint32 pid = 2;
+  string product = 3;
+  string manufacturer = 4;
+  string serial = 5;
+  repeated UsbClass classes = 6;
+  string device_path = 7;
+}
+
+message UsbAttach {
+  UsbDevice device = 1;
+}
+
+message UsbDetach {
+  uint32 vid = 1;
+  uint32 pid = 2;
+  string device_path = 3;
+}
+
+message UsbDeviceListRequest {
+  UsbClass class_filter = 1;  // UNKNOWN = no filter
+}
+
+message UsbDeviceListResponse {
+  repeated UsbDevice devices = 1;
+}
+
+message UsbSelectRequest {
+  uint32 vid = 1;
+  uint32 pid = 2;
+}
+
+message UsbSelectResponse {
+  bool granted = 1;
+  string handle_id = 2;  // opaque token used in subsequent PTT requests
+  string error_message = 3;
+}
+
+enum PttMethod {
+  PTT_METHOD_UNKNOWN = 0;
+  PTT_METHOD_CP2102N_RTS = 1;
+  PTT_METHOD_CM108_HID = 2;
+  PTT_METHOD_AIOC_CDC_DTR = 3;
+  PTT_METHOD_VOX = 4;
+}
+
+message PttKeyRequest {
+  PttMethod method = 1;
+  string handle_id = 2;
+}
+
+message PttUnkeyRequest {
+  PttMethod method = 1;
+  string handle_id = 2;
+}
+
+message PttAck {
+  bool ok = 1;
+  string error_message = 2;
+}
+
+message AudioDeviceListRequest {}
+
+message AudioDevice {
+  string name = 1;
+  string id = 2;
+  bool is_input = 3;
+  bool is_output = 4;
+}
+
+message AudioDeviceListResponse {
+  repeated AudioDevice devices = 1;
+}
+
+message AudioRouteChanged {
+  repeated AudioDevice current_inputs = 1;
+  repeated AudioDevice current_outputs = 2;
+}
+
+enum ErrorCode {
+  ERROR_UNKNOWN = 0;
+  ERROR_NOT_IMPLEMENTED = 1;
+  ERROR_SCHEMA_MISMATCH = 2;
+  ERROR_INVALID_ARGUMENT = 3;
+  ERROR_PERMISSION_DENIED = 4;
+  ERROR_NOT_FOUND = 5;
+  ERROR_INTERNAL = 6;
+}
+
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+}
