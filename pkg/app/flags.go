@@ -45,6 +45,8 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 	fs.StringVar(&cfg.TileCacheDir, "tile-cache-dir", cfg.TileCacheDir,
 		"directory for offline PMTiles cache (created on startup if missing)")
 	fs.StringVar(&cfg.HTTPAddr, "http", cfg.HTTPAddr, "HTTP listen address")
+	fs.StringVar(&cfg.PprofAddr, "pprof", "",
+		"optional pprof debug listen address (e.g. 127.0.0.1:6060); empty disables pprof")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", cfg.ShutdownTimeout,
 		"max time to wait for clean shutdown")
 	fs.StringVar(&cfg.FlacFile, "flac", "", "override audio device with a FLAC file for testing")

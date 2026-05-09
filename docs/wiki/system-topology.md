@@ -26,6 +26,8 @@ sibling of the graywolf binary, `./target/release/graywolf-modem`, `$PATH`
 | Public (no-auth) endpoints | `/api/version`, `/api/auth/setup` | [`../../pkg/webapi/server.go`](../../pkg/webapi/server.go) |
 | WebSocket endpoint | `GET /api/ax25/terminal` (auth required, same-origin only). One WS per active LAPB session; multi-tab via multiple WS. JSON envelopes (`pkg/ax25termws/envelope.go`) carry connect/data/disconnect/abort and state/data_rx/link_stats/error in both directions. | [`../../pkg/webapi/ax25_terminal.go`](../../pkg/webapi/ax25_terminal.go) |
 | OpenAPI reference | [`../handbook/api.html`](../handbook/api.html), [`../handbook/openapi.yaml`](../handbook/openapi.yaml) | (handbook copy of swag-generated spec) |
+| Prometheus metrics | `GET /metrics` on the main HTTP listener (no auth, same bind as UI) | [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) |
+| pprof debug listener (optional, off by default) | `-pprof <addr>` flag; e.g. `127.0.0.1:6060`. Dedicated listener + mux, **no auth**, exposes `/debug/pprof/{heap,goroutine,profile,trace,allocs,block,mutex,cmdline,symbol}`. Bind loopback only. Non-loopback bind logs a warning at startup. | [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`pprofComponent`) |
 
 ## Modem IPC boundary
 

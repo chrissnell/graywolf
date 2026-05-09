@@ -123,6 +123,10 @@ type App struct {
 	igateLineSender *liveIGateLineSender
 	apiSrv      *webapi.Server
 	httpSrv     *http.Server
+	// pprofSrv is the dedicated debug listener for /debug/pprof/*. nil
+	// when cfg.PprofAddr is empty (the default). Has no auth — operators
+	// are expected to bind loopback only.
+	pprofSrv *http.Server
 	// updatesChecker polls GitHub once a day for a newer release tag and
 	// caches the result. Owned here because the namedComponent start
 	// closure needs a handle to call Run on; also installed into apiSrv
@@ -221,6 +225,7 @@ type App struct {
 	beaconReloadWG      sync.WaitGroup
 	positionLogReloadWG sync.WaitGroup
 	httpWG              sync.WaitGroup
+	pprofWG             sync.WaitGroup
 	messagesReloadWG    sync.WaitGroup
 
 	// --- Lifecycle ------------------------------------------------------

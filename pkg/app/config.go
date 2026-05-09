@@ -29,6 +29,16 @@ type Config struct {
 	// HTTPAddr is the web server listen address (-http).
 	HTTPAddr string
 
+	// PprofAddr is the optional listen address for the Go pprof debug
+	// endpoints (-pprof). Empty (default) disables pprof entirely. When
+	// set, the runtime exposes /debug/pprof/{heap,goroutine,profile,
+	// trace,allocs,block,mutex,cmdline,symbol} on a dedicated mux and
+	// listener so the surface is never reachable from the main UI bind.
+	// Operators should bind loopback only (e.g. 127.0.0.1:6060); a
+	// non-loopback bind logs a warning at startup. There is no auth on
+	// this listener.
+	PprofAddr string
+
 	// ShutdownTimeout bounds how long Stop will wait for components to
 	// exit cleanly (-shutdown-timeout).
 	ShutdownTimeout time.Duration
