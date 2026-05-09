@@ -202,13 +202,18 @@ object UsbPttAdapter {
      * Attempt to open a device for which we already hold permission.
      * Branches on classified role; CP2102N opens via usb-serial-for-android,
      * CM108 claims its HID interface only.
+     *
+     * Dispatches the actual open to a background thread because the caller
+     * may be the BroadcastReceiver (USB permission grant) or MainActivity
+     * onResume — both run on the main thread, and synchronous USB control
+     * transfers can stall it long enough to trip Input-dispatch ANR.
      */
     internal fun tryOpen(dev: UsbDevice) {
         val role = classify(dev)
         Log.i(TAG, "tryOpen ${dev.deviceName} role=$role")
         when (role) {
-            DeviceRole.CP2102N -> openCp2102n(dev)
-            DeviceRole.CM108   -> openCm108(dev)
+            DeviceRole.CP2102N -> Thread({ openCp2102n(dev) }, "ptt-open-cp2102n").apply { isDaemon = true }.start()
+            DeviceRole.CM108   -> Thread({ openCm108(dev) }, "ptt-open-cm108").apply { isDaemon = true }.start()
             DeviceRole.UNKNOWN -> Log.w(TAG, "tryOpen on UNKNOWN device — skipping")
         }
     }
@@ -219,21 +224,27 @@ object UsbPttAdapter {
             return@synchronized
         }
         try {
+            Log.i(TAG, "openCp2102n: step=ctor")
             val driver: UsbSerialDriver = Cp21xxSerialDriver(dev)
+            Log.i(TAG, "openCp2102n: step=openDevice")
             val conn: UsbDeviceConnection = usbManager.openDevice(dev) ?: run {
                 Log.e(TAG, "openDevice returned null for CP2102N — permission revoked?")
                 return@synchronized
             }
+            Log.i(TAG, "openCp2102n: step=ports")
             val port = driver.ports.firstOrNull() ?: run {
                 Log.e(TAG, "CP2102N driver returned 0 ports")
                 conn.close()
                 return@synchronized
             }
+            Log.i(TAG, "openCp2102n: step=port.open")
             port.open(conn)
             // Spec §7 trap: some CP210x variants need setLineEncoding before
             // RTS toggles take effect. usb-serial-for-android handles this
             // via setParameters; call once at a benign default.
+            Log.i(TAG, "openCp2102n: step=setParameters")
             port.setParameters(9600, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+            Log.i(TAG, "openCp2102n: step=rts=false")
             port.rts = false
             cp2102n = Cp2102nHandle(dev, port)
             Log.i(TAG, "CP2102N opened ${dev.deviceName}")
