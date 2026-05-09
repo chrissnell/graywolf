@@ -2,6 +2,7 @@ package stationcache
 
 import (
 	"math"
+	"sort"
 	"sync"
 	"time"
 )
@@ -9,6 +10,15 @@ import (
 // posEpsilon is the threshold below which two positions are considered
 // identical (~1m at the equator). Used to deduplicate static re-beacons.
 const posEpsilon = 0.00001
+
+// MaxStations is the hard upper bound on resident MemCache entries.
+// The TTL-based prune (memMaxAge, default 24h) is the primary eviction
+// path for routine operation; this cap is a safety bound for the
+// pathological case of an IS feed with a broad filter heard over a
+// long window. When exceeded, prune evicts oldest-LastHeard first
+// until the cap is satisfied. Sized to bound resident memory at
+// roughly 25 MiB even with full 200-position trails on every station.
+const MaxStations = 50000
 
 // MemCache is an in-memory StationStore for RF-scale traffic.
 // Safe for concurrent use.
@@ -194,6 +204,28 @@ func (c *MemCache) prune() {
 	for key, s := range c.stations {
 		if s.LastHeard.Before(cutoff) {
 			delete(c.stations, key)
+		}
+	}
+	// Safety cap: even when every station is fresh enough to survive
+	// the TTL pass, bound the map at MaxStations to prevent unbounded
+	// growth on pathological IS filter scopes. Drop the
+	// oldest-LastHeard entries until the cap is satisfied. Sort cost
+	// is O(N log N) but only runs when the cap is breached, which
+	// should be rare; the routine TTL pass keeps N << MaxStations
+	// for typical operators.
+	if len(c.stations) > MaxStations {
+		type entry struct {
+			key  string
+			when time.Time
+		}
+		all := make([]entry, 0, len(c.stations))
+		for k, s := range c.stations {
+			all = append(all, entry{key: k, when: s.LastHeard})
+		}
+		sort.Slice(all, func(i, j int) bool { return all[i].when.Before(all[j].when) })
+		drop := len(c.stations) - MaxStations
+		for i := 0; i < drop; i++ {
+			delete(c.stations, all[i].key)
 		}
 	}
 }

@@ -246,6 +246,59 @@ func TestMemCache_Prune(t *testing.T) {
 	}
 }
 
+func TestMemCache_PruneHardCap(t *testing.T) {
+	c := NewMemCache(24 * time.Hour)
+	t.Cleanup(c.Close)
+
+	// Stuff in MaxStations + 100 entries with monotonically increasing
+	// LastHeard timestamps. The lower-indexed entries are older and
+	// should be evicted first when the cap kicks in.
+	now := time.Now()
+	c.mu.Lock()
+	for i := 0; i < MaxStations+100; i++ {
+		key := "stn:T" + intToBase36(i)
+		c.stations[key] = &Station{
+			Key:       key,
+			Callsign:  key,
+			LastHeard: now.Add(time.Duration(i) * time.Second),
+		}
+	}
+	c.mu.Unlock()
+
+	c.prune()
+
+	c.mu.RLock()
+	got := len(c.stations)
+	_, oldestStillThere := c.stations["stn:T"+intToBase36(0)]
+	_, newestStillThere := c.stations["stn:T"+intToBase36(MaxStations+99)]
+	c.mu.RUnlock()
+
+	if got != MaxStations {
+		t.Fatalf("after prune len(stations) = %d, want %d", got, MaxStations)
+	}
+	if oldestStillThere {
+		t.Fatal("oldest entry should have been evicted by hard cap")
+	}
+	if !newestStillThere {
+		t.Fatal("newest entry should remain after hard cap eviction")
+	}
+}
+
+func intToBase36(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	const digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+	var buf [16]byte
+	pos := len(buf)
+	for i > 0 {
+		pos--
+		buf[pos] = digits[i%36]
+		i /= 36
+	}
+	return string(buf[pos:])
+}
+
 func TestMemCache_MetadataUpdate(t *testing.T) {
 	c := newTestCache(t)
 
