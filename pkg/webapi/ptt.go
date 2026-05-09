@@ -3,6 +3,7 @@ package webapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -96,6 +97,9 @@ func (s *Server) upsertPttConfig(w http.ResponseWriter, r *http.Request) {
 	handleCreate[dto.PttRequest](s, w, r, "upsert ptt config",
 		func(ctx context.Context, req dto.PttRequest) (configstore.PttConfig, error) {
 			m := req.ToModel()
+			if err := s.validatePttChannelBacking(ctx, m.ChannelID); err != nil {
+				return configstore.PttConfig{}, err
+			}
 			if err := s.store.UpsertPttConfig(ctx, &m); err != nil {
 				return configstore.PttConfig{}, err
 			}
@@ -103,6 +107,37 @@ func (s *Server) upsertPttConfig(w http.ResponseWriter, r *http.Request) {
 			return m, nil
 		},
 		dto.PttFromModel)
+}
+
+// validatePttChannelBacking rejects PTT writes whose target channel is
+// KISS-TNC-only (Channel.InputDeviceID == nil). PTT for those channels
+// is owned by the TNC hardware itself; an extra graywolf-driven PTT
+// config is at best redundant and at worst points the operator at the
+// wrong radio after they've reassigned channels (issue #110).
+//
+// targetChannelID is the channel the PTT row will end up bound to —
+// for POST and same-channel PUT that's the URL/body channel id; for the
+// PUT rekey branch it's req.ChannelID (the move target), not the URL
+// id, so an operator cannot bypass the rule by editing an existing row
+// onto a KISS channel.
+//
+// A KISS-only channel returns a validationError so the generic handler
+// wiring maps it to HTTP 400 with the explanation in the body. Other
+// store failures (including record-not-found) propagate untouched —
+// missing-channel writes already fail at the FK layer with the standard
+// 500/400 mapping, and overriding that to a typed 400 here would
+// conflate "invalid channel for PTT" with "channel does not exist".
+func (s *Server) validatePttChannelBacking(ctx context.Context, targetChannelID uint32) error {
+	ch, err := s.store.GetChannel(ctx, targetChannelID)
+	if err != nil {
+		return err
+	}
+	if ch.InputDeviceID == nil {
+		return validationError(fmt.Errorf(
+			"channel %d (%q) is backed by a KISS TNC; PTT is controlled by the TNC, not graywolf",
+			targetChannelID, ch.Name))
+	}
+	return nil
 }
 
 // listPttDevices enumerates PTT-capable devices detected on the host —
@@ -300,6 +335,12 @@ func (s *Server) updatePttConfig(w http.ResponseWriter, r *http.Request) {
 		func(ctx context.Context, channelID uint32, req dto.PttRequest) (configstore.PttConfig, error) {
 			if req.ChannelID != channelID {
 				m := req.ToModel()
+				// Validate the move target, not the URL id — issue #110.
+				// Rekeying onto a KISS-TNC channel must fail just like a
+				// fresh POST against one would.
+				if err := s.validatePttChannelBacking(ctx, m.ChannelID); err != nil {
+					return configstore.PttConfig{}, err
+				}
 				if err := s.store.RekeyPttConfig(ctx, channelID, &m); err != nil {
 					if errors.Is(err, configstore.ErrPttChannelTaken) {
 						return configstore.PttConfig{}, validationError(err)
@@ -313,6 +354,9 @@ func (s *Server) updatePttConfig(w http.ResponseWriter, r *http.Request) {
 				return m, nil
 			}
 			m := req.ToUpdate(channelID)
+			if err := s.validatePttChannelBacking(ctx, channelID); err != nil {
+				return configstore.PttConfig{}, err
+			}
 			if err := s.store.UpsertPttConfig(ctx, &m); err != nil {
 				return configstore.PttConfig{}, err
 			}
