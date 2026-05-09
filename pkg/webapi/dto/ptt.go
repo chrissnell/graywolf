@@ -29,6 +29,13 @@ func (r PttRequest) Validate() error {
 	if r.Method == "" {
 		return fmt.Errorf("method is required")
 	}
+	// channel_id is the upsert key; 0 has no corresponding Channel row
+	// (FK would fail anyway). Reject up front so the rekey branch can't
+	// be tricked into a same-channel coalesce by a missing/zero body
+	// field.
+	if r.ChannelID == 0 {
+		return fmt.Errorf("channel_id is required")
+	}
 	return nil
 }
 

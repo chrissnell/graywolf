@@ -331,7 +331,7 @@
     if (editing && String(form.channel_id) !== String(editing.channel_id)) {
       const target = parseInt(form.channel_id, 10);
       if (items.some(p => p.channel_id === target)) {
-        e.channel_id = `${channelName(target) || 'That channel'} already has a PTT configuration. Delete it first.`;
+        e.channel_id = `${channelName(target) || 'That channel'} already has a PTT configuration. Edit that one instead, or delete it first.`;
       }
     }
     if (form.method === 'rigctld') {

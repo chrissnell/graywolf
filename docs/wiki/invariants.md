@@ -75,6 +75,13 @@ Source: [`../../pkg/pttdevice/`](../../pkg/pttdevice/);
 [`../../proto/graywolf.proto`](../../proto/graywolf.proto)
 (`ConfigurePtt`).
 
+### 9a. PTT is one-row-per-channel; PUT supports atomic rekey
+
+*Why:* `PttConfig.ChannelID` carries a uniqueIndex, so an operator changing the channel field on an existing PTT means *move*, not copy. `PUT /api/ptt/{channel}` matches the body's `channel_id` against the URL's: same → in-place upsert; different → atomic rekey in a single GORM transaction (`Store.RekeyPttConfig`), with `ErrPttChannelTaken` mapped to HTTP 400 on collision. The bridge reload (`notifyBridgeForChannel` → `ReconfigureAudioDevice`) is global, so a single notify covers both vacated and newly-targeted channels.
+
+Source: [`../../pkg/configstore/store.go`](../../pkg/configstore/store.go) (`RekeyPttConfig`, `ErrPttChannelTaken`);
+[`../../pkg/webapi/ptt.go`](../../pkg/webapi/ptt.go) (`updatePttConfig`).
+
 ### 10. Gitignored output dirs are not canonical
 
 *Why:* `target/`, `bin/`, `dist/`, `rust-bin/`, `rust-artifacts/`, `web/dist/`, `.worktrees/`, `.context/`, `*.db*` regenerate from sources and are gitignored, so never reference them as authoritative.

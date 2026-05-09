@@ -146,9 +146,10 @@ func TestRekeyPttConfig(t *testing.T) {
 		}
 		return c
 	}
-	chA := mkChan("rxA")
-	chB := mkChan("rxB")
-	chC := mkChan("rxC")
+	// Channel name is irrelevant to rekey (which keys by ChannelID).
+	chA := mkChan("chA")
+	chB := mkChan("chB")
+	chC := mkChan("chC")
 
 	pttA := &PttConfig{ChannelID: chA.ID, Method: "gpio", Device: "/dev/gpiochip0", GpioPin: 17}
 	if err := s.UpsertPttConfig(ctx, pttA); err != nil {
@@ -212,7 +213,7 @@ func TestRekeyPttConfig(t *testing.T) {
 	}
 
 	// Missing source row → ErrRecordNotFound.
-	chD := mkChan("rxD")
+	chD := mkChan("chD")
 	miss := &PttConfig{ChannelID: chD.ID, Method: "none"}
 	if err := s.RekeyPttConfig(ctx, chD.ID, miss); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("expected ErrRecordNotFound for missing source, got %v", err)

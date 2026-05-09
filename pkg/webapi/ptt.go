@@ -298,7 +298,7 @@ func (s *Server) updatePttConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	handleUpdate[dto.PttRequest](s, w, r, "upsert ptt config", id,
 		func(ctx context.Context, channelID uint32, req dto.PttRequest) (configstore.PttConfig, error) {
-			if req.ChannelID != 0 && req.ChannelID != channelID {
+			if req.ChannelID != channelID {
 				m := req.ToModel()
 				if err := s.store.RekeyPttConfig(ctx, channelID, &m); err != nil {
 					if errors.Is(err, configstore.ErrPttChannelTaken) {
