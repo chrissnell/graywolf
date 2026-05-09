@@ -1,0 +1,45 @@
+# Android cross-compile probe -- Phase 2 Task 8
+#
+# Command:
+#   GOOS=android GOARCH=arm64 CGO_ENABLED=0 GOWORK=off go build ./...
+#
+# Result on feature/android-phase-2 prior to the cmd/graywolf stub commit:
+#   exit 0 -- entire module already cross-compiles cleanly.
+#
+# Why it was already clean:
+#   - pkg/pttdevice already ships paired build tags
+#     (cm108_linux.go / cm108_modem.go via !linux, sysfs_other.go,
+#     gpio_lines_linux.go / gpio_lines_other.go, enumerate_nonwindows.go).
+#   - pkg/gps and the rest of pkg/* are pure Go with no host syscalls
+#     that GOOS=android rejects.
+#   - pkg/platformsvc is intentionally //go:build android only
+#     (per spec section 4.3 and the "Build-tagged stubs" gotcha at
+#     line 477 of .context/2026-05-09-android-phase-2-spec.md), so it
+#     ONLY compiles on android -- exactly the inverse of the
+#     cmd/graywolf desktop entry.
+#   - cmd/graywolf, cmd/graywolf-pocb, cmd/flareschema-gen,
+#     cmd/smoke-kiss-tcp-client all happen to use only cross-portable
+#     stdlib + project deps.
+#
+# `go list ./...` under GOOS=android returns 59 packages cleanly.
+#
+# What Task 8 still adds (so phase 3 has a clean swap-in point):
+#   - cmd/graywolf/main.go gets //go:build !android so the desktop
+#     entry stays explicitly non-android-targeted.
+#   - cmd/graywolf/main_android.go is a one-line `func main() {}`
+#     stub gated //go:build android; phase 3 replaces it with the
+#     real Android entry that wires pkg/platformsvc + pkg/gps/android
+#     + pkg/pttdevice/android into the app graph.
+#
+# Post-stub probe (final):
+#   GOOS=android GOARCH=arm64 CGO_ENABLED=0 GOWORK=off go build ./...
+#   exit 0 -- BUILD CLEAN.
+#
+# Desktop verification:
+#   GOWORK=off go build ./...    -> exit 0
+#   GOWORK=off go test ./...     -> all packages PASS
+#                                   (pkg/platformsvc has no desktop
+#                                    files, so it's silently skipped
+#                                    on desktop; cross-compile of its
+#                                    test binary verified separately
+#                                    with `go test -c` for android.)
