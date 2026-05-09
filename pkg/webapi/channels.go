@@ -52,6 +52,18 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "list channels", err)
 		return
 	}
+	// PTT rows are looked up once and indexed by channel id so the
+	// per-card render stays O(1). A missing row maps to nil Ptt — the
+	// UI treats that as "never configured" (distinct from method=none).
+	ptts, err := s.store.ListPttConfigs(ctx)
+	if err != nil {
+		s.internalError(w, r, "list channels", err)
+		return
+	}
+	pttByChannel := make(map[uint32]configstore.PttConfig, len(ptts))
+	for _, p := range ptts {
+		pttByChannel[p.ChannelID] = p
+	}
 	statuses := s.kissStatus()
 	modemLive := s.modemRunning()
 	resp := make([]dto.ChannelResponse, len(chs))
@@ -59,6 +71,10 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 		resp[i] = dto.ChannelFromModel(c)
 		b := computeChannelBacking(c, ifaces, statuses, modemLive)
 		resp[i].Backing = &b
+		if p, ok := pttByChannel[c.ID]; ok {
+			ptt := dto.ChannelPttFromModel(p)
+			resp[i].Ptt = &ptt
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -116,6 +132,23 @@ func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
 			}
 			b := computeChannelBacking(*c, ifaces, s.kissStatus(), s.modemRunning())
 			resp.Backing = &b
+			// Best-effort PTT lookup: ErrRecordNotFound is the common
+			// case (no PttConfig row), and we map it to nil Ptt so the
+			// UI can show "PTT not configured" rather than treating it
+			// as a server error. Any OTHER store error gets logged —
+			// without that signal, "my PTT-configured channel says
+			// 'Not configured'" troubleshooting (the very flow this
+			// indicator exists to support) goes silent.
+			p, perr := s.store.GetPttConfigForChannel(r.Context(), c.ID)
+			switch {
+			case perr == nil:
+				ptt := dto.ChannelPttFromModel(*p)
+				resp.Ptt = &ptt
+			case errors.Is(perr, gorm.ErrRecordNotFound):
+				// Expected: no PTT row for this channel.
+			default:
+				s.logger.Warn("get channel: load ptt config", "channel", c.ID, "err", perr)
+			}
 			return resp
 		})
 }

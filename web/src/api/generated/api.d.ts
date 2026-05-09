@@ -2250,6 +2250,11 @@ export interface components {
             active?: boolean;
             reason?: string;
         };
+        "dto.ChannelPtt": {
+            configured?: boolean;
+            detail?: string;
+            method?: string;
+        };
         "dto.ChannelRequest": {
             bit_rate?: number;
             decoder_offset?: number;
@@ -2288,6 +2293,7 @@ export interface components {
             output_channel?: number;
             output_device_id?: number;
             profile?: string;
+            ptt?: components["schemas"]["dto.ChannelPtt"];
             space_freq?: number;
         };
         "dto.ConversationSummary": {

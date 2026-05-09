@@ -102,6 +102,15 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 PTT *driving* is on the Rust side; see the `tx/ptt_*.rs` files above.
 The split is enforced by [invariant 9](invariants.md).
 
+### Channel-card PTT indicator (issue #112)
+
+| Surface | Where |
+|---|---|
+| Computed read-only summary on `ChannelResponse` | `pkg/webapi/dto/channel.go` — `ChannelPtt{Method,Configured,Detail}`; `ChannelPttFromModel` derives the operator-facing detail string (CM108 pin, GPIO line, serial path, rigctld endpoint). |
+| Wiring | `pkg/webapi/channels.go` — `listChannels` looks up `ListPttConfigs` once and indexes by channel id; `getChannel` does a single `GetPttConfigForChannel` lookup. Missing row → nil `Ptt` (omitempty) so the UI distinguishes "never configured" from `method=none`. |
+| UI helpers | `web/src/lib/channelPtt.js` — `summaryLine`, `pttState`, `methodLabel`, `ariaLabel`. Mirrors `channelBacking.js`. |
+| Card row | `web/src/routes/Channels.svelte` — second `backing-row`-styled block under the BACKING row, only shown for modem-backed TX channels (KISS-only and RX-only channels don't drive PTT). |
+
 ## Channel TX gating
 
 | Surface | Where |

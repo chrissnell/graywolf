@@ -110,6 +110,20 @@
       when frames are coming and going through a KISS interface.
     </p>
 
+    <p>
+      For channels that transmit through the modem, a <strong>PTT</strong>
+      block also appears on the card showing how graywolf is keying the
+      radio &mdash; <em>CM108</em>, <em>GPIO</em>, <em>Serial RTS</em>,
+      <em>Serial DTR</em>, or <em>rigctld</em> &mdash; with a short detail
+      such as the GPIO pin number, gpiochip line, or serial device path.
+      <em>Not configured</em> means the channel can transmit electrically
+      but has no PTT method assigned yet on the
+      <a href="ptt.html">PTT</a> page; outgoing frames will be dropped
+      until you set one. Receive-only channels and KISS-TNC channels
+      don&rsquo;t show this block: KISS interfaces handle their own keying,
+      and an RX-only channel never transmits.
+    </p>
+
     <div class="screenshot">
       <img src="img/channels.png" alt="Channels page showing a VHF APRS channel with AFSK modem at 1200 bps" />
       <div class="caption">Each channel card shows the modem type, audio devices, bit rate, and CSMA settings</div>

@@ -113,7 +113,29 @@ func (r ChannelRequest) ToUpdate(id uint32) configstore.Channel {
 type ChannelResponse struct {
 	ID      uint32          `json:"id"`
 	Backing *ChannelBacking `json:"backing,omitempty"`
+	Ptt     *ChannelPtt     `json:"ptt,omitempty"`
 	ChannelRequest
+}
+
+// ChannelPtt is the read-only, UI-facing summary of the per-channel
+// PttConfig row. The full configuration is still available via
+// /api/ptt/{channel}; this struct exists so the Channels page can
+// render a "PTT" indicator block (parallel to the backing row) without
+// fanning out to the PTT endpoint per card.
+//
+// Method is the PttConfig.Method enum (none|serial_rts|serial_dtr|gpio|
+// cm108|rigctld). Configured is true iff Method is non-empty and not
+// "none" — the convenience flag the UI uses to colour the badge and
+// drive the "PTT not configured" hint.
+//
+// Detail is a short, operator-facing summary of the device the method
+// keys (CM108 pin, GPIO line, serial path, rigctld endpoint). Empty
+// when the chosen method has no parameters worth surfacing in a single
+// line.
+type ChannelPtt struct {
+	Method     string `json:"method"`
+	Configured bool   `json:"configured"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // ChannelBacking describes the runtime backing — modem and/or KISS-TNC
@@ -213,6 +235,66 @@ const (
 	ChannelBackingHealthDown    = "down"
 	ChannelBackingHealthUnbound = "unbound"
 )
+
+// PttMethodNone is the canonical "no keying" value for PttConfig.Method.
+// Stored explicitly rather than as an empty string so the UI can
+// distinguish "operator opened the PTT page and chose None" from "row
+// has never been written" (the latter shows up as a missing PttConfig
+// row, surfaced to the UI as ChannelResponse.Ptt == nil).
+const PttMethodNone = "none"
+
+// ChannelPttFromModel maps a PttConfig row into the response summary.
+// Detail is a short human-readable description; the full config is
+// still served by /api/ptt/{channel}. Keep this in lockstep with the
+// PTT method enum so a new method type doesn't render as a blank row.
+func ChannelPttFromModel(p configstore.PttConfig) ChannelPtt {
+	method := p.Method
+	if method == "" {
+		method = PttMethodNone
+	}
+	return ChannelPtt{
+		Method:     method,
+		Configured: method != PttMethodNone,
+		Detail:     pttDetail(p, method),
+	}
+}
+
+func pttDetail(p configstore.PttConfig, method string) string {
+	switch method {
+	case "cm108":
+		// CM108 keys via HID GPIO output (1-indexed, 1-8; default 3).
+		// Operators see two different surfaces for this same field:
+		// the PTT settings page renders it as `GPIO N (pin N+10)`,
+		// where the parenthetical is the physical CM108 chip pin.
+		// The Channels card is one-line-only so we drop the
+		// parenthetical, but keep the `GPIO` label so the word "pin"
+		// doesn't end up meaning two different things across pages.
+		// `pin == 0` is API-only (the PTT page clamps to 3); coerce
+		// rather than render `GPIO 0`, which is invalid.
+		pin := p.GpioPin
+		if pin == 0 {
+			pin = 3
+		}
+		if p.Device != "" {
+			return fmt.Sprintf("GPIO %d · %s", pin, p.Device)
+		}
+		return fmt.Sprintf("GPIO %d", pin)
+	case "gpio":
+		if p.Device != "" {
+			return fmt.Sprintf("line %d · %s", p.GpioLine, p.Device)
+		}
+		return fmt.Sprintf("line %d", p.GpioLine)
+	case "serial_rts", "serial_dtr":
+		if p.Device != "" {
+			return p.Device
+		}
+		return ""
+	case "rigctld":
+		// Device for rigctld is "host:port"; surface as-is.
+		return p.Device
+	}
+	return ""
+}
 
 // ChannelFromModel converts a storage model into a response DTO. The
 // Backing field is left nil — list/get handlers populate it after the

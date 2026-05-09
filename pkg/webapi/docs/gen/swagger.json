@@ -8338,6 +8338,20 @@
                 }
             }
         },
+        "dto.ChannelPtt": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ChannelRequest": {
             "type": "object",
             "properties": {
@@ -8450,6 +8464,9 @@
                 },
                 "profile": {
                     "type": "string"
+                },
+                "ptt": {
+                    "$ref": "#/definitions/dto.ChannelPtt"
                 },
                 "space_freq": {
                     "type": "integer"

@@ -146,6 +146,94 @@ func TestChannelsList_BackingModem(t *testing.T) {
 	}
 }
 
+// TestChannelsList_PttSurfacesConfiguredRow asserts that a configured
+// PttConfig row is reflected in the Ptt summary on the channel
+// response, while channels with no PttConfig row leave Ptt nil. The
+// Channels page renders a PTT indicator block for issue #112 against
+// this exact field.
+func TestChannelsList_PttSurfacesConfiguredRow(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// Seed a PTT row against the seeded channel from newTestServer.
+	chs, err := srv.store.ListChannels(context.Background())
+	if err != nil || len(chs) == 0 {
+		t.Fatalf("seeded channel missing: %v", err)
+	}
+	chID := chs[0].ID
+	if err := srv.store.UpsertPttConfig(context.Background(), &configstore.PttConfig{
+		ChannelID: chID,
+		Method:    "cm108",
+		GpioPin:   3,
+		Device:    "/dev/hidraw0",
+	}); err != nil {
+		t.Fatalf("UpsertPttConfig: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []dto.ChannelResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	var got *dto.ChannelPtt
+	for i := range resp {
+		if resp[i].ID == chID {
+			got = resp[i].Ptt
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("expected non-nil Ptt for channel %d, response: %+v", chID, resp)
+	}
+	if got.Method != "cm108" {
+		t.Errorf("Method = %q, want cm108", got.Method)
+	}
+	if !got.Configured {
+		t.Errorf("Configured = false, want true")
+	}
+	if got.Detail != "GPIO 3 · /dev/hidraw0" {
+		t.Errorf("Detail = %q", got.Detail)
+	}
+}
+
+// TestChannelsList_PttOmittedWhenAbsent asserts that a channel with no
+// PttConfig row serializes with Ptt omitted (nil + omitempty), so the
+// UI can distinguish "never configured" from method=none.
+func TestChannelsList_PttOmittedWhenAbsent(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	// Decode into a key-preserving structure so the assertion targets
+	// the absence of the literal "ptt" key rather than the substring
+	// (which would false-positive on any future field name containing
+	// "ptt").
+	var raw []map[string]json.RawMessage
+	if err := json.NewDecoder(rec.Body).Decode(&raw); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(raw) == 0 {
+		t.Fatalf("expected at least one channel")
+	}
+	for i, ch := range raw {
+		if _, ok := ch["ptt"]; ok {
+			t.Errorf("channel %d: expected ptt field omitted, got %s", i, string(ch["ptt"]))
+		}
+	}
+}
+
 // TestComputeChannelBacking_Unbound covers the fall-through branch:
 // a channel with no input device + no TNC interface reports
 // summary=unbound and health=unbound. Phase 2 flipped

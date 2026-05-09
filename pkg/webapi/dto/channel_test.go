@@ -132,3 +132,88 @@ func TestChannelRequestToModel_NilInput(t *testing.T) {
 		t.Fatalf("expected nil, got %v", m.InputDeviceID)
 	}
 }
+
+// TestChannelPttFromModel covers the four detail-rendering branches of
+// the PTT summary used by the Channels page (issue #112). The Detail
+// strings are wire format consumed by web/src/lib/channelPtt.js — keep
+// them in lockstep with that file.
+func TestChannelPttFromModel(t *testing.T) {
+	tests := []struct {
+		name       string
+		in         configstore.PttConfig
+		method     string
+		configured bool
+		detail     string
+	}{
+		{
+			name:       "none method maps to !configured",
+			in:         configstore.PttConfig{Method: "none"},
+			method:     "none",
+			configured: false,
+			detail:     "",
+		},
+		{
+			name:       "empty method coerces to none",
+			in:         configstore.PttConfig{},
+			method:     "none",
+			configured: false,
+			detail:     "",
+		},
+		{
+			name:       "cm108 surfaces gpio pin",
+			in:         configstore.PttConfig{Method: "cm108", GpioPin: 3, Device: "/dev/hidraw0"},
+			method:     "cm108",
+			configured: true,
+			detail:     "GPIO 3 · /dev/hidraw0",
+		},
+		{
+			name:       "cm108 zero pin defaults to 3",
+			in:         configstore.PttConfig{Method: "cm108"},
+			method:     "cm108",
+			configured: true,
+			detail:     "GPIO 3",
+		},
+		{
+			name:       "unknown method renders without trailing separator",
+			in:         configstore.PttConfig{Method: "futureproof"},
+			method:     "futureproof",
+			configured: true,
+			detail:     "",
+		},
+		{
+			name:       "gpio surfaces line offset",
+			in:         configstore.PttConfig{Method: "gpio", GpioLine: 17, Device: "/dev/gpiochip0"},
+			method:     "gpio",
+			configured: true,
+			detail:     "line 17 · /dev/gpiochip0",
+		},
+		{
+			name:       "serial_rts surfaces device path",
+			in:         configstore.PttConfig{Method: "serial_rts", Device: "/dev/ttyUSB0"},
+			method:     "serial_rts",
+			configured: true,
+			detail:     "/dev/ttyUSB0",
+		},
+		{
+			name:       "rigctld surfaces host:port",
+			in:         configstore.PttConfig{Method: "rigctld", Device: "127.0.0.1:4532"},
+			method:     "rigctld",
+			configured: true,
+			detail:     "127.0.0.1:4532",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ChannelPttFromModel(tc.in)
+			if got.Method != tc.method {
+				t.Errorf("Method = %q, want %q", got.Method, tc.method)
+			}
+			if got.Configured != tc.configured {
+				t.Errorf("Configured = %v, want %v", got.Configured, tc.configured)
+			}
+			if got.Detail != tc.detail {
+				t.Errorf("Detail = %q, want %q", got.Detail, tc.detail)
+			}
+		})
+	}
+}

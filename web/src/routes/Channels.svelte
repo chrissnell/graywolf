@@ -16,6 +16,11 @@
     HEALTH_LIVE,
     HEALTH_DOWN,
   } from '../lib/channelBacking.js';
+  import {
+    summaryLine as pttSummaryLine,
+    pttState,
+    ariaLabel as pttAriaLabel,
+  } from '../lib/channelPtt.js';
   import { groupReferrers, totalReferrers } from '../lib/channelReferrers.js';
 
   // The Channels page itself hydrates the shared store: this page is
@@ -492,6 +497,24 @@
             <span class="backing-summary">
               <span class="glyph {glyphClass}" aria-hidden="true">{healthGlyph(h)}</span>
               <span class="backing-text">{summaryLabel(ch.backing)} · {healthText(h)}</span>
+            </span>
+          </div>
+        {/if}
+
+        <!-- PTT indicator (issue #112). Only shown for modem-backed TX
+             channels: KISS-TNC channels handle keying inside the TNC
+             firmware, and an RX-only modem channel can't transmit so
+             PTT has no role to play either. -->
+        {#if !isKissOnly && ch.output_device_id && ch.output_device_id !== 0}
+          {@const pttGlyphClass = pttState(ch.ptt)}
+          <div class="backing-row"
+               aria-label={pttAriaLabel(ch.ptt)}>
+            <span class="backing-label">PTT</span>
+            <span class="backing-summary">
+              <span class="glyph {pttGlyphClass}" aria-hidden="true">
+                {pttGlyphClass === 'live' ? '●' : '○'}
+              </span>
+              <span class="backing-text">{pttSummaryLine(ch.ptt)}</span>
             </span>
           </div>
         {/if}
