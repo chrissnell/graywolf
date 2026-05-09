@@ -64,8 +64,16 @@
   let recommendedDevices = $derived(available.filter(d => d.recommended));
   let otherDevices = $derived(available.filter(d => !d.recommended));
 
+  // PTT only applies to modem-backed channels. KISS-TNC-backed channels
+  // (input_device_id == null) have their PTT controlled by the TNC itself,
+  // so adding a graywolf-driven PTT row would either be redundant or, worse,
+  // key the wrong radio after the operator reassigns channels (issue #110).
+  // The backend rejects upserts targeting these channels with HTTP 400; the
+  // filter here keeps them out of the dropdown so the rejection is never
+  // reached in normal use.
+  let modemChannels = $derived(channels.filter(c => c.input_device_id != null));
   let channelOptions = $derived(
-    channels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
+    modemChannels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
   );
 
   function channelName(id) {
@@ -248,9 +256,13 @@
       toasts.error('Create a channel first on the Channels page');
       return;
     }
+    if (modemChannels.length === 0) {
+      toasts.error('PTT only applies to modem-backed channels. KISS-TNC channels manage PTT in the TNC itself.');
+      return;
+    }
     editing = null;
     form = emptyForm();
-    form.channel_id = String(channels[0].id);
+    form.channel_id = String(modemChannels[0].id);
     lastMethod = form.method;
     errors = {};
     modalOpen = true;
@@ -294,12 +306,16 @@
       toasts.error('Create a channel first on the Channels page');
       return;
     }
+    if (modemChannels.length === 0) {
+      toasts.error('PTT only applies to modem-backed channels. KISS-TNC channels manage PTT in the TNC itself.');
+      return;
+    }
     editing = null;
     const method = dev.type === 'gpio' ? 'gpio'
       : dev.type === 'cm108' ? 'cm108'
       : 'serial_rts';
     form = {
-      channel_id: String(channels[0].id),
+      channel_id: String(modemChannels[0].id),
       method,
       device_path: dev.path,
       gpio_pin: method === 'cm108' ? '3' : '0',
@@ -657,7 +673,7 @@
 <Modal bind:open={modalOpen} title={editing ? 'Edit PTT Config' : 'New PTT Config'} onClose={handleModalClose}>
     <FormField label="Channel" id="ptt-ch"
       error={errors.channel_id}
-      hint="Radio channel this PTT controls. Defined on the Channels page.">
+      hint="Modem-backed channels only — KISS-TNC channels manage PTT in the TNC itself.">
       <Select id="ptt-ch" bind:value={form.channel_id} options={channelOptions} />
     </FormField>
     <FormField label="Method" id="ptt-method">
