@@ -42,5 +42,14 @@ class WebAppInterface(
     @JavascriptInterface
     fun unkeyCp2102nRts(): Boolean = UsbPttAdapter.unkeyCp2102nRts()
 
+    @JavascriptInterface
+    fun keyCm108Hid(): Boolean = UsbPttAdapter.keyCm108Hid()
+
+    @JavascriptInterface
+    fun unkeyCm108Hid(): Boolean = UsbPttAdapter.unkeyCm108Hid()
+
+    @JavascriptInterface
+    fun setCm108Bit(bit: Int): Boolean = UsbPttAdapter.setCm108Bit(bit)
+
     companion object { private const val TAG = "WebAppInterface" }
 }

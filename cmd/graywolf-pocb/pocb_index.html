@@ -56,6 +56,27 @@
     <button id="unkey-digirig" type="button" aria-describedby="digirig-keyed digirig-last" disabled>Unkey</button>
     <span id="digirig-last" class="stamp" data-state="idle">— no action yet —</span>
   </div>
+  <div class="ptt-row" data-transport="aioc">
+    <strong>AIOC</strong>
+    <span class="keyed-indicator" id="aioc-keyed" data-keyed="false" aria-live="assertive">UNKEYED</span>
+    <button id="key-aioc" type="button" aria-describedby="aioc-keyed aioc-last" disabled>Key (CM108 HID)</button>
+    <button id="unkey-aioc" type="button" aria-describedby="aioc-keyed aioc-last" disabled>Unkey</button>
+    <span id="aioc-last" class="stamp" data-state="idle">— no action yet —</span>
+  </div>
+  <div class="ptt-row">
+    <label for="cm108-bit">CM108 GPIO bit</label>
+    <select id="cm108-bit" aria-describedby="cm108-bit-last">
+      <option value="0">0</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3" selected>3 (datasheet PTT)</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+    </select>
+    <span id="cm108-bit-last" class="stamp" data-state="idle">— bit=3 (default) —</span>
+  </div>
 </section>
 <div class="row">
   <label>gain</label>
@@ -210,6 +231,25 @@
   }
   bindPtt({ btnId: "key-digirig",   fnName: "keyCp2102nRts",   transport: "digirig", action: "key",   keyedId: "digirig-keyed", stampId: "digirig-last" });
   bindPtt({ btnId: "unkey-digirig", fnName: "unkeyCp2102nRts", transport: "digirig", action: "unkey", keyedId: "digirig-keyed", stampId: "digirig-last" });
+  bindPtt({ btnId: "key-aioc",   fnName: "keyCm108Hid",   transport: "aioc", action: "key",   keyedId: "aioc-keyed", stampId: "aioc-last" });
+  bindPtt({ btnId: "unkey-aioc", fnName: "unkeyCm108Hid", transport: "aioc", action: "unkey", keyedId: "aioc-keyed", stampId: "aioc-last" });
+  const bitSel = document.getElementById("cm108-bit");
+  const bitStamp = document.getElementById("cm108-bit-last");
+  bitSel.addEventListener("change", () => {
+    const bit = parseInt(bitSel.value, 10);
+    const w = window.GraywolfWebInterface;
+    if (!w || !w.setCm108Bit) {
+      bitStamp.dataset.state = "fail";
+      bitStamp.textContent = "✗ bridge missing";
+      return;
+    }
+    bitStamp.dataset.state = "pending";
+    bitStamp.textContent = "… bit=" + bit;
+    const ok = w.setCm108Bit(bit);
+    bitStamp.dataset.state = ok ? "ok" : "fail";
+    bitStamp.textContent = (ok ? "✓ " : "✗ ") + "bit=" + bit +
+      (ok ? "  (next Key AIOC uses this bit)" : " FAIL");
+  });
   setInterval(pollPtt, 1000);
   pollPtt();
 </script>

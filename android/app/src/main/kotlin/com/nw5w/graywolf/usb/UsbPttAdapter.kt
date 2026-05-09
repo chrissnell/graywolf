@@ -242,9 +242,37 @@ object UsbPttAdapter {
         }
     }
 
-    private fun openCm108(dev: UsbDevice) {
-        // Filled in by Task 4. Logged here to make Task 3 runs explicit.
-        Log.i(TAG, "openCm108 stub (Task 4 fills this in)")
+    private fun openCm108(dev: UsbDevice) = synchronized(cm108Lock) {
+        if (cm108 != null) {
+            Log.i(TAG, "openCm108: already open, skipping")
+            return@synchronized
+        }
+        val ifaceId = findHidInterface(dev)
+        if (ifaceId < 0) {
+            Log.e(TAG, "openCm108: no HID interface on ${dev.deviceName}")
+            return@synchronized
+        }
+        val conn: UsbDeviceConnection = usbManager.openDevice(dev) ?: run {
+            Log.e(TAG, "openCm108: openDevice returned null — permission revoked?")
+            return@synchronized
+        }
+        val iface: UsbInterface = (0 until dev.interfaceCount)
+            .map { dev.getInterface(it) }
+            .first { it.id == ifaceId }
+        // Critical invariant (commit 7a71c53): claim ONLY this HID interface.
+        // Do NOT pass force=true on audio interfaces — that detaches the
+        // kernel snd-usb-audio driver and breaks AudioRecord on Android.
+        if (!conn.claimInterface(iface, /* force = */ true)) {
+            Log.e(TAG, "openCm108: claimInterface($ifaceId) failed")
+            conn.close()
+            return@synchronized
+        }
+        cm108 = Cm108Handle(dev, conn, ifaceId)
+        Log.i(
+            TAG,
+            "CM108 opened ${dev.deviceName} hid_iface=$ifaceId vid=0x${"%04X".format(dev.vendorId)} " +
+                "pid=0x${"%04X".format(dev.productId)}"
+        )
     }
 
     /** Transport-keyed (not vendor-keyed) so the CM108 HID path can fan out
@@ -266,6 +294,51 @@ object UsbPttAdapter {
             Log.e(TAG, "setRts($state) failed: $t")
             false
         }
+    }
+
+    fun keyCm108Hid(): Boolean = setHidGpio(true)
+    fun unkeyCm108Hid(): Boolean = setHidGpio(false)
+
+    /**
+     * Empirical CM108 GPIO bit search: AIOC firmware revisions have used
+     * bits 0..3 over time. Allowed range 0..7. Out-of-range calls are no-ops
+     * with a warn log. Setting the bit does not key — caller must follow
+     * with keyCm108Hid().
+     */
+    fun setCm108Bit(bit: Int): Boolean {
+        if (bit < 0 || bit > 7) {
+            Log.w(TAG, "setCm108Bit($bit) out of range")
+            return false
+        }
+        cm108GpioBit = bit
+        Log.i(TAG, "cm108_gpio_bit=$bit")
+        return true
+    }
+
+    private fun setHidGpio(state: Boolean): Boolean = synchronized(cm108Lock) {
+        val h = cm108 ?: run {
+            Log.w(TAG, "setHidGpio($state) but CM108 not open")
+            return@synchronized false
+        }
+        val gpioByte: Byte = if (state) (1 shl cm108GpioBit).toByte() else 0
+        // 4-byte CM108 HID Output Report: [0x00, 0x00, gpio, 0x00].
+        val report = byteArrayOf(0x00, 0x00, gpioByte, 0x00)
+        // controlTransfer(requestType, request, value, index, buffer, length, timeout_ms)
+        //   requestType = 0x21 (Class | Interface | Host->Device)
+        //   request     = 0x09 (SET_REPORT)
+        //   value       = 0x0200 (Output Report, ID 0)
+        //   index       = HID interface number
+        val rc = h.connection.controlTransfer(
+            /* requestType = */ 0x21,
+            /* request     = */ 0x09,
+            /* value       = */ 0x0200,
+            /* index       = */ h.hidIface,
+            /* buffer      = */ report,
+            /* length      = */ report.size,
+            /* timeout_ms  = */ 200,
+        )
+        Log.i(TAG, "ptt: cm108_set_report bit=$cm108GpioBit state=$state rc=$rc")
+        return@synchronized rc == report.size
     }
 
     /** Classify a device by vid/pid + structural fingerprint. */
