@@ -37,7 +37,7 @@ fi
 if ! command -v rustup >/dev/null 2>&1; then
     fail "rustup not on PATH; install via https://rustup.rs"
 fi
-for TARGET in aarch64-linux-android armv7-linux-androideabi x86_64-linux-android; do
+for TARGET in aarch64-linux-android x86_64-linux-android; do
     if ! rustup target list --installed | grep -qx "$TARGET"; then
         fail "Rust target $TARGET not installed; run: rustup target add $TARGET"
     fi

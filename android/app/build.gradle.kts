@@ -16,9 +16,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.0.1-pocb"
-        ndk {
-            abiFilters += "arm64-v8a"
-        }
     }
 
     sourceSets {
@@ -120,6 +117,7 @@ val cargoNdkBuild by tasks.registering(Exec::class) {
     commandLine = listOf(
         "cargo", "ndk",
         "-t", "arm64-v8a",
+        "-t", "x86_64",
         "-P", "26",
         "-o", jniLibsDir.absolutePath,
         "build", "--lib", "--release",
@@ -127,25 +125,52 @@ val cargoNdkBuild by tasks.registering(Exec::class) {
     )
 }
 
+// armv7 dropped: Go's android/arm target requires cgo + NDK C
+// toolchain, and minSdk=28 leaves zero realistic armv7 devices.
+//
+// android/amd64 also requires cgo (Go's internal linker doesn't
+// support it), so x86_64 carries an NDK clang wrapper. arm64
+// stays on the internal linker (CGO_ENABLED=0).
+data class GoAbi(val goarch: String, val cgo: Boolean, val ccTriple: String?)
 val goAbiMatrix = mapOf(
-    "arm64-v8a" to "arm64",
-    // armeabi-v7a + x86_64 added in Task 16.
+    "arm64-v8a" to GoAbi("arm64", cgo = false, ccTriple = null),
+    "x86_64"    to GoAbi("amd64", cgo = true,  ccTriple = "x86_64-linux-android"),
 )
+
+// API level for cgo's clang wrapper. Matches minSdk so the Go-built
+// .so floor lines up with the AndroidManifest.
+val ndkCgoApi = 28
 
 val goCrossCompile by tasks.registering {
     group = "build"
     description = "Cross-compile cmd/graywolf-pocb to libgraywolf.so for each Android ABI."
 }
 
-goAbiMatrix.forEach { (abi, goarch) ->
+goAbiMatrix.forEach { (abi, info) ->
     val taskName = "goCrossCompile_$abi"
     val task = tasks.register<Exec>(taskName) {
         group = "build"
         workingDir = repoRoot
         environment("GOOS", "android")
-        environment("GOARCH", goarch)
-        environment("CGO_ENABLED", "0")
+        environment("GOARCH", info.goarch)
+        environment("CGO_ENABLED", if (info.cgo) "1" else "0")
         environment("GOWORK", "off")
+        if (info.cgo) {
+            // Resolve the NDK clang wrapper for this ABI. ANDROID_NDK_ROOT
+            // (or ANDROID_NDK_HOME) must be set; check-android-toolchain.sh
+            // enforces this in preBuild.
+            val ndkRoot = System.getenv("ANDROID_NDK_ROOT")
+                ?: System.getenv("ANDROID_NDK_HOME")
+                ?: error("ANDROID_NDK_ROOT/ANDROID_NDK_HOME unset; needed for $abi cgo")
+            val hostTag = when {
+                org.gradle.internal.os.OperatingSystem.current().isMacOsX  -> "darwin-x86_64"
+                org.gradle.internal.os.OperatingSystem.current().isLinux   -> "linux-x86_64"
+                org.gradle.internal.os.OperatingSystem.current().isWindows -> "windows-x86_64"
+                else -> error("Unsupported host OS for NDK toolchain")
+            }
+            val clang = file("$ndkRoot/toolchains/llvm/prebuilt/$hostTag/bin/${info.ccTriple}$ndkCgoApi-clang")
+            environment("CC", clang.absolutePath)
+        }
         val outDir = jniLibsDir.resolve(abi)
         // Inputs: every Go source under cmd/graywolf-pocb + the module files
         // every package transitively reaches. fileTree("pkg") + go.{mod,sum}
