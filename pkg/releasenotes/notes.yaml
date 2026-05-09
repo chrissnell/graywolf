@@ -7,6 +7,28 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.4"
+  date: "2026-05-09"
+  style: info
+  schema_version: 1
+  title: "PTT improvements on the Channels page"
+  link: "#/channels"
+  body: |
+    Each channel card now shows which PTT method it is using, so you
+    can see at a glance whether a channel is keying via VOX, CAT, GPIO,
+    CM108, AIOC, or its KISS TNC.
+
+    Editing a channel's PTT settings now takes effect right away. The
+    old PTT is torn down and the new one is brought up as part of the
+    save, so you no longer have to restart anything to pick up the
+    change.
+
+    Channels backed by a KISS TNC handle their own PTT through the TNC
+    itself, so Graywolf no longer accepts a separate PTT configuration
+    on those channels and tells you why if you try.
+
+    Nothing to reconfigure.
+
 - version: "0.13.3"
   date: "2026-05-09"
   style: info
