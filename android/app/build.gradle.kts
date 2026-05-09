@@ -101,3 +101,32 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
 }
+
+val jniLibsDir = file("src/main/jniLibs")
+val repoRoot = rootProject.projectDir.parentFile  // android/.. = repo root
+
+val cargoNdkBuild by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Cross-compile graywolf-modem cdylib for Android via cargo-ndk."
+    workingDir = repoRoot
+    // Declare inputs/outputs so Gradle's UP-TO-DATE check skips the
+    // ~10-30s cargo-ndk launch when nothing changed. cargo's own cache
+    // is fast no-op, but Gradle launching the process at all is the
+    // long pole on incremental builds.
+    inputs.dir(repoRoot.resolve("graywolf-modem/src"))
+    inputs.file(repoRoot.resolve("graywolf-modem/Cargo.toml"))
+    inputs.file(repoRoot.resolve("Cargo.lock"))
+    outputs.dir(jniLibsDir)
+    commandLine = listOf(
+        "cargo", "ndk",
+        "-t", "arm64-v8a",
+        "-P", "26",
+        "-o", jniLibsDir.absolutePath,
+        "build", "--lib", "--release",
+        "--manifest-path", "graywolf-modem/Cargo.toml",
+    )
+}
+
+tasks.named("preBuild") {
+    dependsOn(cargoNdkBuild)
+}
