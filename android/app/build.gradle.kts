@@ -197,3 +197,14 @@ tasks.named("preBuild") {
     dependsOn(cargoNdkBuild)
     dependsOn(goCrossCompile)
 }
+
+val checkAndroidToolchain by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verify Android NDK / cargo-ndk / Go / JDK toolchain."
+    workingDir = repoRoot
+    commandLine = listOf("./scripts/check-android-toolchain.sh")
+}
+
+tasks.named("preBuild") {
+    dependsOn(checkAndroidToolchain)
+}
