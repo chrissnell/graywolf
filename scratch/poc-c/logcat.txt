@@ -1,0 +1,55 @@
+--------- beginning of main
+05-08 13:49:24.076  7780  7780 I graywolfmodem: graywolfmodem::android: JNI_OnLoad: v0.13.2-99ea0dd-dirty
+05-08 13:49:24.077  7780  7879 I graywolfmodem: graywolfmodem::android: ipc server bound at /data/user/0/com.nw5w.graywolf/cache/graywolf-modem.sock
+05-08 13:49:24.143  7780  7780 I AudioPump: AudioRecord init rate=22050 bufBytes=7056 (min=1764)
+05-08 13:49:24.184  7780  7879 I graywolfmodem: graywolfmodem::android: poc-b: ipc_client_connected
+05-08 13:49:24.185  7780  7889 W graywolf-pocb-err: 2026/05/08 19:49:24 graywolf-pocb listening on 127.0.0.1:8080
+05-08 13:49:24.186  7780  7889 W graywolf-pocb-err: 2026/05/08 19:49:24 modem ready version=v0.13.2-99ea0dd-dirty pid=7780
+05-08 13:49:24.234  7780  7900 I graywolfmodem: graywolfmodem::android: gain set to -6.0 dB
+05-08 13:49:24.456  7780  7780 I MainActivity: poc-b: webview_loaded
+05-08 13:49:33.799  7780  7880 I graywolfmodem: graywolfmodem::android: poc-b: first_frame_decoded
+05-08 13:49:40.067  7780  7932 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:49:40.067  7780  7932 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:49:40.087  7780  7932 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:49:40.972  7780  7932 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:49:40.975  7780  7932 I WebAppInterface: poc-c: tx_test_done ok=true
+05-08 13:51:05.620  7780  7938 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:51:05.620  7780  7938 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:51:05.635  7780  7938 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:51:06.513  7780  7938 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:51:06.519  7780  7938 I WebAppInterface: poc-c: tx_test_done ok=true
+05-08 13:51:28.552  7780  7943 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:51:28.553  7780  7943 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:51:28.571  7780  7943 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:51:29.452  7780  7943 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:51:29.458  7780  7943 I WebAppInterface: poc-c: tx_test_done ok=true
+05-08 13:51:50.816  7780  7949 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:51:50.816  7780  7949 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:51:50.833  7780  7949 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:51:51.713  7780  7949 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:51:51.718  7780  7949 I WebAppInterface: poc-c: tx_test_done ok=true
+05-08 13:52:25.060  7780  7957 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:52:25.060  7780  7957 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:52:25.075  7780  7957 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:52:25.955  7780  7957 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:52:25.959  7780  7957 I WebAppInterface: poc-c: tx_test_done ok=true
+aywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:51:05.620  7780  7938 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:51:05.635  7780  7938 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:51:06.513  7780  7938 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:51:06.519  7780  7938 I WebAppInterface: poc-c: tx_test_done ok=true
+05-08 13:51:28.552  7780  7943 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:51:28.553  7780  7943 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:51:28.571  7780  7943 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:51:29.452  7780  7943 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:51:29.458  7780  7943 I WebAppInterface: poc-c: tx_test_done ok=true
+05-08 13:51:50.816  7780  7949 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:51:50.816  7780  7949 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:51:50.833  7780  7949 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:51:51.713  7780  7949 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:51:51.718  7780  7949 I WebAppInterface: poc-c: tx_test_done ok=true
+05-08 13:52:25.060  7780  7957 I graywolfmodem: graywolfmodem::android: modemBuildTestFrame: emitted 18393 samples (834 ms @ 22050 Hz)
+05-08 13:52:25.060  7780  7957 I WebAppInterface: poc-c: tx_test_fire samples=18393
+05-08 13:52:25.075  7780  7957 I AudioTxTest: AudioTrack built: rate=22050 samples=18393 bufferBytes=36786 state=2
+05-08 13:52:25.955  7780  7957 I AudioTxTest: playback complete: head=18393 frames
+05-08 13:52:25.959  7780  7957 I WebAppInterface: poc-c: tx_test_done ok=true
