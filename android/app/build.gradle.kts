@@ -69,6 +69,12 @@ android {
         // Robolectric for what are effectively pure-Kotlin protocol tests.
         unitTests.isReturnDefaultValues = true
     }
+
+    buildFeatures {
+        // AGP 8 disables BuildConfig generation by default. GraywolfService
+        // reads BuildConfig.VERSION_NAME for the Hello frame's serverVersion.
+        buildConfig = true
+    }
 }
 
 protobuf {

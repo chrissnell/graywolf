@@ -9,10 +9,12 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import com.nw5w.graywolf.BuildConfig
 import com.nw5w.graywolf.audio.AudioPump
 import com.nw5w.graywolf.binaries.GoLauncher
 import com.nw5w.graywolf.binaries.Supervisor
 import com.nw5w.graywolf.jni.ModemBridge
+import com.nw5w.graywolf.platformsvc.PlatformServer
 import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.io.File
 import kotlin.concurrent.thread
@@ -20,11 +22,15 @@ import kotlin.concurrent.thread
 class GraywolfService : Service() {
     private val audioPump = AudioPump()
     private var goLauncher: GoLauncher? = null
+    private var platformServer: PlatformServer? = null
     private var gainPoller: Thread? = null
     private val supervisor = Supervisor(onRestart = ::supervisorRestart)
 
     private fun socketPath(): String =
         File(cacheDir, "graywolf-modem.sock").absolutePath
+
+    private fun platformSocketPath(): String =
+        File(cacheDir, "platform.sock").absolutePath
 
     private fun bootModem(): Boolean {
         val rc = ModemBridge.modemStart(socketPath(), /* gainDb = */ -6.0f)
@@ -44,6 +50,7 @@ class GraywolfService : Service() {
             executablePath = goPath,
             env = mapOf(
                 "GRAYWOLF_MODEM_SOCKET" to socketPath(),
+                "GRAYWOLF_PLATFORM_SOCKET" to platformSocketPath(),
                 "GRAYWOLF_LISTEN" to "127.0.0.1:8080",
                 "GRAYWOLF_LISTEN_TOKEN" to bearerToken,
             ),
@@ -101,6 +108,15 @@ class GraywolfService : Service() {
         }
         Log.i(TAG, "modem cdylib version=$v")
 
+        // Bring up the Go ↔ Kotlin platform contract before exec'ing the Go child.
+        // Phase 2: Hello + GpsFix only; the Go child connects, handshakes, and
+        // logs the schema version. Real GpsFix producer is wired in phase 4.
+        platformServer = PlatformServer(
+            socketPath = platformSocketPath(),
+            serverVersion = BuildConfig.VERSION_NAME,
+            schemaVersion = 1,
+        ).also { it.start() }
+
         if (!bootModem()) {
             stopSelf()
             return
@@ -148,6 +164,7 @@ class GraywolfService : Service() {
         goListenerReady = false
         goLauncher?.stop()
         audioPump.stop()
+        platformServer?.stop()
         ModemBridge.modemStop()
         UsbPttAdapter.closeAll()
         super.onDestroy()
