@@ -143,7 +143,7 @@ val ndkCgoApi = 28
 
 val goCrossCompile by tasks.registering {
     group = "build"
-    description = "Cross-compile cmd/graywolf-pocb to libgraywolf.so for each Android ABI."
+    description = "Cross-compile cmd/graywolf to libgraywolf.so for each Android ABI."
 }
 
 goAbiMatrix.forEach { (abi, info) ->
@@ -172,11 +172,11 @@ goAbiMatrix.forEach { (abi, info) ->
             environment("CC", clang.absolutePath)
         }
         val outDir = jniLibsDir.resolve(abi)
-        // Inputs: every Go source under cmd/graywolf-pocb + the module files
+        // Inputs: every Go source under cmd/graywolf + the module files
         // every package transitively reaches. fileTree("pkg") + go.{mod,sum}
         // is conservative but cheap to fingerprint, and Gradle's UP-TO-DATE
         // check then skips the Go process launch on no-op iterations.
-        inputs.files(fileTree(repoRoot.resolve("cmd/graywolf-pocb")) {
+        inputs.files(fileTree(repoRoot.resolve("cmd/graywolf")) {
             include("**/*.go")
         })
         inputs.files(fileTree(repoRoot.resolve("pkg")) { include("**/*.go") })
@@ -187,7 +187,7 @@ goAbiMatrix.forEach { (abi, info) ->
         commandLine = listOf(
             "go", "build",
             "-o", outDir.resolve("libgraywolf.so").absolutePath,
-            "./cmd/graywolf-pocb",
+            "./cmd/graywolf",
         )
     }
     goCrossCompile.configure { dependsOn(task) }
