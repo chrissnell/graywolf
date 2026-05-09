@@ -4,6 +4,7 @@ import android.util.Log
 import android.webkit.JavascriptInterface
 import com.nw5w.graywolf.audio.AudioTxTest
 import com.nw5w.graywolf.jni.ModemBridge
+import com.nw5w.graywolf.usb.UsbPttAdapter
 import kotlin.concurrent.thread
 
 class WebAppInterface(
@@ -30,6 +31,10 @@ class WebAppInterface(
             }
         }
     }
+
+    /** POC-D: returns the USB PTT adapter status snapshot as a JSON string. */
+    @JavascriptInterface
+    fun pttStatusJson(): String = UsbPttAdapter.status().toString()
 
     companion object { private const val TAG = "WebAppInterface" }
 }

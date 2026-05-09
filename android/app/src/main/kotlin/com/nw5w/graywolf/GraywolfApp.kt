@@ -1,6 +1,7 @@
 package com.nw5w.graywolf
 
 import android.app.Application
+import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.security.SecureRandom
 
 /**
@@ -16,6 +17,7 @@ class GraywolfApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        UsbPttAdapter.init(this)
         val b = ByteArray(32)
         SecureRandom().nextBytes(b)
         bearerToken = b.joinToString("") { "%02x".format(it) }

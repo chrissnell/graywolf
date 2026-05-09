@@ -12,6 +12,28 @@
   input[type="range"] { flex: 1; }
   pre { background: #000; padding: 8px; border-radius: 4px; max-height: 70vh; overflow: auto; white-space: pre-wrap; }
   .gain { font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+  /* PTT panel — added in POC-D Task 2. */
+  .ptt-panel { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; }
+  .ptt-panel .ptt-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .ptt-panel .ptt-row:last-child { margin-bottom: 0; }
+  .ptt-panel .dev { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 3px; background: #222; }
+  .ptt-panel .dev[data-state="open"]    { color: #5f5; }
+  .ptt-panel .dev[data-state="found"]   { color: #fc4; }
+  .ptt-panel .dev[data-state="missing"] { color: #888; }
+  .ptt-panel .dev::before { content: "●"; font-size: 10px; }
+  .keyed-indicator { display: inline-block; min-width: 14ch; text-align: center; padding: 6px 10px; border-radius: 3px; background: #222; color: #888; font-weight: bold; letter-spacing: 0.05em; }
+  .keyed-indicator[data-keyed="true"]  { background: #722; color: #fff; box-shadow: 0 0 0 2px #f55 inset; }
+  .keyed-indicator[data-keyed="false"] { background: #161; color: #cfc; }
+  .ptt-panel button { min-height: 48px; min-width: 48px; padding: 10px 14px; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 3px; font: inherit; cursor: pointer; }
+  .ptt-panel button:hover:not(:disabled) { background: #333; border-color: #666; }
+  .ptt-panel button:active:not(:disabled) { background: #444; }
+  .ptt-panel button:focus-visible { outline: 2px solid #4af; outline-offset: 2px; }
+  .ptt-panel button:disabled { background: #1a1a1a; color: #555; border-color: #2a2a2a; cursor: not-allowed; }
+  .stamp { font-variant-numeric: tabular-nums; min-width: 22ch; }
+  .stamp[data-state="ok"]      { color: #5f5; }
+  .stamp[data-state="fail"]    { color: #f55; }
+  .stamp[data-state="pending"] { color: #fc4; }
+  .stamp[data-state="idle"]    { color: #888; }
 </style>
 </head>
 <body>
@@ -20,6 +42,14 @@
   <div class="stat">uptime: <b id="up">0s</b></div>
   <div class="stat" id="conn">connecting</div>
 </div>
+<section class="ptt-panel" aria-labelledby="ptt-heading">
+  <div class="ptt-row">
+    <strong id="ptt-heading">PTT</strong>
+    <span class="dev" id="dev-cp2102n" data-state="missing" aria-live="polite">CP2102N: —</span>
+    <span class="dev" id="dev-cm108" data-state="missing" aria-live="polite">CM108: —</span>
+    <span class="dev" id="dev-vidpid" data-state="missing"></span>
+  </div>
+</section>
 <div class="row">
   <label>gain</label>
   <input id="g" type="range" min="-30" max="20" step="1" value="-6">
@@ -102,6 +132,39 @@
   setInterval(pollStatus, 1000);
   setInterval(pollFrames, 1000);
   setInterval(refreshConn, 500);
+  function setDevState(el, state, label) {
+    el.dataset.state = state;
+    el.textContent = label;
+  }
+  function pollPtt() {
+    if (!window.GraywolfWebInterface || !window.GraywolfWebInterface.pttStatusJson) return;
+    let j;
+    try { j = JSON.parse(window.GraywolfWebInterface.pttStatusJson()); }
+    catch (e) { return; }
+    const cp = document.getElementById("dev-cp2102n");
+    const cm = document.getElementById("dev-cm108");
+    const vp = document.getElementById("dev-vidpid");
+    setDevState(cp,
+      j.cp2102n_open ? "open" : (j.cp2102n_found ? "found" : "missing"),
+      "CP2102N: " + (j.cp2102n_open ? "open" : (j.cp2102n_found ? "found (no perm)" : "—")));
+    setDevState(cm,
+      j.cm108_open ? "open" : (j.cm108_found ? "found" : "missing"),
+      j.cm108_open
+        ? "CM108: open  iface=" + j.cm108_hid_iface + "  bit=" + j.cm108_gpio_bit
+        : (j.cm108_found ? "CM108: found (no perm)" : "CM108: —"));
+    if (j.cm108_vid) {
+      vp.dataset.state = "open";
+      vp.textContent = j.cm108_vid + ":" + j.cm108_pid;
+    } else {
+      vp.dataset.state = "missing";
+      vp.textContent = "";
+    }
+    const btns = window.__pttButtons || {};
+    if (btns.digirig) btns.digirig.forEach(b => b.disabled = !j.cp2102n_open);
+    if (btns.aioc)    btns.aioc.forEach(b => b.disabled = !j.cm108_open);
+  }
+  setInterval(pollPtt, 1000);
+  pollPtt();
 </script>
 </body>
 </html>

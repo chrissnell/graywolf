@@ -13,6 +13,7 @@ import com.nw5w.graywolf.audio.AudioPump
 import com.nw5w.graywolf.binaries.GoLauncher
 import com.nw5w.graywolf.binaries.Supervisor
 import com.nw5w.graywolf.jni.ModemBridge
+import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -148,6 +149,7 @@ class GraywolfService : Service() {
         goLauncher?.stop()
         audioPump.stop()
         ModemBridge.modemStop()
+        UsbPttAdapter.closeAll()
         super.onDestroy()
     }
 

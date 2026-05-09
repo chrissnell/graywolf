@@ -13,6 +13,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.nw5w.graywolf.usb.UsbPttAdapter
 import com.nw5w.graywolf.webview.WebAppInterface
 
 class MainActivity : Activity() {
@@ -80,6 +81,11 @@ class MainActivity : Activity() {
             }
         }
         mainHandler.postDelayed(r, 500)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        UsbPttAdapter.enumerate()
     }
 
     override fun onDestroy() {
