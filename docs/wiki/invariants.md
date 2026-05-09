@@ -82,6 +82,14 @@ Source: [`../../pkg/pttdevice/`](../../pkg/pttdevice/);
 Source: [`../../pkg/configstore/store.go`](../../pkg/configstore/store.go) (`RekeyPttConfig`, `ErrPttChannelTaken`);
 [`../../pkg/webapi/ptt.go`](../../pkg/webapi/ptt.go) (`updatePttConfig`).
 
+### 9b. PTT writes are rejected on KISS-TNC channels
+
+*Why:* A KISS TNC owns the radio interface end-to-end including PTT, so a graywolf-driven PTT row on top of a KISS-only channel (`Channel.InputDeviceID == nil`) is at best redundant and at worst keys the wrong radio after the operator reassigns channels (issue #110). The webapi handlers gate POST `/api/ptt` and both branches of PUT `/api/ptt/{channel}` (in-place upsert AND rekey) through `validatePttChannelBacking`, which returns HTTP 400. For rekey the validator runs against `req.ChannelID` (the move target), not the URL id, so an operator cannot bypass the rule by editing an existing PTT row onto a KISS channel. The PTT page mirrors the rule by hiding KISS-only channels from the channel dropdown.
+
+Source: [`../../pkg/webapi/ptt.go`](../../pkg/webapi/ptt.go) (`validatePttChannelBacking`);
+[`../../pkg/webapi/ptt_test.go`](../../pkg/webapi/ptt_test.go) (`TestPttRejectsKissOnlyChannel`);
+[`../../web/src/routes/Ptt.svelte`](../../web/src/routes/Ptt.svelte) (`modemChannels` filter).
+
 ### 10. Gitignored output dirs are not canonical
 
 *Why:* `target/`, `bin/`, `dist/`, `rust-bin/`, `rust-artifacts/`, `web/dist/`, `.worktrees/`, `.context/`, `*.db*` regenerate from sources and are gitignored, so never reference them as authoritative.

@@ -1,13 +1,17 @@
 package webapi
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/pttdevice"
 )
 
@@ -373,6 +377,134 @@ func TestPttRoutePrecedence_RealHandlers(t *testing.T) {
 				ct, rec.Body.String())
 		}
 	}
+}
+
+// TestPttRejectsKissOnlyChannel pins issue #110: a PTT row cannot be
+// created or updated against a KISS-TNC-only channel (Channel.InputDeviceID
+// == nil). The TNC owns PTT for those channels, and an extra graywolf
+// PTT config is at best redundant and at worst keys the wrong radio
+// after the operator reassigns channels.
+//
+// Both the POST upsert path and the PUT update path are covered to
+// guarantee the validator runs on every write entry point. Successful
+// upsert against the seeded modem-backed channel is also asserted to
+// catch a future change that accidentally rejects every channel.
+func TestPttRejectsKissOnlyChannel(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+
+	// Seed an explicit modem-backed channel alongside the KISS-only one
+	// instead of relying on whatever newTestServer happens to create —
+	// keeps this test self-contained against future fixture drift.
+	inDev := &configstore.AudioDevice{
+		Name: "in", Direction: "input", SourceType: "flac", SourcePath: "/tmp/in.flac",
+		SampleRate: 44100, Channels: 1, Format: "s16le",
+	}
+	if err := srv.store.CreateAudioDevice(ctx, inDev); err != nil {
+		t.Fatalf("seed input device: %v", err)
+	}
+	outDev := &configstore.AudioDevice{
+		Name: "out", Direction: "output", SourceType: "null", SourcePath: "/tmp/out.raw",
+		SampleRate: 44100, Channels: 1, Format: "s16le",
+	}
+	if err := srv.store.CreateAudioDevice(ctx, outDev); err != nil {
+		t.Fatalf("seed output device: %v", err)
+	}
+	modemCh := &configstore.Channel{
+		Name: "modem-test", InputDeviceID: configstore.U32Ptr(inDev.ID), OutputDeviceID: outDev.ID,
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+	}
+	if err := srv.store.CreateChannel(ctx, modemCh); err != nil {
+		t.Fatalf("seed modem channel: %v", err)
+	}
+
+	// Seed a KISS-only channel (InputDeviceID == nil). validateChannel
+	// allows OutputDeviceID == 0 when InputDeviceID is nil.
+	kissCh := &configstore.Channel{
+		Name:           "kiss0",
+		InputDeviceID:  nil,
+		OutputDeviceID: 0,
+	}
+	if err := srv.store.CreateChannel(ctx, kissCh); err != nil {
+		t.Fatalf("seed kiss channel: %v", err)
+	}
+
+	send := func(t *testing.T, path string, method string, body any) *httptest.ResponseRecorder {
+		t.Helper()
+		buf, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		req := httptest.NewRequest(method, path, bytes.NewReader(buf))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("POST rejects kiss-only channel with 400", func(t *testing.T) {
+		rec := send(t, "/api/ptt", http.MethodPost, map[string]any{
+			"channel_id": kissCh.ID,
+			"method":     "serial_rts",
+		})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(strings.ToLower(rec.Body.String()), "kiss") {
+			t.Errorf("expected error to mention KISS, got: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("PUT same-channel rejects kiss-only with 400", func(t *testing.T) {
+		rec := send(t, "/api/ptt/"+strconv.FormatUint(uint64(kissCh.ID), 10), http.MethodPut, map[string]any{
+			"channel_id": kissCh.ID,
+			"method":     "serial_rts",
+		})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("POST allows modem-backed channel", func(t *testing.T) {
+		rec := send(t, "/api/ptt", http.MethodPost, map[string]any{
+			"channel_id": modemCh.ID,
+			"method":     "none",
+		})
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("PUT rekey to kiss-only target rejected with 400", func(t *testing.T) {
+		// Build an existing PTT row on the modem channel, then attempt
+		// to rekey it onto the KISS channel by sending PUT to the modem
+		// id with body channel_id == kissCh.ID. The rekey branch in
+		// updatePttConfig must run validatePttChannelBacking against the
+		// move target (req.ChannelID), not the URL id, otherwise the
+		// guard is bypassable on edit (issue #110 critical edge case).
+		rec := send(t, "/api/ptt/"+strconv.FormatUint(uint64(modemCh.ID), 10), http.MethodPut, map[string]any{
+			"channel_id": kissCh.ID,
+			"method":     "serial_rts",
+		})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for rekey to kiss target, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(strings.ToLower(rec.Body.String()), "kiss") {
+			t.Errorf("expected error to mention KISS, got: %s", rec.Body.String())
+		}
+		// Verify the original row is still bound to the modem channel
+		// (rekey must be atomic — failure leaves the source row intact).
+		got, err := srv.store.GetPttConfigForChannel(ctx, modemCh.ID)
+		if err != nil {
+			t.Fatalf("get ptt after rejected rekey: %v", err)
+		}
+		if got == nil || got.ChannelID != modemCh.ID {
+			t.Fatalf("expected ptt still bound to modemCh.ID=%d, got %+v", modemCh.ID, got)
+		}
+	})
 }
 
 func keys(m map[string]any) []string {
