@@ -42,11 +42,58 @@ func newClient(socketPath string) Client {
 	}
 }
 
-// ConnectWithReconnect is a stub for Tasks 3-4; the reconnect loop lands
-// in a later task. Calling it today returns an error so consumers don't
-// silently get a non-functional client.
+// ConnectWithReconnect dials the UDS and, on disconnect, re-dials with
+// exponential backoff (backoffSchedule). The reconnect loop runs until
+// ctx is cancelled or Close() is called. The first dial is synchronous;
+// subsequent dials happen in a background goroutine.
+//
+// This is the production entry point exposed via the Client interface.
+// The internal one-shot Connect path stays for tests only.
 func (c *clientImpl) ConnectWithReconnect(ctx context.Context) error {
-	return errors.New("platformsvc: ConnectWithReconnect not implemented yet")
+	if err := c.Connect(ctx); err != nil {
+		return err
+	}
+	go c.reconnectLoop(ctx)
+	return nil
+}
+
+func (c *clientImpl) reconnectLoop(ctx context.Context) {
+	for {
+		// Wait until current conn drops.
+		c.mu.Lock()
+		conn := c.conn
+		c.mu.Unlock()
+		if conn == nil {
+			// Already disconnected; back off and retry.
+		} else {
+			select {
+			case <-c.closeCh:
+				return
+			case <-ctx.Done():
+				return
+			case <-time.After(50 * time.Millisecond):
+				continue
+			}
+		}
+
+		var lastErr error
+		for _, delay := range backoffSchedule {
+			select {
+			case <-c.closeCh:
+				return
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
+			}
+			if err := c.Connect(ctx); err == nil {
+				lastErr = nil
+				break
+			} else {
+				lastErr = err
+			}
+		}
+		_ = lastErr
+	}
 }
 
 // injectConn is only used by tests; replaces the live UDS with a net.Pipe
