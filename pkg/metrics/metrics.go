@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
@@ -93,9 +94,21 @@ type Metrics struct {
 	lastDcdTransitions map[uint32]uint64
 }
 
-// New builds a Metrics with a private registry.
+// New builds a Metrics with a private registry. The registry is
+// pre-populated with the default Go runtime collector
+// (go_memstats_*, go_goroutines, go_threads, go_gc_duration_seconds)
+// and the process collector (process_resident_memory_bytes,
+// process_virtual_memory_bytes, process_open_fds, process_cpu_*).
+// These are required for time-series visibility into RAM growth,
+// goroutine leaks, and GC pressure; without them, /metrics exposes
+// only graywolf-specific counters and operators have no way to spot
+// runtime-level regressions.
 func New() *Metrics {
 	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
 	m := &Metrics{
 		Registry: reg,
 		RxFrames: prometheus.NewCounterVec(prometheus.CounterOpts{
