@@ -16,7 +16,7 @@ use jni::{JNIEnv, JavaVM};
 use log::{error, info, warn};
 
 use crate::demod_afsk_multi::{MultiAfskDemodulator, RECOMMENDED_3DEMOD};
-use crate::ipc::proto::{ipc_message, DeviceLevelUpdate, IpcMessage, ReceivedFrame};
+use crate::ipc::proto::{ipc_message, DeviceLevelUpdate, IpcMessage, ReceivedFrame, StatusUpdate};
 use crate::ipc::server::{IpcInbound, IpcServer};
 use crate::rxonly::feed_chunk;
 
@@ -304,6 +304,7 @@ fn run_demod(
                                 retry: String::new(),
                                 timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
                             };
+                            config_state::increment_rx_frames();
                             // Drop on full — IPC thread will catch up
                             // when the Go child connects.
                             let _ = frames_tx.try_send(pb);
@@ -324,6 +325,7 @@ fn run_demod(
         server.accept().map_err(|e| format!("accept: {}", e))?;
     info!("poc-b: ipc_client_connected");
 
+    let mut last_status_emit = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         // Short timeout so the loop pumps both frame and level queues
         // without head-of-line blocking on either.
@@ -345,6 +347,33 @@ fn run_demod(
                 warn!("ipc send (level): {}", e);
                 break;
             }
+        }
+
+        // Emit StatusUpdate once per second so the Go modembridge
+        // status_cache gets the cumulative rx_frames counter that
+        // backs the SPA Dashboard's per-channel RX counter. Audio
+        // levels are zero here -- the per-device DeviceLevelUpdate
+        // path above is the source of truth on Android.
+        let now = Instant::now();
+        if now.duration_since(last_status_emit) >= Duration::from_millis(1000) {
+            let s = StatusUpdate {
+                channel: config_state::channel_id(),
+                rx_frames: config_state::rx_frames(),
+                rx_bad_fcs: 0,
+                tx_frames: 0,
+                dcd_transitions: 0,
+                audio_level_mark: 0.0,
+                audio_level_space: 0.0,
+                audio_level_peak: 0.0,
+                dcd_state: false,
+                shutdown_complete: false,
+                timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
+            };
+            if let Err(e) = handle.send(&IpcMessage::status_update(s)) {
+                warn!("ipc send (status): {}", e);
+                break;
+            }
+            last_status_emit = now;
         }
 
         // Drain any inbound IPC messages from the Go side. We act on

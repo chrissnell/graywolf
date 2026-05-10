@@ -17,7 +17,7 @@
 
 #![cfg(target_os = "android")]
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Default device id when no `ConfigureChannel` has been received yet.
 /// Matches the `id=1` the configstore assigns to the first user-created
@@ -28,6 +28,12 @@ const DEFAULT_CHANNEL_ID: u32 = 1;
 
 static INPUT_DEVICE_ID: AtomicU32 = AtomicU32::new(DEFAULT_DEVICE_ID);
 static CHANNEL_ID: AtomicU32 = AtomicU32::new(DEFAULT_CHANNEL_ID);
+
+/// Cumulative count of frames the demodulator has emitted since modem
+/// start. Read by the IPC writer loop to populate StatusUpdate.rx_frames
+/// at ~1 Hz. The Go modembridge status_cache mirrors this into the
+/// per-channel ChannelStats the SPA Dashboard polls.
+static RX_FRAMES: AtomicU64 = AtomicU64::new(0);
 
 pub fn set_from_configure(channel: u32, input_device_id: u32) {
     if channel != 0 {
@@ -44,4 +50,12 @@ pub fn input_device_id() -> u32 {
 
 pub fn channel_id() -> u32 {
     CHANNEL_ID.load(Ordering::Relaxed)
+}
+
+pub fn increment_rx_frames() {
+    RX_FRAMES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn rx_frames() -> u64 {
+    RX_FRAMES.load(Ordering::Relaxed)
 }
