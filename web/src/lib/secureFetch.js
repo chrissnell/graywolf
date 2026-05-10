@@ -62,6 +62,10 @@ export function installSecureWebSocket() {
   //   - third-party libs that subclass WebSocket continue to inherit
   //     prototype methods correctly
   //   - new.target chain is preserved across the boundary
+  // Static readyState constants (CONNECTING/OPEN/CLOSING/CLOSED) are
+  // inherited via the static prototype chain; do NOT re-assign them
+  // -- WebView's WebSocket exposes them as read-only and assignment
+  // throws "Cannot assign to read only property" in strict mode.
   class SecureWS extends Original {
     constructor(url, protocols) {
       const u = isSameOrigin(url) ? appendToken(url, token) : url;
@@ -72,11 +76,6 @@ export function installSecureWebSocket() {
       }
     }
   }
-  // Preserve readyState constants.
-  SecureWS.CONNECTING = Original.CONNECTING;
-  SecureWS.OPEN = Original.OPEN;
-  SecureWS.CLOSING = Original.CLOSING;
-  SecureWS.CLOSED = Original.CLOSED;
   globalThis.WebSocket = SecureWS;
 }
 
