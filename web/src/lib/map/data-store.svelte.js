@@ -274,10 +274,15 @@ export function createDataStore() {
       document.addEventListener('visibilitychange', visibilityHandler);
     }
 
-    fetchMyPosition();
-    // Fire one immediately so the UI populates without waiting for the timer.
-    fetchOnce().then(() => {
-      if (started) schedule();
+    // Resolve the station's position before the first /api/stations poll
+    // so LiveMapV2's first-load camera logic has a deterministic chance to
+    // recenter on "My Position" before the fit-to-stations fallback fires.
+    // /api/position is an in-memory read; the added latency is negligible.
+    fetchMyPosition().finally(() => {
+      if (!started) return;
+      fetchOnce().then(() => {
+        if (started) schedule();
+      });
     });
   }
 
