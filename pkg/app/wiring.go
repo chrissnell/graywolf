@@ -1284,14 +1284,45 @@ func (a *App) wireHTTP(ctx context.Context) error {
 }
 
 // wrapWithBearerIfSet wraps next with BearerAuthMiddleware iff
-// cfg.BearerToken is non-empty. Extracted from the httpSrv
-// construction to keep the wiring decision testable. Android sets the
-// token via env var; desktop leaves it empty and the wrap is a no-op.
+// cfg.BearerToken is non-empty, but only enforces the bearer on
+// authenticated surfaces (/api/*, /ws/*, /tiles/*). The static SPA
+// (/, /assets/*, /index.html, /favicon*) must remain reachable
+// without auth so the WebView's first navigation can load the SPA
+// shell; once the SPA boots, bootstrap.js installs secureFetch which
+// adds the bearer to every subsequent /api request.
+//
+// Android sets the token via env var; desktop leaves it empty and
+// the wrap is a no-op.
 func wrapWithBearerIfSet(cfg Config, next http.Handler) http.Handler {
 	if cfg.BearerToken == "" {
 		return next
 	}
-	return webauth.BearerAuthMiddleware(cfg.BearerToken)(next)
+	mw := webauth.BearerAuthMiddleware(cfg.BearerToken)
+	guarded := mw(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if needsBearer(r.URL.Path) {
+			guarded.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// needsBearer reports whether the given URL path is an authenticated
+// surface that the per-launch bearer middleware should gate. Public
+// SPA static paths return false so the WebView's first navigation
+// can load the SPA shell.
+func needsBearer(path string) bool {
+	switch {
+	case strings.HasPrefix(path, "/api/"):
+		return true
+	case strings.HasPrefix(path, "/ws/"):
+		return true
+	case strings.HasPrefix(path, "/tiles/"):
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Component factories -------------------------------------------------

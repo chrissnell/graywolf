@@ -176,10 +176,19 @@ goAbiMatrix.forEach { (abi, info) ->
         // every package transitively reaches. fileTree("pkg") + go.{mod,sum}
         // is conservative but cheap to fingerprint, and Gradle's UP-TO-DATE
         // check then skips the Go process launch on no-op iterations.
+        //
+        // web/dist must be in the input set too: cmd/graywolf imports
+        // pkg/web which embeds web/dist via go:embed. Without this entry,
+        // Gradle's UP-TO-DATE check would skip the Go build when only the
+        // SPA bundle changes, shipping a stale embed inside libgraywolf.so.
         inputs.files(fileTree(repoRoot.resolve("cmd/graywolf")) {
             include("**/*.go")
         })
         inputs.files(fileTree(repoRoot.resolve("pkg")) { include("**/*.go") })
+        inputs.files(fileTree(repoRoot.resolve("web/dist")))
+        inputs.files(fileTree(repoRoot.resolve("web")) {
+            include("embed.go")
+        })
         inputs.file(repoRoot.resolve("go.mod"))
         inputs.file(repoRoot.resolve("go.sum"))
         outputs.file(outDir.resolve("libgraywolf.so"))
