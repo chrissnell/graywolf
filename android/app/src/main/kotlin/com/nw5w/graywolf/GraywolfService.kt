@@ -9,7 +9,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import androidx.core.content.ContextCompat
 import android.graphics.drawable.Icon
 import android.net.ConnectivityManager
 import android.os.Build
@@ -166,15 +169,19 @@ class GraywolfService : Service() {
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             // Phase 4a adds LOCATION FGS type alongside MICROPHONE.
-            // Android 14 requires each FGS type declared in the
-            // manifest to come paired with its access perm
-            // (ACCESS_FINE_LOCATION for location). USB_DEVICE pairing
-            // for connectedDevice lands in phase 5.
-            startForeground(
-                NOTIF_ID, notif,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
-            )
+            // Android 14 throws SecurityException if we declare an FGS
+            // type whose paired access perm is denied at runtime, so
+            // only include FGS_TYPE_LOCATION when ACCESS_FINE_LOCATION
+            // is actually granted. RECORD_AUDIO is always granted by
+            // this point (MainActivity.ensurePerms gates the launch).
+            var fgsType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+                fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                Log.i(TAG, "ACCESS_FINE_LOCATION denied; starting FGS without location type")
+            }
+            startForeground(NOTIF_ID, notif, fgsType)
         } else {
             startForeground(NOTIF_ID, notif)
         }

@@ -92,10 +92,18 @@
   $effect(() => {
     // Probe auth state before rendering protected routes.
     // /api/auth/setup is unauthenticated, so it always works.
+    //
+    // Android skips every hash-redirect to /login: the SPA there
+    // authenticates via the per-launch bearer token injected by the
+    // WebView bridge (androidBridge.js), so a 401 indicates a token
+    // mismatch that a reload can't fix. /login is also stripped from
+    // the route map on Android, so the redirect would render a blank
+    // page anyway.
+    const isAndroid = Platform.kind === 'android';
     fetch('/api/auth/setup')
       .then(r => r.json())
       .then(data => {
-        if (data.needs_setup) {
+        if (data.needs_setup && !isAndroid) {
           window.location.hash = '#/login';
           authChecked = true;
           return;
@@ -104,7 +112,7 @@
         // Fetch version (public endpoint) in parallel with auth probe.
         fetch('/api/version').then(r => r.json()).then(d => { version = d.version; }).catch(() => {});
         return fetch('/api/status', { credentials: 'same-origin' }).then(r => {
-          if (r.status === 401) window.location.hash = '#/login';
+          if (r.status === 401 && !isAndroid) window.location.hash = '#/login';
           authChecked = true;
         });
       })

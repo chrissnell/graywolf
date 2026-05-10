@@ -91,7 +91,7 @@ func RegisterPosition(srv *Server, mux *http.ServeMux, pos *gps.StationPos) {
 // @Security CookieAuth
 // @Router   /gps/state [get]
 func getGpsState(pos *gps.StationPos) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		out := GpsStateDTO{}
 		if pos != nil {
 			if fix, ok := pos.Get(); ok {
@@ -102,34 +102,41 @@ func getGpsState(pos *gps.StationPos) http.HandlerFunc {
 					AltM:       fix.Altitude,
 					HasAlt:     fix.HasAlt,
 					SpeedMps:   speed,
-					HasSpeed:   fix.HasCourse, // gps.Fix conflates speed+course presence today
+					HasSpeed:   fix.HasSpeed,
 					CourseDeg:  fix.Heading,
 					HasCourse:  fix.HasCourse,
+					AccuracyM:  fix.AccuracyM,
 					TimeUnixMs: fix.Timestamp.UnixMilli(),
 				}
 			}
 			if view, ok := pos.GetSatellites(); ok {
+				// Prefer receiver-reported totals (Android GnssStatus
+				// exposes SatsInView / SatsUsed directly). Fall back to
+				// deriving from Satellites when both are 0 (NMEA path).
+				inView := view.SatsInView
+				used := view.SatsUsed
+				if inView == 0 && used == 0 {
+					inView = len(view.Satellites)
+					for _, s := range view.Satellites {
+						if s.UsedInFix {
+							used++
+						}
+					}
+				}
 				dto := &GnssStatusDTO{
-					SatsInView: uint32(len(view.Satellites)),
+					SatsInView: uint32(inView),
+					SatsUsed:   uint32(used),
 				}
-				var used uint32
 				for _, s := range view.Satellites {
-					sd := SatInfoDTO{
-						Svid:         uint32(s.PRN),
-						Cn0Dbhz:      float64(s.SNR),
-						ElevationDeg: float64(s.Elevation),
-						AzimuthDeg:   float64(s.Azimuth),
-					}
-					// gps.SatelliteInfo doesn't carry used-in-fix today;
-					// SNR > 0 is a reasonable proxy until the field
-					// propagates through to SatelliteInfo.
-					if s.SNR > 0 {
-						sd.UsedInFix = true
-						used++
-					}
-					dto.Sats = append(dto.Sats, sd)
+					dto.Sats = append(dto.Sats, SatInfoDTO{
+						Svid:          uint32(s.PRN),
+						Constellation: s.Constellation,
+						Cn0Dbhz:       float64(s.SNR),
+						UsedInFix:     s.UsedInFix,
+						ElevationDeg:  float64(s.Elevation),
+						AzimuthDeg:    float64(s.Azimuth),
+					})
 				}
-				dto.SatsUsed = used
 				out.GnssStatus = dto
 			}
 		}

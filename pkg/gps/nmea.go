@@ -102,6 +102,7 @@ func parseRMC(f []string) (Fix, bool, error) {
 	if f[7] != "" {
 		if s, err := strconv.ParseFloat(f[7], 64); err == nil {
 			fix.Speed = s
+			fix.HasSpeed = true
 			fix.HasCourse = true
 		}
 	}
@@ -172,6 +173,7 @@ func parseVTG(f []string) (Fix, bool, error) {
 	if f[5] != "" {
 		if s, err := strconv.ParseFloat(f[5], 64); err == nil {
 			fix.Speed = s
+			fix.HasSpeed = true
 			fix.HasCourse = true
 		}
 	}
@@ -481,6 +483,7 @@ func ReadNMEAStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 			// Course-only sentence (VTG): merge speed/heading into last fix.
 			if prev, ok := cache.Get(); ok {
 				prev.Speed = fix.Speed
+				prev.HasSpeed = fix.HasSpeed
 				prev.Heading = fix.Heading
 				prev.HasCourse = true
 				cache.Update(prev)

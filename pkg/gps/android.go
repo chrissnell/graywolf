@@ -85,8 +85,10 @@ func toFix(pb *platformsvc.GpsFix) Fix {
 		HasAlt:    pb.GetHasAlt(),
 		// Android delivers speed in m/s; gps.Fix carries knots.
 		Speed:     pb.GetSpeedMps() * mpsToKnots,
+		HasSpeed:  pb.GetHasSpeed(),
 		Heading:   pb.GetCourseDeg(),
 		HasCourse: pb.GetHasCourse(),
+		AccuracyM: pb.GetAccuracyM(),
 		Timestamp: time.UnixMilli(pb.GetTimeUnixMs()).UTC(),
 		FixMode:   3, // Android only delivers Locations after a real fix.
 	}
@@ -95,6 +97,8 @@ func toFix(pb *platformsvc.GpsFix) Fix {
 func toSatelliteView(st *platformsvc.GnssStatusUpdate) SatelliteView {
 	out := SatelliteView{
 		UpdatedAt:  time.Now().UTC(),
+		SatsInView: int(st.GetSatsInView()),
+		SatsUsed:   int(st.GetSatsUsed()),
 		Satellites: make([]SatelliteInfo, 0, len(st.GetSats())),
 	}
 	for _, s := range st.GetSats() {
@@ -103,10 +107,12 @@ func toSatelliteView(st *platformsvc.GnssStatusUpdate) SatelliteView {
 		// display. If a future polar plot needs half-dB precision,
 		// widen SatelliteInfo.SNR to float32 in a follow-up.
 		out.Satellites = append(out.Satellites, SatelliteInfo{
-			PRN:       int(s.GetSvid()),
-			Elevation: int(s.GetElevationDeg()),
-			Azimuth:   int(s.GetAzimuthDeg()),
-			SNR:       int(s.GetCn0Dbhz()),
+			PRN:           int(s.GetSvid()),
+			Elevation:     int(s.GetElevationDeg()),
+			Azimuth:       int(s.GetAzimuthDeg()),
+			SNR:           int(s.GetCn0Dbhz()),
+			UsedInFix:     s.GetUsedInFix(),
+			Constellation: s.GetConstellation(),
 		})
 	}
 	return out

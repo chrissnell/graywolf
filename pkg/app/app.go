@@ -104,9 +104,12 @@ type App struct {
 	agwMu       sync.Mutex
 	digi           *digipeater.Digipeater
 	gpsCache       *gps.MemCache
-	satelliteCache gps.SatelliteCache // distinct from gpsCache so the
-	// android per-sat reader doesn't share the position lock; on
-	// desktop it points at gpsCache (which also implements SatelliteCache).
+	// satelliteCache points at gpsCache today (MemCache implements both
+	// PositionCache and SatelliteCache, with separate internal locks).
+	// The field is typed as the narrower SatelliteCache interface so the
+	// android per-sat reader can swap in an alternate implementation
+	// without touching gpsCache.
+	satelliteCache gps.SatelliteCache
 	stationPos  *gps.StationPos
 	gpsMgr      *gpsManager
 	appAndroidExt // platformClient lives here on Android, empty on desktop

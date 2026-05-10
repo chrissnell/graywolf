@@ -81,11 +81,14 @@ func TestRunAndroidWritesFixToCache(t *testing.T) {
 				t.Fatalf("Altitude not propagated: %+v", fix)
 			}
 			// 0.5 m/s == 0.972... knots
-			if fix.Speed < 0.96 || fix.Speed > 0.98 {
-				t.Fatalf("Speed (knots) out of range: %v", fix.Speed)
+			if fix.Speed < 0.96 || fix.Speed > 0.98 || !fix.HasSpeed {
+				t.Fatalf("Speed/HasSpeed not propagated: %+v", fix)
 			}
 			if fix.Heading != 142.0 || !fix.HasCourse {
 				t.Fatalf("Heading not propagated: %+v", fix)
+			}
+			if fix.AccuracyM != 4.8 {
+				t.Fatalf("AccuracyM not propagated: got %v want 4.8", fix.AccuracyM)
 			}
 			if fix.Timestamp.UnixMilli() != 1_700_000_000_000 {
 				t.Fatalf("Timestamp wrong: %v", fix.Timestamp)
@@ -124,6 +127,18 @@ func TestRunAndroidGnssWritesSatelliteView(t *testing.T) {
 		if ok && len(view.Satellites) == 2 {
 			if view.Satellites[0].PRN != 5 || view.Satellites[0].SNR != 41 {
 				t.Fatalf("first sat wrong: %+v", view.Satellites[0])
+			}
+			if !view.Satellites[0].UsedInFix {
+				t.Fatalf("UsedInFix not propagated on used sat: %+v", view.Satellites[0])
+			}
+			if view.Satellites[1].UsedInFix {
+				t.Fatalf("UsedInFix=true leaked onto un-used sat: %+v", view.Satellites[1])
+			}
+			if view.Satellites[0].Constellation != "GPS" {
+				t.Fatalf("Constellation not propagated: %q", view.Satellites[0].Constellation)
+			}
+			if view.SatsInView != 11 || view.SatsUsed != 8 {
+				t.Fatalf("totals not propagated: in_view=%d used=%d", view.SatsInView, view.SatsUsed)
 			}
 			cancel()
 			return
