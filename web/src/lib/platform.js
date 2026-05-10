@@ -1,32 +1,32 @@
-// Platform detection helpers. The presence of the GraywolfWebInterface
-// JS bridge (injected by the Android Service via WebView.addJavascriptInterface)
-// is the ground-truth signal that the SPA is running inside the Android
-// WebView vs. a desktop browser.
+// Platform detection. Returns 'android' when running inside the
+// Android WebView (signalled by the GraywolfWebInterface JS bridge),
+// otherwise 'desktop'. Used by Svelte routes/components that gate
+// surfaces on host platform.
 //
-// Used by Svelte routes/components to hide surfaces that are unsupported
-// or meaningless on Android (audio device path field, output device
-// selectors, PTT settings, the Updates page, etc.) so the operator UI
-// matches the actual runtime capability rather than the desktop-shaped
-// configstore schema.
+// Read via Platform.kind. The kind getter is dynamic — it consults
+// the bridge on every access — so test setups that toggle
+// globalThis.GraywolfWebInterface between cases observe the change
+// without re-importing.
+//
+// Companion modules: pkg/platform.Kind (Go) and Platform.KIND (Kotlin).
 
-import { getBearerToken } from './androidBridge.js';
-
-/**
- * Returns true when running inside the Android WebView. Cheap (cached
- * by androidBridge.getBearerToken) -- safe to call in render paths.
- */
-export function isAndroid() {
-  return getBearerToken() !== null;
+function detectKind() {
+  // Bypass androidBridge's cache — Platform.kind is documented as dynamic
+  // so test setups that toggle globalThis.GraywolfWebInterface observe
+  // the change without re-importing.
+  try {
+    const v = globalThis.GraywolfWebInterface?.getBearerToken?.();
+    return (typeof v === 'string' && v.length > 0) ? 'android' : 'desktop';
+  } catch {
+    return 'desktop';
+  }
 }
 
-/**
- * Inverse helper for readability in templates that hide rather than
- * show on Android.
- *
- *   {#if isDesktop()}
- *     <Button>Detect devices</Button>
- *   {/if}
- */
-export function isDesktop() {
-  return !isAndroid();
-}
+export const Platform = {
+  get kind() { return detectKind(); },
+};
+
+// Legacy shims kept for one transitional commit (Task 4 sweep removes
+// every callsite, then Task 4's final step deletes these exports).
+export function isAndroid() { return Platform.kind === 'android'; }
+export function isDesktop() { return Platform.kind === 'desktop'; }
