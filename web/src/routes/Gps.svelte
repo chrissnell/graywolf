@@ -3,9 +3,11 @@
   import { Button, Input, Select, Badge, AlertDialog } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
+  import { Platform } from '../lib/platform.js';
   import PageHeader from '../components/PageHeader.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
+  import GpsAndroid from './GpsAndroid.svelte';
 
   let config = $state(null);
   let available = $state([]);
@@ -110,6 +112,9 @@
   let hasGps = $derived(config && config.source && config.source !== 'none');
 </script>
 
+{#if Platform.kind === 'android'}
+  <GpsAndroid />
+{:else}
 <PageHeader title="GPS" subtitle="GPS source configuration">
   <Button onclick={detectPorts} disabled={loadingAvail}>
     {loadingAvail ? 'Scanning...' : 'Detect Devices'}
@@ -250,6 +255,7 @@
     </div>
   </AlertDialog.Content>
 </AlertDialog>
+{/if}
 
 <style>
   /* Readiness */
