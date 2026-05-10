@@ -42,3 +42,9 @@ graywolf-modem-arm64
 # Generated at assemble time by android/app/build.gradle.kts
 # (cargoNdkBuild + goCrossCompile tasks).
 android/app/src/main/jniLibs/
+
+# Gradle per-project caches and build output.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
