@@ -27,6 +27,7 @@ type clientImpl struct {
 
 	subsMu         sync.Mutex
 	gpsFixSubs     []chan<- *GpsFix
+	gnssStatusSubs []chan<- *GnssStatusUpdate
 	audioRouteSubs []chan<- *AudioRouteChanged
 
 	// Single in-flight request → response correlation. The platform proto
@@ -151,6 +152,16 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 		for _, s := range subs {
 			select {
 			case s <- b.AudioRouteChanged:
+			default:
+			}
+		}
+	case *pb.PlatformMessage_GnssStatus:
+		c.subsMu.Lock()
+		subs := append([]chan<- *GnssStatusUpdate{}, c.gnssStatusSubs...)
+		c.subsMu.Unlock()
+		for _, s := range subs {
+			select {
+			case s <- b.GnssStatus:
 			default:
 			}
 		}
