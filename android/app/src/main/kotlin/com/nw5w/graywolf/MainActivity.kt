@@ -1,13 +1,18 @@
 package com.nw5w.graywolf
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -19,6 +24,7 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private val mainHandler = Handler(Looper.getMainLooper())
     private var didReloadOnError = false
+    private var batteryOptIntentChecked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +88,32 @@ class MainActivity : Activity() {
         mainHandler.postDelayed(r, 500)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!batteryOptIntentChecked) {
+            batteryOptIntentChecked = true
+            maybeRequestBatteryOptWhitelist()
+        }
+    }
+
+    @SuppressLint("BatteryLife")
+    private fun maybeRequestBatteryOptWhitelist() {
+        if (batteryOptWhitelistRequested(this)) return
+        val pm = getSystemService(PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            markBatteryOptWhitelistRequested(this)
+            return
+        }
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(Uri.parse("package:$packageName"))
+            startActivity(intent)
+        } catch (t: Throwable) {
+            Log.w(TAG, "battery-opt whitelist intent failed: $t")
+        }
+        markBatteryOptWhitelistRequested(this)
+    }
+
     override fun onDestroy() {
         webView.destroy()
         super.onDestroy()
@@ -90,5 +122,16 @@ class MainActivity : Activity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val REQ_PERMS = 0x101
+        private const val PREFS_NAME = "graywolf-prefs"
+        private const val PREF_BATTERY_OPT_REQUESTED = "battery_opt_whitelist_requested_v1"
+
+        fun batteryOptWhitelistRequested(ctx: Context): Boolean =
+            ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(PREF_BATTERY_OPT_REQUESTED, false)
+
+        fun markBatteryOptWhitelistRequested(ctx: Context) {
+            ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(PREF_BATTERY_OPT_REQUESTED, true).apply()
+        }
     }
 }
