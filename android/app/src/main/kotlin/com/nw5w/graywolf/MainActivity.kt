@@ -31,6 +31,20 @@ class MainActivity : Activity() {
         webView = WebView(this).also {
             it.settings.javaScriptEnabled = true
             it.settings.domStorageEnabled = true
+            // Make the WebView feel like a native app: no pinch-zoom,
+            // no zoom controls, no overscroll glow, no scrollbars on
+            // the chrome (the SPA renders its own).
+            it.settings.setSupportZoom(false)
+            it.settings.builtInZoomControls = false
+            it.settings.displayZoomControls = false
+            it.overScrollMode = android.view.View.OVER_SCROLL_NEVER
+            it.isHorizontalScrollBarEnabled = false
+            it.isVerticalScrollBarEnabled = false
+            // Long-press text-select gesture also feels app-y when
+            // disabled on map/control surfaces; SPA can re-enable
+            // per-region with CSS user-select:text on inputs/textareas.
+            it.isLongClickable = false
+            it.setOnLongClickListener { true }
             it.addJavascriptInterface(
                 WebAppInterface { (application as GraywolfApp).bearerToken },
                 "GraywolfWebInterface",
