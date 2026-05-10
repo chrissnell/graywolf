@@ -25,8 +25,3 @@ function detectKind() {
 export const Platform = {
   get kind() { return detectKind(); },
 };
-
-// Legacy shims kept for one transitional commit (Task 4 sweep removes
-// every callsite, then Task 4's final step deletes these exports).
-export function isAndroid() { return Platform.kind === 'android'; }
-export function isDesktop() { return Platform.kind === 'desktop'; }

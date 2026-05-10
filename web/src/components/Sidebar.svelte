@@ -6,7 +6,7 @@
   import { messages } from '../lib/messagesStore.svelte.js';
   import { terminalSidebar } from '../lib/stores/terminal.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
-  import { isAndroid } from '../lib/platform.js';
+  import { Platform } from '../lib/platform.js';
   import logoUrl from '../assets/graywolf.svg';
 
   // Surfaces deferred or unsupported on Android. PTT lands in phase 5;
@@ -47,7 +47,7 @@
   const navGroups = $derived([
     {
       label: 'Settings',
-      items: isAndroid()
+      items: Platform.kind === 'android'
         ? allSettingsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
         : allSettingsItems,
     },
