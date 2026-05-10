@@ -16,6 +16,8 @@ type UsbClass = pb.UsbClass
 type UsbDevice = pb.UsbDevice
 type GpsFix = pb.GpsFix
 type AudioRouteChanged = pb.AudioRouteChanged
+type GnssStatusUpdate = pb.GnssStatusUpdate
+type SatInfo = pb.SatInfo
 type HelloResponse = pb.Hello
 type PttAck = pb.PttAck
 
