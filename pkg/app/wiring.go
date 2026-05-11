@@ -220,6 +220,36 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			plCfg = seeded
 		}
 	}
+	// On Android, seed a single audio_devices row on first boot. The
+	// AudioPump (Kotlin) always captures from the system default mic
+	// regardless of any DB rows -- it's how the modem decodes RF
+	// packets immediately on cold start -- but the SPA's
+	// AudioDevices / Channels pages drive their UX from the
+	// audio_devices table. Without a seed row, an operator who just
+	// launched the app sees "no audio devices" while RF traffic is
+	// already being decoded, which is a confusing failure mode.
+	// Operator can still rename / delete via the SPA; subsequent
+	// boots respect the persisted state.
+	if a.cfg.Platform == "android" {
+		if devs, err := a.store.ListAudioDevices(ctx); err == nil && len(devs) == 0 {
+			seed := &configstore.AudioDevice{
+				Name:       "Android Default Mic",
+				Direction:  "input",
+				SourceType: "soundcard",
+				SourcePath: "android-default",
+				SampleRate: 48000,
+				Channels:   1,
+				Format:     "s16le",
+			}
+			if err := a.store.CreateAudioDevice(ctx, seed); err != nil {
+				a.logger.Warn("seed audio device failed", "err", err)
+			} else {
+				a.logger.Info("seeded audio device (android first-boot default)",
+					"id", seed.ID, "name", seed.Name)
+			}
+		}
+	}
+
 	if plCfg != nil && plCfg.Enabled && a.cfg.HistoryDBPath != "" {
 		hdb, err := historydb.Open(a.cfg.HistoryDBPath)
 		if err != nil {
