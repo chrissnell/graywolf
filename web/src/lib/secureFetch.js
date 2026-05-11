@@ -16,15 +16,31 @@
 
 import { getBearerToken } from './androidBridge.js';
 
-export function installSecureFetch() {
-  const token = getBearerToken();
-  if (!token) return;
+// Read the bridge directly each call (not the cached androidBridge.getBearerToken)
+// so a renderer process that hadn't seen `GraywolfWebInterface` at install
+// time still picks up the token once the bridge attaches. The bridge is
+// stable for the WebView's lifetime, so a single read per fetch is cheap.
+function readBearerNow() {
+  try {
+    const v = globalThis.GraywolfWebInterface?.getBearerToken?.();
+    return (typeof v === 'string' && v.length > 0) ? v : null;
+  } catch {
+    return null;
+  }
+}
 
+export function installSecureFetch() {
+  // Wrap unconditionally. If we're on desktop (bridge never attaches) the
+  // per-call readBearerNow stays null and the wrapper is transparent.
   const originalFetch = globalThis.fetch.bind(globalThis);
 
   globalThis.fetch = function (input, init) {
     const url = inputUrl(input);
     if (!isSameOrigin(url)) {
+      return originalFetch(input, init);
+    }
+    const token = readBearerNow();
+    if (!token) {
       return originalFetch(input, init);
     }
 
@@ -49,12 +65,13 @@ export function installSecureFetch() {
     opts.headers = headers;
     return originalFetch(input, opts);
   };
+  // Keep the named import live so the test harness's resetBridge still
+  // reaches the same module without bundlers tree-shaking it.
+  void getBearerToken;
 }
 
 export function installSecureWebSocket() {
-  const token = getBearerToken();
-  if (!token) return;
-
+  // Same per-call bridge read pattern as installSecureFetch.
   const Original = globalThis.WebSocket;
 
   // Subclass via `class extends` so:
@@ -68,7 +85,8 @@ export function installSecureWebSocket() {
   // throws "Cannot assign to read only property" in strict mode.
   class SecureWS extends Original {
     constructor(url, protocols) {
-      const u = isSameOrigin(url) ? appendToken(url, token) : url;
+      const token = readBearerNow();
+      const u = (token && isSameOrigin(url)) ? appendToken(url, token) : url;
       if (protocols !== undefined) {
         super(u, protocols);
       } else {

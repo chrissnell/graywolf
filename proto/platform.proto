@@ -27,6 +27,7 @@ message PlatformMessage {
     AudioDeviceListResponse audio_list_resp = 14;
     AudioRouteChanged audio_route_changed = 15;
     Error error = 16;
+    GnssStatusUpdate gnss_status = 17;  // server → client; pushed alongside GpsFix
   }
 }
 
@@ -53,6 +54,19 @@ message GpsFix {
   double hdop = 7;
   uint32 num_sats = 8;
   GpsSource source = 9;
+  // Horizontal accuracy radius in meters (Android Location.getAccuracy()).
+  // 0 means "unknown / not provided" — desktop NMEA path leaves this 0.
+  // (JSON consumers reading /api/gps/state must treat 0 as "unset", not
+  // "perfect"; Android Location.accuracy never returns 0 in practice.)
+  // Old clients ignore the field; old servers send 0. Schema version stays 1.
+  double accuracy_m = 10;
+  // Presence bits. Android Location exposes hasAltitude()/hasSpeed()/
+  // hasBearing(); without these companion bools, the receiver cannot
+  // distinguish a legitimate zero (stationary station, due-north course,
+  // sea-level altitude) from "field absent". Default false on old senders.
+  bool has_alt = 11;
+  bool has_speed = 12;
+  bool has_course = 13;
 }
 
 message BatteryState {
@@ -162,4 +176,19 @@ enum ErrorCode {
 message Error {
   ErrorCode code = 1;
   string message = 2;
+}
+
+message SatInfo {
+  uint32 svid = 1;          // satellite vehicle id
+  string constellation = 2; // "GPS" / "GLONASS" / "BEIDOU" / "GALILEO" / "QZSS" / "SBAS"
+  double cn0_dbhz = 3;      // signal strength
+  bool used_in_fix = 4;
+  double elevation_deg = 5;
+  double azimuth_deg = 6;
+}
+
+message GnssStatusUpdate {
+  uint32 sats_in_view = 1;
+  uint32 sats_used = 2;
+  repeated SatInfo sats = 3;
 }

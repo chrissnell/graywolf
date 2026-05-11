@@ -22,11 +22,11 @@ func BearerAuthMiddleware(token string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if matchHeader(r, want) {
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(w, r.WithContext(WithBearerAuthed(r.Context())))
 				return
 			}
 			if isWebSocketUpgrade(r) && matchQueryToken(r, want) {
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(w, r.WithContext(WithBearerAuthed(r.Context())))
 				return
 			}
 			jsonError(w, http.StatusUnauthorized, "authentication required")

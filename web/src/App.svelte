@@ -1,7 +1,8 @@
 <script>
   import './app.css';
-  import Router, { location } from 'svelte-spa-router';
+  import Router, { location, replace } from 'svelte-spa-router';
   import { Toaster } from '@chrissnell/chonky-ui';
+  import { Platform } from './lib/platform.js';
   import Sidebar from './components/Sidebar.svelte';
   import NewsPopup from './components/NewsPopup.svelte';
   import { start as startMessagesTransport } from './lib/messagesTransport.js';
@@ -33,7 +34,7 @@
   import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
   import Actions from './routes/Actions.svelte';
 
-  const routes = {
+  const baseRoutes = {
     '/login': Login,
     '/': Dashboard,
     '/map': LiveMapV2,
@@ -59,6 +60,13 @@
     '/preferences/maps': MapsSettings,
     '/about': About,
   };
+  const routes = (() => {
+    if (Platform.kind !== 'android') return baseRoutes;
+    const r = { ...baseRoutes };
+    delete r['/agw'];
+    delete r['/login'];
+    return r;
+  })();
 
   let currentPath = $state('');
   $effect(() => {
@@ -66,7 +74,17 @@
     return unsub;
   });
 
-  let isLoginPage = $derived(currentPath === '/login');
+  let isLoginPage = $derived(currentPath === '/login' && Platform.kind !== 'android');
+
+  $effect(() => {
+    if (Platform.kind === 'android' && currentPath === '/login') {
+      // replace() uses history.replaceState — no new history entry, so
+      // pressing back doesn't loop the user through /login again. Direct
+      // `window.location.hash = '#/'` would push, causing a visible
+      // navigation ping-pong on Android's back button.
+      replace('/');
+    }
+  });
 
   let version = $state('');
   let authChecked = $state(false);
@@ -74,10 +92,18 @@
   $effect(() => {
     // Probe auth state before rendering protected routes.
     // /api/auth/setup is unauthenticated, so it always works.
+    //
+    // Android skips every hash-redirect to /login: the SPA there
+    // authenticates via the per-launch bearer token injected by the
+    // WebView bridge (androidBridge.js), so a 401 indicates a token
+    // mismatch that a reload can't fix. /login is also stripped from
+    // the route map on Android, so the redirect would render a blank
+    // page anyway.
+    const isAndroid = Platform.kind === 'android';
     fetch('/api/auth/setup')
       .then(r => r.json())
       .then(data => {
-        if (data.needs_setup) {
+        if (data.needs_setup && !isAndroid) {
           window.location.hash = '#/login';
           authChecked = true;
           return;
@@ -86,7 +112,7 @@
         // Fetch version (public endpoint) in parallel with auth probe.
         fetch('/api/version').then(r => r.json()).then(d => { version = d.version; }).catch(() => {});
         return fetch('/api/status', { credentials: 'same-origin' }).then(r => {
-          if (r.status === 401) window.location.hash = '#/login';
+          if (r.status === 401 && !isAndroid) window.location.hash = '#/login';
           authChecked = true;
         });
       })

@@ -125,6 +125,7 @@ func readGPSDStream(ctx context.Context, r io.Reader, cache PositionCache, logge
 			Latitude:  tpv.Lat,
 			Longitude: tpv.Lon,
 			Speed:     tpv.Speed * 1.9438444924, // m/s → knots
+			HasSpeed:  true,                     // gpsd TPV speed is authoritative once Mode>=2
 			Heading:   tpv.Track,
 			HasCourse: true,
 			Timestamp: tpv.Time,

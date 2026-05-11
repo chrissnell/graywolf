@@ -20,6 +20,49 @@ type PositionDTO struct {
 	Timestamp string  `json:"timestamp,omitempty"`
 }
 
+// GpsFixDTO is the JSON shape of a single GPS fix inside GpsStateDTO.
+// Field names match the platform.proto wire shape so the Android GPS
+// page can read s.fix.* directly. speed_mps + course_deg are exposed
+// (vs PositionDTO's knots/heading) because the Android page renders
+// raw m/s and degrees.
+type GpsFixDTO struct {
+	Lat        float64 `json:"lat,omitempty"`
+	Lon        float64 `json:"lon,omitempty"`
+	AltM       float64 `json:"alt_m,omitempty"`
+	HasAlt     bool    `json:"has_alt,omitempty"`
+	SpeedMps   float64 `json:"speed_mps,omitempty"`
+	HasSpeed   bool    `json:"has_speed,omitempty"`
+	CourseDeg  float64 `json:"course_deg,omitempty"`
+	HasCourse  bool    `json:"has_course,omitempty"`
+	AccuracyM  float64 `json:"accuracy_m,omitempty"`
+	TimeUnixMs int64   `json:"time_unix_ms,omitempty"`
+}
+
+// SatInfoDTO mirrors platformproto.SatInfo for the Android GPS page.
+type SatInfoDTO struct {
+	Svid          uint32  `json:"svid"`
+	Constellation string  `json:"constellation,omitempty"`
+	Cn0Dbhz       float64 `json:"cn0_dbhz,omitempty"`
+	UsedInFix     bool    `json:"used_in_fix,omitempty"`
+	ElevationDeg  float64 `json:"elevation_deg,omitempty"`
+	AzimuthDeg    float64 `json:"azimuth_deg,omitempty"`
+}
+
+// GnssStatusDTO mirrors platformproto.GnssStatusUpdate.
+type GnssStatusDTO struct {
+	SatsInView uint32       `json:"sats_in_view"`
+	SatsUsed   uint32       `json:"sats_used"`
+	Sats       []SatInfoDTO `json:"sats,omitempty"`
+}
+
+// GpsStateDTO aggregates a GPS fix and the per-sat status snapshot for
+// GET /api/gps/state. Either field may be omitted when no fix or no
+// per-sat detail has been observed.
+type GpsStateDTO struct {
+	Fix        *GpsFixDTO     `json:"fix,omitempty"`
+	GnssStatus *GnssStatusDTO `json:"gnss_status,omitempty"`
+}
+
 // RegisterPosition installs GET /api/position on the Server's mux using
 // a Go 1.22+ method-scoped pattern.
 //
@@ -33,6 +76,72 @@ type PositionDTO struct {
 func RegisterPosition(srv *Server, mux *http.ServeMux, pos *gps.StationPos) {
 	_ = srv // kept in signature so main.go wiring reads naturally
 	mux.HandleFunc("GET /api/position", getPosition(pos))
+	mux.HandleFunc("GET /api/gps/state", getGpsState(pos))
+}
+
+// getGpsState aggregates the latest fix + per-sat satellite view for
+// the Android GPS page. Returns 200 with empty fields when no fix
+// has been seen yet.
+//
+// @Summary  Get raw GPS state (fix + per-sat status)
+// @Tags     position
+// @ID       getGpsState
+// @Produce  json
+// @Success  200 {object} webapi.GpsStateDTO
+// @Security CookieAuth
+// @Router   /gps/state [get]
+func getGpsState(pos *gps.StationPos) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		out := GpsStateDTO{}
+		if pos != nil {
+			if fix, ok := pos.Get(); ok {
+				speed := fix.Speed / 1.94384449 // knots → m/s for the raw view
+				out.Fix = &GpsFixDTO{
+					Lat:        fix.Latitude,
+					Lon:        fix.Longitude,
+					AltM:       fix.Altitude,
+					HasAlt:     fix.HasAlt,
+					SpeedMps:   speed,
+					HasSpeed:   fix.HasSpeed,
+					CourseDeg:  fix.Heading,
+					HasCourse:  fix.HasCourse,
+					AccuracyM:  fix.AccuracyM,
+					TimeUnixMs: fix.Timestamp.UnixMilli(),
+				}
+			}
+			if view, ok := pos.GetSatellites(); ok {
+				// Prefer receiver-reported totals (Android GnssStatus
+				// exposes SatsInView / SatsUsed directly). Fall back to
+				// deriving from Satellites when both are 0 (NMEA path).
+				inView := view.SatsInView
+				used := view.SatsUsed
+				if inView == 0 && used == 0 {
+					inView = len(view.Satellites)
+					for _, s := range view.Satellites {
+						if s.UsedInFix {
+							used++
+						}
+					}
+				}
+				dto := &GnssStatusDTO{
+					SatsInView: uint32(inView),
+					SatsUsed:   uint32(used),
+				}
+				for _, s := range view.Satellites {
+					dto.Sats = append(dto.Sats, SatInfoDTO{
+						Svid:          uint32(s.PRN),
+						Constellation: s.Constellation,
+						Cn0Dbhz:       float64(s.SNR),
+						UsedInFix:     s.UsedInFix,
+						ElevationDeg:  float64(s.Elevation),
+						AzimuthDeg:    float64(s.Azimuth),
+					})
+				}
+				out.GnssStatus = dto
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
 }
 
 // getPosition returns the current station position. A station with no

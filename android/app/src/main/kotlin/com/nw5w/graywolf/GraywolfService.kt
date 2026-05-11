@@ -9,7 +9,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import androidx.core.content.ContextCompat
 import android.graphics.drawable.Icon
 import android.net.ConnectivityManager
 import android.os.Build
@@ -20,6 +23,7 @@ import com.nw5w.graywolf.BuildConfig
 import com.nw5w.graywolf.audio.AudioPump
 import com.nw5w.graywolf.binaries.GoLauncher
 import com.nw5w.graywolf.binaries.Supervisor
+import com.nw5w.graywolf.gps.GpsAdapter
 import com.nw5w.graywolf.jni.ModemBridge
 import com.nw5w.graywolf.platformsvc.PlatformServer
 import java.io.File
@@ -28,6 +32,7 @@ class GraywolfService : Service() {
     private val audioPump = AudioPump()
     private var goLauncher: GoLauncher? = null
     private var platformServer: PlatformServer? = null
+    private var gpsAdapter: GpsAdapter? = null
     private val supervisor = Supervisor(onRestart = ::supervisorRestart)
 
     private val stopReceiver = object : BroadcastReceiver() {
@@ -153,7 +158,7 @@ class GraywolfService : Service() {
         val notif: Notification = Notification.Builder(this, getString(R.string.notification_channel_id))
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_text))
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_notification)
             .addAction(
                 Notification.Action.Builder(
                     Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
@@ -163,17 +168,20 @@ class GraywolfService : Service() {
             )
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Phase 3 = MICROPHONE only. Android 14 requires each FGS
-            // type declared in the manifest to come paired with its
-            // access perm (USB_DEVICE for connectedDevice, ACCESS_*_
-            // LOCATION for location). Those access perms land in
-            // phases 5 (USB-PTT) and 4 (GPS) respectively; declaring
-            // the FGS types here without them throws SecurityException
-            // at startForeground.
-            startForeground(
-                NOTIF_ID, notif,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-            )
+            // Phase 4a adds LOCATION FGS type alongside MICROPHONE.
+            // Android 14 throws SecurityException if we declare an FGS
+            // type whose paired access perm is denied at runtime, so
+            // only include FGS_TYPE_LOCATION when ACCESS_FINE_LOCATION
+            // is actually granted. RECORD_AUDIO is always granted by
+            // this point (MainActivity.ensurePerms gates the launch).
+            var fgsType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+                fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                Log.i(TAG, "ACCESS_FINE_LOCATION denied; starting FGS without location type")
+            }
+            startForeground(NOTIF_ID, notif, fgsType)
         } else {
             startForeground(NOTIF_ID, notif)
         }
@@ -193,6 +201,7 @@ class GraywolfService : Service() {
             serverVersion = BuildConfig.VERSION_NAME,
             schemaVersion = 1,
         ).also { it.start() }
+        gpsAdapter = GpsAdapter(this, platformServer!!).also { it.start() }
 
         if (!bootModem()) {
             stopSelf()
@@ -216,6 +225,8 @@ class GraywolfService : Service() {
     override fun onDestroy() {
         supervisor.stop()
         goListenerReady = false
+        gpsAdapter?.stop()
+        gpsAdapter = null
         goLauncher?.stop()
         audioPump.stop()
         platformServer?.stop()

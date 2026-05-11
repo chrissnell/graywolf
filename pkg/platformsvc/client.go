@@ -14,6 +14,7 @@ type Client interface {
 	ConnectWithReconnect(ctx context.Context) error
 	Hello(ctx context.Context, schemaVersion uint32) (*HelloResponse, error)
 	SubscribeGpsFix(ctx context.Context, ch chan<- *GpsFix) error
+	SubscribeGnssStatus(ctx context.Context, ch chan<- *GnssStatusUpdate) error
 	SubscribeAudioRouteChanged(ctx context.Context, ch chan<- *AudioRouteChanged) error
 	ListUsbDevices(ctx context.Context, class UsbClass) ([]*UsbDevice, error)
 	SelectUsbDevice(ctx context.Context, vid, pid uint16) (*UsbHandle, error)

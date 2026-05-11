@@ -6,13 +6,13 @@
   import { messages } from '../lib/messagesStore.svelte.js';
   import { terminalSidebar } from '../lib/stores/terminal.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
-  import { isAndroid } from '../lib/platform.js';
+  import { Platform } from '../lib/platform.js';
   import logoUrl from '../assets/graywolf.svg';
 
   // Surfaces deferred or unsupported on Android. PTT lands in phase 5;
   // Simulation is a desktop dev-mode tool. Hidden from the sidebar so
   // operators don't tap into a non-functional surface.
-  const HIDDEN_ON_ANDROID = new Set(['/ptt', '/simulation']);
+  const HIDDEN_ON_ANDROID = new Set(['/ptt', '/simulation', '/agw', '/login']);
 
   // Main-function entries get an icon and render in a single
   // unsubheadered top section. Inline SVGs cover the cases chonky-ui's
@@ -47,7 +47,7 @@
   const navGroups = $derived([
     {
       label: 'Settings',
-      items: isAndroid()
+      items: Platform.kind === 'android'
         ? allSettingsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
         : allSettingsItems,
     },

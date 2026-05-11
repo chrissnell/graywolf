@@ -97,6 +97,8 @@ dependencies {
     implementation("com.google.protobuf:protobuf-javalite:3.25.3")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
 }
 
 val jniLibsDir = file("src/main/jniLibs")

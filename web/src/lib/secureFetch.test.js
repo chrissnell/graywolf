@@ -25,9 +25,34 @@ afterEach(() => {
 
 // ---------- installSecureFetch ----------
 
-test('installSecureFetch is no-op when bridge absent', () => {
+test('installSecureFetch wraps fetch even when bridge absent (transparent pass-through)', async () => {
+  // Bridge attaches AFTER bootstrap on some WebViews; wrapping
+  // unconditionally + reading the token per-call lets late-arriving
+  // bridge state still inject the Bearer header. With no bridge,
+  // the wrapped fetch must behave as a pass-through (no header set).
+  let capturedHeaders;
+  globalThis.fetch = (_input, opts) => {
+    capturedHeaders = new Headers(opts?.headers);
+    return Promise.resolve(new Response('{}'));
+  };
   installSecureFetch();
-  assert.equal(globalThis.fetch, originalFetch);
+  await globalThis.fetch('/api/version');
+  assert.equal(capturedHeaders.get('Authorization'), null);
+});
+
+test('installSecureFetch picks up a late-arriving bridge', async () => {
+  // Bridge absent at install time; attaches before first fetch.
+  // Stub the originalFetch BEFORE installing so the wrapper closes
+  // over the stub. Then attach the bridge and call the wrapped fetch.
+  let capturedHeaders;
+  globalThis.fetch = (_input, opts) => {
+    capturedHeaders = new Headers(opts?.headers);
+    return Promise.resolve(new Response('{}'));
+  };
+  installSecureFetch();
+  globalThis.GraywolfWebInterface = { getBearerToken: () => 'tok-late' };
+  await globalThis.fetch('/api/version');
+  assert.equal(capturedHeaders.get('Authorization'), 'Bearer tok-late');
 });
 
 test('installSecureFetch wraps fetch and adds Authorization header', async () => {
@@ -83,9 +108,20 @@ test('installSecureFetch preserves caller-supplied Authorization header (caller 
 
 // ---------- installSecureWebSocket ----------
 
-test('installSecureWebSocket is no-op when bridge absent', () => {
+test('installSecureWebSocket wraps WebSocket even when bridge absent (pass-through)', () => {
+  // Same rationale as installSecureFetch: wrap unconditionally so a
+  // late-arriving bridge can still drive the per-call token read.
+  const captured = [];
+  class FakeWS {
+    constructor(url, protocols) { captured.push({ url, protocols }); }
+  }
+  globalThis.WebSocket = FakeWS;
   installSecureWebSocket();
-  assert.equal(globalThis.WebSocket, originalWS);
+  /* eslint-disable-next-line no-new */
+  new globalThis.WebSocket('/ws/x');
+  assert.equal(captured.length, 1);
+  // No token in the URL when bridge absent.
+  assert.equal(captured[0].url, '/ws/x');
 });
 
 test('installSecureWebSocket appends ?token to same-origin URL', () => {

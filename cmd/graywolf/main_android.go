@@ -62,46 +62,54 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := platformHello(ctx, logger, os.Getenv("GRAYWOLF_PLATFORM_SOCKET")); err != nil {
+	a := app.New(cfg, logger)
+
+	cli, err := platformConnect(ctx, logger, os.Getenv("GRAYWOLF_PLATFORM_SOCKET"))
+	if err != nil {
 		logger.Error("graywolf-android: platformsvc handshake failed", "err", err)
 		os.Exit(1)
 	}
+	defer cli.Close()
+	a.SetPlatformClient(cli)
 
-	if err := app.New(cfg, logger).Run(ctx); err != nil {
+	if err := a.Run(ctx); err != nil {
 		logger.Error("graywolf-android: exited with error", "err", err)
 		os.Exit(1)
 	}
 }
 
-// platformHello dials the Kotlin PlatformServer at sockPath, exchanges
-// Hello, logs the agreed schema version. Mismatch returns an error;
-// the Service supervisor will restart the process.
-func platformHello(ctx context.Context, logger *slog.Logger, sockPath string) error {
+// platformConnect dials the Kotlin PlatformServer at sockPath, exchanges
+// Hello, logs the agreed schema version, and returns the live client
+// for the app to keep using. The caller owns Close. Mismatch returns
+// an error; the Service supervisor will restart the process.
+func platformConnect(ctx context.Context, logger *slog.Logger, sockPath string) (platformsvc.Client, error) {
 	if sockPath == "" {
-		return errors.New("GRAYWOLF_PLATFORM_SOCKET unset")
+		return nil, errors.New("GRAYWOLF_PLATFORM_SOCKET unset")
 	}
 	cli := platformsvc.NewClient(sockPath)
-	defer cli.Close()
 
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := cli.ConnectWithReconnect(dialCtx); err != nil {
-		return fmt.Errorf("connect: %w", err)
+		_ = cli.Close()
+		return nil, fmt.Errorf("connect: %w", err)
 	}
 	helloCtx, helloCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer helloCancel()
 	resp, err := cli.Hello(helloCtx, platformSchemaVersion)
 	if err != nil {
-		return fmt.Errorf("hello: %w", err)
+		_ = cli.Close()
+		return nil, fmt.Errorf("hello: %w", err)
 	}
 	logger.Info("platformsvc: connected",
 		"server_version", resp.GetServerVersion(),
 		"schema_version", resp.GetSchemaVersion())
 	if resp.GetSchemaVersion() != platformSchemaVersion {
-		return fmt.Errorf("schema mismatch: client=%d server=%d",
+		_ = cli.Close()
+		return nil, fmt.Errorf("schema mismatch: client=%d server=%d",
 			platformSchemaVersion, resp.GetSchemaVersion())
 	}
-	return nil
+	return cli, nil
 }
 
 // installAndroidResolver replaces net.DefaultResolver with one whose

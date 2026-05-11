@@ -11,33 +11,45 @@ import (
 
 // Fix is a single GPS observation. Zero Timestamp indicates "no fix yet".
 type Fix struct {
-	Latitude  float64   // degrees, north positive
-	Longitude float64   // degrees, east positive
-	Altitude  float64   // metres above MSL
-	HasAlt    bool
-	Speed     float64   // knots (APRS/NMEA canonical unit)
-	Heading   float64   // degrees true, 0..360
-	HasCourse bool      // true if Speed/Heading are valid for this fix
-	Timestamp time.Time // UTC
-	FixMode   int       // 0=unknown, 1=no fix, 2=2D, 3=3D (from GSA)
-	PDOP      float64   // position dilution of precision
-	HDOP      float64   // horizontal dilution of precision
-	VDOP      float64   // vertical dilution of precision
-	HasDOP    bool      // true if DOP values are valid
+	Latitude   float64   // degrees, north positive
+	Longitude  float64   // degrees, east positive
+	Altitude   float64   // metres above MSL
+	HasAlt     bool
+	Speed      float64   // knots (APRS/NMEA canonical unit)
+	HasSpeed   bool      // true if Speed is valid for this fix (independent of HasCourse)
+	Heading    float64   // degrees true, 0..360
+	HasCourse  bool      // true if Heading is valid for this fix
+	AccuracyM  float64   // horizontal accuracy radius in metres (0 = unknown / not provided)
+	Timestamp  time.Time // UTC
+	FixMode    int       // 0=unknown, 1=no fix, 2=2D, 3=3D (from GSA)
+	PDOP       float64   // position dilution of precision
+	HDOP       float64   // horizontal dilution of precision
+	VDOP       float64   // vertical dilution of precision
+	HasDOP     bool      // true if DOP values are valid
 }
 
 // SatelliteInfo describes a single satellite visible to the receiver.
 type SatelliteInfo struct {
-	PRN       int // satellite PRN/ID number
-	Elevation int // degrees above horizon (0-90)
-	Azimuth   int // degrees from true north (0-359)
-	SNR       int // signal-to-noise dB-Hz (0-99), -1 if not tracking
+	PRN           int    // satellite PRN/ID number
+	Elevation     int    // degrees above horizon (0-90)
+	Azimuth       int    // degrees from true north (0-359)
+	SNR           int    // signal-to-noise dB-Hz (0-99), -1 if not tracking
+	UsedInFix     bool   // true if this satellite was used in the most recent fix
+	Constellation string // "GPS" / "GLONASS" / "BEIDOU" / "GALILEO" / "QZSS" / "SBAS" (empty for NMEA receivers that don't report)
 }
 
 // SatelliteView is a snapshot of all satellites visible to the receiver,
 // assembled from one or more complete GSV sentence cycles.
+//
+// SatsInView / SatsUsed are the receiver-reported totals when available
+// (Android GnssStatus exposes them directly). They may differ from
+// len(Satellites) and the count of UsedInFix entries when the receiver
+// truncates the per-sat list. NMEA path leaves both 0; consumers MUST
+// fall back to deriving them from Satellites when both are zero.
 type SatelliteView struct {
 	Satellites []SatelliteInfo
+	SatsInView int
+	SatsUsed   int
 	UpdatedAt  time.Time
 }
 

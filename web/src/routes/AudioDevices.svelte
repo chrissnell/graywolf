@@ -3,7 +3,7 @@
   import { Button, Input, Select, Badge, AlertDialog, Checkbox } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
-  import { isAndroid } from '../lib/platform.js';
+  import { Platform } from '../lib/platform.js';
   import PageHeader from '../components/PageHeader.svelte';
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
@@ -28,7 +28,13 @@
   let isWindows = $state(false);
 
   function emptyForm() {
-    return { name: '', device_path: '', sample_rate: '48000', source_type: 'soundcard', direction: 'input' };
+    return {
+      name: '',
+      device_path: Platform.kind === 'android' ? 'android-default' : '',
+      sample_rate: '48000',
+      source_type: 'soundcard',
+      direction: 'input',
+    };
   }
 
   onMount(() => {
@@ -265,7 +271,7 @@
 </script>
 
 <PageHeader title="Audio Devices" subtitle="Sound card configuration">
-  {#if !isAndroid()}
+  {#if Platform.kind !== 'android'}
     <Button onclick={refreshAvailable} disabled={loadingAvail}>
       {loadingAvail ? 'Scanning...' : 'Detect Devices'}
     </Button>
@@ -278,7 +284,7 @@
   <Button variant="primary" onclick={openCreate}>+ Add Device</Button>
 </PageHeader>
 
-{#if isAndroid()}
+{#if Platform.kind === 'android'}
   <div class="android-note" role="note">
     <strong>Android audio model.</strong> Capture is handled by the system
     via the default microphone source (built-in mic, or USB audio device
@@ -418,7 +424,7 @@
 {/if}
 
 <!-- Available devices from hardware scan -->
-{#if available.length > 0 && !isAndroid()}
+{#if available.length > 0 && Platform.kind !== 'android'}
   <div class="section-label" style="margin-top: 24px;">Detected Hardware</div>
   <p class="section-hint">Click a device to add it to your configuration.</p>
   <div class="avail-grid">
@@ -473,7 +479,11 @@
     <Input id="ad-name" bind:value={form.name} placeholder="USB Sound Card" />
   </FormField>
   <FormField label="Device Path" error={errors.device_path} id="ad-path">
-    <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
+    {#if Platform.kind === 'android'}
+      <Input id="ad-path" value="android-default" readonly />
+    {:else}
+      <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
+    {/if}
   </FormField>
   <FormField label="Direction" id="ad-dir">
     <Select id="ad-dir" bind:value={form.direction} options={[

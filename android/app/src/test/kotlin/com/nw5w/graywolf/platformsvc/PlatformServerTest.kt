@@ -110,6 +110,31 @@ class PlatformServerTest {
     }
 
     @Test
+    fun broadcastGpsFixIsSafeWithNoConnectedClients() {
+        // No client connected; broadcast must be a silent no-op (not a crash).
+        // This proves the helper exists, builds the message correctly, and
+        // tolerates an empty activeOutputs list. Live UDS round-trip cover-
+        // age happens on the T865 device walk in Task 20 — host-only JDK
+        // sockets behave subtly differently around buffering and would mask
+        // bugs that only show up on Android's LocalSocket.
+        val fix = GpsFix.newBuilder()
+            .setLat(1.0)
+            .setLon(2.0)
+            .setSource(com.nw5w.graywolf.platformproto.GpsSource.GPS_SOURCE_ANDROID_GPS)
+            .build()
+        server.broadcastGpsFix(fix)  // must not throw
+    }
+
+    @Test
+    fun broadcastGnssStatusIsSafeWithNoConnectedClients() {
+        val status = com.nw5w.graywolf.platformproto.GnssStatusUpdate.newBuilder()
+            .setSatsInView(11)
+            .setSatsUsed(8)
+            .build()
+        server.broadcastGnssStatus(status)  // must not throw
+    }
+
+    @Test
     fun unimplementedMessageReturnsNotImplemented() {
         connect().use { ch ->
             val out = Channels.newOutputStream(ch)

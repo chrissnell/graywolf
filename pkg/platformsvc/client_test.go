@@ -134,6 +134,73 @@ func TestSubscribeGpsFix(t *testing.T) {
 	}
 }
 
+func TestSubscribeGnssStatusDelivers(t *testing.T) {
+	respond := func(req *pb.PlatformMessage) *pb.PlatformMessage { return nil }
+	fs, clientConn := newFakeServer(t, respond)
+	defer fs.close()
+	c := newClient("").(*clientImpl)
+	c.injectConn(clientConn)
+
+	ch := make(chan *pb.GnssStatusUpdate, 4)
+	if err := c.SubscribeGnssStatus(context.Background(), ch); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	push := &pb.PlatformMessage{Body: &pb.PlatformMessage_GnssStatus{
+		GnssStatus: &pb.GnssStatusUpdate{
+			SatsInView: 11,
+			SatsUsed:   8,
+			Sats: []*pb.SatInfo{
+				{Svid: 5, Constellation: "GPS", Cn0Dbhz: 41.5, UsedInFix: true},
+			},
+		},
+	}}
+	if err := writeFrame(fs.conn, push); err != nil {
+		t.Fatalf("server push: %v", err)
+	}
+
+	select {
+	case got := <-ch:
+		if got.GetSatsInView() != 11 || got.GetSatsUsed() != 8 || len(got.GetSats()) != 1 {
+			t.Fatalf("unexpected payload: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for GnssStatusUpdate")
+	}
+}
+
+func TestGnssStatusDoesNotCrossTalkToGpsFixSub(t *testing.T) {
+	respond := func(req *pb.PlatformMessage) *pb.PlatformMessage { return nil }
+	fs, clientConn := newFakeServer(t, respond)
+	defer fs.close()
+	c := newClient("").(*clientImpl)
+	c.injectConn(clientConn)
+
+	gpsCh := make(chan *pb.GpsFix, 4)
+	gnssCh := make(chan *pb.GnssStatusUpdate, 4)
+	_ = c.SubscribeGpsFix(context.Background(), gpsCh)
+	_ = c.SubscribeGnssStatus(context.Background(), gnssCh)
+
+	push := &pb.PlatformMessage{Body: &pb.PlatformMessage_GnssStatus{
+		GnssStatus: &pb.GnssStatusUpdate{SatsInView: 1},
+	}}
+	_ = writeFrame(fs.conn, push)
+
+	select {
+	case <-gnssCh:
+		// good
+	case <-time.After(time.Second):
+		t.Fatal("expected GnssStatus on its channel")
+	}
+
+	select {
+	case got := <-gpsCh:
+		t.Fatalf("GpsFix subscriber leaked a GnssStatus event: %+v", got)
+	case <-time.After(200 * time.Millisecond):
+		// good
+	}
+}
+
 func TestRoundTripAllMessageTypes(t *testing.T) {
 	// Echo server: every request gets a typed response of the same oneof.
 	respond := func(req *pb.PlatformMessage) *pb.PlatformMessage {
