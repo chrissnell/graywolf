@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AGWPE &mdash; Graywolf Handbook</title>
+  <title>Serial KISS TNC &mdash; Graywolf Handbook</title>
   <link rel="stylesheet" href="handbook.css" />
 </head>
 <body>
@@ -66,94 +66,60 @@
   </aside>
 
   <main class="content">
-    <h1>AGWPE</h1>
-    <p class="subtitle">AGW Packet Engine protocol interface for legacy software</p>
+    <h1>Serial KISS TNC</h1>
+    <p class="subtitle">Configure graywolf to use hardware TNC connected as a serial port</p>
 
     <p>
-      The AGWPE (AGW Packet Engine) interface provides compatibility with
-      Windows packet radio software that speaks the AGW protocol. This is
-      a single-instance TCP server that supports multiple simultaneous
-      clients and up to four radio ports.
-    </p>
-
-    <div class="screenshot">
-      <img src="img/agwpe.png" alt="AGW Interface page showing listen address and callsign configuration" />
-      <div class="caption">AGWPE interface configuration with listen address and per-port callsigns</div>
-    </div>
-
-    <h2>Settings</h2>
-
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>enabled</code></td>
-              <td><code>false</code></td>
-              <td>Enable the AGWPE listener</td>
-            </tr>
-            <tr>
-              <td><code>listen_addr</code></td>
-              <td><code>0.0.0.0:8000</code></td>
-              <td>TCP listen address</td>
-            </tr>
-            <tr>
-              <td><code>callsigns</code></td>
-              <td>&mdash;</td>
-              <td>Comma-separated callsigns, one per AGW port (max 4)</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <h2>Port Mapping</h2>
-
-    <p>
-      AGWPE supports up to four radio ports (numbered 0&ndash;3). Each port
-      is mapped to a callsign specified in the <code>callsigns</code> field.
-      The order determines the port number:
-    </p>
-
-<pre><code>callsigns: "N0CALL,N0CALL-5,N0CALL-10"
-# Port 0 → N0CALL
-# Port 1 → N0CALL-5
-# Port 2 → N0CALL-10</code></pre>
-
-    <h2>Supported Frame Types</h2>
-
-    <p>
-      Graywolf implements the AGWPE protocol subset needed for packet radio
-      operations:
+      There are several types of devices which provide an external KISS TNC:
     </p>
 
     <ul>
-      <li><strong>Monitor frames</strong> &mdash; receive decoded AX.25 packets</li>
-      <li><strong>Unproto frames</strong> &mdash; transmit UI (unnumbered information) packets</li>
-      <li><strong>Raw frames</strong> &mdash; send and receive raw AX.25 data</li>
+      <li>Hardware TNC devices like the <a href="https://www.mobilinkd.com/\">Mobilinkd</a></li>
+      <li>Handheld radios like the Kenwood TH-D75 or VGC VR-N76 which expose a KISS TNC via a cable or bluetooth</li>
     </ul>
 
-    <div class="callout info">
-      <span class="callout-icon">&#9432;</span>
-      <div class="callout-body">
-        <p>
-          Port 8000 is the conventional AGWPE port. Most AGWPE-compatible
-          software will default to this port.
-        </p>
-      </div>
-    </div>
+    <p>
+      The software TNC in graywolf probably outperforms these external TNCs, so you might consider revising your
+      configuration to connect your radio to graywolf using an audio interface. But you can still use these
+      external devices with graywolf.
+    </p>
+
+    <p>
+      Graywolf does not yet have support for serial KISS TNCs, so to make it work we'll need a small helper program.
+      Download the free <a href="https://github.com/chrissnell/tnc-server">tnc-server</a> program. This simple
+      software will talk to your serial KISS TNC, and expose it as a network server over TCP. You can then configure
+      a <a href="kiss.html">KISS interface</a> of type TCP Client in graywolf which talks to the `tnc-server` program.
+    </p>
+
+    <p>
+      You don't need any additional hardware for this to work, the `tnc-server` program will comfortably run on the
+      same computer that graywolf is running on. Download the
+      <a href="https://github.com/chrissnell/tnc-server/releases">latest release of tnc-server</a> for your operating
+      system and architecture, it supports linux, macOS, and Windows. The
+      <a href="https://github.com/chrissnell/tnc-server">README</a> has all the details of how it works.
+    </p>
+
+    <p>
+      Here's an example of how to use `tnc-server` to connect graywolf to the KISS TNC in a Kenwood TH-D75.
+      On Linux, a Kenwood TH-D75 often shows up as `/dev/ttyACM0`. For most hardware TNCs the baud rate
+      doesn't matter, I use 9600 baud. Start `tnc-server` as:
+    </p>
+    <pre><code>tnc-server -port /dev/ttyACM0 -baud=1200 -listen=localhost:6700</code></pre>
+
+    <p>
+      Now create a <a href="channels.html">Channel</a> called "TH-D75" that is a KISS TNC only channel.
+      After that, create a <a href="kiss.html">KISS TNC Interface</a> of type `TCP Client`, and tell it
+      to connect to `localhost` port `6700`.
+    </p>
 
     <nav class="page-nav">
-      <a href="kiss-serial.html">
+      <a href="remote-kiss-tnc.html">
         <span class="label">Previous</span>
-        Serial KISS TNC
+        Remote KISS TNC
       </a>
-      <a href="gps.html" class="next">
+      <a href="agwpe.html" class="next">
         <span class="label">Next</span>
-        GPS
+        AGWPE
       </a>
     </nav>
   </main>
