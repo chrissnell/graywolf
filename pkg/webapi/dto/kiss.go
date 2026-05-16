@@ -123,8 +123,15 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 	// A tcp-client dials OUT to a hardware TNC, so the only useful
 	// default is a TX-capable TNC link (the Phase 4 contract documented
 	// on KissInterface.AllowTxFromGovernor). Every other interface type
-	// keeps the historical modem default. normalizeKissInterface applies
-	// the identical rule for callers that bypass the DTO.
+	// keeps the historical modem default; an explicitly supplied Mode is
+	// always honored verbatim. ToModel feeds both create and ToUpdate,
+	// and KISS PUT is full-resource replace (Store.UpdateKissInterface
+	// does db.Save) — a PUT that omits mode re-applies this default
+	// exactly as create does, consistent with every other field default
+	// here. validateKissInterface independently rejects the only
+	// hazardous outcome (tnc+governor TX on a modem-backed channel) on
+	// both paths. normalizeKissInterface applies the identical rule for
+	// callers that bypass the DTO.
 	mode := r.Mode
 	allowTx := r.AllowTxFromGovernor
 	if mode == "" {

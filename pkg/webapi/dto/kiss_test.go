@@ -258,6 +258,39 @@ func TestKissRequest_ToModel_TcpClientModeDefault(t *testing.T) {
 	})
 }
 
+// TestKissRequest_ToUpdate_TcpClientFullResourceReplace pins the
+// update-path contract: KISS PUT is full-resource replace (ToUpdate
+// feeds the same ToModel that create uses, and Store.UpdateKissInterface
+// does db.Save), so a PUT that OMITS mode re-applies the tcp-client TX
+// default exactly as create does — it does not merge against the
+// persisted row. An explicitly supplied mode is still honored verbatim.
+// This is intentional and consistent with every other KISS field
+// default (reconnect bounds, ingress rates) on PUT; the only hazardous
+// outcome (tnc+governor TX on a modem-backed channel) is independently
+// rejected by validateKissInterface, not by this layer.
+func TestKissRequest_ToUpdate_TcpClientFullResourceReplace(t *testing.T) {
+	t.Run("PUT omitting mode re-applies the tcp-client TX default", func(t *testing.T) {
+		m := KissRequest{Type: "tcp-client", RemoteHost: "tnc.example", RemotePort: 8001}.ToUpdate(7)
+		if m.ID != 7 {
+			t.Errorf("ID=%d, want 7", m.ID)
+		}
+		if m.Mode != configstore.KissModeTnc || !m.AllowTxFromGovernor {
+			t.Errorf("Mode=%q Allow=%v, want tnc+true (default re-applied on update)",
+				m.Mode, m.AllowTxFromGovernor)
+		}
+	})
+	t.Run("PUT with explicit modem keeps the interface passive", func(t *testing.T) {
+		m := KissRequest{
+			Type: "tcp-client", RemoteHost: "tnc.example", RemotePort: 8001,
+			Mode: configstore.KissModeModem,
+		}.ToUpdate(7)
+		if m.Mode != configstore.KissModeModem || m.AllowTxFromGovernor {
+			t.Errorf("Mode=%q Allow=%v, want explicit modem preserved (passive)",
+				m.Mode, m.AllowTxFromGovernor)
+		}
+	})
+}
+
 // TestKissFromModel_TcpClient_Roundtrip ensures response mapping
 // includes the new fields.
 func TestKissFromModel_TcpClient_Roundtrip(t *testing.T) {

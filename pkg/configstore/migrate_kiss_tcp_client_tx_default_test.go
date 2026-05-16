@@ -28,6 +28,9 @@ func TestMigrateKissTcpClientTxDefault(t *testing.T) {
 	// row at all) is a KISS-only channel: the migration's subquery only
 	// excludes channels that have an audio input device. The audio
 	// device row satisfies the channels.input_device_id foreign key.
+	// kiss_interfaces.channel is a soft FK (not SQLite-enforced), so
+	// rows referencing the absent channel 2 insert fine — if a future
+	// schema adds a hard FK there this insert fails loudly here.
 	if err := store.DB().Exec(
 		`INSERT INTO audio_devices(id, name, direction, source_type, created_at, updated_at)
 		VALUES (1, 'card0', 'input', 'soundcard', datetime('now'), datetime('now'))`).Error; err != nil {

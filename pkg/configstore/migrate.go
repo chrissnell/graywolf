@@ -491,6 +491,15 @@ func migrateKissTcpClientTxDefault(tx *gorm.DB) error {
 	if tableExists == 0 {
 		return nil
 	}
+	// A pre-Phase-2 channel that carried the legacy NOT NULL
+	// input_device_id=0 (migration 2 default, copied verbatim by
+	// migration 8) is matched by `input_device_id IS NOT NULL`, so its
+	// tcp-client is conservatively skipped — same direction as
+	// validateKissInterface, which GORM-scans 0 into a non-nil pointer
+	// and also treats the channel as modem-backed. Skipping is the safe
+	// outcome (no surprise TX, no double-transmit); a stale 0 on a true
+	// KISS-only channel is a pre-existing data-quality issue, not this
+	// migration's to repair.
 	return tx.Exec(
 		`UPDATE kiss_interfaces ` +
 			`SET mode = 'tnc', allow_tx_from_governor = 1 ` +
