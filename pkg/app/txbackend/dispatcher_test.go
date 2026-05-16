@@ -332,3 +332,63 @@ func TestDispatcher_ShutdownOrder(t *testing.T) {
 		t.Fatalf("closeOrder=%v, want 2 entries", closed)
 	}
 }
+
+// TestDispatcher_OnChannelTx_FanOutSafe verifies the KISS per-channel
+// TX hook fires exactly once per Send even when the channel fans out
+// to multiple KISS-TNC backends — it must stay in lockstep with the
+// per-frame aggregate counter, not multiply by fan-out width (issue
+// #132 review follow-up).
+func TestDispatcher_OnChannelTx_FanOutSafe(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	k1 := &fakeBackend{name: BackendNameKiss, instance: "kiss-1", channels: []uint32{11}, submit: func(*pb.TransmitFrame) error { return nil }}
+	k2 := &fakeBackend{name: BackendNameKiss, instance: "kiss-2", channels: []uint32{11}, submit: func(*pb.TransmitFrame) error { return ErrBackendBusy }}
+	reg := NewRegistry()
+	reg.Publish(&Snapshot{
+		ByChannel: map[uint32][]Backend{11: {k1, k2}},
+		CsmaSkip:  map[uint32]bool{11: true},
+	})
+
+	var calls []uint32
+	d := New(Config{Registry: reg, OnChannelTx: func(ch uint32) { calls = append(calls, ch) }})
+
+	if err := d.Send(&pb.TransmitFrame{Channel: 11, FrameId: 1}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if len(calls) != 1 || calls[0] != 11 {
+		t.Fatalf("OnChannelTx calls=%v, want exactly [11] (one per frame, not per fan-out)", calls)
+	}
+
+	// Even when every backend fails the channel was still dispatched,
+	// matching the aggregate ObserveTxFrame semantic.
+	k1.submit = func(*pb.TransmitFrame) error { return ErrBackendDown }
+	k2.submit = func(*pb.TransmitFrame) error { return ErrBackendDown }
+	_ = d.Send(&pb.TransmitFrame{Channel: 11, FrameId: 2})
+	if len(calls) != 2 {
+		t.Fatalf("OnChannelTx calls=%v after all-fail Send, want 2", calls)
+	}
+}
+
+// TestDispatcher_OnChannelTx_NotFiredForModem verifies modem-backed
+// channels never trigger the KISS per-channel TX hook (the validator
+// forbids mixing, and the dashboard reads modem TX from modembridge).
+func TestDispatcher_OnChannelTx_NotFiredForModem(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	modem := &fakeBackend{name: BackendNameModem, instance: "modem", channels: []uint32{1}}
+	reg := NewRegistry()
+	reg.Publish(&Snapshot{
+		ByChannel: map[uint32][]Backend{1: {modem}},
+		CsmaSkip:  map[uint32]bool{},
+	})
+
+	fired := false
+	d := New(Config{Registry: reg, OnChannelTx: func(uint32) { fired = true }})
+
+	if err := d.Send(&pb.TransmitFrame{Channel: 1, FrameId: 7}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if fired {
+		t.Fatal("OnChannelTx fired for a modem-only channel; want no call")
+	}
+}

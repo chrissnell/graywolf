@@ -379,20 +379,27 @@ counters, which are fed *only* by the Rust modem's `StatusUpdate`
 IPC. KISS-TNC-backed channels have no Rust modem, so their card was
 permanently stuck at zero even though the aggregate Prometheus
 tiles incremented (issue #132). Per-channel counts for TNC-mode KISS
-interfaces are therefore tracked separately in `kiss.Manager`
-(RX via the wrapped `RxIngress`, TX via the per-instance tx queue's
-`onEnqueue` observer); `webapi` prefers the bridge cache and falls
+interfaces are therefore tracked separately in `kiss.Manager`: RX
+via the wrapped `RxIngress` (per inbound frame, per interface); TX
+via `txbackend.Dispatcher`'s `OnChannelTx` hook, called once per
+dispatched frame on a KISS-backed channel, co-located with the
+aggregate `ObserveTxFrame` so it stays in lockstep and does NOT
+multiply by fan-out width when a channel has multiple KISS-TNC
+interfaces attached. `webapi` prefers the bridge cache and falls
 back to `kiss.Manager.ChannelStats` only when the bridge has no
 entry. The TX-backend validator forbids a channel being both modem-
 and KISS-backed, so the two sources never overlap and cannot
-double-count. Bad-FCS is intentionally absent for KISS-TNC channels:
+double-count (a modem-backed channel carries no KISS backend, so
+`OnChannelTx` never fires for it). Bad-FCS is intentionally absent for KISS-TNC channels:
 a hardware TNC validates the FCS and never forwards a bad frame over
 KISS. Unlike the modem cache, the KISS counters are process-lifetime
 monotonic and are NOT reset on a modem restart.
 
 Source: [`../../pkg/kiss/channelstats.go`](../../pkg/kiss/channelstats.go),
 [`../../pkg/kiss/manager.go`](../../pkg/kiss/manager.go)
-(`Start`/`StartClient` observer wiring),
+(`wrapRxIngress` wiring in `Start`/`StartClient`),
+[`../../pkg/app/txbackend/dispatcher.go`](../../pkg/app/txbackend/dispatcher.go)
+(`OnChannelTx`),
 [`../../pkg/webapi/status.go`](../../pkg/webapi/status.go),
 [`../../pkg/webapi/channels.go`](../../pkg/webapi/channels.go)
 (`getChannelStats`).

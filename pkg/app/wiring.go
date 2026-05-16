@@ -221,6 +221,15 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.txDispatcher = txbackend.New(txbackend.Config{
 		Metrics: a.metrics, // *metrics.Metrics satisfies the txbackend.Metrics interface.
 		Logger:  a.logger,
+		// Per-channel KISS-TNC TX counter for the dashboard (issue
+		// #132). Lazy a.kissMgr read: same closure-capture rationale
+		// as the snapshot builder above — the manager is constructed
+		// later in the wiring order but exists before any TX flows.
+		OnChannelTx: func(ch uint32) {
+			if a.kissMgr != nil {
+				a.kissMgr.RecordChannelTx(ch)
+			}
+		},
 	})
 	a.txBackendReload = make(chan struct{}, 1)
 

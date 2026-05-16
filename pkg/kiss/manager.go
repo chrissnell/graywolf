@@ -278,10 +278,7 @@ func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 		q := newInstanceTxQueue(ctx, broadcast)
 		// Wire metric observers with the interface ID captured.
 		ifaceID := id
-		// onEnqueue fires once per frame accepted onto the queue
-		// (Enqueue success), which is the per-channel TX signal the
-		// dashboard needs for KISS-TNC channels (issue #132).
-		onEnqueue := func() { m.countTx(ch) }
+		var onEnqueue func()
 		var onDrop func(string)
 		var onDepth func(int32)
 		if m.onTxQueueDepth != nil {
@@ -443,9 +440,7 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 			ms.txQueue = q
 			m.mu.Unlock()
 			ifaceID := id
-			// Per-channel TX counting for tcp-client TNC interfaces,
-			// mirroring the server-listen path (issue #132).
-			onEnqueue := func() { m.countTx(ms.channel) }
+			var onEnqueue func()
 			var onDrop func(string)
 			var onDepth func(int32)
 			if m.onTxQueueDepth != nil {

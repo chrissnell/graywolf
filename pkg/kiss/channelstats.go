@@ -7,11 +7,17 @@ import (
 )
 
 // ChannelStat is a cumulative per-channel frame count for a TNC-mode
-// KISS interface. RxFrames counts AX.25 frames ingested from the TNC;
-// TxFrames counts frames the governor handed to the per-instance tx
-// queue. Bad-FCS is deliberately absent: a hardware TNC validates the
-// FCS itself and never forwards a bad frame over KISS, so the
-// dashboard's "Bad FCS" stays 0 for these channels (issue #132).
+// KISS channel. RxFrames counts AX.25 frames ingested from the TNC
+// (per inbound frame, per interface — genuinely distinct off-air
+// traffic). TxFrames counts frames dispatched to the channel by the
+// TX backend, incremented once per frame regardless of how many
+// KISS-TNC interfaces the channel fans out to, so it stays in
+// lockstep with the aggregate TX tile rather than multiplying by
+// fan-out width; it is a dispatched count, not an on-air
+// confirmation. Bad-FCS is deliberately absent: a hardware TNC
+// validates the FCS itself and never forwards a bad frame over KISS,
+// so the dashboard's "Bad FCS" stays 0 for these channels (issue
+// #132).
 type ChannelStat struct {
 	RxFrames uint64
 	TxFrames uint64
@@ -28,6 +34,13 @@ func (m *Manager) countRx(ch uint32) {
 	s.RxFrames++
 	m.chanStatsMu.Unlock()
 }
+
+// RecordChannelTx records one dispatched TX frame on ch. Called by
+// the TX backend dispatcher (once per frame, fan-out-safe) rather
+// than from the per-instance tx queue, so the count matches the
+// aggregate TX tile on channels with multiple KISS-TNC interfaces
+// (issue #132).
+func (m *Manager) RecordChannelTx(ch uint32) { m.countTx(ch) }
 
 // countTx records one transmitted frame on ch.
 func (m *Manager) countTx(ch uint32) {
