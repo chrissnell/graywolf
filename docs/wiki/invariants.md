@@ -81,6 +81,13 @@ flare `--list-audio` path and the Linux *output* path; flare
 separate `--list-audio` process can't probe safely). The live picker is
 authoritative.
 
+Output side: idle outputs enumerate unchanged (`collect_devices`), but a
+configured/in-use output card (e.g. the AIOC's shared in/out PCM, whose
+`supported_output_configs()` fails once RX holds the card) is re-appended
+from the in-use-output snapshot, one entry per physical card, without
+opening the device — so a configured output never vanishes from
+detection while audio is running.
+
 ### 9. PTT enumeration vs. driving split
 
 *Why:* Go enumerates PTT hardware and Rust drives it, so both sides must agree on the identifier scheme passed via `ConfigurePtt.method` and `ConfigurePtt.device`.
