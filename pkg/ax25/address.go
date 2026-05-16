@@ -130,7 +130,7 @@ func decodeAddress(buf []byte) (Address, bool, error) {
 		}
 		call = append(call, c)
 	}
-	a.Call = string(call)
+	a.Call = strings.ToUpper(string(call))
 	a.SSID = (buf[6] >> 1) & 0x0F
 	a.Repeated = buf[6]&0x80 != 0 // interpretation depends on position; caller reinterprets for dest/src
 	last := buf[6]&0x01 != 0

@@ -45,6 +45,28 @@ func TestAddressString(t *testing.T) {
 	}
 }
 
+// TestDecodeAddressUppercasesCallsign guards against non-conformant
+// transmitters that ship lowercase shifted bytes in AX.25 address
+// fields. We normalize on decode so lowercase callsigns never reach
+// the station cache or message store.
+func TestDecodeAddressUppercasesCallsign(t *testing.T) {
+	// Build a 7-byte address with lowercase 'n0call' shifted left by 1.
+	var buf [addrLen]byte
+	call := "n0call"
+	for i := range 6 {
+		buf[i] = call[i] << 1
+	}
+	buf[6] = 0x60 | 0x01 // RR=1, SSID=0, end-of-address
+
+	got, _, err := decodeAddress(buf[:])
+	if err != nil {
+		t.Fatalf("decodeAddress: %v", err)
+	}
+	if got.Call != "N0CALL" {
+		t.Errorf("Call = %q, want %q", got.Call, "N0CALL")
+	}
+}
+
 func TestUIFrameRoundTrip(t *testing.T) {
 	src, _ := ParseAddress("N0CALL-1")
 	dst, _ := ParseAddress("APRS")
