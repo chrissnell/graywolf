@@ -53,6 +53,14 @@ type Dispatcher struct {
 	metrics Metrics
 	logger  *slog.Logger
 
+	// onChannelTx, if set, is called once per Send for a KISS-backed
+	// channel — co-located with the per-frame ObserveTxFrame so it
+	// increments exactly once regardless of fan-out width. Feeds the
+	// KISS per-channel dashboard counter (issue #132); modem-backed
+	// channels never trigger it because they carry no KISS backend
+	// (the validator forbids a channel being both).
+	onChannelTx func(channel uint32)
+
 	// closed flips to true on StopAccepting. Readers check it before
 	// loading the snapshot so a late Send after shutdown returns
 	// ErrStopped rather than blindly fanning out to backends whose
@@ -72,6 +80,10 @@ type Config struct {
 	Metrics Metrics
 	// Logger is optional; slog.Default is used when nil.
 	Logger *slog.Logger
+	// OnChannelTx, if non-nil, is invoked once per dispatched frame on
+	// a KISS-backed channel (one call regardless of fan-out size).
+	// Optional; nil disables KISS per-channel TX counting.
+	OnChannelTx func(channel uint32)
 }
 
 // New returns a Dispatcher. The watcher goroutine is not started
@@ -94,6 +106,7 @@ func New(cfg Config) *Dispatcher {
 		reg:         reg,
 		metrics:     m,
 		logger:      lg.With("component", "txbackend"),
+		onChannelTx: cfg.OnChannelTx,
 		watcherDone: make(chan struct{}),
 	}
 }
@@ -135,6 +148,18 @@ func (d *Dispatcher) Send(tf *pb.TransmitFrame) error {
 
 	// Per-frame counter: one increment regardless of fan-out size.
 	d.metrics.ObserveTxFrame(tf.Channel)
+
+	// KISS per-channel TX, in lockstep with the aggregate counter
+	// above: one call per dispatched frame even when the channel
+	// fans out to multiple KISS-TNC interfaces (issue #132).
+	if d.onChannelTx != nil {
+		for _, b := range backends {
+			if b.Name() == BackendNameKiss {
+				d.onChannelTx(tf.Channel)
+				break
+			}
+		}
+	}
 
 	d.logger.Debug("tx dispatch",
 		"channel", tf.Channel,
