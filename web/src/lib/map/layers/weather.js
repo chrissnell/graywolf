@@ -19,13 +19,7 @@
 
 import maplibregl from 'maplibre-gl';
 import { unitsState } from '../../settings/units-store.svelte.js';
-
-const KMH_PER_MPH = 1.60934;
-
-function cardinal(deg) {
-  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  return dirs[Math.round(deg / 45) % 8];
-}
+import { cardinal, KMH_PER_MPH } from '../popup-helpers.js';
 
 function formatLabel(wx, isMetric) {
   if (!wx) return '';

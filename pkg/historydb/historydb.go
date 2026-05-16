@@ -409,5 +409,25 @@ func bootstrap(db *gorm.DB) error {
 		_ = db.Exec(m).Error
 	}
 
+	// One-time data migration (issue #126): before the fix, rain_1h /
+	// rain_24h were persisted as raw APRS101 hundredths-of-an-inch
+	// rather than inches, so hydrating the station cache on restart
+	// surfaced 100x-too-large rain in the Live Map popup. Convert
+	// existing rows exactly once, gated on PRAGMA user_version so a
+	// reboot never double-divides. The fixed write path only runs
+	// after bootstrap, so every row present here is guaranteed legacy.
+	var userVersion int
+	if err := db.Raw("PRAGMA user_version").Row().Scan(&userVersion); err != nil {
+		return err
+	}
+	if userVersion < 1 {
+		if err := db.Exec(`UPDATE weather SET rain_1h = rain_1h / 100.0, rain_24h = rain_24h / 100.0`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`PRAGMA user_version = 1`).Error; err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

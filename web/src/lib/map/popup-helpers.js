@@ -37,10 +37,10 @@ export function viaText(s) {
   return 'RF direct';
 }
 
-const KMH_PER_MPH = 1.60934;
+export const KMH_PER_MPH = 1.60934;
 const MM_PER_IN = 25.4;
 
-function cardinal(deg) {
+export function cardinal(deg) {
   const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   return dirs[Math.round(deg / 45) % 8];
 }

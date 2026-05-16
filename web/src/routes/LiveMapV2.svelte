@@ -112,8 +112,7 @@
     if (!pos) return;
     closePopup();
 
-    const wx = dataStore.weather.get(station.callsign);
-    const html = renderStationPopupHTML(wx ? { ...station, weather: wx } : station, {
+    const html = renderStationPopupHTML(station, {
       hasStation: (callsign) => dataStore.stations.has(callsign),
     });
 
