@@ -352,3 +352,21 @@ Source: [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
 [`../../pkg/igate/output.go`](../../pkg/igate/output.go)
 (`IgateOutput.SetIgate`),
 [`../../pkg/app/igate_toggle_test.go`](../../pkg/app/igate_toggle_test.go).
+
+### 29. AX.25 callsigns are uppercased on decode
+
+*Why:* APRS callsigns are uppercase alphanumeric per spec, but
+non-conformant transmitters occasionally ship lowercase shifted bytes
+in the address field. The text parser `ax25.ParseAddress` already
+uppercases, but the binary `decodeAddress` path used for every RF
+frame did not, so lowercase callsigns leaked through `pkt.Source`
+into the station cache and message store. Normalizing at the single
+binary-decode chokepoint keeps every downstream consumer (router,
+station cache, persistInbound, digipeater) working from canonical
+uppercase. Object and Item names are NOT normalized — APRS101 §11
+defines them as case-sensitive free-form names, not callsigns.
+
+Source: [`../../pkg/ax25/address.go`](../../pkg/ax25/address.go)
+(`decodeAddress`),
+[`../../pkg/ax25/frame_test.go`](../../pkg/ax25/frame_test.go)
+(`TestDecodeAddressUppercasesCallsign`).
