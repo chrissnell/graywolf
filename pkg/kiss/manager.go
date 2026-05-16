@@ -84,6 +84,18 @@ type Manager struct {
 	onClientStateChange func(ifaceID uint32, name string, st InterfaceStatus)
 	// onClientReconnect fires once per successful dial.
 	onClientReconnect func(ifaceID uint32)
+
+	// chanStatsMu guards chanStats. Separate from mu so the RX/TX
+	// counting hot paths never contend with Start/Stop lifecycle.
+	chanStatsMu sync.Mutex
+	// chanStats holds cumulative per-channel RX/TX frame counts for
+	// TNC-mode interfaces. KISS-TNC channels have no Rust modem and
+	// therefore no StatusUpdate feeding modembridge's status cache;
+	// this is the only per-channel counter source the dashboard has
+	// for them (issue #132). Process-lifetime monotonic — unlike
+	// modembridge's cache it is deliberately NOT reset on a modem
+	// restart, since KISS interfaces are independent of the modem.
+	chanStats map[uint32]*ChannelStat
 }
 
 type managedServer struct {
@@ -177,6 +189,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 		onTxQueueDrop:         cfg.OnTxQueueDrop,
 		onClientStateChange:   cfg.OnClientStateChange,
 		onClientReconnect:     cfg.OnClientReconnect,
+		chanStats:             make(map[uint32]*ChannelStat),
 	}
 }
 
@@ -232,6 +245,13 @@ func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 	if cfg.RxIngress == nil {
 		cfg.RxIngress = m.rxIngress
 	}
+	// Count per-channel RX only when routing is actually configured.
+	// Leaving a nil RxIngress nil preserves the server's "no
+	// RxIngress wired" drop-with-warning diagnostic and its
+	// ingressQ-allocation guard (issue #132).
+	if cfg.RxIngress != nil {
+		cfg.RxIngress = m.wrapRxIngress(cfg.RxIngress)
+	}
 	if cfg.Clock == nil {
 		cfg.Clock = m.clock
 	}
@@ -258,7 +278,10 @@ func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 		q := newInstanceTxQueue(ctx, broadcast)
 		// Wire metric observers with the interface ID captured.
 		ifaceID := id
-		var onEnqueue func()
+		// onEnqueue fires once per frame accepted onto the queue
+		// (Enqueue success), which is the per-channel TX signal the
+		// dashboard needs for KISS-TNC channels (issue #132).
+		onEnqueue := func() { m.countTx(ch) }
 		var onDrop func(string)
 		var onDepth func(int32)
 		if m.onTxQueueDepth != nil {
@@ -364,6 +387,12 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 	if cfg.RxIngress == nil {
 		cfg.RxIngress = m.rxIngress
 	}
+	// Same per-channel RX counting as the server-listen path; only
+	// wrap when routing is configured so a nil RxIngress keeps the
+	// client's drop-with-warning diagnostic (issue #132).
+	if cfg.RxIngress != nil {
+		cfg.RxIngress = m.wrapRxIngress(cfg.RxIngress)
+	}
 	if cfg.Clock == nil {
 		cfg.Clock = m.clock
 	}
@@ -414,7 +443,9 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 			ms.txQueue = q
 			m.mu.Unlock()
 			ifaceID := id
-			var onEnqueue func()
+			// Per-channel TX counting for tcp-client TNC interfaces,
+			// mirroring the server-listen path (issue #132).
+			onEnqueue := func() { m.countTx(ms.channel) }
 			var onDrop func(string)
 			var onDepth func(int32)
 			if m.onTxQueueDepth != nil {

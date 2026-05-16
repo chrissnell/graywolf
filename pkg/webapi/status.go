@@ -104,13 +104,28 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if ch.InputDeviceID != nil {
 			sc.InputDeviceID = *ch.InputDeviceID
 		}
+		haveBridgeStats := false
 		if s.bridge != nil {
 			if stats, ok := s.bridge.GetChannelStats(uint32(ch.ID)); ok {
+				haveBridgeStats = true
 				sc.RxFrames = stats.RxFrames
 				sc.RxBadFCS = stats.RxBadFCS
 				sc.TxFrames = stats.TxFrames
 				sc.DcdState = stats.DcdState
 				sc.AudioPeak = stats.AudioLevelPeak
+			}
+		}
+		// KISS-TNC-backed channels have no Rust modem and thus no
+		// StatusUpdate feeding the bridge cache; fall back to the
+		// KISS manager's per-channel counters so their RX/TX no
+		// longer read a stuck zero (issue #132). RxBadFCS stays 0:
+		// a hardware TNC validates the FCS and never forwards a bad
+		// frame over KISS. The validator forbids a channel being
+		// both modem- and KISS-backed, so this never double-counts.
+		if !haveBridgeStats && s.kissManager != nil {
+			if ks, ok := s.kissManager.ChannelStats(uint32(ch.ID)); ok {
+				sc.RxFrames = ks.RxFrames
+				sc.TxFrames = ks.TxFrames
 			}
 		}
 		if deviceLevels != nil && ch.InputDeviceID != nil {
