@@ -37,6 +37,10 @@
     right away instead of a confusing generic failure. Passwords are
     limited to 72 bytes.
 
+    Weather station popups on the map have an improved display. Click
+    a weather station and you now get a clearer, fuller readout of its
+    current conditions.
+
 - version: "0.13.4"
   date: "2026-05-09"
   style: info
