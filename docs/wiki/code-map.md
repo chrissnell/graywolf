@@ -128,7 +128,7 @@ The split is enforced by [invariant 9](invariants.md).
 | AX.25 transcript store | `pkg/configstore/ax25_transcripts.go` — `AX25TranscriptSession` + `AX25TranscriptEntry`. Bridge calls `transcriptRecorder.Begin/Append/End` when the operator runs `Ctrl-]` `transcript on`; the per-session writer logs every RX/TX byte block plus state-change + error events. |
 | Wiring entry | `pkg/app/wiring.go` — injects `*configstore.Store` as `ChannelModes` into beacon/digi/igate/messages constructors. |
 | REST | `webapi/channels.go` accepts `mode` on POST/PUT; `webapi/messages_config.go` exposes GET/PUT `/api/messages/config` with packet-mode validation. |
-| UI | `web/src/routes/Channels.svelte` shows mode selector + badge; `web/src/routes/Preferences.svelte` shows messages TX-channel selector filtered to non-packet channels. |
+| UI | `web/src/routes/Channels.svelte` shows mode selector + badge; `web/src/routes/MessagesSettings.svelte` shows messages TX-channel selector filtered to non-packet channels. |
 
 See [invariant 23](invariants.md) for the TX-gating contract.
 
@@ -186,7 +186,7 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 | `package.json`, `vite.config.js`, `svelte.config.js` | Build config |
 | `embed.go` | `Handler()` and `SPAHandler()` |
 | `src/App.svelte`, `src/main.js` | App shell, route table |
-| `src/routes/` | One Svelte route per page (Dashboard, LiveMapV2, Channels, Beacons, Digipeater, Igate, Kiss, Agw, Ptt, Gps, AudioDevices, Messages, Terminal + TerminalTranscripts, PositionLog, MapsSettings, Preferences, Login, About, Logs, Simulation) |
+| `src/routes/` | One Svelte route per page (Dashboard, LiveMapV2, Channels, Beacons, Digipeater, Igate, Kiss, Agw, Ptt, Gps, AudioDevices, Messages, Terminal + TerminalTranscripts, PositionLog, MapsSettings, Preferences, MessagesSettings, Login, About, Logs, Simulation) |
 | `src/components/terminal/` | AX.25 terminal pieces: `TerminalViewport` (xterm.js host, 80x24 fixed), `PreConnectForm` (channel + CALL[-N] + advanced timers), `StatusBar`, `TabBar`, `CommandBar` (Ctrl-] command line: `disconnect`, `transcript on/off`, etc.), `MacroToolbar` + `MacroEditor` (operator-defined byte-payload buttons), `RawPacketView` (APRS-only channels show packetlog raw-tail in lieu of LAPB session), `TelemetryPanel` (live `link_stats` side panel: V(S)/V(R)/V(A), N2 retry, RTT EWMA, busy flags) |
 | `src/lib/terminal/` | Terminal client state: `session.svelte.js` (one WebSocket per link), `sessions.svelte.js` (multi-tab map, cap 6, focus + visibility tracking), `palette.ts` + `theme.js` (CSS-var-resolved xterm ITheme; `theme.test.js` covers the resolver), `presets.ts` (classic / phosphor-green / phosphor-amber), `envelope.js` (b64 ↔ Uint8Array), `macros.svelte.js` (singleton-config-backed macro store), `profiles.svelte.js` (saved + recent connection profiles store) |
 | `src/lib/stores/terminal.svelte.js` | Sidebar-facing summary: unread-bytes total across non-focused sessions for the Sidebar `NotificationBadge` |
