@@ -7,6 +7,22 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.5"
+  date: "2026-05-16"
+  style: info
+  schema_version: 1
+  title: "KISS TNC client can now transmit"
+  link: "#/kiss"
+  body: |
+    When Graywolf connects out to a KISS TNC, that connection can now
+    transmit, not just receive. New TNC client connections are set up
+    to transmit by default, and any existing connection that was stuck
+    receive-only is upgraded automatically when you start this version.
+
+    If you have a TNC client that you deliberately want to keep
+    receive-only, or one sharing a channel with a sound-card modem,
+    it is left as-is. Nothing else to reconfigure.
+
 - version: "0.13.4"
   date: "2026-05-09"
   style: info

@@ -1019,15 +1019,26 @@ func (s *Store) validateKissInterface(ctx context.Context, k *KissInterface) err
 // is the backstop that keeps a bad row from ever reaching SQLite if a
 // future caller forgets the DTO path.
 //
-// An empty Mode is silently upgraded to KissModeModem so older clients
-// that don't know about the field keep working. Zero rate values are
-// treated as "unset" and replaced with the defaults documented on the
-// struct tags; the column's NOT NULL constraint would accept 0, but 0
-// would disable the Phase 3 token bucket entirely, which is almost
-// certainly not what the caller meant.
+// An empty Mode is silently upgraded so older clients that don't know
+// about the field keep working: a tcp-client dials OUT to a hardware
+// TNC, so it defaults to a TX-capable TNC link (KissModeTnc +
+// AllowTxFromGovernor; the Phase 4 contract on
+// KissInterface.AllowTxFromGovernor) — every other interface type keeps
+// the historical KissModeModem default. dto.KissRequest.ToModel applies
+// the identical rule at the API boundary; this is the backstop for
+// callers that bypass the DTO. Zero rate values are treated as "unset"
+// and replaced with the defaults documented on the struct tags; the
+// column's NOT NULL constraint would accept 0, but 0 would disable the
+// Phase 3 token bucket entirely, which is almost certainly not what the
+// caller meant.
 func normalizeKissInterface(k *KissInterface) error {
 	if k.Mode == "" {
-		k.Mode = KissModeModem
+		if k.InterfaceType == KissTypeTCPClient {
+			k.Mode = KissModeTnc
+			k.AllowTxFromGovernor = true
+		} else {
+			k.Mode = KissModeModem
+		}
 	}
 	if !ValidKissMode(k.Mode) {
 		return fmt.Errorf("kiss interface: invalid mode %q: must be %q or %q", k.Mode, KissModeModem, KissModeTnc)

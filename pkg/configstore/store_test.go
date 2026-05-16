@@ -955,3 +955,47 @@ func TestIGateConfigDefaults_ZeroChannels(t *testing.T) {
 		t.Errorf("TxChannel default = %d, want 0", got.TxChannel)
 	}
 }
+
+// TestNormalizeKissInterface_TcpClientTxDefault is the store-side
+// backstop for the issue #128 fix: a tcp-client row with no explicit
+// Mode must normalize to a TX-capable TNC link (mode=tnc +
+// allow_tx_from_governor), while every other interface type keeps the
+// historical modem default and an explicit Mode is never overridden.
+func TestNormalizeKissInterface_TcpClientTxDefault(t *testing.T) {
+	t.Run("tcp-client empty mode -> tnc + governor TX", func(t *testing.T) {
+		k := &KissInterface{Name: "c1", InterfaceType: KissTypeTCPClient, Channel: 1}
+		if err := normalizeKissInterface(k); err != nil {
+			t.Fatalf("normalize: %v", err)
+		}
+		if k.Mode != KissModeTnc {
+			t.Errorf("Mode=%q, want %q", k.Mode, KissModeTnc)
+		}
+		if !k.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=false, want true")
+		}
+	})
+	t.Run("tcp server empty mode -> modem, no governor TX", func(t *testing.T) {
+		k := &KissInterface{Name: "s1", InterfaceType: KissTypeTCP, Channel: 1}
+		if err := normalizeKissInterface(k); err != nil {
+			t.Fatalf("normalize: %v", err)
+		}
+		if k.Mode != KissModeModem {
+			t.Errorf("Mode=%q, want %q", k.Mode, KissModeModem)
+		}
+		if k.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=true, want false")
+		}
+	})
+	t.Run("explicit modem on tcp-client is preserved", func(t *testing.T) {
+		k := &KissInterface{Name: "c2", InterfaceType: KissTypeTCPClient, Channel: 1, Mode: KissModeModem}
+		if err := normalizeKissInterface(k); err != nil {
+			t.Fatalf("normalize: %v", err)
+		}
+		if k.Mode != KissModeModem {
+			t.Errorf("Mode=%q, want explicit %q preserved", k.Mode, KissModeModem)
+		}
+		if k.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=true, want false when caller pinned modem")
+		}
+	})
+}
