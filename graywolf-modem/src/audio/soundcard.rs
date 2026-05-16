@@ -529,6 +529,18 @@ pub struct AlsaCardGroup {
     pub candidates: Vec<String>,
 }
 
+/// Canonical physical-card key for a pcm_id: `"card:<idx>"` when its
+/// `CARD=` token resolves, else the pcm_id itself (so `default` and
+/// unknown ids stay distinct). The single source of truth for "do two
+/// pcm_ids name the same physical card" — used by grouping and by the
+/// in-use output reconciliation.
+pub fn alsa_canonical_key(pcm_id: &str, resolve: impl Fn(&str) -> Option<u32>) -> String {
+    match alsa_card_token(pcm_id).and_then(resolve) {
+        Some(idx) => format!("card:{}", idx),
+        None => pcm_id.to_string(),
+    }
+}
+
 /// Collapse cpal-reported ALSA pcm_ids to one entry per physical card.
 ///
 /// `resolve` maps a `CARD=` token to the canonical card index; pcm_ids
@@ -543,10 +555,7 @@ pub fn group_alsa_cards(
     let mut order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
     for id in pcm_ids {
-        let key = match alsa_card_token(id).and_then(&resolve) {
-            Some(idx) => format!("card:{}", idx),
-            None => id.clone(),
-        };
+        let key = alsa_canonical_key(id, &resolve);
         if !groups.contains_key(&key) {
             order.push(key.clone());
         }
@@ -1331,6 +1340,23 @@ mod tests {
         assert_eq!(r.get("Headphones").copied(), Some(0));
         assert_eq!(r.get("0").copied(), Some(0));
         assert_eq!(r.get("nonexistent").copied(), None);
+    }
+
+    #[test]
+    fn alsa_canonical_key_unifies_name_and_index_and_passes_through_default() {
+        let cards = parse_proc_asound_cards(ISSUE_129_PROC_CARDS);
+        let r = build_card_resolver(&cards);
+        let key = |p: &str| alsa_canonical_key(p, |t| r.get(t).copied());
+        // Numeric and symbolic forms of the same card collapse equal.
+        assert_eq!(key("plughw:CARD=Device,DEV=0"), key("hw:CARD=Device,DEV=0"));
+        assert_eq!(key("hw:CARD=Device,DEV=0"), key("plughw:CARD=1,DEV=0"));
+        assert_eq!(key("hw:CARD=Device,DEV=0"), "card:1");
+        assert_eq!(key("plughw:CARD=Headphones,DEV=0"), "card:0");
+        // No card token -> passes through unchanged.
+        assert_eq!(key("default"), "default");
+        // Unknown card (not in /proc/asound/cards) stays distinct by
+        // pcm_id rather than collapsing with anything else.
+        assert_eq!(key("hw:CARD=Unknown,DEV=0"), "hw:CARD=Unknown,DEV=0");
     }
 
     #[test]
