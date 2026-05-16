@@ -181,12 +181,18 @@ func TestCreateKissTcpClient(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	// Valid tcp-client.
+	// Valid tcp-client. Channel 1 is the modem-backed seed channel, so
+	// pin mode=modem explicitly: a bare tcp-client now defaults to a
+	// TX-capable TNC link (issue #128), which the dual-backend
+	// invariant correctly refuses on a modem channel. This test only
+	// exercises tcp-client field plumbing; the TX default is covered by
+	// the dto/store/migration unit tests.
 	body, _ := json.Marshal(map[string]any{
 		"type":        "tcp-client",
 		"remote_host": "lora.example.com",
 		"remote_port": 8001,
 		"channel":     1,
+		"mode":        "modem",
 	})
 	rec := doPost(mux, "/api/kiss", body)
 	if rec.Code != http.StatusCreated {
@@ -279,11 +285,16 @@ func TestKissReconnect_Endpoint(t *testing.T) {
 	// actually starts a supervisor that will try to dial the bogus
 	// address and enter backoff. The reconnect handler should return
 	// 200 once the manager has the id registered.
+	// Pin mode=modem: channel 1 is modem-backed and a bare tcp-client
+	// now defaults to a TX-capable TNC link (issue #128), which the
+	// dual-backend invariant refuses on a modem channel. This test
+	// exercises the reconnect supervisor, not the TX default.
 	clientBody, _ := json.Marshal(map[string]any{
-		"type":             "tcp-client",
-		"remote_host":      "127.0.0.1",
-		"remote_port":      1,
-		"channel":          1,
+		"type":              "tcp-client",
+		"remote_host":       "127.0.0.1",
+		"remote_port":       1,
+		"channel":           1,
+		"mode":              "modem",
 		"reconnect_init_ms": 60000,
 		"reconnect_max_ms":  60000,
 	})

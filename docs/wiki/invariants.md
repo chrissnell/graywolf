@@ -141,6 +141,14 @@ Source: [`../../pkg/igate/filters/filters.go`](../../pkg/igate/filters/filters.g
 Source: [`../../pkg/txgovernor/governor.go`](../../pkg/txgovernor/governor.go)
 (package comment).
 
+### 16b. KISS `tcp-client` defaults to a TX-capable TNC link
+
+*Why:* A `tcp-client` KISS interface dials OUT to a hardware TNC, so its only useful default is `Mode=tnc` + `AllowTxFromGovernor=true` -- otherwise it registers no TX backend and silently transmits nothing while still receiving (issue #128). When `Mode` is omitted, both the API boundary (`dto.KissRequest.ToModel`) and the store backstop (`normalizeKissInterface`) apply this default for `tcp-client` only; every other interface type keeps the historical `modem` default, and an explicit `Mode` is never overridden. Migration 20 (`kiss_tcp_client_tx_default`) repairs pre-existing `tcp-client` rows stuck at the old `modem`/`false` default, but skips any row whose channel also has an audio input device -- that channel already has a modem backend and enabling KISS-TNC TX there would double-transmit (the dual-backend case `validateKissInterface` forbids).
+
+Source: [`../../pkg/webapi/dto/kiss.go`](../../pkg/webapi/dto/kiss.go),
+[`../../pkg/configstore/store.go`](../../pkg/configstore/store.go) (`normalizeKissInterface`),
+[`../../pkg/configstore/migrate.go`](../../pkg/configstore/migrate.go) (`migrateKissTcpClientTxDefault`).
+
 ### 17. RX fanout carries provenance via `ingress.Source` (in-process)
 
 *Why:* Lets KISS broadcast suppress its own loopback without leaking a transport detail into the proto -- the provenance tag is in-process only, never on the wire.

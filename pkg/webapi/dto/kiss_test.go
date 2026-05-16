@@ -219,6 +219,45 @@ func TestKissRequest_ToModel_TcpClient(t *testing.T) {
 	}
 }
 
+// TestKissRequest_ToModel_TcpClientModeDefault verifies the Phase 4
+// contract: a tcp-client with no explicit Mode defaults to a TX-capable
+// TNC link (mode=tnc + allow_tx_from_governor), while every other
+// interface type keeps the historical modem default and an explicit
+// Mode is always preserved as-is. This is the API-boundary half of the
+// issue #128 fix; normalizeKissInterface is the store-side backstop.
+func TestKissRequest_ToModel_TcpClientModeDefault(t *testing.T) {
+	t.Run("tcp-client empty mode defaults to tnc + governor TX", func(t *testing.T) {
+		m := KissRequest{Type: "tcp-client", RemoteHost: "tnc.example", RemotePort: 8001}.ToModel()
+		if m.Mode != configstore.KissModeTnc {
+			t.Errorf("Mode=%q, want %q", m.Mode, configstore.KissModeTnc)
+		}
+		if !m.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=false, want true for a defaulted tcp-client")
+		}
+	})
+	t.Run("tcp server empty mode keeps modem default", func(t *testing.T) {
+		m := KissRequest{Type: "tcp", TcpPort: 8001}.ToModel()
+		if m.Mode != configstore.KissModeModem {
+			t.Errorf("Mode=%q, want %q", m.Mode, configstore.KissModeModem)
+		}
+		if m.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=true, want false for a modem-default tcp server")
+		}
+	})
+	t.Run("explicit modem mode on tcp-client is preserved", func(t *testing.T) {
+		m := KissRequest{
+			Type: "tcp-client", RemoteHost: "tnc.example", RemotePort: 8001,
+			Mode: configstore.KissModeModem,
+		}.ToModel()
+		if m.Mode != configstore.KissModeModem {
+			t.Errorf("Mode=%q, want explicit %q preserved", m.Mode, configstore.KissModeModem)
+		}
+		if m.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=true, want false when caller pinned modem mode")
+		}
+	})
+}
+
 // TestKissFromModel_TcpClient_Roundtrip ensures response mapping
 // includes the new fields.
 func TestKissFromModel_TcpClient_Roundtrip(t *testing.T) {

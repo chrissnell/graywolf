@@ -164,6 +164,18 @@ type migration struct {
 //	    action_invocations.reply_line_count columns. Defaults 1 so
 //	    existing rows behave identically to the single-reply era.
 //	    Both NOT NULL so application code never sees NULL.
+//	20 — kiss_tcp_client_tx_default: repair tcp-client KISS interfaces
+//	    created before the Phase 4 TX-capable default existed. A
+//	    tcp-client dials OUT to a hardware TNC, but a row stuck at the
+//	    historical mode=modem / allow_tx_from_governor=0 default never
+//	    registers a TX backend — the operator sees inbound frames but
+//	    nothing is ever transmitted (issue #128). Flips those rows to
+//	    mode=tnc + allow_tx_from_governor=1. Scoped to skip any row
+//	    whose channel also has an audio input device: that channel
+//	    already has a modem backend, and enabling KISS-TNC TX there
+//	    would double-transmit every frame (the dual-backend case the
+//	    store validator forbids). Idempotent and post-AutoMigrate
+//	    (needs the kiss_interfaces and channels tables present).
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -184,6 +196,7 @@ var schemaMigrations = []migration{
 	{version: 17, name: "actions_arg_mode", phase: postAutoMigrate, run: migrateActionsArgMode},
 	{version: 18, name: "actions_uppercase_names", phase: postAutoMigrate, run: migrateActionsUppercaseNames},
 	{version: 19, name: "actions_max_reply_lines", phase: postAutoMigrate, run: migrateActionsMaxReplyLines},
+	{version: 20, name: "kiss_tcp_client_tx_default", phase: postAutoMigrate, run: migrateKissTcpClientTxDefault},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -452,6 +465,40 @@ func migrateKissInterfacesTcpClientFields(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// migrateKissTcpClientTxDefault repairs tcp-client KISS interfaces that
+// were created before the Phase 4 TX-capable default existed. Such a
+// row dials OUT to a hardware TNC but, stuck at the historical
+// mode=modem / allow_tx_from_governor=0 default, never registers a TX
+// backend — the operator sees inbound frames but nothing is ever
+// transmitted (issue #128). Flip those rows to the working
+// tnc + governor-TX configuration.
+//
+// Scoped so it cannot create a double-transmit channel: a row whose
+// channel also has an audio input device (hence a modem backend) is
+// left alone — that combination is the dual-backend case the store
+// validator (validateKissInterface) forbids, and silently enabling it
+// would transmit every frame twice. Idempotent: after the flip
+// mode='tnc' no longer matches the WHERE clause. No-op when the
+// kiss_interfaces table is absent (defensive; it always exists by the
+// post-AutoMigrate phase).
+func migrateKissTcpClientTxDefault(tx *gorm.DB) error {
+	var tableExists int
+	if err := tx.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='kiss_interfaces'").Scan(&tableExists).Error; err != nil {
+		return fmt.Errorf("probe kiss_interfaces: %w", err)
+	}
+	if tableExists == 0 {
+		return nil
+	}
+	return tx.Exec(
+		`UPDATE kiss_interfaces ` +
+			`SET mode = 'tnc', allow_tx_from_governor = 1 ` +
+			`WHERE interface_type = 'tcp-client' ` +
+			`AND mode = 'modem' ` +
+			`AND allow_tx_from_governor = 0 ` +
+			`AND channel NOT IN (SELECT id FROM channels WHERE input_device_id IS NOT NULL)`,
+	).Error
 }
 
 // migrateIGateConfigRetainCallsignPasscode re-adds the callsign and

@@ -120,9 +120,20 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 	if ch == 0 {
 		ch = 1
 	}
+	// A tcp-client dials OUT to a hardware TNC, so the only useful
+	// default is a TX-capable TNC link (the Phase 4 contract documented
+	// on KissInterface.AllowTxFromGovernor). Every other interface type
+	// keeps the historical modem default. normalizeKissInterface applies
+	// the identical rule for callers that bypass the DTO.
 	mode := r.Mode
+	allowTx := r.AllowTxFromGovernor
 	if mode == "" {
-		mode = configstore.KissModeModem
+		if r.Type == configstore.KissTypeTCPClient {
+			mode = configstore.KissModeTnc
+			allowTx = true
+		} else {
+			mode = configstore.KissModeModem
+		}
 	}
 	// Apply reconnect defaults when caller sent zero — the DB column
 	// defaults cover legacy rows, but a freshly-built DTO with a
@@ -148,7 +159,7 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 		Mode:                mode,
 		TncIngressRateHz:    r.TncIngressRateHz,
 		TncIngressBurst:     r.TncIngressBurst,
-		AllowTxFromGovernor: r.AllowTxFromGovernor,
+		AllowTxFromGovernor: allowTx,
 		RemoteHost:          r.RemoteHost,
 		RemotePort:          r.RemotePort,
 		ReconnectInitMs:     initMs,
