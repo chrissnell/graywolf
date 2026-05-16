@@ -25,10 +25,10 @@ func AuthenticatedUser(r *http.Request) *WebUser {
 	return u
 }
 
-// WithBearerAuthed marks ctx as already authenticated via Bearer token
-// (set by BearerAuthMiddleware). RequireAuth uses this to short-circuit
-// the cookie check.
-func WithBearerAuthed(ctx context.Context) context.Context {
+// withBearerAuthed marks ctx as already authenticated via Bearer token.
+// Unexported so only BearerAuthMiddleware can stamp the marker —
+// downstream code cannot synthesize the bypass.
+func withBearerAuthed(ctx context.Context) context.Context {
 	return context.WithValue(ctx, bearerAuthedContextKey, true)
 }
 

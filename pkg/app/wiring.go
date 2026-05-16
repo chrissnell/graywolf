@@ -237,13 +237,19 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			// the system default speaker regardless of any DB rows;
 			// the seed pair just gives the SPA's UI something to
 			// show + something to bind a channel to.
+			// Sample rate matches AudioPump's default (22050) and the Rust
+			// modem's Android JNI canned-frame rate (22050). The DB value
+			// is informational on Android — the modem reads samples from
+			// the JNI bridge at the bridge's rate, not from the
+			// configstore-driven CPAL device-open path — but matching the
+			// real rate keeps the UI honest.
 			for _, seed := range []configstore.AudioDevice{
 				{
 					Name:       "Default Input",
 					Direction:  "input",
 					SourceType: "soundcard",
 					SourcePath: "android-default",
-					SampleRate: 48000,
+					SampleRate: 22050,
 					Channels:   1,
 					Format:     "s16le",
 				},
@@ -252,7 +258,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 					Direction:  "output",
 					SourceType: "soundcard",
 					SourcePath: "android-default",
-					SampleRate: 48000,
+					SampleRate: 22050,
 					Channels:   1,
 					Format:     "s16le",
 				},

@@ -480,7 +480,12 @@
   </FormField>
   <FormField label="Device Path" error={errors.device_path} id="ad-path">
     {#if Platform.kind === 'android'}
-      <Input id="ad-path" value="android-default" readonly />
+      <!-- Read-only on Android, but still bound to form.device_path so the
+           displayed value reflects what will be saved. If the row was
+           loaded with a non-default path (manual DB edit, migration), the
+           field shows that path rather than silently overriding with
+           "android-default" only in the UI. -->
+      <Input id="ad-path" bind:value={form.device_path} readonly />
     {:else}
       <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
     {/if}
