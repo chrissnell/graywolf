@@ -106,6 +106,13 @@ type managedServer struct {
 	// ID, so the union-of-types here is the cheapest way to unify
 	// lifecycle bookkeeping across both kinds.
 	client *Client
+	// serial is set instead of server/client when the interface was
+	// started with StartSerial. At most one of server/client/serial
+	// is non-nil. serial owns its own *Server internally; that Server
+	// is intentionally NOT stored in `server` so BroadcastFromChannel
+	// (which only targets ms.server) never echoes a serial TNC's own
+	// RX back to it — exactly the tcp-client rule.
+	serial *SerialSupervisor
 	cancel context.CancelFunc
 	// txQueue is the per-instance bounded tx queue used by
 	// TransmitOnChannel. Non-nil only when the interface was started
@@ -460,6 +467,121 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 	go func() {
 		cli.run(ctx)
 	}()
+}
+
+// StartSerial launches a serial KISS supervisor for the given DB row.
+// Any previously-running interface under id is stopped first. The
+// owned *Server is finalized exactly as Start does (Sink/RxIngress/
+// InterfaceID/...) then handed to NewSerial. The per-instance tx
+// queue is built exactly as Start does (Mode==tnc &&
+// AllowTxFromGovernor) so governor TX reaches the radio.
+func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfig) {
+	m.mu.Lock()
+	if existing, ok := m.running[id]; ok {
+		delete(m.running, id)
+		m.mu.Unlock()
+		m.stopManaged(existing)
+		m.mu.Lock()
+	}
+
+	// Finalize the owned ServerConfig exactly as Start does (manager.go:231-262).
+	scfg := ServerConfig{
+		Name:                cfg.Name,
+		ListenAddr:          "", // no listener — ServeTransport drives it
+		ChannelMap:          cfg.ChannelMap,
+		Mode:                cfg.Mode,
+		Broadcast:           false, // serial Server is not a fanout target
+		TncIngressRateHz:    cfg.TncIngressRateHz,
+		TncIngressBurst:     cfg.TncIngressBurst,
+		AllowTxFromGovernor: cfg.AllowTxFromGovernor,
+	}
+	scfg.Sink = m.sink
+	if cfg.Logger != nil {
+		scfg.Logger = cfg.Logger
+	} else {
+		scfg.Logger = m.logger
+	}
+	if scfg.OnDecodeError == nil {
+		scfg.OnDecodeError = m.onDecodeError
+	}
+	if scfg.OnFrameIngress == nil && m.onFrameIngress != nil {
+		ifaceID := id
+		fn := m.onFrameIngress
+		scfg.OnFrameIngress = func(mode Mode) { fn(ifaceID, mode) }
+	}
+	// Two-step RxIngress wiring identical to Start (manager.go:245-254):
+	// assign the manager-level callback, then unconditionally wrap it for
+	// per-channel RX counting only when non-nil (preserves the server's
+	// "no RxIngress wired" diagnostic for nil cases — issue #132).
+	if scfg.RxIngress == nil {
+		scfg.RxIngress = m.rxIngress
+	}
+	if scfg.RxIngress != nil {
+		scfg.RxIngress = m.wrapRxIngress(scfg.RxIngress)
+	}
+	if scfg.Clock == nil {
+		scfg.Clock = m.clock
+	}
+	scfg.InterfaceID = id // load-bearing for TNC source tagging
+
+	ctx, cancel := context.WithCancel(parent)
+	srv := NewServer(scfg)
+	sup := NewSerial(cfg, srv)
+
+	// Chain OnReload. Manager-level serial state-change hook wiring is
+	// added in Task 7 (ManagerConfig.OnSerialStateChange/OnSerialReconnect).
+	// For now, wire only the caller-supplied cfg.OnReload.
+	if cfg.OnReload != nil {
+		sup.onReload = cfg.OnReload
+	}
+
+	ms := &managedServer{serial: sup, cancel: cancel, channel: scfg.firstChannel()}
+
+	// Per-instance tx queue: only when Mode=tnc AND AllowTxFromGovernor,
+	// exactly as Start does (manager.go:273-292).
+	if cfg.Mode == ModeTnc && cfg.AllowTxFromGovernor {
+		ch := ms.channel
+		broadcast := func(axBytes []byte) {
+			srv.TxBroadcast(ch, axBytes, instanceTxSocketDeadline)
+		}
+		q := newInstanceTxQueue(ctx, broadcast)
+		ifaceID := id
+		var onEnqueue func()
+		var onDrop func(string)
+		var onDepth func(int32)
+		if m.onTxQueueDepth != nil {
+			onDepth = func(d int32) { m.onTxQueueDepth(ifaceID, d) }
+		}
+		if m.onTxQueueDrop != nil {
+			onDrop = func(reason string) { m.onTxQueueDrop(ifaceID, reason) }
+		}
+		q.SetObservers(onEnqueue, onDrop, onDepth)
+		ms.txQueue = q
+	}
+
+	m.running[id] = ms
+	m.mu.Unlock()
+
+	go sup.run(ctx)
+}
+
+// stopManaged tears down any managed interface kind. Caller must hold
+// no lock; client/serial close() blocks on the supervisor goroutine.
+func (m *Manager) stopManaged(ms *managedServer) {
+	switch {
+	case ms.client != nil:
+		ms.cancel()
+		ms.client.close()
+	case ms.serial != nil:
+		ms.cancel()
+		ms.serial.close()
+	default:
+		// Plain server-listen row: matches Stop's else branch (manager.go:337-340).
+		if ms.txQueue != nil {
+			ms.txQueue.Close()
+		}
+		ms.cancel()
+	}
 }
 
 // Reconnect short-circuits the current backoff wait on the tcp-client
