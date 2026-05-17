@@ -19,6 +19,7 @@
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
+    { path: '/logs', label: 'Logs', svgIcon: 'logs' },
   ];
 
   const navGroups = [
@@ -34,7 +35,6 @@
         { path: '/gps', label: 'GPS' },
         { path: '/igate', label: 'iGate' },
         { path: '/kiss', label: 'KISS' },
-        { path: '/logs', label: 'Logs' },
         { path: '/preferences/maps', label: 'Maps' },
         { path: '/preferences/messages', label: 'Messaging' },
         { path: '/position-log', label: 'Position Log' },
@@ -206,6 +206,23 @@
                 stroke-linejoin="round"
               >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            {:else if item.svgIcon === 'logs'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                <path d="M14 3v5h5" />
+                <line x1="9" y1="13" x2="15" y2="13" />
+                <line x1="9" y1="17" x2="15" y2="17" />
               </svg>
             {/if}
             {#if unread > 0}
