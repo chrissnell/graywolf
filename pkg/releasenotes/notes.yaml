@@ -11,7 +11,7 @@
   date: "2026-05-16"
   style: info
   schema_version: 1
-  title: "KISS TNC transmit, channel stats, and cleaner audio detection"
+  title: "KISS TNC transmit, serial TNC support, channel stats, cleaner audio detection"
   link: "#/kiss"
   body: |
     When Graywolf connects out to a KISS TNC, that connection can now
@@ -22,6 +22,15 @@
     If you have a TNC client that you deliberately want to keep
     receive-only, or one sharing a channel with a sound-card modem,
     it is left as-is. Nothing else to reconfigure.
+
+    You can now attach a KISS TNC over a serial port, not just over
+    the network. On the KISS settings page pick the new Serial
+    interface type, enter the device path (for example /dev/ttyUSB0
+    or /dev/ttyACM0) and the baud rate, and attach it to a channel
+    just like a network TNC. Graywolf opens the port, keeps the link
+    up, and if the device is unplugged it backs off and reconnects on
+    its own when it comes back, with no restart needed. Changing the
+    device, baud, or mode and saving takes effect right away.
 
     KISS TNC channels now report their own receive and transmit
     counts, so each channel card shows that channel's traffic at a
