@@ -223,7 +223,9 @@
   // side can fire it via evaluateJavascript("__usbResult(id, granted)").
   function requestGrant() {
     if (!usbDevice) return;
-    const callbackId = Math.random().toString(36).slice(2);
+    // Prefix guarantees a non-empty alphanumeric id even if Math.random()
+    // returns 0 (slice(2) of "0" is ""), which T9's Kotlin validator rejects.
+    const callbackId = 'cb' + Math.random().toString(36).slice(2);
     // __usbResult is the global dispatcher Kotlin evaluateJavascript calls.
     if (!globalThis.__usbResult) {
       globalThis.__usbResult = (id, granted) => {
@@ -281,6 +283,12 @@
   onDestroy(() => {
     clearPttHold();
     stopUsbPoll();
+    // Tear down the global USB-grant dispatcher so a late callback after
+    // unmount can't fire into a dead component.
+    if (globalThis.__usbResult) {
+      delete globalThis.__usbResult;
+      delete globalThis.__usbCallbacks;
+    }
   });
 
   // Legacy name; delegates to the shared store so every caller gets
