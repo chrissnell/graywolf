@@ -258,9 +258,29 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			TncIngressBurst:     ki.TncIngressBurst,
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
 		})
+	case configstore.KissTypeSerial:
+		if ki.Device == "" || ki.BaudRate == 0 {
+			s.kissManager.Stop(ki.ID)
+			return
+		}
+		reload := s.notifyTxBackendReload
+		s.kissManager.StartSerial(s.kissCtx, ki.ID, kiss.SerialConfig{
+			Name:                ki.Name,
+			Device:              ki.Device,
+			BaudRate:            ki.BaudRate,
+			Mode:                mode,
+			ChannelMap:          map[uint8]uint32{0: ch},
+			ReconnectInitMs:     ki.ReconnectInitMs,
+			ReconnectMaxMs:      ki.ReconnectMaxMs,
+			Logger:              s.logger,
+			TncIngressRateHz:    ki.TncIngressRateHz,
+			TncIngressBurst:     ki.TncIngressBurst,
+			AllowTxFromGovernor: ki.AllowTxFromGovernor,
+			OnReload:            reload,
+		})
 	default:
-		// Serial / bluetooth paths aren't wired through the manager
-		// today; stop any lingering session.
+		// Bluetooth is not wired through the manager yet; stop any
+		// lingering session.
 		s.kissManager.Stop(ki.ID)
 	}
 }

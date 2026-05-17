@@ -328,6 +328,205 @@ func TestKissReconnect_Endpoint(t *testing.T) {
 	}
 }
 
+// newSerialTestServer returns a *Server wired with a real kiss.Manager and the
+// bogus device path used by serial KISS tests. The manager context and cleanup
+// are registered on t. Callers receive the server and a ready-to-use ServeMux.
+func newSerialTestServer(t *testing.T) (*Server, *kiss.Manager, *http.ServeMux) {
+	t.Helper()
+	srv, _ := newTestServer(t)
+	mgr := kiss.NewManager(kiss.ManagerConfig{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	srv.kissManager = mgr
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		mgr.StopAll()
+	})
+	srv.kissCtx = ctx
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	return srv, mgr, mux
+}
+
+// pollRegistered polls mgr.Status() until id is present or deadline expires.
+// Returns true when the id appears before the deadline.
+func pollRegistered(mgr *kiss.Manager, id uint32, deadline time.Time) bool {
+	for time.Now().Before(deadline) {
+		if _, ok := mgr.Status()[id]; ok {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// pollAbsent polls mgr.Status() until id is absent or deadline expires.
+// Returns true when the id is gone before the deadline.
+func pollAbsent(mgr *kiss.Manager, id uint32, deadline time.Time) bool {
+	for time.Now().Before(deadline) {
+		if _, ok := mgr.Status()[id]; !ok {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// TestNotifyKissManager_Serial verifies the initial dispatch path: a valid
+// serial KISS config causes the manager to register the supervisor (step A).
+// This is the load-bearing discriminator for the case configstore.KissTypeSerial
+// arm — without it, notifyKissManager falls through to the default: arm which
+// calls Stop(), so the registration can never succeed.
+//
+// Mirrors the tcp-client pattern in TestKissReconnect_Endpoint: a real
+// kiss.Manager is wired in; the supervisor tries to open the bogus device path
+// and enters reconnect backoff — that is fine; we only assert the row appears
+// in manager Status(). No real serial hardware is required.
+func TestNotifyKissManager_Serial(t *testing.T) {
+	_, mgr, mux := newSerialTestServer(t)
+
+	// POST a valid serial interface; device is bogus so the supervisor
+	// enters backoff, but the manager row is registered immediately.
+	body, _ := json.Marshal(map[string]any{
+		"type":              "serial",
+		"serial_device":     "/dev/ttyACM-graywolf-test-nonexistent",
+		"baud_rate":         9600,
+		"channel":           1,
+		"mode":              "modem",
+		"reconnect_init_ms": 60000,
+		"reconnect_max_ms":  60000,
+	})
+	rr := doPost(mux, "/api/kiss", body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create serial: %d %s", rr.Code, rr.Body.String())
+	}
+	var created dto.KissResponse
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Type != "serial" {
+		t.Fatalf("created type = %q, want serial", created.Type)
+	}
+
+	// A: valid first dispatch → id must appear in Status().
+	// Without the case KissTypeSerial arm, this assertion fails because
+	// the default: arm calls Stop(), which is a no-op for a fresh id and
+	// never registers it.
+	if !pollRegistered(mgr, created.ID, time.Now().Add(2*time.Second)) {
+		t.Errorf("serial interface %d not registered in manager after notifyKissManager (A); Status=%v",
+			created.ID, mgr.Status())
+	}
+}
+
+// TestNotifyKissManager_SerialReload verifies the two hot-reload semantics that
+// are the whole point of the case configstore.KissTypeSerial arm:
+//
+//	B. Blank-device reload on a RUNNING serial row → manager must Stop it
+//	   (the arm's invalid-config guard fires and removes the supervisor).
+//	C. Edit of a RUNNING serial row with a still-valid config (e.g. BaudRate
+//	   change) → manager must keep the row registered (StartSerial
+//	   stops-then-restarts under the same id, so the row is never dropped).
+//
+// Step A (valid registration) is a prerequisite for both B and C: it is the
+// discriminating assertion — without the arm the registration never happens,
+// so the test fails at A before B or C can run. That sequencing means the
+// full test fails when the arm is absent, even if B's blank-device Stop would
+// otherwise be reachable via the default: arm.
+func TestNotifyKissManager_SerialReload(t *testing.T) {
+	srv, mgr, mux := newSerialTestServer(t)
+
+	const bogusDev = "/dev/ttyACM-graywolf-test-nonexistent"
+
+	// — A: bring up a valid serial row —
+	body, _ := json.Marshal(map[string]any{
+		"type":              "serial",
+		"serial_device":     bogusDev,
+		"baud_rate":         9600,
+		"channel":           1,
+		"mode":              "modem",
+		"reconnect_init_ms": 60000,
+		"reconnect_max_ms":  60000,
+	})
+	rr := doPost(mux, "/api/kiss", body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create serial: %d %s", rr.Code, rr.Body.String())
+	}
+	var created dto.KissResponse
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	// A: valid dispatch → must be registered (prerequisite for B and C;
+	// fails without the arm — see function-level comment).
+	if !pollRegistered(mgr, created.ID, time.Now().Add(2*time.Second)) {
+		t.Fatalf("serial %d not registered after initial dispatch (A); Status=%v",
+			created.ID, mgr.Status())
+	}
+
+	// — B: blank-device hot-reload on a RUNNING row → must be removed —
+	// The HTTP layer rejects an empty device, so call notifyKissManager
+	// directly to simulate an operator clearing the device field via a
+	// path that bypasses HTTP validation (e.g. direct store write or a
+	// future batch-edit API). The arm's guard ( if ki.Device==""... )
+	// fires Stop(id), which synchronously removes the entry from running.
+	blankDevice := configstore.KissInterface{
+		ID:            created.ID,
+		InterfaceType: configstore.KissTypeSerial,
+		Name:          "serial-reload-test",
+		Device:        "", // invalid — triggers stop
+		BaudRate:      9600,
+		Channel:       1,
+		Enabled:       true,
+	}
+	srv.notifyKissManager(blankDevice)
+
+	// Stop() removes the entry synchronously; poll confirms removal.
+	if !pollAbsent(mgr, created.ID, time.Now().Add(2*time.Second)) {
+		t.Errorf("serial %d still registered after blank-device reload (B); Status=%v",
+			created.ID, mgr.Status())
+	}
+
+	// — Re-register for step C —
+	// Call notifyKissManager directly with the original valid config so we
+	// can exercise the edit path without a second HTTP round-trip.
+	valid := configstore.KissInterface{
+		ID:            created.ID,
+		InterfaceType: configstore.KissTypeSerial,
+		Name:          "serial-reload-test",
+		Device:        bogusDev,
+		BaudRate:      9600,
+		Channel:       1,
+		Enabled:       true,
+	}
+	srv.notifyKissManager(valid)
+	if !pollRegistered(mgr, created.ID, time.Now().Add(2*time.Second)) {
+		t.Fatalf("serial %d not re-registered after restore (C-pre); Status=%v",
+			created.ID, mgr.Status())
+	}
+
+	// — C: valid edit (BaudRate change) on a RUNNING row → must stay registered —
+	// StartSerial stops-then-restarts under the same id, so the manager
+	// row is never dropped. Without the arm, notifyKissManager hits
+	// default: → Stop(), and the row would be absent after the call.
+	edited := configstore.KissInterface{
+		ID:            created.ID,
+		InterfaceType: configstore.KissTypeSerial,
+		Name:          "serial-reload-test",
+		Device:        bogusDev,
+		BaudRate:      19200, // changed field
+		Channel:       1,
+		Enabled:       true,
+	}
+	srv.notifyKissManager(edited)
+
+	if !pollRegistered(mgr, created.ID, time.Now().Add(2*time.Second)) {
+		t.Errorf("serial %d not registered after valid-edit hot-reload (C); Status=%v",
+			created.ID, mgr.Status())
+	}
+}
+
 // doPost is a small request helper so each test case stays readable.
 func doPost(mux *http.ServeMux, path string, body []byte) *httptest.ResponseRecorder {
 	var r *http.Request
