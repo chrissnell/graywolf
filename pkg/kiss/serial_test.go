@@ -41,7 +41,6 @@ func TestSerialConfig_InjectedOpenFuncWins(t *testing.T) {
 // closed (so ServeTransport stays alive until ctx cancel / explicit
 // close), and whose Close unblocks Read with io.EOF.
 type fakeRWC struct {
-	mu     sync.Mutex
 	closed chan struct{}
 	once   sync.Once
 }
