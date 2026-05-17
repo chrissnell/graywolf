@@ -819,6 +819,7 @@ pub(crate) mod tests {
         assert_eq!(PttMethod::parse("cm108"), Some(PttMethod::Cm108));
         assert_eq!(PttMethod::parse("gpio"), Some(PttMethod::Gpio));
         assert_eq!(PttMethod::parse("rigctld"), Some(PttMethod::Rigctld));
+        assert_eq!(PttMethod::parse("android"), Some(PttMethod::Android));
         // Typos must surface as errors at build_driver time rather
         // than silently folding into a no-op — "radio never keys"
         // with no log output is the worst possible debug experience.
