@@ -6,15 +6,13 @@
 // These tests exercise pure logic extracted from Channels.svelte —
 // the Svelte component itself has no headless harness in this repo.
 
-import { test, before, after, mock } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 // ---------------------------------------------------------------------------
 // postChannelPtt — API helper
 // ---------------------------------------------------------------------------
 // Import the helper after wiring a fetch mock so the module sees globalThis.fetch.
-
-let fetchMock;
 
 before(() => {
   globalThis.window = globalThis.window ?? { location: { hash: '' } };
