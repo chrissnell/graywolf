@@ -234,9 +234,11 @@ func computeChannelBacking(
 	// rejecting zero; the pointer check is the authoritative signal.
 	hasModem := ch.InputDeviceID != nil
 	modem := dto.ChannelModemBacking{Active: hasModem && modemRunning}
-	if !hasModem {
-		modem.Reason = "no audio input device"
-	} else if !modemRunning {
+	// A channel with no audio input device has no modem at all; the
+	// modem sub-object is dead state. Leaving Reason empty stops it
+	// leaking through the channel-picker tooltip on KISS-only and
+	// unbound channels (the summary already conveys the real state).
+	if hasModem && !modemRunning {
 		modem.Reason = "modem subprocess not running"
 	}
 

@@ -86,6 +86,51 @@ func TestComputeChannelBacking_TxCapabilityMatrix(t *testing.T) {
 	}
 }
 
+// TestComputeChannelBacking_ModemReason asserts the modem sub-object's
+// Reason is empty whenever no audio modem is configured (InputDeviceID
+// == nil), regardless of whether a KISS-TNC is attached. The string
+// "no audio input device" must only ever describe a real modem.
+func TestComputeChannelBacking_ModemReason(t *testing.T) {
+	u := configstore.U32Ptr
+
+	t.Run("kiss-only channel: modem reason empty, summary kiss-tnc", func(t *testing.T) {
+		ch := configstore.Channel{ID: 42, Name: "ch", InputDeviceID: nil}
+		ifaces := []configstore.KissInterface{
+			{ID: 7, Name: "tnc", Channel: 42, Mode: configstore.KissModeTnc},
+		}
+		statuses := map[uint32]kiss.InterfaceStatus{7: {State: kiss.StateConnected}}
+		b := computeChannelBacking(ch, ifaces, statuses, false)
+		if b.Modem.Reason != "" {
+			t.Errorf("Modem.Reason = %q, want \"\"", b.Modem.Reason)
+		}
+		if b.Summary != dto.ChannelBackingSummaryKissTnc {
+			t.Errorf("Summary = %q, want kiss-tnc", b.Summary)
+		}
+	})
+
+	t.Run("unbound channel: modem reason empty", func(t *testing.T) {
+		ch := configstore.Channel{ID: 43, Name: "u", InputDeviceID: nil}
+		b := computeChannelBacking(ch, nil, nil, false)
+		if b.Modem.Reason != "" {
+			t.Errorf("Modem.Reason = %q, want \"\"", b.Modem.Reason)
+		}
+	})
+
+	t.Run("modem channel, subprocess down: reason still set", func(t *testing.T) {
+		ch := configstore.Channel{ID: 44, Name: "m", InputDeviceID: u(1), OutputDeviceID: 2}
+		b := computeChannelBacking(ch, nil, nil, false)
+		if b.Modem.Reason != "modem subprocess not running" {
+			t.Errorf("Modem.Reason = %q, want \"modem subprocess not running\"", b.Modem.Reason)
+		}
+		if b.Modem.Active != false {
+			t.Errorf("Modem.Active = %v, want false", b.Modem.Active)
+		}
+		if b.Summary != dto.ChannelBackingSummaryModem {
+			t.Errorf("Summary = %q, want %q", b.Summary, dto.ChannelBackingSummaryModem)
+		}
+	})
+}
+
 // TestComputeChannelBacking_TxIgnoresKissModemMode asserts that KISS
 // interfaces in modem-mode (not TNC-mode) do NOT count as a TX backend
 // — they are phase-3 TX paths for the modem, not for the governor.

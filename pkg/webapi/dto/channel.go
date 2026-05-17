@@ -196,8 +196,10 @@ const (
 
 // ChannelModemBacking reports whether an audio modem currently serves
 // this channel. Active is true when the channel has a bound input audio
-// device and the modem subprocess is running. Reason is populated when
-// Active is false; empty otherwise.
+// device and the modem subprocess is running. Reason is populated only
+// when a modem is configured but its subprocess is not running; it is
+// empty for a running modem and for channels with no audio modem at all
+// (KISS-only or unbound), where the modem sub-object is dead state.
 type ChannelModemBacking struct {
 	Active bool   `json:"active"`
 	Reason string `json:"reason,omitempty"`

@@ -251,8 +251,11 @@ func TestComputeChannelBacking_Unbound(t *testing.T) {
 	if b.Modem.Active {
 		t.Errorf("modem.active should be false")
 	}
-	if b.Modem.Reason == "" {
-		t.Errorf("expected reason on unbound modem")
+	// Modem.Reason must be empty on an unbound channel: no audio
+	// modem was ever configured, so the modem sub-object is dead
+	// state. The summary already conveys the real state.
+	if b.Modem.Reason != "" {
+		t.Errorf("modem.reason = %q, want \"\"", b.Modem.Reason)
 	}
 }
 

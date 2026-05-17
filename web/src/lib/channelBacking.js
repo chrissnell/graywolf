@@ -73,15 +73,25 @@ export function ariaLabel(ch) {
   return parts.join(', ');
 }
 
-// Tooltip text: prefer an explicit modem reason; fall back to the
-// concatenated KISS-TNC last_error values. Empty when nothing to show.
+// Tooltip text, summary-aware so a KISS-only channel never shows the
+// modem's dead-state reason. Switch on backing.summary:
+//   kiss-tnc → joined non-empty kiss_tnc[].last_error
+//   modem    → modem.reason
+//   else     → '' (unbound / unknown — nothing to surface)
+// There is deliberately no SUMMARY_UNBOUND constant; unbound is the
+// default branch.
 export function tooltipText(backing) {
   if (!backing) return '';
-  if (backing.modem && backing.modem.reason) return backing.modem.reason;
-  const errs = (backing.kiss_tnc || [])
-    .map((e) => e.last_error)
-    .filter((s) => typeof s === 'string' && s.length > 0);
-  return errs.join('; ');
+  if (backing.summary === SUMMARY_KISS_TNC) {
+    const errs = (backing.kiss_tnc || [])
+      .map((e) => e.last_error)
+      .filter((s) => typeof s === 'string' && s.length > 0);
+    return errs.join('; ');
+  }
+  if (backing.summary === SUMMARY_MODEM) {
+    return backing.modem && backing.modem.reason ? backing.modem.reason : '';
+  }
+  return '';
 }
 
 // TX-capability reason wire constants. Mirror of
