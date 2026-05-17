@@ -94,6 +94,9 @@ func (r KissRequest) Validate() error {
 	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeBluetooth) && r.SerialDevice == "" {
 		return fmt.Errorf("serial_device is required for serial/bluetooth interfaces")
 	}
+	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeBluetooth) && r.BaudRate == 0 {
+		return fmt.Errorf("baud_rate is required for serial/bluetooth interfaces")
+	}
 	if r.Mode != "" && !configstore.ValidKissMode(r.Mode) {
 		return fmt.Errorf("invalid mode %q: must be %q or %q", r.Mode, configstore.KissModeModem, configstore.KissModeTnc)
 	}

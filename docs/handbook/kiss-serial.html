@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KISS over Serial &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="kiss-serial.html">KISS over Serial</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>KISS over Serial</h1>
+    <p class="subtitle">Connect a hardware TNC or radio with a built-in KISS serial port directly to graywolf over a USB or RS-232 serial link.</p>
+
+    <h2>Overview</h2>
+
+    <p>
+      Some TNCs and radios speak KISS natively over a serial port rather
+      than over TCP. Connecting one of these devices lets graywolf use it
+      as a full radio channel &mdash; beacon into it, digipeat across it,
+      and iGate from it &mdash; without an audio modem or a network
+      connection between graywolf and the device.
+    </p>
+
+    <p>
+      Common examples include the Kenwood TH-D75 and TH-D74 handhelds
+      (which expose a USB serial port and speak KISS when placed in packet
+      mode), Mobilinkd TNCs (which attach over Bluetooth serial or USB
+      serial), and the Kantronics KPC-3+ (classic RS-232 TNC with a KISS
+      mode). Any device that presents a serial port and speaks the KISS
+      protocol works.
+    </p>
+
+    <p>
+      Graywolf opens the serial port, reads KISS frames as they arrive,
+      and writes KISS frames when transmitting. The device handles all RF
+      carrier sensing, timing, and actual transmission; graywolf is just
+      the packet router on top.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">i</span>
+      <div class="callout-body">
+        <p>
+          Putting the radio or TNC into KISS mode is the operator's
+          responsibility. Graywolf opens the serial port and begins
+          speaking KISS immediately; it does not send any AT commands or
+          mode-switching sequences. Consult your device's manual for the
+          procedure to enter KISS mode before connecting it in graywolf.
+        </p>
+      </div>
+    </div>
+
+    <h2 id="device-paths">Device Paths</h2>
+
+    <p>
+      When graywolf asks for a device path, enter the operating-system
+      path to the serial port:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Platform</th><th>Typical paths</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Linux</strong></td>
+              <td><code>/dev/ttyACM0</code>, <code>/dev/ttyACM1</code>
+                (USB CDC-ACM devices such as Mobilinkd and AIOC),
+                <code>/dev/ttyUSB0</code>, <code>/dev/ttyUSB1</code>
+                (USB-to-serial adapters, FTDI and CP210x chips)
+              </td>
+            </tr>
+            <tr>
+              <td><strong>macOS</strong></td>
+              <td><code>/dev/cu.usbmodem*</code>,
+                <code>/dev/cu.usbserial-*</code> &mdash; use
+                <code>/dev/cu.*</code> (the call-out device), not
+                <code>/dev/tty.*</code> (the dial-in device), to avoid
+                blocking on open.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Windows</strong></td>
+              <td><code>COM3</code>, <code>COM4</code>, etc. Check
+                Device Manager under &ldquo;Ports (COM &amp; LPT)&rdquo;
+                for the assigned port number.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      On Linux, if you are unsure which path corresponds to your device,
+      unplug it, run <code>ls /dev/ttyACM* /dev/ttyUSB*</code>, plug it
+      back in, and run the command again. The new entry is your device.
+      The <code>dmesg</code> output also shows the assigned path when
+      the kernel recognizes the USB device.
+    </p>
+
+    <h2>Baud Rate</h2>
+
+    <p>
+      The baud rate you enter in graywolf must match the baud rate
+      configured on the device. Common values:
+    </p>
+
+    <ul>
+      <li><strong>9600</strong> &mdash; the most common default for TNCs
+        and many radios with built-in KISS serial support.</li>
+      <li><strong>4800</strong> &mdash; used by some older TNCs and
+        low-speed configurations.</li>
+      <li><strong>19200</strong>, <strong>38400</strong>,
+        <strong>57600</strong>, <strong>115200</strong> &mdash; higher
+        speeds used by some modern USB TNCs; check your device's
+        documentation.</li>
+    </ul>
+
+    <p>
+      A baud-rate mismatch produces garbage framing. If the KISS
+      interface appears connected but no frames arrive (or arrive as
+      decode errors), verify that both sides are set to the same rate.
+    </p>
+
+    <h2>Configuration</h2>
+
+    <h3>Step 1 &mdash; Create a KISS-only channel</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Radio &rarr; Channels</strong> in the web UI.</li>
+      <li>Click <strong>+ Add Channel</strong>.</li>
+      <li>In the channel-type segmented control at the top of the form,
+        choose <strong>KISS-TNC only</strong>. The audio device, modem
+        type, and TX timing fields disappear &mdash; a KISS-only channel
+        is a logical routing lane, not a modulated radio channel.</li>
+      <li>Name it to reflect the attached device (for example,
+        <code>TH-D75</code> or <code>Mobilinkd</code>). Give it a
+        channel number that does not collide with your existing RF
+        channels.</li>
+      <li>Click <strong>Save</strong>. The channel appears on the list
+        with a <strong>KISS-TNC only</strong> badge. Its backing shows
+        <strong>&mdash; Unbound</strong> until you attach the serial
+        KISS interface below.</li>
+    </ol>
+
+    <h3>Step 2 &mdash; Create a serial KISS interface</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Interfaces &rarr; KISS TNC</strong> (the page
+        is titled <strong>KISS Interfaces</strong>).</li>
+      <li>Click <strong>+ Add KISS</strong>.</li>
+      <li>In the <strong>Type</strong> field, choose
+        <strong>Serial</strong>.</li>
+      <li>In <strong>Serial Device</strong>, enter the operating-system
+        path to the serial port
+        (see <a href="#device-paths">Device Paths</a> above).</li>
+      <li>Set <strong>Baud Rate</strong> to match the rate configured
+        on the device (9600 is the most common starting point).</li>
+      <li>In the <strong>Channel</strong> picker, select the KISS-only
+        channel you just created.</li>
+      <li>Set <strong>Mode</strong> to <strong>TNC</strong>. In TNC
+        mode the interface is treated as a radio, not a software
+        client. This also reveals the transmit opt-in checkbox.</li>
+      <li>Check the box labeled <strong>Allow digipeater/beacon/iGate
+        to transmit on this interface</strong> to allow graywolf's
+        TX pipeline to send frames to the device. Without this
+        checkbox the interface only receives.</li>
+      <li>Click <strong>Create</strong>. Graywolf opens the serial port
+        immediately. The row's status badge shows
+        <strong>Connected</strong> if the port opened successfully.
+        The channel's backing on the Channels page flips to
+        <strong>&#x25CF; Live</strong>.</li>
+    </ol>
+
+    <div class="callout warn">
+      <span class="callout-icon">!</span>
+      <div class="callout-body">
+        <p>
+          Make sure the device is already in KISS mode before saving
+          the interface in graywolf. Graywolf does not issue any
+          mode-switch commands; it assumes the port is already
+          speaking KISS when it opens it.
+        </p>
+      </div>
+    </div>
+
+    <h2>Reconnect Behavior</h2>
+
+    <p>
+      If the serial device is unplugged or the port closes unexpectedly,
+      graywolf's serial supervisor backs off and automatically retries
+      opening the port. You do not need to restart the daemon. When the
+      device is plugged back in and the operating system reassigns the
+      same path, graywolf reconnects and the channel returns to
+      <strong>&#x25CF; Live</strong> status.
+    </p>
+
+    <p>
+      Editing the device path, baud rate, or mode on the KISS TNC page
+      and clicking Save triggers a hot reload: graywolf closes the
+      existing connection and re-opens the port with the new settings.
+      No daemon restart is required.
+    </p>
+
+    <h2>Troubleshooting</h2>
+
+    <h3>Linux permission denied (EACCES)</h3>
+
+    <p>
+      On Linux the serial port device is typically owned by the
+      <code>dialout</code> group (or <code>uucp</code> on some
+      distributions). The user running graywolf must be a member of
+      that group. Add the user with:
+    </p>
+
+    <pre><code>sudo usermod -aG dialout &lt;username&gt;</code></pre>
+
+    <p>
+      You must log out and log back in (or start a new login session)
+      for the group change to take effect. If graywolf runs as the
+      <code>graywolf</code> system user (the default for deb/rpm/AUR
+      package installs), the post-install script adds that user to
+      <code>dialout</code> automatically.
+    </p>
+
+    <h3>Port busy (EBUSY / "device or resource busy")</h3>
+
+    <p>
+      Another process holds the serial port open. Common culprits are a
+      terminal emulator left open (<code>minicom</code>,
+      <code>screen</code>, <code>picocom</code>), a competing TNC
+      application, or the ModemManager service on Linux (which probes
+      newly-connected serial devices). Check with:
+    </p>
+
+    <pre><code>fuser /dev/ttyACM0</code></pre>
+
+    <p>
+      That command prints the PID of any process holding the device.
+      On systems running ModemManager you can stop it for a session
+      with <code>sudo systemctl stop ModemManager</code> or add a
+      udev rule to prevent it from touching your TNC's USB vendor/product
+      ID.
+    </p>
+
+    <h3>Interface connects but no frames arrive</h3>
+
+    <p>
+      Check in order:
+    </p>
+
+    <ol>
+      <li>Confirm the device is actually in KISS mode. Most radios and
+        TNCs default to a human-readable command mode and must be
+        explicitly switched. Consult your device's manual.</li>
+      <li>Verify the baud rate matches on both sides. A mismatch
+        produces garbage bytes that the KISS framer discards.</li>
+      <li>Confirm the device is transmitting. On a radio such as the
+        TH-D75, the APRS channel must be active and a beacon must be
+        due &mdash; the port is silent between packets.</li>
+      <li>Check the <strong>Logs</strong> page in the graywolf UI for
+        any serial framing or open errors.</li>
+    </ol>
+
+    <h3>My beacon on the channel does not transmit</h3>
+
+    <p>
+      Likely causes:
+    </p>
+
+    <ul>
+      <li><strong>Transmit checkbox is off.</strong> Open the KISS
+        interface, confirm Mode is <code>TNC</code> and the
+        <strong>Allow digipeater/beacon/iGate to transmit on this
+        interface</strong> box is checked.</li>
+      <li><strong>Port is not open.</strong> The status badge on the
+        KISS page shows <strong>Reconnecting</strong> if graywolf
+        cannot open the port. Confirm the device is connected and
+        the path is correct.</li>
+      <li><strong>Channel is unbound.</strong> If you created the
+        channel but never attached the serial interface to it, the
+        channel's backing is <strong>&mdash; Unbound</strong> and
+        no frame goes anywhere.</li>
+    </ul>
+
+    <h2>Known-Working Devices</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Device</th><th>Connection</th><th>Baud Rate</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Kenwood TH-D75</td>
+              <td>USB (CDC-ACM, <code>/dev/ttyACM*</code>)</td>
+              <td>9600</td>
+              <td>Enable packet mode in the radio's menu and set the
+                data speed to 9600 bps. The radio must be tuned to an
+                APRS frequency.</td>
+            </tr>
+            <tr>
+              <td>Kenwood TH-D74</td>
+              <td>USB (CDC-ACM, <code>/dev/ttyACM*</code>)</td>
+              <td>9600</td>
+              <td>Similar to the TH-D75. Use the radio's APRS menu to
+                confirm it is in packet / KISS mode.</td>
+            </tr>
+            <tr>
+              <td>Mobilinkd TNC4</td>
+              <td>Bluetooth serial or USB</td>
+              <td>38400</td>
+              <td>Configure via the Mobilinkd app before connecting to
+                graywolf. KISS mode is selected in the app. Baud rate
+                may vary by firmware version; confirm in the app.</td>
+            </tr>
+            <tr>
+              <td>Kantronics KPC-3+</td>
+              <td>RS-232 (via USB adapter)</td>
+              <td>9600</td>
+              <td>Issue <code>KISSMODE</code> from a terminal before
+                connecting in graywolf. To exit KISS mode later,
+                power-cycle the TNC.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Related Pages</h2>
+
+    <ul>
+      <li><a href="kiss.html">KISS TNC</a> &mdash; TCP server and
+        client KISS interfaces.</li>
+      <li><a href="remote-kiss-tnc.html">Remote KISS TNC</a> &mdash;
+        dialing out to a remote KISS server over TCP.</li>
+      <li><a href="channels.html">Radio Channels</a> &mdash; channel
+        types, backing, and TX timing.</li>
+      <li><a href="configurations.html">Known-Working Configs</a>
+        &mdash; example hardware configurations.</li>
+    </ul>
+
+    <nav class="page-nav">
+      <a href="remote-kiss-tnc.html">
+        <span class="label">Previous</span>
+        Remote KISS TNC
+      </a>
+      <a href="agwpe.html" class="next">
+        <span class="label">Next</span>
+        AGWPE
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

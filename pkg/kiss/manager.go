@@ -83,7 +83,9 @@ type Manager struct {
 	// onClientStateChange fires on every tcp-client state transition.
 	onClientStateChange func(ifaceID uint32, name string, st InterfaceStatus)
 	// onClientReconnect fires once per successful dial.
-	onClientReconnect func(ifaceID uint32)
+	onClientReconnect   func(ifaceID uint32)
+	onSerialStateChange func(ifaceID uint32, name string, st InterfaceStatus)
+	onSerialReconnect   func(ifaceID uint32)
 
 	// chanStatsMu guards chanStats. Separate from mu so the RX/TX
 	// counting hot paths never contend with Start/Stop lifecycle.
@@ -106,6 +108,13 @@ type managedServer struct {
 	// ID, so the union-of-types here is the cheapest way to unify
 	// lifecycle bookkeeping across both kinds.
 	client *Client
+	// serial is set instead of server/client when the interface was
+	// started with StartSerial. At most one of server/client/serial
+	// is non-nil. serial owns its own *Server internally; that Server
+	// is intentionally NOT stored in `server` so BroadcastFromChannel
+	// (which only targets ms.server) never echoes a serial TNC's own
+	// RX back to it — exactly the tcp-client rule.
+	serial *SerialSupervisor
 	cancel context.CancelFunc
 	// txQueue is the per-instance bounded tx queue used by
 	// TransmitOnChannel. Non-nil only when the interface was started
@@ -168,6 +177,12 @@ type ManagerConfig struct {
 	// tcp-client supervisor. Wired to the Phase 4
 	// graywolf_kiss_client_reconnects_total counter.
 	OnClientReconnect func(ifaceID uint32)
+	// OnSerialStateChange / OnSerialReconnect mirror the client hooks
+	// for serial supervisors. Parallel hooks (D7 option A); a
+	// follow-up may collapse both behind transport-neutral
+	// OnSupervisor* (tracked Out-of-scope in the spec).
+	OnSerialStateChange func(ifaceID uint32, name string, st InterfaceStatus)
+	OnSerialReconnect   func(ifaceID uint32)
 }
 
 // NewManager creates a Manager. Call Start to launch individual servers.
@@ -189,6 +204,8 @@ func NewManager(cfg ManagerConfig) *Manager {
 		onTxQueueDrop:         cfg.OnTxQueueDrop,
 		onClientStateChange:   cfg.OnClientStateChange,
 		onClientReconnect:     cfg.OnClientReconnect,
+		onSerialStateChange:   cfg.OnSerialStateChange,
+		onSerialReconnect:     cfg.OnSerialReconnect,
 		chanStats:             make(map[uint32]*ChannelStat),
 	}
 }
@@ -209,21 +226,12 @@ func (m *Manager) SetRxIngress(fn func(rf *pb.ReceivedFrame, src ingress.Source)
 func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 	m.mu.Lock()
 
-	// Stop existing if any — handle both server-listen and tcp-client
-	// (client.close blocks on done, so release the lock before calling
-	// into it).
+	// Stop existing if any — release lock before calling stopManaged
+	// (client/serial close blocks on the supervisor goroutine).
 	if ms, ok := m.running[id]; ok {
 		delete(m.running, id)
 		m.mu.Unlock()
-		if ms.client != nil {
-			ms.cancel()
-			ms.client.close()
-		} else {
-			if ms.txQueue != nil {
-				ms.txQueue.Close()
-			}
-			ms.cancel()
-		}
+		m.stopManaged(ms)
 		m.mu.Lock()
 	}
 	defer m.mu.Unlock()
@@ -327,17 +335,7 @@ func (m *Manager) Stop(id uint32) {
 	if !ok {
 		return
 	}
-	if ms.client != nil {
-		// For clients the tx queue is owned by the client and will be
-		// closed as part of its run() shutdown.
-		ms.cancel()
-		ms.client.close()
-		return
-	}
-	if ms.txQueue != nil {
-		ms.txQueue.Close()
-	}
-	ms.cancel()
+	m.stopManaged(ms)
 }
 
 // StartClient launches a tcp-client KISS supervisor for the given DB
@@ -355,15 +353,7 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 	if existing, ok := m.running[id]; ok {
 		delete(m.running, id)
 		m.mu.Unlock()
-		if existing.client != nil {
-			existing.cancel()
-			existing.client.close()
-		} else {
-			if existing.txQueue != nil {
-				existing.txQueue.Close()
-			}
-			existing.cancel()
-		}
+		m.stopManaged(existing)
 		m.mu.Lock()
 	}
 
@@ -462,9 +452,152 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 	}()
 }
 
-// Reconnect short-circuits the current backoff wait on the tcp-client
-// interface under id. Returns nil on success; returns a non-nil error
-// when id is not registered or is not a tcp-client supervisor.
+// StartSerial launches a serial KISS supervisor for the given DB row.
+// Any previously-running interface under id is stopped first. The
+// owned *Server is finalized exactly as Start does (Sink/RxIngress/
+// InterfaceID/...) then handed to NewSerial. The per-instance tx
+// queue is built exactly as Start does (Mode==tnc &&
+// AllowTxFromGovernor) so governor TX reaches the radio.
+func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfig) {
+	m.mu.Lock()
+	if existing, ok := m.running[id]; ok {
+		delete(m.running, id)
+		m.mu.Unlock()
+		m.stopManaged(existing)
+		m.mu.Lock()
+	}
+
+	// Finalize the owned ServerConfig exactly as Start does.
+	scfg := ServerConfig{
+		Name:                cfg.Name,
+		ListenAddr:          "", // no listener — ServeTransport drives it
+		ChannelMap:          cfg.ChannelMap,
+		Mode:                cfg.Mode,
+		Broadcast:           false, // serial Server is not a fanout target
+		TncIngressRateHz:    cfg.TncIngressRateHz,
+		TncIngressBurst:     cfg.TncIngressBurst,
+		AllowTxFromGovernor: cfg.AllowTxFromGovernor,
+	}
+	scfg.Sink = m.sink
+	if cfg.Logger != nil {
+		scfg.Logger = cfg.Logger
+	} else {
+		scfg.Logger = m.logger
+	}
+	if scfg.OnDecodeError == nil {
+		scfg.OnDecodeError = m.onDecodeError
+	}
+	if scfg.OnFrameIngress == nil && m.onFrameIngress != nil {
+		ifaceID := id
+		fn := m.onFrameIngress
+		scfg.OnFrameIngress = func(mode Mode) { fn(ifaceID, mode) }
+	}
+	// Two-step RxIngress wiring identical to Start:
+	// assign the manager-level callback, then unconditionally wrap it for
+	// per-channel RX counting only when non-nil (preserves the server's
+	// "no RxIngress wired" diagnostic for nil cases — issue #132).
+	if scfg.RxIngress == nil {
+		scfg.RxIngress = m.rxIngress
+	}
+	if scfg.RxIngress != nil {
+		scfg.RxIngress = m.wrapRxIngress(scfg.RxIngress)
+	}
+	if scfg.Clock == nil {
+		scfg.Clock = m.clock
+	}
+	scfg.InterfaceID = id // load-bearing for TNC source tagging
+
+	ctx, cancel := context.WithCancel(parent)
+	srv := NewServer(scfg)
+	sup := NewSerial(cfg, srv)
+
+	// Chain onReload / onReconnect with the manager-level hooks,
+	// mirroring StartClient's onClientStateChange/onClientReconnect
+	// chaining, so manager-level metric hooks fire without the
+	// supervisor knowing about the Manager. The else-if preserves a
+	// caller-supplied OnReload when no manager state-change hook is set.
+	userOnReload := cfg.OnReload
+	if m.onSerialStateChange != nil {
+		managerHook := m.onSerialStateChange
+		ifaceID := id
+		ifaceName := cfg.Name
+		sup.onReload = func() {
+			if userOnReload != nil {
+				userOnReload()
+			}
+			managerHook(ifaceID, ifaceName, sup.Status())
+		}
+		// Deliberate divergence from StartClient, which has no else-if here
+		// because its callers always pair OnReload with OnClientStateChange.
+		// Serial keeps this branch as a regression-guard: Task 6 wired
+		// cfg.OnReload unconditionally, so dropping it when no manager
+		// state-change hook is set would silently regress that behaviour.
+		// Do not "resync" with StartClient by removing this branch.
+	} else if userOnReload != nil {
+		sup.onReload = userOnReload
+	}
+	if m.onSerialReconnect != nil {
+		ifaceID := id
+		reconnectHook := m.onSerialReconnect
+		sup.onReconnect = func() { reconnectHook(ifaceID) }
+	}
+
+	ms := &managedServer{serial: sup, cancel: cancel, channel: scfg.firstChannel()}
+
+	// Per-instance tx queue: only when Mode=tnc AND AllowTxFromGovernor,
+	// exactly as Start does.
+	if cfg.Mode == ModeTnc && cfg.AllowTxFromGovernor {
+		ch := ms.channel
+		broadcast := func(axBytes []byte) {
+			srv.TxBroadcast(ch, axBytes, instanceTxSocketDeadline)
+		}
+		q := newInstanceTxQueue(ctx, broadcast)
+		ifaceID := id
+		var onEnqueue func()
+		var onDrop func(string)
+		var onDepth func(int32)
+		if m.onTxQueueDepth != nil {
+			onDepth = func(d int32) { m.onTxQueueDepth(ifaceID, d) }
+		}
+		if m.onTxQueueDrop != nil {
+			onDrop = func(reason string) { m.onTxQueueDrop(ifaceID, reason) }
+		}
+		q.SetObservers(onEnqueue, onDrop, onDepth)
+		ms.txQueue = q
+	}
+
+	m.running[id] = ms
+	m.mu.Unlock()
+
+	go sup.run(ctx)
+}
+
+// stopManaged tears down any managed interface kind. Caller must hold
+// no lock; client/serial close() blocks on the supervisor goroutine.
+func (m *Manager) stopManaged(ms *managedServer) {
+	switch {
+	case ms.client != nil:
+		ms.cancel()
+		ms.client.close()
+	case ms.serial != nil:
+		// ModeTnc serial row: do NOT call ms.txQueue.Close() here. The queue
+		// was built with newInstanceTxQueue(ctx, ...) where ctx is this row's
+		// cancel context, so ms.cancel() reaps the drain goroutine
+		// asynchronously; an explicit Close() would be redundant.
+		ms.cancel()
+		ms.serial.close()
+	default:
+		// Plain server-listen row: txQueue.Close() then cancel().
+		if ms.txQueue != nil {
+			ms.txQueue.Close()
+		}
+		ms.cancel()
+	}
+}
+
+// Reconnect short-circuits the current backoff wait on a tcp-client or
+// serial supervisor under id. Returns nil on success; returns a non-nil
+// error when id is not registered or is not reconnectable.
 func (m *Manager) Reconnect(id uint32) error {
 	m.mu.Lock()
 	ms, ok := m.running[id]
@@ -472,11 +605,15 @@ func (m *Manager) Reconnect(id uint32) error {
 	if !ok {
 		return errors.New("kiss: interface not running")
 	}
-	if ms.client == nil {
-		return errors.New("kiss: interface is not a tcp-client")
+	if ms.client != nil {
+		ms.client.Reconnect()
+		return nil
 	}
-	ms.client.Reconnect()
-	return nil
+	if ms.serial != nil {
+		ms.serial.Reconnect()
+		return nil
+	}
+	return errors.New("kiss: interface is not reconnectable")
 }
 
 // InstanceQueueFor returns the per-instance tx queue for the running
@@ -606,20 +743,24 @@ func (m *Manager) Status() map[uint32]InterfaceStatus {
 	m.mu.Lock()
 	type entry struct {
 		client *Client
+		serial *SerialSupervisor
 	}
 	snapshot := make(map[uint32]entry, len(m.running))
 	for id, ms := range m.running {
-		snapshot[id] = entry{client: ms.client}
+		snapshot[id] = entry{client: ms.client, serial: ms.serial}
 	}
 	m.mu.Unlock()
 
 	out := make(map[uint32]InterfaceStatus, len(snapshot))
 	for id, e := range snapshot {
-		if e.client != nil {
+		switch {
+		case e.client != nil:
 			out[id] = e.client.Status()
-			continue
+		case e.serial != nil:
+			out[id] = e.serial.Status()
+		default:
+			out[id] = InterfaceStatus{State: StateListening}
 		}
-		out[id] = InterfaceStatus{State: StateListening}
 	}
 	return out
 }

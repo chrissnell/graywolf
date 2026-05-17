@@ -533,3 +533,17 @@ own.
 Source:
 [`../../graywolf-modem/src/audio/soundcard.rs`](../../graywolf-modem/src/audio/soundcard.rs)
 (`pick_input_sample_format`, `input_format_rank`, `pick_input_probe_config`, `spawn`).
+
+### 34. KISS InterfaceType dispatch must be updated in two independent places
+
+Adding or changing a KISS InterfaceType (e.g. `KissTypeSerial`) requires updating the `switch ki.InterfaceType` in **both**:
+
+1. `pkg/app/wiring.go` -- `kissComponent().start` (startup dispatch)
+2. `pkg/webapi/kiss.go` -- `notifyKissManager` (hot-reload / config-write dispatch)
+
+The two switches are independent; omitting #2 means a config write calls `Stop()` on a running interface and silently leaves it stopped with no error.
+
+*Why:* There is no shared dispatch table -- each switch is a separate match on the stored `InterfaceType` string, so a new type added to one switch must be consciously added to the other.
+
+Source: [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`),
+[`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`notifyKissManager`).

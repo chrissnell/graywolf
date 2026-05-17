@@ -93,6 +93,60 @@ func TestKissFromModel_AllowTxFromGovernor_Roundtrip(t *testing.T) {
 	}
 }
 
+// TestKissRequest_Validate_BaudRate verifies that a serial/bluetooth
+// interface with baud_rate == 0 is rejected, a valid baud_rate is
+// accepted, and non-serial types are unaffected by the baud_rate check.
+func TestKissRequest_Validate_BaudRate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     KissRequest
+		wantErr string
+	}{
+		{
+			name: "serial with zero baud_rate is rejected",
+			req: KissRequest{
+				Type: configstore.KissTypeSerial, SerialDevice: "/dev/ttyUSB0", BaudRate: 0,
+			},
+			wantErr: "baud_rate is required for serial/bluetooth interfaces",
+		},
+		{
+			name: "serial with non-zero baud_rate is accepted",
+			req: KissRequest{
+				Type: configstore.KissTypeSerial, SerialDevice: "/dev/ttyUSB0", BaudRate: 9600,
+			},
+		},
+		{
+			name: "tcp with zero baud_rate is accepted (baud_rate irrelevant for tcp)",
+			req: KissRequest{
+				Type: configstore.KissTypeTCP, TcpPort: 8001, BaudRate: 0,
+			},
+		},
+		{
+			name: "tcp-client with zero baud_rate is accepted (baud_rate irrelevant for tcp-client)",
+			req: KissRequest{
+				Type: configstore.KissTypeTCPClient, RemoteHost: "tnc.example", RemotePort: 8001, BaudRate: 0,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.req.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("want error containing %q, got nil", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err=%v, want contains %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestKissRequest_Validate_TcpClient exercises the tcp-client branch
 // of the validator: RemoteHost + RemotePort are required, reconnect
 // bounds are sanity-checked, and init <= max is enforced.

@@ -5,6 +5,7 @@ package metrics
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -12,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
+	"github.com/chrissnell/graywolf/pkg/kiss"
 )
 
 // Metrics owns a Prometheus registry and the graywolf metric vectors.
@@ -87,11 +89,26 @@ type Metrics struct {
 	// (no reconnect triggered).
 	IgateFilterRecompositions prometheus.Counter
 
+	// Phase serial: KISS serial supervisor observability.
+	//   KissSerialConnected:      gauge per interface (1 = connected, 0 = not); labels: interface_id, name, device
+	//   KissSerialReconnects:     counter per interface (cumulative opens); labels: interface_id, name, device
+	//   KissSerialBackoffSeconds: gauge per interface (current backoff delay); labels: interface_id, name, device
+	KissSerialConnected      *prometheus.GaugeVec
+	KissSerialReconnects     *prometheus.CounterVec
+	KissSerialBackoffSeconds *prometheus.GaugeVec
+
 	// Track last-seen cumulative DCD transition counts per channel so we can
 	// translate the Rust modem's absolute counters into Prometheus counter
 	// deltas. (Rx frame counts come directly from ObserveReceivedFrame so we
 	// don't double-count them from StatusUpdate.)
 	lastDcdTransitions map[uint32]uint64
+
+	// serialLabels caches the {name, device} pair last reported by
+	// ObserveKissSerialState so that ObserveKissSerialReconnect (which
+	// only receives ifaceID, mirroring the client reconnect contract) can
+	// supply the full label set required by the serial reconnect counter.
+	serialLabelsMu sync.Mutex           // guards serialLabels
+	serialLabels   map[uint32][2]string // ifaceID → {name, device}
 }
 
 // New builds a Metrics with a private registry. The registry is
@@ -268,7 +285,20 @@ func New() *Metrics {
 			Name: "graywolf_igate_filter_recompositions_total",
 			Help: "Reloads where the composed APRS-IS server filter differed from the last-applied value and was pushed to the iGate client. Reloads that only changed RF rules or the governor without altering the filter do not increment.",
 		}),
+		KissSerialConnected: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "graywolf_kiss_serial_connected",
+			Help: "1 when the KISS serial supervisor's port is open and connected, 0 otherwise.",
+		}, []string{"interface_id", "name", "device"}),
+		KissSerialReconnects: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_kiss_serial_reconnects_total",
+			Help: "Cumulative successful serial port opens performed by the KISS serial supervisor since process start.",
+		}, []string{"interface_id", "name", "device"}),
+		KissSerialBackoffSeconds: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "graywolf_kiss_serial_backoff_seconds",
+			Help: "Current backoff delay in seconds for the KISS serial supervisor while waiting to re-open. Zero when connected or not in backoff.",
+		}, []string{"interface_id", "name", "device"}),
 		lastDcdTransitions: make(map[uint32]uint64),
+		serialLabels:       make(map[uint32][2]string),
 	}
 	reg.MustRegister(
 		m.RxFrames,
@@ -310,6 +340,9 @@ func New() *Metrics {
 		m.KissClientBackoffSeconds,
 		m.KissClientTxDrops,
 		m.IgateFilterRecompositions,
+		m.KissSerialConnected,
+		m.KissSerialReconnects,
+		m.KissSerialBackoffSeconds,
 	)
 	return m
 }
@@ -466,4 +499,38 @@ func (m *Metrics) ObserveKissClientTxDrop(ifaceID uint32, reason string) {
 	m.KissClientTxDrops.
 		WithLabelValues(strconv.FormatUint(uint64(ifaceID), 10), reason).
 		Inc()
+}
+
+// ObserveKissSerialState updates the per-interface serial supervisor
+// connected gauge and backoff gauge. device is st.PeerAddr, which
+// SerialSupervisor sets to cfg.Device. The {name, device} pair is
+// cached so ObserveKissSerialReconnect (which only receives ifaceID,
+// mirroring the tcp-client reconnect contract) can supply the full
+// label set required by the serial reconnect counter.
+func (m *Metrics) ObserveKissSerialState(ifaceID uint32, name string, st kiss.InterfaceStatus) {
+	idLbl := strconv.FormatUint(uint64(ifaceID), 10)
+	device := st.PeerAddr
+	m.serialLabelsMu.Lock()
+	m.serialLabels[ifaceID] = [2]string{name, device}
+	m.serialLabelsMu.Unlock()
+	v := 0.0
+	if st.State == kiss.StateConnected {
+		v = 1
+	}
+	m.KissSerialConnected.WithLabelValues(idLbl, name, device).Set(v)
+	m.KissSerialBackoffSeconds.WithLabelValues(idLbl, name, device).Set(float64(st.BackoffSeconds))
+}
+
+// ObserveKissSerialReconnect increments the per-interface serial
+// reconnect counter. name and device are looked up from the cache
+// populated by the most recent ObserveKissSerialState call for this
+// interface. This mirrors ObserveKissClientReconnect, which also
+// takes only ifaceID; the extra labels are resolved from the cached
+// state rather than re-deriving them from a manager snapshot.
+func (m *Metrics) ObserveKissSerialReconnect(ifaceID uint32) {
+	idLbl := strconv.FormatUint(uint64(ifaceID), 10)
+	m.serialLabelsMu.Lock()
+	lbl := m.serialLabels[ifaceID] // zero value ≡ {"",""}
+	m.serialLabelsMu.Unlock()
+	m.KissSerialReconnects.WithLabelValues(idLbl, lbl[0], lbl[1]).Inc()
 }

@@ -4,9 +4,11 @@ import (
 	"io"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
+	"github.com/chrissnell/graywolf/pkg/kiss"
 )
 
 func scrape(t *testing.T, m *Metrics) string {
@@ -128,6 +130,74 @@ func TestObservabilityCountersRegistered(t *testing.T) {
 			t.Errorf("counter %q is not registered (no HELP line in /metrics output)", name)
 		}
 	}
+}
+
+// TestKissSerialMetrics pins the serial supervisor metrics contract:
+// ObserveKissSerialState drives the connected and backoff gauges;
+// ObserveKissSerialReconnect increments the reconnect counter using
+// the name/device cached by the most recent state observation.
+func TestKissSerialMetrics(t *testing.T) {
+	m := New()
+
+	// First state observation: port open, connected.
+	m.ObserveKissSerialState(5, "tnc0", kiss.InterfaceStatus{
+		State:          kiss.StateConnected,
+		PeerAddr:       "/dev/ttyUSB0",
+		BackoffSeconds: 0,
+	})
+
+	// Reconnect counter should use the cached labels.
+	m.ObserveKissSerialReconnect(5)
+
+	// Second state observation: in backoff.
+	m.ObserveKissSerialState(5, "tnc0", kiss.InterfaceStatus{
+		State:          kiss.StateBackoff,
+		PeerAddr:       "/dev/ttyUSB0",
+		BackoffSeconds: 4,
+	})
+
+	body := scrape(t, m)
+	// Prometheus sorts labels alphabetically: device, interface_id, name.
+	for _, want := range []string{
+		`graywolf_kiss_serial_connected{device="/dev/ttyUSB0",interface_id="5",name="tnc0"} 0`,
+		`graywolf_kiss_serial_backoff_seconds{device="/dev/ttyUSB0",interface_id="5",name="tnc0"} 4`,
+		`graywolf_kiss_serial_reconnects_total{device="/dev/ttyUSB0",interface_id="5",name="tnc0"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output missing %q\n---\n%s", want, body)
+		}
+	}
+}
+
+// TestKissSerialMetrics_ConcurrentRace exercises ObserveKissSerialState
+// and ObserveKissSerialReconnect from multiple goroutines simultaneously.
+// Without the serialLabelsMu mutex this triggers "fatal error: concurrent
+// map read and map write" / a -race report; with the mutex it must pass
+// cleanly. Run with `go test -race` to validate.
+func TestKissSerialMetrics_ConcurrentRace(t *testing.T) {
+	m := New()
+	const (
+		goroutines = 8
+		ifaces     = 4
+		iterations = 200
+	)
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				id := uint32(g%ifaces) + 1
+				m.ObserveKissSerialState(id, "tnc", kiss.InterfaceStatus{
+					State:          kiss.StateConnected,
+					PeerAddr:       "/dev/ttyUSB0",
+					BackoffSeconds: 0,
+				})
+				m.ObserveKissSerialReconnect(id)
+			}
+		}(g)
+	}
+	wg.Wait()
 }
 
 // TestKissTncObservabilityCounters pins the Phase 5 KISS modem/TNC

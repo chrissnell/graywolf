@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -203,5 +204,148 @@ func TestManager_Reconnect_RoutesToClient(t *testing.T) {
 	}
 	if err := m.Reconnect(2); err != nil {
 		t.Errorf("Reconnect on tcp-client: want nil, got %v", err)
+	}
+}
+
+// TestManager_StartSerial_Connected verifies that StartSerial dispatches a
+// SerialSupervisor, that the supervisor reaches StateConnected via the
+// injected OpenFunc, that Manager.Status() reports it (serial arm added in
+// Task 8), and that Stop removes the row from the manager.
+func TestManager_StartSerial_Connected(t *testing.T) {
+	rec := &txSinkRecorder{}
+	m := NewManager(ManagerConfig{Sink: rec})
+	rwc := newFakeRWC()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.StartSerial(ctx, 9, SerialConfig{
+		Name: "ser", Device: "/dev/ttyACM0", BaudRate: 9600,
+		Mode: ModeModem, ChannelMap: map[uint8]uint32{0: 3},
+		ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) { return rwc, nil },
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if st, ok := m.Status()[9]; ok && st.State == StateConnected {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if m.Status()[9].State != StateConnected {
+		t.Fatalf("Status[9].State = %q, want connected", m.Status()[9].State)
+	}
+	m.Stop(9)
+	if _, ok := m.Status()[9]; ok {
+		t.Fatal("interface 9 still present after Stop")
+	}
+}
+
+func TestManager_SerialStatusAndTxQueue(t *testing.T) {
+	m := NewManager(ManagerConfig{Sink: &txSinkRecorder{}})
+	rwc := newFakeRWC()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.StartSerial(ctx, 11, SerialConfig{
+		Name: "tnc", Device: "d", BaudRate: 9600, Mode: ModeTnc,
+		AllowTxFromGovernor: true, ChannelMap: map[uint8]uint32{0: 4},
+		ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) { return rwc, nil },
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if m.Status()[11].State == StateConnected {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if got := m.Status()[11].State; got != StateConnected {
+		t.Fatalf("Status[11].State = %q, want connected", got)
+	}
+	if m.InstanceQueueFor(11) == nil {
+		t.Fatal("InstanceQueueFor(11) nil — governor TX would never reach a serial TNC")
+	}
+	if err := m.Reconnect(11); err != nil {
+		t.Fatalf("Reconnect(11) = %v, want nil", err)
+	}
+	m.Stop(11)
+
+	rwc2 := newFakeRWC()
+	m.StartSerial(ctx, 12, SerialConfig{
+		Name: "mdm", Device: "d", BaudRate: 9600, Mode: ModeModem,
+		ChannelMap: map[uint8]uint32{0: 4}, ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) { return rwc2, nil },
+	})
+	if m.InstanceQueueFor(12) != nil {
+		t.Fatal("modem-mode serial should have no instance tx queue")
+	}
+	m.Stop(12)
+}
+
+func TestManager_SerialWriterlessTxNoPanic(t *testing.T) {
+	m := NewManager(ManagerConfig{Sink: &txSinkRecorder{}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.StartSerial(ctx, 13, SerialConfig{
+		Name: "tnc", Device: "d", BaudRate: 9600, Mode: ModeTnc,
+		AllowTxFromGovernor: true, ChannelMap: map[uint8]uint32{0: 4},
+		ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) {
+			return nil, errors.New("never opens")
+		},
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if m.Status()[13].State == StateBackoff {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	_, _ = m.TransmitOnChannel(ctx, 4, []byte{0x01, 0x02}, 1)
+	m.Stop(13)
+}
+
+func TestManager_OnSerialHooksFire(t *testing.T) {
+	var mu sync.Mutex
+	var states []string
+	var reconnects int
+	m := NewManager(ManagerConfig{
+		Sink: &txSinkRecorder{},
+		OnSerialStateChange: func(id uint32, name string, st InterfaceStatus) {
+			mu.Lock()
+			states = append(states, st.State)
+			mu.Unlock()
+		},
+		OnSerialReconnect: func(id uint32) {
+			mu.Lock()
+			reconnects++
+			mu.Unlock()
+		},
+	})
+	rwc := newFakeRWC()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.StartSerial(ctx, 5, SerialConfig{
+		Name: "ser", Device: "d", BaudRate: 9600, Mode: ModeModem,
+		ChannelMap: map[uint8]uint32{0: 1}, ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) { return rwc, nil },
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		r := reconnects
+		mu.Unlock()
+		if r > 0 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	m.Stop(5)
+	mu.Lock()
+	defer mu.Unlock()
+	if reconnects == 0 {
+		t.Fatal("OnSerialReconnect never fired")
+	}
+	if len(states) == 0 {
+		t.Fatal("OnSerialStateChange never fired")
 	}
 }

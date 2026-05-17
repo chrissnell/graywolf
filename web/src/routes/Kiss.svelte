@@ -80,6 +80,7 @@
   const typeOptions = [
     { value: 'tcp', label: 'TCP (server)' },
     { value: 'tcp-client', label: 'TCP Client' },
+    { value: 'serial', label: 'Serial' },
   ];
 
   const modeOptions = [
@@ -372,6 +373,8 @@
     <Badge variant="info">TCP Client</Badge>
   {:else if value === 'tcp'}
     <Badge>TCP Server</Badge>
+  {:else if value === 'serial'}
+    <Badge>Serial</Badge>
   {:else}
     <Badge>{value || '—'}</Badge>
   {/if}
@@ -453,10 +456,18 @@
         <Input id="kiss-remote-port" bind:value={form.remote_port} type="number" min={1} max={65535} placeholder="8001" />
       </FormField>
     {:else}
-      <FormField label="Serial Device" id="kiss-serial">
+      <FormField
+        label="Serial Device"
+        id="kiss-serial"
+        hint="Serial port the KISS TNC is attached to, e.g. /dev/ttyUSB0 or /dev/ttyACM0."
+      >
         <Input id="kiss-serial" bind:value={form.serial_device} placeholder="/dev/ttyUSB0" />
       </FormField>
-      <FormField label="Baud Rate" id="kiss-baud">
+      <FormField
+        label="Baud Rate"
+        id="kiss-baud"
+        hint="Serial line speed. Must match the TNC's configured baud rate. Default 9600."
+      >
         <Input id="kiss-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
       </FormField>
     {/if}

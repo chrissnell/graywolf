@@ -46,7 +46,10 @@ sibling of the graywolf binary, `./target/release/graywolf-modem`, `$PATH`
 |---|---|---|---|
 | KISS over TCP (server) | configurable via UI | [`../../pkg/kiss/server.go`](../../pkg/kiss/server.go) | [`../handbook/kiss.html`](../handbook/kiss.html) |
 | KISS over TCP (client, dial-out) | configurable | [`../../pkg/kiss/client.go`](../../pkg/kiss/client.go) | [`../handbook/remote-kiss-tnc.html`](../handbook/remote-kiss-tnc.html) |
+| KISS over Serial | configurable via UI | [`../../pkg/kiss/serial.go`](../../pkg/kiss/serial.go) | [`../handbook/kiss-serial.html`](../handbook/kiss-serial.html) |
 | AGWPE over TCP | `0.0.0.0:8000` (default when unset) | [`../../pkg/agw/`](../../pkg/agw/), [`../../pkg/webapi/dto/agw.go`](../../pkg/webapi/dto/agw.go) | [`../handbook/agwpe.html`](../handbook/agwpe.html) |
+
+Adding a KISS InterfaceType requires updating dispatch in two independent places -- see [invariant 34](invariants.md).
 
 ## RX fanout
 
