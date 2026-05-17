@@ -22,6 +22,8 @@ use crate::rxonly::feed_chunk;
 
 pub mod audio;
 pub mod config_state;
+#[cfg(any(target_os = "android", feature = "android-test-stub"))]
+pub mod upcall;
 
 const LOG_TAG: &str = "graywolfmodem";
 const TARGET_SAMPLE_RATE: u32 = 22_050;
@@ -411,4 +413,49 @@ fn run_demod(
     let _ = dsp_join.join();
     info!("demod loop exiting");
     Ok(())
+}
+
+// ── JNI install exports ───────────────────────────────────────────────────────
+//
+// These are the JNI-visible entry points that Kotlin calls once during
+// GraywolfService.onCreate (after System.loadLibrary) to hand the Rust modem a
+// live reference to each callback object.
+//
+// Signatures the Kotlin side must match (T5 / ModemBridge.kt):
+//   external fun installPttCallback(cb: UsbPttCallback)
+//     → interface UsbPttCallback { fun pttSet(method: Int, keyed: Boolean): Boolean }
+//   external fun installAudioTxCallback(cb: AudioTxCallback)
+//     → interface AudioTxCallback { fun pushSamples(samples: ShortArray, count: Int): Int }
+
+use jni::objects::JObject;
+
+/// Install the Kotlin `UsbPttCallback` implementation.
+///
+/// Resolves `pttSet(IZ)Z` on the callback object, promotes it to a `GlobalRef`,
+/// and stores both so `upcall::jni_ptt_set` can invoke it from any thread.
+/// Replaces any prior installation (idempotent across `GraywolfService` restarts).
+/// Errors are logged but do not abort — a JNI failure here is bad, but crashing
+/// the cdylib at startup is worse.
+#[no_mangle]
+pub extern "system" fn Java_com_nw5w_graywolf_jni_ModemBridge_installPttCallback<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    upcall::install_ptt(&mut env, callback);
+}
+
+/// Install the Kotlin `AudioTxCallback` implementation.
+///
+/// Resolves `pushSamples([SI)I` on the callback object, promotes it to a
+/// `GlobalRef`, and stores both so `upcall::jni_tx_push_samples` can feed PCM
+/// samples to `AudioTxPump` from the Rust modem TX thread.
+/// Replaces any prior installation. Errors are logged, not panicked.
+#[no_mangle]
+pub extern "system" fn Java_com_nw5w_graywolf_jni_ModemBridge_installAudioTxCallback<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    upcall::install_audio_tx(&mut env, callback);
 }

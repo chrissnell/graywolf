@@ -107,6 +107,12 @@ pub mod list_usb;
 pub mod rxonly;
 #[cfg(target_os = "android")]
 pub mod android;
+// On the host with android-test-stub, the android/ mod.rs is not compiled
+// (jni crate is android-only), but upcall.rs is self-contained and only
+// needs std. Pull it in directly so stub-mode unit tests are reachable.
+#[cfg(all(feature = "android-test-stub", not(target_os = "android")))]
+#[path = "android/upcall.rs"]
+pub mod android_upcall;
 
 /// Base semver string ("0.7.13"), injected at build time from the repo's
 /// VERSION file (via the GRAYWOLF_VERSION env var set by the Makefile / CI).

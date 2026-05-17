@@ -8,6 +8,13 @@ description = "Rust port of the Dire Wolf AFSK demodulator"
 name = "graywolfmodem"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+# Compile the Android JNI upcall helpers (jni_ptt_set / jni_tx_push_samples)
+# on the host so unit tests can exercise the dispatch path without an Android
+# target or live JVM. Replaces real JNI calls with in-memory mock closures.
+android-test-stub = []
+
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 claxon = "0.4"
