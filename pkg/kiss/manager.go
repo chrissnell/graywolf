@@ -226,21 +226,12 @@ func (m *Manager) SetRxIngress(fn func(rf *pb.ReceivedFrame, src ingress.Source)
 func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 	m.mu.Lock()
 
-	// Stop existing if any — handle both server-listen and tcp-client
-	// (client.close blocks on done, so release the lock before calling
-	// into it).
+	// Stop existing if any — release lock before calling stopManaged
+	// (client/serial close blocks on the supervisor goroutine).
 	if ms, ok := m.running[id]; ok {
 		delete(m.running, id)
 		m.mu.Unlock()
-		if ms.client != nil {
-			ms.cancel()
-			ms.client.close()
-		} else {
-			if ms.txQueue != nil {
-				ms.txQueue.Close()
-			}
-			ms.cancel()
-		}
+		m.stopManaged(ms)
 		m.mu.Lock()
 	}
 	defer m.mu.Unlock()
@@ -344,17 +335,7 @@ func (m *Manager) Stop(id uint32) {
 	if !ok {
 		return
 	}
-	if ms.client != nil {
-		// For clients the tx queue is owned by the client and will be
-		// closed as part of its run() shutdown.
-		ms.cancel()
-		ms.client.close()
-		return
-	}
-	if ms.txQueue != nil {
-		ms.txQueue.Close()
-	}
-	ms.cancel()
+	m.stopManaged(ms)
 }
 
 // StartClient launches a tcp-client KISS supervisor for the given DB
@@ -372,15 +353,7 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 	if existing, ok := m.running[id]; ok {
 		delete(m.running, id)
 		m.mu.Unlock()
-		if existing.client != nil {
-			existing.cancel()
-			existing.client.close()
-		} else {
-			if existing.txQueue != nil {
-				existing.txQueue.Close()
-			}
-			existing.cancel()
-		}
+		m.stopManaged(existing)
 		m.mu.Lock()
 	}
 
@@ -494,7 +467,7 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 		m.mu.Lock()
 	}
 
-	// Finalize the owned ServerConfig exactly as Start does (manager.go:231-262).
+	// Finalize the owned ServerConfig exactly as Start does.
 	scfg := ServerConfig{
 		Name:                cfg.Name,
 		ListenAddr:          "", // no listener — ServeTransport drives it
@@ -519,7 +492,7 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 		fn := m.onFrameIngress
 		scfg.OnFrameIngress = func(mode Mode) { fn(ifaceID, mode) }
 	}
-	// Two-step RxIngress wiring identical to Start (manager.go:245-254):
+	// Two-step RxIngress wiring identical to Start:
 	// assign the manager-level callback, then unconditionally wrap it for
 	// per-channel RX counting only when non-nil (preserves the server's
 	// "no RxIngress wired" diagnostic for nil cases — issue #132).
@@ -572,7 +545,7 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 	ms := &managedServer{serial: sup, cancel: cancel, channel: scfg.firstChannel()}
 
 	// Per-instance tx queue: only when Mode=tnc AND AllowTxFromGovernor,
-	// exactly as Start does (manager.go:273-292).
+	// exactly as Start does.
 	if cfg.Mode == ModeTnc && cfg.AllowTxFromGovernor {
 		ch := ms.channel
 		broadcast := func(axBytes []byte) {
@@ -607,10 +580,14 @@ func (m *Manager) stopManaged(ms *managedServer) {
 		ms.cancel()
 		ms.client.close()
 	case ms.serial != nil:
+		// ModeTnc serial row: do NOT call ms.txQueue.Close() here. The queue
+		// was built with newInstanceTxQueue(ctx, ...) where ctx is this row's
+		// cancel context, so ms.cancel() reaps the drain goroutine
+		// asynchronously; an explicit Close() would be redundant.
 		ms.cancel()
 		ms.serial.close()
 	default:
-		// Plain server-listen row: matches Stop's else branch (manager.go:337-340).
+		// Plain server-listen row: txQueue.Close() then cancel().
 		if ms.txQueue != nil {
 			ms.txQueue.Close()
 		}
@@ -618,9 +595,9 @@ func (m *Manager) stopManaged(ms *managedServer) {
 	}
 }
 
-// Reconnect short-circuits the current backoff wait on the tcp-client
-// interface under id. Returns nil on success; returns a non-nil error
-// when id is not registered or is not a tcp-client supervisor.
+// Reconnect short-circuits the current backoff wait on a tcp-client or
+// serial supervisor under id. Returns nil on success; returns a non-nil
+// error when id is not registered or is not reconnectable.
 func (m *Manager) Reconnect(id uint32) error {
 	m.mu.Lock()
 	ms, ok := m.running[id]
@@ -628,11 +605,15 @@ func (m *Manager) Reconnect(id uint32) error {
 	if !ok {
 		return errors.New("kiss: interface not running")
 	}
-	if ms.client == nil {
-		return errors.New("kiss: interface is not a tcp-client")
+	if ms.client != nil {
+		ms.client.Reconnect()
+		return nil
 	}
-	ms.client.Reconnect()
-	return nil
+	if ms.serial != nil {
+		ms.serial.Reconnect()
+		return nil
+	}
+	return errors.New("kiss: interface is not reconnectable")
 }
 
 // InstanceQueueFor returns the per-instance tx queue for the running
@@ -762,20 +743,24 @@ func (m *Manager) Status() map[uint32]InterfaceStatus {
 	m.mu.Lock()
 	type entry struct {
 		client *Client
+		serial *SerialSupervisor
 	}
 	snapshot := make(map[uint32]entry, len(m.running))
 	for id, ms := range m.running {
-		snapshot[id] = entry{client: ms.client}
+		snapshot[id] = entry{client: ms.client, serial: ms.serial}
 	}
 	m.mu.Unlock()
 
 	out := make(map[uint32]InterfaceStatus, len(snapshot))
 	for id, e := range snapshot {
-		if e.client != nil {
+		switch {
+		case e.client != nil:
 			out[id] = e.client.Status()
-			continue
+		case e.serial != nil:
+			out[id] = e.serial.Status()
+		default:
+			out[id] = InterfaceStatus{State: StateListening}
 		}
-		out[id] = InterfaceStatus{State: StateListening}
 	}
 	return out
 }

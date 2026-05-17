@@ -209,10 +209,8 @@ func TestManager_Reconnect_RoutesToClient(t *testing.T) {
 
 // TestManager_StartSerial_Connected verifies that StartSerial dispatches a
 // SerialSupervisor, that the supervisor reaches StateConnected via the
-// injected OpenFunc, and that Stop removes the row from the manager.
-//
-// Task 8 adds the Status() serial arm; this asserts wiring via the
-// managed supervisor until then (see plan: intentional ordering edge).
+// injected OpenFunc, that Manager.Status() reports it (serial arm added in
+// Task 8), and that Stop removes the row from the manager.
 func TestManager_StartSerial_Connected(t *testing.T) {
 	rec := &txSinkRecorder{}
 	m := NewManager(ManagerConfig{Sink: rec})
@@ -225,46 +223,85 @@ func TestManager_StartSerial_Connected(t *testing.T) {
 		ReconnectInitMs: 10, ReconnectMaxMs: 20,
 		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) { return rwc, nil },
 	})
-	// Poll until the supervisor reaches StateConnected. We read it via the
-	// managed supervisor directly because Status() has no serial arm until
-	// Task 8 (intentional ordering edge; plan § "Commit A / Task 8 step 5").
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		m.mu.Lock()
-		ms, ok := m.running[9]
-		var sup *SerialSupervisor
-		if ok && ms.serial != nil {
-			sup = ms.serial
-		}
-		m.mu.Unlock()
-		if sup != nil && sup.Status().State == StateConnected {
+		if st, ok := m.Status()[9]; ok && st.State == StateConnected {
 			break
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	m.mu.Lock()
-	ms, ok := m.running[9]
-	var sup *SerialSupervisor
-	if ok && ms.serial != nil {
-		sup = ms.serial
+	if m.Status()[9].State != StateConnected {
+		t.Fatalf("Status[9].State = %q, want connected", m.Status()[9].State)
 	}
-	m.mu.Unlock()
-	if sup == nil {
-		t.Fatal("m.running[9].serial is nil — StartSerial did not register the supervisor")
-	}
-	if sup.Status().State != StateConnected {
-		t.Fatalf("supervisor state = %q, want %q", sup.Status().State, StateConnected)
-	}
-	// Stop removes the row. Note: Task 8 will also wire close() on serial
-	// rows; until then Stop cancels ctx but does not await the supervisor
-	// goroutine (goroutine exits asynchronously when ctx is cancelled).
 	m.Stop(9)
-	m.mu.Lock()
-	_, stillPresent := m.running[9]
-	m.mu.Unlock()
-	if stillPresent {
-		t.Fatal("interface 9 still present in m.running after Stop")
+	if _, ok := m.Status()[9]; ok {
+		t.Fatal("interface 9 still present after Stop")
 	}
+}
+
+func TestManager_SerialStatusAndTxQueue(t *testing.T) {
+	m := NewManager(ManagerConfig{Sink: &txSinkRecorder{}})
+	rwc := newFakeRWC()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.StartSerial(ctx, 11, SerialConfig{
+		Name: "tnc", Device: "d", BaudRate: 9600, Mode: ModeTnc,
+		AllowTxFromGovernor: true, ChannelMap: map[uint8]uint32{0: 4},
+		ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) { return rwc, nil },
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if m.Status()[11].State == StateConnected {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if got := m.Status()[11].State; got != StateConnected {
+		t.Fatalf("Status[11].State = %q, want connected", got)
+	}
+	if m.InstanceQueueFor(11) == nil {
+		t.Fatal("InstanceQueueFor(11) nil — governor TX would never reach a serial TNC")
+	}
+	if err := m.Reconnect(11); err != nil {
+		t.Fatalf("Reconnect(11) = %v, want nil", err)
+	}
+	m.Stop(11)
+
+	rwc2 := newFakeRWC()
+	m.StartSerial(ctx, 12, SerialConfig{
+		Name: "mdm", Device: "d", BaudRate: 9600, Mode: ModeModem,
+		ChannelMap: map[uint8]uint32{0: 4}, ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) { return rwc2, nil },
+	})
+	if m.InstanceQueueFor(12) != nil {
+		t.Fatal("modem-mode serial should have no instance tx queue")
+	}
+	m.Stop(12)
+}
+
+func TestManager_SerialWriterlessTxNoPanic(t *testing.T) {
+	m := NewManager(ManagerConfig{Sink: &txSinkRecorder{}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.StartSerial(ctx, 13, SerialConfig{
+		Name: "tnc", Device: "d", BaudRate: 9600, Mode: ModeTnc,
+		AllowTxFromGovernor: true, ChannelMap: map[uint8]uint32{0: 4},
+		ReconnectInitMs: 10, ReconnectMaxMs: 20,
+		OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) {
+			return nil, errors.New("never opens")
+		},
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if m.Status()[13].State == StateBackoff {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	_, _ = m.TransmitOnChannel(ctx, 4, []byte{0x01, 0x02}, 1)
+	m.Stop(13)
 }
 
 func TestManager_OnSerialHooksFire(t *testing.T) {
