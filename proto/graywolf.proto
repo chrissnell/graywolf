@@ -40,6 +40,7 @@ message IpcMessage {
     PlayTestTone play_test_tone = 18;
     SetDeviceGain set_device_gain = 19;
     ScanInputLevels scan_input_levels = 20;
+    ManualPtt manual_ptt = 21;           // Go → Rust: manual PTT toggle for testing
   }
 }
 
@@ -265,6 +266,14 @@ message DeviceLevelUpdate {
 message ScanInputLevels {
   uint32 request_id = 1;        // echoed back in InputLevelScanResult
   uint32 duration_ms = 2;       // how long to sample each device (default 500ms)
+}
+
+// Manual PTT toggle for SPA testing. The PTT driver for the channel must
+// already be registered via ConfigurePtt. A 10-second Go-side watchdog
+// auto-unkeys if no heartbeat arrives.
+message ManualPtt {
+  uint32 channel = 1;  // logical channel
+  bool keyed = 2;      // true = key, false = unkey
 }
 
 // Result of an input level scan.

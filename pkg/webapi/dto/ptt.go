@@ -36,6 +36,16 @@ func (r PttRequest) Validate() error {
 	if r.ChannelID == 0 {
 		return fmt.Errorf("channel_id is required")
 	}
+	// android method requires gpio_pin in 1..4 (spec Appendix B):
+	//   1 = CP2102N_RTS, 2 = CM108_HID, 3 = AIOC_CDC_DTR, 4 = VOX
+	if r.Method == "android" {
+		switch r.GpioPin {
+		case 1, 2, 3, 4:
+			// valid
+		default:
+			return fmt.Errorf("android ptt method requires gpio_pin in 1..4 (spec Appendix B), got %d", r.GpioPin)
+		}
+	}
 	return nil
 }
 

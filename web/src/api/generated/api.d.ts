@@ -504,6 +504,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/{id}/ptt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual PTT key/unkey */
+        post: operations["manualPtt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/{id}/referrers": {
         parameters: {
             query?: never;
@@ -619,6 +636,23 @@ export interface paths {
         };
         /** List available GPS serial ports */
         get: operations["listAvailableGps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/gps/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get raw GPS state (fix + per-sat status) */
+        get: operations["getGpsState"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3087,6 +3121,27 @@ export interface components {
             error?: string;
             referrers?: components["schemas"]["configstore.Referrer"][];
         };
+        "webapi.GnssStatusDTO": {
+            sats?: components["schemas"]["webapi.SatInfoDTO"][];
+            sats_in_view?: number;
+            sats_used?: number;
+        };
+        "webapi.GpsFixDTO": {
+            accuracy_m?: number;
+            alt_m?: number;
+            course_deg?: number;
+            has_alt?: boolean;
+            has_course?: boolean;
+            has_speed?: boolean;
+            lat?: number;
+            lon?: number;
+            speed_mps?: number;
+            time_unix_ms?: number;
+        };
+        "webapi.GpsStateDTO": {
+            fix?: components["schemas"]["webapi.GpsFixDTO"];
+            gnss_status?: components["schemas"]["webapi.GnssStatusDTO"];
+        };
         "webapi.IgateSimulationResponse": {
             simulation_mode?: boolean;
         };
@@ -3105,6 +3160,14 @@ export interface components {
             speed_kt?: number;
             timestamp?: string;
             valid?: boolean;
+        };
+        "webapi.SatInfoDTO": {
+            azimuth_deg?: number;
+            cn0_dbhz?: number;
+            constellation?: string;
+            elevation_deg?: number;
+            svid?: number;
+            used_in_fix?: boolean;
         };
         "webapi.StationDTO": {
             /** @description Callsign is the station or object name (APRS callsign-SSID for stations, object/item name otherwise). */
@@ -5404,6 +5467,52 @@ export interface operations {
             };
         };
     };
+    manualPtt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description PTT state */
+        requestBody: {
+            content: {
+                "application/json": {
+                    keyed?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
     getChannelReferrers: {
         parameters: {
             query?: never;
@@ -5811,6 +5920,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["gps.SerialPortInfo"][];
+                };
+            };
+        };
+    };
+    getGpsState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.GpsStateDTO"];
                 };
             };
         };

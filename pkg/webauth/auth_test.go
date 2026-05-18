@@ -256,6 +256,74 @@ func TestMiddleware(t *testing.T) {
 	}
 }
 
+// TestBearerThenRequireAuthBypassLoadsStationUser asserts the Android
+// auth path: BearerAuthMiddleware stamps the bypass marker, RequireAuth
+// honors it, loads the first user (single-station model), and the
+// handler sees AuthenticatedUser(r) populated.
+func TestBearerThenRequireAuthBypassLoadsStationUser(t *testing.T) {
+	s := testAuthStore(t)
+	ctx := context.Background()
+	if _, err := s.CreateUser(ctx, "admin", "hash", ""); err != nil {
+		t.Fatalf("CreateUser admin: %v", err)
+	}
+	if _, err := s.CreateUser(ctx, "second", "hash", ""); err != nil {
+		t.Fatalf("CreateUser second: %v", err)
+	}
+
+	var seen *WebUser
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = AuthenticatedUser(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	stack := BearerAuthMiddleware("tok")(RequireAuth(s)(inner))
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if seen == nil {
+		t.Fatal("expected AuthenticatedUser non-nil after bearer bypass")
+	}
+	// ListUsers orders by username ascending, so "admin" sorts before "second".
+	if seen.Username != "admin" {
+		t.Fatalf("expected admin user, got %q", seen.Username)
+	}
+}
+
+// TestBearerBypassWithEmptyStorePassesNilUser asserts the fresh-install
+// path: bearer accepted, no users yet, handler runs with nil user.
+// Downstream handlers that require a user must surface their own 401.
+func TestBearerBypassWithEmptyStorePassesNilUser(t *testing.T) {
+	s := testAuthStore(t)
+	var seen *WebUser
+	var ran bool
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ran = true
+		seen = AuthenticatedUser(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	stack := BearerAuthMiddleware("tok")(RequireAuth(s)(inner))
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, req)
+
+	if !ran {
+		t.Fatal("expected handler to run on empty-store bearer bypass")
+	}
+	if seen != nil {
+		t.Fatalf("expected nil user on empty store, got %+v", seen)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
 func TestFirstRunSetup(t *testing.T) {
 	s := testAuthStore(t)
 	h := &Handlers{Auth: s}

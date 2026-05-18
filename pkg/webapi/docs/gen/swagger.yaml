@@ -2392,6 +2392,47 @@ definitions:
           $ref: '#/definitions/configstore.Referrer'
         type: array
     type: object
+  webapi.GnssStatusDTO:
+    properties:
+      sats:
+        items:
+          $ref: '#/definitions/webapi.SatInfoDTO'
+        type: array
+      sats_in_view:
+        type: integer
+      sats_used:
+        type: integer
+    type: object
+  webapi.GpsFixDTO:
+    properties:
+      accuracy_m:
+        type: number
+      alt_m:
+        type: number
+      course_deg:
+        type: number
+      has_alt:
+        type: boolean
+      has_course:
+        type: boolean
+      has_speed:
+        type: boolean
+      lat:
+        type: number
+      lon:
+        type: number
+      speed_mps:
+        type: number
+      time_unix_ms:
+        type: integer
+    type: object
+  webapi.GpsStateDTO:
+    properties:
+      fix:
+        $ref: '#/definitions/webapi.GpsFixDTO'
+      gnss_status:
+        $ref: '#/definitions/webapi.GnssStatusDTO'
+    type: object
   webapi.IgateSimulationResponse:
     properties:
       simulation_mode:
@@ -2424,6 +2465,21 @@ definitions:
       timestamp:
         type: string
       valid:
+        type: boolean
+    type: object
+  webapi.SatInfoDTO:
+    properties:
+      azimuth_deg:
+        type: number
+      cn0_dbhz:
+        type: number
+      constellation:
+        type: string
+      elevation_deg:
+        type: number
+      svid:
+        type: integer
+      used_in_fix:
         type: boolean
     type: object
   webapi.StationDTO:
@@ -4255,6 +4311,42 @@ paths:
       summary: Update channel
       tags:
         - channels
+  /channels/{id}/ptt:
+    post:
+      consumes:
+        - application/json
+      operationId: manualPtt
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: PTT state
+          in: body
+          name: body
+          required: true
+          schema:
+            properties:
+              keyed:
+                type: boolean
+            type: object
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Manual PTT key/unkey
+      tags:
+        - channels
   /channels/{id}/referrers:
     get:
       operationId: getChannelReferrers
@@ -4551,6 +4643,21 @@ paths:
       summary: List available GPS serial ports
       tags:
         - gps
+  /gps/state:
+    get:
+      operationId: getGpsState
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.GpsStateDTO'
+      security:
+        - CookieAuth: []
+      summary: Get raw GPS state (fix + per-sat status)
+      tags:
+        - position
   /health:
     get:
       operationId: getHealth

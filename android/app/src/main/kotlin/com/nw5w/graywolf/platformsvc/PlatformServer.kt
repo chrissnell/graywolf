@@ -3,6 +3,7 @@ package com.nw5w.graywolf.platformsvc
 import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.util.Log
+import com.nw5w.graywolf.platformproto.GnssStatusUpdate
 import com.nw5w.graywolf.platformproto.GpsFix
 import com.nw5w.graywolf.platformproto.PlatformMessage
 import java.io.Closeable
@@ -35,9 +36,35 @@ class PlatformServer(
     private var acceptThread: Thread? = null
     @Volatile private var running = false
 
+    @Volatile private var activeOutputs: List<OutputStream> = emptyList()
+    private val outputsLock = Object()
+
     fun subscribeGpsFix(cb: (GpsFix) -> Unit) {
         gpsFixSubs.add(cb)
     }
+
+    /**
+     * Push a server-produced PlatformMessage to every connected client.
+     * Synchronizes per-stream: serveClient's response writes also wrap
+     * WireCodec.writeFrame in synchronized(out) so a concurrent
+     * broadcast can't interleave bytes with a response frame.
+     */
+    private fun broadcast(msg: PlatformMessage) {
+        val outs = activeOutputs  // snapshot — CoW List, safe to iterate
+        for (os in outs) {
+            try {
+                synchronized(os) { WireCodec.writeFrame(os, msg) }
+            } catch (_: IOException) {
+                // serveClient will remove the dead stream on its next read failure.
+            }
+        }
+    }
+
+    fun broadcastGpsFix(fix: GpsFix) =
+        broadcast(PlatformMessage.newBuilder().setGpsFix(fix).build())
+
+    fun broadcastGnssStatus(status: GnssStatusUpdate) =
+        broadcast(PlatformMessage.newBuilder().setGnssStatus(status).build())
 
     /**
      * Production startup. Binds an android.net.LocalServerSocket at
@@ -129,12 +156,10 @@ class PlatformServer(
     private fun serveClient(stream: ClientStream) {
         val out = stream.outputStream()
         val input = stream.inputStream()
+        var registered = false
         try {
             while (running) {
                 val req = WireCodec.readFrame(input)
-                // Hello is the only request/response pair in phase 2.
-                // GpsFix and other Go→Kotlin messages are notifications:
-                // they are dispatched (or dropped) without a wire reply.
                 val handler: MessageHandler = when (req.bodyCase) {
                     PlatformMessage.BodyCase.HELLO ->
                         HelloHandler(serverVersion, schemaVersion)
@@ -147,10 +172,21 @@ class PlatformServer(
                 }
                 val resp = handler.handle(req)
                 if (resp != null) {
-                    WireCodec.writeFrame(out, resp)
+                    synchronized(out) { WireCodec.writeFrame(out, resp) }
+                    // Register into activeOutputs only after a successful Hello
+                    // round-trip — otherwise a broadcast that fires during the
+                    // pre-Hello window would write into an unframed stream the
+                    // client isn't yet ready to read, and the first fix could
+                    // be silently lost. Hello is the only handshake message,
+                    // so register exactly once on its success.
+                    if (!registered &&
+                        req.bodyCase == PlatformMessage.BodyCase.HELLO &&
+                        resp.bodyCase != PlatformMessage.BodyCase.ERROR) {
+                        synchronized(outputsLock) { activeOutputs = activeOutputs + out }
+                        registered = true
+                    }
                     if (req.bodyCase == PlatformMessage.BodyCase.HELLO &&
                         resp.bodyCase == PlatformMessage.BodyCase.ERROR) {
-                        // Schema mismatch: Hello mismatch terminates the client.
                         return
                     }
                 }
@@ -158,6 +194,9 @@ class PlatformServer(
         } catch (e: IOException) {
             Log.i(TAG, "client disconnected: $e")
         } finally {
+            if (registered) {
+                synchronized(outputsLock) { activeOutputs = activeOutputs - out }
+            }
             try { stream.close() } catch (_: IOException) {}
         }
     }

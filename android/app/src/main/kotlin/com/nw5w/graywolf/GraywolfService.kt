@@ -3,34 +3,73 @@ package com.nw5w.graywolf
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import androidx.core.content.ContextCompat
+import android.graphics.drawable.Icon
+import android.hardware.usb.UsbManager
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import java.net.Inet6Address
 import com.nw5w.graywolf.BuildConfig
 import com.nw5w.graywolf.audio.AudioPump
+import com.nw5w.graywolf.audio.AudioTxPump
 import com.nw5w.graywolf.binaries.GoLauncher
 import com.nw5w.graywolf.binaries.Supervisor
+import com.nw5w.graywolf.gps.GpsAdapter
 import com.nw5w.graywolf.jni.ModemBridge
 import com.nw5w.graywolf.platformsvc.PlatformServer
 import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.io.File
-import kotlin.concurrent.thread
 
 class GraywolfService : Service() {
     private val audioPump = AudioPump()
+    private var audioTxPump: AudioTxPump? = null
     private var goLauncher: GoLauncher? = null
     private var platformServer: PlatformServer? = null
-    private var gainPoller: Thread? = null
+    private var gpsAdapter: GpsAdapter? = null
     private val supervisor = Supervisor(onRestart = ::supervisorRestart)
+
+    private val stopReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == ACTION_STOP) {
+                Log.i(TAG, "stop action received; shutting down")
+                stopSelf()
+            }
+        }
+    }
 
     private fun socketPath(): String =
         File(cacheDir, "graywolf-modem.sock").absolutePath
 
     private fun platformSocketPath(): String =
         File(cacheDir, "platform.sock").absolutePath
+
+    /**
+     * Read the active network's DNS server list from ConnectivityManager
+     * and return as a comma-separated string of IP literals. Empty when
+     * no active network or no DNS servers (Wi-Fi off / airplane mode).
+     *
+     * IPv6 addresses are wrapped in brackets so the consumer (Go side)
+     * can parse them as `host:port` directly.
+     */
+    private fun currentDnsServers(): String {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return ""
+        val net = cm.activeNetwork ?: return ""
+        val lp = cm.getLinkProperties(net) ?: return ""
+        return lp.dnsServers.joinToString(",") { addr ->
+            if (addr is Inet6Address) "[${addr.hostAddress}]" else addr.hostAddress ?: ""
+        }
+    }
 
     private fun bootModem(): Boolean {
         val rc = ModemBridge.modemStart(socketPath(), /* gainDb = */ -6.0f)
@@ -46,6 +85,9 @@ class GraywolfService : Service() {
     private fun bootGoChild(): Boolean {
         val bearerToken = (application as GraywolfApp).bearerToken
         val goPath = File(applicationInfo.nativeLibraryDir, "libgraywolf.so").absolutePath
+        val tileCacheDir = File(filesDir, "tiles").also { it.mkdirs() }
+        val dnsServers = currentDnsServers()
+        Log.i(TAG, "GRAYWOLF_DNS_SERVERS=$dnsServers")
         val launcher = GoLauncher(
             executablePath = goPath,
             env = mapOf(
@@ -58,6 +100,16 @@ class GraywolfService : Service() {
                 "GRAYWOLF_PLATFORM_SOCKET" to "@" + platformSocketPath(),
                 "GRAYWOLF_LISTEN" to "127.0.0.1:8080",
                 "GRAYWOLF_LISTEN_TOKEN" to bearerToken,
+                "GRAYWOLF_DB" to File(filesDir, "graywolf.db").absolutePath,
+                "GRAYWOLF_HISTORY_DB" to File(filesDir, "graywolf-history.db").absolutePath,
+                "GRAYWOLF_TILE_CACHE" to tileCacheDir.absolutePath,
+                "GRAYWOLF_PLATFORM" to "android",
+                // Android has no /etc/resolv.conf; without this Go's net
+                // resolver falls through to dialing [::1]:53 and every
+                // outbound DNS lookup fails with "connection refused".
+                // Pull DNS server list from the active network's
+                // LinkProperties and let Go override its DefaultResolver.
+                "GRAYWOLF_DNS_SERVERS" to dnsServers,
             ),
         )
         val ok = launcher.startAndAwaitReady(10_000)
@@ -92,16 +144,62 @@ class GraywolfService : Service() {
                 NotificationManager.IMPORTANCE_LOW,
             )
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(
+                stopReceiver,
+                IntentFilter(ACTION_STOP),
+                Context.RECEIVER_NOT_EXPORTED,
+            )
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(stopReceiver, IntentFilter(ACTION_STOP))
+        }
+        val stopIntent = Intent(ACTION_STOP).setPackage(packageName)
+        val stopPending = PendingIntent.getBroadcast(
+            this, 0, stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         val notif: Notification = Notification.Builder(this, getString(R.string.notification_channel_id))
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_text))
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_notification)
+            .addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                    getString(R.string.notification_stop_label),
+                    stopPending,
+                ).build()
+            )
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIF_ID, notif,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
+            // Phase 4a adds LOCATION FGS type alongside MICROPHONE.
+            // Android 14 throws SecurityException if we declare an FGS
+            // type whose paired access perm is denied at runtime, so
+            // only include FGS_TYPE_LOCATION when ACCESS_FINE_LOCATION
+            // is actually granted. RECORD_AUDIO is always granted by
+            // this point (MainActivity.ensurePerms gates the launch).
+            var fgsType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+                fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                Log.i(TAG, "ACCESS_FINE_LOCATION denied; starting FGS without location type")
+            }
+            // MEDIA_PLAYBACK pairs with no runtime perm; always safe to include.
+            fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            // Per spec §3.6 + Android 14: CONNECTED_DEVICE FGS type requires that
+            // at least one USB device has been granted permission at start time, or
+            // startForeground throws SecurityException. Probe with UsbManager
+            // directly (UsbPttAdapter isn't init'd yet at this point).
+            val usbManager = getSystemService(UsbManager::class.java)
+            val hasGrantedUsbDevice = usbManager?.deviceList?.values
+                ?.any { usbManager.hasPermission(it) } == true
+            if (hasGrantedUsbDevice) {
+                fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            } else {
+                Log.i(TAG, "no USB device permission yet; starting FGS without CONNECTED_DEVICE type")
+            }
+            startForeground(NOTIF_ID, notif, fgsType)
         } else {
             startForeground(NOTIF_ID, notif)
         }
@@ -113,6 +211,19 @@ class GraywolfService : Service() {
         }
         Log.i(TAG, "modem cdylib version=$v")
 
+        // Install JNI callbacks immediately after loadLibrary (modemVersion triggers it).
+        // Must precede bootModem so any TX/PTT activation the modem fires on boot
+        // finds a registered callback. T5/T6/T7 supply the implementations.
+        ModemBridge.installPttCallback(UsbPttAdapter)
+        val txPump = AudioTxPump(applicationContext)
+        audioTxPump = txPump
+        ModemBridge.installAudioTxCallback(txPump)
+
+        // Start TX audio + USB PTT adapter after FGS is active (spec §3.1).
+        txPump.start()
+        UsbPttAdapter.init(applicationContext)
+        UsbPttAdapter.enumerate()
+
         // Bring up the Go ↔ Kotlin platform contract before exec'ing the Go child.
         // Phase 2: Hello + GpsFix only; the Go child connects, handshakes, and
         // logs the schema version. Real GpsFix producer is wired in phase 4.
@@ -121,6 +232,7 @@ class GraywolfService : Service() {
             serverVersion = BuildConfig.VERSION_NAME,
             schemaVersion = 1,
         ).also { it.start() }
+        gpsAdapter = GpsAdapter(this, platformServer!!).also { it.start() }
 
         if (!bootModem()) {
             stopSelf()
@@ -134,27 +246,6 @@ class GraywolfService : Service() {
             return
         }
 
-        gainPoller = thread(start = true, isDaemon = true, name = "gain-poll") {
-            val token = (application as GraywolfApp).bearerToken
-            var last = Float.NaN
-            val rx = Regex("""\"db\":(-?\d+(?:\.\d+)?)""")
-            while (!Thread.currentThread().isInterrupted) {
-                try {
-                    val u = java.net.URL("http://127.0.0.1:8080/api/_internal/gain")
-                    val c = u.openConnection() as java.net.HttpURLConnection
-                    c.setRequestProperty("Authorization", "Bearer $token")
-                    val body = c.inputStream.bufferedReader().readText()
-                    val db = rx.find(body)?.groupValues?.get(1)?.toFloatOrNull()
-                    if (db != null && db != last) {
-                        ModemBridge.modemSetGainDb(db)
-                        Log.i(TAG, "poc-b: gain_applied db=$db")
-                        last = db
-                    }
-                } catch (_: Throwable) { /* swallow */ }
-                try { Thread.sleep(1000) } catch (_: InterruptedException) { return@thread }
-            }
-        }
-
         supervisor.start { goLauncher?.process }
     }
 
@@ -164,20 +255,26 @@ class GraywolfService : Service() {
 
     override fun onDestroy() {
         supervisor.stop()
-        gainPoller?.interrupt()
-        gainPoller = null
         goListenerReady = false
+        gpsAdapter?.stop()
+        gpsAdapter = null
         goLauncher?.stop()
         audioPump.stop()
+        audioTxPump?.stop()
+        audioTxPump = null
+        UsbPttAdapter.closeAll()
         platformServer?.stop()
         ModemBridge.modemStop()
-        UsbPttAdapter.closeAll()
+        try {
+            unregisterReceiver(stopReceiver)
+        } catch (_: IllegalArgumentException) { /* idempotent */ }
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "GraywolfService"
         private const val NOTIF_ID = 0x6757
+        const val ACTION_STOP = "com.nw5w.graywolf.STOP"
 
         @Volatile
         var goListenerReady: Boolean = false

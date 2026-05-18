@@ -16,11 +16,16 @@ use jni::{JNIEnv, JavaVM};
 use log::{error, info, warn};
 
 use crate::demod_afsk_multi::{MultiAfskDemodulator, RECOMMENDED_3DEMOD};
-use crate::ipc::proto::{IpcMessage, ReceivedFrame};
-use crate::ipc::server::IpcServer;
+use crate::ipc::proto::{ipc_message, DeviceLevelUpdate, IpcMessage, ReceivedFrame, StatusUpdate};
+use crate::ipc::server::{IpcInbound, IpcServer};
+use crate::modem::tx_worker::{TxJob, TxWorker};
 use crate::rxonly::feed_chunk;
+use crate::tx::ptt::PortRegistry;
 
 pub mod audio;
+pub mod audio_tx;
+pub mod config_state;
+pub mod upcall;
 
 const LOG_TAG: &str = "graywolfmodem";
 const TARGET_SAMPLE_RATE: u32 = 22_050;
@@ -258,7 +263,19 @@ fn run_demod(
     info!("ipc server bound at {}", socket_path);
     ready.store(true, Ordering::Release);
 
+    // TX path: one TxWorker serialises all PTT + audio output; one
+    // PortRegistry tracks open serial / HID handles so the same port
+    // is never opened twice. Both are owned for the lifetime of this
+    // demod run and are joined/dropped on exit.
+    let tx_worker = TxWorker::spawn().map_err(|e| format!("spawn tx worker: {}", e))?;
+    let mut ptt_registry = PortRegistry::new();
+
     let (frames_tx, frames_rx) = sync_channel::<ReceivedFrame>(64);
+    // Bounded level queue. ingest() runs at audio rate but only emits at
+    // ~5 Hz, so 32 slots is more than enough; try_send drops on full to
+    // protect the JNI audio thread.
+    let (level_tx, level_rx) = sync_channel::<DeviceLevelUpdate>(32);
+    audio::install_level_tx(level_tx);
     let stop_dsp = stop.clone();
     let dsp_join = thread::Builder::new()
         .name("graywolfmodem-dsp".into())
@@ -280,8 +297,14 @@ fn run_demod(
                                 info!("poc-b: first_frame_decoded");
                                 first_frame_logged = true;
                             }
+                            // Tag the frame with the operator-configured
+                            // channel id (captured from ConfigureChannel
+                            // IPC) instead of the demodulator's internal
+                            // 0-indexed `frame.chan`. Without this tag
+                            // the Go dispatcher can't attribute frames
+                            // to a per-channel rx_frames counter.
                             let pb = ReceivedFrame {
-                                channel: frame.chan as u32,
+                                channel: config_state::channel_id(),
                                 subchan: frame.subchan as u32,
                                 slice: frame.slice as u32,
                                 data: frame.data,
@@ -292,6 +315,7 @@ fn run_demod(
                                 retry: String::new(),
                                 timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
                             };
+                            config_state::increment_rx_frames();
                             // Drop on full — IPC thread will catch up
                             // when the Go child connects.
                             let _ = frames_tx.try_send(pb);
@@ -312,31 +336,228 @@ fn run_demod(
         server.accept().map_err(|e| format!("accept: {}", e))?;
     info!("poc-b: ipc_client_connected");
 
+    let mut last_status_emit = Instant::now();
     while !stop.load(Ordering::Relaxed) {
-        match frames_rx.recv_timeout(Duration::from_millis(250)) {
+        // Short timeout so the loop pumps both frame and level queues
+        // without head-of-line blocking on either.
+        match frames_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(pb) => {
                 if let Err(e) = handle.send(&IpcMessage::received_frame(pb)) {
-                    warn!("ipc send: {}", e);
+                    warn!("ipc send (frame): {}", e);
                     break;
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        // Drain any inbound IPC messages so the channel doesn't back up.
-        // POC-B doesn't act on configure messages — phase 3 wires them in.
-        while let Ok(_msg) = ipc_rx.try_recv() {}
+
+        // Drain queued level updates (~5 Hz cadence; usually 0 or 1 per
+        // tick). Non-blocking; never head-of-line-blocks the frame path.
+        while let Ok(level) = level_rx.try_recv() {
+            if let Err(e) = handle.send(&IpcMessage::device_level_update(level)) {
+                warn!("ipc send (level): {}", e);
+                break;
+            }
+        }
+
+        // Emit StatusUpdate once per second so the Go modembridge
+        // status_cache gets the cumulative rx_frames counter that
+        // backs the SPA Dashboard's per-channel RX counter. Audio
+        // levels are zero here -- the per-device DeviceLevelUpdate
+        // path above is the source of truth on Android.
+        let now = Instant::now();
+        if now.duration_since(last_status_emit) >= Duration::from_millis(1000) {
+            let s = StatusUpdate {
+                channel: config_state::channel_id(),
+                rx_frames: config_state::rx_frames(),
+                rx_bad_fcs: 0,
+                tx_frames: config_state::tx_frames(),
+                dcd_transitions: 0,
+                audio_level_mark: 0.0,
+                audio_level_space: 0.0,
+                audio_level_peak: 0.0,
+                dcd_state: false,
+                shutdown_complete: false,
+                timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
+            };
+            if let Err(e) = handle.send(&IpcMessage::status_update(s)) {
+                warn!("ipc send (status): {}", e);
+                break;
+            }
+            last_status_emit = now;
+        }
+
+        // Drain inbound IPC messages from the Go side. Previously only
+        // ConfigureChannel was handled; now the full TX dispatch is wired.
+        while let Ok(inbound) = ipc_rx.try_recv() {
+            if let IpcInbound::Message(msg) = inbound {
+                match msg.payload {
+                    Some(ipc_message::Payload::ConfigureChannel(cc)) => {
+                        let chan = cc.channel;
+                        let dev = if cc.input_device_id != 0 {
+                            cc.input_device_id
+                        } else {
+                            cc.device_id
+                        };
+                        info!(
+                            "configure channel: channel={} input_device_id={}",
+                            chan, dev
+                        );
+                        config_state::set_from_configure(chan, dev);
+                        // Capture DSP params so TransmitFrame can call
+                        // build_samples with the same baud / tone pair.
+                        config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
+                    }
+                    Some(ipc_message::Payload::ConfigurePtt(cfg)) => {
+                        let chan = cfg.channel;
+                        // Persist timing for later TransmitFrame use.
+                        config_state::set_ptt_timing(cfg.txdelay_ms, cfg.txtail_ms);
+                        match ptt_registry.build_driver(&cfg) {
+                            Ok(driver) => {
+                                if let Err(e) = tx_worker.register_driver(chan, driver) {
+                                    warn!("register_driver(channel={}): {}", chan, e);
+                                } else {
+                                    info!(
+                                        "ptt driver registered channel={} method={}",
+                                        chan, cfg.method
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "build_driver(channel={} method={}): {}",
+                                    chan, cfg.method, e
+                                );
+                            }
+                        }
+                    }
+                    Some(ipc_message::Payload::ManualPtt(mp)) => {
+                        if let Err(e) = tx_worker.manual_key(mp.channel, mp.keyed) {
+                            warn!(
+                                "manual_key(channel={} keyed={}): {}",
+                                mp.channel, mp.keyed, e
+                            );
+                        }
+                    }
+                    Some(ipc_message::Payload::TransmitFrame(tf)) => {
+                        let txdelay = if tf.txdelay_override_ms != 0 {
+                            tf.txdelay_override_ms
+                        } else {
+                            config_state::txdelay_ms()
+                        };
+                        let txtail = if tf.txtail_override_ms != 0 {
+                            tf.txtail_override_ms
+                        } else {
+                            config_state::txtail_ms()
+                        };
+                        match crate::tx::build_samples(
+                            &tf.data,
+                            txdelay,
+                            txtail,
+                            TARGET_SAMPLE_RATE,
+                            config_state::baud(),
+                            config_state::mark_freq(),
+                            config_state::space_freq(),
+                        ) {
+                            Ok(samples) => {
+                                let job = TxJob {
+                                    channel: tf.channel,
+                                    samples,
+                                    sample_rate: TARGET_SAMPLE_RATE,
+                                    // unused by the Android arm of process_job
+                                    // (AndroidTxSink handles audio routing via JNI)
+                                    output_device_id: 0,
+                                    sink_config: crate::audio::soundcard::SoundcardOutputConfig {
+                                        device_name: String::new(),
+                                        sample_rate: TARGET_SAMPLE_RATE,
+                                        channels: 1,
+                                        audio_channel: 0,
+                                    },
+                                };
+                                if let Err(e) = tx_worker.transmit(job) {
+                                    warn!("transmit(channel={}): {}", tf.channel, e);
+                                } else {
+                                    config_state::increment_tx_frames();
+                                }
+                            }
+                            Err(e) => {
+                                warn!("build_samples(channel={}): {}", tf.channel, e);
+                            }
+                        }
+                    }
+                    Some(ipc_message::Payload::SetDeviceGain(sg)) => {
+                        // Live gain from the operator slider. Without this
+                        // arm it was a silent no-op on Android (gain frozen
+                        // at the modemStart boot value). Parity with the JNI
+                        // modemSetGainDb path; single global software gain so
+                        // device_id is informational.
+                        audio::set_gain_db(sg.gain_db);
+                        info!(
+                            "gain set to {:.1} dB (device_id={})",
+                            sg.gain_db, sg.device_id
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     // Close the write side so the reader thread observes EOF and exits.
     drop(handle);
     let _ = ipc_join.join();
+    audio::clear_level_tx();
 
     // On exit (any path), flip ready to false so the supervisor's
-    // modem-health poll (Task 15) detects modem death even if the Go
-    // child is still alive.
+    // modem-health poll detects modem death even if the Go child is
+    // still alive.
     ready.store(false, Ordering::Release);
     let _ = dsp_join.join();
     info!("demod loop exiting");
     Ok(())
+}
+
+// ── JNI install exports ───────────────────────────────────────────────────────
+//
+// These are the JNI-visible entry points that Kotlin calls once during
+// GraywolfService.onCreate (after System.loadLibrary) to hand the Rust modem a
+// live reference to each callback object.
+//
+// Signatures the Kotlin side must match (T5 / ModemBridge.kt):
+//   external fun installPttCallback(cb: UsbPttCallback)
+//     → interface UsbPttCallback { fun pttSet(method: Int, keyed: Boolean): Boolean }
+//   external fun installAudioTxCallback(cb: AudioTxCallback)
+//     → interface AudioTxCallback { fun pushSamples(samples: ShortArray, count: Int): Int }
+
+use jni::objects::JObject;
+
+/// Install the Kotlin `UsbPttCallback` implementation.
+///
+/// Resolves `pttSet(IZ)Z` on the callback object, promotes it to a `GlobalRef`,
+/// and stores both so `upcall::jni_ptt_set` can invoke it from any thread.
+/// Replaces any prior installation (idempotent across `GraywolfService` restarts).
+/// Errors are logged but do not abort — a JNI failure here is bad, but crashing
+/// the cdylib at startup is worse.
+#[no_mangle]
+pub extern "system" fn Java_com_nw5w_graywolf_jni_ModemBridge_installPttCallback<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    upcall::install_ptt(&mut env, callback);
+}
+
+/// Install the Kotlin `AudioTxCallback` implementation.
+///
+/// Resolves `pushSamples([SI)I` on the callback object, promotes it to a
+/// `GlobalRef`, and stores both so `upcall::jni_tx_push_samples` can feed PCM
+/// samples to `AudioTxPump` from the Rust modem TX thread.
+/// Replaces any prior installation. Errors are logged, not panicked.
+#[no_mangle]
+pub extern "system" fn Java_com_nw5w_graywolf_jni_ModemBridge_installAudioTxCallback<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    upcall::install_audio_tx(&mut env, callback);
 }

@@ -3,6 +3,7 @@
   import { Button, Input, Select, Badge, AlertDialog, Checkbox } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
+  import { Platform } from '../lib/platform.js';
   import { pickDefaultSampleRate } from '../lib/sampleRate.js';
   import PageHeader from '../components/PageHeader.svelte';
   import Modal from '../components/Modal.svelte';
@@ -28,7 +29,13 @@
   let isWindows = $state(false);
 
   function emptyForm() {
-    return { name: '', device_path: '', sample_rate: '48000', source_type: 'soundcard', direction: 'input' };
+    return {
+      name: '',
+      device_path: Platform.kind === 'android' ? 'android-default' : '',
+      sample_rate: '48000',
+      source_type: 'soundcard',
+      direction: 'input',
+    };
   }
 
   onMount(() => {
@@ -265,16 +272,29 @@
 </script>
 
 <PageHeader title="Audio Devices" subtitle="Sound card configuration">
-  <Button onclick={refreshAvailable} disabled={loadingAvail}>
-    {loadingAvail ? 'Scanning...' : 'Detect Devices'}
-  </Button>
-  {#if available.some(d => d.is_input)}
-    <Button onclick={scanInputLevels} disabled={scanning}>
-      {scanning ? 'Scanning...' : 'Scan Input Levels'}
+  {#if Platform.kind !== 'android'}
+    <Button onclick={refreshAvailable} disabled={loadingAvail}>
+      {loadingAvail ? 'Scanning...' : 'Detect Devices'}
     </Button>
+    {#if available.some(d => d.is_input)}
+      <Button onclick={scanInputLevels} disabled={scanning}>
+        {scanning ? 'Scanning...' : 'Scan Input Levels'}
+      </Button>
+    {/if}
   {/if}
   <Button variant="primary" onclick={openCreate}>+ Add Device</Button>
 </PageHeader>
+
+{#if Platform.kind === 'android'}
+  <div class="android-note" role="note">
+    <strong>Android audio model.</strong> Capture is handled by the system
+    via the default microphone source (built-in mic, or USB audio device
+    when one is connected via OTG). Per-device enumeration and the
+    "Detect Devices" / "Scan Input Levels" buttons are not available;
+    add a single audio device entry below using a placeholder device path
+    (e.g. <code>android-default</code>) and assign it to your channel.
+  </div>
+{/if}
 
 {#if showNoChannelBanner}
   <div class="no-channel-banner" role="alert">
@@ -405,7 +425,7 @@
 {/if}
 
 <!-- Available devices from hardware scan -->
-{#if available.length > 0}
+{#if available.length > 0 && Platform.kind !== 'android'}
   <div class="section-label" style="margin-top: 24px;">Detected Hardware</div>
   <p class="section-hint">Click a device to add it to your configuration.</p>
   <div class="avail-grid">
@@ -460,7 +480,16 @@
     <Input id="ad-name" bind:value={form.name} placeholder="USB Sound Card" />
   </FormField>
   <FormField label="Device Path" error={errors.device_path} id="ad-path">
-    <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
+    {#if Platform.kind === 'android'}
+      <!-- Read-only on Android, but still bound to form.device_path so the
+           displayed value reflects what will be saved. If the row was
+           loaded with a non-default path (manual DB edit, migration), the
+           field shows that path rather than silently overriding with
+           "android-default" only in the UI. -->
+      <Input id="ad-path" bind:value={form.device_path} readonly />
+    {:else}
+      <Input id="ad-path" bind:value={form.device_path} placeholder="hw:0,0" />
+    {/if}
   </FormField>
   <FormField label="Direction" id="ad-dir">
     <Select id="ad-dir" bind:value={form.direction} options={[

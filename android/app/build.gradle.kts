@@ -97,6 +97,8 @@ dependencies {
     implementation("com.google.protobuf:protobuf-javalite:3.25.3")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
 }
 
 val jniLibsDir = file("src/main/jniLibs")
@@ -143,7 +145,7 @@ val ndkCgoApi = 28
 
 val goCrossCompile by tasks.registering {
     group = "build"
-    description = "Cross-compile cmd/graywolf-pocb to libgraywolf.so for each Android ABI."
+    description = "Cross-compile cmd/graywolf to libgraywolf.so for each Android ABI."
 }
 
 goAbiMatrix.forEach { (abi, info) ->
@@ -172,14 +174,23 @@ goAbiMatrix.forEach { (abi, info) ->
             environment("CC", clang.absolutePath)
         }
         val outDir = jniLibsDir.resolve(abi)
-        // Inputs: every Go source under cmd/graywolf-pocb + the module files
+        // Inputs: every Go source under cmd/graywolf + the module files
         // every package transitively reaches. fileTree("pkg") + go.{mod,sum}
         // is conservative but cheap to fingerprint, and Gradle's UP-TO-DATE
         // check then skips the Go process launch on no-op iterations.
-        inputs.files(fileTree(repoRoot.resolve("cmd/graywolf-pocb")) {
+        //
+        // web/dist must be in the input set too: cmd/graywolf imports
+        // pkg/web which embeds web/dist via go:embed. Without this entry,
+        // Gradle's UP-TO-DATE check would skip the Go build when only the
+        // SPA bundle changes, shipping a stale embed inside libgraywolf.so.
+        inputs.files(fileTree(repoRoot.resolve("cmd/graywolf")) {
             include("**/*.go")
         })
         inputs.files(fileTree(repoRoot.resolve("pkg")) { include("**/*.go") })
+        inputs.files(fileTree(repoRoot.resolve("web/dist")))
+        inputs.files(fileTree(repoRoot.resolve("web")) {
+            include("embed.go")
+        })
         inputs.file(repoRoot.resolve("go.mod"))
         inputs.file(repoRoot.resolve("go.sum"))
         outputs.file(outDir.resolve("libgraywolf.so"))
@@ -187,7 +198,7 @@ goAbiMatrix.forEach { (abi, info) ->
         commandLine = listOf(
             "go", "build",
             "-o", outDir.resolve("libgraywolf.so").absolutePath,
-            "./cmd/graywolf-pocb",
+            "./cmd/graywolf",
         )
     }
     goCrossCompile.configure { dependsOn(task) }

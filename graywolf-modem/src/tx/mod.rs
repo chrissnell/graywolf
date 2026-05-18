@@ -11,6 +11,9 @@ pub mod canned;
 mod error;
 pub mod hdlc_encode;
 pub(crate) mod ptt;
+pub mod ptt_android_consts;
+#[cfg(any(target_os = "android", feature = "android-test-stub"))]
+pub(crate) mod ptt_android;
 
 pub use error::TxError;
 

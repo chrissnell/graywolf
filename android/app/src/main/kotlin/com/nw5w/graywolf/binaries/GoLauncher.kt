@@ -65,7 +65,7 @@ class GoLauncher(
     }
 
     companion object {
-        private const val TAG_STDOUT = "graywolf-pocb"
-        private const val TAG_STDERR = "graywolf-pocb-err"
+        private const val TAG_STDOUT = "GraywolfGo"
+        private const val TAG_STDERR = "GraywolfGoErr"
     }
 }

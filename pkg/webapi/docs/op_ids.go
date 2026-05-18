@@ -32,6 +32,7 @@ const (
 	OpDeleteChannel       = "deleteChannel"
 	OpGetChannelStats     = "getChannelStats"
 	OpGetChannelReferrers = "getChannelReferrers"
+	OpManualPtt           = "manualPtt"
 )
 
 // Beacons resource — /api/beacons (Phase 2).
@@ -171,9 +172,11 @@ const (
 	OpListPackets = "listPackets"
 )
 
-// Position — /api/position.
+// Position — /api/position plus the raw GPS-state read at
+// /api/gps/state (both @Tags position).
 const (
 	OpGetPosition = "getPosition"
+	OpGetGpsState = "getGpsState"
 )
 
 // Stations — /api/stations.
@@ -300,8 +303,8 @@ const (
 // returns the issued token. ?include_token=1 on the GET is the lone
 // way to retrieve the persisted token after registration.
 const (
-	OpGetMapsConfig    = "getMapsConfig"
-	OpUpdateMapsConfig = "updateMapsConfig"
+	OpGetMapsConfig     = "getMapsConfig"
+	OpUpdateMapsConfig  = "updateMapsConfig"
 	OpRegisterMapsToken = "registerMapsToken"
 )
 
@@ -365,21 +368,21 @@ const (
 // OTP credentials live under /api/otp-credentials and are consumed by
 // per-Action otp_required gating.
 const (
-	OpListActions              = "listActions"
-	OpCreateAction             = "createAction"
-	OpGetAction                = "getAction"
-	OpUpdateAction             = "updateAction"
-	OpDeleteAction             = "deleteAction"
-	OpTestFireAction           = "testFireAction"
-	OpListActionListeners      = "listActionListeners"
-	OpCreateActionListener     = "createActionListener"
-	OpDeleteActionListener     = "deleteActionListener"
-	OpListActionInvocations    = "listActionInvocations"
-	OpClearActionInvocations   = "clearActionInvocations"
-	OpListOTPCredentials       = "listOTPCredentials"
-	OpCreateOTPCredential      = "createOTPCredential"
-	OpGetOTPCredential         = "getOTPCredential"
-	OpDeleteOTPCredential      = "deleteOTPCredential"
+	OpListActions            = "listActions"
+	OpCreateAction           = "createAction"
+	OpGetAction              = "getAction"
+	OpUpdateAction           = "updateAction"
+	OpDeleteAction           = "deleteAction"
+	OpTestFireAction         = "testFireAction"
+	OpListActionListeners    = "listActionListeners"
+	OpCreateActionListener   = "createActionListener"
+	OpDeleteActionListener   = "deleteActionListener"
+	OpListActionInvocations  = "listActionInvocations"
+	OpClearActionInvocations = "clearActionInvocations"
+	OpListOTPCredentials     = "listOTPCredentials"
+	OpCreateOTPCredential    = "createOTPCredential"
+	OpGetOTPCredential       = "getOTPCredential"
+	OpDeleteOTPCredential    = "deleteOTPCredential"
 )
 
 // Remote Actions resource — /api/remote-actions/* — outbound

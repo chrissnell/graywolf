@@ -90,6 +90,10 @@ type Bridge struct {
 	toneDispatcher *dispatcher[*pb.TestToneResult]
 	scanDispatcher *dispatcher[*pb.InputLevelScanResult]
 
+	// pttWatchdog auto-unkeys channels whose manual PTT has been held
+	// longer than 10s without a heartbeat.
+	pttWatchdog *pttWatchdog
+
 	// mu guards sendFn, cancel, and done.
 	mu sync.Mutex
 	// sendFn is the current session's write function, or nil between
@@ -131,6 +135,13 @@ func New(cfg Config) *Bridge {
 		toneDispatcher: newDispatcher[*pb.TestToneResult](),
 		scanDispatcher: newDispatcher[*pb.InputLevelScanResult](),
 	}
+	// pttWatchdog auto-unkeys channels after 10s of no heartbeat. The
+	// unkey closure captures b so it can call ManualPtt(ch, false)
+	// after construction — no forward-reference problem because the
+	// closure is only called at timer-fire time.
+	b.pttWatchdog = newPttWatchdog(10*time.Second, func(ch uint32) error {
+		return b.ManualPtt(ch, false)
+	}, cfg.Logger)
 	// Hold a long-lived "primary" subscription so DcdEvents() returns a
 	// stable channel for the txgovernor wiring path that predates
 	// DcdSubscribe. dcdPublisher.Close closes it alongside the other
@@ -139,6 +150,7 @@ func New(cfg Config) *Bridge {
 	b.sup = newSupervisor(supervisorConfig{
 		BinaryPath:       cfg.BinaryPath,
 		SocketDir:        cfg.SocketDir,
+		ExistingSocket:   cfg.ExistingSocket,
 		ReadinessTimeout: cfg.ReadinessTimeout,
 		Metrics:          cfg.Metrics,
 		RunSession: func(ctx context.Context, conn net.Conn) error {
@@ -188,6 +200,10 @@ func (b *Bridge) supervise(ctx context.Context) {
 	b.toneDispatcher.Reset()
 	b.scanDispatcher.Reset()
 	b.status.Reset()
+	// Cancel any watchdog timers left over from a prior session so a
+	// stale timer can't fire an auto-unkey into a freshly-spawned modem
+	// that has no keyed-PTT state.
+	b.pttWatchdog.cancelAll()
 	// Reset liveness: IsRunning must be false until a fresh session
 	// starts exchanging IPC messages.
 	b.lastActivityUnix.Store(0)
@@ -286,6 +302,31 @@ func (b *Bridge) SetDeviceGain(deviceID uint32, gainDB float32) error {
 	}})
 }
 
+// ManualPtt sends a ManualPtt IPC message to the modem to directly key or
+// unkey the PTT driver for the channel. The driver must already be registered
+// via ConfigurePtt. Returns an error if no session is active.
+func (b *Bridge) ManualPtt(channel uint32, keyed bool) error {
+	return b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_ManualPtt{
+		ManualPtt: &pb.ManualPtt{Channel: channel, Keyed: keyed},
+	}})
+}
+
+// ManualPttWithWatchdog keys or unkeys the radio and maintains the 10-second
+// watchdog: a keyed:true call (re)starts the timer; keyed:false cancels it.
+// The REST handler calls this method; direct tests can use ManualPtt to
+// exercise IPC dispatch without the timer side-effects.
+func (b *Bridge) ManualPttWithWatchdog(channel uint32, keyed bool) error {
+	if err := b.ManualPtt(channel, keyed); err != nil {
+		return err
+	}
+	if keyed {
+		b.pttWatchdog.onKey(channel)
+	} else {
+		b.pttWatchdog.onUnkey(channel)
+	}
+	return nil
+}
+
 // setSender is called by runSession to publish the current session's
 // write function; clear it (nil) when the session ends.
 func (b *Bridge) setSender(fn func(*pb.IpcMessage) error) {
@@ -325,6 +366,21 @@ func (b *Bridge) GetAllDeviceLevels() map[uint32]*DeviceLevel {
 // when StatusUpdate / DeviceLevelUpdate messages arrive.
 func (b *Bridge) updateStatusCache(s *pb.StatusUpdate)       { b.status.UpdateStatus(s) }
 func (b *Bridge) updateDeviceLevelCache(u *pb.DeviceLevelUpdate) { b.status.UpdateDeviceLevel(u) }
+
+// InjectSendFnForTest installs a fake send function so tests can capture
+// IPC messages without running a real modem child. The previous value is
+// restored when the returned cleanup function is called. Test-only.
+func (b *Bridge) InjectSendFnForTest(fn func(*pb.IpcMessage) error) func() {
+	b.mu.Lock()
+	prev := b.sendFn
+	b.sendFn = fn
+	b.mu.Unlock()
+	return func() {
+		b.mu.Lock()
+		b.sendFn = prev
+		b.mu.Unlock()
+	}
+}
 
 // InjectStatusForTest populates the status cache directly. Test-only.
 func (b *Bridge) InjectStatusForTest(channel uint32, rxFrames, rxBadFCS, txFrames uint64,

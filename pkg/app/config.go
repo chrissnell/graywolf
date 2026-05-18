@@ -79,6 +79,34 @@ type Config struct {
 	// command-line flags.
 	Version   string
 	GitCommit string
+
+	// ModemSocketPath, when non-empty, switches the modembridge into
+	// connect-only mode: it dials this UDS path instead of forking
+	// the graywolf-modem child. Used on Android where the Service
+	// loads the modem cdylib in-process and exposes it at a Service-
+	// allocated socket path. Empty on desktop (modembridge owns the
+	// child process).
+	ModemSocketPath string
+
+	// Platform is "android" on Android builds, "" elsewhere. Wiring
+	// uses it to gate components that don't make sense on Android
+	// (updatescheck, native serial PTT). Set by main_android.go from
+	// the GRAYWOLF_PLATFORM env var.
+	Platform string
+
+	// BearerToken, if non-empty, gates every HTTP and WebSocket
+	// request behind webauth.BearerAuthMiddleware. Set by
+	// main_android.go from the GRAYWOLF_LISTEN_TOKEN env var (the
+	// Android Service generates a fresh 32-byte hex token at every
+	// cold start). Empty on desktop. (Invariant N7.)
+	BearerToken string
+
+	// OnHTTPListenerReady, if non-nil, is invoked exactly once after
+	// net.Listen succeeds for the main HTTP listener and before
+	// Serve starts blocking. Used by main_android.go to write the
+	// readiness "\n" to stdout that GoLauncher waits on. Desktop
+	// builds leave it nil.
+	OnHTTPListenerReady func()
 }
 
 // DefaultConfig returns a Config populated with the same defaults

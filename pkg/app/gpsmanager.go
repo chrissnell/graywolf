@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -26,6 +27,7 @@ type gpsRunFunc func(ctx context.Context) error
 // config reload or per-error backoff. Only the Run goroutine mutates
 // its fields, so no mutex is needed.
 type gpsManager struct {
+	app    *App
 	store  *configstore.Store
 	cache  *gps.MemCache
 	logger *slog.Logger
@@ -38,8 +40,8 @@ type gpsManager struct {
 	done   chan struct{}
 }
 
-func newGPSManager(store *configstore.Store, cache *gps.MemCache, logger *slog.Logger, m *metrics.Metrics) *gpsManager {
-	return &gpsManager{store: store, cache: cache, logger: logger, m: m}
+func newGPSManager(app *App, store *configstore.Store, cache *gps.MemCache, logger *slog.Logger, m *metrics.Metrics) *gpsManager {
+	return &gpsManager{app: app, store: store, cache: cache, logger: logger, m: m}
 }
 
 // Run drives the manager until ctx is cancelled: start on boot, restart
@@ -64,9 +66,11 @@ func (m *gpsManager) start(parent context.Context) {
 	m.stop()
 
 	gpsCfg, err := m.store.GetGPSConfig(parent)
-	if err != nil || gpsCfg == nil || !gpsCfg.Enabled {
-		m.logger.Info("gps reader disabled")
-		return
+	if !platformGpsAlwaysOn {
+		if err != nil || gpsCfg == nil || !gpsCfg.Enabled {
+			m.logger.Info("gps reader disabled")
+			return
+		}
 	}
 
 	// onParseError routes gps parse-failure notifications to the
@@ -81,26 +85,40 @@ func (m *gpsManager) start(parent context.Context) {
 
 	var run gpsRunFunc
 	var name string
-	switch gpsCfg.SourceType {
-	case "serial":
-		scfg := gps.SerialConfig{
-			Device:       gpsCfg.Device,
-			BaudRate:     int(gpsCfg.BaudRate),
-			OnParseError: onParseError,
-		}
-		run = func(ctx context.Context) error { return gps.RunSerial(ctx, scfg, m.cache, m.logger) }
-		name = "gps serial reader"
-	case "gpsd":
-		gcfg := gps.GPSDConfig{
-			Host:         gpsCfg.GpsdHost,
-			Port:         int(gpsCfg.GpsdPort),
-			OnParseError: onParseError,
-		}
-		run = func(ctx context.Context) error { return gps.RunGPSD(ctx, gcfg, m.cache, m.logger) }
-		name = "gpsd reader"
-	default:
-		m.logger.Info("gps source type not recognized", "type", gpsCfg.SourceType)
+	if pf, pname := platformGpsRunner(m.app, gpsCfg, m.logger, onParseError); pf != nil {
+		run = pf
+		name = pname
+	} else if platformGpsAlwaysOn {
+		// Always-on platform (Android) but the runner couldn't be built —
+		// e.g. platformsvc client is nil because GRAYWOLF_PLATFORM_SOCKET
+		// was unset or Hello failed. Falling through to the configstore
+		// switch would try to open /dev/ttyUSB0 (or whatever the operator
+		// last configured on a desktop) which is wrong on a phone. Log
+		// loudly and bail.
+		m.logger.Warn("gps: always-on platform reader unavailable; not falling back to serial/gpsd")
 		return
+	} else {
+		switch gpsCfg.SourceType {
+		case "serial":
+			scfg := gps.SerialConfig{
+				Device:       gpsCfg.Device,
+				BaudRate:     int(gpsCfg.BaudRate),
+				OnParseError: onParseError,
+			}
+			run = func(ctx context.Context) error { return gps.RunSerial(ctx, scfg, m.cache, m.logger) }
+			name = "gps serial reader"
+		case "gpsd":
+			gcfg := gps.GPSDConfig{
+				Host:         gpsCfg.GpsdHost,
+				Port:         int(gpsCfg.GpsdPort),
+				OnParseError: onParseError,
+			}
+			run = func(ctx context.Context) error { return gps.RunGPSD(ctx, gcfg, m.cache, m.logger) }
+			name = "gpsd reader"
+		default:
+			m.logger.Info("gps source type not recognized", "type", gpsCfg.SourceType)
+			return
+		}
 	}
 
 	readerCtx, cancel := context.WithCancel(parent)
@@ -108,6 +126,16 @@ func (m *gpsManager) start(parent context.Context) {
 	m.cancel = cancel
 	m.done = done
 	go m.runLoop(readerCtx, done, run, name)
+
+	// Companion per-sat reader (Android only). Lifetime tied to the
+	// same readerCtx so stop() drains both.
+	if gnssRun := platformGnssRunner(m.app, m.logger); gnssRun != nil {
+		go func() {
+			if err := gnssRun(readerCtx); err != nil && !errors.Is(err, context.Canceled) {
+				m.logger.Warn("gps gnss reader exited", "err", err)
+			}
+		}()
+	}
 }
 
 // runLoop is the per-reader supervisor: call run, log any non-cancel

@@ -102,10 +102,17 @@ type App struct {
 	// the reload goroutine takes the write lock to stop the old server
 	// and install (or clear) a replacement.
 	agwMu       sync.Mutex
-	digi        *digipeater.Digipeater
-	gpsCache    *gps.MemCache
+	digi           *digipeater.Digipeater
+	gpsCache       *gps.MemCache
+	// satelliteCache points at gpsCache today (MemCache implements both
+	// PositionCache and SatelliteCache, with separate internal locks).
+	// The field is typed as the narrower SatelliteCache interface so the
+	// android per-sat reader can swap in an alternate implementation
+	// without touching gpsCache.
+	satelliteCache gps.SatelliteCache
 	stationPos  *gps.StationPos
 	gpsMgr      *gpsManager
+	appAndroidExt // platformClient lives here on Android, empty on desktop
 	beaconSched *beacon.Scheduler
 	// ig is the live *igate.Igate; nil while the iGate is disabled.
 	// Held in an atomic pointer so the runtime enable/disable toggle

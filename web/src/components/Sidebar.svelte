@@ -6,7 +6,13 @@
   import { messages } from '../lib/messagesStore.svelte.js';
   import { terminalSidebar } from '../lib/stores/terminal.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
+  import { Platform } from '../lib/platform.js';
   import logoUrl from '../assets/graywolf.svg';
+
+  // Surfaces deferred or unsupported on Android. PTT lands in phase 5;
+  // Simulation is a desktop dev-mode tool. Hidden from the sidebar so
+  // operators don't tap into a non-functional surface.
+  const HIDDEN_ON_ANDROID = new Set(['/ptt', '/simulation', '/agw', '/login']);
 
   // Main-function entries get an icon and render in a single
   // unsubheadered top section. Inline SVGs cover the cases chonky-ui's
@@ -22,28 +28,31 @@
     { path: '/logs', label: 'Logs', svgIcon: 'logs' },
   ];
 
-  const navGroups = [
+  const allSettingsItems = [
+    { path: '/agw', label: 'AGW' },
+    { path: '/audio-devices', label: 'Audio Devices' },
+    { path: '/beacons', label: 'Beacons' },
+    { path: '/channels', label: 'Channels' },
+    { path: '/digipeater', label: 'Digipeater' },
+    { path: '/preferences', label: 'General' },
+    { path: '/gps', label: 'GPS' },
+    { path: '/igate', label: 'iGate' },
+    { path: '/kiss', label: 'KISS' },
+    { path: '/preferences/maps', label: 'Maps' },
+    { path: '/preferences/messages', label: 'Messaging' },
+    { path: '/position-log', label: 'Position Log' },
+    { path: '/ptt', label: 'PTT' },
+    { path: '/simulation', label: 'Simulation' },
+    { path: '/callsign', label: 'Station Callsign' },
+  ];
+  const navGroups = $derived([
     {
       label: 'Settings',
-      items: [
-        { path: '/agw', label: 'AGW' },
-        { path: '/audio-devices', label: 'Audio Devices' },
-        { path: '/beacons', label: 'Beacons' },
-        { path: '/channels', label: 'Channels' },
-        { path: '/digipeater', label: 'Digipeater' },
-        { path: '/preferences', label: 'General' },
-        { path: '/gps', label: 'GPS' },
-        { path: '/igate', label: 'iGate' },
-        { path: '/kiss', label: 'KISS' },
-        { path: '/preferences/maps', label: 'Maps' },
-        { path: '/preferences/messages', label: 'Messaging' },
-        { path: '/position-log', label: 'Position Log' },
-        { path: '/ptt', label: 'PTT' },
-        { path: '/simulation', label: 'Simulation' },
-        { path: '/callsign', label: 'Station Callsign' },
-      ],
+      items: Platform.kind === 'android'
+        ? allSettingsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
+        : allSettingsItems,
     },
-  ];
+  ]);
 
   let currentPath = $state('');
   $effect(() => {

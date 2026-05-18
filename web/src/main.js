@@ -1,3 +1,9 @@
+// MUST be the first import: installs Android bearer-token wrappers
+// around globalThis.fetch and globalThis.WebSocket before any other
+// module evaluates. Reordering or removing this line breaks Android
+// auth silently.
+import './bootstrap.js';
+
 // Auto-import every theme stylesheet in graywolf/web/themes/. Each
 // file scopes its declarations under [data-theme="<id>"]; Vite
 // inlines them all so the final bundle contains every shipped theme.

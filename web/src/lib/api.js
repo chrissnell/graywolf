@@ -1,6 +1,8 @@
 // Thin API client wrapping all fetch calls to /api/*.
 // Returns mock data when the API is unreachable (dev without backend).
 
+import { getBearerToken } from './androidBridge.js';
+
 const MOCK_DELAY = 200;
 
 // ApiError carries the structured body from a non-2xx response so
@@ -38,6 +40,15 @@ async function request(method, path, body = null) {
     return getMockData(method, path, body);
   }
   if (res.status === 401) {
+    if (getBearerToken() !== null) {
+      // Android: no login route. The bearer token is per-launch and
+      // injected by the Service; a 401 here means the Service rotated
+      // the token (supervisor restart) or the wrapper failed to inject.
+      // Throw without navigating; callers surface the error and the
+      // operator-visible recovery is "Stop + relaunch" or wait for
+      // WebView reload on Service restart.
+      throw new ApiError(401, { error: 'Unauthorized' });
+    }
     window.location.hash = '#/login';
     throw new ApiError(401, { error: 'Unauthorized' });
   }
@@ -217,5 +228,16 @@ function getMockData(method, path, body) {
   if (path === '/simulation' && method === 'GET') return delay(mockSimulation);
   if (path === '/simulation' && method === 'PUT') return delay(body);
 
+  // Manual PTT (Android test toggle)
+  if (path.match(/^\/channels\/\d+\/ptt$/) && method === 'POST') return delay(null);
+
   return delay(null);
+}
+
+// postChannelPtt sends a manual PTT key/unkey to POST /api/channels/{id}/ptt.
+// Used by the Android Test PTT press-and-hold toggle and its 2-second
+// heartbeat. keyed=true keys the radio; keyed=false unkeys it. The Go-side
+// watchdog auto-unkeys after 10 s of no heartbeat.
+export async function postChannelPtt(channelId, keyed) {
+  await request('POST', `/channels/${channelId}/ptt`, { keyed });
 }

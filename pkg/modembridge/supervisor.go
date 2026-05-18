@@ -21,6 +21,7 @@ import (
 type supervisorConfig struct {
 	BinaryPath       string
 	SocketDir        string
+	ExistingSocket   string
 	ReadinessTimeout time.Duration
 	MaxBackoff       time.Duration
 
@@ -170,6 +171,9 @@ func (s *supervisor) Run(ctx context.Context) {
 // tears the child down. It returns whatever error caused the session to
 // end (or nil on clean shutdown via context cancel).
 func (s *supervisor) runOnce(ctx context.Context) error {
+	if s.cfg.ExistingSocket != "" {
+		return s.runOnceConnect(ctx)
+	}
 	listenAddr := modemListenAddr(s.cfg.SocketDir)
 	cleanupListenAddr(listenAddr)
 
@@ -222,5 +226,30 @@ func (s *supervisor) runOnce(ctx context.Context) error {
 	}
 	defer conn.Close()
 
+	return s.cfg.RunSession(ctx, conn)
+}
+
+// runOnceConnect is the connect-only variant of runOnce used when
+// supervisorConfig.ExistingSocket is set: the modem binary is owned
+// by some other process (Android Service loading the cdylib via JNI)
+// and listens on a UDS path that the caller hands us. We dial it,
+// drive one session, and return when the session ends. Restart
+// backoff and reconnect are handled by the outer Run loop, same as
+// the fork variant.
+func (s *supervisor) runOnceConnect(ctx context.Context) error {
+	addr := s.cfg.ExistingSocket
+	timeout := s.cfg.ReadinessTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	conn, err := dialModem(addr, timeout)
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", addr, err)
+	}
+	defer conn.Close()
+	s.logger.Info("connected to existing modem socket", "addr", addr)
+	if s.cfg.Metrics != nil {
+		s.cfg.Metrics.SetChildUp(true)
+	}
 	return s.cfg.RunSession(ctx, conn)
 }

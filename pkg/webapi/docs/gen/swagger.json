@@ -2412,6 +2412,63 @@
                 }
             }
         },
+        "/channels/{id}/ptt": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "summary": "Manual PTT key/unkey",
+                "operationId": "manualPtt",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Channel id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "PTT state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "keyed": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/channels/{id}/referrers": {
             "get": {
                 "security": [
@@ -2878,6 +2935,31 @@
                             "items": {
                                 "$ref": "#/definitions/gps.SerialPortInfo"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/gps/state": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "position"
+                ],
+                "summary": "Get raw GPS state (fix + per-sat status)",
+                "operationId": "getGpsState",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.GpsStateDTO"
                         }
                     }
                 }
@@ -10180,6 +10262,69 @@
                 }
             }
         },
+        "webapi.GnssStatusDTO": {
+            "type": "object",
+            "properties": {
+                "sats": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.SatInfoDTO"
+                    }
+                },
+                "sats_in_view": {
+                    "type": "integer"
+                },
+                "sats_used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "webapi.GpsFixDTO": {
+            "type": "object",
+            "properties": {
+                "accuracy_m": {
+                    "type": "number"
+                },
+                "alt_m": {
+                    "type": "number"
+                },
+                "course_deg": {
+                    "type": "number"
+                },
+                "has_alt": {
+                    "type": "boolean"
+                },
+                "has_course": {
+                    "type": "boolean"
+                },
+                "has_speed": {
+                    "type": "boolean"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "speed_mps": {
+                    "type": "number"
+                },
+                "time_unix_ms": {
+                    "type": "integer"
+                }
+            }
+        },
+        "webapi.GpsStateDTO": {
+            "type": "object",
+            "properties": {
+                "fix": {
+                    "$ref": "#/definitions/webapi.GpsFixDTO"
+                },
+                "gnss_status": {
+                    "$ref": "#/definitions/webapi.GnssStatusDTO"
+                }
+            }
+        },
         "webapi.IgateSimulationResponse": {
             "type": "object",
             "properties": {
@@ -10228,6 +10373,29 @@
                     "type": "string"
                 },
                 "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "webapi.SatInfoDTO": {
+            "type": "object",
+            "properties": {
+                "azimuth_deg": {
+                    "type": "number"
+                },
+                "cn0_dbhz": {
+                    "type": "number"
+                },
+                "constellation": {
+                    "type": "string"
+                },
+                "elevation_deg": {
+                    "type": "number"
+                },
+                "svid": {
+                    "type": "integer"
+                },
+                "used_in_fix": {
                     "type": "boolean"
                 }
             }

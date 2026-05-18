@@ -142,6 +142,11 @@ pub(crate) enum PttMethod {
     Gpio,
     /// Hamlib rigctld over TCP. `device` is `"host:port"`.
     Rigctld,
+    /// Android USB PTT — delegates to Kotlin's UsbPttAdapter via JNI.
+    /// The method int (one of the ptt_android_consts values) is carried
+    /// in ConfigurePtt.gpio_pin to avoid a proto change for T3; see
+    /// build_driver for the field-reuse comment.
+    Android,
 }
 
 impl PttMethod {
@@ -158,6 +163,7 @@ impl PttMethod {
             "cm108" => Some(Self::Cm108),
             "gpio" => Some(Self::Gpio),
             "rigctld" => Some(Self::Rigctld),
+            "android" => Some(Self::Android),
             _ => None,
         }
     }
@@ -559,6 +565,33 @@ impl PortRegistry {
                 }
                 Ok(Box::new(ptt_rigctld::RigctldPtt::connect(&cfg.device)?))
             }
+            PttMethod::Android => {
+                #[cfg(any(target_os = "android", feature = "android-test-stub"))]
+                {
+                    use crate::tx::ptt_android_consts::{
+                        PTT_METHOD_AIOC_CDC_DTR, PTT_METHOD_CM108_HID, PTT_METHOD_CP2102N_RTS,
+                        PTT_METHOD_VOX,
+                    };
+                    // The method int is carried in cfg.gpio_pin (field reuse:
+                    // no proto change required for T3; gpio_pin is unused by the
+                    // Android path for its original CM108-pin purpose).
+                    let method = cfg.gpio_pin as i32;
+                    match method {
+                        PTT_METHOD_CP2102N_RTS
+                        | PTT_METHOD_CM108_HID
+                        | PTT_METHOD_AIOC_CDC_DTR
+                        | PTT_METHOD_VOX => {
+                            Ok(Box::new(super::ptt_android::AndroidPtt::new(method)))
+                        }
+                        n => Err(format!("android ptt: unknown method int {}", n)),
+                    }
+                }
+                #[cfg(not(any(target_os = "android", feature = "android-test-stub")))]
+                {
+                    let _ = cfg;
+                    Err("android ptt method is only valid on Android targets".into())
+                }
+            }
         }
     }
 
@@ -786,6 +819,7 @@ pub(crate) mod tests {
         assert_eq!(PttMethod::parse("cm108"), Some(PttMethod::Cm108));
         assert_eq!(PttMethod::parse("gpio"), Some(PttMethod::Gpio));
         assert_eq!(PttMethod::parse("rigctld"), Some(PttMethod::Rigctld));
+        assert_eq!(PttMethod::parse("android"), Some(PttMethod::Android));
         // Typos must surface as errors at build_driver time rather
         // than silently folding into a no-op — "radio never keys"
         // with no log output is the worst possible debug experience.
@@ -1639,5 +1673,125 @@ pub(crate) mod tests {
             Ok(_) => panic!("must fail on missing device"),
         };
         assert!(err.contains("CreateFileW"), "unexpected error: {}", err);
+    }
+
+    // --- Android dispatch tests (stub mode only) ---
+
+    #[cfg(feature = "android-test-stub")]
+    #[test]
+    fn parse_recognizes_android_method_string() {
+        assert_eq!(PttMethod::parse("android"), Some(PttMethod::Android));
+    }
+
+    #[cfg(feature = "android-test-stub")]
+    mod android_dispatch {
+        use super::*;
+        use crate::tx::ptt_android_consts::{
+            PTT_METHOD_AIOC_CDC_DTR, PTT_METHOD_CM108_HID, PTT_METHOD_CP2102N_RTS, PTT_METHOD_VOX,
+        };
+        use serial_test::serial;
+
+        #[test]
+        #[serial]
+        fn build_driver_android_with_valid_method_int_yields_android_driver() {
+            crate::clear_mocks();
+            // Install a mock so the construction path (no unkey on android) doesn't
+            // fail. AndroidPtt doesn't call unkey on construction unlike serial drivers.
+            crate::install_ptt_mock(|_, _| true);
+
+            let mut registry = PortRegistry::new();
+            let cfg = ConfigurePtt {
+                method: "android".into(),
+                // gpio_pin carries the method int — see build_driver comment.
+                gpio_pin: PTT_METHOD_CP2102N_RTS as u32,
+                ..base_cfg()
+            };
+
+            let mut driver = registry
+                .build_driver(&cfg)
+                .expect("android method with valid int should succeed");
+
+            // Confirm the driver routes through to the mock by calling key()
+            // and verifying the mock received method=1.
+            let seen: std::sync::Arc<std::sync::Mutex<Option<i32>>> =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+            let seen2 = seen.clone();
+            crate::install_ptt_mock(move |m, _| {
+                *seen2.lock().unwrap() = Some(m);
+                true
+            });
+
+            driver.key().expect("key() should succeed with mock");
+            assert_eq!(
+                *seen.lock().unwrap(),
+                Some(PTT_METHOD_CP2102N_RTS),
+                "callback must receive method=PTT_METHOD_CP2102N_RTS"
+            );
+            crate::clear_mocks();
+        }
+
+        #[test]
+        #[serial]
+        fn build_driver_android_valid_for_all_four_method_ints() {
+            for &method in &[
+                PTT_METHOD_CP2102N_RTS,
+                PTT_METHOD_CM108_HID,
+                PTT_METHOD_AIOC_CDC_DTR,
+                PTT_METHOD_VOX,
+            ] {
+                crate::clear_mocks();
+                crate::install_ptt_mock(|_, _| true);
+
+                let mut registry = PortRegistry::new();
+                let cfg = ConfigurePtt {
+                    method: "android".into(),
+                    gpio_pin: method as u32,
+                    ..base_cfg()
+                };
+                assert!(
+                    registry.build_driver(&cfg).is_ok(),
+                    "build_driver should succeed for method={method}"
+                );
+                crate::clear_mocks();
+            }
+        }
+
+        #[test]
+        #[serial]
+        fn build_driver_android_rejects_unknown_method_int() {
+            crate::clear_mocks();
+            let mut registry = PortRegistry::new();
+            let cfg = ConfigurePtt {
+                method: "android".into(),
+                gpio_pin: 99, // not a valid PTT method int
+                ..base_cfg()
+            };
+            let err = expect_err(registry.build_driver(&cfg));
+            assert!(
+                err.contains("unknown method int") && err.contains("99"),
+                "unexpected error: {err}"
+            );
+            crate::clear_mocks();
+        }
+
+        #[test]
+        #[serial]
+        fn build_driver_android_rejects_method_zero() {
+            // PTT_METHOD_UNKNOWN (0) must not silently accept — it means
+            // unset/error, not a valid transport choice.
+            crate::clear_mocks();
+            let mut registry = PortRegistry::new();
+            let cfg = ConfigurePtt {
+                method: "android".into(),
+                gpio_pin: 0, // PTT_METHOD_UNKNOWN
+                ..base_cfg()
+            };
+            let err = expect_err(registry.build_driver(&cfg));
+            assert!(
+                err.contains("unknown method int"),
+                "UNKNOWN (0) must be rejected; got: {err}"
+            );
+            crate::clear_mocks();
+        }
     }
 }

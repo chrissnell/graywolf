@@ -159,28 +159,41 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.metrics = metrics.New()
 
 	// --- Modem binary resolution + version banner ----------------------
-	resolvedModem, err := ResolveModemPath(a.cfg.ModemPath)
-	if err != nil {
-		return fmt.Errorf("locate graywolf-modem: %w", err)
-	}
-	a.resolvedModem = resolvedModem
-	pttdevice.SetModemPath(resolvedModem)
-	modemVersion, verr := QueryModemVersion(resolvedModem)
-	if verr != nil {
-		// Not fatal: log and move on. If the binary is actually broken,
-		// bridge.Start's handshake will surface it with a better error.
-		a.logger.Warn("query graywolf-modem version",
-			"path", resolvedModem, "err", verr)
-		modemVersion = "unknown"
-	}
-	a.logger.Info("starting graywolf",
-		"graywolf", a.cfg.FullVersion(),
-		"graywolf-modem", modemVersion)
-	if modemVersion != "unknown" && modemVersion != a.cfg.FullVersion() {
-		a.logger.Warn("graywolf and graywolf-modem versions disagree — possibly a mixed build",
+	//
+	// Skipped on Android: cfg.ModemSocketPath != "" means modembridge
+	// runs in connect-only mode (the Service has already loaded the
+	// modem cdylib in-process and exposed it at the UDS path). There
+	// is no on-disk graywolf-modem binary to resolve or version-check.
+	var resolvedModem string
+	if a.cfg.ModemSocketPath == "" {
+		var err error
+		resolvedModem, err = ResolveModemPath(a.cfg.ModemPath)
+		if err != nil {
+			return fmt.Errorf("locate graywolf-modem: %w", err)
+		}
+		a.resolvedModem = resolvedModem
+		pttdevice.SetModemPath(resolvedModem)
+		modemVersion, verr := QueryModemVersion(resolvedModem)
+		if verr != nil {
+			// Not fatal: log and move on. If the binary is actually broken,
+			// bridge.Start's handshake will surface it with a better error.
+			a.logger.Warn("query graywolf-modem version",
+				"path", resolvedModem, "err", verr)
+			modemVersion = "unknown"
+		}
+		a.logger.Info("starting graywolf",
 			"graywolf", a.cfg.FullVersion(),
-			"graywolf-modem", modemVersion,
-			"modem_path", resolvedModem)
+			"graywolf-modem", modemVersion)
+		if modemVersion != "unknown" && modemVersion != a.cfg.FullVersion() {
+			a.logger.Warn("graywolf and graywolf-modem versions disagree — possibly a mixed build",
+				"graywolf", a.cfg.FullVersion(),
+				"graywolf-modem", modemVersion,
+				"modem_path", resolvedModem)
+		}
+	} else {
+		a.logger.Info("starting graywolf (modem connect-only)",
+			"graywolf", a.cfg.FullVersion(),
+			"modem_socket", a.cfg.ModemSocketPath)
 	}
 
 	// --- Packet log ----------------------------------------------------
@@ -189,6 +202,78 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// --- Station cache (map's last-known-state store) ------------------
 	a.stationCache = stationcache.NewPersistentCache(a.logger)
 	plCfg, _ := a.store.GetPositionLogConfig(ctx)
+	// On Android, default the position log to enabled on first boot.
+	// The desktop default (off) protects SD-card-based Pi installs from
+	// write amplification; Android internal storage doesn't share that
+	// constraint and a disabled history db wipes the live map on every
+	// process restart -- a confusing failure mode for the operator.
+	if plCfg == nil && a.cfg.Platform == "android" && a.cfg.HistoryDBPath != "" {
+		seeded := &configstore.PositionLogConfig{
+			Enabled: true,
+			DBPath:  a.cfg.HistoryDBPath,
+		}
+		if err := a.store.UpsertPositionLogConfig(ctx, seeded); err != nil {
+			a.logger.Warn("seed position log config failed", "err", err)
+		} else {
+			a.logger.Info("seeded position log config (android first-boot default)",
+				"path", a.cfg.HistoryDBPath)
+			plCfg = seeded
+		}
+	}
+	// On Android, seed a single audio_devices row on first boot. The
+	// AudioPump (Kotlin) always captures from the system default mic
+	// regardless of any DB rows -- it's how the modem decodes RF
+	// packets immediately on cold start -- but the SPA's
+	// AudioDevices / Channels pages drive their UX from the
+	// audio_devices table. Without a seed row, an operator who just
+	// launched the app sees "no audio devices" while RF traffic is
+	// already being decoded, which is a confusing failure mode.
+	// Operator can still rename / delete via the SPA; subsequent
+	// boots respect the persisted state.
+	if a.cfg.Platform == "android" {
+		if devs, err := a.store.ListAudioDevices(ctx); err == nil && len(devs) == 0 {
+			// One input row + one output row. AudioPump (Kotlin)
+			// captures from the system default mic and renders to
+			// the system default speaker regardless of any DB rows;
+			// the seed pair just gives the SPA's UI something to
+			// show + something to bind a channel to.
+			// Sample rate matches AudioPump's default (22050) and the Rust
+			// modem's Android JNI canned-frame rate (22050). The DB value
+			// is informational on Android — the modem reads samples from
+			// the JNI bridge at the bridge's rate, not from the
+			// configstore-driven CPAL device-open path — but matching the
+			// real rate keeps the UI honest.
+			for _, seed := range []configstore.AudioDevice{
+				{
+					Name:       "Default Input",
+					Direction:  "input",
+					SourceType: "soundcard",
+					SourcePath: "android-default",
+					SampleRate: 22050,
+					Channels:   1,
+					Format:     "s16le",
+				},
+				{
+					Name:       "Default Output",
+					Direction:  "output",
+					SourceType: "soundcard",
+					SourcePath: "android-default",
+					SampleRate: 22050,
+					Channels:   1,
+					Format:     "s16le",
+				},
+			} {
+				s := seed
+				if err := a.store.CreateAudioDevice(ctx, &s); err != nil {
+					a.logger.Warn("seed audio device failed", "name", s.Name, "err", err)
+				} else {
+					a.logger.Info("seeded audio device (android first-boot default)",
+						"id", s.ID, "name", s.Name, "direction", s.Direction)
+				}
+			}
+		}
+	}
+
 	if plCfg != nil && plCfg.Enabled && a.cfg.HistoryDBPath != "" {
 		hdb, err := historydb.Open(a.cfg.HistoryDBPath)
 		if err != nil {
@@ -203,10 +288,11 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- Modem bridge (construction; Start happens later) --------------
 	a.bridge = modembridge.New(modembridge.Config{
-		BinaryPath: resolvedModem,
-		Store:      a.store,
-		Metrics:    a.metrics,
-		Logger:     a.logger,
+		BinaryPath:     resolvedModem,
+		ExistingSocket: a.cfg.ModemSocketPath,
+		Store:          a.store,
+		Metrics:        a.metrics,
+		Logger:         a.logger,
 	})
 
 	// --- TX backend dispatcher (Phase 3) -------------------------------
@@ -388,9 +474,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- GPS cache + manager -------------------------------------------
 	a.gpsCache = gps.NewMemCache()
+	a.satelliteCache = a.gpsCache
 	a.stationPos = gps.NewStationPos(a.gpsCache)
 	a.gpsReload = make(chan struct{}, 1)
-	a.gpsMgr = newGPSManager(a.store, a.gpsCache, a.logger, a.metrics)
+	a.gpsMgr = newGPSManager(a, a.store, a.gpsCache, a.logger, a.metrics)
 
 	// --- Beacon scheduler ----------------------------------------------
 	beaconSched, err := beacon.New(beacon.Options{
@@ -1162,13 +1249,21 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// The checker's Run goroutine is launched by updatesCheckComponent;
 	// the reload channel it selects on is owned by apiSrv and surfaced
 	// via UpdatesReloadCh(). See pkg/updatescheck and plan D4.
-	a.updatesChecker = updatescheck.NewChecker(
-		a.cfg.Version,
-		a.store,
-		updatescheck.DefaultBaseURL,
-		a.logger.With("component", "updatescheck"),
-	)
-	apiSrv.SetUpdatesChecker(a.updatesChecker)
+	//
+	// Skipped on Android: Play Store handles upgrades there; an
+	// in-process GitHub poll has no purpose and would generate
+	// unwanted background traffic.
+	if a.cfg.Platform != "android" {
+		a.updatesChecker = updatescheck.NewChecker(
+			a.cfg.Version,
+			a.store,
+			updatescheck.DefaultBaseURL,
+			a.logger.With("component", "updatescheck"),
+		)
+		apiSrv.SetUpdatesChecker(a.updatesChecker)
+	} else {
+		a.logger.Info("updatescheck: disabled on android (Play Store handles updates)")
+	}
 
 	// /api/version is public (the UI reads it before login to pick
 	// which screens to show). It is mounted on the outer mux so it
@@ -1268,10 +1363,52 @@ func (a *App) wireHTTP(ctx context.Context) error {
 
 	a.httpSrv = &http.Server{
 		Addr:              a.cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           wrapWithBearerIfSet(a.cfg, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return nil
+}
+
+// wrapWithBearerIfSet wraps next with BearerAuthMiddleware iff
+// cfg.BearerToken is non-empty, but only enforces the bearer on
+// authenticated surfaces (/api/*, /ws/*, /tiles/*). The static SPA
+// (/, /assets/*, /index.html, /favicon*) must remain reachable
+// without auth so the WebView's first navigation can load the SPA
+// shell; once the SPA boots, bootstrap.js installs secureFetch which
+// adds the bearer to every subsequent /api request.
+//
+// Android sets the token via env var; desktop leaves it empty and
+// the wrap is a no-op.
+func wrapWithBearerIfSet(cfg Config, next http.Handler) http.Handler {
+	if cfg.BearerToken == "" {
+		return next
+	}
+	mw := webauth.BearerAuthMiddleware(cfg.BearerToken)
+	guarded := mw(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if needsBearer(r.URL.Path) {
+			guarded.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// needsBearer reports whether the given URL path is an authenticated
+// surface that the per-launch bearer middleware should gate. Public
+// SPA static paths return false so the WebView's first navigation
+// can load the SPA shell.
+func needsBearer(path string) bool {
+	switch {
+	case strings.HasPrefix(path, "/api/"):
+		return true
+	case strings.HasPrefix(path, "/ws/"):
+		return true
+	case strings.HasPrefix(path, "/tiles/"):
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Component factories -------------------------------------------------
@@ -1490,6 +1627,9 @@ func (a *App) updatesCheckComponent() namedComponent {
 	return namedComponent{
 		name: "updates check",
 		start: func(ctx context.Context) error {
+			if a.updatesChecker == nil {
+				return nil
+			}
 			a.updatesWG.Add(1)
 			go func() {
 				defer a.updatesWG.Done()
@@ -1502,6 +1642,9 @@ func (a *App) updatesCheckComponent() namedComponent {
 			return nil
 		},
 		stop: func(shutdownCtx context.Context) error {
+			if a.updatesChecker == nil {
+				return nil
+			}
 			return waitGroup(shutdownCtx, &a.updatesWG, "updates check")
 		},
 	}
@@ -2583,10 +2726,18 @@ func (a *App) httpComponent() namedComponent {
 		name: "http",
 		start: func(ctx context.Context) error {
 			a.logBanner()
+			ln, lerr := net.Listen("tcp", a.httpSrv.Addr)
+			if lerr != nil {
+				a.logger.Error("http: listen failed", "addr", a.httpSrv.Addr, "err", lerr)
+				return lerr
+			}
+			if a.cfg.OnHTTPListenerReady != nil {
+				a.cfg.OnHTTPListenerReady()
+			}
 			a.httpWG.Add(1)
 			go func() {
 				defer a.httpWG.Done()
-				if err := a.httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if err := a.httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					a.logger.Error("http server", "err", err)
 				}
 			}()

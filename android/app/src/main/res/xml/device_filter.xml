@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Known-good (verified on operator bench, POC-D) -->
+  <usb-device vendor-id="4292"  product-id="60000" /> <!-- 0x10C4:0xEA60 Digirig CP2102N -->
+  <usb-device vendor-id="3468"  product-id="18"    /> <!-- 0x0D8C:0x0012 Digirig CM108 -->
+  <usb-device vendor-id="4617"  product-id="29576" /> <!-- 0x1209:0x7388 AIOC -->
+
+  <!-- CP210x family (Silicon Labs) -->
+  <usb-device vendor-id="4292"  product-id="60016" /> <!-- 0x10C4:0xEA70 CP2105 -->
+  <usb-device vendor-id="4292"  product-id="60017" /> <!-- 0x10C4:0xEA71 CP2108 -->
+
+  <!-- FTDI family -->
+  <usb-device vendor-id="1027"  product-id="24577" /> <!-- 0x0403:0x6001 FT232R -->
+  <usb-device vendor-id="1027"  product-id="24592" /> <!-- 0x0403:0x6010 FT2232H -->
+  <usb-device vendor-id="1027"  product-id="24593" /> <!-- 0x0403:0x6011 FT4232H -->
+  <usb-device vendor-id="1027"  product-id="24596" /> <!-- 0x0403:0x6014 FT232H -->
+  <usb-device vendor-id="1027"  product-id="24597" /> <!-- 0x0403:0x6015 FT231X -->
+
+  <!-- CH34x family (QinHeng) -->
+  <usb-device vendor-id="6790"  product-id="29987" /> <!-- 0x1A86:0x7523 CH340 -->
+  <usb-device vendor-id="6790"  product-id="21795" /> <!-- 0x1A86:0x5523 CH341 -->
+
+  <!-- Prolific PL2303 -->
+  <usb-device vendor-id="1659"  product-id="8963"  /> <!-- 0x067B:0x2303 PL2303 -->
+
+  <!-- Generic CDC-ACM (covers AIOC variants + others) -->
+  <usb-device class="2" subclass="2" />
+</resources>

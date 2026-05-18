@@ -1,6 +1,13 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#4af"
-        android:pathData="M30,40 L54,72 L78,40 L70,40 L54,60 L38,40 Z"/>
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon foreground: 108×108 dp adaptive layer with the
+  graywolf logo bitmap inset at 72×72 dp (the safe zone Android
+  guarantees won't be clipped by the system mask). The 18 dp inset
+  on each side keeps the logo inside the safe zone regardless of
+  whether the launcher applies a circle/squircle/rounded-square mask.
+  Source asset: drawable-nodpi/wolf_logo.png, rendered from
+  web/public/favicon.svg at 432 px (= 108 dp × 4-DPI scale).
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/wolf_logo"
+    android:inset="18dp"/>

@@ -4,4 +4,5 @@
     <string name="notification_channel_id">graywolf-fgs</string>
     <string name="notification_title">graywolf running</string>
     <string name="notification_text">RX-only POC-B</string>
+    <string name="notification_stop_label">Stop</string>
 </resources>

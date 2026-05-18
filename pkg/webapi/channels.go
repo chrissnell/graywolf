@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -29,6 +30,7 @@ func (s *Server) registerChannels(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/channels/{id}", s.deleteChannel)
 	mux.HandleFunc("GET /api/channels/{id}/stats", s.getChannelStats)
 	mux.HandleFunc("GET /api/channels/{id}/referrers", s.getChannelReferrers)
+	mux.HandleFunc("POST /api/channels/{id}/ptt", s.manualPtt)
 }
 
 // listChannels returns every configured channel.
@@ -616,4 +618,44 @@ func (s *Server) getChannelStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	notFound(w)
+}
+
+// manualPtt keys or unkeys the radio on the given channel for SPA testing.
+// A 10-second watchdog on the bridge will auto-unkey if no heartbeat arrives.
+// The SPA is expected to POST {"keyed":true} every 2s while holding PTT and
+// POST {"keyed":false} on release.
+//
+// @Summary  Manual PTT key/unkey
+// @Tags     channels
+// @ID       manualPtt
+// @Accept   json
+// @Param    id   path     int               true "Channel id"
+// @Param    body body     object{keyed=bool} true "PTT state"
+// @Success  204 "No Content"
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  503 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /channels/{id}/ptt [post]
+func (s *Server) manualPtt(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid channel id")
+		return
+	}
+	if s.bridge == nil {
+		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: "bridge not available"})
+		return
+	}
+	var req struct {
+		Keyed bool `json:"keyed"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		badRequest(w, "invalid request body: "+err.Error())
+		return
+	}
+	if err := s.bridge.ManualPttWithWatchdog(id, req.Keyed); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

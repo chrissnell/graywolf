@@ -18,6 +18,7 @@
 //! — the driver's `Box<dyn PttDriver>` is `Send`, and once it lives in
 //! the worker's table only the worker thread ever touches it.
 
+#[cfg(not(target_os = "android"))]
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,11 +29,14 @@ use std::time::{Duration, Instant};
 
 use cpal::Device;
 
+#[cfg(not(target_os = "android"))]
 use crate::audio::soundcard::{self, AudioSink, SoundcardOutputConfig};
+#[cfg(target_os = "android")]
+use crate::audio::soundcard::{AudioSink, SoundcardOutputConfig};
 use crate::tx::ptt::PttDriver;
 
 /// One queued transmission for the worker thread to play.
-pub(super) struct TxJob {
+pub(crate) struct TxJob {
     pub channel: u32,
     pub samples: Vec<i16>,
     pub sample_rate: u32,
@@ -67,6 +71,12 @@ enum TxMessage {
     /// subsequent reconfigure gets a fresh `spawn_output` on the new
     /// device instead of reusing a stale one.
     ReleaseSinks,
+    /// Key or unkey the PTT driver for a channel directly, without
+    /// transmitting audio. Used by the manual-PTT REST path for testing.
+    ManualKey {
+        channel: u32,
+        keyed: bool,
+    },
     /// Test-only synchronous query: reply with the number of PTT
     /// drivers currently registered. Because mpsc is FIFO, a successful
     /// reply also proves every earlier message has already been
@@ -79,7 +89,10 @@ enum TxMessage {
 /// the trait at the tx_worker layer (rather than on `AudioSink` itself)
 /// means tests exercise the exact production sequencing logic without
 /// ever constructing a cpal stream.
-pub(super) trait TxSink {
+///
+/// `pub(crate)` so the android module can provide `AndroidTxSink` on
+/// the Android target without the trait leaking to downstream crates.
+pub(crate) trait TxSink {
     fn submit(&self, samples: Vec<i16>) -> Result<usize, String>;
     fn drained_samples(&self) -> usize;
 }
@@ -99,7 +112,7 @@ impl TxSink for AudioSink {
 /// sequence logic so tests can pin the "no spurious sleeps, unkey
 /// always runs after key" invariants without touching real hardware.
 #[derive(Debug)]
-pub(super) enum TxCycleOutcome {
+pub(crate) enum TxCycleOutcome {
     /// Full cycle completed (either naturally or after drain timeout).
     Done,
     /// PTT key failed — radio was never asserted; sink untouched.
@@ -114,7 +127,7 @@ pub(super) enum TxCycleOutcome {
 
 /// Handle to the worker thread owned by [`crate::modem::Modem`]. Dropping
 /// this releases every cached output device and joins the thread.
-pub(super) struct TxWorker {
+pub(crate) struct TxWorker {
     sender: Sender<TxMessage>,
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
@@ -174,6 +187,15 @@ impl TxWorker {
         let _ = self.sender.send(TxMessage::ReleaseSinks);
     }
 
+    /// Directly key or unkey the PTT driver for a channel without transmitting
+    /// audio. Used by the manual-PTT REST path. Returns an error only if the
+    /// worker thread channel is broken (worker has exited).
+    pub fn manual_key(&self, channel: u32, keyed: bool) -> Result<(), String> {
+        self.sender
+            .send(TxMessage::ManualKey { channel, keyed })
+            .map_err(|e| format!("tx worker manual_key: {}", e))
+    }
+
     /// Synchronously query the number of PTT drivers the worker thread
     /// currently owns. Used by unit tests to verify that a preceding
     /// `RegisterDriver` / `ReleaseDriver` has been processed. Because
@@ -222,6 +244,29 @@ fn worker_loop(rx: std::sync::mpsc::Receiver<TxMessage>, stop: Arc<AtomicBool>) 
                 sinks.clear();
                 pending_devices.clear();
             }
+            Ok(TxMessage::ManualKey { channel, keyed }) => {
+                match drivers.get_mut(&channel) {
+                    Some(driver) => {
+                        let result = if keyed { driver.key() } else { driver.unkey() };
+                        match result {
+                            Ok(()) => eprintln!(
+                                "graywolf-modem: ManualKey channel={} keyed={}: ok",
+                                channel, keyed
+                            ),
+                            Err(e) => eprintln!(
+                                "graywolf-modem: ManualKey channel={} keyed={}: {}",
+                                channel, keyed, e
+                            ),
+                        }
+                    }
+                    None => {
+                        eprintln!(
+                            "graywolf-modem: ManualKey channel={} no driver registered",
+                            channel
+                        );
+                    }
+                }
+            }
             #[cfg(test)]
             Ok(TxMessage::QueryDriverCount(reply)) => {
                 let _ = reply.send(drivers.len());
@@ -233,8 +278,10 @@ fn worker_loop(rx: std::sync::mpsc::Receiver<TxMessage>, stop: Arc<AtomicBool>) 
 }
 
 fn process_job(
+    #[cfg_attr(target_os = "android", allow(unused_variables))]
     sinks: &mut HashMap<u32, AudioSink>,
     drivers: &mut HashMap<u32, Box<dyn PttDriver>>,
+    #[cfg_attr(target_os = "android", allow(unused_variables))]
     pending_devices: &mut HashMap<u32, Device>,
     job: TxJob,
 ) {
@@ -262,55 +309,88 @@ fn process_job(
         }
     };
 
-    // Lazy-create the sink, holding the &mut returned by the Entry API
-    // so the rest of this function never has to look the sink up again.
+    // Android: audio is pre-routed to the USB OTG dongle by Kotlin's
+    // AudioTxPump (setPreferredDevice). cpal cannot reach the AudioTrack
+    // instance Kotlin holds, so skip the cpal sink entirely and push
+    // samples directly through the JNI upcall. The `sinks` /
+    // `pending_devices` maps are unused on this target.
+    #[cfg(target_os = "android")]
+    {
+        let _ = output_device_id;
+        let _ = sink_config;
+        let sink = crate::android::audio_tx::AndroidTxSink::new();
+        let outcome = drive_tx_cycle(driver.as_mut(), &sink, samples, sample_rate);
+        match outcome {
+            TxCycleOutcome::Done => {}
+            TxCycleOutcome::KeyFailed(e) => {
+                eprintln!("graywolf-modem: TransmitFrame: ptt_key: {}", e);
+            }
+            TxCycleOutcome::SubmitFailed(e) => {
+                // On Android a submit failure means the JNI upcall failed
+                // (AudioTrack error or JVM not attached). Log prominently
+                // but do not attempt sink rebuild — the Kotlin side manages
+                // AudioTrack lifetime independently.
+                eprintln!("graywolf-modem: TransmitFrame: sink submit (android): {}", e);
+            }
+            TxCycleOutcome::UnkeyFailed(e) => {
+                eprintln!("graywolf-modem: TransmitFrame: ptt_unkey: {}", e);
+            }
+        }
+        return;
+    }
+
+    // Non-Android: lazy-create a cpal AudioSink, holding the &mut from
+    // the Entry API so the rest of this function never looks it up again.
     //
     // Use a pre-resolved cpal Device if one was sent by PrepareOutput
     // (resolved before input streams opened). Falls back to runtime
     // enumeration if none is cached (error recovery path).
-    let sink = match sinks.entry(output_device_id) {
-        Entry::Occupied(e) => e.into_mut(),
-        Entry::Vacant(e) => {
-            let device = pending_devices.remove(&output_device_id);
-            match soundcard::spawn_output(sink_config, device) {
-                Ok(s) => {
-                    eprintln!(
-                        "graywolf-modem: TX sink opened for device_id={} at {} Hz",
-                        output_device_id, sample_rate
-                    );
-                    e.insert(s)
-                }
-                Err(err) => {
-                    eprintln!(
-                        "graywolf-modem: TransmitFrame: open output device_id={}: {}",
-                        output_device_id, err
-                    );
-                    return;
+    #[cfg(not(target_os = "android"))]
+    {
+        let sink = match sinks.entry(output_device_id) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => {
+                let device = pending_devices.remove(&output_device_id);
+                match soundcard::spawn_output(sink_config, device) {
+                    Ok(s) => {
+                        eprintln!(
+                            "graywolf-modem: TX sink opened for device_id={} at {} Hz",
+                            output_device_id, sample_rate
+                        );
+                        e.insert(s)
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "graywolf-modem: TransmitFrame: open output device_id={}: {}",
+                            output_device_id, err
+                        );
+                        return;
+                    }
                 }
             }
-        }
-    };
+        };
 
-    // Explicit reborrow so the &mut AudioSink becomes a &AudioSink
-    // that drive_tx_cycle can unsize to &dyn TxSink. NLL drops the
-    // reborrow after the call returns so the match arms below can
-    // mutate `sinks` again.
-    let outcome = drive_tx_cycle(driver.as_mut(), &*sink, samples, sample_rate);
-    match outcome {
-        TxCycleOutcome::Done => {}
-        TxCycleOutcome::KeyFailed(e) => {
-            eprintln!("graywolf-modem: TransmitFrame: ptt_key: {}", e);
-        }
-        TxCycleOutcome::SubmitFailed(e) => {
-            eprintln!("graywolf-modem: TransmitFrame: sink submit: {}", e);
-            // A submit error means the sink's background thread died
-            // (cpal stream build or play failed after spawn_output
-            // returned). Drop the corpse so the next TX gets a fresh
-            // attempt instead of bricking the device forever.
-            sinks.remove(&output_device_id);
-        }
-        TxCycleOutcome::UnkeyFailed(e) => {
-            eprintln!("graywolf-modem: TransmitFrame: ptt_unkey: {}", e);
+        // Explicit reborrow so the &mut AudioSink becomes a &AudioSink
+        // that drive_tx_cycle can unsize to &dyn TxSink. NLL drops the
+        // reborrow after the call returns so the match arms below can
+        // mutate `sinks` again.
+        let outcome = drive_tx_cycle(driver.as_mut(), &*sink, samples, sample_rate);
+        match outcome {
+            TxCycleOutcome::Done => {}
+            TxCycleOutcome::KeyFailed(e) => {
+                eprintln!("graywolf-modem: TransmitFrame: ptt_key: {}", e);
+            }
+            TxCycleOutcome::SubmitFailed(e) => {
+                eprintln!("graywolf-modem: TransmitFrame: sink submit: {}", e);
+                // A submit error means the sink's background thread died
+                // (cpal stream build or play failed after spawn_output
+                // returned). Drop the corpse so the next TX gets a fresh
+                // attempt instead of bricking the device forever.
+                sinks.remove(&output_device_id);
+            }
+            TxCycleOutcome::UnkeyFailed(e) => {
+                eprintln!("graywolf-modem: TransmitFrame: ptt_unkey: {}", e);
+            }
         }
     }
 }
@@ -576,6 +656,40 @@ mod tests {
         assert!(
             sink_log.lock().unwrap().is_empty(),
             "submit must NOT run when key failed"
+        );
+    }
+
+    /// Verify that `manual_key` sends a `ManualKey` message that the worker
+    /// dispatches to the registered PTT driver. After `manual_key(ch, true)`,
+    /// the mock's log must contain exactly one Key call; after
+    /// `manual_key(ch, false)`, exactly one Unkey call follows.
+    #[test]
+    fn manual_key_routes_to_registered_driver() {
+        let worker = TxWorker::spawn().expect("worker spawns");
+
+        let mock = MockPtt::default();
+        let ptt_log = mock.log.clone();
+
+        worker
+            .register_driver(1, Box::new(mock))
+            .expect("register ok");
+
+        // Use driver_count() as a synchronization barrier: it guarantees
+        // the preceding RegisterDriver message has been processed before
+        // we send ManualKey.
+        assert_eq!(worker.driver_count(), 1);
+
+        worker.manual_key(1, true).expect("manual_key ok");
+        worker.manual_key(1, false).expect("manual_key ok");
+
+        // QueryDriverCount is FIFO-ordered, so by the time it returns,
+        // both ManualKey messages have already been processed.
+        let _ = worker.driver_count();
+
+        assert_eq!(
+            *ptt_log.lock().unwrap(),
+            vec![PttCall::Key, PttCall::Unkey],
+            "manual_key(true) then manual_key(false) should produce Key then Unkey"
         );
     }
 }

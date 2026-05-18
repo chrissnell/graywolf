@@ -268,6 +268,7 @@ type PlatformMessage struct {
 	//	*PlatformMessage_AudioListResp
 	//	*PlatformMessage_AudioRouteChanged
 	//	*PlatformMessage_Error
+	//	*PlatformMessage_GnssStatus
 	Body          isPlatformMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -454,6 +455,15 @@ func (x *PlatformMessage) GetError() *Error {
 	return nil
 }
 
+func (x *PlatformMessage) GetGnssStatus() *GnssStatusUpdate {
+	if x != nil {
+		if x, ok := x.Body.(*PlatformMessage_GnssStatus); ok {
+			return x.GnssStatus
+		}
+	}
+	return nil
+}
+
 type isPlatformMessage_Body interface {
 	isPlatformMessage_Body()
 }
@@ -522,6 +532,10 @@ type PlatformMessage_Error struct {
 	Error *Error `protobuf:"bytes,16,opt,name=error,proto3,oneof"`
 }
 
+type PlatformMessage_GnssStatus struct {
+	GnssStatus *GnssStatusUpdate `protobuf:"bytes,17,opt,name=gnss_status,json=gnssStatus,proto3,oneof"` // server → client; pushed alongside GpsFix
+}
+
 func (*PlatformMessage_Hello) isPlatformMessage_Body() {}
 
 func (*PlatformMessage_GpsFix) isPlatformMessage_Body() {}
@@ -553,6 +567,8 @@ func (*PlatformMessage_AudioListResp) isPlatformMessage_Body() {}
 func (*PlatformMessage_AudioRouteChanged) isPlatformMessage_Body() {}
 
 func (*PlatformMessage_Error) isPlatformMessage_Body() {}
+
+func (*PlatformMessage_GnssStatus) isPlatformMessage_Body() {}
 
 type Hello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -615,16 +631,29 @@ func (x *Hello) GetServerVersion() string {
 }
 
 type GpsFix struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lat           float64                `protobuf:"fixed64,1,opt,name=lat,proto3" json:"lat,omitempty"`
-	Lon           float64                `protobuf:"fixed64,2,opt,name=lon,proto3" json:"lon,omitempty"`
-	AltM          float64                `protobuf:"fixed64,3,opt,name=alt_m,json=altM,proto3" json:"alt_m,omitempty"`
-	SpeedMps      float64                `protobuf:"fixed64,4,opt,name=speed_mps,json=speedMps,proto3" json:"speed_mps,omitempty"`
-	CourseDeg     float64                `protobuf:"fixed64,5,opt,name=course_deg,json=courseDeg,proto3" json:"course_deg,omitempty"`
-	TimeUnixMs    int64                  `protobuf:"varint,6,opt,name=time_unix_ms,json=timeUnixMs,proto3" json:"time_unix_ms,omitempty"`
-	Hdop          float64                `protobuf:"fixed64,7,opt,name=hdop,proto3" json:"hdop,omitempty"`
-	NumSats       uint32                 `protobuf:"varint,8,opt,name=num_sats,json=numSats,proto3" json:"num_sats,omitempty"`
-	Source        GpsSource              `protobuf:"varint,9,opt,name=source,proto3,enum=graywolf.platform.GpsSource" json:"source,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Lat        float64                `protobuf:"fixed64,1,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon        float64                `protobuf:"fixed64,2,opt,name=lon,proto3" json:"lon,omitempty"`
+	AltM       float64                `protobuf:"fixed64,3,opt,name=alt_m,json=altM,proto3" json:"alt_m,omitempty"`
+	SpeedMps   float64                `protobuf:"fixed64,4,opt,name=speed_mps,json=speedMps,proto3" json:"speed_mps,omitempty"`
+	CourseDeg  float64                `protobuf:"fixed64,5,opt,name=course_deg,json=courseDeg,proto3" json:"course_deg,omitempty"`
+	TimeUnixMs int64                  `protobuf:"varint,6,opt,name=time_unix_ms,json=timeUnixMs,proto3" json:"time_unix_ms,omitempty"`
+	Hdop       float64                `protobuf:"fixed64,7,opt,name=hdop,proto3" json:"hdop,omitempty"`
+	NumSats    uint32                 `protobuf:"varint,8,opt,name=num_sats,json=numSats,proto3" json:"num_sats,omitempty"`
+	Source     GpsSource              `protobuf:"varint,9,opt,name=source,proto3,enum=graywolf.platform.GpsSource" json:"source,omitempty"`
+	// Horizontal accuracy radius in meters (Android Location.getAccuracy()).
+	// 0 means "unknown / not provided" — desktop NMEA path leaves this 0.
+	// (JSON consumers reading /api/gps/state must treat 0 as "unset", not
+	// "perfect"; Android Location.accuracy never returns 0 in practice.)
+	// Old clients ignore the field; old servers send 0. Schema version stays 1.
+	AccuracyM float64 `protobuf:"fixed64,10,opt,name=accuracy_m,json=accuracyM,proto3" json:"accuracy_m,omitempty"`
+	// Presence bits. Android Location exposes hasAltitude()/hasSpeed()/
+	// hasBearing(); without these companion bools, the receiver cannot
+	// distinguish a legitimate zero (stationary station, due-north course,
+	// sea-level altitude) from "field absent". Default false on old senders.
+	HasAlt        bool `protobuf:"varint,11,opt,name=has_alt,json=hasAlt,proto3" json:"has_alt,omitempty"`
+	HasSpeed      bool `protobuf:"varint,12,opt,name=has_speed,json=hasSpeed,proto3" json:"has_speed,omitempty"`
+	HasCourse     bool `protobuf:"varint,13,opt,name=has_course,json=hasCourse,proto3" json:"has_course,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -720,6 +749,34 @@ func (x *GpsFix) GetSource() GpsSource {
 		return x.Source
 	}
 	return GpsSource_GPS_SOURCE_UNKNOWN
+}
+
+func (x *GpsFix) GetAccuracyM() float64 {
+	if x != nil {
+		return x.AccuracyM
+	}
+	return 0
+}
+
+func (x *GpsFix) GetHasAlt() bool {
+	if x != nil {
+		return x.HasAlt
+	}
+	return false
+}
+
+func (x *GpsFix) GetHasSpeed() bool {
+	if x != nil {
+		return x.HasSpeed
+	}
+	return false
+}
+
+func (x *GpsFix) GetHasCourse() bool {
+	if x != nil {
+		return x.HasCourse
+	}
+	return false
 }
 
 type BatteryState struct {
@@ -1586,11 +1643,155 @@ func (x *Error) GetMessage() string {
 	return ""
 }
 
+type SatInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Svid          uint32                 `protobuf:"varint,1,opt,name=svid,proto3" json:"svid,omitempty"`                       // satellite vehicle id
+	Constellation string                 `protobuf:"bytes,2,opt,name=constellation,proto3" json:"constellation,omitempty"`      // "GPS" / "GLONASS" / "BEIDOU" / "GALILEO" / "QZSS" / "SBAS"
+	Cn0Dbhz       float64                `protobuf:"fixed64,3,opt,name=cn0_dbhz,json=cn0Dbhz,proto3" json:"cn0_dbhz,omitempty"` // signal strength
+	UsedInFix     bool                   `protobuf:"varint,4,opt,name=used_in_fix,json=usedInFix,proto3" json:"used_in_fix,omitempty"`
+	ElevationDeg  float64                `protobuf:"fixed64,5,opt,name=elevation_deg,json=elevationDeg,proto3" json:"elevation_deg,omitempty"`
+	AzimuthDeg    float64                `protobuf:"fixed64,6,opt,name=azimuth_deg,json=azimuthDeg,proto3" json:"azimuth_deg,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SatInfo) Reset() {
+	*x = SatInfo{}
+	mi := &file_platform_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatInfo) ProtoMessage() {}
+
+func (x *SatInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_platform_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatInfo.ProtoReflect.Descriptor instead.
+func (*SatInfo) Descriptor() ([]byte, []int) {
+	return file_platform_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SatInfo) GetSvid() uint32 {
+	if x != nil {
+		return x.Svid
+	}
+	return 0
+}
+
+func (x *SatInfo) GetConstellation() string {
+	if x != nil {
+		return x.Constellation
+	}
+	return ""
+}
+
+func (x *SatInfo) GetCn0Dbhz() float64 {
+	if x != nil {
+		return x.Cn0Dbhz
+	}
+	return 0
+}
+
+func (x *SatInfo) GetUsedInFix() bool {
+	if x != nil {
+		return x.UsedInFix
+	}
+	return false
+}
+
+func (x *SatInfo) GetElevationDeg() float64 {
+	if x != nil {
+		return x.ElevationDeg
+	}
+	return 0
+}
+
+func (x *SatInfo) GetAzimuthDeg() float64 {
+	if x != nil {
+		return x.AzimuthDeg
+	}
+	return 0
+}
+
+type GnssStatusUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SatsInView    uint32                 `protobuf:"varint,1,opt,name=sats_in_view,json=satsInView,proto3" json:"sats_in_view,omitempty"`
+	SatsUsed      uint32                 `protobuf:"varint,2,opt,name=sats_used,json=satsUsed,proto3" json:"sats_used,omitempty"`
+	Sats          []*SatInfo             `protobuf:"bytes,3,rep,name=sats,proto3" json:"sats,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GnssStatusUpdate) Reset() {
+	*x = GnssStatusUpdate{}
+	mi := &file_platform_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GnssStatusUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GnssStatusUpdate) ProtoMessage() {}
+
+func (x *GnssStatusUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_platform_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GnssStatusUpdate.ProtoReflect.Descriptor instead.
+func (*GnssStatusUpdate) Descriptor() ([]byte, []int) {
+	return file_platform_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GnssStatusUpdate) GetSatsInView() uint32 {
+	if x != nil {
+		return x.SatsInView
+	}
+	return 0
+}
+
+func (x *GnssStatusUpdate) GetSatsUsed() uint32 {
+	if x != nil {
+		return x.SatsUsed
+	}
+	return 0
+}
+
+func (x *GnssStatusUpdate) GetSats() []*SatInfo {
+	if x != nil {
+		return x.Sats
+	}
+	return nil
+}
+
 var File_platform_proto protoreflect.FileDescriptor
 
 const file_platform_proto_rawDesc = "" +
 	"\n" +
-	"\x0eplatform.proto\x12\x11graywolf.platform\"\xf8\b\n" +
+	"\x0eplatform.proto\x12\x11graywolf.platform\"\xc0\t\n" +
 	"\x0fPlatformMessage\x120\n" +
 	"\x05hello\x18\x01 \x01(\v2\x18.graywolf.platform.HelloH\x00R\x05hello\x124\n" +
 	"\agps_fix\x18\x02 \x01(\v2\x19.graywolf.platform.GpsFixH\x00R\x06gpsFix\x12F\n" +
@@ -1611,12 +1812,14 @@ const file_platform_proto_rawDesc = "" +
 	"\x0eaudio_list_req\x18\r \x01(\v2).graywolf.platform.AudioDeviceListRequestH\x00R\faudioListReq\x12T\n" +
 	"\x0faudio_list_resp\x18\x0e \x01(\v2*.graywolf.platform.AudioDeviceListResponseH\x00R\raudioListResp\x12V\n" +
 	"\x13audio_route_changed\x18\x0f \x01(\v2$.graywolf.platform.AudioRouteChangedH\x00R\x11audioRouteChanged\x120\n" +
-	"\x05error\x18\x10 \x01(\v2\x18.graywolf.platform.ErrorH\x00R\x05errorB\x06\n" +
+	"\x05error\x18\x10 \x01(\v2\x18.graywolf.platform.ErrorH\x00R\x05error\x12F\n" +
+	"\vgnss_status\x18\x11 \x01(\v2#.graywolf.platform.GnssStatusUpdateH\x00R\n" +
+	"gnssStatusB\x06\n" +
 	"\x04body\"|\n" +
 	"\x05Hello\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12%\n" +
 	"\x0eclient_version\x18\x02 \x01(\tR\rclientVersion\x12%\n" +
-	"\x0eserver_version\x18\x03 \x01(\tR\rserverVersion\"\x84\x02\n" +
+	"\x0eserver_version\x18\x03 \x01(\tR\rserverVersion\"\xf8\x02\n" +
 	"\x06GpsFix\x12\x10\n" +
 	"\x03lat\x18\x01 \x01(\x01R\x03lat\x12\x10\n" +
 	"\x03lon\x18\x02 \x01(\x01R\x03lon\x12\x13\n" +
@@ -1628,7 +1831,14 @@ const file_platform_proto_rawDesc = "" +
 	"timeUnixMs\x12\x12\n" +
 	"\x04hdop\x18\a \x01(\x01R\x04hdop\x12\x19\n" +
 	"\bnum_sats\x18\b \x01(\rR\anumSats\x124\n" +
-	"\x06source\x18\t \x01(\x0e2\x1c.graywolf.platform.GpsSourceR\x06source\"c\n" +
+	"\x06source\x18\t \x01(\x0e2\x1c.graywolf.platform.GpsSourceR\x06source\x12\x1d\n" +
+	"\n" +
+	"accuracy_m\x18\n" +
+	" \x01(\x01R\taccuracyM\x12\x17\n" +
+	"\ahas_alt\x18\v \x01(\bR\x06hasAlt\x12\x1b\n" +
+	"\thas_speed\x18\f \x01(\bR\bhasSpeed\x12\x1d\n" +
+	"\n" +
+	"has_course\x18\r \x01(\bR\thasCourse\"c\n" +
 	"\fBatteryState\x12\x18\n" +
 	"\apercent\x18\x01 \x01(\x02R\apercent\x12\x1a\n" +
 	"\bcharging\x18\x02 \x01(\bR\bcharging\x12\x1d\n" +
@@ -1683,7 +1893,20 @@ const file_platform_proto_rawDesc = "" +
 	"\x0fcurrent_outputs\x18\x02 \x03(\v2\x1e.graywolf.platform.AudioDeviceR\x0ecurrentOutputs\"S\n" +
 	"\x05Error\x120\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x1c.graywolf.platform.ErrorCodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage*}\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xc4\x01\n" +
+	"\aSatInfo\x12\x12\n" +
+	"\x04svid\x18\x01 \x01(\rR\x04svid\x12$\n" +
+	"\rconstellation\x18\x02 \x01(\tR\rconstellation\x12\x19\n" +
+	"\bcn0_dbhz\x18\x03 \x01(\x01R\acn0Dbhz\x12\x1e\n" +
+	"\vused_in_fix\x18\x04 \x01(\bR\tusedInFix\x12#\n" +
+	"\relevation_deg\x18\x05 \x01(\x01R\felevationDeg\x12\x1f\n" +
+	"\vazimuth_deg\x18\x06 \x01(\x01R\n" +
+	"azimuthDeg\"\x81\x01\n" +
+	"\x10GnssStatusUpdate\x12 \n" +
+	"\fsats_in_view\x18\x01 \x01(\rR\n" +
+	"satsInView\x12\x1b\n" +
+	"\tsats_used\x18\x02 \x01(\rR\bsatsUsed\x12.\n" +
+	"\x04sats\x18\x03 \x03(\v2\x1a.graywolf.platform.SatInfoR\x04sats*}\n" +
 	"\tGpsSource\x12\x16\n" +
 	"\x12GPS_SOURCE_UNKNOWN\x10\x00\x12\x1c\n" +
 	"\x18GPS_SOURCE_ANDROID_FUSED\x10\x01\x12\x1a\n" +
@@ -1724,7 +1947,7 @@ func file_platform_proto_rawDescGZIP() []byte {
 }
 
 var file_platform_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_platform_proto_goTypes = []any{
 	(GpsSource)(0),                  // 0: graywolf.platform.GpsSource
 	(UsbClass)(0),                   // 1: graywolf.platform.UsbClass
@@ -1749,6 +1972,8 @@ var file_platform_proto_goTypes = []any{
 	(*AudioDeviceListResponse)(nil), // 20: graywolf.platform.AudioDeviceListResponse
 	(*AudioRouteChanged)(nil),       // 21: graywolf.platform.AudioRouteChanged
 	(*Error)(nil),                   // 22: graywolf.platform.Error
+	(*SatInfo)(nil),                 // 23: graywolf.platform.SatInfo
+	(*GnssStatusUpdate)(nil),        // 24: graywolf.platform.GnssStatusUpdate
 }
 var file_platform_proto_depIdxs = []int32{
 	5,  // 0: graywolf.platform.PlatformMessage.hello:type_name -> graywolf.platform.Hello
@@ -1767,22 +1992,24 @@ var file_platform_proto_depIdxs = []int32{
 	20, // 13: graywolf.platform.PlatformMessage.audio_list_resp:type_name -> graywolf.platform.AudioDeviceListResponse
 	21, // 14: graywolf.platform.PlatformMessage.audio_route_changed:type_name -> graywolf.platform.AudioRouteChanged
 	22, // 15: graywolf.platform.PlatformMessage.error:type_name -> graywolf.platform.Error
-	0,  // 16: graywolf.platform.GpsFix.source:type_name -> graywolf.platform.GpsSource
-	1,  // 17: graywolf.platform.UsbDevice.classes:type_name -> graywolf.platform.UsbClass
-	8,  // 18: graywolf.platform.UsbAttach.device:type_name -> graywolf.platform.UsbDevice
-	1,  // 19: graywolf.platform.UsbDeviceListRequest.class_filter:type_name -> graywolf.platform.UsbClass
-	8,  // 20: graywolf.platform.UsbDeviceListResponse.devices:type_name -> graywolf.platform.UsbDevice
-	2,  // 21: graywolf.platform.PttKeyRequest.method:type_name -> graywolf.platform.PttMethod
-	2,  // 22: graywolf.platform.PttUnkeyRequest.method:type_name -> graywolf.platform.PttMethod
-	19, // 23: graywolf.platform.AudioDeviceListResponse.devices:type_name -> graywolf.platform.AudioDevice
-	19, // 24: graywolf.platform.AudioRouteChanged.current_inputs:type_name -> graywolf.platform.AudioDevice
-	19, // 25: graywolf.platform.AudioRouteChanged.current_outputs:type_name -> graywolf.platform.AudioDevice
-	3,  // 26: graywolf.platform.Error.code:type_name -> graywolf.platform.ErrorCode
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	24, // 16: graywolf.platform.PlatformMessage.gnss_status:type_name -> graywolf.platform.GnssStatusUpdate
+	0,  // 17: graywolf.platform.GpsFix.source:type_name -> graywolf.platform.GpsSource
+	1,  // 18: graywolf.platform.UsbDevice.classes:type_name -> graywolf.platform.UsbClass
+	8,  // 19: graywolf.platform.UsbAttach.device:type_name -> graywolf.platform.UsbDevice
+	1,  // 20: graywolf.platform.UsbDeviceListRequest.class_filter:type_name -> graywolf.platform.UsbClass
+	8,  // 21: graywolf.platform.UsbDeviceListResponse.devices:type_name -> graywolf.platform.UsbDevice
+	2,  // 22: graywolf.platform.PttKeyRequest.method:type_name -> graywolf.platform.PttMethod
+	2,  // 23: graywolf.platform.PttUnkeyRequest.method:type_name -> graywolf.platform.PttMethod
+	19, // 24: graywolf.platform.AudioDeviceListResponse.devices:type_name -> graywolf.platform.AudioDevice
+	19, // 25: graywolf.platform.AudioRouteChanged.current_inputs:type_name -> graywolf.platform.AudioDevice
+	19, // 26: graywolf.platform.AudioRouteChanged.current_outputs:type_name -> graywolf.platform.AudioDevice
+	3,  // 27: graywolf.platform.Error.code:type_name -> graywolf.platform.ErrorCode
+	23, // 28: graywolf.platform.GnssStatusUpdate.sats:type_name -> graywolf.platform.SatInfo
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_platform_proto_init() }
@@ -1807,6 +2034,7 @@ func file_platform_proto_init() {
 		(*PlatformMessage_AudioListResp)(nil),
 		(*PlatformMessage_AudioRouteChanged)(nil),
 		(*PlatformMessage_Error)(nil),
+		(*PlatformMessage_GnssStatus)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1814,7 +2042,7 @@ func file_platform_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_platform_proto_rawDesc), len(file_platform_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
