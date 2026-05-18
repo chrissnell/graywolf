@@ -371,7 +371,7 @@ fn run_demod(
                 channel: config_state::channel_id(),
                 rx_frames: config_state::rx_frames(),
                 rx_bad_fcs: 0,
-                tx_frames: 0,
+                tx_frames: config_state::tx_frames(),
                 dcd_transitions: 0,
                 audio_level_mark: 0.0,
                 audio_level_space: 0.0,
@@ -476,6 +476,8 @@ fn run_demod(
                                 };
                                 if let Err(e) = tx_worker.transmit(job) {
                                     warn!("transmit(channel={}): {}", tf.channel, e);
+                                } else {
+                                    config_state::increment_tx_frames();
                                 }
                             }
                             Err(e) => {
