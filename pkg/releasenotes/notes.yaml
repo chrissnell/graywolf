@@ -8,7 +8,7 @@
 # accepts internal #/... routes.
 
 - version: "0.13.5"
-  date: "2026-05-16"
+  date: "2026-05-17"
   style: info
   schema_version: 1
   title: "KISS TNC transmit, serial TNC support, channel stats, cleaner audio detection"

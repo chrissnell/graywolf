@@ -489,7 +489,7 @@ dependencies = [
 
 [[package]]
 name = "graywolf-demod"
-version = "0.13.4"
+version = "0.13.5"
 dependencies = [
  "android_logger",
  "bytes",
