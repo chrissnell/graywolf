@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { Button, Input, Select, Badge, Toggle, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Toggle, AlertDialog } from '@chrissnell/chonky-ui';
   import { api, ApiError, postChannelPtt } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import { Platform } from '../lib/platform.js';
@@ -8,22 +8,9 @@
   import Modal from '../components/Modal.svelte';
   import FormField from '../components/FormField.svelte';
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels } from '../lib/stores/channels.svelte.js';
-  import {
-    healthGlyph,
-    healthText,
-    summaryLabel,
-    ariaLabel as backingAriaLabel,
-    tooltipText as backingTooltip,
-    HEALTH_LIVE,
-    HEALTH_DOWN,
-  } from '../lib/channelBacking.js';
-  import {
-    summaryLine as pttSummaryLine,
-    pttState,
-    ariaLabel as pttAriaLabel,
-  } from '../lib/channelPtt.js';
   import { groupReferrers, totalReferrers } from '../lib/channelReferrers.js';
   import { blankForm, rowToForm, formToPayload, validateForm } from '../lib/channelForm.js';
+  import ChannelRow from './channels/ChannelRow.svelte';
 
   // The Channels page itself hydrates the shared store: this page is
   // the cheapest place for a first-visit operator to land, so it
@@ -305,16 +292,6 @@
     txTimings = map;
   }
 
-  function deviceName(id) {
-    if (!id || id === 0) return null;
-    const d = audioDevices.find(d => d.id === id);
-    return d ? d.name : `Device #${id}`;
-  }
-
-  function channelLabel(ch) {
-    return ch === 0 ? 'Left/Mono' : ch === 1 ? 'Right' : `Ch ${ch}`;
-  }
-
   function openCreate() {
     editing = null;
     stopUsbPoll();
@@ -568,117 +545,13 @@
 {:else}
   <div class="channel-grid">
     {#each channels as ch}
-      {@const isKissOnly = ch.input_device_id == null}
-      <div class="channel-card">
-        <div class="channel-header">
-          <span class="channel-name">{ch.name}</span>
-          <div class="channel-badges">
-            {#if isKissOnly}
-              <Badge variant="info">KISS-TNC only</Badge>
-            {:else}
-              <Badge variant="default">{ch.modem_type.toUpperCase()}</Badge>
-              {#if ch.output_device_id && ch.output_device_id !== 0}
-                <Badge variant="success">RX/TX</Badge>
-              {:else}
-                <Badge variant="info">RX</Badge>
-              {/if}
-            {/if}
-            {#if ch.mode === 'packet'}
-              <Badge variant="warning">Packet</Badge>
-            {:else if ch.mode === 'aprs+packet'}
-              <Badge variant="info">APRS + Packet</Badge>
-            {:else}
-              <Badge variant="info">APRS</Badge>
-            {/if}
-          </div>
-        </div>
-
-        {#if !isKissOnly}
-          <div class="channel-devices">
-            <div class="device-link">
-              <span class="device-direction">RX</span>
-              <div class="device-info">
-                <span class="device-name-ref">{deviceName(ch.input_device_id) || '—'}</span>
-                <span class="device-ch">{channelLabel(ch.input_channel)}</span>
-              </div>
-            </div>
-            {#if ch.output_device_id && ch.output_device_id !== 0}
-              <div class="device-link">
-                <span class="device-direction tx">TX</span>
-                <div class="device-info">
-                  <span class="device-name-ref">{deviceName(ch.output_device_id)}</span>
-                  <span class="device-ch">{channelLabel(ch.output_channel)}</span>
-                </div>
-              </div>
-            {/if}
-          </div>
-        {:else}
-          <div class="channel-kiss-only-note">
-            Serviced by a KISS TNC interface (configured on the KISS page).
-          </div>
-        {/if}
-
-        {#if ch.backing}
-          {@const h = ch.backing.health}
-          {@const glyphClass = h === HEALTH_LIVE ? 'live' : h === HEALTH_DOWN ? 'down' : 'unbound'}
-          <div class="backing-row"
-               aria-label={backingAriaLabel(ch)}
-               title={backingTooltip(ch.backing)}>
-            <span class="backing-label">Backing</span>
-            <span class="backing-summary">
-              <span class="glyph {glyphClass}" aria-hidden="true">{healthGlyph(h)}</span>
-              <span class="backing-text">{summaryLabel(ch.backing)} · {healthText(h)}</span>
-            </span>
-          </div>
-        {/if}
-
-        <!-- PTT indicator (issue #112). Only shown for modem-backed TX
-             channels: KISS-TNC channels handle keying inside the TNC
-             firmware, and an RX-only modem channel can't transmit so
-             PTT has no role to play either. -->
-        {#if !isKissOnly && ch.output_device_id && ch.output_device_id !== 0}
-          {@const pttGlyphClass = pttState(ch.ptt)}
-          <div class="backing-row"
-               aria-label={pttAriaLabel(ch.ptt)}>
-            <span class="backing-label">PTT</span>
-            <span class="backing-summary">
-              <span class="glyph {pttGlyphClass}" aria-hidden="true">
-                {pttGlyphClass === 'live' ? '●' : '○'}
-              </span>
-              <span class="backing-text">{pttSummaryLine(ch.ptt)}</span>
-            </span>
-          </div>
-        {/if}
-
-        <div class="channel-details">
-          {#if !isKissOnly}
-            <div class="detail-row">
-              <span class="detail-label">Bit Rate</span>
-              <span class="detail-value">{ch.bit_rate} bps</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Mark / Space</span>
-              <span class="detail-value">{ch.mark_freq} / {ch.space_freq} Hz</span>
-            </div>
-            {#if ch.output_device_id && ch.output_device_id !== 0 && txTimings[ch.id]}
-              {@const t = txTimings[ch.id]}
-              <div class="detail-row">
-                <span class="detail-label">TXD / Tail</span>
-                <span class="detail-value">{t.tx_delay_ms} / {t.tx_tail_ms} ms</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">CSMA</span>
-                <span class="detail-value">p{t.persist} slot {t.slot_ms}ms{t.full_dup ? ' FDX' : ''}</span>
-              </div>
-            {/if}
-          {/if}
-        </div>
-
-        <div class="channel-actions">
-          <Button variant="ghost" onclick={() => openEdit(ch)}>Edit</Button>
-          <Button variant="danger" onclick={() => requestDelete(ch)}>Delete</Button>
-        </div>
-      </div>
+      <ChannelRow
+        channel={ch}
+        txTiming={txTimings[ch.id]}
+        {audioDevices}
+        onEdit={openEdit}
+        onDelete={requestDelete}
+      />
     {/each}
   </div>
 {/if}
@@ -1008,119 +881,6 @@
     gap: 12px;
   }
 
-  .channel-card {
-    display: flex;
-    flex-direction: column;
-    padding: 16px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-  }
-
-  .channel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    gap: 8px;
-  }
-  .channel-name {
-    font-weight: 600;
-    font-size: 15px;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .channel-badges {
-    display: flex;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  /* RX/TX device links */
-  .channel-devices {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 12px;
-    padding: 10px;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius);
-  }
-  .device-link {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .device-direction {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    color: var(--color-info);
-    background: var(--color-info-muted);
-    padding: 2px 6px;
-    border-radius: 3px;
-    flex-shrink: 0;
-    min-width: 26px;
-    text-align: center;
-  }
-  .device-direction.tx {
-    color: var(--color-success);
-    background: var(--color-success-muted);
-  }
-  .device-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    font-size: 13px;
-  }
-  .device-name-ref {
-    color: var(--text-primary);
-    font-weight: 500;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .device-ch {
-    color: var(--text-secondary);
-    font-size: 12px;
-    flex-shrink: 0;
-  }
-
-  .channel-details {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    flex: 1;
-  }
-  .detail-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-    gap: 12px;
-  }
-  .detail-label {
-    color: var(--text-secondary);
-    flex-shrink: 0;
-  }
-  .detail-value {
-    font-family: var(--font-mono);
-    color: var(--text-primary);
-    text-align: right;
-  }
-
-  .channel-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-color);
-  }
-
   /* Wider modal for channel editor */
   .wide-modal :global(.modal) {
     width: min(860px, 94vw);
@@ -1238,55 +998,6 @@
     color: white !important;
   }
 
-  /* Backing summary row on each channel card. Kept deliberately muted
-     so the primary RX/TX device info stays the visual focus; the
-     backing line is for "where does a TX frame go" disambiguation. */
-  .backing-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 10px;
-    padding: 6px 10px;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius);
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-  .backing-label {
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-  }
-  .backing-summary {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-  .backing-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .glyph {
-    display: inline-flex;
-    width: 12px;
-    height: 12px;
-    line-height: 1;
-    font-size: 12px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  .glyph.live {
-    color: var(--color-success, #2ea043);
-  }
-  .glyph.down {
-    color: var(--color-warning, #d4a72c);
-  }
-  .glyph.unbound {
-    color: var(--text-muted, #888);
-  }
-
   /* D11 channel-type segmented control + edit-time read-only badge. */
   .channel-type-row {
     display: flex;
@@ -1350,15 +1061,6 @@
   }
   .kiss-only-explainer a {
     color: var(--color-info, #388bfd);
-  }
-
-  .channel-kiss-only-note {
-    padding: 10px;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius);
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-bottom: 12px;
   }
 
   /* Phase 5 two-step delete flow */
