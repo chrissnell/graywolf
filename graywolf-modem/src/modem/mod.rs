@@ -4,7 +4,7 @@
 //! Supports multiple audio devices, multiple channels per device, and
 //! multiple demodulator types (AFSK, PSK, 9600).
 
-mod tx_worker;
+pub(crate) mod tx_worker;
 // Re-export so the android module can implement TxSink on AndroidTxSink
 // without exposing the private tx_worker module path externally. Only
 // needed when the android audio path is compiled in.

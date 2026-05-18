@@ -36,7 +36,7 @@ use crate::audio::soundcard::{AudioSink, SoundcardOutputConfig};
 use crate::tx::ptt::PttDriver;
 
 /// One queued transmission for the worker thread to play.
-pub(super) struct TxJob {
+pub(crate) struct TxJob {
     pub channel: u32,
     pub samples: Vec<i16>,
     pub sample_rate: u32,
@@ -112,7 +112,7 @@ impl TxSink for AudioSink {
 /// sequence logic so tests can pin the "no spurious sleeps, unkey
 /// always runs after key" invariants without touching real hardware.
 #[derive(Debug)]
-pub(super) enum TxCycleOutcome {
+pub(crate) enum TxCycleOutcome {
     /// Full cycle completed (either naturally or after drain timeout).
     Done,
     /// PTT key failed — radio was never asserted; sink untouched.
@@ -127,7 +127,7 @@ pub(super) enum TxCycleOutcome {
 
 /// Handle to the worker thread owned by [`crate::modem::Modem`]. Dropping
 /// this releases every cached output device and joins the thread.
-pub(super) struct TxWorker {
+pub(crate) struct TxWorker {
     sender: Sender<TxMessage>,
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,

@@ -18,7 +18,9 @@ use log::{error, info, warn};
 use crate::demod_afsk_multi::{MultiAfskDemodulator, RECOMMENDED_3DEMOD};
 use crate::ipc::proto::{ipc_message, DeviceLevelUpdate, IpcMessage, ReceivedFrame, StatusUpdate};
 use crate::ipc::server::{IpcInbound, IpcServer};
+use crate::modem::tx_worker::{TxJob, TxWorker};
 use crate::rxonly::feed_chunk;
+use crate::tx::ptt::PortRegistry;
 
 pub mod audio;
 pub mod audio_tx;
@@ -261,6 +263,13 @@ fn run_demod(
     info!("ipc server bound at {}", socket_path);
     ready.store(true, Ordering::Release);
 
+    // TX path: one TxWorker serialises all PTT + audio output; one
+    // PortRegistry tracks open serial / HID handles so the same port
+    // is never opened twice. Both are owned for the lifetime of this
+    // demod run and are joined/dropped on exit.
+    let tx_worker = TxWorker::spawn().map_err(|e| format!("spawn tx worker: {}", e))?;
+    let mut ptt_registry = PortRegistry::new();
+
     let (frames_tx, frames_rx) = sync_channel::<ReceivedFrame>(64);
     // Bounded level queue. ingest() runs at audio rate but only emits at
     // ~5 Hz, so 32 slots is more than enough; try_send drops on full to
@@ -378,24 +387,103 @@ fn run_demod(
             last_status_emit = now;
         }
 
-        // Drain any inbound IPC messages from the Go side. We act on
-        // ConfigureChannel to capture the operator-set channel and
-        // input_device_id mapping; everything else is currently a no-op
-        // on Android (TX path is phase 5).
+        // Drain inbound IPC messages from the Go side. Previously only
+        // ConfigureChannel was handled; now the full TX dispatch is wired.
         while let Ok(inbound) = ipc_rx.try_recv() {
             if let IpcInbound::Message(msg) = inbound {
-                if let Some(ipc_message::Payload::ConfigureChannel(cc)) = msg.payload {
-                    let chan = cc.channel;
-                    let dev = if cc.input_device_id != 0 {
-                        cc.input_device_id
-                    } else {
-                        cc.device_id
-                    };
-                    info!(
-                        "configure channel: channel={} input_device_id={}",
-                        chan, dev
-                    );
-                    config_state::set_from_configure(chan, dev);
+                match msg.payload {
+                    Some(ipc_message::Payload::ConfigureChannel(cc)) => {
+                        let chan = cc.channel;
+                        let dev = if cc.input_device_id != 0 {
+                            cc.input_device_id
+                        } else {
+                            cc.device_id
+                        };
+                        info!(
+                            "configure channel: channel={} input_device_id={}",
+                            chan, dev
+                        );
+                        config_state::set_from_configure(chan, dev);
+                        // Capture DSP params so TransmitFrame can call
+                        // build_samples with the same baud / tone pair.
+                        config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
+                    }
+                    Some(ipc_message::Payload::ConfigurePtt(cfg)) => {
+                        let chan = cfg.channel;
+                        // Persist timing for later TransmitFrame use.
+                        config_state::set_ptt_timing(cfg.txdelay_ms, cfg.txtail_ms);
+                        match ptt_registry.build_driver(&cfg) {
+                            Ok(driver) => {
+                                if let Err(e) = tx_worker.register_driver(chan, driver) {
+                                    warn!("register_driver(channel={}): {}", chan, e);
+                                } else {
+                                    info!(
+                                        "ptt driver registered channel={} method={}",
+                                        chan, cfg.method
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "build_driver(channel={} method={}): {}",
+                                    chan, cfg.method, e
+                                );
+                            }
+                        }
+                    }
+                    Some(ipc_message::Payload::ManualPtt(mp)) => {
+                        if let Err(e) = tx_worker.manual_key(mp.channel, mp.keyed) {
+                            warn!(
+                                "manual_key(channel={} keyed={}): {}",
+                                mp.channel, mp.keyed, e
+                            );
+                        }
+                    }
+                    Some(ipc_message::Payload::TransmitFrame(tf)) => {
+                        let txdelay = if tf.txdelay_override_ms != 0 {
+                            tf.txdelay_override_ms
+                        } else {
+                            config_state::txdelay_ms()
+                        };
+                        let txtail = if tf.txtail_override_ms != 0 {
+                            tf.txtail_override_ms
+                        } else {
+                            config_state::txtail_ms()
+                        };
+                        match crate::tx::build_samples(
+                            &tf.data,
+                            txdelay,
+                            txtail,
+                            TARGET_SAMPLE_RATE,
+                            config_state::baud(),
+                            config_state::mark_freq(),
+                            config_state::space_freq(),
+                        ) {
+                            Ok(samples) => {
+                                let job = TxJob {
+                                    channel: tf.channel,
+                                    samples,
+                                    sample_rate: TARGET_SAMPLE_RATE,
+                                    // unused by the Android arm of process_job
+                                    // (AndroidTxSink handles audio routing via JNI)
+                                    output_device_id: 0,
+                                    sink_config: crate::audio::soundcard::SoundcardOutputConfig {
+                                        device_name: String::new(),
+                                        sample_rate: TARGET_SAMPLE_RATE,
+                                        channels: 1,
+                                        audio_channel: 0,
+                                    },
+                                };
+                                if let Err(e) = tx_worker.transmit(job) {
+                                    warn!("transmit(channel={}): {}", tf.channel, e);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("build_samples(channel={}): {}", tf.channel, e);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
