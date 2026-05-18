@@ -50,6 +50,13 @@ static TXTAIL_MS: AtomicU32 = AtomicU32::new(100);
 /// per-channel ChannelStats the SPA Dashboard polls.
 static RX_FRAMES: AtomicU64 = AtomicU64::new(0);
 
+/// Cumulative count of frames handed to the TX worker since modem
+/// start. Read by the IPC writer loop to populate StatusUpdate.tx_frames
+/// at ~1 Hz. Counts frames successfully enqueued for transmission
+/// (build_samples ok + tx_worker.transmit ok) -- the same "dispatched
+/// for TX" semantics as the desktop pkg/kiss ChannelStats.TxFrames.
+static TX_FRAMES: AtomicU64 = AtomicU64::new(0);
+
 pub fn set_from_configure(channel: u32, input_device_id: u32) {
     if channel != 0 {
         CHANNEL_ID.store(channel, Ordering::Relaxed);
@@ -116,4 +123,12 @@ pub fn increment_rx_frames() {
 
 pub fn rx_frames() -> u64 {
     RX_FRAMES.load(Ordering::Relaxed)
+}
+
+pub fn increment_tx_frames() {
+    TX_FRAMES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn tx_frames() -> u64 {
+    TX_FRAMES.load(Ordering::Relaxed)
 }
