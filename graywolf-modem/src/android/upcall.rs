@@ -57,7 +57,7 @@ mod android_impl {
     /// to a `GlobalRef` so it survives beyond the JNI frame. Replaces any prior
     /// installation; the old `GlobalRef` is dropped, returning the slot to the
     /// JVM reference table.
-    pub(super) fn install_ptt(env: &mut jni::JNIEnv<'_>, obj: JObject<'_>) {
+    pub(crate) fn install_ptt(env: &mut jni::JNIEnv<'_>, obj: JObject<'_>) {
         let global = match env.new_global_ref(&obj) {
             Ok(g) => g,
             Err(e) => {
@@ -65,8 +65,17 @@ mod android_impl {
                 return;
             }
         };
-        // Resolve `pttSet(int method, boolean keyed) -> boolean`
-        let method = match env.get_method_id(&obj, "pttSet", "(IZ)Z") {
+        // Resolve `pttSet(int method, boolean keyed) -> boolean`.
+        // jni 0.21's get_method_id takes a JClass, not a JObject — resolve the
+        // class via get_object_class first.
+        let class = match env.get_object_class(&obj) {
+            Ok(c) => c,
+            Err(e) => {
+                error!("installPttCallback: get_object_class failed: {e}");
+                return;
+            }
+        };
+        let method = match env.get_method_id(&class, "pttSet", "(IZ)Z") {
             Ok(m) => m,
             Err(e) => {
                 error!("installPttCallback: get_method_id(pttSet) failed: {e}");
@@ -79,7 +88,7 @@ mod android_impl {
 
     /// Store the Kotlin `AudioTxCallback` instance + resolved `pushSamples([SI)I`
     /// method ID. Replaces any prior installation.
-    pub(super) fn install_audio_tx(env: &mut jni::JNIEnv<'_>, obj: JObject<'_>) {
+    pub(crate) fn install_audio_tx(env: &mut jni::JNIEnv<'_>, obj: JObject<'_>) {
         let global = match env.new_global_ref(&obj) {
             Ok(g) => g,
             Err(e) => {
@@ -87,7 +96,14 @@ mod android_impl {
                 return;
             }
         };
-        let method = match env.get_method_id(&obj, "pushSamples", "([SI)I") {
+        let class = match env.get_object_class(&obj) {
+            Ok(c) => c,
+            Err(e) => {
+                error!("installAudioTxCallback: get_object_class failed: {e}");
+                return;
+            }
+        };
+        let method = match env.get_method_id(&class, "pushSamples", "([SI)I") {
             Ok(m) => m,
             Err(e) => {
                 error!("installAudioTxCallback: get_method_id(pushSamples) failed: {e}");

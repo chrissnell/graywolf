@@ -18,6 +18,7 @@
 //! — the driver's `Box<dyn PttDriver>` is `Send`, and once it lives in
 //! the worker's table only the worker thread ever touches it.
 
+#[cfg(not(target_os = "android"))]
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,7 +29,10 @@ use std::time::{Duration, Instant};
 
 use cpal::Device;
 
+#[cfg(not(target_os = "android"))]
 use crate::audio::soundcard::{self, AudioSink, SoundcardOutputConfig};
+#[cfg(target_os = "android")]
+use crate::audio::soundcard::{AudioSink, SoundcardOutputConfig};
 use crate::tx::ptt::PttDriver;
 
 /// One queued transmission for the worker thread to play.
@@ -274,8 +278,10 @@ fn worker_loop(rx: std::sync::mpsc::Receiver<TxMessage>, stop: Arc<AtomicBool>) 
 }
 
 fn process_job(
+    #[cfg_attr(target_os = "android", allow(unused_variables))]
     sinks: &mut HashMap<u32, AudioSink>,
     drivers: &mut HashMap<u32, Box<dyn PttDriver>>,
+    #[cfg_attr(target_os = "android", allow(unused_variables))]
     pending_devices: &mut HashMap<u32, Device>,
     job: TxJob,
 ) {
