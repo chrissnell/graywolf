@@ -1400,7 +1400,14 @@ type ConfigurePtt struct {
 	GpioPin uint32 `protobuf:"varint,10,opt,name=gpio_pin,json=gpioPin,proto3" json:"gpio_pin,omitempty"`
 	// 0-indexed GPIO line offset for the `gpio` method (gpiochip chardev v2).
 	// For CM108, use `gpio_pin` (1-indexed) instead.
-	GpioLine      uint32 `protobuf:"varint,11,opt,name=gpio_line,json=gpioLine,proto3" json:"gpio_line,omitempty"`
+	GpioLine uint32 `protobuf:"varint,11,opt,name=gpio_line,json=gpioLine,proto3" json:"gpio_line,omitempty"`
+	// Android USB-PTT transport selector. Carries the PttMethod enum value
+	// (proto/platform.proto: 1=PTT_METHOD_CP2102N_RTS, 2=PTT_METHOD_CM108_HID,
+	// 3=PTT_METHOD_AIOC_CDC_DTR, 4=PTT_METHOD_VOX). Typed uint32 (not the
+	// platform.proto enum) to keep this IPC contract self-contained
+	// (invariant #2). Meaningful only when method=="android"; 0 otherwise.
+	// Never overload gpio_pin for this.
+	PttMethod     uint32 `protobuf:"varint,12,opt,name=ptt_method,json=pttMethod,proto3" json:"ptt_method,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1508,6 +1515,13 @@ func (x *ConfigurePtt) GetGpioPin() uint32 {
 func (x *ConfigurePtt) GetGpioLine() uint32 {
 	if x != nil {
 		return x.GpioLine
+	}
+	return 0
+}
+
+func (x *ConfigurePtt) GetPttMethod() uint32 {
+	if x != nil {
+		return x.PttMethod
 	}
 	return 0
 }
@@ -2305,7 +2319,7 @@ const file_graywolf_proto_rawDesc = "" +
 	"\vsource_type\x18\x05 \x01(\tR\n" +
 	"sourceType\x12\x16\n" +
 	"\x06format\x18\x06 \x01(\tR\x06format\x12\x17\n" +
-	"\again_db\x18\a \x01(\x02R\x06gainDb\"\xba\x02\n" +
+	"\again_db\x18\a \x01(\x02R\x06gainDb\"\xd9\x02\n" +
 	"\fConfigurePtt\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x16\n" +
@@ -2320,7 +2334,9 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x06invert\x18\t \x01(\bR\x06invert\x12\x19\n" +
 	"\bgpio_pin\x18\n" +
 	" \x01(\rR\agpioPin\x12\x1b\n" +
-	"\tgpio_line\x18\v \x01(\rR\bgpioLine\"\f\n" +
+	"\tgpio_line\x18\v \x01(\rR\bgpioLine\x12\x1d\n" +
+	"\n" +
+	"ptt_method\x18\f \x01(\rR\tpttMethod\"\f\n" +
 	"\n" +
 	"StartAudio\"\v\n" +
 	"\tStopAudio\")\n" +
