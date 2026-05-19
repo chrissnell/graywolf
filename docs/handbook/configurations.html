@@ -153,6 +153,86 @@
     </div>
 
     <!-- ============================================================ -->
+
+    <div class="config-card" id="th-d75-rpi4">
+      <div class="config-card-header">Kenwood TH-D75 + Raspberry Pi 4 Model B &mdash; Raspbian</div>
+      <div class="config-card-body">
+        <div class="config-section">
+          <div class="config-section-label">System</div>
+          <table>
+            <tbody>
+              <tr><td><strong>OS</strong></td><td>Raspbian (Debian) 13 - trixie</td></tr>
+              <tr><td><strong>Hardware</strong></td><td>Raspberry Pi 4 Model B, 8GB RAM</td></tr>
+              <tr><td><strong>TNC</strong></td><td>Kenwood TH-D75 (built-in KISS TNC over USB)</td></tr>
+              <tr><td><strong>GPS</strong></td><td>VK-162 (u-blox 7)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">KISS Interface</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Mode</strong></td><td>TNC</td></tr>
+              <tr><td><strong>Type</strong></td><td>Serial</td></tr>
+              <tr><td><strong>Serial Device</strong></td><td><code>/dev/ttyACM1</code></td></tr>
+              <tr><td><strong>Baud Rate</strong></td><td>9600</td></tr>
+            </tbody>
+          </table>
+          <p>
+            9600 baud is the speed that graywolf talks
+            to the TH-D75. See below for settings on the radio.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">GPS</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Source</strong></td><td>GPSD</td></tr>
+              <tr><td><strong>Host</strong></td><td>localhost</td></tr>
+              <tr><td><strong>Port</strong></td><td>2947</td></tr>
+            </tbody>
+          </table>
+          <p>GPSD reads from <code>/dev/ttyACM0</code>. Configure in
+          <code>/etc/default/gpsd</code>.</p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">TH-D75 Radio Setup</div>
+          <table>
+            <thead>
+              <tr><th>Menu</th><th>Name</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>505</td><td>Data Speed</td><td>1200 bps</td></tr>
+              <tr><td>506</td><td>Data Band</td><td>B Band</td></tr>
+              <tr><td>920</td><td>Battery Saver</td><td>Off</td></tr>
+              <tr><td>980</td><td>USB Function</td><td>COM+AF/IF Output</td></tr>
+              <tr><td>983</td><td>KISS</td><td>USB</td></tr>
+            </tbody>
+          </table>
+            <p>
+              Data Speed is the rate the radio transmits symbols via RF, not the baud rate
+              it speaks over USB to the Raspberry Pi.
+            </p>
+          <ol class="steps">
+            <li>Configure menu settings as above.</li>
+            <li>Tune Band B to 144.390 MHz.</li>
+            <li>Press <strong>[F]</strong> &rarr; <strong>[APRS]</strong>. Band B
+              should show <strong>KISS 12</strong>; if it shows
+              <strong>APRS</strong>, press <strong>[F]</strong> &rarr;
+              <strong>[APRS]</strong> again.</li>
+            <li>Connect the TH-D75 to the Raspberry Pi via USB cable.</li>
+          </ol>
+        </div>
+
+      </div>
+
+
+    </div>
+
+    <!-- ============================================================ -->
     <!-- Add new configurations above this line.                      -->
     <!-- Copy the Digirig Mobile section as a template and fill in    -->
     <!-- your own values. Group by device, then by OS/hardware.       -->
