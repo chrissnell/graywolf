@@ -2287,6 +2287,12 @@ export interface components {
         "dto.ChannelPtt": {
             configured?: boolean;
             detail?: string;
+            /**
+             * @description GpioPin carries the CM108 HID pin (cm108 method) and, on Android,
+             *     the PTT method int (1..4, spec Appendix B) reused as a carrier so
+             *     the channel edit modal can restore the selected method. 0 = unset.
+             */
+            gpio_pin?: number;
             method?: string;
         };
         "dto.ChannelRequest": {
