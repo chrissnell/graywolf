@@ -24,9 +24,16 @@ builds:
     goarch:
       - amd64
       - arm64
+      - arm
+    goarm:
+      - "6"
     ignore:
       - goos: windows
         goarch: arm64
+      - goos: windows
+        goarch: arm
+      - goos: darwin
+        goarch: arm
 
 archives:
   - id: graywolf
@@ -39,6 +46,7 @@ archives:
       {{- .Version }}_
       {{- if eq .Os "darwin" }}macOS{{ else }}{{ .Os }}{{ end }}_
       {{- if eq .Arch "amd64" }}x86_64
+      {{- else if and (eq .Arch "arm") (eq .Arm "6") }}armv6l
       {{- else }}{{ .Arch }}{{ end }}
     files:
       - LICENSE*

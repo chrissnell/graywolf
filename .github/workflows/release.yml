@@ -26,6 +26,11 @@ jobs:
             arch: arm64
             platform: linux
             use_cross: true
+          - os: ubuntu-latest
+            target: arm-unknown-linux-gnueabihf
+            arch: arm
+            platform: linux
+            use_cross: true
           - os: macos-15
             target: x86_64-apple-darwin
             arch: amd64
@@ -180,9 +185,10 @@ jobs:
 
       - name: Arrange Rust binaries for GoReleaser
         run: |
-          mkdir -p rust-bin/{linux_amd64,linux_arm64,darwin_amd64,darwin_arm64,windows_amd64}
+          mkdir -p rust-bin/{linux_amd64,linux_arm64,linux_arm,darwin_amd64,darwin_arm64,windows_amd64}
           cp rust-artifacts/rust-linux-amd64/graywolf-modem       rust-bin/linux_amd64/
           cp rust-artifacts/rust-linux-arm64/graywolf-modem       rust-bin/linux_arm64/
+          cp rust-artifacts/rust-linux-arm/graywolf-modem         rust-bin/linux_arm/
           cp rust-artifacts/rust-darwin-amd64/graywolf-modem      rust-bin/darwin_amd64/
           cp rust-artifacts/rust-darwin-arm64/graywolf-modem      rust-bin/darwin_arm64/
           cp rust-artifacts/rust-windows-amd64/graywolf-modem.exe rust-bin/windows_amd64/

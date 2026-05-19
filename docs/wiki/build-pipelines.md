@@ -11,6 +11,7 @@ Release pipeline definition: [`../../.goreleaser.yml`](../../.goreleaser.yml).
 | Go binary + web only (skip Rust) | `make graywolf-quick` (= `web` + `go build`) | same as above, minus `target/release/graywolf-modem` | `bin/graywolf` only; reuses existing `bin/graywolf-modem` | Manual; safe when `proto/` + `VERSION` unchanged |
 | Rust modem (native dev) | `make release` | `graywolf-modem/`, `proto/graywolf.proto`, `VERSION` | `target/release/graywolf-modem` (workspace root, not `graywolf-modem/target/`) | Manual; see [invariant 1](invariants.md) |
 | Rust modem (cross arm64) | `cross` per [`../../Cross.toml`](../../Cross.toml) | same + Docker image with aarch64 ALSA/udev libs and protoc | `target/<triple>/release/graywolf-modem` | Release CI |
+| Rust modem (cross armv6) | `cross` per [`../../Cross.toml`](../../Cross.toml) target `arm-unknown-linux-gnueabihf` | same + Docker image with armhf ALSA/udev libs and protoc | `target/arm-unknown-linux-gnueabihf/release/graywolf-modem` | Release CI; one ARMv6 build covers Pi 1, Pi 2, Pi Zero / Zero W (Pi 2 is ARMv7 but runs ARMv6 binaries) |
 | Web UI | `make web` (`npm install`, `npm run build`) | `web/src/`, `package.json`, themes, public, generated TS client | `web/dist/` (gitignored, then `go:embed` -- [invariant 12](invariants.md)) | Triggered by `make graywolf` / `make all` / `make api-client` |
 | TS API client | `make api-client` (`make docs` + `npm run api:generate`) | `pkg/webapi/docs/gen/swagger.{json,yaml}` | `web/src/api/generated/api.d.ts` (committed) | `make bump-*`; CI guard `api-client-check` |
 | Proto codegen (Go) | `make proto` (`protoc --go_out`) | [`../../proto/graywolf.proto`](../../proto/graywolf.proto) | `pkg/ipcproto/graywolf.pb.go` (committed) | Manual after proto edits |
@@ -24,7 +25,7 @@ Release pipeline definition: [`../../.goreleaser.yml`](../../.goreleaser.yml).
 | OCI image | goreleaser `dockers:` + [`../../Dockerfile.goreleaser`](../../Dockerfile.goreleaser), [`../../Dockerfile.goreleaser.arm64`](../../Dockerfile.goreleaser.arm64) | Go binary + `graywolf-modem-{amd64,arm64}` | `ghcr.io/chrissnell/graywolf:<tag>-{amd64,arm64}`, manifest list `:<tag>` and `:latest` | Tag push |
 | Arch AUR | [`../../packaging/aur/PKGBUILD`](../../packaging/aur/PKGBUILD) (pkgname `graywolf-aprs`) | github archive of the tag, `.service`, `.sysusers` | AUR (off-repo upload by maintainer) | `make bump-*` rewrites `pkgver` in `PKGBUILD` and `.SRCINFO` |
 | Windows NSIS installer | [`../../packaging/nsis/graywolf.nsi`](../../packaging/nsis/graywolf.nsi) (`makensis`) | `BINARY_PATH`, `MODEM_PATH`, `APP_VERSION`, `APP_VERSION_NUMERIC` | `graywolf_<ver>_Windows_x86_64.exe` | Manual; outside goreleaser |
-| Pre-built rust-bin (CI) | rust-build matrix in `.github/workflows/release.yml` | Per-target `cargo build --release` | `rust-bin/<os>_<arch>/graywolf-modem[.exe]`, plus top-level `graywolf-modem-{amd64,arm64}` for the docker context | Tag push |
+| Pre-built rust-bin (CI) | rust-build matrix in `.github/workflows/release.yml` | Per-target `cargo build --release` (Linux amd64, arm64, arm; macOS amd64, arm64; Windows amd64) | `rust-bin/<os>_<arch>/graywolf-modem[.exe]`, plus top-level `graywolf-modem-{amd64,arm64}` for the docker context (no 32-bit ARM docker image) | Tag push |
 
 ## CI workflows
 
