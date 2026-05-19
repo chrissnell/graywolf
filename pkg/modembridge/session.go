@@ -278,6 +278,7 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			DwaitMs:    ptt.DwaitMs,
 			GpioPin:    gpioPin,
 			GpioLine:   ptt.GpioLine,
+			PttMethod:  ptt.PttMethod,
 		}}}
 		if err := send(pmsg); err != nil {
 			return false, err

@@ -218,16 +218,16 @@ func TestChannelPttFromModel(t *testing.T) {
 	}
 }
 
-// TestChannelPttFromModel_GpioPin verifies that the GPIO pin (CM108 HID pin
-// and Android PTT method int) round-trips through the DTO so the channel edit
-// modal can restore the selected method.
-func TestChannelPttFromModel_GpioPin(t *testing.T) {
-	in := configstore.PttConfig{ChannelID: 7, Method: "android", GpioPin: 3}
+// TestChannelPttFromModel_PttMethod verifies that ptt_method round-trips
+// through the DTO so the channel edit modal can restore the selected Android
+// USB-PTT transport.
+func TestChannelPttFromModel_PttMethod(t *testing.T) {
+	in := configstore.PttConfig{ChannelID: 7, Method: "android", PttMethod: 3}
 	got := ChannelPttFromModel(in)
 	if got.Method != "android" {
 		t.Fatalf("method: got %q want android", got.Method)
 	}
-	if got.GpioPin != 3 {
-		t.Fatalf("gpio_pin: got %d want 3 (AIOC method int must round-trip to the SPA modal)", got.GpioPin)
+	if got.PttMethod != 3 {
+		t.Fatalf("ptt_method: got %d want 3 (AIOC must round-trip to the SPA modal)", got.PttMethod)
 	}
 }

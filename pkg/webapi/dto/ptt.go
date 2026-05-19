@@ -12,10 +12,12 @@ type PttRequest struct {
 	ChannelID  uint32 `json:"channel_id"`
 	Method     string `json:"method"`
 	DevicePath string `json:"device_path"`
-	// GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used
-	// by the `gpio` method, which references `gpio_line` instead to avoid
-	// indexing ambiguity between CM108 pin numbers and gpiochip line offsets.
+	// GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3).
+	// cm108 method only. The `gpio` method uses `gpio_line` instead.
 	GpioPin uint32 `json:"gpio_pin"`
+	// PttMethod is the Android USB-PTT transport (PttMethod enum 1..4)
+	// when Method=="android". Not used by desktop methods.
+	PttMethod uint32 `json:"ptt_method"`
 	// GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
 	// method. Ignored for every other method.
 	GpioLine   uint32 `json:"gpio_line"`
@@ -36,14 +38,14 @@ func (r PttRequest) Validate() error {
 	if r.ChannelID == 0 {
 		return fmt.Errorf("channel_id is required")
 	}
-	// android method requires gpio_pin in 1..4 (spec Appendix B):
+	// android method requires ptt_method in 1..4 (spec Appendix B):
 	//   1 = CP2102N_RTS, 2 = CM108_HID, 3 = AIOC_CDC_DTR, 4 = VOX
 	if r.Method == "android" {
-		switch r.GpioPin {
+		switch r.PttMethod {
 		case 1, 2, 3, 4:
 			// valid
 		default:
-			return fmt.Errorf("android ptt method requires gpio_pin in 1..4 (spec Appendix B), got %d", r.GpioPin)
+			return fmt.Errorf("android ptt method requires ptt_method in 1..4 (spec Appendix B), got %d", r.PttMethod)
 		}
 	}
 	return nil
@@ -60,6 +62,7 @@ func (r PttRequest) ToModel() configstore.PttConfig {
 		SlotTimeMs: r.SlotTimeMs,
 		Persist:    r.Persist,
 		DwaitMs:    r.DwaitMs,
+		PttMethod:  r.PttMethod,
 	}
 }
 
@@ -93,6 +96,7 @@ func PttFromModel(m configstore.PttConfig) PttResponse {
 			SlotTimeMs: m.SlotTimeMs,
 			Persist:    m.Persist,
 			DwaitMs:    m.DwaitMs,
+			PttMethod:  m.PttMethod,
 		},
 	}
 }
