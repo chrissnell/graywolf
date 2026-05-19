@@ -8429,6 +8429,10 @@
                 "detail": {
                     "type": "string"
                 },
+                "gpio_pin": {
+                    "description": "GpioPin carries the CM108 HID pin (cm108 method) and, on Android,\nthe PTT method int (1..4, spec Appendix B) reused as a carrier so\nthe channel edit modal can restore the selected method. 0 = unset.",
+                    "type": "integer"
+                },
                 "method": {
                     "type": "string"
                 }

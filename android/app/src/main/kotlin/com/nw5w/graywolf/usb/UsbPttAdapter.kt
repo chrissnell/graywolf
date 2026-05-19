@@ -22,8 +22,11 @@ import org.json.JSONObject
 
 /**
  * USB PTT adapter for POC-D. Owns the singletons that key/unkey radios via
- * USB wire toggling: CP2102N RTS for the Digirig PTT path, CM108 HID GPIO for
- * the AIOC path (and Digirig's secondary HID path).
+ * USB wire toggling: CP2102N RTS for the Digirig PTT path, CDC-ACM DTR (RTS
+ * held low) for the AIOC path, and CM108 HID GPIO for generic CM108-class
+ * hardware and Digirig's secondary HID path. (See the AIOC inline note below
+ * and POC-D results: AIOC firmware >=1.2.0 accepts HID Set_Report but does not
+ * drive the PTT GPIO; CDC-ACM is the actual PTT control path.)
  *
  * Lifecycle:
  *   GraywolfApp.onCreate    -> UsbPttAdapter.init(applicationContext)

@@ -112,6 +112,15 @@ Source: [`../../pkg/webapi/ptt.go`](../../pkg/webapi/ptt.go) (`validatePttChanne
 [`../../pkg/webapi/ptt_test.go`](../../pkg/webapi/ptt_test.go) (`TestPttRejectsKissOnlyChannel`);
 [`../../web/src/routes/Ptt.svelte`](../../web/src/routes/Ptt.svelte) (`modemChannels` filter).
 
+### 9c. Android PTT method rides in `gpio_pin`; every PTT read path must round-trip it
+
+*Why:* On Android there is no dedicated PTT-method column. The Channels modal sends `POST /api/ptt {method:"android", gpio_pin:N}` where `N` is the method int from spec Appendix B (1 = CP2102N RTS / Digirig, 2 = CM108 HID, 3 = AIOC CDC-ACM DTR, 4 = VOX). That int rides in `PttConfig.GpioPin` the whole way: configstore → `session.go` (which must NOT zero `gpio_pin` for `method=="android"` — it only zeroes it for `method=="gpio"`) → `ConfigurePtt.GpioPin` → Rust `build_driver` (`PttMethod::Android` does `let method = cfg.gpio_pin as i32`) → `AndroidPtt` → JNI → Kotlin `UsbPttAdapter.pttSet`. Therefore **any response DTO or read path that surfaces a channel's PTT must carry `gpio_pin`**. If it doesn't, the edit modal can't restore the selected method, falls back to CP2102N, and the next save of that channel POSTs `gpio_pin=1`, silently downgrading a saved AIOC/CM108 config to CP2102N (this was the `ChannelPtt`-DTO bug fixed in #149). The Kotlin doc was correspondingly wrong: AIOC keys via CDC-ACM DTR (RTS held low), not CM108 HID GPIO.
+
+Source: [`../../pkg/webapi/dto/channel.go`](../../pkg/webapi/dto/channel.go) (`ChannelPtt.GpioPin`, `ChannelPttFromModel`);
+[`../../pkg/modembridge/session.go`](../../pkg/modembridge/session.go) (`gpioPin` zeroed only for `method=="gpio"`);
+[`../../graywolf-modem/src/tx/ptt.rs`](../../graywolf-modem/src/tx/ptt.rs) (`PttMethod::Android` arm);
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt) (`pttSet`, `setAiocRts`).
+
 ### 10. Gitignored output dirs are not canonical
 
 *Why:* `target/`, `bin/`, `dist/`, `rust-bin/`, `rust-artifacts/`, `web/dist/`, `.worktrees/`, `.context/`, `*.db*` regenerate from sources and are gitignored, so never reference them as authoritative.

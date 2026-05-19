@@ -136,6 +136,10 @@ type ChannelPtt struct {
 	Method     string `json:"method"`
 	Configured bool   `json:"configured"`
 	Detail     string `json:"detail,omitempty"`
+	// GpioPin carries the CM108 HID pin (cm108 method) and, on Android,
+	// the PTT method int (1..4, spec Appendix B) reused as a carrier so
+	// the channel edit modal can restore the selected method. 0 = unset.
+	GpioPin uint32 `json:"gpio_pin,omitempty"`
 }
 
 // ChannelBacking describes the runtime backing — modem and/or KISS-TNC
@@ -258,6 +262,7 @@ func ChannelPttFromModel(p configstore.PttConfig) ChannelPtt {
 		Method:     method,
 		Configured: method != PttMethodNone,
 		Detail:     pttDetail(p, method),
+		GpioPin:    p.GpioPin,
 	}
 }
 
