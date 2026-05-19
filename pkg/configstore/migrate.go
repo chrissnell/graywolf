@@ -176,6 +176,17 @@ type migration struct {
 //	    would double-transmit every frame (the dual-backend case the
 //	    store validator forbids). Idempotent and post-AutoMigrate
 //	    (needs the kiss_interfaces and channels tables present).
+//	21 — audio_devices_clamp_sample_rate: clamp sample_rate to 48000
+//	    for audio_devices rows that were auto-filled with an inflated
+//	    ALSA advertised rate (up to 192 kHz) that caused the modem to
+//	    clock bit timing against the wrong rate and drop every frame.
+//	22 — ptt_android_method_field: move the Android PTT transport int
+//	    out of the overloaded gpio_pin field into the new ptt_method
+//	    column. method='android' rows with gpio_pin 1..4 get
+//	    ptt_method=gpio_pin and gpio_pin zeroed; malformed rows
+//	    (gpio_pin outside 1..4) coerce to ptt_method=1
+//	    (PTT_METHOD_CP2102N_RTS). Non-android rows are untouched.
+//	    Idempotent via the ptt_method=0 guard.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -198,6 +209,7 @@ var schemaMigrations = []migration{
 	{version: 19, name: "actions_max_reply_lines", phase: postAutoMigrate, run: migrateActionsMaxReplyLines},
 	{version: 20, name: "kiss_tcp_client_tx_default", phase: postAutoMigrate, run: migrateKissTcpClientTxDefault},
 	{version: 21, name: "audio_devices_clamp_sample_rate", phase: postAutoMigrate, run: migrateClampAudioSampleRate},
+	{version: 22, name: "ptt_android_method_field", phase: postAutoMigrate, run: migratePttAndroidMethodField},
 }
 
 // runMigrations applies every pending migration in the given phase,
