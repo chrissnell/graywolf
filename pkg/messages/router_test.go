@@ -280,6 +280,9 @@ func TestRouterDMInboundForOurCallPersistsAndAutoACKs(t *testing.T) {
 		ms, _, _ := store.List(context.Background(), Filter{})
 		return len(ms) == 1
 	}, "row persisted")
+	waitFor(t, time.Second, func() bool {
+		return len(sink.list()) >= 1
+	}, "auto-ACK submitted")
 
 	ms, _, _ := store.List(context.Background(), Filter{})
 	if ms[0].FromCall != "W1ABC-9" {
@@ -330,6 +333,9 @@ func TestRouterDMInboundForOurCallWithSSID(t *testing.T) {
 		ms, _, _ := store.List(context.Background(), Filter{})
 		return len(ms) == 1
 	}, "row persisted")
+	waitFor(t, time.Second, func() bool {
+		return len(sink.list()) >= 1
+	}, "auto-ACK submitted")
 
 	if got := len(sink.list()); got != 1 {
 		t.Fatalf("auto-ACK count = %d", got)
