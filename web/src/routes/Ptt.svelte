@@ -180,9 +180,9 @@
     }
   }
 
-  function handleDeviceSave(device) {
+  function handleDeviceSave(payload) {
     dialogDeviceOpen = false;
-    void persistFromDialogs({ device });
+    void persistFromDialogs(payload);
   }
 
   function handleDeviceBack() {
@@ -190,17 +190,17 @@
     dialogMethodOpen = true;
   }
 
-  async function persistFromDialogs({ device }) {
+  async function persistFromDialogs(payload) {
     if (!dialogContext) return;
     const m = dialogMethodChosen;
     if (!m) return;
     const body = {
       channel_id: dialogContext.channelId,
       method: m.wire.method,
-      device_path: device?.path || '',
-      gpio_pin: 0,
-      gpio_line: 0,
-      invert: false,
+      device_path: payload?.device?.path || '',
+      gpio_pin: payload?.gpio_pin ?? 0,
+      gpio_line: payload?.gpio_line ?? 0,
+      invert: !!payload?.invert,
     };
     if (m.wire.ppt_method != null) body.ppt_method = m.wire.ppt_method;
     try {
@@ -378,6 +378,9 @@
   method={dialogMethodChosen}
   {deviceSource}
   initialDevicePath={dialogContext?.item?.device_path || null}
+  initialGpioLine={dialogContext?.item?.gpio_line ?? 0}
+  initialGpioPin={dialogContext?.item?.gpio_pin ?? 3}
+  initialInvert={dialogContext?.item?.invert || false}
   onSave={handleDeviceSave}
   onBack={handleDeviceBack}
   onCancel={() => { dialogDeviceOpen = false; dialogContext = null; }}
