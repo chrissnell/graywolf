@@ -105,12 +105,14 @@
   />
   {#if isRigctld}
     <div class="rigctld-extras">
-      <FormField label="rigctld Hostname" id="dlg-rigctld-host">
-        <Input id="dlg-rigctld-host" bind:value={rigctldHost} placeholder="localhost" />
-      </FormField>
-      <FormField label="rigctld Port" id="dlg-rigctld-port">
-        <Input id="dlg-rigctld-port" type="number" min={1} max={65535} bind:value={rigctldPort} />
-      </FormField>
+      <div class="rigctld-fields">
+        <FormField label="rigctld Hostname" id="dlg-rigctld-host">
+          <Input id="dlg-rigctld-host" bind:value={rigctldHost} placeholder="localhost" />
+        </FormField>
+        <FormField label="rigctld Port" id="dlg-rigctld-port">
+          <Input id="dlg-rigctld-port" type="number" min={1} max={65535} bind:value={rigctldPort} />
+        </FormField>
+      </div>
       <div class="rigctld-test-row">
         <Button onclick={testConnection} disabled={!hostValid || !portValid || testState.kind === 'testing'}>
           {#if testState.kind === 'testing'}Testing…{:else}Test Connection{/if}
@@ -135,8 +137,9 @@
 
 <style>
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-  .rigctld-extras { display: flex; gap: 8px; margin-top: 12px; }
-  .rigctld-extras :global(.form-field) { flex: 1; }
+  .rigctld-extras { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .rigctld-fields { display: flex; gap: 8px; }
+  .rigctld-fields :global(.form-field) { flex: 1; }
   .rigctld-test-row { display: flex; justify-content: flex-end; margin-top: 8px; }
   .rigctld-result { margin-top: 6px; font-size: 13px; }
   .rigctld-badge { padding: 2px 8px; border-radius: 4px; }
