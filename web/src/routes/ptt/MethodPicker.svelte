@@ -17,7 +17,8 @@
   // Each `methods` entry has shape:
   //   { wire: { method, ppt_method? }, label, meta, deviceClass? }
   // `wire` is what eventually goes onto the /api/ptt POST body.
-  import { key } from './MethodPicker.svelte';
+  // `key()` is defined in the <script module> block above and is directly
+  // accessible to this instance script — no import required.
 
   let {
     methods,           // array of method-option objects

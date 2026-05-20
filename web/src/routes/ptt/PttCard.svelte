@@ -6,7 +6,8 @@
     item,
     channelName,
     methodLabel,
-    onEdit,
+    onChangeMethod,
+    onChangeDevice,
     onDelete,
   } = $props();
 
@@ -52,7 +53,8 @@
     {/if}
   </div>
   <div class="device-actions">
-    <Button variant="ghost" onclick={() => onEdit(item)}>Edit</Button>
+    <Button variant="ghost" onclick={() => onChangeMethod(item)}>Change Method ›</Button>
+    <Button variant="ghost" onclick={() => onChangeDevice(item)}>Change Device ›</Button>
     <Button variant="danger" onclick={() => onDelete(item)}>Delete</Button>
   </div>
 </div>
