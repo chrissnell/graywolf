@@ -62,7 +62,7 @@ class WebAppInterface(
      */
     @JavascriptInterface
     fun requestUsbPermission(vid: Int, pid: Int, callbackId: String) {
-        if (!CALLBACK_ID_RE.matches(callbackId)) {
+        if (!WebBridgeIds.CALLBACK_ID_RE.matches(callbackId)) {
             Log.w(TAG, "rejected invalid callbackId: $callbackId")
             return
         }
@@ -93,7 +93,7 @@ class WebAppInterface(
      */
     @JavascriptInterface
     fun requestBluetoothPermission(callbackId: String) {
-        if (!CALLBACK_ID_RE.matches(callbackId)) {
+        if (!WebBridgeIds.CALLBACK_ID_RE.matches(callbackId)) {
             Log.w(TAG, "rejected invalid bt callbackId: $callbackId")
             return
         }
@@ -102,6 +102,5 @@ class WebAppInterface(
 
     companion object {
         private const val TAG = "WebAppInterface"
-        private val CALLBACK_ID_RE = Regex("^[A-Za-z0-9_-]+$")
     }
 }
