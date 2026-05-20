@@ -1,6 +1,7 @@
 <!-- web/src/routes/ptt/PttCard.svelte -->
 <script>
   import { Button, Badge } from '@chrissnell/chonky-ui';
+  import { postChannelPtt } from '../../lib/api.js';
 
   let {
     item,
@@ -10,6 +11,25 @@
     onChangeDevice,
     onDelete,
   } = $props();
+
+  let testing = $state(false);
+
+  async function testPtt() {
+    if (!item.channel_id || testing) return;
+    testing = true;
+    try {
+      await postChannelPtt(item.channel_id, true);
+      // Hold for ~1s, then unkey. Single shot — no heartbeat.
+      await new Promise(r => setTimeout(r, 1000));
+      await postChannelPtt(item.channel_id, false);
+    } catch (err) {
+      console.error('Test PTT failed:', err);
+      // Best-effort unkey on error
+      try { await postChannelPtt(item.channel_id, false); } catch { /* ignore */ }
+    } finally {
+      testing = false;
+    }
+  }
 
   function truncatePath(p, max = 40) {
     if (!p || p.length <= max) return p || '—';
@@ -56,6 +76,11 @@
     <Button variant="ghost" onclick={() => onChangeMethod(item)}>Change Method ›</Button>
     <Button variant="ghost" onclick={() => onChangeDevice(item)}>Change Device ›</Button>
     <Button variant="danger" onclick={() => onDelete(item)}>Delete</Button>
+  </div>
+  <div class="device-footer">
+    <Button disabled={testing || item.method === 'none'} onclick={testPtt}>
+      {testing ? 'Keying…' : 'Test PTT (1s)'}
+    </Button>
   </div>
 </div>
 
@@ -125,6 +150,13 @@
     justify-content: flex-end;
     margin-top: 12px;
     padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+  }
+  .device-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+    padding-top: 6px;
     border-top: 1px solid var(--border-color);
   }
 </style>
