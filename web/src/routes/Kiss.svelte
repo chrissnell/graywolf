@@ -186,6 +186,12 @@
     clockTimer = setInterval(() => {
       clockTick = (clockTick + 1) % CLOCK_TICK_MOD;
     }, CLOCK_TICK_MS);
+    // Pre-warm the bonded list on Android so the table can show
+    // friendly names for Bluetooth rows immediately on first paint.
+    // Uses a silent fetch — if it fails we just fall back to bare
+    // MACs in the table, and the operator will see the real error
+    // when they open the modal and trigger the lazy loader there.
+    if (Platform.isAndroid) prewarmBondedDevices();
   });
 
   onDestroy(() => {
@@ -275,6 +281,19 @@
     }
   }
 
+  // Silent background fetch used only to pre-populate friendly names
+  // in the table. Failures are intentionally not surfaced — the modal
+  // path (loadBondedDevices) is the one that reports errors to the
+  // operator when it's actionable.
+  async function prewarmBondedDevices() {
+    try {
+      const resp = await kissBt.bondedDevices();
+      if (Array.isArray(resp?.devices)) bondedDevices = resp.devices;
+    } catch {
+      /* swallow — falls back to bare MACs in the table */
+    }
+  }
+
   // Auto-fill a friendly slug name when the operator picks a bonded
   // device. Only overwrites empty names or names that look like a
   // previous auto-fill (kiss-bt-*) so manually-named interfaces are
@@ -357,6 +376,36 @@
     commitSave();
   }
 
+  // labelForType maps the stored interface-type discriminator to the
+  // operator-facing label. The tcp-client relabel to "Network" on
+  // Android mirrors typeOptions so the modal and the table stay in
+  // sync. Falls through to the raw type for forward-compat with any
+  // server-side type we don't recognize yet.
+  function labelForType(t) {
+    switch (t) {
+      case 'tcp':        return 'TCP (server)';
+      case 'tcp-client': return Platform.isAndroid ? 'Network' : 'TCP Client';
+      case 'serial':     return 'Serial';
+      case 'bluetooth':  return 'Bluetooth Serial';
+      default:           return t;
+    }
+  }
+
+  // friendlyDevice returns a human-readable endpoint string for the
+  // interface row. For bluetooth rows we cross-reference the cached
+  // bondedDevices list (populated when the modal was open) so the
+  // operator sees "Mobilinkd TNC3 (AA:BB:...)" instead of a bare MAC.
+  // Falls back to the bare device id when we don't have a name yet
+  // (e.g. table rendered before the modal has ever been opened).
+  function friendlyDevice(iface) {
+    const dev = iface.device || iface.serial_device || '';
+    if (iface.type !== 'bluetooth') return dev;
+    const match = bondedDevices.find(
+      (d) => d.mac === iface.device || d.mac === iface.serial_device,
+    );
+    return match ? `${match.name} (${dev})` : dev;
+  }
+
   function describeRow(row) {
     const mode = modeLabels[row.mode] || 'Modem';
     if (row.type === 'tcp') return `TCP server on port ${row.tcp_port}, ${mode}`;
@@ -365,6 +414,10 @@
       const dev = (row.serial_device || '').trim();
       return dev ? `serial ${dev}, ${mode}` : `serial, ${mode}`;
     }
+    if (row.type === 'bluetooth') {
+      const dev = friendlyDevice(row);
+      return dev ? `bluetooth ${dev}, ${mode}` : `bluetooth, ${mode}`;
+    }
     return `#${row.id}, ${mode}`;
   }
 
@@ -372,6 +425,7 @@
     if (row.type === 'tcp') return `:${row.tcp_port}`;
     if (row.type === 'tcp-client') return `${row.remote_host}:${row.remote_port}`;
     if (row.type === 'serial') return row.serial_device || '—';
+    if (row.type === 'bluetooth') return friendlyDevice(row) || '—';
     return '—';
   }
 
@@ -467,11 +521,13 @@
 
 {#snippet typeCell(value, _row)}
   {#if value === 'tcp-client'}
-    <Badge variant="info">TCP Client</Badge>
+    <Badge variant="info">{labelForType(value)}</Badge>
   {:else if value === 'tcp'}
     <Badge>TCP Server</Badge>
+  {:else if value === 'bluetooth'}
+    <Badge variant="info">{labelForType(value)}</Badge>
   {:else if value === 'serial'}
-    <Badge>Serial</Badge>
+    <Badge>{labelForType(value)}</Badge>
   {:else}
     <Badge>{value || '—'}</Badge>
   {/if}
@@ -516,6 +572,8 @@
           {/if}
         {:else if row.type === 'tcp'}
           <div class="detail-row"><span class="detail-label">Listening:</span> <span>:{row.tcp_port}</span></div>
+        {:else if row.type === 'bluetooth'}
+          <div class="detail-row"><span class="detail-label">Device:</span> <span>{friendlyDevice(row) || '—'}</span></div>
         {:else}
           <div class="detail-row"><span class="detail-label">Device:</span> <span>{row.serial_device || '—'}</span></div>
         {/if}
