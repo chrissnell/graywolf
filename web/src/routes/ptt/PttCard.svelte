@@ -62,9 +62,8 @@
   .device-card {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 14px 16px;
-    background: var(--bg-surface, #fff);
+    padding: 16px;
+    background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
   }
@@ -72,35 +71,46 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    margin-bottom: 12px;
+    gap: 8px;
   }
   .device-name {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 15px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .device-badges {
     display: flex;
     gap: 4px;
+    flex-shrink: 0;
   }
   .device-details {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    font-size: 13px;
+    gap: 6px;
+    flex: 1;
   }
   .detail-row {
     display: flex;
     justify-content: space-between;
+    font-size: 13px;
     gap: 12px;
   }
   .detail-label {
-    color: var(--text-secondary, #555);
-    font-weight: 500;
+    color: var(--text-secondary);
+    flex-shrink: 0;
   }
   .detail-value {
-    color: var(--text-primary, #111);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    text-align: right;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .detail-value.muted {
     color: var(--text-muted);
@@ -109,7 +119,10 @@
   }
   .device-actions {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
   }
 </style>
