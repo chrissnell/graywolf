@@ -7,6 +7,30 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.6"
+  date: "2026-05-19"
+  style: cta
+  schema_version: 1
+  title: "Android: connect to a KISS TNC over Bluetooth"
+  link: "#/kiss"
+  body: |
+    On Android tablets, you can now attach a Bluetooth-paired KISS TNC,
+    such as a Mobilinkd TNC3 or TNC4 or a Kenwood TH-D74 or D75, as a
+    KISS interface. Pair the TNC in Android Settings under Bluetooth
+    first, then in Graywolf go to the KISS page, click Add KISS
+    Interface, pick Bluetooth as the type, and choose your TNC from the
+    bonded device list.
+
+    The first time you open that list, Graywolf asks for permission to
+    see your paired Bluetooth devices. Grant it so the list can load.
+
+    There is no baud rate to set, since Bluetooth radio links do not
+    have one. The interface card shows the TNC name and address, and
+    flips to Connected when the TNC is in range and ready.
+
+    Desktop installs are unchanged. The new Bluetooth interface type
+    only appears on the Android tablet build.
+
 - version: "0.13.5"
   date: "2026-05-17"
   style: info
