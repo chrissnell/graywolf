@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.Manifest
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -48,6 +49,42 @@ class GraywolfService : Service() {
             if (intent.action == ACTION_STOP) {
                 Log.i(TAG, "stop action received; shutting down")
                 stopSelf()
+            }
+        }
+    }
+
+    /**
+     * ACTION_BOND_STATE_CHANGED listener: tears down any open RFCOMM
+     * sockets to a now-unpaired device, and refreshes the bonded list on
+     * the Go side when a new pairing completes. The system broadcasts
+     * this intent without requiring BLUETOOTH_CONNECT to receive (the
+     * permission is only needed for direct API reads).
+     */
+    private val bondReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+            val device: BluetoothDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+            }
+            val mac = device?.address ?: return
+            val newState = intent.getIntExtra(
+                BluetoothDevice.EXTRA_BOND_STATE,
+                BluetoothDevice.ERROR,
+            )
+            val adapter = btSerialAdapter ?: return
+            when (newState) {
+                BluetoothDevice.BOND_NONE -> {
+                    Log.i(TAG, "bond lost mac=$mac; closing any open RFCOMM handles")
+                    adapter.onBondLost(mac)
+                }
+                BluetoothDevice.BOND_BONDED -> {
+                    Log.i(TAG, "bonded mac=$mac; pushing refreshed bonded list")
+                    adapter.handleBondedRequest()
+                }
+                else -> { /* BOND_BONDING or other transient -- ignore */ }
             }
         }
     }
@@ -154,9 +191,19 @@ class GraywolfService : Service() {
                 IntentFilter(ACTION_STOP),
                 Context.RECEIVER_NOT_EXPORTED,
             )
+            registerReceiver(
+                bondReceiver,
+                IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
+                Context.RECEIVER_NOT_EXPORTED,
+            )
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(stopReceiver, IntentFilter(ACTION_STOP))
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(
+                bondReceiver,
+                IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
+            )
         }
         val stopIntent = Intent(ACTION_STOP).setPackage(packageName)
         val stopPending = PendingIntent.getBroadcast(
@@ -286,6 +333,9 @@ class GraywolfService : Service() {
         ModemBridge.modemStop()
         try {
             unregisterReceiver(stopReceiver)
+        } catch (_: IllegalArgumentException) { /* idempotent */ }
+        try {
+            unregisterReceiver(bondReceiver)
         } catch (_: IllegalArgumentException) { /* idempotent */ }
         super.onDestroy()
     }
