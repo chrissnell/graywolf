@@ -358,7 +358,7 @@
     if (!Platform.isAndroid) return;
     if (!globalThis.GraywolfWebInterface?.requestBluetoothPermission) return;
     // Prefix guarantees a non-empty alphanumeric id even if Math.random()
-    // returns 0 — matches the existing USB-grant pattern in AndroidPttFields.
+    // returns 0 — same callback-id pattern the Android USB-grant flow uses.
     const callbackId = 'bt-' + Math.random().toString(36).slice(2);
     const prev = globalThis.__btResult;
     globalThis.__btResult = (id, granted) => {
