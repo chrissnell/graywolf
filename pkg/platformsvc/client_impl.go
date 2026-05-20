@@ -25,6 +25,12 @@ type clientImpl struct {
 	closed  atomic.Bool
 	closeCh chan struct{}
 
+	// writeMu serializes writeFrame calls on c.conn. The frame format is
+	// [4-byte length][payload], split across two Write calls in writeFrame,
+	// so concurrent writers (roundTrip + async BtSerial write pump) would
+	// interleave header and body bytes without this guard.
+	writeMu sync.Mutex
+
 	subsMu         sync.Mutex
 	gpsFixSubs     []chan<- *GpsFix
 	gnssStatusSubs []chan<- *GnssStatusUpdate
@@ -34,6 +40,14 @@ type clientImpl struct {
 	// has no request_id field, so we serialize requests through requestMu.
 	requestMu sync.Mutex
 	respCh    chan *pb.PlatformMessage // re-set per request
+
+	// Multiplexed Bluetooth serial handles. Each open BtSerial stream gets
+	// a unique uint32 handle (atomic-allocated via btHandleCounter) and a
+	// dedicated inbound channel that the dispatch loop fans data/close/
+	// error frames into. btHandles is lazily allocated on first use.
+	btHandlesMu     sync.Mutex
+	btHandles       map[uint32]chan *pb.PlatformMessage
+	btHandleCounter uint32
 }
 
 func newClient(socketPath string) Client {
@@ -165,6 +179,14 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 			default:
 			}
 		}
+	case *pb.PlatformMessage_SerialOpenAck:
+		c.deliverBtHandle(b.SerialOpenAck.GetHandle(), msg)
+	case *pb.PlatformMessage_SerialData:
+		c.deliverBtHandle(b.SerialData.GetHandle(), msg)
+	case *pb.PlatformMessage_SerialClose:
+		c.deliverBtHandle(b.SerialClose.GetHandle(), msg)
+	case *pb.PlatformMessage_SerialError:
+		c.deliverBtHandle(b.SerialError.GetHandle(), msg)
 	default:
 		// Response to an in-flight request. We only forward when the
 		// oneof body matches a request type we actually issue from
@@ -244,8 +266,11 @@ func (c *clientImpl) roundTrip(ctx context.Context, req *pb.PlatformMessage) (*p
 		return nil, errors.New("platformsvc: not connected")
 	}
 
-	if err := writeFrame(conn, req); err != nil {
-		return nil, fmt.Errorf("write: %w", err)
+	c.writeMu.Lock()
+	werr := writeFrame(conn, req)
+	c.writeMu.Unlock()
+	if werr != nil {
+		return nil, fmt.Errorf("write: %w", werr)
 	}
 	select {
 	case resp, ok := <-respCh:
@@ -261,6 +286,72 @@ func (c *clientImpl) roundTrip(ctx context.Context, req *pb.PlatformMessage) (*p
 		return nil, ctx.Err()
 	case <-c.closeCh:
 		return nil, ErrClosed
+	}
+}
+
+// send marshals and writes msg to the current connection without waiting
+// for a response. Used by async paths (BtSerial Write/Close) that do not
+// fit roundTrip's strict-ordered request/response model. writeMu serializes
+// frame writes so the 4-byte header and payload stay contiguous.
+func (c *clientImpl) send(msg *pb.PlatformMessage) error {
+	if c.closed.Load() {
+		return ErrClosed
+	}
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return errors.New("platformsvc: not connected")
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return writeFrame(conn, msg)
+}
+
+// nextBtHandle allocates a fresh non-zero handle ID for a new BtSerial
+// stream. The first allocated handle is 1; handles never repeat within a
+// client lifetime (uint32 wraparound is not a practical concern).
+func (c *clientImpl) nextBtHandle() uint32 {
+	return atomic.AddUint32(&c.btHandleCounter, 1)
+}
+
+// registerBtHandle creates a buffered inbound channel and records it under
+// btHandlesMu. Returns the channel for the caller to read from.
+func (c *clientImpl) registerBtHandle(handle uint32) chan *pb.PlatformMessage {
+	ch := make(chan *pb.PlatformMessage, 256)
+	c.btHandlesMu.Lock()
+	if c.btHandles == nil {
+		c.btHandles = make(map[uint32]chan *pb.PlatformMessage)
+	}
+	c.btHandles[handle] = ch
+	c.btHandlesMu.Unlock()
+	return ch
+}
+
+// removeBtHandle removes the inbound channel for handle. Idempotent; safe
+// to call multiple times. Does not close the channel — the caller is
+// responsible for any reader synchronization (e.g. via a separate done
+// signal).
+func (c *clientImpl) removeBtHandle(handle uint32) {
+	c.btHandlesMu.Lock()
+	delete(c.btHandles, handle)
+	c.btHandlesMu.Unlock()
+}
+
+// deliverBtHandle fans an incoming BT serial frame (Ack/Data/Close/Error)
+// to the per-handle channel. Non-blocking: if the channel is full the
+// frame is dropped. The 256-frame buffer makes this rare under normal
+// load; a sustained overflow indicates a stalled reader.
+func (c *clientImpl) deliverBtHandle(handle uint32, msg *pb.PlatformMessage) {
+	c.btHandlesMu.Lock()
+	ch := c.btHandles[handle]
+	c.btHandlesMu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- msg:
+	default:
 	}
 }
 
