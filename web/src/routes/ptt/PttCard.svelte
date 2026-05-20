@@ -46,6 +46,9 @@
   </div>
 
   <dl class="device-details">
+    <dt>Method</dt>
+    <dd class="value-text">{methodLabel}</dd>
+
     {#if item.method !== 'none'}
       <dt>Device</dt>
       <dd title={item.device_path}>{truncatePath(item.device_path)}</dd>
@@ -64,20 +67,27 @@
     {/if}
   </dl>
 
-  <div class="device-test">
-    <Button
-      variant="primary"
+  <div class="device-primary-actions">
+    <Button variant="primary" onclick={() => onChangeMethod(item)}>Change Method</Button>
+    <Button variant="primary" onclick={() => onChangeDevice(item)}>Change Device</Button>
+  </div>
+
+  <div class="device-secondary-actions">
+    <button
+      type="button"
+      class="link-button"
       disabled={testing || item.method === 'none'}
       onclick={testPtt}
     >
-      {testing ? 'Keying…' : 'Test PTT (1 sec)'}
-    </Button>
-  </div>
-
-  <div class="device-actions">
-    <Button size="sm" onclick={() => onChangeMethod(item)}>Change Method</Button>
-    <Button size="sm" onclick={() => onChangeDevice(item)}>Change Device</Button>
-    <Button size="sm" variant="danger" onclick={() => onDelete(item)}>Delete</Button>
+      {testing ? 'Keying…' : 'Test PTT (1s)'}
+    </button>
+    <button
+      type="button"
+      class="link-button link-button-danger"
+      onclick={() => onDelete(item)}
+    >
+      Delete
+    </button>
   </div>
 </div>
 
@@ -114,7 +124,7 @@
     grid-template-columns: auto 1fr;
     column-gap: 16px;
     row-gap: 6px;
-    margin: 0 0 14px;
+    margin: 0 0 16px;
     font-size: 13px;
   }
   .device-details dt {
@@ -131,6 +141,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .device-details dd.value-text {
+    font-family: inherit;
+  }
   .device-details dd.muted {
     color: var(--text-muted);
     font-style: italic;
@@ -138,19 +151,44 @@
     text-align: left;
   }
 
-  .device-test {
-    margin-bottom: 12px;
+  .device-primary-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
   }
-  .device-test :global(.btn) {
+  .device-primary-actions :global(.btn) {
     width: 100%;
     justify-content: center;
   }
 
-  .device-actions {
+  .device-secondary-actions {
     display: flex;
-    gap: 8px;
+    justify-content: space-between;
+    align-items: center;
   }
-  .device-actions :global(.btn) {
-    flex: 1;
+  .link-button {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 4px 0;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .link-button:hover:not(:disabled) {
+    color: var(--text-primary);
+    text-decoration: underline;
+  }
+  .link-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .link-button-danger {
+    color: var(--color-danger, #b91c1c);
+  }
+  .link-button-danger:hover:not(:disabled) {
+    color: var(--color-danger, #b91c1c);
   }
 </style>

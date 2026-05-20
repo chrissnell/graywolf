@@ -413,7 +413,6 @@
     <section class="detected-section detected-others" style="margin-top: 44px;">
       <header class="detected-heading">
         <h3 class="detected-title detected-title-muted">Other detected devices</h3>
-        <p class="detected-subtitle">Listed for completeness. Pick one only if you know it's correct for your adapter.</p>
       </header>
       <div class="avail-grid avail-grid-compact">
         {#each otherDevices as dev}
