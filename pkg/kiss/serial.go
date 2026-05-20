@@ -22,6 +22,11 @@ import (
 	"go.bug.st/serial"
 )
 
+// OpenFunc is the type of SerialConfig.OpenFunc. Exported so build-tagged
+// factories in other packages can return it without duplicating the
+// signature.
+type OpenFunc = func(device string, baud uint32) (io.ReadWriteCloser, error)
+
 // SerialConfig mirrors the ClientConfig supervisor-knob surface for a
 // serial KISS transport. Sink / RxIngress / InterfaceID /
 // OnDecodeError / OnFrameIngress / Clock are deliberately NOT here:
