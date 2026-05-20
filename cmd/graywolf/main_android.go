@@ -24,7 +24,11 @@ import (
 	"github.com/chrissnell/graywolf/pkg/platformsvc"
 )
 
-const platformSchemaVersion = 1
+// platformSchemaVersion mirrors the pkg/platformsvc package constant so
+// the wire-schema version is a single source of truth across the Go
+// binary and the Kotlin PlatformServer. Drift between this and Kotlin's
+// `schemaVersion` is caught by pkg/platformsvc/schema_version_test.go.
+const platformSchemaVersion = platformsvc.SchemaVersion
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
