@@ -6,6 +6,9 @@ import android.util.Log
 import com.nw5w.graywolf.platformproto.GnssStatusUpdate
 import com.nw5w.graywolf.platformproto.GpsFix
 import com.nw5w.graywolf.platformproto.PlatformMessage
+import com.nw5w.graywolf.platformproto.UsbClass
+import com.nw5w.graywolf.platformproto.UsbDevice as ProtoUsbDevice
+import com.nw5w.graywolf.platformproto.UsbDeviceListResponse
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
@@ -50,6 +53,19 @@ class PlatformServer(
      */
     fun attachBtAdapter(adapter: BtSerialAdapter) {
         btSerialAdapter = adapter
+    }
+
+    @Volatile private var usbDeviceLister: ((UsbClass) -> List<ProtoUsbDevice>)? = null
+
+    /**
+     * Attach the USB enumeration provider. The lambda receives the
+     * class_filter from each UsbDeviceListRequest and must return the
+     * matching list of ProtoUsbDevice. Wired this way (vs. holding an
+     * Android Context here) so PlatformServer stays Android-injection-free
+     * and unit-testable. Safe to call at most once during onCreate.
+     */
+    fun attachUsbDeviceLister(lister: (UsbClass) -> List<ProtoUsbDevice>) {
+        usbDeviceLister = lister
     }
 
     fun subscribeGpsFix(cb: (GpsFix) -> Unit) {
@@ -222,6 +238,31 @@ class PlatformServer(
                             Log.d(TAG, "BONDED_BT_DEVICES_REQUEST with no BtSerialAdapter attached; dropping")
                         } else {
                             adapter.handleBondedRequest()
+                        }
+                        continue
+                    }
+                    PlatformMessage.BodyCase.USB_LIST_REQ -> {
+                        val lister = usbDeviceLister
+                        val devices = if (lister != null) {
+                            try { lister(req.usbListReq.classFilter) } catch (e: Throwable) {
+                                Log.w(TAG, "usbDeviceLister threw; replying empty", e)
+                                emptyList()
+                            }
+                        } else {
+                            Log.d(TAG, "USB_LIST_REQ with no usbDeviceLister attached; replying empty")
+                            emptyList()
+                        }
+                        val resp = PlatformMessage.newBuilder()
+                            .setUsbListResp(
+                                UsbDeviceListResponse.newBuilder()
+                                    .addAllDevices(devices)
+                                    .build()
+                            )
+                            .build()
+                        try {
+                            synchronized(out) { WireCodec.writeFrame(out, resp) }
+                        } catch (_: IOException) {
+                            // serveClient will tear down on next read failure
                         }
                         continue
                     }
