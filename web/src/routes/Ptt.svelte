@@ -158,6 +158,50 @@
     dialogMethodOpen = true;
   }
 
+  function methodOptionForDevice(dev) {
+    if (isAndroid) {
+      // Map server-side type to Android method-option.
+      const byType = {
+        'usb-cp2102n': 1, // CP2102N RTS
+        'usb-cdc-acm': 3, // AIOC CDC-ACM DTR
+        'usb-hid':     2, // CM108 HID
+      };
+      const ppt = byType[dev.type];
+      if (ppt == null) return null;
+      return methodOptionsForPlatform.find(m =>
+        m.wire.method === 'android' && m.wire.ppt_method === ppt
+      );
+    }
+    // Desktop: map by AvailableDevice.type → method-options entry.
+    const byType = { 'serial': 'serial_rts', 'gpio': 'gpio', 'cm108': 'cm108' };
+    const w = byType[dev.type];
+    if (!w) return null;
+    return methodOptionsForPlatform.find(m => m.wire.method === w);
+  }
+
+  function configureFromDetected(dev) {
+    if (channels.length === 0) {
+      toasts.error('Create a channel first on the Channels page');
+      return;
+    }
+    if (channelsNeedingPttList.length === 0) {
+      toasts.error('Every modem-backed channel already has a PTT configuration.');
+      return;
+    }
+    const m = methodOptionForDevice(dev);
+    dialogContext = { kind: 'add', channelId: channelsNeedingPttList[0].id, item: { device_path: dev.path } };
+    if (m && dev.recommended) {
+      // Recommended: skip Dialog A, jump straight into Dialog B with
+      // method + device preselected.
+      dialogMethodChosen = m;
+      dialogDeviceOpen = true;
+    } else {
+      // Other / unknown: open Dialog A so the operator picks a method.
+      dialogMethodChosen = m || null;
+      dialogMethodOpen = true;
+    }
+  }
+
   function openChangeMethod(item) {
     dialogContext = { kind: 'edit', channelId: item.channel_id, item };
     dialogMethodChosen = methodOptionsForPlatform.find(m =>
@@ -347,7 +391,7 @@
       </header>
       <div class="avail-grid avail-grid-prominent">
         {#each recommendedDevices as dev}
-          <button class="avail-card avail-card-recommended" onclick={openAddPtt}>
+          <button class="avail-card avail-card-recommended" onclick={() => configureFromDetected(dev)}>
             <div class="avail-header">
               <strong class="avail-name">{dev.description || dev.name}</strong>
               <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
@@ -373,7 +417,7 @@
       </header>
       <div class="avail-grid avail-grid-compact">
         {#each otherDevices as dev}
-          <button class="avail-card avail-card-muted" onclick={openAddPtt}>
+          <button class="avail-card avail-card-muted" onclick={() => configureFromDetected(dev)}>
             <div class="avail-header">
               <strong class="avail-name">{dev.description || dev.name}</strong>
               <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
