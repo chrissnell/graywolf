@@ -93,9 +93,10 @@ func TestKissFromModel_AllowTxFromGovernor_Roundtrip(t *testing.T) {
 	}
 }
 
-// TestKissRequest_Validate_BaudRate verifies that a serial/bluetooth
-// interface with baud_rate == 0 is rejected, a valid baud_rate is
-// accepted, and non-serial types are unaffected by the baud_rate check.
+// TestKissRequest_Validate_BaudRate verifies that a serial interface
+// with baud_rate == 0 is rejected, a valid baud_rate is accepted, and
+// non-serial types — including bluetooth/RFCOMM, which has no baud —
+// are unaffected by the baud_rate check.
 func TestKissRequest_Validate_BaudRate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -107,12 +108,18 @@ func TestKissRequest_Validate_BaudRate(t *testing.T) {
 			req: KissRequest{
 				Type: configstore.KissTypeSerial, SerialDevice: "/dev/ttyUSB0", BaudRate: 0,
 			},
-			wantErr: "baud_rate is required for serial/bluetooth interfaces",
+			wantErr: "baud_rate is required for serial interfaces",
 		},
 		{
 			name: "serial with non-zero baud_rate is accepted",
 			req: KissRequest{
 				Type: configstore.KissTypeSerial, SerialDevice: "/dev/ttyUSB0", BaudRate: 9600,
+			},
+		},
+		{
+			name: "bluetooth with zero baud_rate is accepted (RFCOMM has no baud)",
+			req: KissRequest{
+				Type: configstore.KissTypeBluetooth, SerialDevice: "00:11:22:33:44:55", BaudRate: 0,
 			},
 		},
 		{

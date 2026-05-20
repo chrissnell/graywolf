@@ -94,8 +94,12 @@ func (r KissRequest) Validate() error {
 	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeBluetooth) && r.SerialDevice == "" {
 		return fmt.Errorf("serial_device is required for serial/bluetooth interfaces")
 	}
-	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeBluetooth) && r.BaudRate == 0 {
-		return fmt.Errorf("baud_rate is required for serial/bluetooth interfaces")
+	// Bluetooth/RFCOMM has no baud rate (the radio link runs at its
+	// own modulation rate), so the BaudRate check only applies to
+	// real serial devices. wiring.go hardcodes BaudRate=0 for the
+	// bluetooth path; rejecting it here would deadlock valid POSTs.
+	if r.Type == configstore.KissTypeSerial && r.BaudRate == 0 {
+		return fmt.Errorf("baud_rate is required for serial interfaces")
 	}
 	if r.Mode != "" && !configstore.ValidKissMode(r.Mode) {
 		return fmt.Errorf("invalid mode %q: must be %q or %q", r.Mode, configstore.KissModeModem, configstore.KissModeTnc)
