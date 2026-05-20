@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KISS over Bluetooth &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="kiss-serial.html">KISS over Serial</a>
+      <a href="kiss-bluetooth.html">KISS over Bluetooth</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>KISS over Bluetooth</h1>
+    <p class="subtitle">Talk to a Bluetooth-paired hardware TNC from the graywolf Android tablet build.</p>
+
+    <h2>Overview</h2>
+
+    <p>
+      Many handheld TNCs &mdash; Mobilinkd TNC3 and TNC4, the Kenwood
+      TH-D74 and TH-D75 in Bluetooth mode, and others &mdash; expose a
+      KISS interface over the Bluetooth Serial Port Profile (SPP). When
+      graywolf runs on an Android tablet, it can connect to one of these
+      TNCs and use it as a full radio channel: beacon into it, digipeat
+      across it, and iGate from it. The TNC handles all RF carrier
+      sensing, timing, and actual transmission; graywolf is just the
+      packet router on top.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">i</span>
+      <div class="callout-body">
+        <p>
+          This interface is available <strong>only on the Android tablet
+          build</strong> of graywolf. Linux, macOS, and Windows desktops
+          do not see Bluetooth as a KISS interface type &mdash; on those
+          platforms, use <a href="kiss-serial.html">KISS over Serial</a>
+          instead, including for Bluetooth-paired TNCs that present
+          themselves as a virtual serial port (e.g.&nbsp;<code>/dev/rfcomm0</code>
+          on Linux).
+        </p>
+      </div>
+    </div>
+
+    <p>
+      Graywolf does not pair Bluetooth devices itself. Pairing happens in
+      Android's Settings app, the same way you would pair a headset or a
+      keyboard. Once a TNC is paired (Android calls this "bonded"), it
+      shows up in graywolf's KISS interface form as a selectable device.
+    </p>
+
+    <h2>Setup</h2>
+
+    <h3>Step 1 &mdash; Pair the TNC in Android Settings</h3>
+
+    <ol class="steps">
+      <li>Power on the TNC and put it into pairing mode. Consult the
+        TNC's manual for the procedure (Mobilinkd TNCs typically enter
+        pairing mode by holding the button at power-on; the radios have
+        a Bluetooth menu).</li>
+      <li>On the tablet, open <strong>Settings &rarr; Connected devices
+        &rarr; Pair new device</strong> (the exact path varies by Android
+        version).</li>
+      <li>Pick the TNC from the scan list and complete pairing. The TNC
+        should then appear under <strong>Paired devices</strong>.</li>
+      <li>Confirm the TNC is in KISS mode. Some TNCs ship in a
+        human-readable command mode by default and must be switched. The
+        TNC's configuration app (for example, the Mobilinkd app) sets
+        this.</li>
+    </ol>
+
+    <h3>Step 2 &mdash; Grant Bluetooth permission to graywolf</h3>
+
+    <p>
+      The first time you open the KISS Interfaces page in graywolf, the
+      Bluetooth section shows a prompt to grant Bluetooth permission. Tap
+      <strong>Grant Bluetooth permission</strong> and accept the system
+      dialog. Without this permission graywolf cannot list bonded devices.
+    </p>
+
+    <h3>Step 3 &mdash; Create a KISS-only channel</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Radio &rarr; Channels</strong> in the web UI.</li>
+      <li>Click <strong>+ Add Channel</strong>.</li>
+      <li>In the channel-type segmented control at the top of the form,
+        choose <strong>KISS-TNC only</strong>. A KISS-only channel is a
+        logical routing lane, not a modulated radio channel.</li>
+      <li>Name it to reflect the attached TNC (for example,
+        <code>TNC4</code> or <code>TH-D75</code>). Give it a channel
+        number that does not collide with your existing RF channels.</li>
+      <li>Click <strong>Save</strong>. The channel appears on the list
+        with a <strong>KISS-TNC only</strong> badge. Its backing shows
+        <strong>&mdash; Unbound</strong> until you attach the Bluetooth
+        interface below.</li>
+    </ol>
+
+    <h3>Step 4 &mdash; Create a Bluetooth KISS interface</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Interfaces &rarr; KISS TNC</strong> (the page is
+        titled <strong>KISS Interfaces</strong>).</li>
+      <li>Click <strong>+ Add KISS Interface</strong>.</li>
+      <li>In the <strong>Type</strong> field, choose
+        <strong>Bluetooth Serial</strong>. On the Android build this is
+        the default. (If the Type field does not offer Bluetooth Serial,
+        you are not on the Android build.)</li>
+      <li>The <strong>Device</strong> dropdown lists every Bluetooth
+        device currently paired in Android Settings. Pick your TNC. The
+        list shows the device name and MAC address.</li>
+      <li>In the <strong>Channel</strong> picker, select the KISS-only
+        channel you just created.</li>
+      <li>Set <strong>Mode</strong> to <strong>TNC</strong>. In TNC mode
+        the interface is treated as a radio, not a software client. This
+        also reveals the transmit opt-in checkbox.</li>
+      <li>Check the box labeled <strong>Allow digipeater/beacon/iGate to
+        transmit on this interface</strong> to allow graywolf's TX
+        pipeline to send frames to the TNC. Without this checkbox the
+        interface only receives.</li>
+      <li>Click <strong>Create</strong>. Graywolf opens the RFCOMM
+        connection to the TNC. The row's status badge shows
+        <strong>Connected</strong> once the link comes up. The channel's
+        backing on the Channels page flips to
+        <strong>&#x25CF; Live</strong>.</li>
+    </ol>
+
+    <p>
+      The interface card lists the TNC's name and MAC address so you can
+      tell connected TNCs apart at a glance.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">!</span>
+      <div class="callout-body">
+        <p>
+          Make sure the TNC is in KISS mode before saving the interface
+          in graywolf. Graywolf opens the Bluetooth connection and begins
+          speaking KISS immediately; it does not send any mode-switch
+          commands.
+        </p>
+      </div>
+    </div>
+
+    <h2>Reconnect Behavior</h2>
+
+    <p>
+      If the TNC moves out of range, is powered off, or the Bluetooth
+      link drops for any reason, graywolf backs off and automatically
+      retries the connection. You do not need to restart the app. When
+      the TNC is back in range and powered on, graywolf reconnects and
+      the channel returns to <strong>&#x25CF; Live</strong> status.
+    </p>
+
+    <p>
+      Editing the device or mode on the KISS Interfaces page and clicking
+      Save triggers a hot reload: graywolf closes the existing connection
+      and re-opens with the new settings.
+    </p>
+
+    <p>
+      If you unpair the TNC in Android Settings while graywolf is
+      running, the interface card's status flips to
+      <strong>Unpaired</strong>. Re-pair the device in Android Settings,
+      then refresh the KISS Interfaces page; the bonded-device list will
+      include it again.
+    </p>
+
+    <h2>Troubleshooting</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Device dropdown is empty when adding the interface</td>
+              <td>Bluetooth permission not granted to graywolf</td>
+              <td>Tap <strong>Grant Bluetooth permission</strong> in the
+                form, accept the system dialog, then re-open the form.</td>
+            </tr>
+            <tr>
+              <td>Device dropdown is still empty after granting
+                permission</td>
+              <td>TNC is not paired in Android yet</td>
+              <td>Pair the TNC in <strong>Android Settings &rarr;
+                Connected devices</strong>, then tap
+                <strong>Refresh</strong> in the form.</td>
+            </tr>
+            <tr>
+              <td>Interface status stuck on <strong>Reconnecting</strong></td>
+              <td>TNC is off, out of range, or asleep</td>
+              <td>Power on the TNC and bring it within Bluetooth range
+                (roughly 10 m / 30 ft). Graywolf reconnects on its own.</td>
+            </tr>
+            <tr>
+              <td>Status flips to <strong>Unpaired</strong></td>
+              <td>TNC was removed from Android's paired-devices list</td>
+              <td>Re-pair the TNC in Android Settings, then refresh the
+                KISS Interfaces page.</td>
+            </tr>
+            <tr>
+              <td>Connected, but no frames decode</td>
+              <td>TNC is not actually in KISS mode &mdash; it is sitting
+                at the command prompt</td>
+              <td>Switch the TNC into KISS mode using its configuration
+                app (Mobilinkd app, Kenwood radio menu, etc.).</td>
+            </tr>
+            <tr>
+              <td>Beacon scheduled but nothing transmits</td>
+              <td>Transmit checkbox is off, or channel is unbound</td>
+              <td>Open the KISS interface, confirm <strong>Mode</strong>
+                is TNC and <strong>Allow digipeater/beacon/iGate to
+                transmit on this interface</strong> is checked. Confirm
+                the channel's backing on the Channels page shows
+                <strong>&#x25CF; Live</strong>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Notes</h2>
+
+    <ul>
+      <li><strong>Pairing happens in Android, not in graywolf.</strong>
+        Graywolf only lists devices that Android already considers
+        bonded. There is no in-app pair button.</li>
+      <li><strong>No baud rate setting.</strong> Bluetooth RFCOMM is
+        framed at the protocol level; there is no baud rate to set on
+        the graywolf side. The TNC's internal radio baud rate (1200 or
+        9600) is configured on the TNC itself.</li>
+      <li><strong>One Bluetooth interface per TNC.</strong> Each
+        Bluetooth KISS interface owns a single RFCOMM connection to one
+        paired device. If you have multiple TNCs paired, add one
+        interface per TNC and bind each to its own KISS-only channel.</li>
+      <li><strong>Connection is supervised.</strong> If the link drops,
+        graywolf retries with exponential backoff up to a configurable
+        ceiling. The interface card shows the current state
+        (<strong>Connected</strong>, <strong>Reconnecting</strong>,
+        <strong>Unpaired</strong>).</li>
+    </ul>
+
+    <h2>Related Pages</h2>
+
+    <ul>
+      <li><a href="kiss.html">KISS TNC</a> &mdash; overview of all KISS
+        interface types.</li>
+      <li><a href="kiss-serial.html">KISS over Serial</a> &mdash; the
+        equivalent setup on Linux, macOS, and Windows, where
+        Bluetooth-paired TNCs are reached through a virtual serial
+        port.</li>
+      <li><a href="channels.html">Radio Channels</a> &mdash; channel
+        types, backing, and TX timing.</li>
+    </ul>
+
+    <nav class="page-nav">
+      <a href="kiss-serial.html">
+        <span class="label">Previous</span>
+        KISS over Serial
+      </a>
+      <a href="agwpe.html" class="next">
+        <span class="label">Next</span>
+        AGWPE
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
