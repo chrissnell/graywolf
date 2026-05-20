@@ -103,21 +103,39 @@
   let bondedDevices = $state([]);
   let bondedLoading = $state(false);
   let bondedError = $state('');
+  // Inline save-time validation error. Surfaced via the bonded-device
+  // FormField's `error` prop alongside any network error from the
+  // lazy loader. Cleared whenever the operator picks a device or the
+  // modal reopens.
+  let saveError = $state('');
 
-  // Derived <Select> options for the bonded-device picker. First
-  // entry is a disabled placeholder so the field renders empty by
-  // default rather than auto-selecting the first paired device.
-  let bondedDeviceOptions = $derived([
-    {
-      value: '',
-      label: bondedLoading ? 'Loading…' : 'Select a bonded device',
-      disabled: true,
-    },
-    ...bondedDevices.map((d) => ({
+  // Derived <Select> options for the bonded-device picker. chonky-ui's
+  // Select doesn't honor `disabled` on individual options (it only
+  // propagates value+label), so we don't ship a fake placeholder
+  // entry — the Select's own `placeholder` prop handles the empty
+  // state correctly. handleSave() guards against submitting an empty
+  // serial_device for bluetooth interfaces.
+  let bondedDeviceOptions = $derived(
+    bondedDevices.map((d) => ({
       value: d.mac,
       label: `${d.name} (${d.mac})`,
     })),
-  ]);
+  );
+
+  // Combined error surfaced on the bonded-device FormField. Save-time
+  // validation takes precedence over the network/loader error, since
+  // the operator just acted and that's the more relevant signal.
+  let bondedFieldError = $derived(saveError || bondedError);
+
+  // Hint text for the bonded-device FormField. When the list is empty
+  // and nothing is loading or errored, surface the "pair in Android
+  // Settings first" guidance through the FormField's hint slot so it
+  // gets a stable id and is wired into aria-describedby on the Select.
+  let bondedHint = $derived(
+    !bondedLoading && !bondedError && bondedDevices.length === 0
+      ? 'No paired Bluetooth devices found. Pair your TNC in Android Settings → Bluetooth, then click Refresh.'
+      : 'Pair the TNC in Android Settings → Bluetooth first, then refresh.',
+  );
 
   const modeOptions = [
     { value: 'modem', label: 'Modem' },
@@ -202,6 +220,15 @@
   function openCreate() {
     editing = null;
     form = emptyForm();
+    // The Type select only shows {bluetooth, tcp-client} on Android —
+    // the default `tcp` from emptyForm() would render an invisible
+    // selection and silently submit a server-listen interface if the
+    // operator never touched the field. Pick a visible default for
+    // the platform's actual menu.
+    if (Platform.isAndroid) {
+      form.type = 'bluetooth';
+    }
+    saveError = '';
     // Default AllowTxFromGovernor=true for new tcp-client rows per
     // plan D4. When the operator flips to tcp-client we pre-check
     // the governor-TX checkbox so the common case (outbound TNC for
@@ -211,6 +238,7 @@
 
   function openEdit(row) {
     editing = row;
+    saveError = '';
     form = {
       ...row,
       tcp_port: String(row.tcp_port ?? ''),
@@ -255,15 +283,19 @@
   // Lazy-load bonded devices the first time the operator opens the
   // modal AND selects bluetooth. Re-runs only when the gate
   // conditions flip back to satisfied — operator can clear an error
-  // and click Refresh to retry without remounting.
+  // and click Refresh to retry without remounting. Gated on
+  // Platform.isAndroid: on desktop the GET returns 501 by design, so
+  // we short-circuit with a friendly message instead of letting the
+  // operator stare at "HTTP 501".
   $effect(() => {
-    if (
-      form.type === 'bluetooth' &&
-      modalOpen &&
-      bondedDevices.length === 0 &&
-      !bondedLoading &&
-      !bondedError
-    ) {
+    if (form.type !== 'bluetooth' || !modalOpen) return;
+    if (!Platform.isAndroid) {
+      if (!bondedError) {
+        bondedError = 'Bluetooth interfaces can only be configured from the Android app.';
+      }
+      return;
+    }
+    if (bondedDevices.length === 0 && !bondedLoading && !bondedError) {
       loadBondedDevices();
     }
   });
@@ -303,6 +335,9 @@
   // future name input wires up for free.
   function autofillBtName() {
     if (!form.serial_device) return;
+    // Operator just picked a device — clear any "pick a device first"
+    // validation error so it doesn't linger as visual noise.
+    saveError = '';
     const d = bondedDevices.find((x) => x.mac === form.serial_device);
     if (!d) return;
     const slug = d.name
@@ -365,6 +400,17 @@
   }
 
   function handleSave() {
+    // Client-side guard: chonky-ui's Select doesn't honor per-option
+    // `disabled`, so without this check an operator could leave the
+    // bonded-device picker at its empty placeholder and submit a
+    // bluetooth interface with serial_device=''. The server would
+    // accept it and the supervisor would fail to dial later. Catch
+    // it here and surface the error inline on the FormField.
+    if (form.type === 'bluetooth' && !form.serial_device) {
+      saveError = 'Pick a bonded device before saving.';
+      return;
+    }
+    saveError = '';
     // Mode changes on an existing interface take effect the instant the
     // server restarts the per-interface KISS server — connected peers see
     // routing behavior flip under them. Make the operator confirm it.
@@ -616,23 +662,24 @@
       <FormField
         label="Bonded device"
         id="kiss-bt-device"
-        hint="Pair the TNC in Android Settings → Bluetooth first, then refresh."
-        error={bondedError}
+        hint={bondedHint}
+        error={bondedFieldError}
       >
-        <div class="bt-picker">
-          <Select
-            id="kiss-bt-device"
-            bind:value={form.serial_device}
-            options={bondedDeviceOptions}
-            onchange={autofillBtName}
-          />
-          <Button variant="secondary" onclick={loadBondedDevices} disabled={bondedLoading}>
-            Refresh
-          </Button>
-        </div>
-        {#if !bondedError && !bondedLoading && bondedDevices.length === 0}
-          <span class="bt-empty-hint">No paired Bluetooth devices found. Pair your TNC in Android Settings → Bluetooth, then click Refresh.</span>
-        {/if}
+        {#snippet children(describedBy)}
+          <div class="bt-picker">
+            <Select
+              id="kiss-bt-device"
+              bind:value={form.serial_device}
+              options={bondedDeviceOptions}
+              placeholder={bondedLoading ? 'Loading…' : 'Select a bonded device'}
+              onValueChange={autofillBtName}
+              aria-describedby={describedBy}
+            />
+            <Button variant="secondary" onclick={loadBondedDevices} disabled={bondedLoading}>
+              Refresh
+            </Button>
+          </div>
+        {/snippet}
       </FormField>
     {:else if form.type === 'serial'}
       <FormField
@@ -857,12 +904,5 @@
   .bt-picker :global(input) {
     margin: 0 !important;
     flex: 1 1 auto;
-  }
-  .bt-empty-hint {
-    display: block;
-    margin-top: 6px;
-    font-size: 12px;
-    color: var(--color-text-muted, #888);
-    line-height: 1.4;
   }
 </style>
