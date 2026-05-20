@@ -1,7 +1,8 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { Button, Input, Select, Badge, Checkbox } from '@chrissnell/chonky-ui';
-  import { api } from '../lib/api.js';
+  import { api, kissBt } from '../lib/api.js';
+  import { Platform } from '../lib/platform.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import DataTable from '../components/DataTable.svelte';
@@ -77,11 +78,46 @@
     { key: 'status', label: 'Status' },
   ];
 
-  const typeOptions = [
-    { value: 'tcp', label: 'TCP (server)' },
+  // Platform-conditional type menu. On Android, operators see only
+  // the two interface types we actually support there: Bluetooth
+  // (serial-over-RFCOMM to a paired TNC) and TCP-Client (which we
+  // relabel "Network" because that's the term Android operators
+  // expect). Desktop keeps the full set including server-listen TCP
+  // and host-serial. Platform.isAndroid is read reactively so the
+  // menu re-derives if the JS bridge appears/disappears mid-session
+  // (rare, but the reactive shape costs us nothing).
+  const desktopTypeOptions = [
+    { value: 'tcp',        label: 'TCP (server)' },
     { value: 'tcp-client', label: 'TCP Client' },
-    { value: 'serial', label: 'Serial' },
+    { value: 'serial',     label: 'Serial' },
   ];
+  const androidTypeOptions = [
+    { value: 'bluetooth',  label: 'Bluetooth Serial' },
+    { value: 'tcp-client', label: 'Network' },
+  ];
+  let typeOptions = $derived(Platform.isAndroid ? androidTypeOptions : desktopTypeOptions);
+
+  // Bonded Bluetooth devices, fetched lazily the first time the
+  // operator switches the type select to "bluetooth" with the modal
+  // open. Refreshable via the Refresh button next to the picker.
+  let bondedDevices = $state([]);
+  let bondedLoading = $state(false);
+  let bondedError = $state('');
+
+  // Derived <Select> options for the bonded-device picker. First
+  // entry is a disabled placeholder so the field renders empty by
+  // default rather than auto-selecting the first paired device.
+  let bondedDeviceOptions = $derived([
+    {
+      value: '',
+      label: bondedLoading ? 'Loading…' : 'Select a bonded device',
+      disabled: true,
+    },
+    ...bondedDevices.map((d) => ({
+      value: d.mac,
+      label: `${d.name} (${d.mac})`,
+    })),
+  ]);
 
   const modeOptions = [
     { value: 'modem', label: 'Modem' },
@@ -198,6 +234,67 @@
       form._clientDefaultsApplied = true;
     }
   });
+
+  // Phase 5: Bluetooth-typed interfaces are always TNCs (the paired
+  // device IS the modem). Force Mode=tnc whenever the operator flips
+  // type to bluetooth so the Mode-gated UI (rate/burst, governor-TX
+  // checkbox) renders, and so buildPayload() doesn't try to send
+  // mode=modem to a server that would reject it.
+  $effect(() => {
+    if (form.type === 'bluetooth' && form.mode !== 'tnc') {
+      form.mode = 'tnc';
+    }
+  });
+
+  // Lazy-load bonded devices the first time the operator opens the
+  // modal AND selects bluetooth. Re-runs only when the gate
+  // conditions flip back to satisfied — operator can clear an error
+  // and click Refresh to retry without remounting.
+  $effect(() => {
+    if (
+      form.type === 'bluetooth' &&
+      modalOpen &&
+      bondedDevices.length === 0 &&
+      !bondedLoading &&
+      !bondedError
+    ) {
+      loadBondedDevices();
+    }
+  });
+
+  async function loadBondedDevices() {
+    bondedLoading = true;
+    bondedError = '';
+    try {
+      const resp = await kissBt.bondedDevices();
+      bondedDevices = resp?.devices ?? [];
+    } catch (err) {
+      bondedError = err?.message ?? 'Failed to load Bluetooth devices';
+    } finally {
+      bondedLoading = false;
+    }
+  }
+
+  // Auto-fill a friendly slug name when the operator picks a bonded
+  // device. Only overwrites empty names or names that look like a
+  // previous auto-fill (kiss-bt-*) so manually-named interfaces are
+  // preserved on re-pick. The form/DTO doesn't model a name field
+  // today, but interfaces carry .name server-side (used in the
+  // NeedsReconfig banner); leaving the helper in place means a
+  // future name input wires up for free.
+  function autofillBtName() {
+    if (!form.serial_device) return;
+    const d = bondedDevices.find((x) => x.mac === form.serial_device);
+    if (!d) return;
+    const slug = d.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const autoName = `kiss-bt-${slug}`;
+    if (!form.name || (typeof form.name === 'string' && form.name.startsWith('kiss-bt-'))) {
+      form.name = autoName;
+    }
+  }
 
   function buildPayload() {
     const data = {
@@ -428,11 +525,13 @@
 {/snippet}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit KISS' : 'New KISS Interface'}>
-    <FormField label="Mode" id="kiss-mode" hint={modeHint}>
-      {#snippet children(describedBy)}
-        <Select id="kiss-mode" bind:value={form.mode} options={modeOptions} aria-describedby={describedBy} />
-      {/snippet}
-    </FormField>
+    {#if form.type !== 'bluetooth'}
+      <FormField label="Mode" id="kiss-mode" hint={modeHint}>
+        {#snippet children(describedBy)}
+          <Select id="kiss-mode" bind:value={form.mode} options={modeOptions} aria-describedby={describedBy} />
+        {/snippet}
+      </FormField>
+    {/if}
     <FormField label="Type" id="kiss-type">
       <Select id="kiss-type" bind:value={form.type} options={typeOptions} />
     </FormField>
@@ -455,7 +554,29 @@
       >
         <Input id="kiss-remote-port" bind:value={form.remote_port} type="number" min={1} max={65535} placeholder="8001" />
       </FormField>
-    {:else}
+    {:else if form.type === 'bluetooth'}
+      <FormField
+        label="Bonded device"
+        id="kiss-bt-device"
+        hint="Pair the TNC in Android Settings → Bluetooth first, then refresh."
+        error={bondedError}
+      >
+        <div class="bt-picker">
+          <Select
+            id="kiss-bt-device"
+            bind:value={form.serial_device}
+            options={bondedDeviceOptions}
+            onchange={autofillBtName}
+          />
+          <Button variant="secondary" onclick={loadBondedDevices} disabled={bondedLoading}>
+            Refresh
+          </Button>
+        </div>
+        {#if !bondedError && !bondedLoading && bondedDevices.length === 0}
+          <span class="bt-empty-hint">No paired Bluetooth devices found. Pair your TNC in Android Settings → Bluetooth, then click Refresh.</span>
+        {/if}
+      </FormField>
+    {:else if form.type === 'serial'}
       <FormField
         label="Serial Device"
         id="kiss-serial"
@@ -664,5 +785,26 @@
     font-size: 16px;
     color: var(--color-warning, #d4a72c);
     flex-shrink: 0;
+  }
+  /* Bluetooth bonded-device picker: Select + Refresh button on one
+     row. chonky inputs ship margin-bottom:1rem which shifts the
+     button down inside a flex row — override locally per the project
+     convention (see feedback_chonky_input_alignment in memory). */
+  .bt-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bt-picker :global(select),
+  .bt-picker :global(input) {
+    margin: 0 !important;
+    flex: 1 1 auto;
+  }
+  .bt-empty-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--color-text-muted, #888);
+    line-height: 1.4;
   }
 </style>
