@@ -45,7 +45,6 @@ class BtSerialAdapter(
         val mac: String,
         val socket: BluetoothSocket,
         val readJob: Job,
-        val writeJob: Job?,    // null until first writer activity if you use a queue model
         val mutex: Mutex = Mutex(),
     )
 
@@ -97,7 +96,7 @@ class BtSerialAdapter(
                 return@launch
             }
             val readJob = scope.launch { readPump(handle, socket) }
-            handles[handle] = HandleState(mac, socket, readJob, null)
+            handles[handle] = HandleState(mac, socket, readJob)
             sendAck(handle, ok = true, err = "")
         }
     }
@@ -123,8 +122,11 @@ class BtSerialAdapter(
         val handle = req.handle.toUInt()
         val state = handles.remove(handle) ?: return
         scope.launch {
-            try { state.readJob.cancelAndJoin() } catch (_: Throwable) {}
+            // socket.close() first: the read pump is blocked in a native JNI
+            // inputStream.read() that coroutine cancellation cannot interrupt;
+            // closing the socket unblocks it via IOException.
             try { state.socket.close() } catch (_: Throwable) {}
+            try { state.readJob.cancelAndJoin() } catch (_: Throwable) {}
         }
     }
 

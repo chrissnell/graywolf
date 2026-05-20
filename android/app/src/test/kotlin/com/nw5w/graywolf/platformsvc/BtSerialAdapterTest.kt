@@ -53,10 +53,10 @@ class BtSerialAdapterTest {
         assertTrue(acks[0].error.contains("not_bonded") || acks[0].error.contains("not bonded"))
     }
 
-    @Test fun closeHandle_sendsClose_and_stopsPumps() = runTest {
+    @Test fun closeNonexistentHandle_isNoOp() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        // The bookkeeping path: closing a non-existent handle is a no-op,
-        // does not crash, and does not emit a SerialClose.
+        // Closing an unknown handle must not crash and must emit nothing.
+        // Does NOT cover open/close lifecycle of a live socket.
         val facade = FakeBluetoothFacade(bonded = listOf(BondedDevice("AA:BB:CC:00:00:01", "X")))
         val sent = mutableListOf<PlatformMessage>()
         val adapter = BtSerialAdapter(facade, dispatcher) { sent.add(it) }
