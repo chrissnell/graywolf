@@ -1,17 +1,5 @@
 <!-- web/src/routes/ptt/MethodPicker.svelte -->
-<script>
-  // Radio-card method picker. Pure presentation: the parent supplies the
-  // method-options array and current selection; we emit selection changes.
-  //
-  // Each `methods` entry has shape:
-  //   { wire: { method, ppt_method? }, label, meta, deviceClass? }
-  // `wire` is what eventually goes onto the /api/ptt POST body.
-  let {
-    methods,           // array of method-option objects
-    selectedWireKey,   // string; the key() of the currently-selected method
-    onSelect,          // (method) => void; receives the full method-option
-  } = $props();
-
+<script module>
   // A deterministic key per method-option for binding to the radio group.
   // Includes ppt_method so Android's five `method:'android'` entries are
   // distinguishable.
@@ -20,6 +8,22 @@
       ? `${m.wire.method}#${m.wire.ppt_method}`
       : m.wire.method;
   }
+</script>
+
+<script>
+  // Radio-card method picker. Pure presentation: the parent supplies the
+  // method-options array and current selection; we emit selection changes.
+  //
+  // Each `methods` entry has shape:
+  //   { wire: { method, ppt_method? }, label, meta, deviceClass? }
+  // `wire` is what eventually goes onto the /api/ptt POST body.
+  import { key } from './MethodPicker.svelte';
+
+  let {
+    methods,           // array of method-option objects
+    selectedWireKey,   // string; the key() of the currently-selected method
+    onSelect,          // (method) => void; receives the full method-option
+  } = $props();
 </script>
 
 <ul class="method-list" role="radiogroup">
