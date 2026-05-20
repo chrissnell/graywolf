@@ -557,3 +557,28 @@ The two switches are independent; omitting #2 means a config write calls `Stop()
 
 Source: [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`),
 [`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`notifyKissManager`).
+
+### 35. All blocking Bluetooth and USB calls run on a worker thread
+
+`BluetoothSocket.connect`, `BluetoothAdapter.bondedDevices`,
+`BluetoothSocket.inputStream.read`, `UsbDeviceConnection.controlTransfer`,
+and HID Set_Report calls are blocking JNI/native invocations. Main-thread
+invocation can block UI for several seconds the first time the corresponding
+stack is touched, leading to ANR ("Application Not Responding") dialogs on
+Android.
+
+*Why:* feedback memory `feedback_android_usb_open_worker_thread` -- phase-4b
+USB enumeration on the main thread caused a 5-second ANR. The lesson is
+general to any blocking native call.
+
+*How to apply:* Kotlin code touching `BluetoothAdapter`, `BluetoothSocket`,
+`UsbDeviceConnection`, or `HidDevice` MUST dispatch onto an IO/worker
+dispatcher (`Dispatchers.IO`, a dedicated `SingleThreadExecutor`, or a
+worker `Thread`). Calls arriving FROM the `@JavascriptInterface` binder
+thread that need a main-thread API surface (`requestPermissions` etc.) may
+`mainHandler.post { ... }` only that AndroidManifest-API call; the actual
+blocking work still belongs on a worker thread.
+
+Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BluetoothFacade.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BluetoothFacade.kt),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt).

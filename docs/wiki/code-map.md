@@ -218,6 +218,31 @@ PMTiles infrastructure (manifest gen, R2 sync, Cloudflare Worker) is in
 [`../../pkg/updatescheck/checker.go`](../../pkg/updatescheck/checker.go)
 polls GitHub Releases once per day and serves the snapshot via webapi `/api/updates`.
 
+## Android Kotlin platform service (`android/app/`)
+
+Kotlin code that backs the Android tablet build. The webview hosts the
+graywolf Go binary in-process; everything platform-specific (USB, audio,
+GPS, Bluetooth) lives on the Kotlin side and is reached through the
+platform UDS via proto messages defined in
+[`../../proto/platform.proto`](../../proto/platform.proto). Handbook:
+[`../handbook/installation.html`](../handbook/installation.html) (Android
+section), [`../handbook/kiss-bluetooth.html`](../handbook/kiss-bluetooth.html).
+
+| Concern | File |
+|---|---|
+| Activity + webview host | `com/nw5w/graywolf/MainActivity.kt`, `webview/WebAppInterface.kt` |
+| Foreground service + Go binary supervisor | `GraywolfService.kt`, `binaries/Supervisor.kt`, `binaries/GoLauncher.kt` |
+| Modem JNI bridge | `jni/ModemBridge.kt` |
+| Platform UDS server + proto codec | `platformsvc/PlatformServer.kt`, `platformsvc/MessageHandler.kt`, `platformsvc/WireCodec.kt` |
+| USB PTT adapter (CM108 / CP2102N / AIOC / VOX) | `usb/UsbPttAdapter.kt`, `usb/PttMethodConsts.kt` |
+| Bluetooth facade + permission/bond receivers | `platformsvc/BluetoothFacade.kt` |
+| RFCOMM byte relay for KISS-over-Bluetooth | `platformsvc/BtSerialAdapter.kt` -- owns one `BluetoothSocket` per handle; pump pair on worker thread; multiplexes through the platform UDS via `SerialOpen` / `SerialData` / `SerialClose` / `SerialError` proto messages |
+| Audio capture / playback pumps | `audio/AudioPump.kt`, `audio/AudioTxPump.kt`, `audio/AudioTxTest.kt` |
+| GPS adapter | `gps/GpsAdapter.kt` |
+
+The blocking-call-on-worker-thread rule that applies to USB and
+Bluetooth code on this surface is [invariant 35](invariants.md).
+
 ## Packaging (`packaging/`)
 
 | Target | Path |
