@@ -20,6 +20,9 @@ type Client interface {
 	SelectUsbDevice(ctx context.Context, vid, pid uint16) (*UsbHandle, error)
 	KeyPtt(ctx context.Context, method PttMethod, handle *UsbHandle) (*PttAck, error)
 	UnkeyPtt(ctx context.Context, method PttMethod, handle *UsbHandle) (*PttAck, error)
+	// BondedBtDevices enumerates the currently-bonded Bluetooth devices on
+	// the Android side. One-shot request/response; safe to call repeatedly.
+	BondedBtDevices(ctx context.Context) ([]BondedBtDevice, error)
 	Close() error
 }
 

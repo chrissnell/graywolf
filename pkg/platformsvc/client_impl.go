@@ -178,6 +178,7 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 			*pb.PlatformMessage_UsbSelectResp,
 			*pb.PlatformMessage_PttAck,
 			*pb.PlatformMessage_AudioListResp,
+			*pb.PlatformMessage_BondedBtDevicesResponse,
 			*pb.PlatformMessage_Error:
 			c.mu.Lock()
 			ch := c.respCh
