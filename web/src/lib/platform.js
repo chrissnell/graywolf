@@ -24,4 +24,8 @@ function detectKind() {
 
 export const Platform = {
   get kind() { return detectKind(); },
+  // Convenience for the common "are we on Android?" gate. Backed by
+  // the same detectKind() call as `kind`, so toggling
+  // globalThis.GraywolfWebInterface between accesses flips this too.
+  get isAndroid() { return detectKind() === 'android'; },
 };
