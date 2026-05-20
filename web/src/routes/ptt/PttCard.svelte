@@ -67,27 +67,13 @@
     {/if}
   </dl>
 
-  <div class="device-primary-actions">
+  <div class="device-actions">
     <Button variant="primary" onclick={() => onChangeMethod(item)}>Change Method</Button>
     <Button variant="primary" onclick={() => onChangeDevice(item)}>Change Device</Button>
-  </div>
-
-  <div class="device-secondary-actions">
-    <button
-      type="button"
-      class="link-button"
-      disabled={testing || item.method === 'none'}
-      onclick={testPtt}
-    >
+    <Button disabled={testing || item.method === 'none'} onclick={testPtt}>
       {testing ? 'Keying…' : 'Test PTT (1s)'}
-    </button>
-    <button
-      type="button"
-      class="link-button link-button-danger"
-      onclick={() => onDelete(item)}
-    >
-      Delete
-    </button>
+    </Button>
+    <Button variant="danger" onclick={() => onDelete(item)}>Delete</Button>
   </div>
 </div>
 
@@ -151,44 +137,13 @@
     text-align: left;
   }
 
-  .device-primary-actions {
+  .device-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
-    margin-bottom: 10px;
   }
-  .device-primary-actions :global(.btn) {
+  .device-actions :global(.btn) {
     width: 100%;
     justify-content: center;
-  }
-
-  .device-secondary-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .link-button {
-    appearance: none;
-    background: none;
-    border: none;
-    padding: 4px 0;
-    font-family: inherit;
-    font-size: 13px;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .link-button:hover:not(:disabled) {
-    color: var(--text-primary);
-    text-decoration: underline;
-  }
-  .link-button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .link-button-danger {
-    color: var(--color-danger, #b91c1c);
-  }
-  .link-button-danger:hover:not(:disabled) {
-    color: var(--color-danger, #b91c1c);
   }
 </style>
