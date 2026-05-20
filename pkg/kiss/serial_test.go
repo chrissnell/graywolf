@@ -271,3 +271,95 @@ func TestSerialSupervisor_RxRoundTrip(t *testing.T) {
 	cancel()
 	sup.close()
 }
+
+// TestSerialSupervisor_BluetoothShapedConfig_RxRoundTrip proves that the
+// SerialSupervisor accepts the exact shape pkg/app/wiring.go uses for the
+// KissTypeBluetooth case — MAC-style device string, BaudRate=0,
+// Mode=ModeTnc — and that the OpenFunc round-trip works identically to
+// the serial path. The injected OpenFunc returns a net.Pipe end the way
+// platformsvc.BtSerialOpen returns an RFCOMM-multiplexed io.ReadWriteCloser
+// on Android; the supervisor doesn't care which is which.
+//
+// Mode=ModeTnc means RX dispatches via the TNC rate limiter rather than
+// the Sink, so this test asserts the OnFrameIngress hook fires (the same
+// hook server.go uses for ingress accounting) — that is sufficient proof
+// the frame round-tripped through ServeTransport.
+func TestSerialSupervisor_BluetoothShapedConfig_RxRoundTrip(t *testing.T) {
+	srvSide, cliSide := net.Pipe()
+	rwc := struct {
+		io.ReadWriteCloser
+	}{srvSide}
+
+	const mac = "AA:BB:CC:DD:EE:FF"
+
+	var (
+		ingressMu  sync.Mutex
+		ingressN   int
+		ingressMod Mode
+	)
+	srv := NewServer(ServerConfig{
+		Name:       "bt-rx",
+		Mode:       ModeTnc, // BT TNCs always own the modem
+		ChannelMap: map[uint8]uint32{0: 7},
+		OnFrameIngress: func(m Mode) {
+			ingressMu.Lock()
+			defer ingressMu.Unlock()
+			ingressN++
+			ingressMod = m
+		},
+	})
+
+	var openMac string
+	var openBaud uint32
+	sup := NewSerial(SerialConfig{
+		Name:            "bt",
+		Device:          mac,
+		BaudRate:        0, // RFCOMM has no baud
+		Mode:            ModeTnc,
+		ReconnectInitMs: 10,
+		ReconnectMaxMs:  20,
+		OpenFunc: func(device string, baud uint32) (io.ReadWriteCloser, error) {
+			openMac = device
+			openBaud = baud
+			return rwc, nil
+		},
+	}, srv)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go sup.run(ctx)
+	waitState(t, sup, StateConnected)
+
+	if openMac != mac {
+		t.Fatalf("OpenFunc device = %q, want %q", openMac, mac)
+	}
+	if openBaud != 0 {
+		t.Fatalf("OpenFunc baud = %d, want 0 (RFCOMM has no baud)", openBaud)
+	}
+
+	ax := kissUIFrameBytes(t, "bt-hello")
+	frame := Encode(0, ax)
+	go func() { _, _ = cliSide.Write(frame) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		ingressMu.Lock()
+		n := ingressN
+		ingressMu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	ingressMu.Lock()
+	gotN := ingressN
+	gotMode := ingressMod
+	ingressMu.Unlock()
+	if gotN == 0 {
+		t.Fatal("OnFrameIngress never fired — BT-shaped OpenFunc round-trip failed")
+	}
+	if gotMode != ModeTnc {
+		t.Fatalf("ingress mode = %v, want ModeTnc", gotMode)
+	}
+	cancel()
+	sup.close()
+}
