@@ -30,3 +30,21 @@ test('Platform.kind is read each access (dynamic)', () => {
   assert.equal(Platform.kind, 'desktop');
 });
 
+test('Platform.isAndroid === false when bridge absent', () => {
+  assert.equal(Platform.isAndroid, false);
+});
+
+test('Platform.isAndroid === true when bridge present', () => {
+  globalThis.GraywolfWebInterface = { getBearerToken: () => 'tok' };
+  assert.equal(Platform.isAndroid, true);
+});
+
+test('Platform.isAndroid tracks bridge toggling dynamically', () => {
+  assert.equal(Platform.isAndroid, false);
+  globalThis.GraywolfWebInterface = { getBearerToken: () => 'tok' };
+  assert.equal(Platform.isAndroid, true);
+  delete globalThis.GraywolfWebInterface;
+  resetBridge();
+  assert.equal(Platform.isAndroid, false);
+});
+
