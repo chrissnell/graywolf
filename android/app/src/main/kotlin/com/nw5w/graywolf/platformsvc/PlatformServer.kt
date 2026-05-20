@@ -39,6 +39,19 @@ class PlatformServer(
     @Volatile private var activeOutputs: List<OutputStream> = emptyList()
     private val outputsLock = Object()
 
+    @Volatile private var btSerialAdapter: BtSerialAdapter? = null
+
+    /**
+     * Attach the BtSerialAdapter after construction. Wired this way because
+     * BtSerialAdapter's sendMessage callback references broadcastBt on this
+     * server, so the server must exist before the adapter is built. Safe
+     * to call at most once during onCreate; serveClient consults the field
+     * with a nullable read.
+     */
+    fun attachBtAdapter(adapter: BtSerialAdapter) {
+        btSerialAdapter = adapter
+    }
+
     fun subscribeGpsFix(cb: (GpsFix) -> Unit) {
         gpsFixSubs.add(cb)
     }
@@ -65,6 +78,16 @@ class PlatformServer(
 
     fun broadcastGnssStatus(status: GnssStatusUpdate) =
         broadcast(PlatformMessage.newBuilder().setGnssStatus(status).build())
+
+    /**
+     * Typed wrapper used by BtSerialAdapter to push asynchronous frames
+     * (SerialOpenAck, SerialData, SerialError, SerialClose,
+     * BondedBtDevicesResponse) to the connected Go client. The adapter
+     * already builds a fully-formed PlatformMessage, so this just forwards
+     * to broadcast. Kept distinct from the raw private broadcast() to
+     * preserve typed-intent at every call site.
+     */
+    fun broadcastBt(msg: PlatformMessage) = broadcast(msg)
 
     /**
      * Production startup. Binds an android.net.LocalServerSocket at
@@ -160,6 +183,50 @@ class PlatformServer(
         try {
             while (running) {
                 val req = WireCodec.readFrame(input)
+                // Bluetooth-serial notifications are fire-and-forget: replies
+                // are produced asynchronously by BtSerialAdapter via the
+                // broadcastBt path. Dispatch directly and skip the synchronous
+                // response branch. Treat a null adapter as a no-op so unit
+                // tests (which never attach one) still work.
+                when (req.bodyCase) {
+                    PlatformMessage.BodyCase.SERIAL_OPEN -> {
+                        val adapter = btSerialAdapter
+                        if (adapter == null) {
+                            Log.d(TAG, "SERIAL_OPEN with no BtSerialAdapter attached; dropping")
+                        } else {
+                            adapter.handleSerialOpen(req.serialOpen)
+                        }
+                        continue
+                    }
+                    PlatformMessage.BodyCase.SERIAL_DATA -> {
+                        val adapter = btSerialAdapter
+                        if (adapter == null) {
+                            Log.d(TAG, "SERIAL_DATA with no BtSerialAdapter attached; dropping")
+                        } else {
+                            adapter.handleSerialData(req.serialData)
+                        }
+                        continue
+                    }
+                    PlatformMessage.BodyCase.SERIAL_CLOSE -> {
+                        val adapter = btSerialAdapter
+                        if (adapter == null) {
+                            Log.d(TAG, "SERIAL_CLOSE with no BtSerialAdapter attached; dropping")
+                        } else {
+                            adapter.handleSerialClose(req.serialClose)
+                        }
+                        continue
+                    }
+                    PlatformMessage.BodyCase.BONDED_BT_DEVICES_REQUEST -> {
+                        val adapter = btSerialAdapter
+                        if (adapter == null) {
+                            Log.d(TAG, "BONDED_BT_DEVICES_REQUEST with no BtSerialAdapter attached; dropping")
+                        } else {
+                            adapter.handleBondedRequest()
+                        }
+                        continue
+                    }
+                    else -> { /* fall through to synchronous-handler path */ }
+                }
                 val handler: MessageHandler = when (req.bodyCase) {
                     PlatformMessage.BodyCase.HELLO ->
                         HelloHandler(serverVersion, schemaVersion)

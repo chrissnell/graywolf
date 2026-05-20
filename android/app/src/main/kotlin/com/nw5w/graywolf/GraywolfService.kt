@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.Manifest
+import android.bluetooth.BluetoothManager
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import androidx.core.content.ContextCompat
@@ -27,7 +28,9 @@ import com.nw5w.graywolf.binaries.GoLauncher
 import com.nw5w.graywolf.binaries.Supervisor
 import com.nw5w.graywolf.gps.GpsAdapter
 import com.nw5w.graywolf.jni.ModemBridge
+import com.nw5w.graywolf.platformsvc.BtSerialAdapter
 import com.nw5w.graywolf.platformsvc.PlatformServer
+import com.nw5w.graywolf.platformsvc.SystemBluetoothFacade
 import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.io.File
 
@@ -37,6 +40,7 @@ class GraywolfService : Service() {
     private var goLauncher: GoLauncher? = null
     private var platformServer: PlatformServer? = null
     private var gpsAdapter: GpsAdapter? = null
+    private var btSerialAdapter: BtSerialAdapter? = null
     private val supervisor = Supervisor(onRestart = ::supervisorRestart)
 
     private val stopReceiver = object : BroadcastReceiver() {
@@ -234,6 +238,17 @@ class GraywolfService : Service() {
         ).also { it.start() }
         gpsAdapter = GpsAdapter(this, platformServer!!).also { it.start() }
 
+        // Bluetooth-classic KISS TNC adapter. Wired AFTER PlatformServer.start()
+        // because its sendMessage callback closes over platformServer.broadcastBt.
+        // Tolerates a missing BluetoothAdapter (devices without BT, or BT off):
+        // SystemBluetoothFacade no-ops bondedDevices and rejects connectRfcomm.
+        val btManager = getSystemService(BluetoothManager::class.java)
+        val btFacade = SystemBluetoothFacade(btManager?.adapter)
+        btSerialAdapter = BtSerialAdapter(
+            facade = btFacade,
+            sendMessage = { msg -> platformServer!!.broadcastBt(msg) },
+        ).also { platformServer!!.attachBtAdapter(it) }
+
         if (!bootModem()) {
             stopSelf()
             return
@@ -263,6 +278,10 @@ class GraywolfService : Service() {
         audioTxPump?.stop()
         audioTxPump = null
         UsbPttAdapter.closeAll()
+        // Adapter shutdown emits any final SerialClose frames via broadcastBt
+        // -- it MUST run before platformServer.stop() tears the socket down.
+        btSerialAdapter?.shutdown()
+        btSerialAdapter = null
         platformServer?.stop()
         ModemBridge.modemStop()
         try {
