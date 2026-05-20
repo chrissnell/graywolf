@@ -17,7 +17,17 @@ export function createAndroidDeviceSource(api) {
         'hid-cm108': 'usb-hid',
       })[cls];
       if (!expectType) return [];
-      return all.filter(d => d.type === expectType);
+      return all
+        .filter(d => d.type === expectType)
+        .map(d => ({
+          ...d,
+          // Android USB devices don't have stable POSIX paths (the bus
+          // path /dev/bus/usb/NNN/MMM rotates on reconnect). Synthesize
+          // a usb:VID:PID identifier so DevicePicker's selectedPath
+          // comparison works and the saved device_path round-trips on
+          // re-open.
+          path: d.path || `usb:${d.usb_vendor}:${d.usb_product}`,
+        }));
     },
     async requestPermission(device) {
       const bridge = globalThis.GraywolfWebInterface;

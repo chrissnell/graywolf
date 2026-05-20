@@ -38,6 +38,36 @@ test('androidDeviceSource.list for VOX (no deviceClass) returns an empty array',
   assert.deepEqual(await src.list({ wire: { method: 'android', ppt_method: 4 } }), []);
 });
 
+test('androidDeviceSource.list synthesizes usb:VID:PID path when the device row has none', async () => {
+  // Backend rows omit path on Android (no stable POSIX path). The adapter
+  // must inject a deterministic identifier so DevicePicker.selectedPath
+  // compares correctly and the saved device_path round-trips on re-open.
+  const fakeApi = {
+    get: async () => [
+      { path: '', name: 'AIOC', type: 'usb-cdc-acm', usb_vendor: '1209', usb_product: '7388', recommended: true },
+    ],
+  };
+  const { createAndroidDeviceSource } = await import('./androidDeviceSource.js');
+  const src = createAndroidDeviceSource(fakeApi);
+  const list = await src.list({ wire: { method: 'android', ppt_method: 3 }, deviceClass: 'cdc-acm' });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].path, 'usb:1209:7388');
+});
+
+test('androidDeviceSource.list preserves a non-empty backend path when present', async () => {
+  // If the backend ever populates path (e.g., the desktop branch on a
+  // shared serial cable), the adapter must not clobber it.
+  const fakeApi = {
+    get: async () => [
+      { path: '/dev/bus/usb/001/002', name: 'AIOC', type: 'usb-cdc-acm', usb_vendor: '1209', usb_product: '7388', recommended: true },
+    ],
+  };
+  const { createAndroidDeviceSource } = await import('./androidDeviceSource.js');
+  const src = createAndroidDeviceSource(fakeApi);
+  const list = await src.list({ wire: { method: 'android', ppt_method: 3 }, deviceClass: 'cdc-acm' });
+  assert.equal(list[0].path, '/dev/bus/usb/001/002');
+});
+
 test('androidDeviceSource.requestPermission calls the JS bridge and resolves to the granted boolean', async () => {
   const calls = [];
   globalThis.GraywolfWebInterface = {
