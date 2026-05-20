@@ -3,7 +3,6 @@
   import { Button } from '@chrissnell/chonky-ui';
   import { api, ApiError } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
-  import { Platform } from '../lib/platform.js';
   import PageHeader from '../components/PageHeader.svelte';
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels } from '../lib/stores/channels.svelte.js';
   import ChannelRow from './channels/ChannelRow.svelte';
@@ -80,8 +79,8 @@
 
   // handleSave receives the payload + context built by ChannelEditModal
   // and delegates to persistSave (PUT/POST + referrer-confirm path).
-  async function handleSave({ payload, isTxEnabled, txTiming, androidPttMethod }) {
-    await persistSave(payload, { force: false, isTxEnabled, txTiming, androidPttMethod });
+  async function handleSave({ payload, isTxEnabled, txTiming }) {
+    await persistSave(payload, { force: false, isTxEnabled, txTiming });
   }
 
   // persistSave runs the actual PUT/POST + follow-up tx-timing save.
@@ -90,10 +89,10 @@
   // reload dance. `force` adds ?force=true to the PUT query when
   // true; backend treats that as "I know this breaks referrers,
   // proceed anyway" (Phase 1 handoff).
-  // isTxEnabled, txTiming, androidPttMethod are passed from ChannelEditModal
-  // via handleSave; the force-retry path (confirmForcePut) re-passes the
+  // isTxEnabled and txTiming are passed from ChannelEditModal via
+  // handleSave; the force-retry path (confirmForcePut) re-passes the
   // context it captured when the 409 landed.
-  async function persistSave(data, { force, isTxEnabled = false, txTiming = null, androidPttMethod = null }) {
+  async function persistSave(data, { force, isTxEnabled = false, txTiming = null }) {
     try {
       let channelId;
       if (editing) {
@@ -118,17 +117,6 @@
         await api.put(`/tx-timing/${channelId}`, timingData);
       }
 
-      // On Android, persist the PTT transport as a first-class field.
-      // method='android' is the subsystem discriminator; ptt_method is
-      // the transport (PttMethod enum 1..4, spec Appendix B).
-      if (Platform.kind === 'android' && androidPttMethod != null && channelId) {
-        await api.post('/ptt', {
-          channel_id: channelId,
-          method: 'android',
-          ptt_method: androidPttMethod,
-        });
-      }
-
       modalOpen = false;
       await Promise.all([loadChannels(), loadTxTimings()]);
     } catch (err) {
@@ -147,7 +135,7 @@
         putReferrers = err.body.referrers;
         putPendingPayload = data;
         putPendingId = editing.id;
-        putPendingContext = { isTxEnabled, txTiming, androidPttMethod };
+        putPendingContext = { isTxEnabled, txTiming };
         putServerError = err.body?.error || err.message || '';
         putConfirmOpen = true;
         return;
