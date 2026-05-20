@@ -57,7 +57,6 @@ type btTestServer struct {
 	inMu    sync.Mutex
 	inbound []*pb.PlatformMessage
 	in      chan *pb.PlatformMessage
-	stopCh  chan struct{}
 	wg      sync.WaitGroup
 }
 
@@ -65,10 +64,9 @@ func newBtTestServer(t *testing.T) (*btTestServer, *clientImpl) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 	srv := &btTestServer{
-		t:      t,
-		conn:   serverConn,
-		in:     make(chan *pb.PlatformMessage, 16),
-		stopCh: make(chan struct{}),
+		t:    t,
+		conn: serverConn,
+		in:   make(chan *pb.PlatformMessage, 16),
 	}
 	srv.wg.Add(1)
 	go srv.readLoop()
@@ -118,7 +116,6 @@ func (s *btTestServer) send(t *testing.T, msg *pb.PlatformMessage) {
 }
 
 func (s *btTestServer) close() {
-	close(s.stopCh)
 	s.conn.Close()
 	s.wg.Wait()
 }
@@ -298,5 +295,147 @@ func TestBtSerialOpen_serialError_returnsTypedError(t *testing.T) {
 	}
 	if serr.Detail != "remote unbonded" {
 		t.Errorf("SerialErrorErr.Detail = %q", serr.Detail)
+	}
+}
+
+// TestBtSerialOpen_clientClose_unblocksRead proves that calling the
+// underlying client's Close() wakes a blocked btReadWriteCloser.Read with
+// io.EOF instead of hanging on the now-orphaned per-handle channel.
+// Without drainBtHandles in Close(), this test would deadlock until the
+// test timeout. The 500 ms deadline is generous; the wakeup is effectively
+// immediate once the channel is closed.
+func TestBtSerialOpen_clientClose_unblocksRead(t *testing.T) {
+	srv, c := newBtTestServer(t)
+	defer srv.close()
+
+	openDone := make(chan io.ReadWriteCloser, 1)
+	openErr := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		rwc, err := c.BtSerialOpen(ctx, "AA:BB:CC:DD:EE:FF")
+		if err != nil {
+			openErr <- err
+			return
+		}
+		openDone <- rwc
+	}()
+
+	open := srv.waitFor(t, func(m *pb.PlatformMessage) bool {
+		return m.GetSerialOpen() != nil
+	}, 2*time.Second)
+	handle := open.GetSerialOpen().GetHandle()
+	srv.send(t, &pb.PlatformMessage{Body: &pb.PlatformMessage_SerialOpenAck{
+		SerialOpenAck: &pb.SerialOpenAck{Handle: handle, Ok: true},
+	}})
+
+	var rwc io.ReadWriteCloser
+	select {
+	case rwc = <-openDone:
+	case err := <-openErr:
+		t.Fatalf("BtSerialOpen: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("BtSerialOpen did not return")
+	}
+
+	// Kick off a blocked Read; nothing on the wire so it parks on the
+	// inbound channel.
+	type readResult struct {
+		n   int
+		err error
+	}
+	readCh := make(chan readResult, 1)
+	go func() {
+		buf := make([]byte, 16)
+		n, err := rwc.Read(buf)
+		readCh <- readResult{n, err}
+	}()
+
+	// Give the reader a beat to actually block.
+	time.Sleep(20 * time.Millisecond)
+
+	// Closing the client drains btHandles -> Read sees channel close ->
+	// returns io.EOF.
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case res := <-readCh:
+		if res.err != io.EOF {
+			t.Fatalf("Read err after client Close: got %v want io.EOF", res.err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Read did not return within 500ms of client Close; drainBtHandles missing?")
+	}
+}
+
+// TestBtSerialOpen_serverDisconnect_unblocksRead proves the same property
+// for handleDisconnect: when the UDS dies (server-side conn.Close), the
+// client's drainBtHandles call from handleDisconnect must wake any blocked
+// per-handle Read with io.EOF.
+func TestBtSerialOpen_serverDisconnect_unblocksRead(t *testing.T) {
+	srv, c := newBtTestServer(t)
+	// Do not defer srv.close() — we close the server conn explicitly below
+	// to exercise the handleDisconnect path. Final cleanup of wg is via
+	// readLoop returning on the broken pipe.
+	defer c.Close()
+
+	openDone := make(chan io.ReadWriteCloser, 1)
+	openErr := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		rwc, err := c.BtSerialOpen(ctx, "AA:BB:CC:DD:EE:FF")
+		if err != nil {
+			openErr <- err
+			return
+		}
+		openDone <- rwc
+	}()
+
+	open := srv.waitFor(t, func(m *pb.PlatformMessage) bool {
+		return m.GetSerialOpen() != nil
+	}, 2*time.Second)
+	handle := open.GetSerialOpen().GetHandle()
+	srv.send(t, &pb.PlatformMessage{Body: &pb.PlatformMessage_SerialOpenAck{
+		SerialOpenAck: &pb.SerialOpenAck{Handle: handle, Ok: true},
+	}})
+
+	var rwc io.ReadWriteCloser
+	select {
+	case rwc = <-openDone:
+	case err := <-openErr:
+		t.Fatalf("BtSerialOpen: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("BtSerialOpen did not return")
+	}
+	defer rwc.Close()
+
+	type readResult struct {
+		n   int
+		err error
+	}
+	readCh := make(chan readResult, 1)
+	go func() {
+		buf := make([]byte, 16)
+		n, err := rwc.Read(buf)
+		readCh <- readResult{n, err}
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Closing the server side of the pipe causes the client's readLoop to
+	// hit an error and invoke handleDisconnect, which drains btHandles.
+	srv.conn.Close()
+	srv.wg.Wait()
+
+	select {
+	case res := <-readCh:
+		if res.err != io.EOF {
+			t.Fatalf("Read err after server disconnect: got %v want io.EOF", res.err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Read did not return within 500ms of server disconnect; drainBtHandles missing in handleDisconnect?")
 	}
 }

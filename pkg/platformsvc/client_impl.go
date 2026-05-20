@@ -221,7 +221,9 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 // handleDisconnect is called from readLoop when the underlying conn dies.
 // It closes the in-flight response channel (if any) so a caller blocked in
 // roundTrip's select wakes up immediately rather than deadlocking until
-// ctx expires. The reconnect loop sees c.conn == nil and re-dials.
+// ctx expires. It also drains btHandles so any blocked btReadWriteCloser.Read
+// wakes with io.EOF instead of hanging forever. The reconnect loop sees
+// c.conn == nil and re-dials.
 func (c *clientImpl) handleDisconnect(_ error) {
 	c.mu.Lock()
 	c.conn = nil
@@ -232,6 +234,7 @@ func (c *clientImpl) handleDisconnect(_ error) {
 		// Closing surfaces as `_, ok := <-respCh; !ok` in roundTrip.
 		close(respCh)
 	}
+	c.drainBtHandles()
 }
 
 func (c *clientImpl) Close() error {
@@ -243,10 +246,28 @@ func (c *clientImpl) Close() error {
 	conn := c.conn
 	c.conn = nil
 	c.mu.Unlock()
+	c.drainBtHandles()
 	if conn != nil {
 		return conn.Close()
 	}
 	return nil
+}
+
+// drainBtHandles closes every per-handle inbound channel and clears the
+// map. Called from handleDisconnect (UDS died) and Close (client shutdown)
+// so any goroutine blocked in btReadWriteCloser.Read wakes with io.EOF
+// instead of stalling on a now-orphaned channel. Safe when btHandles is
+// nil (initial state — never used). The map snapshot is taken under
+// btHandlesMu and the close() calls happen outside the lock to avoid
+// re-entering dispatch paths that also take btHandlesMu.
+func (c *clientImpl) drainBtHandles() {
+	c.btHandlesMu.Lock()
+	handles := c.btHandles
+	c.btHandles = nil
+	c.btHandlesMu.Unlock()
+	for _, ch := range handles {
+		close(ch)
+	}
 }
 
 // roundTrip serializes one request, awaits exactly one response.

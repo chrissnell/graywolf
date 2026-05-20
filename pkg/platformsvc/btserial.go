@@ -203,13 +203,13 @@ func (r *btReadWriteCloser) Read(p []byte) (int, error) {
 				}
 				n := copy(p, data)
 				if n < len(data) {
-					tail := make([]byte, len(data)-n)
-					copy(tail, data[n:])
 					r.bufMu.Lock()
 					// Stash for the next Read. There's no concurrent
 					// reader by contract; defensive lock guards against
-					// misuse without changing semantics.
-					r.buf = append(r.buf, tail...)
+					// misuse without changing semantics. append() copies
+					// data[n:] into its own backing array, so no extra
+					// defensive copy is needed.
+					r.buf = append(r.buf, data[n:]...)
 					r.bufMu.Unlock()
 				}
 				return n, nil
@@ -243,10 +243,7 @@ func (r *btReadWriteCloser) Write(p []byte) (int, error) {
 	}
 	written := 0
 	for written < len(p) {
-		chunkEnd := written + btSerialMaxChunk
-		if chunkEnd > len(p) {
-			chunkEnd = len(p)
-		}
+		chunkEnd := min(written+btSerialMaxChunk, len(p))
 		chunk := p[written:chunkEnd]
 		msg := &pb.PlatformMessage{Body: &pb.PlatformMessage_SerialData{
 			SerialData: &pb.SerialData{
