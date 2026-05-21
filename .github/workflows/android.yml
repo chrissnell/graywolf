@@ -14,6 +14,11 @@ on:
   pull_request:
     branches:
       - main
+  # Manual trigger so this workflow can be exercised from a branch PR
+  # (e.g. while it's stacked on another feature branch and the PR's
+  # base isn't main yet). Also useful for re-running on transient
+  # network failures.
+  workflow_dispatch:
 
 permissions:
   contents: read
