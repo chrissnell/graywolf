@@ -24,12 +24,6 @@ import (
 	"github.com/chrissnell/graywolf/pkg/platformsvc"
 )
 
-// platformSchemaVersion mirrors the pkg/platformsvc package constant so
-// the wire-schema version is a single source of truth across the Go
-// binary and the Kotlin PlatformServer. Drift between this and Kotlin's
-// `schemaVersion` is caught by pkg/platformsvc/schema_version_test.go.
-const platformSchemaVersion = platformsvc.SchemaVersion
-
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -100,7 +94,7 @@ func platformConnect(ctx context.Context, logger *slog.Logger, sockPath string) 
 	}
 	helloCtx, helloCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer helloCancel()
-	resp, err := cli.Hello(helloCtx, platformSchemaVersion)
+	resp, err := cli.Hello(helloCtx, platformsvc.SchemaVersion)
 	if err != nil {
 		_ = cli.Close()
 		return nil, fmt.Errorf("hello: %w", err)
@@ -108,10 +102,10 @@ func platformConnect(ctx context.Context, logger *slog.Logger, sockPath string) 
 	logger.Info("platformsvc: connected",
 		"server_version", resp.GetServerVersion(),
 		"schema_version", resp.GetSchemaVersion())
-	if resp.GetSchemaVersion() != platformSchemaVersion {
+	if resp.GetSchemaVersion() != platformsvc.SchemaVersion {
 		_ = cli.Close()
 		return nil, fmt.Errorf("schema mismatch: client=%d server=%d",
-			platformSchemaVersion, resp.GetSchemaVersion())
+			platformsvc.SchemaVersion, resp.GetSchemaVersion())
 	}
 	return cli, nil
 }

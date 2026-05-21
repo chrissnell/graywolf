@@ -37,6 +37,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
+	"github.com/chrissnell/graywolf/pkg/platform"
 	"github.com/chrissnell/graywolf/pkg/pttdevice"
 	"github.com/chrissnell/graywolf/pkg/remoteactions"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
@@ -207,7 +208,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// write amplification; Android internal storage doesn't share that
 	// constraint and a disabled history db wipes the live map on every
 	// process restart -- a confusing failure mode for the operator.
-	if plCfg == nil && a.cfg.Platform == "android" && a.cfg.HistoryDBPath != "" {
+	if plCfg == nil && platform.Kind == "android" && a.cfg.HistoryDBPath != "" {
 		seeded := &configstore.PositionLogConfig{
 			Enabled: true,
 			DBPath:  a.cfg.HistoryDBPath,
@@ -230,7 +231,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// already being decoded, which is a confusing failure mode.
 	// Operator can still rename / delete via the SPA; subsequent
 	// boots respect the persisted state.
-	if a.cfg.Platform == "android" {
+	if platform.Kind == "android" {
 		if devs, err := a.store.ListAudioDevices(ctx); err == nil && len(devs) == 0 {
 			// One input row + one output row. AudioPump (Kotlin)
 			// captures from the system default mic and renders to
@@ -1267,7 +1268,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// Skipped on Android: Play Store handles upgrades there; an
 	// in-process GitHub poll has no purpose and would generate
 	// unwanted background traffic.
-	if a.cfg.Platform != "android" {
+	if platform.Kind != "android" {
 		a.updatesChecker = updatescheck.NewChecker(
 			a.cfg.Version,
 			a.store,

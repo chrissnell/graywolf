@@ -88,12 +88,6 @@ type Config struct {
 	// child process).
 	ModemSocketPath string
 
-	// Platform is "android" on Android builds, "" elsewhere. Wiring
-	// uses it to gate components that don't make sense on Android
-	// (updatescheck, native serial PTT). Set by main_android.go from
-	// the GRAYWOLF_PLATFORM env var.
-	Platform string
-
 	// BearerToken, if non-empty, gates every HTTP and WebSocket
 	// request behind webauth.BearerAuthMiddleware. Set by
 	// main_android.go from the GRAYWOLF_LISTEN_TOKEN env var (the

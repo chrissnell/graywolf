@@ -60,7 +60,6 @@ func configFromEnv() (app.Config, error) {
 		ModemSocketPath: modemSock,
 		HTTPAddr:        listen,
 		BearerToken:     token,
-		Platform:        os.Getenv("GRAYWOLF_PLATFORM"),
 		ShutdownTimeout: 10 * time.Second,
 	}
 	return cfg, nil

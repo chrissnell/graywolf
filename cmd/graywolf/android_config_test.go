@@ -18,9 +18,6 @@ func TestConfigFromEnv_AllSet(t *testing.T) {
 	if cfg.BearerToken != "tok-abc" {
 		t.Fatalf("BearerToken = %q want tok-abc", cfg.BearerToken)
 	}
-	if cfg.Platform != "android" {
-		t.Fatalf("Platform = %q want android", cfg.Platform)
-	}
 	if cfg.ModemSocketPath != "/tmp/modem.sock" {
 		t.Fatalf("ModemSocketPath = %q", cfg.ModemSocketPath)
 	}
@@ -52,7 +49,6 @@ var andEnvKeys = []string{
 	"GRAYWOLF_PLATFORM_SOCKET",
 	"GRAYWOLF_LISTEN",
 	"GRAYWOLF_LISTEN_TOKEN",
-	"GRAYWOLF_PLATFORM",
 }
 
 func clearEnv(t *testing.T, keys ...string) {
@@ -70,6 +66,5 @@ func happyEnv() map[string]string {
 		"GRAYWOLF_PLATFORM_SOCKET": "@/tmp/platform.sock",
 		"GRAYWOLF_LISTEN":          "127.0.0.1:8080",
 		"GRAYWOLF_LISTEN_TOKEN":    "tok-abc",
-		"GRAYWOLF_PLATFORM":        "android",
 	}
 }
