@@ -82,10 +82,6 @@
     }
   }
 
-  function handleRequestPermission(d) {
-    deviceSource.requestPermission?.(d)?.then(refresh);
-  }
-
   function buildPayload() {
     return {
       device: devices.find(d => d.path === selectedPath) || null,
@@ -119,7 +115,6 @@
       {devices}
       {selectedPath}
       onSelect={(d) => { selectedPath = d.path || null; }}
-      onRequestPermission={deviceSource.requestPermission ? handleRequestPermission : undefined}
     />
   {/if}
 

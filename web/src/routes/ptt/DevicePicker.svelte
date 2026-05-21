@@ -1,15 +1,13 @@
 <!-- web/src/routes/ptt/DevicePicker.svelte -->
 <script>
-  import { Button, Badge } from '@chrissnell/chonky-ui';
+  import { Badge } from '@chrissnell/chonky-ui';
 
-  // Device list with recommended/other split + optional Android permission
-  // CTA. Pure presentation: parent supplies the filtered device array,
-  // current selection, and (Android) permission-request callback.
+  // Device list with recommended/other split. Pure presentation:
+  // parent supplies the filtered device array and current selection.
   let {
     devices,             // array of AvailableDevice / PttDevice
     selectedPath,        // string | null; matches device.path
     onSelect,            // (device) => void
-    onRequestPermission, // (device) => void; Android only — desktop omits
   } = $props();
 
   // Server-side classification: `recommended:bool` on every device row.
@@ -52,11 +50,6 @@
               {/if}
               {#if d.usb_vendor && d.usb_product}
                 <span class="usb">USB {d.usb_vendor}:{d.usb_product}</span>
-              {/if}
-              {#if d.has_permission === false && onRequestPermission}
-                <Button onclick={(e) => { e.stopPropagation(); onRequestPermission(d); }}>
-                  Request permission
-                </Button>
               {/if}
             </button>
           </li>
