@@ -2,8 +2,11 @@ package com.nw5w.graywolf.platformsvc
 
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.util.Log
 import com.nw5w.graywolf.platformproto.UsbClass
 import com.nw5w.graywolf.platformproto.UsbDevice as ProtoUsbDevice
+
+private const val TAG = "UsbDeviceLister"
 
 /**
  * Maps Android `UsbManager.deviceList` into the proto UsbDevice rows
@@ -21,12 +24,19 @@ import com.nw5w.graywolf.platformproto.UsbDevice as ProtoUsbDevice
  */
 internal object UsbDeviceLister {
     fun list(usbManager: UsbManager?, classFilter: UsbClass): List<ProtoUsbDevice> {
-        if (usbManager == null) return emptyList()
-        return usbManager.deviceList.values.mapNotNull { dev ->
+        if (usbManager == null) {
+            Log.w(TAG, "list called with null UsbManager; returning empty")
+            return emptyList()
+        }
+        val all = usbManager.deviceList.values.toList()
+        Log.i(TAG, "list classFilter=$classFilter attached=${all.size}")
+        val out = all.mapNotNull { dev ->
             val classes = deviceClasses(dev)
-            if (classFilter != UsbClass.USB_CLASS_UNKNOWN && classFilter !in classes) {
-                return@mapNotNull null
-            }
+            val skipped = classFilter != UsbClass.USB_CLASS_UNKNOWN && classFilter !in classes
+            Log.d(TAG, "  ${dev.deviceName} vid=0x${"%04X".format(dev.vendorId)} " +
+                "pid=0x${"%04X".format(dev.productId)} product=\"${dev.productName ?: ""}\" " +
+                "classes=$classes skipped=$skipped")
+            if (skipped) return@mapNotNull null
             ProtoUsbDevice.newBuilder()
                 .setVid(dev.vendorId)
                 .setPid(dev.productId)
@@ -36,6 +46,8 @@ internal object UsbDeviceLister {
                 .addAllClasses(classes)
                 .build()
         }
+        Log.i(TAG, "list returning ${out.size} device(s)")
+        return out
     }
 
     private fun deviceClasses(dev: UsbDevice): List<UsbClass> {
