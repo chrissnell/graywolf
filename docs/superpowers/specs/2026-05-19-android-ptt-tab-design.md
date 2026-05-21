@@ -21,7 +21,7 @@ ending the "Android PTT lives inside the Channels modal" friction.
 |---|---|---|
 | Data model | Keep `PttConfig` per-channel everywhere | PR #157 already added `PttConfig.PttMethod` as a first-class column (migration v22). On Android the "station PTT" feel falls out naturally: Android has at most one modem-backed channel, so at most one PTT row. No new singleton table, no v23 migration. |
 | API surface | Keep `/api/ptt` endpoints unchanged | One set of handlers. No Android-only endpoint. |
-| Proto / IPC | `ConfigurePtt.ppt_method` path unchanged | Already plumbed end-to-end by PR #157 per invariant 9c. |
+| Proto / IPC | `ConfigurePtt.ptt_method` path unchanged | Already plumbed end-to-end by PR #157 per invariant 9c. |
 | Component shape | One `Ptt.svelte`; method options array branches by platform | Same shell, same card, same dialogs. ~20 lines of data differ between platforms; zero logic divergence. |
 | Add/edit modal | Split into two dialogs (Change Method → Change Device) | Replaces today's single cramped modal. UX win on desktop too. |
 | Channel selector | Auto-hide when exactly one modem-backed channel needs a PTT row | Generic rule, not Android-specific. Single-radio desktop users get the same nicety. |
@@ -29,7 +29,7 @@ ending the "Android PTT lives inside the Channels modal" friction.
 | Detected-vs-Recommended classification | Server-side flag on each device row | Identical JS rendering both platforms. Desktop already classifies via `/api/ptt/available`; Android response from `UsbDeviceListRequest` gets the same `recommended: bool` shape. |
 | Test PTT | 1-second key/unkey from the modal footer | Traverses the full real proto/JNI/Kotlin chain so it verifies the whole path. |
 | `Off` method | Explicit method (no PTT keying), not "no row exists" | Lets an operator say "I have no PTT here, don't warn me." |
-| `ppt_method` integer | Internal only; not surfaced in UI | Operators see method labels; the enum integer stays in code, logs, and invariant 9c documentation. |
+| `ptt_method` integer | Internal only; not surfaced in UI | Operators see method labels; the enum integer stays in code, logs, and invariant 9c documentation. |
 
 ## Non-goals
 
@@ -90,16 +90,16 @@ platform-blind.
 export const ANDROID_METHODS = [
   { wire: { method: 'none' },                       label: 'Off — no PTT',
     meta: 'Graywolf does not key the radio.' },
-  { wire: { method: 'android', ppt_method: 1 },     label: 'Digirig (CP2102N RTS)',
+  { wire: { method: 'android', ptt_method: 1 },     label: 'Digirig (CP2102N RTS)',
     meta: 'USB-serial RTS keys the radio. Most common option.',
     deviceClass: 'cp2102n' },
-  { wire: { method: 'android', ppt_method: 3 },     label: 'AIOC (CDC-ACM DTR)',
+  { wire: { method: 'android', ptt_method: 3 },     label: 'AIOC (CDC-ACM DTR)',
     meta: 'For AIOC firmware ≥ 1.2.0. DTR=1 / RTS=0.',
     deviceClass: 'cdc-acm' },
-  { wire: { method: 'android', ppt_method: 2 },     label: 'CM108 HID GPIO',
+  { wire: { method: 'android', ptt_method: 2 },     label: 'CM108 HID GPIO',
     meta: 'Generic CM108-class adapters with GPIO 3 wired externally to PTT. Not for Digirig or AIOC.',
     deviceClass: 'hid-cm108' },
-  { wire: { method: 'android', ppt_method: 4 },     label: 'VOX (no keying)',
+  { wire: { method: 'android', ptt_method: 4 },     label: 'VOX (no keying)',
     meta: 'Radio detects audio and keys itself. No USB device required.',
     deviceClass: null },
 ];
@@ -225,9 +225,9 @@ without leaving the Channels page.
 5. Dialog B opens. Device list filtered to `deviceClass: 'cp2102n'`.
    Shows the connected CP2102N device with "Permission OK" or "Request permission".
 6. Operator selects the device → `Save`.
-7. Frontend `POST /api/ptt { channel_id: <auto>, method: 'android', ppt_method: 1, device_path: '...' }`.
+7. Frontend `POST /api/ptt { channel_id: <auto>, method: 'android', ptt_method: 1, device_path: '...' }`.
 8. Existing `pkg/webapi/ptt.go` `upsertPttConfig` handler writes the row.
-9. `pkg/modembridge/session.go` builds `ConfigurePtt{ppt_method: 1, ...}` per invariant 9c.
+9. `pkg/modembridge/session.go` builds `ConfigurePtt{ptt_method: 1, ...}` per invariant 9c.
 10. Rust modem dispatches to `AndroidPtt`; JNI relays to Kotlin
     `UsbPttAdapter.keyCp2102nRts()`.
 11. Card flips to "Active". Operator clicks `Test PTT (1s)`; the same
@@ -276,7 +276,7 @@ rigctld test-connection failure, etc.). Two new UI-level edge cases:
 ### Go (`pkg/webapi/`)
 
 - `pkg/webapi/ptt_test.go` already exercises the `upsertPttConfig`
-  handler. Add a case: POST with `{method:'android', ppt_method:N}`
+  handler. Add a case: POST with `{method:'android', ptt_method:N}`
   succeeds and persists; verify the `ChannelPttFromModel` summary in
   the GET response.
 - `pkg/webapi/ptt_devices_test.go` (new): asserts the `Recommended`
@@ -323,7 +323,7 @@ Android unification lands in phases 4–7. Each phase ships independently.
 - `pkg/configstore/migrate.go` (no migration v23).
 - `pkg/webapi/ptt.go` handler signatures and routes.
 - `pkg/webapi/dto/ptt.go` request/response shapes (the existing
-  `ppt_method` field carries Android transports as before).
+  `ptt_method` field carries Android transports as before).
 - `pkg/modembridge/session.go` `ConfigurePtt` construction.
 - `proto/graywolf.proto` `ConfigurePtt` message.
 - `graywolf-modem/src/tx/ptt.rs` `PttMethod::Android` arm.
@@ -334,7 +334,7 @@ Android unification lands in phases 4–7. Each phase ships independently.
 ## References
 
 - PR #157: introduced the Android-in-channels divergence this design reverses.
-- Invariant 9c (`docs/wiki/invariants.md`): the `ppt_method` first-class field contract — preserved by this design.
+- Invariant 9c (`docs/wiki/invariants.md`): the `ptt_method` first-class field contract — preserved by this design.
 - Companion design: `docs/superpowers/specs/2026-05-19-android-bluetooth-kiss-tnc-design.md`.
 - Android architecture context: `.context/2026-05-01-android-app-design.md` (esp. §3.3, §5.2, §5.5).
 - Relevant memories: `feedback_ui_design_quality`, `feedback_single_user_station`, `feedback_chonky_ui_workflow`, `feedback_chonky_input_alignment`.

@@ -1,15 +1,9 @@
 <script>
   import { untrack } from 'svelte';
   import { Button, Input, Select, Toggle } from '@chrissnell/chonky-ui';
-  import { Platform } from '../../lib/platform.js';
   import Modal from '../../components/Modal.svelte';
   import FormField from '../../components/FormField.svelte';
   import { blankForm, rowToForm, formToPayload, validateForm } from '../../lib/channelForm.js';
-  import AndroidPttFields from './AndroidPttFields.svelte';
-
-  // Android PTT method constant — must match PTT_METHOD_* in ptt_android.rs
-  // and the Kotlin UsbPttAdapter dispatcher (Appendix B of the 4b spec).
-  const PTT_METHOD_CP2102N_RTS = 1;
 
   let { open = $bindable(), editing, audioDevices, txTimings, onSave, onCancel } = $props();
 
@@ -39,19 +33,12 @@
     { value: '1', label: '1 (Right)' },
   ];
 
-  // Android PTT form state (only used when Platform.kind === 'android')
-  let androidPttMethod = $state(PTT_METHOD_CP2102N_RTS);
-  // Reference to the AndroidPttFields component instance for cleanup calls.
-  // $state only to silence Svelte's non_reactive_update warning on the
-  // bind:this target; the ref is used imperatively, never read reactively.
-  let androidPttComp = $state(null);
-
   // Edge-triggered open: fire ONCE per closed→open transition, then
-  // hold. All init inputs (editing, txTimings, inputDevices, Platform)
-  // are read inside untrack() so they do NOT subscribe this effect —
-  // only `open` is tracked.  This reproduces the original imperative
-  // openCreate / openEdit semantics: a snapshot at open time, not a
-  // live reactive binding.  Consequences:
+  // hold. All init inputs (editing, txTimings, inputDevices) are read
+  // inside untrack() so they do NOT subscribe this effect — only `open`
+  // is tracked. This reproduces the original imperative openCreate /
+  // openEdit semantics: a snapshot at open time, not a live reactive
+  // binding. Consequences:
   //   • editing reassigned while open (confirmForcePut 409 path) → NO re-init
   //   • audioDevices / txTimings change while open → NO re-init
   //   • closing then reopening (same or different row) → re-inits once
@@ -65,21 +52,11 @@
         if (row) {
           form = rowToForm(row, (txTimings || {})[row.id]);
           errors = {};
-          if (Platform.kind === 'android') {
-            if (row.ptt?.method === 'android' && row.ptt?.ptt_method) {
-              androidPttMethod = row.ptt.ptt_method;
-            } else {
-              androidPttMethod = PTT_METHOD_CP2102N_RTS;
-            }
-          }
         } else {
           // Create path: snapshot inputDevices once at open time.
           const defaultInput = inputDevices.length > 0 ? String(inputDevices[0].id) : '0';
           form = { ...blankForm(), input_device_id: defaultInput };
           errors = {};
-          if (Platform.kind === 'android') {
-            androidPttMethod = PTT_METHOD_CP2102N_RTS;
-          }
         }
       });
       wasOpen = true;
@@ -97,9 +74,9 @@
     if (!validate()) return;
     const payload = formToPayload(form);
     // Pass the full context the parent's persistSave path needs:
-    // channel payload, tx-timing fields, Android PTT method, and
-    // isTxEnabled flag. The parent keeps the PUT/POST + referrer-confirm
-    // logic (B6/B7) and runs the tx-timing + PTT saves itself.
+    // channel payload, tx-timing fields, and isTxEnabled flag. The
+    // parent keeps the PUT/POST + referrer-confirm logic (B6/B7) and
+    // runs the tx-timing save itself.
     onSave({
       payload,
       isTxEnabled,
@@ -110,13 +87,10 @@
         persist: parseInt(form.persist, 10),
         full_dup: form.full_dup,
       },
-      androidPttMethod,
     });
   }
 
   function handleCancel() {
-    androidPttComp?.clearPttHold();
-    androidPttComp?.stopUsbPoll();
     onCancel();
   }
 </script>
@@ -224,11 +198,6 @@
         </FormField>
       </div>
     </div>
-
-    <!-- ── PTT ───────────────────────────────────────────────────── -->
-    {#if Platform.kind === 'android'}
-      <AndroidPttFields bind:this={androidPttComp} bind:method={androidPttMethod} channelId={editing?.id} />
-    {/if}
 
     <!-- ── Timing ─────────────────────────────────────────────────── -->
     {#if isTxEnabled}

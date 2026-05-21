@@ -12,7 +12,7 @@
   // Surfaces deferred or unsupported on Android. PTT lands in phase 5;
   // Simulation is a desktop dev-mode tool. Hidden from the sidebar so
   // operators don't tap into a non-functional surface.
-  const HIDDEN_ON_ANDROID = new Set(['/ptt', '/simulation', '/agw', '/login']);
+  const HIDDEN_ON_ANDROID = new Set(['/simulation', '/agw', '/login']);
 
   // Main-function entries get an icon and render in a single
   // unsubheadered top section. Inline SVGs cover the cases chonky-ui's

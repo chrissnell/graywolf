@@ -1234,6 +1234,14 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// responds 501 Not Implemented (see btsource_default.go).
 	apiSrv.SetBtSource(a.btSourceForWebapi())
 
+	// PTT device source for the unified PTT tab. Android returns a
+	// live adapter backed by the platformsvc client (see
+	// pttsource_android.go) so GET /api/ptt/available enumerates
+	// USB devices via the Kotlin PlatformServer. Desktop builds return
+	// nil and the handler falls back to native pttdevice.Enumerate()
+	// (see pttsource_default.go).
+	apiSrv.SetPttDeviceSource(a.pttSourceForWebapi())
+
 	// Actions service runs the listener-addressee reload + test-fire
 	// path the REST handlers reach for. Skipped when wireActions
 	// declined to construct one (e.g. headless RF-only mode without a

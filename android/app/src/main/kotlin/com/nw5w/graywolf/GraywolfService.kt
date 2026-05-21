@@ -32,6 +32,7 @@ import com.nw5w.graywolf.jni.ModemBridge
 import com.nw5w.graywolf.platformsvc.BtSerialAdapter
 import com.nw5w.graywolf.platformsvc.PlatformServer
 import com.nw5w.graywolf.platformsvc.SystemBluetoothFacade
+import com.nw5w.graywolf.platformsvc.UsbDeviceLister
 import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.io.File
 
@@ -295,6 +296,19 @@ class GraywolfService : Service() {
             facade = btFacade,
             sendMessage = { msg -> platformServer!!.broadcastBt(msg) },
         ).also { platformServer!!.attachBtAdapter(it) }
+
+        // USB enumeration provider for the unified PTT tab. The Go side
+        // calls platformsvc.ListUsbDevices() when the operator opens the
+        // Change Device dialog on Android. No permission is required to
+        // enumerate (vid/pid/product are exposed without grant); permission
+        // is requested separately when the device is selected.
+        platformServer!!.attachUsbDeviceLister { classFilter ->
+            UsbDeviceLister.list(
+                getSystemService(UsbManager::class.java),
+                classFilter,
+                beforeQuery = { UsbPttAdapter.pruneStaleHandles() },
+            )
+        }
 
         if (!bootModem()) {
             stopSelf()

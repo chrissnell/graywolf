@@ -84,14 +84,14 @@
 </section>
 
 <section class="latlon" aria-label="Position">
-  <div><label>LATITUDE</label><span>{fix?.lat?.toFixed(5) ?? '—'}</span></div>
-  <div><label>LONGITUDE</label><span>{fix?.lon?.toFixed(5) ?? '—'}</span></div>
+  <div><span class="readout-label">LATITUDE</span><span>{fix?.lat?.toFixed(5) ?? '—'}</span></div>
+  <div><span class="readout-label">LONGITUDE</span><span>{fix?.lon?.toFixed(5) ?? '—'}</span></div>
 </section>
 
 <section class="trio" aria-label="Movement">
-  <div><label>ALT</label><span>{fix?.alt_m != null ? `${fix.alt_m.toFixed(0)} m` : '—'}</span></div>
-  <div><label>SPEED</label><span>{fix?.speed_mps != null ? `${fix.speed_mps.toFixed(1)} m/s` : '—'}</span></div>
-  <div><label>COURSE</label><span>{fix?.course_deg != null ? `${fix.course_deg.toFixed(0)}°` : '—'}</span></div>
+  <div><span class="readout-label">ALT</span><span>{fix?.alt_m != null ? `${fix.alt_m.toFixed(0)} m` : '—'}</span></div>
+  <div><span class="readout-label">SPEED</span><span>{fix?.speed_mps != null ? `${fix.speed_mps.toFixed(1)} m/s` : '—'}</span></div>
+  <div><span class="readout-label">COURSE</span><span>{fix?.course_deg != null ? `${fix.course_deg.toFixed(0)}°` : '—'}</span></div>
 </section>
 
 <section class="sats" aria-labelledby="sats-heading">
@@ -103,7 +103,6 @@
       <div
         class="bar"
         role="img"
-        tabindex="0"
         aria-label={satLabel(s)}
         title={satLabel(s)}
         style:height={`${Math.min(100, (s.cn0_dbhz ?? 0) * 2)}%`}
@@ -119,7 +118,7 @@
   .status-row[data-tone="warn"] .status-pill { background: var(--color-warning); }
   .status-row[data-tone="bad"]  .status-pill { background: var(--color-danger); }
   .latlon { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
-  .latlon label, .trio label { display: block; font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.05em; }
+  .latlon .readout-label, .trio .readout-label { display: block; font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.05em; }
   .latlon span, .trio span { font-size: 1.5rem; font-family: var(--font-mono); }
   .trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
   .sats h2 { font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin: 0 0 0.5rem; }

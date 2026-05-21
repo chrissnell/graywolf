@@ -1,8 +1,7 @@
 // Unit tests for the Bluetooth-permission-grant helper used by Kiss.svelte
 // (Phase 6 of the Android Bluetooth KISS TNC plan).
 //
-// Mirrors the extracted-logic style of Channels.android.ptt.test.js: the
-// component itself has no headless harness, so the helper is reproduced
+// The component itself has no headless harness, so the helper is reproduced
 // verbatim against a mocked JS bridge and verified end-to-end.
 
 import { test, beforeEach, afterEach } from 'node:test';

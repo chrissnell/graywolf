@@ -73,13 +73,13 @@ object UsbPttAdapter : UsbPttCallback {
     // Open-state grouped into immutable handles so JS-thread reads of the
     // (connection, hidIface) pair never tear when the broadcast-receiver
     // thread swaps the handle. Single @Volatile pointer = atomic publish.
-    internal data class Cp2102nHandle(val device: UsbDevice, val port: UsbSerialPort)
+    internal data class Cp2102nHandle(val device: UsbDevice, val port: UsbSerialPort, val connection: UsbDeviceConnection)
     internal data class Cm108Handle(
         val device: UsbDevice,
         val connection: UsbDeviceConnection,
         val hidIface: Int,
     )
-    internal data class AiocHandle(val device: UsbDevice, val port: UsbSerialPort)
+    internal data class AiocHandle(val device: UsbDevice, val port: UsbSerialPort, val connection: UsbDeviceConnection)
 
     @Volatile internal var cp2102n: Cp2102nHandle? = null
     @Volatile internal var cm108: Cm108Handle? = null
@@ -117,6 +117,50 @@ object UsbPttAdapter : UsbPttCallback {
         }
     }
 
+    /**
+     * System-broadcast hotplug watcher. Receives USB_DEVICE_ATTACHED whenever
+     * a USB device is plugged in (regardless of whether the app is foreground)
+     * and USB_DEVICE_DETACHED on unplug. ATTACHED → classify; if recognized,
+     * request permission (if missing) or tryOpen (if granted). DETACHED →
+     * release any handle whose deviceName matches the unplugged device so a
+     * subsequent re-attach gets a fresh open instead of inheriting a stale
+     * UsbDeviceConnection.
+     *
+     * This closes the gap onResume() can't cover: when MainActivity is already
+     * resumed (PTT page visible) and the operator swaps adapters, onResume
+     * never re-fires, so the swap-in device would otherwise sit unrecognized.
+     */
+    private val hotPlugReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            val device: UsbDevice? = if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            }
+            if (device == null) {
+                Log.w(TAG, "hotplug broadcast with null device (action=${intent.action})")
+                return
+            }
+            when (intent.action) {
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    val role = classify(device)
+                    Log.i(TAG, "hotplug ATTACHED ${device.deviceName} vid=0x${"%04X".format(device.vendorId)} pid=0x${"%04X".format(device.productId)} role=$role")
+                    if (role == DeviceRole.UNKNOWN) return
+                    if (usbManager.hasPermission(device)) {
+                        tryOpen(device)
+                    } else {
+                        requestPermission(device)
+                    }
+                }
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    Log.i(TAG, "hotplug DETACHED ${device.deviceName}")
+                    closeForDevice(device)
+                }
+            }
+        }
+    }
+
     fun init(ctx: Context) {
         if (this::appContext.isInitialized) return
         appContext = ctx.applicationContext
@@ -127,12 +171,19 @@ object UsbPttAdapter : UsbPttCallback {
 
     private fun registerReceiverIfNeeded() {
         if (receiverRegistered) return
-        val filter = IntentFilter(ACTION_USB_PERMISSION)
+        val permFilter = IntentFilter(ACTION_USB_PERMISSION)
+        val hotPlugFilter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
         if (Build.VERSION.SDK_INT >= 33) {
-            appContext.registerReceiver(permissionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            appContext.registerReceiver(permissionReceiver, permFilter, Context.RECEIVER_NOT_EXPORTED)
+            appContext.registerReceiver(hotPlugReceiver, hotPlugFilter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
-            appContext.registerReceiver(permissionReceiver, filter)
+            appContext.registerReceiver(permissionReceiver, permFilter)
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            appContext.registerReceiver(hotPlugReceiver, hotPlugFilter)
         }
         receiverRegistered = true
     }
@@ -149,7 +200,8 @@ object UsbPttAdapter : UsbPttCallback {
      * what lets `requestPermission` surface its system dialog; calling this
      * from a backgrounded Service silently no-ops the prompt.
      *
-     * No hot-plug watcher; phase 5.
+     * Hot-plug is handled separately by hotPlugReceiver (USB_DEVICE_ATTACHED
+     * / DETACHED), so this is primarily an at-startup / on-resume sweep.
      */
     fun enumerate() {
         check(this::appContext.isInitialized) { "init(context) must be called first" }
@@ -234,6 +286,119 @@ object UsbPttAdapter : UsbPttCallback {
         }
     }
 
+    /**
+     * Probe each open handle by issuing a standard USB GET_STATUS control
+     * transfer. If the underlying device has been physically disconnected
+     * but we still hold the file descriptor, the controller returns < 0
+     * (or throws). On failure, close the handle so the kernel can finalize
+     * the disconnect and re-enumerate the bus position — necessary on
+     * controllers like MediaTek musb-hdrc that won't release a stale entry
+     * while a userspace fd is held open.
+     *
+     * Called before each UsbDeviceLister.list so the SPA's "Detect Devices"
+     * gesture (and dialog opens) refresh the kernel's view.
+     */
+    fun pruneStaleHandles() {
+        synchronized(cp2102nLock) {
+            cp2102n?.let { h ->
+                if (!isHandleAlive(h.connection)) {
+                    Log.i(TAG, "pruneStaleHandles: CP2102N at ${h.device.deviceName} is dead, releasing")
+                    try { h.port.close() } catch (_: Throwable) { /* dead */ }
+                    cp2102n = null
+                }
+            }
+        }
+        synchronized(cm108Lock) {
+            cm108?.let { h ->
+                if (!isHandleAlive(h.connection)) {
+                    Log.i(TAG, "pruneStaleHandles: CM108 at ${h.device.deviceName} is dead, releasing")
+                    try {
+                        val iface = (0 until h.device.interfaceCount)
+                            .map { h.device.getInterface(it) }
+                            .firstOrNull { it.id == h.hidIface }
+                        if (iface != null) h.connection.releaseInterface(iface)
+                        h.connection.close()
+                    } catch (_: Throwable) { /* dead */ }
+                    cm108 = null
+                }
+            }
+        }
+        synchronized(aiocLock) {
+            aioc?.let { h ->
+                if (!isHandleAlive(h.connection)) {
+                    Log.i(TAG, "pruneStaleHandles: AIOC at ${h.device.deviceName} is dead, releasing")
+                    try { h.port.close() } catch (_: Throwable) { /* dead */ }
+                    aioc = null
+                }
+            }
+        }
+    }
+
+    /**
+     * USB GET_STATUS(Device) — standard request that every live device
+     * answers in 2 bytes. A < 0 return (or thrown exception) means the
+     * device is gone from the bus but the kernel hasn't released our fd.
+     */
+    private fun isHandleAlive(conn: UsbDeviceConnection): Boolean {
+        val buf = ByteArray(2)
+        return try {
+            val rc = conn.controlTransfer(
+                /* requestType = */ 0x80,    // USB_TYPE_STANDARD | USB_DIR_IN | USB_RECIP_DEVICE
+                /* request     = */ 0x00,    // GET_STATUS
+                /* value       = */ 0,
+                /* index       = */ 0,
+                /* buffer      = */ buf,
+                /* length      = */ buf.size,
+                /* timeout_ms  = */ 100,
+            )
+            rc >= 0
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Release any open handle whose deviceName matches the supplied device,
+     * leaving the other transports untouched. Called from the DETACHED
+     * hot-plug broadcast so a re-attach gets a fresh open instead of using
+     * a stale UsbDeviceConnection backed by an unplugged device.
+     */
+    private fun closeForDevice(dev: UsbDevice) {
+        synchronized(cp2102nLock) {
+            cp2102n?.let { h ->
+                if (h.device.deviceName == dev.deviceName) {
+                    try { h.port.close() } catch (t: Throwable) { Log.w(TAG, "cp2102n.close on detach: $t") }
+                    Log.i(TAG, "closeForDevice: cp2102n released ${dev.deviceName}")
+                    cp2102n = null
+                }
+            }
+        }
+        synchronized(cm108Lock) {
+            cm108?.let { h ->
+                if (h.device.deviceName == dev.deviceName) {
+                    try {
+                        val iface = (0 until h.device.interfaceCount)
+                            .map { h.device.getInterface(it) }
+                            .firstOrNull { it.id == h.hidIface }
+                        if (iface != null) h.connection.releaseInterface(iface)
+                        h.connection.close()
+                    } catch (t: Throwable) { Log.w(TAG, "cm108.close on detach: $t") }
+                    Log.i(TAG, "closeForDevice: cm108 released ${dev.deviceName}")
+                    cm108 = null
+                }
+            }
+        }
+        synchronized(aiocLock) {
+            aioc?.let { h ->
+                if (h.device.deviceName == dev.deviceName) {
+                    try { h.port.close() } catch (t: Throwable) { Log.w(TAG, "aioc.close on detach: $t") }
+                    Log.i(TAG, "closeForDevice: aioc released ${dev.deviceName}")
+                    aioc = null
+                }
+            }
+        }
+    }
+
     private fun requestPermission(dev: UsbDevice) {
         val intent = Intent(ACTION_USB_PERMISSION).setPackage(appContext.packageName)
         val flags = if (Build.VERSION.SDK_INT >= 31) {
@@ -300,7 +465,7 @@ object UsbPttAdapter : UsbPttCallback {
             port.setParameters(9600, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
             Log.i(TAG, "openCp2102n: step=rts=false")
             port.rts = false
-            cp2102n = Cp2102nHandle(dev, port)
+            cp2102n = Cp2102nHandle(dev, port, conn)
             Log.i(TAG, "CP2102N opened ${dev.deviceName}")
         } catch (t: Throwable) {
             Log.e(TAG, "openCp2102n failed: $t")
@@ -380,19 +545,34 @@ object UsbPttAdapter : UsbPttCallback {
     fun keyCp2102nRts(): Boolean = setRts(true)
     fun unkeyCp2102nRts(): Boolean = setRts(false)
 
-    private fun setRts(state: Boolean): Boolean = synchronized(cp2102nLock) {
-        val h = cp2102n ?: run {
-            Log.w(TAG, "setRts($state) but CP2102N not open")
-            return@synchronized false
+    private fun setRts(state: Boolean): Boolean {
+        val attempted = synchronized(cp2102nLock) {
+            val h = cp2102n
+            if (h == null) {
+                Log.w(TAG, "setRts($state) but CP2102N not open")
+                return@synchronized null
+            }
+            try {
+                h.port.rts = state
+                Log.i(TAG, "ptt: cp2102n_rts=$state")
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "setRts($state) failed: $t")
+                // Stale handle (USB device went away under us, hub glitch,
+                // bus reset). Drop it so the next enumerate() opens fresh.
+                try { h.port.close() } catch (_: Throwable) { /* already broken */ }
+                cp2102n = null
+                false
+            }
         }
-        return@synchronized try {
-            h.port.rts = state
-            Log.i(TAG, "ptt: cp2102n_rts=$state")
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "setRts($state) failed: $t")
-            false
+        // Re-enumerate when we either had no handle (hot-swap that never
+        // triggered our broadcast) or just released a stale one. Caller's
+        // next click drives the freshly-opened handle.
+        if (attempted != true) {
+            Log.i(TAG, "setRts: scheduling re-enumeration (handle was ${if (attempted == null) "absent" else "stale"})")
+            try { enumerate() } catch (t: Throwable) { Log.w(TAG, "re-enumerate threw: $t") }
         }
+        return attempted ?: false
     }
 
     fun keyCm108Hid(): Boolean = setHidGpio(true)
@@ -414,10 +594,19 @@ object UsbPttAdapter : UsbPttCallback {
         return true
     }
 
-    private fun setHidGpio(state: Boolean): Boolean = synchronized(cm108Lock) {
+    private fun setHidGpio(state: Boolean): Boolean {
+        val attempted = setHidGpioLocked(state)
+        if (attempted != true) {
+            Log.i(TAG, "setHidGpio: scheduling re-enumeration (handle was ${if (attempted == null) "absent" else "stale"})")
+            try { enumerate() } catch (t: Throwable) { Log.w(TAG, "re-enumerate threw: $t") }
+        }
+        return attempted ?: false
+    }
+
+    private fun setHidGpioLocked(state: Boolean): Boolean? = synchronized(cm108Lock) {
         val h = cm108 ?: run {
             Log.w(TAG, "setHidGpio($state) but CM108 not open")
-            return@synchronized false
+            return@synchronized null
         }
         // Layout matches graywolf-modem/src/tx/ptt_cm108_unix.rs and
         // ptt_cm108_macos.rs (which key the AIOC successfully on desktop):
@@ -446,6 +635,19 @@ object UsbPttAdapter : UsbPttCallback {
         )
         Log.i(TAG, "ptt: cm108_set_report pin=$pin mask=0x%02X value=0x%02X state=$state rc=$rc"
             .format(mask.toInt() and 0xFF, value.toInt() and 0xFF))
+        if (rc < 0) {
+            // Stale handle (USB device went away, hub glitch). Drop so a
+            // re-enumerate opens fresh.
+            try {
+                val iface = (0 until h.device.interfaceCount)
+                    .map { h.device.getInterface(it) }
+                    .firstOrNull { it.id == h.hidIface }
+                if (iface != null) h.connection.releaseInterface(iface)
+                h.connection.close()
+            } catch (_: Throwable) { /* already broken */ }
+            cm108 = null
+            return@synchronized false
+        }
         return@synchronized rc == report.size
     }
 
@@ -484,7 +686,7 @@ object UsbPttAdapter : UsbPttCallback {
             Log.i(TAG, "openAioc: step=dtr=rts=false")
             port.dtr = false
             port.rts = false
-            aioc = AiocHandle(dev, port)
+            aioc = AiocHandle(dev, port, conn)
             Log.i(TAG, "AIOC opened ${dev.deviceName}")
         } catch (t: Throwable) {
             Log.e(TAG, "openAioc failed: $t")
@@ -496,23 +698,33 @@ object UsbPttAdapter : UsbPttCallback {
     fun keyAiocCdcRts(): Boolean = setAiocRts(true)
     fun unkeyAiocCdcRts(): Boolean = setAiocRts(false)
 
-    private fun setAiocRts(state: Boolean): Boolean = synchronized(aiocLock) {
-        val h = aioc ?: run {
-            Log.w(TAG, "setAiocRts($state) but AIOC not open")
-            return@synchronized false
+    private fun setAiocRts(state: Boolean): Boolean {
+        val attempted = synchronized(aiocLock) {
+            val h = aioc
+            if (h == null) {
+                Log.w(TAG, "setAiocRts($state) but AIOC not open")
+                return@synchronized null
+            }
+            try {
+                // AIOC firmware >=1.2.0: PTT asserted on DTR=1 AND RTS=0.
+                // RTS must stay 0 in BOTH key and unkey states — the firmware
+                // releases PTT only when DTR drops to 0.
+                h.port.rts = false
+                h.port.dtr = state
+                Log.i(TAG, "ptt: aioc_cdc dtr=$state rts=0")
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "setAiocRts($state) failed: $t")
+                try { h.port.close() } catch (_: Throwable) { /* already broken */ }
+                aioc = null
+                false
+            }
         }
-        return@synchronized try {
-            // AIOC firmware >=1.2.0: PTT asserted on DTR=1 AND RTS=0.
-            // RTS must stay 0 in BOTH key and unkey states — the firmware
-            // releases PTT only when DTR drops to 0.
-            h.port.rts = false
-            h.port.dtr = state
-            Log.i(TAG, "ptt: aioc_cdc dtr=$state rts=0")
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "setAiocRts($state) failed: $t")
-            false
+        if (attempted != true) {
+            Log.i(TAG, "setAiocRts: scheduling re-enumeration (handle was ${if (attempted == null) "absent" else "stale"})")
+            try { enumerate() } catch (t: Throwable) { Log.w(TAG, "re-enumerate threw: $t") }
         }
+        return attempted ?: false
     }
 
     /** Classify a device by vid/pid + structural fingerprint. */

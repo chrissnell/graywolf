@@ -14,6 +14,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import com.nw5w.graywolf.usb.UsbPttAdapter
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -183,6 +184,22 @@ class MainActivity : Activity() {
         if (!batteryOptIntentChecked) {
             batteryOptIntentChecked = true
             maybeRequestBatteryOptWhitelist()
+        }
+        // Re-enumerate USB devices on resume. Two flows depend on this:
+        //   1) USB_DEVICE_ATTACHED (manifest intent filter on this activity)
+        //      brings the activity to the front when an interesting device
+        //      plugs in; onResume catches the new device and opens it.
+        //   2) Operator swaps the configured PTT method (e.g., AIOC -> Digirig)
+        //      via the PTT tab; the freshly-relevant device may be unopened
+        //      because UsbPttAdapter only opens devices that match an active
+        //      method. Re-enumerating after a method switch reaches the
+        //      newly-relevant device on the next resume.
+        try {
+            UsbPttAdapter.enumerate()
+        } catch (t: Throwable) {
+            // init() not yet run, or the adapter is between handles —
+            // logged inside the adapter; not actionable here.
+            Log.w(TAG, "onResume enumerate threw: $t")
         }
     }
 

@@ -122,6 +122,13 @@ Source: [`../../pkg/webapi/dto/channel.go`](../../pkg/webapi/dto/channel.go) (`C
 [`../../graywolf-modem/src/tx/ptt.rs`](../../graywolf-modem/src/tx/ptt.rs) (`PttMethod::Android` arm);
 [`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt) (`pttSet`, `setAiocRts`).
 
+*UI contract:* PTT configuration is operated only from the **PTT tab**
+(`Ptt.svelte`) on both Android and desktop. The Channels page modal is
+channel-only; an earlier PR-#157-era Android branch in
+`ChannelEditModal.svelte` (`AndroidPttFields`) was removed in favor of
+the unified tab. The Channels page's read-only PTT indicator row stays
+— that's a glance-surface, not a config surface.
+
 ### 10. Gitignored output dirs are not canonical
 
 *Why:* `target/`, `bin/`, `dist/`, `rust-bin/`, `rust-artifacts/`, `web/dist/`, `.worktrees/`, `.context/`, `*.db*` regenerate from sources and are gitignored, so never reference them as authoritative.

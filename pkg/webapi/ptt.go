@@ -140,10 +140,31 @@ func (s *Server) validatePttChannelBacking(ctx context.Context, targetChannelID 
 	return nil
 }
 
-// listPttDevices enumerates PTT-capable devices detected on the host —
-// serial ports, gpiochips, and CM108 HID devices. The payload is a flat
-// array of devices regardless of platform; platform-dependent fields
-// like `warning` and `recommended` are populated by the enumerator.
+// PttDeviceSource is the optional injector for GET /api/ptt/available.
+// On Android the source is backed by the platformsvc client (see
+// pkg/app/pttsource_android.go) which lists USB devices via the Kotlin
+// PlatformServer UDS. Desktop builds leave it nil and the handler falls
+// back to pttdevice.Enumerate() for native host enumeration (serial
+// ports + gpiochips + CM108 HID). The wire shape (a JSON array of
+// pttdevice.AvailableDevice) is identical either way so the SPA's
+// /api/ptt/available consumer is platform-agnostic.
+type PttDeviceSource interface {
+	ListPttDevices(ctx context.Context) []pttdevice.AvailableDevice
+}
+
+// SetPttDeviceSource installs the PTT device source post-construction.
+// Called from pkg/app on both Android (live adapter) and desktop (nil,
+// which is the zero value already — the desktop adapter just keeps the
+// call site symmetric with SetBtSource). Safe to call once before Run.
+func (s *Server) SetPttDeviceSource(src PttDeviceSource) { s.pttDeviceSource = src }
+
+// listPttDevices enumerates PTT-capable devices. When a PttDeviceSource
+// is installed (Android wiring), it is consulted and the result returned
+// verbatim. Otherwise the handler falls back to pttdevice.Enumerate()
+// which discovers serial ports, gpiochips, and CM108 HID devices
+// natively on the host. The payload is a flat array of
+// pttdevice.AvailableDevice; platform-dependent fields like `warning`
+// and `recommended` are populated by the enumerator.
 //
 // @Summary  List PTT devices
 // @Tags     ptt
@@ -153,6 +174,10 @@ func (s *Server) validatePttChannelBacking(ctx context.Context, targetChannelID 
 // @Security CookieAuth
 // @Router   /ptt/available [get]
 func (s *Server) listPttDevices(w http.ResponseWriter, r *http.Request) {
+	if s.pttDeviceSource != nil {
+		writeJSON(w, http.StatusOK, s.pttDeviceSource.ListPttDevices(r.Context()))
+		return
+	}
 	writeJSON(w, http.StatusOK, pttdevice.Enumerate())
 }
 

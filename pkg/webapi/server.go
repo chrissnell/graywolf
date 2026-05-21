@@ -120,6 +120,13 @@ type Server struct {
 	// SetBtSource by pkg/app on Android builds; nil elsewhere, in which
 	// case the handler returns 501 Not Implemented.
 	btSource BondedBtDevicesSource
+
+	// pttDeviceSource is the optional /api/ptt/available injector. Wired
+	// post-construction via SetPttDeviceSource by pkg/app on Android
+	// (live platformsvc-backed adapter); nil on desktop, in which case
+	// the handler falls back to pttdevice.Enumerate() natively. See
+	// pkg/webapi/ptt.go for the interface definition.
+	pttDeviceSource PttDeviceSource
 }
 
 // ActionsService is the narrow surface the webapi handlers consume

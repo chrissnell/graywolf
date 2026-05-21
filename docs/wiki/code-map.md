@@ -112,6 +112,21 @@ The split is enforced by [invariant 9](invariants.md).
 | UI helpers | `web/src/lib/channelPtt.js` — `summaryLine`, `pttState`, `methodLabel`, `ariaLabel`. Mirrors `channelBacking.js`. |
 | Card row | `web/src/routes/Channels.svelte` — second `backing-row`-styled block under the BACKING row, only shown for modem-backed TX channels (KISS-only and RX-only channels don't drive PTT). |
 
+### PTT tab (unified Android + desktop)
+
+| Surface | Where |
+|---|---|
+| Page shell, dialog hosts, Platform.kind branch | `web/src/routes/Ptt.svelte` |
+| One-card-per-PttConfig with Change Method / Change Device / Test PTT | `web/src/routes/ptt/PttCard.svelte` |
+| Method radio-card list | `web/src/routes/ptt/MethodPicker.svelte` |
+| Device list (Recommended / Other split + permission CTA) | `web/src/routes/ptt/DevicePicker.svelte` |
+| Dialog A — method picker + rigctld host:port + Test Connection | `web/src/routes/ptt/DialogChangeMethod.svelte` |
+| Dialog B — device picker + GPIO line / CM108 pin / invert | `web/src/routes/ptt/DialogChangeDevice.svelte` |
+| Method options per platform | `web/src/routes/ptt/devices/methodOptions.{android,desktop}.js` |
+| Device-source adapters per platform | `web/src/routes/ptt/devices/{android,desktop}DeviceSource.js` |
+| Channel-selector auto-hide + Add visibility rule | `web/src/routes/ptt/channelSelector.js` |
+| Android USB enumeration into `[]AvailableDevice` shape | `pkg/pttdevice/android.go` |
+
 ## Channel TX gating
 
 | Surface | Where |
