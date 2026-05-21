@@ -1,0 +1,140 @@
+name: Android
+
+# PR / push:main: build an unsigned debug APK and upload as an artifact.
+# Tag pushes (v*) will additionally trigger the release-sign job in
+# Phase 4 of the Android Play Store pipeline plan
+# (docs/superpowers/plans/2026-05-21-android-play-store-pipeline.md).
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  # Manual trigger so this workflow can be exercised from a branch PR
+  # (e.g. while it's stacked on another feature branch and the PR's
+  # base isn't main yet). Also useful for re-running on transient
+  # network failures.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (debug APK)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Full history so any tooling that walks tags (e.g. release
+          # fixture generators) keeps working if we extend this job later.
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Node is needed by the Gradle webBuild task, which runs
+      # `npx vite build` to refresh web/dist before goCrossCompile
+      # embeds it via go:embed. Tracks web/package-lock.json so this
+      # job's npm cache invalidates when frontend deps change.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: |
+          npm ci
+          # rollup's optional binary deps don't always install via npm
+          # ci on linux runners; this matches the proven pattern in
+          # release.yml's frontend-build job.
+          npm install @rollup/rollup-linux-x64-gnu
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Rust + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked --version ^4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: '28.x'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pulls the Android SDK platforms / build-tools / NDK at the
+      # versions the Gradle script expects. NDK version is pinned to
+      # match cargo-ndk's expectation and the floor enforced by
+      # scripts/check-android-toolchain.sh (r27+). compileSdk and
+      # build-tools 36 match android/app/build.gradle.kts.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018'
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      # Diagnostic: prove the NDK clang wrappers are at the path Gradle
+      # expects before invoking the build. Cheap insurance against silent
+      # NDK-version drift.
+      - name: NDK layout sanity
+        run: |
+          set -euo pipefail
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-<unset>}"
+          ls -1 "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/" | grep -E "^(x86_64|aarch64)-linux-android[0-9]+-clang$" | sort
+
+      - name: Build debug APK
+        working-directory: android
+        # Do NOT use `env: ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_HOME }}`
+        # here. `${{ env.X }}` evaluates against the workflow-context env,
+        # which doesn't reflect variables setup-android exports at the
+        # shell level — the expression resolves to "" and poisons the
+        # downstream NDK path. setup-android sets ANDROID_NDK_HOME as a
+        # real shell env var; the gradle script's fallback chain
+        # ANDROID_NDK_ROOT -> ANDROID_NDK_HOME (with .takeUnless { blank }
+        # so an empty string is treated as unset) handles that cleanly.
+        #
+        # --info surfaces the underlying go/cargo stdout that Gradle's
+        # Exec task would otherwise buffer and discard. On failure the
+        # actual error message lands in the run log instead of just
+        # "Process 'command 'go'' finished with non-zero exit value 1".
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --info
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: graywolf-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7

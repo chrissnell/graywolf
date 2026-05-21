@@ -242,9 +242,17 @@ goAbiMatrix.forEach { (abi, info) ->
             // Resolve the NDK clang wrapper for this ABI. ANDROID_NDK_ROOT
             // (or ANDROID_NDK_HOME) must be set; check-android-toolchain.sh
             // enforces this in preBuild.
-            val ndkRoot = System.getenv("ANDROID_NDK_ROOT")
-                ?: System.getenv("ANDROID_NDK_HOME")
-                ?: error("ANDROID_NDK_ROOT/ANDROID_NDK_HOME unset; needed for $abi cgo")
+            //
+            // .takeUnless { it.isNullOrBlank() } rejects both "unset" and
+            // "set to empty string". GitHub Actions hit the latter on
+            // 2026-05-21 when the workflow used `env: ANDROID_NDK_ROOT:
+            // ${{ env.ANDROID_NDK_HOME }}` (evaluated to "" because
+            // setup-android exports the var at shell level, not workflow
+            // context). A raw `?:` accepted "" and produced a broken
+            // clang path "/toolchains/...".
+            val ndkRoot = System.getenv("ANDROID_NDK_ROOT").takeUnless { it.isNullOrBlank() }
+                ?: System.getenv("ANDROID_NDK_HOME").takeUnless { it.isNullOrBlank() }
+                ?: error("ANDROID_NDK_ROOT/ANDROID_NDK_HOME unset or blank; needed for $abi cgo")
             val hostTag = when {
                 org.gradle.internal.os.OperatingSystem.current().isMacOsX  -> "darwin-x86_64"
                 org.gradle.internal.os.OperatingSystem.current().isLinux   -> "linux-x86_64"
