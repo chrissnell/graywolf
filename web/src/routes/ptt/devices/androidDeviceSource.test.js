@@ -21,13 +21,13 @@ test('androidDeviceSource.list filters /api/ptt/available by method deviceClass'
   const { createAndroidDeviceSource } = await import('./androidDeviceSource.js');
   const src = createAndroidDeviceSource(fakeApi);
 
-  const cp = await src.list({ wire: { method: 'android', ppt_method: 1 }, deviceClass: 'cp2102n' });
+  const cp = await src.list({ wire: { method: 'android', ptt_method: 1 }, deviceClass: 'cp2102n' });
   assert.deepEqual(cp.map(d => d.name), ['CP2102N']);
 
-  const aioc = await src.list({ wire: { method: 'android', ppt_method: 3 }, deviceClass: 'cdc-acm' });
+  const aioc = await src.list({ wire: { method: 'android', ptt_method: 3 }, deviceClass: 'cdc-acm' });
   assert.deepEqual(aioc.map(d => d.name), ['AIOC']);
 
-  const cm = await src.list({ wire: { method: 'android', ppt_method: 2 }, deviceClass: 'hid-cm108' });
+  const cm = await src.list({ wire: { method: 'android', ptt_method: 2 }, deviceClass: 'hid-cm108' });
   assert.deepEqual(cm.map(d => d.name), ['CM108']);
 });
 
@@ -35,7 +35,7 @@ test('androidDeviceSource.list for VOX (no deviceClass) returns an empty array',
   const fakeApi = { get: async () => [{ name: 'CP2102N', type: 'usb-cp2102n', recommended: true }] };
   const { createAndroidDeviceSource } = await import('./androidDeviceSource.js');
   const src = createAndroidDeviceSource(fakeApi);
-  assert.deepEqual(await src.list({ wire: { method: 'android', ppt_method: 4 } }), []);
+  assert.deepEqual(await src.list({ wire: { method: 'android', ptt_method: 4 } }), []);
 });
 
 test('androidDeviceSource.list synthesizes usb:VID:PID path when the device row has none', async () => {
@@ -49,7 +49,7 @@ test('androidDeviceSource.list synthesizes usb:VID:PID path when the device row 
   };
   const { createAndroidDeviceSource } = await import('./androidDeviceSource.js');
   const src = createAndroidDeviceSource(fakeApi);
-  const list = await src.list({ wire: { method: 'android', ppt_method: 3 }, deviceClass: 'cdc-acm' });
+  const list = await src.list({ wire: { method: 'android', ptt_method: 3 }, deviceClass: 'cdc-acm' });
   assert.equal(list.length, 1);
   assert.equal(list[0].path, 'usb:1209:7388');
 });
@@ -64,7 +64,7 @@ test('androidDeviceSource.list preserves a non-empty backend path when present',
   };
   const { createAndroidDeviceSource } = await import('./androidDeviceSource.js');
   const src = createAndroidDeviceSource(fakeApi);
-  const list = await src.list({ wire: { method: 'android', ppt_method: 3 }, deviceClass: 'cdc-acm' });
+  const list = await src.list({ wire: { method: 'android', ptt_method: 3 }, deviceClass: 'cdc-acm' });
   assert.equal(list[0].path, '/dev/bus/usb/001/002');
 });
 

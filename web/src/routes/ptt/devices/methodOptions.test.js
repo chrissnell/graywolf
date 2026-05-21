@@ -20,20 +20,20 @@ test('DESKTOP_METHODS entries carry label + wire', async () => {
 test('ANDROID_METHODS includes off + 3 USB methods + VOX in display order', async () => {
   const { ANDROID_METHODS } = await import('./methodOptions.android.js');
   assert.deepEqual(
-    ANDROID_METHODS.map(m => ({ method: m.wire.method, ppt_method: m.wire.ppt_method ?? null })),
+    ANDROID_METHODS.map(m => ({ method: m.wire.method, ptt_method: m.wire.ptt_method ?? null })),
     [
-      { method: 'none',    ppt_method: null },
-      { method: 'android', ppt_method: 1 },   // CP2102N RTS
-      { method: 'android', ppt_method: 3 },   // AIOC CDC-ACM DTR
-      { method: 'android', ppt_method: 2 },   // CM108 HID
-      { method: 'android', ppt_method: 4 },   // VOX
+      { method: 'none',    ptt_method: null },
+      { method: 'android', ptt_method: 1 },   // CP2102N RTS
+      { method: 'android', ptt_method: 3 },   // AIOC CDC-ACM DTR
+      { method: 'android', ptt_method: 2 },   // CM108 HID
+      { method: 'android', ptt_method: 4 },   // VOX
     ],
   );
 });
 
 test('ANDROID_METHODS USB entries carry deviceClass; VOX and Off do not', async () => {
   const { ANDROID_METHODS } = await import('./methodOptions.android.js');
-  const byKey = (m) => `${m.wire.method}#${m.wire.ppt_method ?? ''}`;
+  const byKey = (m) => `${m.wire.method}#${m.wire.ptt_method ?? ''}`;
   const map = new Map(ANDROID_METHODS.map(m => [byKey(m), m.deviceClass ?? null]));
   assert.equal(map.get('android#1'), 'cp2102n');
   assert.equal(map.get('android#3'), 'cdc-acm');

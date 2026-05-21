@@ -1,11 +1,11 @@
 <!-- web/src/routes/ptt/MethodPicker.svelte -->
 <script module>
   // A deterministic key per method-option for binding to the radio group.
-  // Includes ppt_method so Android's five `method:'android'` entries are
+  // Includes ptt_method so Android's five `method:'android'` entries are
   // distinguishable.
   export function key(m) {
-    return m.wire.ppt_method != null
-      ? `${m.wire.method}#${m.wire.ppt_method}`
+    return m.wire.ptt_method != null
+      ? `${m.wire.method}#${m.wire.ptt_method}`
       : m.wire.method;
   }
 </script>
@@ -15,7 +15,7 @@
   // method-options array and current selection; we emit selection changes.
   //
   // Each `methods` entry has shape:
-  //   { wire: { method, ppt_method? }, label, meta, deviceClass? }
+  //   { wire: { method, ptt_method? }, label, meta, deviceClass? }
   // `wire` is what eventually goes onto the /api/ptt POST body.
   // `key()` is defined in the <script module> block above and is directly
   // accessible to this instance script — no import required.

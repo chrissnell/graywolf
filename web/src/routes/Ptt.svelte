@@ -169,7 +169,7 @@
       const ppt = byType[dev.type];
       if (ppt == null) return null;
       return methodOptionsForPlatform.find(m =>
-        m.wire.method === 'android' && m.wire.ppt_method === ppt
+        m.wire.method === 'android' && m.wire.ptt_method === ppt
       );
     }
     // Desktop: map by AvailableDevice.type → method-options entry.
@@ -206,7 +206,7 @@
     dialogContext = { kind: 'edit', channelId: item.channel_id, item };
     dialogMethodChosen = methodOptionsForPlatform.find(m =>
       m.wire.method === item.method &&
-      (m.wire.ppt_method == null || m.wire.ppt_method === item.ptt_method)
+      (m.wire.ptt_method == null || m.wire.ptt_method === item.ptt_method)
     ) || null;
     dialogMethodOpen = true;
   }
@@ -215,7 +215,7 @@
     dialogContext = { kind: 'edit', channelId: item.channel_id, item };
     dialogMethodChosen = methodOptionsForPlatform.find(m =>
       m.wire.method === item.method &&
-      (m.wire.ppt_method == null || m.wire.ppt_method === item.ptt_method)
+      (m.wire.ptt_method == null || m.wire.ptt_method === item.ptt_method)
     ) || null;
     if (!dialogMethodChosen) {
       // Method isn't in the current platform's option list — bounce
@@ -231,7 +231,7 @@
     const w = method.wire.method;
     if (w === 'none') return false;
     if (w === 'rigctld') return false;
-    if (w === 'android' && method.wire.ppt_method === 4) return false;
+    if (w === 'android' && method.wire.ptt_method === 4) return false;
     return true;
   }
 
@@ -271,7 +271,7 @@
       gpio_line: payload?.gpio_line ?? 0,
       invert: !!payload?.invert,
     };
-    if (m.wire.ppt_method != null) body.ppt_method = m.wire.ppt_method;
+    if (m.wire.ptt_method != null) body.ptt_method = m.wire.ptt_method;
     try {
       if (dialogContext.kind === 'edit' && dialogContext.item) {
         await api.put(`/ptt/${dialogContext.item.channel_id}`, body);
