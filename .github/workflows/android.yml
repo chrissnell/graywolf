@@ -117,16 +117,19 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        env:
-          # Both vars are populated by android-actions/setup-android.
-          # Gradle's check-android-toolchain.sh keys off ANDROID_NDK_ROOT
-          # specifically; ANDROID_NDK_HOME is the legacy alias.
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_HOME }}
+        # Do NOT use `env: ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_HOME }}`
+        # here. `${{ env.X }}` evaluates against the workflow-context env,
+        # which doesn't reflect variables setup-android exports at the
+        # shell level — the expression resolves to "" and poisons the
+        # downstream NDK path. setup-android sets ANDROID_NDK_HOME as a
+        # real shell env var; the gradle script's fallback chain
+        # ANDROID_NDK_ROOT -> ANDROID_NDK_HOME (with .takeUnless { blank }
+        # so an empty string is treated as unset) handles that cleanly.
+        #
         # --info surfaces the underlying go/cargo stdout that Gradle's
-        # Exec task would otherwise buffer and discard on success. On
-        # failure the actual error message lands in the run log instead
-        # of just "Process 'command 'go'' finished with non-zero exit
-        # value 1".
+        # Exec task would otherwise buffer and discard. On failure the
+        # actual error message lands in the run log instead of just
+        # "Process 'command 'go'' finished with non-zero exit value 1".
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --info
 
       - name: Upload debug APK
