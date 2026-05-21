@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy &mdash; Graywolf APRS Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+      <a href="privacy.html">Privacy Policy</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Privacy Policy</h1>
+    <p class="subtitle">Graywolf APRS &mdash; effective 2026-05-21</p>
+
+    <p>
+      Graywolf APRS is a single-station amateur radio application. It
+      runs entirely on your own device (desktop, Raspberry Pi, or
+      Android tablet). The developer does not operate any service that
+      collects data from your installation. This page describes what
+      Graywolf APRS does with your data, what stays on your device,
+      and what is transmitted on the network or over the air when you
+      enable specific features.
+    </p>
+
+    <h2>Information Graywolf APRS does not collect</h2>
+    <p>
+      Graywolf APRS contains no analytics, no telemetry, no crash
+      reporting, no advertising identifiers, and no developer-side
+      account system. The developer receives no information about your
+      use of the application, including but not limited to: how often
+      you launch it, what features you use, your callsign, your
+      location, your channel configuration, or any error or diagnostic
+      data. There is no "create an account" flow and no cloud sync.
+    </p>
+
+    <h2>Information that stays on your device</h2>
+    <p>
+      The application stores the following data locally on the device
+      where it is installed. None of it is transmitted to the developer
+      or to any third party except as you explicitly configure
+      (see below):
+    </p>
+    <ul>
+      <li>Your station callsign and configured channels, beacons,
+        digipeater paths, iGate filters, and other operator
+        settings.</li>
+      <li>Logs of received and transmitted packets, when you have a
+        packet log enabled.</li>
+      <li>Position history from your GPS device, when you have the
+        position log enabled.</li>
+      <li>Message history for APRS messaging, when you use the
+        messaging feature.</li>
+      <li>Cached map tiles, when you view the live map.</li>
+      <li>A randomly generated per-launch authentication token on
+        Android (used only by the in-app web view to talk to the
+        local server; not persisted across launches).</li>
+    </ul>
+
+    <h2>Network connections you may initiate</h2>
+    <p>
+      Graywolf APRS only contacts external services when you enable
+      the corresponding feature. None of these are on by default; you
+      configure them deliberately.
+    </p>
+    <ul>
+      <li>
+        <strong>APRS-IS:</strong> if you configure the iGate or
+        outbound beacon submission, the application connects to an
+        APRS-IS server you specify and transmits your callsign, your
+        position (if you have a position beacon), and any packets you
+        are gating to the internet. APRS-IS is a public network
+        operated by the amateur radio community; data sent to it is
+        publicly visible.
+      </li>
+      <li>
+        <strong>OpenStreetMap tiles (default):</strong> the application
+        ships with OpenStreetMap as the default tile source. When you
+        use the live map, raster tiles are fetched directly from the
+        public OpenStreetMap tile servers. OSM sees your IP address
+        and the coordinates of tiles you request. See
+        <a href="https://wiki.openstreetmap.org/wiki/Privacy_Policy">openstreetmap.org's privacy policy</a>.
+      </li>
+      <li>
+        <strong>Graywolf Maps (optional, opt-in):</strong> you may
+        switch the tile source to "Graywolf Maps", a vector-tile
+        service operated by the developer at
+        <code>maps.nw5w.com</code>. Switching to this source is
+        opt-in and requires a one-time registration step.
+        <ul>
+          <li>
+            <em>What is collected at registration:</em> when you
+            register, the application sends only your amateur radio
+            callsign (uppercased, with any -SSID stripped) to the
+            developer-operated registration endpoint at
+            <code>auth.nw5w.com/register</code>. No email address,
+            no name, no location, no device identifier, and no other
+            data is sent.
+          </li>
+          <li>
+            <em>What you receive in return:</em> a per-callsign access
+            token. The token is stored locally on your device and is
+            included as an <code>Authorization: Bearer</code> header
+            on every tile request to <code>maps.nw5w.com</code>.
+          </li>
+          <li>
+            <em>How the callsign is used:</em> the registration server
+            associates the issued token with your callsign so that
+            tile-server requests can be attributed to a licensed
+            amateur operator for abuse prevention and per-callsign
+            rate limiting. The callsign and the token issuance time
+            are retained on the server for the lifetime of the
+            registration. The tile server logs request metadata
+            (callsign, IP, tile coordinates, timestamps) for the
+            purpose of operating the service and detecting abuse;
+            logs are not shared with third parties.
+          </li>
+          <li>
+            <em>How to remove your registration:</em> contact the
+            address at the bottom of this page. Or, simply switch the
+            tile source back to OpenStreetMap; the token stays on
+            your device but is no longer used.
+          </li>
+        </ul>
+      </li>
+      <li>
+        <strong>Remote Actions (optional, opt-in):</strong> the
+        Remote Actions feature lets you trigger actions on remote
+        graywolf stations via APRS messages authenticated by
+        one-time passwords. If you enable this feature, the
+        per-remote credentials you configure are stored locally on
+        your device; nothing is sent to any developer-operated
+        service for this feature.
+      </li>
+      <li>
+        <strong>Update checks (desktop only):</strong> the desktop
+        version periodically checks the developer's GitHub repository
+        for a newer release. The Android version does not perform
+        update checks; the Play Store handles updates.
+      </li>
+    </ul>
+
+    <h2>Information transmitted over the air</h2>
+    <p>
+      As an amateur radio application, Graywolf APRS transmits radio
+      packets that include your licensed callsign whenever you have
+      transmission enabled. Amateur radio transmissions are public by
+      regulation: they can be received by anyone with appropriate
+      equipment, and your callsign and any data you transmit
+      (including position, messages, and weather data) are not
+      confidential. This is a property of amateur radio itself, not of
+      this application.
+    </p>
+
+    <h2>Hardware permissions</h2>
+    <p>
+      On Android, the application requests the following hardware
+      permissions. Each is used solely for the in-app function
+      described; none of the data leaves the device through the
+      application:
+    </p>
+    <ul>
+      <li><strong>Microphone (RECORD_AUDIO):</strong> required to
+        receive and decode audio from your radio for packet decoding.
+        Audio is processed in memory by the modem and is not recorded
+        to disk or transmitted.</li>
+      <li><strong>Location (ACCESS_FINE_LOCATION):</strong> required
+        only if you enable GPS-based beaconing. Location data is used
+        to populate your beacon position and is stored only in your
+        local position log; it is transmitted only as part of the
+        APRS beacons you configure to send.</li>
+      <li><strong>Bluetooth (BLUETOOTH_CONNECT):</strong> required
+        only if you use a Bluetooth-connected KISS TNC. Used only to
+        communicate with paired TNC hardware.</li>
+      <li><strong>USB device access:</strong> required only if you
+        use a USB-connected radio interface (Digirig, AIOC, CM108,
+        CP2102, and similar). Used only to communicate with the
+        attached interface.</li>
+      <li><strong>Notifications (POST_NOTIFICATIONS):</strong> used to
+        show the foreground service notification that Android requires
+        while the radio is active.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>
+      Graywolf APRS is designed for use by licensed amateur radio
+      operators. Amateur radio licensing is regulated by the country
+      of operation and is not generally available to children under
+      the licensing age. The application is not directed at children
+      under 13 and is rated for ages 18 and up on the Google Play
+      Store.
+    </p>
+
+    <h2>Data retention and deletion</h2>
+    <p>
+      Because no data is collected by the developer, there is no
+      developer-side retention period and no deletion request to
+      submit. To delete the local data on your device, uninstall the
+      application. To delete data from external services you have
+      opted into (APRS-IS, map tile providers, auth.nw5w.com), refer
+      to the privacy policy of those services directly.
+    </p>
+
+    <h2>Changes to this policy</h2>
+    <p>
+      This policy is part of the Graywolf APRS source code and is
+      published at
+      <a href="https://chrissnell.com/software/graywolf/privacy.html">chrissnell.com/software/graywolf/privacy.html</a>.
+      Material changes will be reflected here and the effective date
+      at the top of the page will be updated. Historical versions are
+      visible in the project's public git history.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions about this privacy policy may be sent to
+      <a href="mailto:graywolf@nw5w.com">graywolf@nw5w.com</a>.
+    </p>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
