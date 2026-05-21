@@ -1,4 +1,5 @@
 import com.google.protobuf.gradle.proto
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -50,13 +51,48 @@ android {
         jniLibs.useLegacyPackaging = true
     }
 
+    // Release signing reads from env vars so CI can inject secrets without
+    // a committed keystore. Local release builds: export GRAYWOLF_KEYSTORE_PATH
+    // + GRAYWOLF_KEYSTORE_PASSWORD before ./gradlew assembleRelease|bundleRelease.
+    // CI passes GRAYWOLF_KEYSTORE_BASE64 (decoded inline) instead.
+    val keystorePath = System.getenv("GRAYWOLF_KEYSTORE_PATH")
+    val keystoreBase64 = System.getenv("GRAYWOLF_KEYSTORE_BASE64")
+    val keystorePassword = System.getenv("GRAYWOLF_KEYSTORE_PASSWORD")
+    val keyAlias = System.getenv("GRAYWOLF_KEY_ALIAS") ?: "graywolf-upload"
+    val keyPassword = System.getenv("GRAYWOLF_KEY_PASSWORD") ?: keystorePassword
+
+    val resolvedKeystoreFile: java.io.File? = when {
+        keystorePath != null -> file(keystorePath)
+        keystoreBase64 != null -> {
+            val tmp = layout.buildDirectory.file("upload.keystore").get().asFile
+            tmp.parentFile.mkdirs()
+            tmp.writeBytes(Base64.getDecoder().decode(keystoreBase64))
+            tmp
+        }
+        else -> null
+    }
+
+    signingConfigs {
+        if (resolvedKeystoreFile != null && keystorePassword != null) {
+            create("release") {
+                storeFile = resolvedKeystoreFile
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword!!
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
         }
         release {
-            // POC-B is debug-only; phase 6 wires release signing.
             isMinifyEnabled = false
+            // No keystore env -> leave signingConfig unset; assembleRelease
+            // emits an unsigned APK. PR-build CI never sees secrets and
+            // stays green; tag builds inject the keystore env to sign.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 
