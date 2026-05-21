@@ -27,6 +27,8 @@
 {#if devices.length === 0}
   <div class="empty">
     No matching devices detected. Plug in the adapter and click Refresh.
+    If the adapter is plugged in but still not detected after a swap,
+    restart Graywolf.
   </div>
 {:else}
   {#if recommended.length > 0}
