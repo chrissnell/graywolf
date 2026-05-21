@@ -32,6 +32,12 @@ export function createAndroidDeviceSource(api) {
     async requestPermission(device) {
       const bridge = globalThis.GraywolfWebInterface;
       if (!bridge?.requestUsbPermission) return false;
+      // Singleton callback-dispatcher pattern shared across Android JS-bridge
+      // flows. The Kotlin side calls evaluateJavascript("__usbResult(id, granted)")
+      // when the system USB permission dialog returns; we route to the per-call
+      // promise via __usbCallbacks[id]. Idempotent install — Kiss.svelte uses
+      // the same shape with __btResult / __btCallbacks. Removing or replacing
+      // either one breaks the other.
       if (!globalThis.__usbResult) {
         globalThis.__usbResult = (id, granted) => {
           const cb = globalThis.__usbCallbacks?.[id];
