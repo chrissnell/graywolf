@@ -16,7 +16,6 @@
   import {
     modemBackedChannels as computeModemBacked,
     channelsNeedingPtt as computeChannelsNeedingPtt,
-    showChannelSelector as computeShowChannelSelector,
     showAddButton as computeShowAddButton,
   } from './ptt/channelSelector.js';
 
@@ -70,11 +69,7 @@
   let pttByChannel = $derived(new Map(items.map(p => [p.channel_id, p])));
   let modemChannels = $derived(computeModemBacked(channels));
   let channelsNeedingPttList = $derived(computeChannelsNeedingPtt(channels, pttByChannel));
-  let showChannelSelector = $derived(computeShowChannelSelector(channels, pttByChannel));
   let showAddPttButton = $derived(computeShowAddButton(channels, pttByChannel));
-  let channelOptions = $derived(
-    modemChannels.map(c => ({ value: String(c.id), label: `${c.name} (ch ${c.id})` }))
-  );
 
   function channelName(id) {
     const c = channels.find(c => c.id === id);
