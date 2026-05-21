@@ -163,8 +163,8 @@ func (s *Server) SetPttDeviceSource(src PttDeviceSource) { s.pttDeviceSource = s
 // verbatim. Otherwise the handler falls back to pttdevice.Enumerate()
 // which discovers serial ports, gpiochips, and CM108 HID devices
 // natively on the host. The payload is a flat array of
-// pttdevice.AvailableDevice; platform-dependent fields like `warning`,
-// `recommended`, and `has_permission` are populated by the enumerator.
+// pttdevice.AvailableDevice; platform-dependent fields like `warning`
+// and `recommended` are populated by the enumerator.
 //
 // @Summary  List PTT devices
 // @Tags     ptt

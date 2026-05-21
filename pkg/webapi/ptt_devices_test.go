@@ -9,12 +9,12 @@ import (
 
 // TestListPttDevicesShapeOnDesktop asserts the /api/ptt/available
 // response shape carries the fields the new SPA depends on:
-// `recommended`, `type`, `path`, and (optionally) `has_permission`.
+// `recommended`, `type`, and `path`.
 //
-// Tasks 5.1/5.2 added the optional `has_permission` field plus new
-// Android-only `usb-*` types. This test locks the desktop contract so a
-// future struct rename or accidental field promotion can't silently
-// break the SPA, which keys its UI off `type` and `recommended`.
+// Tasks 5.1/5.2 added new Android-only `usb-*` types. This test locks
+// the desktop contract so a future struct rename or accidental type
+// promotion can't silently break the SPA, which keys its UI off `type`
+// and `recommended`.
 func TestListPttDevicesShapeOnDesktop(t *testing.T) {
 	srv, _ := newTestServer(t)
 	mux := http.NewServeMux()
@@ -27,10 +27,9 @@ func TestListPttDevicesShapeOnDesktop(t *testing.T) {
 		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var out []struct {
-		Path          string `json:"path"`
-		Type          string `json:"type"`
-		Recommended   bool   `json:"recommended"`
-		HasPermission *bool  `json:"has_permission,omitempty"`
+		Path        string `json:"path"`
+		Type        string `json:"type"`
+		Recommended bool   `json:"recommended"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -43,9 +42,6 @@ func TestListPttDevicesShapeOnDesktop(t *testing.T) {
 			// recognized desktop types
 		default:
 			t.Errorf("unexpected desktop type: %q", d.Type)
-		}
-		if d.HasPermission != nil {
-			t.Errorf("desktop should omit has_permission, got %v", *d.HasPermission)
 		}
 	}
 }

@@ -24,10 +24,6 @@ type AvailableDevice struct {
 	Recommended bool `json:"recommended"`
 	// Warning is set when there's a known gotcha with this path.
 	Warning string `json:"warning,omitempty"`
-	// HasPermission is populated only on Android, where USB devices need
-	// explicit grant. Desktop omits this field entirely (JSON null), so
-	// the SPA's `has_permission: false` branch is Android-exclusive.
-	HasPermission *bool `json:"has_permission,omitempty"`
 }
 
 // Enumerate returns all detected PTT-capable devices on the host.
