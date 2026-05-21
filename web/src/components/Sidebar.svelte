@@ -9,10 +9,15 @@
   import { Platform } from '../lib/platform.js';
   import logoUrl from '../assets/graywolf.svg';
 
-  // Surfaces deferred or unsupported on Android. PTT lands in phase 5;
-  // Simulation is a desktop dev-mode tool. Hidden from the sidebar so
-  // operators don't tap into a non-functional surface.
-  const HIDDEN_ON_ANDROID = new Set(['/simulation', '/agw', '/login']);
+  // Surfaces deferred or unsupported on Android. Hidden from the
+  // sidebar so operators don't tap into a non-functional surface:
+  //   /simulation - dev-mode tool, not for Android operators
+  //   /agw        - AGWPE TCP server, not wired on Android
+  //   /login      - Android authenticates via the per-launch bearer token
+  //   /actions    - command-handler Actions exec shell scripts, which
+  //                 Android's W^X sandbox forbids; webhook handlers
+  //                 would work but aren't worth a partial UI for launch
+  const HIDDEN_ON_ANDROID = new Set(['/simulation', '/agw', '/login', '/actions']);
 
   // Main-function entries get an icon and render in a single
   // unsubheadered top section. Inline SVGs cover the cases chonky-ui's
@@ -45,6 +50,14 @@
     { path: '/simulation', label: 'Simulation' },
     { path: '/callsign', label: 'Station Callsign' },
   ];
+  // mainItems carries the icon'd top section; it's filtered by the
+  // same HIDDEN_ON_ANDROID set as the settings group so an entry like
+  // /actions disappears from both places on Android.
+  const visibleMainItems = $derived(
+    Platform.kind === 'android'
+      ? mainItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
+      : mainItems,
+  );
   const navGroups = $derived([
     {
       label: 'Settings',
@@ -138,7 +151,7 @@
 
 {#snippet navItems()}
   <ul class="nav-list main-list">
-    {#each mainItems as item}
+    {#each visibleMainItems as item}
       {@const unread = item.badge ? badgeCount(item.badge) : 0}
       <li>
         <a

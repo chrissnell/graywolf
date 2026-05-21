@@ -67,6 +67,10 @@
     const r = { ...baseRoutes };
     delete r['/agw'];
     delete r['/login'];
+    // Actions command-handlers exec shell scripts, which Android's W^X
+    // sandbox forbids; the tab is hidden in the sidebar and the route
+    // is dropped so a stray hash nav can't render a dead surface.
+    delete r['/actions'];
     return r;
   })();
 
