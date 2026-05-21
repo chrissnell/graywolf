@@ -2361,12 +2361,6 @@ definitions:
       description:
         description: human-friendly label (USB product, GPIO chip)
         type: string
-      has_permission:
-        description: |-
-          HasPermission is populated only on Android, where USB devices need
-          explicit grant. Desktop omits this field entirely (JSON null), so
-          the SPA's `has_permission: false` branch is Android-exclusive.
-        type: boolean
       name:
         type: string
       path:

@@ -3120,12 +3120,6 @@ export interface components {
         "pttdevice.AvailableDevice": {
             /** @description human-friendly label (USB product, GPIO chip) */
             description?: string;
-            /**
-             * @description HasPermission is populated only on Android, where USB devices need
-             *     explicit grant. Desktop omits this field entirely (JSON null), so
-             *     the SPA's `has_permission: false` branch is Android-exclusive.
-             */
-            has_permission?: boolean;
             name?: string;
             path?: string;
             /**
