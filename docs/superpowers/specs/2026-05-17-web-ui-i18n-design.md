@@ -1,8 +1,57 @@
 # Web UI Internationalization — Design
 
 Date: 2026-05-17
-Status: Approved (brainstorming), pending implementation plan
+Status: Approved (brainstorming); reviewed for implementation 2026-05-17 (see "Implementation review")
 Scope: `web/` Svelte SPA + bounded backend error-string contract
+
+## Implementation review (2026-05-17)
+
+Codebase-grounded adjustments made before planning. These supersede any
+conflicting wording in the sections below.
+
+1. **Compiled artifact is an ES module, not JSON.** `compiled/<lang>.js`
+   (ESM exporting `{ messages, plural }`), not `compiled/<lang>.json`. A
+   JSON file cannot carry the plural selector function; the alternatives
+   are runtime `eval`/`new Function` (CSP risk, rejected) or a second
+   file. `.js` is lazy-loaded by `import.meta.glob` exactly as
+   `web/src/main.js:5` already does for theme CSS. The plural selector is
+   produced at build time by transforming the PO `Plural-Forms` C
+   expression to a JS arrow body through a strict token allowlist
+   (identifiers limited to `n`; operators limited to
+   `+ - * / % ? : ( ) == != < > <= >= && || !` and integer literals) —
+   any token outside the allowlist fails the build. No runtime eval.
+
+2. **Build dependencies named explicitly.** devDependencies:
+   `gettext-parser` (PO/POT parse + compile) and `acorn` (ESTree parse of
+   `.js`/`.mjs` for literal-arg extraction and the linter; `svelte/compiler`
+   covers `.svelte` only and Svelte 5 does not re-export a JS parser).
+   `msgmerge` (GNU gettext binary) is an **optional developer tool**, not
+   a build/CI hard dependency: an English-only ship has zero `.po` files,
+   so `make i18n-extract` regenerates the POT always and runs `msgmerge`
+   only when `.po` files exist *and* the binary is on PATH, warning and
+   skipping otherwise.
+
+3. **CI job is new.** `web/`'s `npm run test` is not run by any current
+   CI job (`.github/workflows/ci.yml` has Go/Rust/example jobs only). A
+   dedicated `web-i18n` CI job runs the freshness gate, `.po` parse +
+   placeholder parity, `make i18n-lint`, and the resolver/store Node
+   tests. The Go `error_key` parity test rides the existing
+   `go test -race ./...`.
+
+4. **§4 error-key mechanics concretized.** Keys are `const` declarations
+   in a new `pkg/weberr` package (enumerable, one source). The canonical
+   envelope `webtypes.ErrorResponse` gains `error_key` and `params`
+   (both `omitempty`, wire-compatible). `internalError` sets
+   `error_key:"internal.error"`. The client maps `error_key` -> an
+   English source string in `web/src/lib/i18n/errors.js`; that map's
+   values are ordinary `t(...)` msgids (so they extract into the POT
+   like any other string). A Go test enumerates the `weberr` constants;
+   a Node test asserts the JS map covers exactly that set (drift fails
+   CI on both sides).
+
+5. **Pseudo-locale build trigger.** `compile.mjs` emits
+   `compiled/pseudo.js` (and the store/registry expose `pseudo`) only
+   when `GRAYWOLF_I18N_PSEUDO=1` is set; normal builds never ship it.
 
 ## Goal
 
@@ -56,11 +105,12 @@ English carries different meaning (e.g. "Open" verb vs. adjective).
 |---|---|---|
 | `messages.pot` | Extracted template; translation source of truth | Yes |
 | `locales/<lang>.po` | One per language; English needs none (msgid *is* English) | Yes |
-| `compiled/<lang>.json` | Build artifact from `.po` | No (gitignored) |
+| `compiled/<lang>.js` | Build artifact from `.po` (ESM: `{ messages, plural }`) | No (gitignored) |
 | `i18n-store.svelte.js` | Runes store; localStorage `lang` mirror + server sync + boot-applied | Yes |
 | `t.js` | Resolver: `t()`, `tn()`, number/date helpers | Yes |
-| `extract.mjs` | Svelte-aware extractor -> `messages.pot` + `msgmerge` | Yes |
-| `compile.mjs` | `.po` -> `compiled/<lang>.json` (Vite prebuild) | Yes |
+| `errors.js` | `error_key` -> English `t()` msgid map (see §4) | Yes |
+| `extract.mjs` | Svelte-aware extractor -> `messages.pot` + optional `msgmerge` | Yes |
+| `compile.mjs` | `.po` -> `compiled/<lang>.js` (Vite prebuild) | Yes |
 
 ### Store (`i18n-store.svelte.js`)
 
@@ -70,7 +120,7 @@ Exact structural mirror of `web/src/lib/settings/theme-store.svelte.js`:
 - `GET/PUT /api/preferences/language` for server persistence; offline/401
   falls back to the localStorage mirror.
 - Exposes reactive `locale` getter and `setLocale(next)`.
-- Active locale's `compiled/<lang>.json` lazy-loaded via `import.meta.glob`.
+- Active locale's `compiled/<lang>.js` lazy-loaded via `import.meta.glob`.
   English path needs no fetch — the resolver falls back to the msgid.
 
 ### Resolver (`t.js`)
@@ -130,7 +180,7 @@ stale vs. source (`make i18n-extract && git diff --exit-code`) — a mechanical
 gate, the only extraction bookkeeping a developer ever feels.
 
 **Build:** a Vite prebuild step compiles `locales/*.po` ->
-`compiled/*.json`. Missing entries fall through to English at runtime;
+`compiled/*.js`. Missing entries fall through to English at runtime;
 nothing ships blank.
 
 **Translator:** opens `messages.pot` or `<lang>.po` in Poedit, Weblate,
