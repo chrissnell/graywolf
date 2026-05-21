@@ -474,19 +474,33 @@ object UsbPttAdapter : UsbPttCallback {
     fun keyCp2102nRts(): Boolean = setRts(true)
     fun unkeyCp2102nRts(): Boolean = setRts(false)
 
-    private fun setRts(state: Boolean): Boolean = synchronized(cp2102nLock) {
-        val h = cp2102n ?: run {
-            Log.w(TAG, "setRts($state) but CP2102N not open")
-            return@synchronized false
+    private fun setRts(state: Boolean): Boolean {
+        val attempted = synchronized(cp2102nLock) {
+            val h = cp2102n
+            if (h == null) {
+                Log.w(TAG, "setRts($state) but CP2102N not open")
+                return@synchronized null
+            }
+            try {
+                h.port.rts = state
+                Log.i(TAG, "ptt: cp2102n_rts=$state")
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "setRts($state) failed: $t")
+                // Stale handle (USB device went away under us, hub glitch,
+                // bus reset). Drop it so the next enumerate() opens fresh.
+                try { h.port.close() } catch (_: Throwable) { /* already broken */ }
+                cp2102n = null
+                false
+            }
         }
-        return@synchronized try {
-            h.port.rts = state
-            Log.i(TAG, "ptt: cp2102n_rts=$state")
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "setRts($state) failed: $t")
-            false
+        if (attempted == false) {
+            // Re-enumerate so a still-attached CP2102N gets re-opened;
+            // caller (Test PTT) can retry on the next click.
+            Log.i(TAG, "setRts: scheduling re-enumeration after stale-handle failure")
+            try { enumerate() } catch (t: Throwable) { Log.w(TAG, "re-enumerate threw: $t") }
         }
+        return attempted ?: false
     }
 
     fun keyCm108Hid(): Boolean = setHidGpio(true)
@@ -508,10 +522,19 @@ object UsbPttAdapter : UsbPttCallback {
         return true
     }
 
-    private fun setHidGpio(state: Boolean): Boolean = synchronized(cm108Lock) {
+    private fun setHidGpio(state: Boolean): Boolean {
+        val attempted = setHidGpioLocked(state)
+        if (attempted == false) {
+            Log.i(TAG, "setHidGpio: scheduling re-enumeration after stale-handle failure")
+            try { enumerate() } catch (t: Throwable) { Log.w(TAG, "re-enumerate threw: $t") }
+        }
+        return attempted ?: false
+    }
+
+    private fun setHidGpioLocked(state: Boolean): Boolean? = synchronized(cm108Lock) {
         val h = cm108 ?: run {
             Log.w(TAG, "setHidGpio($state) but CM108 not open")
-            return@synchronized false
+            return@synchronized null
         }
         // Layout matches graywolf-modem/src/tx/ptt_cm108_unix.rs and
         // ptt_cm108_macos.rs (which key the AIOC successfully on desktop):
@@ -540,6 +563,19 @@ object UsbPttAdapter : UsbPttCallback {
         )
         Log.i(TAG, "ptt: cm108_set_report pin=$pin mask=0x%02X value=0x%02X state=$state rc=$rc"
             .format(mask.toInt() and 0xFF, value.toInt() and 0xFF))
+        if (rc < 0) {
+            // Stale handle (USB device went away, hub glitch). Drop so a
+            // re-enumerate opens fresh.
+            try {
+                val iface = (0 until h.device.interfaceCount)
+                    .map { h.device.getInterface(it) }
+                    .firstOrNull { it.id == h.hidIface }
+                if (iface != null) h.connection.releaseInterface(iface)
+                h.connection.close()
+            } catch (_: Throwable) { /* already broken */ }
+            cm108 = null
+            return@synchronized false
+        }
         return@synchronized rc == report.size
     }
 
@@ -590,23 +626,33 @@ object UsbPttAdapter : UsbPttCallback {
     fun keyAiocCdcRts(): Boolean = setAiocRts(true)
     fun unkeyAiocCdcRts(): Boolean = setAiocRts(false)
 
-    private fun setAiocRts(state: Boolean): Boolean = synchronized(aiocLock) {
-        val h = aioc ?: run {
-            Log.w(TAG, "setAiocRts($state) but AIOC not open")
-            return@synchronized false
+    private fun setAiocRts(state: Boolean): Boolean {
+        val attempted = synchronized(aiocLock) {
+            val h = aioc
+            if (h == null) {
+                Log.w(TAG, "setAiocRts($state) but AIOC not open")
+                return@synchronized null
+            }
+            try {
+                // AIOC firmware >=1.2.0: PTT asserted on DTR=1 AND RTS=0.
+                // RTS must stay 0 in BOTH key and unkey states — the firmware
+                // releases PTT only when DTR drops to 0.
+                h.port.rts = false
+                h.port.dtr = state
+                Log.i(TAG, "ptt: aioc_cdc dtr=$state rts=0")
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "setAiocRts($state) failed: $t")
+                try { h.port.close() } catch (_: Throwable) { /* already broken */ }
+                aioc = null
+                false
+            }
         }
-        return@synchronized try {
-            // AIOC firmware >=1.2.0: PTT asserted on DTR=1 AND RTS=0.
-            // RTS must stay 0 in BOTH key and unkey states — the firmware
-            // releases PTT only when DTR drops to 0.
-            h.port.rts = false
-            h.port.dtr = state
-            Log.i(TAG, "ptt: aioc_cdc dtr=$state rts=0")
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "setAiocRts($state) failed: $t")
-            false
+        if (attempted == false) {
+            Log.i(TAG, "setAiocRts: scheduling re-enumeration after stale-handle failure")
+            try { enumerate() } catch (t: Throwable) { Log.w(TAG, "re-enumerate threw: $t") }
         }
+        return attempted ?: false
     }
 
     /** Classify a device by vid/pid + structural fingerprint. */
