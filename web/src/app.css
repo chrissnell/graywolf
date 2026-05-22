@@ -39,6 +39,12 @@ html, body, #app {
   font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.5;
+  /* Disable Android WebView text autosizing ("font boosting"), which
+     inflates text in blocks it deems wider than the viewport. On phones
+     it blew the AX.25 terminal heading up to wrap one word per line.
+     Pin to 100% so all text renders at the CSS-declared size. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 a {
