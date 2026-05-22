@@ -24,11 +24,19 @@ import { mkdir } from 'node:fs/promises';
 import process from 'node:process';
 
 const BASE = process.env.GW_SCREENSHOT_BASE || 'http://127.0.0.1:8088';
-const OUT = process.env.GW_SCREENSHOT_OUT || 'scratch/ss-work/shots';
-// Tablet portrait-ish landscape. The test device reports 1280x800;
-// Play accepts tablet screenshots at this size.
-const WIDTH = 1280;
-const HEIGHT = 800;
+// GW_SCREENSHOT_MODE=phone shoots a narrow portrait viewport so the SPA
+// renders its mobile layout (sidebar collapses to the top bar); anything
+// else shoots the 1280x800 tablet layout. Play wants both phone and
+// 7"/10" tablet screenshots, so the harness runs once per mode.
+const PHONE = process.env.GW_SCREENSHOT_MODE === 'phone';
+const OUT = process.env.GW_SCREENSHOT_OUT ||
+  (PHONE ? 'scratch/ss-work/shots-phone' : 'scratch/ss-work/shots');
+// Phone: a Pixel-5-class profile -- 393x851 CSS px (narrow enough to
+// trigger the mobile layout) at dsf 2.75 renders 1080x2340 PNGs, within
+// Play's phone limits. Tablet: 1280x800 (the test device's resolution).
+const WIDTH = PHONE ? 393 : 1280;
+const HEIGHT = PHONE ? 851 : 800;
+const DSF = PHONE ? 2.75 : 2;
 const USER = 'admin';
 const PASS = 'screenshot-admin-pw';
 
@@ -64,7 +72,9 @@ async function main() {
   const browser = await chromium.launch();
   const context = await browser.newContext({
     viewport: { width: WIDTH, height: HEIGHT },
-    deviceScaleFactor: 2,
+    deviceScaleFactor: DSF,
+    isMobile: PHONE,
+    hasTouch: PHONE,
     baseURL: BASE,
   });
   const page = await context.newPage();
