@@ -102,9 +102,10 @@ func TestConcurrentChainsShareThrottleAndStayBounded(t *testing.T) {
 	wg.Wait()
 
 	// Bound check: same shape as TestEndToEndBurstStaysBounded but
-	// across N concurrent producers. If the throttle counter were
-	// per-chain, MaintenanceEvery would only fire on whichever chain
-	// hit the threshold first and the count would blow past the bound.
+	// across N concurrent producers. This is the real proof that the
+	// throttle counter is shared: if it were per-chain, MaintenanceEvery
+	// would only fire on whichever chain hit the threshold first and the
+	// count would blow past the bound.
 	var count int64
 	if err := db.gorm.Raw("SELECT COUNT(*) FROM logs").Scan(&count).Error; err != nil {
 		t.Fatalf("count: %v", err)
@@ -116,8 +117,18 @@ func TestConcurrentChainsShareThrottleAndStayBounded(t *testing.T) {
 		t.Fatalf("ring under-populated: count=%d, want >=40 (concurrent writes lost?)", count)
 	}
 
-	// Both components must be represented in the survivors — proves
-	// neither chain was starved by the other.
+	// Both chains must route to their own component column. The survivor
+	// set from the concurrent burst above can't prove this: evict() keeps
+	// the globally-newest RingSize rows by id, so whichever chain's
+	// goroutines happened to commit last owns the entire tail — a legal
+	// scheduling outcome, not starvation. Write a short interleaved tail
+	// (shorter than RingSize) so both components are deterministically
+	// present in the survivor window, then assert routing.
+	const tail = 20
+	for i := 0; i < tail; i++ {
+		chainA.Info("tail", "i", i)
+		chainB.Info("tail", "i", i)
+	}
 	var componentsSeen int64
 	if err := db.gorm.Raw("SELECT COUNT(DISTINCT component) FROM logs").Scan(&componentsSeen).Error; err != nil {
 		t.Fatalf("distinct components: %v", err)
