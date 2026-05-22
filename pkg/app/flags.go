@@ -51,6 +51,8 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 		"max time to wait for clean shutdown")
 	fs.StringVar(&cfg.FlacFile, "flac", "", "override audio device with a FLAC file for testing")
 	fs.BoolVar(&cfg.Debug, "debug", false, "enable debug-level logging")
+	fs.BoolVar(&cfg.Demo, "demo", false,
+		"seed canned demo data (stations, counters) for screenshots; use with -modem \"\"")
 	fs.BoolVar(&cfg.LogBufferRamdisk, "logbuffer-ramdisk", false,
 		"force the in-database log buffer onto a ramdisk (tmpfs) regardless of the host's storage type")
 

@@ -127,6 +127,8 @@ type Server struct {
 	// the handler falls back to pttdevice.Enumerate() natively. See
 	// pkg/webapi/ptt.go for the interface definition.
 	pttDeviceSource PttDeviceSource
+
+	demo bool // true when running in screenshot/demo mode; set from Config.Demo
 }
 
 // ActionsService is the narrow surface the webapi handlers consume
@@ -189,6 +191,9 @@ type Config struct {
 	// /api/maps/catalog handler and slug-validation paths return 503
 	// when nil. Tests inject a Cache pointed at an httptest upstream.
 	Catalog *mapscatalog.Cache
+	// Demo serves canned dashboard counters from /api/status. Set by the
+	// wiring layer from app.Config.Demo. Screenshots/demos only.
+	Demo bool
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -222,6 +227,7 @@ func NewServer(cfg Config) (*Server, error) {
 		mapsAuth:        mapsClient,
 		mapsCache:       cfg.MapsCache,
 		catalog:         cfg.Catalog,
+		demo:            cfg.Demo,
 	}, nil
 }
 

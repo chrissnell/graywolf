@@ -24,6 +24,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/demoseed"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/historydb"
@@ -275,6 +276,86 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		}
 	}
 
+	// Demo mode: ensure the config DB has a station callsign + a channel
+	// so the dashboard and Channels page render populated. Only seeds when
+	// empty so re-launching against a populated demo DB is idempotent.
+	if a.cfg.Demo {
+		if cfgs, err := a.store.GetStationConfig(ctx); err == nil && cfgs.Callsign == "" {
+			if err := a.store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "NW5W-8"}); err != nil {
+				a.logger.Warn("demo: seed callsign failed", "err", err)
+			} else {
+				a.logger.Info("demo: seeded station callsign", "callsign", "NW5W-8")
+			}
+		}
+		var inDevID, outDevID uint32
+		if devs, err := a.store.ListAudioDevices(ctx); err == nil {
+			for _, d := range devs {
+				if inDevID == 0 && d.Direction == "input" {
+					inDevID = d.ID
+				}
+				if outDevID == 0 && d.Direction == "output" {
+					outDevID = d.ID
+				}
+			}
+			if inDevID == 0 {
+				in := &configstore.AudioDevice{Name: "Default Input", Direction: "input", SourceType: "soundcard", SourcePath: "demo-default", SampleRate: 48000, Channels: 1, Format: "s16le"}
+				if err := a.store.CreateAudioDevice(ctx, in); err != nil {
+					a.logger.Warn("demo: seed input device failed", "err", err)
+				} else {
+					inDevID = in.ID
+					a.logger.Info("demo: seeded input device", "id", inDevID)
+				}
+			}
+			if outDevID == 0 {
+				out := &configstore.AudioDevice{Name: "Default Output", Direction: "output", SourceType: "soundcard", SourcePath: "demo-default", SampleRate: 48000, Channels: 1, Format: "s16le"}
+				if err := a.store.CreateAudioDevice(ctx, out); err != nil {
+					a.logger.Warn("demo: seed output device failed", "err", err)
+				} else {
+					outDevID = out.ID
+					a.logger.Info("demo: seeded output device", "id", outDevID)
+				}
+			}
+		}
+		if chs, err := a.store.ListChannels(ctx); err == nil && len(chs) == 0 {
+			ch := &configstore.Channel{
+				ID:        2,
+				Name:      "VHF APRS",
+				ModemType: "afsk",
+				BitRate:   1200,
+				MarkFreq:  1200,
+				SpaceFreq: 2200,
+			}
+			if inDevID != 0 {
+				ch.InputDeviceID = &inDevID
+			}
+			ch.OutputDeviceID = outDevID
+			if err := a.store.CreateChannel(ctx, ch); err != nil {
+				a.logger.Warn("demo: seed channel failed", "err", err)
+			} else {
+				a.logger.Info("demo: seeded channel", "id", ch.ID, "name", ch.Name)
+			}
+		}
+		if bcns, err := a.store.ListBeacons(ctx); err == nil && len(bcns) == 0 {
+			b := &configstore.Beacon{
+				Type:        "position",
+				Channel:     2,
+				Callsign:    "NW5W-8",
+				Enabled:     true,
+				UseGps:      false,
+				Latitude:    40.47624,
+				Longitude:   -111.84587,
+				SymbolTable: "/",
+				Symbol:      "-",
+				Comment:     "Graywolf demo station",
+			}
+			if err := a.store.CreateBeacon(ctx, b); err != nil {
+				a.logger.Warn("demo: seed beacon failed", "err", err)
+			} else {
+				a.logger.Info("demo: seeded fixed-position beacon", "id", b.ID, "callsign", b.Callsign)
+			}
+		}
+	}
+
 	if plCfg != nil && plCfg.Enabled && a.cfg.HistoryDBPath != "" {
 		hdb, err := historydb.Open(a.cfg.HistoryDBPath)
 		if err != nil {
@@ -285,6 +366,17 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 				a.logger.Warn("failed to hydrate from history db", "err", err)
 			}
 		}
+	}
+
+	if a.cfg.Demo {
+		stations := demoseed.Stations()
+		packets := demoseed.Packets()
+		a.stationCache.Update(stations)
+		for _, e := range packets {
+			a.plog.Record(e)
+		}
+		a.logger.Info("demo: seeded station cache + packet log",
+			"stations", len(stations), "packets", len(packets))
 	}
 
 	// --- Modem bridge (construction; Start happens later) --------------
@@ -517,6 +609,22 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	// --- Messages service ---------------------------------------------
 	if err := a.wireMessages(ctx); err != nil {
 		return err
+	}
+
+	// Demo mode: seed a canned DM conversation so the Messages screen
+	// renders a real-looking thread for screenshots. Idempotent: only
+	// inserts when the conversation table is empty.
+	if a.cfg.Demo && a.msgStore != nil {
+		if rollup, err := a.msgStore.ConversationRollup(ctx, 1); err == nil && len(rollup) == 0 {
+			msgs := demoseed.Messages()
+			for _, m := range msgs {
+				mm := m // copy to avoid taking the address of the loop variable
+				if err := a.msgStore.Insert(ctx, &mm); err != nil {
+					a.logger.Warn("demo: seed message failed", "err", err)
+				}
+			}
+			a.logger.Info("demo: seeded messages", "count", len(msgs))
+		}
 	}
 
 	// --- Actions service ----------------------------------------------
@@ -1165,6 +1273,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Version:       a.cfg.Version,
 		MapsCache:     mapsCache,
 		Catalog:       catalog,
+		Demo:          a.cfg.Demo,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)

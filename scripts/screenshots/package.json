@@ -1,0 +1,13 @@
+{
+  "name": "graywolf-android-screenshots",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright harness that drives the graywolf SPA in Android mode to capture Play Store screenshots.",
+  "type": "module",
+  "scripts": {
+    "shoot": "node shoot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

@@ -152,3 +152,20 @@ func TestParseFlagsErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParseFlags_Demo(t *testing.T) {
+	cfg, err := ParseFlags([]string{"-demo"})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if !cfg.Demo {
+		t.Fatal("expected cfg.Demo true with -demo")
+	}
+	cfg2, err := ParseFlags([]string{})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if cfg2.Demo {
+		t.Fatal("expected cfg.Demo false by default")
+	}
+}

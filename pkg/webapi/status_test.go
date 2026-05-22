@@ -2,6 +2,8 @@ package webapi
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -115,5 +117,28 @@ func TestStatusDTO_WireShape_WithIgate_EmptyLastConnected(t *testing.T) {
 
 	if string(oldBytes) != string(newBytes) {
 		t.Fatalf("wire shape drift with zero LastConnected:\n old: %s\n new: %s", oldBytes, newBytes)
+	}
+}
+
+func TestHandleStatus_Demo(t *testing.T) {
+	srv := &Server{demo: true, startedAt: time.Now()}
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	srv.handleStatus(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var dto StatusDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if dto.UptimeSeconds == 0 {
+		t.Error("demo uptime should be non-zero")
+	}
+	if len(dto.Channels) == 0 || dto.Channels[0].RxFrames == 0 {
+		t.Error("demo should report a channel with non-zero RxFrames")
+	}
+	if dto.Igate == nil {
+		t.Error("demo should report an igate section")
 	}
 }

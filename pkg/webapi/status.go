@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/demoseed"
 	"github.com/chrissnell/graywolf/pkg/igate"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 )
@@ -72,6 +73,37 @@ type StatusChannel struct {
 // @Security CookieAuth
 // @Router   /status [get]
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if s.demo {
+		// Demo mode: serve canned counters without touching the store or runtime.
+		c := demoseed.StatusCounters()
+		writeJSON(w, http.StatusOK, StatusDTO{
+			UptimeSeconds: c.UptimeSeconds,
+			Channels: []StatusChannel{{
+				ID:             2,
+				Name:           "VHF APRS",
+				ModemType:      "afsk",
+				BitRate:        1200,
+				RxFrames:       c.RxFrames,
+				RxBadFCS:       c.RxBadFCS,
+				TxFrames:       c.TxFrames,
+				DcdState:       false,
+				AudioPeak:      c.AudioPeakDBFS,
+				InputDeviceID:  1,
+				DevicePeakDBFS: c.AudioPeakDBFS,
+				DeviceRmsDBFS:  c.AudioRmsDBFS,
+				DeviceClipping: false,
+			}},
+			Igate: &StatusIgateDTO{
+				Connected:  true,
+				Server:     "rotate.aprs2.net:14580",
+				Callsign:   "NW5W-8",
+				Gated:      c.IgateGated,
+				Downlinked: c.IgateDownlink,
+			},
+		})
+		return
+	}
+
 	out := StatusDTO{
 		UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
 	}

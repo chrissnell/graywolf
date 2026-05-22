@@ -55,3 +55,34 @@ func TestGetCatalog_ServiceUnavailable(t *testing.T) {
 		t.Fatalf("status=%d", rec.Code)
 	}
 }
+
+func TestGetCatalog_Demo(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.demo = true
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/maps/catalog", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var out dto.Catalog
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.SchemaVersion != 1 {
+		t.Fatalf("expected SchemaVersion=1, got %d", out.SchemaVersion)
+	}
+	if len(out.Countries) != 0 {
+		t.Fatalf("expected empty countries, got %d", len(out.Countries))
+	}
+	if len(out.Provinces) != 0 {
+		t.Fatalf("expected empty provinces, got %d", len(out.Provinces))
+	}
+	if len(out.States) != 0 {
+		t.Fatalf("expected empty states, got %d", len(out.States))
+	}
+}

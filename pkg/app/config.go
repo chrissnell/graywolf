@@ -62,6 +62,11 @@ type Config struct {
 	// Debug enables debug-level logging (-debug).
 	Debug bool
 
+	// Demo, when true, seeds canned station + dashboard data so a fresh
+	// launch looks like a busy real station. For screenshots and demos
+	// only; pair with -modem "" since there is no real RF. Off by default.
+	Demo bool
+
 	// LogBufferRamdisk forces the logbuffer to land on tmpfs even when
 	// graywolf is not running on an SD-card-backed system
 	// (--logbuffer-ramdisk). Useful for desktop/server operators who
