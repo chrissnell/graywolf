@@ -1,0 +1,10 @@
+{
+  "name": "graywolf-play-auth-check",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Probe whether the Play upload service account can manage testing tracks yet.",
+  "type": "module",
+  "dependencies": {
+    "google-auth-library": "^9.14.0"
+  }
+}
