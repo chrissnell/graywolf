@@ -24,6 +24,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/demoseed"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/historydb"
@@ -275,6 +276,30 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		}
 	}
 
+	// Demo mode: ensure the config DB has a station callsign + a channel
+	// so the dashboard and Channels page render populated. Only seeds when
+	// empty so re-launching against a populated demo DB is idempotent.
+	if a.cfg.Demo {
+		if cfgs, err := a.store.GetStationConfig(ctx); err != nil || cfgs.Callsign == "" {
+			_ = a.store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "NW5W-8"})
+			a.logger.Info("demo: seeded station callsign", "callsign", "NW5W-8")
+		}
+		if chs, err := a.store.ListChannels(ctx); err == nil && len(chs) == 0 {
+			ch := &configstore.Channel{
+				Name:      "VHF APRS",
+				ModemType: "afsk",
+				BitRate:   1200,
+				MarkFreq:  1200,
+				SpaceFreq: 2200,
+			}
+			if err := a.store.CreateChannel(ctx, ch); err != nil {
+				a.logger.Warn("demo: seed channel failed", "err", err)
+			} else {
+				a.logger.Info("demo: seeded channel", "name", ch.Name)
+			}
+		}
+	}
+
 	if plCfg != nil && plCfg.Enabled && a.cfg.HistoryDBPath != "" {
 		hdb, err := historydb.Open(a.cfg.HistoryDBPath)
 		if err != nil {
@@ -285,6 +310,15 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 				a.logger.Warn("failed to hydrate from history db", "err", err)
 			}
 		}
+	}
+
+	if a.cfg.Demo {
+		a.stationCache.Update(demoseed.Stations())
+		for _, e := range demoseed.Packets() {
+			a.plog.Record(e)
+		}
+		a.logger.Info("demo: seeded station cache + packet log",
+			"stations", len(demoseed.Stations()), "packets", len(demoseed.Packets()))
 	}
 
 	// --- Modem bridge (construction; Start happens later) --------------
