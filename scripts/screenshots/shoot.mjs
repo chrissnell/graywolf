@@ -40,8 +40,7 @@ const ROUTES = [
   { hash: '#/map', file: '02-livemap.png', wait: 'canvas, .maplibregl-canvas' },
   { hash: '#/messages', file: '03-messages.png', wait: '.nav-list' },
   { hash: '#/channels', file: '04-channels.png', wait: '.nav-list' },
-  { hash: '#/ptt', file: '05-ptt.png', wait: '.nav-list' },
-  { hash: '#/beacons', file: '06-beacons.png', wait: '.nav-list' },
+  { hash: '#/beacons', file: '05-beacons.png', wait: '.nav-list' },
 ];
 
 const BRIDGE_INIT = () => {
@@ -94,24 +93,18 @@ async function main() {
   }
   console.log(`auth OK (/api/status -> ${statusResp.status()})`);
 
-  // --- Step 2: inject the Android bridge for all future loads ------
+  // --- Step 2: pre-ack release notes via the API -------------------
+  // Pre-ack release notes so the "What's New" popup never appears and
+  // no "Saved" toast pollutes the screenshots. The endpoint acks every
+  // note up to the running version; no body required. Must happen before
+  // the bridge is injected and before any page navigations.
+  const ackResp = await page.request.post('/api/release-notes/ack');
+  console.log(`/release-notes/ack -> ${ackResp.status()}`);
+
+  // --- Step 3: inject the Android bridge for all future loads ------
   await context.addInitScript(BRIDGE_INIT);
 
-  // --- Step 2b: dismiss the "What's New" release-notes popup -------
-  // App.svelte mounts NewsPopup whenever the user has unseen release
-  // notes (tracked server-side). A fresh user has the current build's
-  // note unseen, so the popup covers every page. Clicking "Got it"
-  // acks it server-side, so it stays dismissed for the rest of the run.
-  await page.goto('/#/', { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1000);
-  const gotIt = page.locator('button:has-text("Got it")');
-  if (await gotIt.count()) {
-    await gotIt.first().click();
-    await page.waitForTimeout(500);
-    console.log('dismissed What\'s New popup');
-  }
-
-  // --- Step 3: screenshot each Android-visible route ---------------
+  // --- Step 4: screenshot each Android-visible route ---------------
   for (const route of ROUTES) {
     await page.goto(`/${route.hash}`, { waitUntil: 'networkidle' });
     // The hash-router needs a tick to mount the route component.
@@ -121,8 +114,20 @@ async function main() {
     } catch {
       console.warn(`  (selector ${route.wait} not found for ${route.hash}; shooting anyway)`);
     }
-    // Map tiles + history markers stream in async; give them time.
-    await page.waitForTimeout(route.hash === '#/map' ? 4000 : 1200);
+    if (route.hash === '#/map') {
+      // Wait for at least one station marker to appear so the map has
+      // auto-fitted to the station cluster (first poll ~5-6s). Fall back
+      // gracefully -- warn and shoot rather than aborting the whole run.
+      try {
+        await page.waitForSelector('.gw-station-marker', { timeout: 15000 });
+        // Let the auto-fit fly-to animation settle before shooting.
+        await page.waitForTimeout(1500);
+      } catch {
+        console.warn('  (no station markers appeared on the map; shooting anyway)');
+      }
+    } else {
+      await page.waitForTimeout(1200);
+    }
     const path = `${OUT}/${route.file}`;
     await page.screenshot({ path });
     console.log(`shot ${route.hash} -> ${path}`);
