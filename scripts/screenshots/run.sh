@@ -2,13 +2,9 @@
 # Orchestrates Android Play Store screenshot capture:
 #   1. refresh web/dist so screenshots reflect the current UI
 #   2. build a local graywolf binary (SPA embedded; no Rust modem needed)
-#   3. stage a copy of the seed DBs (originals stay pristine)
-#   4. launch graywolf against the seed on a test port
-#   5. run the Playwright harness (shoot.mjs) in Android mode
-#   6. tear graywolf down
-#
-# Seed DBs come from a real tablet snapshot; refresh them with
-# scripts/screenshots/pull-seed.sh while the tablet is on adb.
+#   3. launch graywolf in -demo mode (self-seeding; no tablet DB required)
+#   4. run the Playwright harness (shoot.mjs) in Android mode
+#   5. tear graywolf down
 #
 # Run via `make android-screenshots` from the repo root.
 set -euo pipefail
@@ -17,16 +13,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 PORT="${ANDROID_SS_PORT:-8088}"
-SEED_DIR="scratch/screenshots-seed"
 WORK_DIR="scratch/ss-work"
 BIN="scratch/gw-screenshots"
 OUT="${GW_SCREENSHOT_OUT:-$WORK_DIR/shots}"
-
-if [[ ! -f "$SEED_DIR/graywolf.db" ]]; then
-  echo "ERROR: no seed DB at $SEED_DIR/graywolf.db" >&2
-  echo "Run 'make android-screenshots-seed' with the tablet on adb first." >&2
-  exit 1
-fi
 
 echo "==> Building SPA bundle (vite)"
 ( cd web && npx vite build >/dev/null )
@@ -34,14 +23,12 @@ echo "==> Building SPA bundle (vite)"
 echo "==> Building graywolf binary"
 GOWORK=off go build -o "$BIN" ./cmd/graywolf
 
-echo "==> Staging seed DBs into $WORK_DIR"
+echo "==> Preparing work dir $WORK_DIR"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR/tiles"
-cp "$SEED_DIR/graywolf.db" "$WORK_DIR/graywolf.db"
-cp "$SEED_DIR/graywolf-history.db" "$WORK_DIR/graywolf-history.db"
 
 echo "==> Launching graywolf on 127.0.0.1:$PORT"
-GRAYWOLF_PLATFORM=desktop "$BIN" \
+GRAYWOLF_PLATFORM=desktop "$BIN" -demo \
   -config "$WORK_DIR/graywolf.db" \
   -history-db "$WORK_DIR/graywolf-history.db" \
   -tile-cache-dir "$WORK_DIR/tiles" \
