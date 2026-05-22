@@ -51,9 +51,22 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-echo "==> Capturing screenshots"
+echo "==> Capturing tablet screenshots"
 GW_SCREENSHOT_BASE="http://127.0.0.1:$PORT" \
 GW_SCREENSHOT_OUT="$OUT" \
   node scripts/screenshots/shoot.mjs
 
-echo "==> Done. Screenshots in $OUT/"
+echo "==> Capturing phone screenshots"
+GW_SCREENSHOT_BASE="http://127.0.0.1:$PORT" \
+GW_SCREENSHOT_MODE=phone \
+GW_SCREENSHOT_OUT="${OUT}-phone" \
+  node scripts/screenshots/shoot.mjs
+
+echo "==> Generating store graphics (icon + feature)"
+GW_ASSET_OUT="$(dirname "$OUT")/assets" \
+  node scripts/screenshots/assets.mjs
+
+echo "==> Done."
+echo "    tablet screenshots: $OUT/"
+echo "    phone screenshots:  ${OUT}-phone/"
+echo "    store graphics:     $(dirname "$OUT")/assets/"
