@@ -66,7 +66,20 @@ echo "==> Generating store graphics (icon + feature)"
 GW_ASSET_OUT="$(dirname "$OUT")/assets" \
   node scripts/screenshots/assets.mjs
 
+# Stage everything into fastlane's metadata layout so
+# `make android-upload-listing` (fastlane supply) can push it to Play.
+# These dirs are gitignored for *.png; only the structure is committed.
+echo "==> Staging assets into fastlane/metadata"
+IMG=fastlane/metadata/android/en-US/images
+rm -f "$IMG"/icon/*.png "$IMG"/featureGraphic/*.png \
+      "$IMG"/phoneScreenshots/*.png "$IMG"/sevenInchScreenshots/*.png
+cp "$(dirname "$OUT")/assets/icon-512.png"           "$IMG/icon/icon.png"
+cp "$(dirname "$OUT")/assets/feature-1024x500.png"   "$IMG/featureGraphic/feature.png"
+cp "${OUT}-phone"/*.png                              "$IMG/phoneScreenshots/"
+cp "$OUT"/*.png                                      "$IMG/sevenInchScreenshots/"
+
 echo "==> Done."
 echo "    tablet screenshots: $OUT/"
 echo "    phone screenshots:  ${OUT}-phone/"
 echo "    store graphics:     $(dirname "$OUT")/assets/"
+echo "    staged for fastlane: $IMG/"

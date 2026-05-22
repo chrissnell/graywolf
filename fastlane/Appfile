@@ -1,0 +1,7 @@
+# Local runs point at the service-account JSON file via SUPPLY_JSON_KEY.
+# CI supplies the raw JSON content via SUPPLY_JSON_KEY_DATA (from the
+# GRAYWOLF_PLAY_SERVICE_ACCOUNT_JSON secret); supply reads that directly,
+# so json_key_file stays unset there. Only set it when the path env is
+# present to avoid handing supply a nil path.
+json_key_file(ENV["SUPPLY_JSON_KEY"]) if ENV["SUPPLY_JSON_KEY"]
+package_name("com.nw5w.graywolf")

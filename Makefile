@@ -49,7 +49,7 @@ SWAGGER_UI_VENDOR := $(DOCS_HANDBOOK)/vendor/swagger-ui
 # api-client-check guards catch.
 GENERATED_SPEC_FILES := $(DOCS_GEN_DIR)/swagger.json $(DOCS_GEN_DIR)/swagger.yaml $(WEB_DIR)/src/api/generated/api.d.ts
 
-.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf graywolf-quick version bump-minor bump-point bump-beta handbook-sync handbook-sync-ssh docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks android-screenshots android-screenshots-seed android-play-check
+.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf graywolf-quick version bump-minor bump-point bump-beta handbook-sync handbook-sync-ssh docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks android-screenshots android-screenshots-seed android-play-check android-promote android-upload-listing
 
 all: release web
 	mkdir -p bin
@@ -244,6 +244,24 @@ android-play-check:
 	@test -n "$(JSON)" || { echo "usage: make android-play-check JSON=path/to/service-account.json" >&2; exit 2; }
 	@test -d scripts/android/node_modules || ( cd scripts/android && npm install )
 	node scripts/android/play-auth-check.mjs "$(JSON)"
+
+# Promote an already-uploaded build between Play tracks via fastlane
+# (no re-upload -- Play rejects a duplicate versionCode). CI does this
+# from the Android workflow's promote-to-closed job; this is the local
+# equivalent.
+#   make android-promote VC=130800 TO=alpha JSON=path/to/service-account.json
+android-promote:
+	@test -n "$(VC)" || { echo "usage: make android-promote VC=<versionCode> TO=<track> JSON=<sa.json>" >&2; exit 2; }
+	@test -n "$(JSON)" || { echo "error: JSON=<service-account.json> required" >&2; exit 2; }
+	SUPPLY_JSON_KEY="$(JSON)" fastlane promote version_code:$(VC) to:$(or $(TO),alpha) from:$(or $(FROM),internal)
+
+# Upload the Play store-listing images (icon, feature graphic, phone +
+# tablet screenshots). Run `make android-screenshots` first to generate
+# and stage them under fastlane/metadata.
+#   make android-upload-listing JSON=path/to/service-account.json
+android-upload-listing:
+	@test -n "$(JSON)" || { echo "usage: make android-upload-listing JSON=<sa.json>" >&2; exit 2; }
+	SUPPLY_JSON_KEY="$(JSON)" fastlane upload_listing
 
 android-screenshots-seed:
 	./scripts/screenshots/pull-seed.sh

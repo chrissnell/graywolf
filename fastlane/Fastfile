@@ -1,0 +1,56 @@
+# Android Play Store automation. Two lanes:
+#   promote          -- move an already-uploaded versionCode between tracks
+#                       (no re-upload; that's why r0adkll didn't work --
+#                       Play rejects a duplicate versionCode on upload).
+#   upload_listing   -- push the store-listing images (icon, feature
+#                       graphic, phone + tablet screenshots).
+#
+# Auth: supply reads the service account from SUPPLY_JSON_KEY (file path,
+# local) or SUPPLY_JSON_KEY_DATA (raw JSON, CI from the GH secret).
+
+default_platform(:android)
+
+PACKAGE = "com.nw5w.graywolf".freeze
+
+platform :android do
+  desc "Promote an existing versionCode from one track to another (no re-upload)"
+  desc "Params: version_code (required), from (default internal), to (default alpha)"
+  lane :promote do |options|
+    version_code = (options[:version_code] || ENV["VERSION_CODE"]).to_i
+    from_track   = options[:from] || ENV["FROM_TRACK"] || "internal"
+    to_track     = options[:to]   || ENV["TO_TRACK"]   || "alpha"
+    UI.user_error!("version_code is required (e.g. version_code:130800)") if version_code.zero?
+
+    UI.message("Promoting versionCode #{version_code}: #{from_track} -> #{to_track}")
+    supply(
+      package_name:      PACKAGE,
+      version_code:      version_code,
+      track:             from_track,
+      track_promote_to:  to_track,
+      # Promotion only: don't touch artifacts, text, or images.
+      skip_upload_apk:         true,
+      skip_upload_aab:         true,
+      skip_upload_metadata:    true,
+      skip_upload_changelogs:  true,
+      skip_upload_images:      true,
+      skip_upload_screenshots: true,
+      release_status: "completed",
+    )
+  end
+
+  desc "Upload store-listing images (icon, feature graphic, screenshots) from fastlane/metadata"
+  lane :upload_listing do
+    supply(
+      package_name: PACKAGE,
+      # Images + screenshots only -- no binary, no text descriptions,
+      # no changelogs. supply reads them from
+      # fastlane/metadata/android/<locale>/images/.
+      skip_upload_apk:        true,
+      skip_upload_aab:        true,
+      skip_upload_metadata:   true,
+      skip_upload_changelogs: true,
+      # images + screenshots are uploaded (defaults; not skipped).
+      validate_only: false,
+    )
+  end
+end

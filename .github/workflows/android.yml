@@ -346,28 +346,28 @@ jobs:
             exit 1
           fi
 
-      - name: Download AAB from the GitHub Release
+      - name: Set up Ruby + fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      # Promote (not re-upload): the version is already in Play (from the
+      # Phase 5 auto-upload to internal). fastlane supply moves that
+      # versionCode to the chosen track. Re-uploading the AAB would fail
+      # with "version code already used", which is why this isn't an
+      # upload action. versionCode is derived from X.Y.Z the same way
+      # android/app/build.gradle.kts derives it (M*1e6 + m*1e4 + p*100).
+      - name: Promote to the chosen track via fastlane
+        if: env.HAVE_PLAY_SA == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUPPLY_JSON_KEY_DATA: ${{ secrets.GRAYWOLF_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          mkdir -p staging
-          gh release download "v${{ github.event.inputs.version }}" \
-            --repo "${{ github.repository }}" \
-            --pattern 'graywolf-*.aab' \
-            --dir staging
-          ls -la staging/
-
-      - name: Promote AAB to the chosen testing track
-        if: env.HAVE_PLAY_SA == 'true'
-        uses: r0adkll/upload-google-play@v1.1.3
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.GRAYWOLF_PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.nw5w.graywolf
-          releaseFiles: staging/graywolf-*.aab
-          # Play track IDs are fixed: internal, alpha (closed testing),
-          # beta (open testing), production. A private 15-person beta is
-          # closed testing -> alpha. Defaults to alpha; override at
-          # dispatch time with --field track=...
-          track: ${{ github.event.inputs.track }}
-          status: completed
+          IFS=. read -r MAJ MIN PAT <<< "${{ github.event.inputs.version }}"
+          VC=$(( MAJ*1000000 + MIN*10000 + PAT*100 ))
+          echo "Promoting versionCode $VC -> track '${{ github.event.inputs.track }}'"
+          bundle exec fastlane promote \
+            version_code:"$VC" \
+            from:internal \
+            to:"${{ github.event.inputs.track }}"

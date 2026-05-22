@@ -48,3 +48,7 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+
+# fastlane / bundler
+/vendor/bundle/
+.bundle/
