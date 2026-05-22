@@ -49,7 +49,7 @@ SWAGGER_UI_VENDOR := $(DOCS_HANDBOOK)/vendor/swagger-ui
 # api-client-check guards catch.
 GENERATED_SPEC_FILES := $(DOCS_GEN_DIR)/swagger.json $(DOCS_GEN_DIR)/swagger.yaml $(WEB_DIR)/src/api/generated/api.d.ts
 
-.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf graywolf-quick version bump-minor bump-point bump-beta handbook-sync handbook-sync-ssh docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks android-screenshots android-screenshots-seed
+.PHONY: all build release test bench clean clean-web distclean check fmt lint doc run-bench proto go-build go-test go-fuzz web graywolf graywolf-quick version bump-minor bump-point bump-beta handbook-sync handbook-sync-ssh docs docs-api-html docs-check docs-lint api-client api-client-check flareschema install-hooks android-screenshots android-screenshots-seed android-play-check
 
 all: release web
 	mkdir -p bin
@@ -236,6 +236,15 @@ bump-beta:
 # Output lands in scratch/ss-work/shots/. Seed + output stay in
 # scratch/ (gitignored) because they hold the operator's real station
 # data. First run installs Playwright under scripts/screenshots/.
+# Probe whether the Play upload service account can manage testing
+# tracks yet (i.e. whether Google has propagated the permission grant,
+# which can take up to 24h). HTTP 200 = ready; 403 = not propagated yet.
+#   make android-play-check JSON=path/to/service-account.json
+android-play-check:
+	@test -n "$(JSON)" || { echo "usage: make android-play-check JSON=path/to/service-account.json" >&2; exit 2; }
+	@test -d scripts/android/node_modules || ( cd scripts/android && npm install )
+	node scripts/android/play-auth-check.mjs "$(JSON)"
+
 android-screenshots-seed:
 	./scripts/screenshots/pull-seed.sh
 
