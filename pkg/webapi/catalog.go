@@ -23,7 +23,7 @@ func (s *Server) registerCatalog(mux *http.ServeMux) {
 func (s *Server) getCatalog(w http.ResponseWriter, r *http.Request) {
 	// Demo mode: no offline-maps backend; return an empty catalog so the SPA shows no error toast.
 	if s.demo {
-		writeJSON(w, http.StatusOK, toCatalogDTO(mapscatalog.Catalog{}))
+		writeJSON(w, http.StatusOK, toCatalogDTO(mapscatalog.Catalog{SchemaVersion: 1}))
 		return
 	}
 	if s.catalog == nil {

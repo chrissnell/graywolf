@@ -287,6 +287,33 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 				a.logger.Info("demo: seeded station callsign", "callsign", "NW5W-8")
 			}
 		}
+		var inDevID, outDevID uint32
+		if devs, err := a.store.ListAudioDevices(ctx); err == nil {
+			for _, d := range devs {
+				if inDevID == 0 && d.Direction == "input" {
+					inDevID = d.ID
+				}
+				if outDevID == 0 && d.Direction == "output" {
+					outDevID = d.ID
+				}
+			}
+			if inDevID == 0 {
+				in := &configstore.AudioDevice{Name: "Default Input", Direction: "input", SourceType: "soundcard", SourcePath: "demo-default", SampleRate: 48000, Channels: 1, Format: "s16le"}
+				if err := a.store.CreateAudioDevice(ctx, in); err != nil {
+					a.logger.Warn("demo: seed input device failed", "err", err)
+				} else {
+					inDevID = in.ID
+				}
+			}
+			if outDevID == 0 {
+				out := &configstore.AudioDevice{Name: "Default Output", Direction: "output", SourceType: "soundcard", SourcePath: "demo-default", SampleRate: 48000, Channels: 1, Format: "s16le"}
+				if err := a.store.CreateAudioDevice(ctx, out); err != nil {
+					a.logger.Warn("demo: seed output device failed", "err", err)
+				} else {
+					outDevID = out.ID
+				}
+			}
+		}
 		if chs, err := a.store.ListChannels(ctx); err == nil && len(chs) == 0 {
 			ch := &configstore.Channel{
 				ID:        2,
@@ -296,6 +323,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 				MarkFreq:  1200,
 				SpaceFreq: 2200,
 			}
+			if inDevID != 0 {
+				ch.InputDeviceID = &inDevID
+			}
+			ch.OutputDeviceID = outDevID
 			if err := a.store.CreateChannel(ctx, ch); err != nil {
 				a.logger.Warn("demo: seed channel failed", "err", err)
 			} else {
