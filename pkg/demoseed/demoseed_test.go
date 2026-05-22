@@ -62,3 +62,43 @@ func TestAprsCoord(t *testing.T) {
 		t.Fatalf("aprsCoord = %q", got)
 	}
 }
+
+func TestMessages_Conversation(t *testing.T) {
+	msgs := Messages()
+	if len(msgs) < 3 {
+		t.Fatalf("want >= 3 demo messages, got %d", len(msgs))
+	}
+	now := time.Now()
+	hasIn, hasOut := false, false
+	for _, m := range msgs {
+		if m.OurCall != "NW5W-8" {
+			t.Errorf("OurCall = %q, want NW5W-8", m.OurCall)
+		}
+		if m.Text == "" {
+			t.Error("empty Text in message")
+		}
+		if len(m.Text) > 67 {
+			t.Errorf("Text too long (%d > 67): %q", len(m.Text), m.Text)
+		}
+		if m.ThreadKind != "dm" {
+			t.Errorf("ThreadKind = %q, want dm", m.ThreadKind)
+		}
+		if m.ThreadKey != m.PeerCall {
+			t.Errorf("ThreadKey %q != PeerCall %q", m.ThreadKey, m.PeerCall)
+		}
+		if now.Sub(m.CreatedAt) > 30*time.Minute {
+			t.Errorf("CreatedAt too old: %v", m.CreatedAt)
+		}
+		switch m.Direction {
+		case "in":
+			hasIn = true
+		case "out":
+			hasOut = true
+		default:
+			t.Errorf("unexpected Direction %q", m.Direction)
+		}
+	}
+	if !hasIn || !hasOut {
+		t.Errorf("conversation must contain both 'in' and 'out' messages; hasIn=%v hasOut=%v", hasIn, hasOut)
+	}
+}

@@ -558,6 +558,21 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		return err
 	}
 
+	// Demo mode: seed a canned DM conversation so the Messages screen
+	// renders a real-looking thread for screenshots. Idempotent: only
+	// inserts when the conversation table is empty.
+	if a.cfg.Demo && a.msgStore != nil {
+		if rollup, err := a.msgStore.ConversationRollup(ctx, 1); err == nil && len(rollup) == 0 {
+			for _, m := range demoseed.Messages() {
+				mm := m
+				if err := a.msgStore.Insert(ctx, &mm); err != nil {
+					a.logger.Warn("demo: seed message failed", "err", err)
+				}
+			}
+			a.logger.Info("demo: seeded messages", "count", len(demoseed.Messages()))
+		}
+	}
+
 	// --- Actions service ----------------------------------------------
 	// Runs after messages so the reply adapter can ride messages.Service
 	// (msg-id allocation, outbound view, retry ladder). The classifier

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 )
@@ -131,6 +132,54 @@ func aprsCoord(lat, lon float64) string {
 	lonDeg := int(lon)
 	lonMin := (lon - float64(lonDeg)) * 60
 	return fmt.Sprintf("%02d%05.2f%s/%03d%05.2f%s", latDeg, latMin, latHemi, lonDeg, lonMin, lonHemi)
+}
+
+// Messages returns a canned DM thread between NW5W-8 and KK7GBE-7 so
+// the Messages screen renders a real-looking conversation for screenshots.
+// Timestamps are stamped to now at call time (same reasoning as Stations).
+func Messages() []configstore.Message {
+	now := time.Now()
+	const (
+		ourCall  = "NW5W-8"
+		peerCall = "KK7GBE-7"
+	)
+	seed := []struct {
+		dir      string
+		text     string
+		ackState string
+		unread   bool
+		age      time.Duration
+	}{
+		{"in", "Good morning! You up for the SLC valley net tonight?", "none", false, 9 * time.Minute},
+		{"out", "Affirmative, QRV 1900 local on 146.520.", "acked", false, 6 * time.Minute},
+		{"in", "Perfect, talk then. 73", "none", false, 2 * time.Minute},
+	}
+	msgs := make([]configstore.Message, 0, len(seed))
+	for _, s := range seed {
+		ts := now.Add(-s.age)
+		from, to := peerCall, ourCall
+		if s.dir == "out" {
+			from, to = ourCall, peerCall
+		}
+		msgs = append(msgs, configstore.Message{
+			Direction:  s.dir,
+			OurCall:    ourCall,
+			PeerCall:   peerCall,
+			FromCall:   from,
+			ToCall:     to,
+			Text:       s.text,
+			AckState:   s.ackState,
+			Source:     "rf",
+			Channel:    2,
+			ThreadKind: "dm",
+			ThreadKey:  peerCall,
+			Kind:       "text",
+			Unread:     s.unread,
+			CreatedAt:  ts,
+			UpdatedAt:  ts,
+		})
+	}
+	return msgs
 }
 
 // Packets returns canned packet-log entries derived from the demo
