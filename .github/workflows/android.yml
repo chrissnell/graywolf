@@ -337,6 +337,13 @@ jobs:
     env:
       HAVE_PLAY_SA: ${{ secrets.GRAYWOLF_PLAY_SERVICE_ACCOUNT_JSON != '' }}
     steps:
+      # Needed so the Gemfile + fastlane/ are present: setup-ruby's
+      # bundler-cache and `bundle exec fastlane` both require the repo
+      # checked out (the old r0adkll promote didn't, which is why this
+      # was missing).
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - name: Validate version input
         run: |
           set -euo pipefail
