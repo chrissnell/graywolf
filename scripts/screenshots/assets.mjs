@@ -62,7 +62,7 @@ const featureHtml = `<!doctype html><html><head><meta charset="utf8">
     <div class="copy">
       <div class="wordmark">Graywolf&nbsp;APRS</div>
       <div class="rule"></div>
-      <div class="tagline">A modern APRS station for your radio. VARA, packet, APRS, and voice.</div>
+      <div class="tagline">A modern APRS stack for your smartphone and tablet</div>
     </div>
   </div>
 </body></html>`;
