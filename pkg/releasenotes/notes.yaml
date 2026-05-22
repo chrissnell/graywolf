@@ -7,6 +7,15 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.7"
+  date: "2026-05-21"
+  style: info
+  schema_version: 1
+  title: "Continued Android app preparation"
+  body: |
+    More groundwork for the upcoming Graywolf APRS Android app.
+    Nothing changes on macOS, Linux, or Windows; no action needed.
+
 - version: "0.13.6"
   date: "2026-05-21"
   style: info
