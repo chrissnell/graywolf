@@ -60,6 +60,9 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | `ax25termws` | One-bridge-per-WebSocket glue between `pkg/ax25conn.Manager` and the `/api/ax25/terminal` endpoint. JSON envelopes: `connect`, `data`, `disconnect`, `abort`, `transcript_set`, `raw_tail_subscribe`/`raw_tail_unsubscribe` C→S; `state`, `data_rx`, `link_stats`, `error`, `raw_tail` S→C. `data_rx` uses a blocking send so the LAPB window propagates back-pressure into the peer; control envelopes use non-blocking sends with drop+warn. The bridge optionally adapts a `TranscriptRecorder` and a `*packetlog.Log` for raw-tail mode. | `envelope.go`, `bridge.go` |
 | `aprs` | APRS info-field parsing (positions, messages, weather, telemetry, mic-e, plus assorted extensions -- see [glossary.md](glossary.md)) | `parse.go`, `position.go`, `mice.go`, `message.go`, `weather.go`, ... |
 | `kiss` | KISS framing + TCP server + TCP client + serial supervisor + multi-port manager + tx queue + ratelimit | `framing.go`, `server.go`, `client.go`, `serial.go`, `manager.go`, `tx_queue.go` |
+| `platformsvc` (USB serial) | Android USB serial open + device enumeration; Go side of the platform UDS serial transport | `pkg/platformsvc/usbserial.go` (`UsbSerialOpen`, `AvailableUsbSerialDevices`), `pkg/platformsvc/serialstream.go` (shared `serialReadWriteCloser` / `openSerialStream` / `SerialError`) |
+| `webapi` (USB serial) | REST endpoint listing connected USB serial devices | `pkg/webapi/kiss_usb.go` (`GET /api/kiss/available-usb-serial-devices`) |
+| `app` (USB serial source) | Build-tag dispatch for the USB serial device source (Android vs. stub) | `pkg/app/usbserialsource_android.go`, `pkg/app/usbserialsource_default.go` |
 | `agw` | AGWPE TCP server (direwolf-compatible subset: R/G/g/k/K/m/X/x/y/Y/V) | `server.go`, `protocol.go` |
 | `ipcproto` | Generated Go bindings for `proto/graywolf.proto` | `graywolf.pb.go` (regen via `make proto`) |
 | `modembridge` | Supervises Rust modem child + IPC state machine + dispatcher + status cache + DCD publisher | `bridge.go`, `supervisor.go`, `ipc_unix.go`, `ipc_windows.go`, `dispatcher.go`, `session.go`, `status_cache.go` |
@@ -241,7 +244,8 @@ GPS, Bluetooth) lives on the Kotlin side and is reached through the
 platform UDS via proto messages defined in
 [`../../proto/platform.proto`](../../proto/platform.proto). Handbook:
 [`../handbook/installation.html`](../handbook/installation.html) (Android
-section), [`../handbook/kiss-bluetooth.html`](../handbook/kiss-bluetooth.html).
+section), [`../handbook/kiss-bluetooth.html`](../handbook/kiss-bluetooth.html),
+[`../handbook/kiss-usb-serial.html`](../handbook/kiss-usb-serial.html).
 
 | Concern | File |
 |---|---|
@@ -250,6 +254,9 @@ section), [`../handbook/kiss-bluetooth.html`](../handbook/kiss-bluetooth.html).
 | Modem JNI bridge | `jni/ModemBridge.kt` |
 | Platform UDS server + proto codec | `platformsvc/PlatformServer.kt`, `platformsvc/MessageHandler.kt`, `platformsvc/WireCodec.kt` |
 | USB PTT adapter (CM108 / CP2102N / AIOC / VOX) | `usb/UsbPttAdapter.kt`, `usb/PttMethodConsts.kt` |
+| USB device ownership arbiter (KISS vs. PTT claim/evict) | `usb/UsbDeviceArbiter.kt` -- tracks which USB device is claimed for KISS serial vs. PTT; `claim` evicts any prior PTT hold, `release` returns the device to the available pool |
+| USB serial byte relay for KISS-over-USB-Serial | `platformsvc/UsbSerialAdapter.kt` -- owns one `UsbDeviceConnection` per handle; pump pair on worker thread; multiplexes through the platform UDS via `SerialOpen` / `SerialData` / `SerialClose` / `SerialError` proto messages |
+| USB serial permission + chip-family facade | `platformsvc/UsbSerialFacade.kt` -- enumerates connected USB serial devices (CDC-ACM, CP210x, CH34x), requests Android `UsbManager` permissions, delivers open handles to `UsbSerialAdapter` |
 | Bluetooth facade + permission/bond receivers | `platformsvc/BluetoothFacade.kt` |
 | RFCOMM byte relay for KISS-over-Bluetooth | `platformsvc/BtSerialAdapter.kt` -- owns one `BluetoothSocket` per handle; pump pair on worker thread; multiplexes through the platform UDS via `SerialOpen` / `SerialData` / `SerialClose` / `SerialError` proto messages |
 | Audio capture / playback pumps | `audio/AudioPump.kt`, `audio/AudioTxPump.kt`, `audio/AudioTxTest.kt` |

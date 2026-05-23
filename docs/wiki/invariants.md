@@ -569,26 +569,30 @@ Source: [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`),
 
 `BluetoothSocket.connect`, `BluetoothAdapter.bondedDevices`,
 `BluetoothSocket.inputStream.read`, `UsbDeviceConnection.controlTransfer`,
-and HID Set_Report calls are blocking JNI/native invocations. Main-thread
-invocation can block UI for several seconds the first time the corresponding
-stack is touched, leading to ANR ("Application Not Responding") dialogs on
-Android.
+`UsbDeviceConnection.bulkTransfer`, `UsbManager.openDevice`,
+`UsbDeviceConnection.claimInterface`, and HID Set_Report calls are blocking
+JNI/native invocations. Main-thread invocation can block UI for several
+seconds the first time the corresponding stack is touched, leading to ANR
+("Application Not Responding") dialogs on Android.
 
 *Why:* feedback memory `feedback_android_usb_open_worker_thread` -- phase-4b
 USB enumeration on the main thread caused a 5-second ANR. The lesson is
 general to any blocking native call.
 
 *How to apply:* Kotlin code touching `BluetoothAdapter`, `BluetoothSocket`,
-`UsbDeviceConnection`, or `HidDevice` MUST dispatch onto an IO/worker
-dispatcher (`Dispatchers.IO`, a dedicated `SingleThreadExecutor`, or a
-worker `Thread`). Calls arriving FROM the `@JavascriptInterface` binder
-thread that need a main-thread API surface (`requestPermissions` etc.) may
-`mainHandler.post { ... }` only that AndroidManifest-API call; the actual
-blocking work still belongs on a worker thread.
+`UsbDeviceConnection`, `UsbSerialAdapter`, `UsbSerialFacade`, or `HidDevice`
+MUST dispatch onto an IO/worker dispatcher (`Dispatchers.IO`, a dedicated
+`SingleThreadExecutor`, or a worker `Thread`). Calls arriving FROM the
+`@JavascriptInterface` binder thread that need a main-thread API surface
+(`requestPermissions` etc.) may `mainHandler.post { ... }` only that
+AndroidManifest-API call; the actual blocking work still belongs on a
+worker thread.
 
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt),
 [`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BluetoothFacade.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BluetoothFacade.kt),
-[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt).
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialAdapter.kt),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialFacade.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialFacade.kt).
 
 ### 36. The Android Go child dies with the app (two-layer shutdown)
 
@@ -655,3 +659,32 @@ cannot outlive the app, because no single mechanism covers both cases.
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt),
 [`../../cmd/graywolf/parentwatch.go`](../../cmd/graywolf/parentwatch.go),
 [`../../cmd/graywolf/main_android.go`](../../cmd/graywolf/main_android.go).
+
+### 37. A USB device claimed for KISS serial cannot simultaneously be a PTT device (Android)
+
+A CP210x or CH34x USB cable can act as either a PTT keying device
+(via `UsbPttAdapter`) or a serial KISS TNC (via `UsbSerialAdapter`), but
+not both at once.
+
+*Why:* Both paths open the same `UsbDeviceConnection`. Concurrent ownership
+would cause control-transfer collisions and undefined PTT state.
+
+*How it is enforced:*
+1. When `UsbSerialFacade.open(device)` is called to attach a KISS interface,
+   it calls `UsbDeviceArbiter.claim(device)`, which calls
+   `UsbPttAdapter.evictDevice(device)` to close and release any existing PTT
+   connection on that device before the serial port is opened.
+2. `UsbPttAdapter.tryOpen(device)` consults `UsbDeviceArbiter.isClaimed(device)`
+   and refuses to open a device that is currently held by the KISS path.
+3. When the KISS interface is stopped or reconfigured, `UsbSerialFacade`
+   calls `UsbDeviceArbiter.release(device)` so the device becomes available
+   for PTT again.
+
+CDC-ACM devices (TH-D75, AIOC, Mobilinkd) are not affected: KISS takes full
+ownership of the device and PTT is handled by the TNC hardware or inside the
+KISS stream itself -- there is no separate PTT claim on a CDC-ACM device
+that could conflict.
+
+Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbDeviceArbiter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbDeviceArbiter.kt),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialFacade.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialFacade.kt),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt).
