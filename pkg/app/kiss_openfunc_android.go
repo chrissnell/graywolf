@@ -11,36 +11,45 @@ import (
 	"github.com/chrissnell/graywolf/pkg/kiss"
 )
 
-// btSerialOpener is the narrow surface the factory needs from platformsvc.
+// serialOpener is the narrow surface the factory needs from platformsvc.
 // Defining it here makes the factory unit-testable without dragging the
 // full platformsvc.Client surface into the test.
-type btSerialOpener interface {
+type serialOpener interface {
 	BtSerialOpen(ctx context.Context, mac string) (io.ReadWriteCloser, error)
+	UsbSerialOpen(ctx context.Context, vidPid string, baud uint32) (io.ReadWriteCloser, error)
 }
 
 // macRe matches MAC-48 in either colon-separated or hyphen-separated form.
 var macRe = regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$`)
 
+// vidPidRe matches a USB "vid:pid" identity in 4-hex:4-hex form ("2341:0043").
+var vidPidRe = regexp.MustCompile(`^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$`)
+
 // errNotSupportedOnAndroid is returned when wiring tries to open a raw
 // serial device path on Android. The Android sandbox blocks /dev/tty*
 // anyway, so this surfaces the configuration mistake immediately rather
 // than letting it fail later inside go.bug.st/serial.
-var errNotSupportedOnAndroid = errors.New("kiss: serial device path not supported on Android (use Bluetooth interface)")
+var errNotSupportedOnAndroid = errors.New("kiss: serial device path not supported on Android (use Bluetooth or USB serial interface)")
 
 // newKissSerialOpenFunc returns an OpenFunc that routes MAC-style device
-// strings to platformsvc.BtSerialOpen and rejects raw device paths.
+// strings to platformsvc.BtSerialOpen, "vid:pid" strings to
+// platformsvc.UsbSerialOpen (with baud), and rejects raw device paths.
 // Returns nil when psv is nil so the supervisor falls back to its default
 // open (which on Android would also fail, but lets the supervisor surface
 // the error consistently).
-func newKissSerialOpenFunc(psv btSerialOpener) kiss.OpenFunc {
+func newKissSerialOpenFunc(psv serialOpener) kiss.OpenFunc {
 	if psv == nil {
 		return nil
 	}
-	return func(device string, _ uint32) (io.ReadWriteCloser, error) {
-		if macRe.MatchString(device) {
+	return func(device string, baud uint32) (io.ReadWriteCloser, error) {
+		switch {
+		case macRe.MatchString(device):
 			return psv.BtSerialOpen(context.Background(), device)
+		case vidPidRe.MatchString(device):
+			return psv.UsbSerialOpen(context.Background(), device, baud)
+		default:
+			return nil, errNotSupportedOnAndroid
 		}
-		return nil, errNotSupportedOnAndroid
 	}
 }
 

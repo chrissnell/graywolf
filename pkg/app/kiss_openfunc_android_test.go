@@ -9,15 +9,23 @@ import (
 	"testing"
 )
 
-// fakePsv records BtSerialOpen calls and returns a canned rwc/err.
+// fakePsv records BtSerialOpen / UsbSerialOpen calls and returns a canned rwc/err.
 type fakePsv struct {
-	macSeen string
-	rwc     io.ReadWriteCloser
-	err     error
+	macSeen    string
+	vidPidSeen string
+	baudSeen   uint32
+	rwc        io.ReadWriteCloser
+	err        error
 }
 
 func (f *fakePsv) BtSerialOpen(_ context.Context, mac string) (io.ReadWriteCloser, error) {
 	f.macSeen = mac
+	return f.rwc, f.err
+}
+
+func (f *fakePsv) UsbSerialOpen(_ context.Context, vidPid string, baud uint32) (io.ReadWriteCloser, error) {
+	f.vidPidSeen = vidPid
+	f.baudSeen = baud
 	return f.rwc, f.err
 }
 
@@ -71,5 +79,29 @@ func TestNewKissSerialOpenFunc_Android_NonMAC_RejectsWithoutCallingPsv(t *testin
 func TestNewKissSerialOpenFunc_Android_NilClient_ReturnsNil(t *testing.T) {
 	if got := newKissSerialOpenFunc(nil); got != nil {
 		t.Fatalf("expected nil OpenFunc when psv=nil; got non-nil")
+	}
+}
+
+func TestNewKissSerialOpenFunc_Android_VidPid_RoutesThroughUsb(t *testing.T) {
+	f := &fakePsv{rwc: nopRWC{}}
+	open := newKissSerialOpenFunc(f)
+	if open == nil {
+		t.Fatal("expected non-nil OpenFunc")
+	}
+	rwc, err := open("2341:0043", 9600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if rwc == nil {
+		t.Fatalf("rwc=nil")
+	}
+	if f.vidPidSeen != "2341:0043" {
+		t.Fatalf("vidPid=%q", f.vidPidSeen)
+	}
+	if f.baudSeen != 9600 {
+		t.Fatalf("baud=%d want 9600", f.baudSeen)
+	}
+	if f.macSeen != "" {
+		t.Fatalf("BtSerialOpen wrongly called with %q", f.macSeen)
 	}
 }
