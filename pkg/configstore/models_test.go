@@ -99,6 +99,15 @@ func TestValidChannelMode(t *testing.T) {
 	}
 }
 
+func TestValidKissInterfaceType_UsbSerial(t *testing.T) {
+	if !ValidKissInterfaceType(KissTypeUsbSerial) {
+		t.Fatalf("usbserial should be a valid KISS interface type")
+	}
+	if KissTypeUsbSerial != "usbserial" {
+		t.Fatalf("KissTypeUsbSerial = %q, want %q", KissTypeUsbSerial, "usbserial")
+	}
+}
+
 // TestChannelModeConstants pins the string forms of Channel.Mode constants
 // so a rename fails at the test boundary rather than silently breaking
 // downstream consumers.

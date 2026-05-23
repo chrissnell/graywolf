@@ -194,6 +194,7 @@ const (
 	KissTypeTCPClient = "tcp-client"
 	KissTypeSerial    = "serial"
 	KissTypeBluetooth = "bluetooth"
+	KissTypeUsbSerial = "usbserial"
 )
 
 // Channel.Mode values. Default is ChannelModeAPRS to preserve current
@@ -220,7 +221,7 @@ func ValidChannelMode(m string) bool {
 // of the KISS TCP-client + channel-backing plan.
 func ValidKissInterfaceType(t string) bool {
 	switch t {
-	case KissTypeTCP, KissTypeTCPClient, KissTypeSerial, KissTypeBluetooth:
+	case KissTypeTCP, KissTypeTCPClient, KissTypeSerial, KissTypeBluetooth, KissTypeUsbSerial:
 		return true
 	}
 	return false
