@@ -19,6 +19,7 @@ func (s *Server) registerKiss(mux *http.ServeMux) {
 	// the {id} path. Go 1.22+ patterns prefer literal-over-wildcard
 	// already, but listing the literal first makes intent obvious.
 	mux.HandleFunc("GET /api/kiss/bonded-bt-devices", s.handleGetBondedBtDevices)
+	mux.HandleFunc("GET /api/kiss/available-usb-serial-devices", s.handleGetAvailableUsbSerialDevices)
 	mux.HandleFunc("GET /api/kiss/{id}", s.getKiss)
 	mux.HandleFunc("PUT /api/kiss/{id}", s.updateKiss)
 	mux.HandleFunc("DELETE /api/kiss/{id}", s.deleteKiss)
