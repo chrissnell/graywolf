@@ -190,6 +190,35 @@
   // now owns channel freshness; this page just subscribes.
   startChannelsStore();
 
+  // Parse ?lat=…&lon=… from the hash route. svelte-spa-router doesn't
+  // hand us the query string directly; the conventional pattern is to
+  // pull it off window.location.hash. Returns nulls when either field
+  // is missing or unparseable, so the caller can short-circuit.
+  function parseLatLonFromHash() {
+    if (typeof window === 'undefined') return { lat: null, lon: null };
+    const h = window.location.hash || '';
+    const qIdx = h.indexOf('?');
+    if (qIdx < 0) return { lat: null, lon: null };
+    const params = new URLSearchParams(h.slice(qIdx + 1));
+    const lat = parseFloat(params.get('lat'));
+    const lon = parseFloat(params.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return { lat: null, lon: null };
+    }
+    return { lat, lon };
+  }
+
+  // Strip query params from the hash without triggering a route nav, so
+  // a reload doesn't re-open the modal. replaceState keeps history clean.
+  function clearLatLonFromHash() {
+    if (typeof window === 'undefined') return;
+    const h = window.location.hash || '';
+    const qIdx = h.indexOf('?');
+    if (qIdx < 0) return;
+    const clean = h.slice(0, qIdx);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + clean);
+  }
+
   onMount(async () => {
     beacons = await api.get('/beacons') || [];
     const sb = await api.get('/smart-beacon');
@@ -209,6 +238,18 @@
       stationCallsign = (st && st.callsign) || '';
     } catch {
       stationCallsign = '';
+    }
+    // Deep-link entry from the map context menu's "Add fixed beacon
+    // here" item: open the create modal with pos_source=fixed and the
+    // clicked coordinates prefilled. Done after the channels store has
+    // been kicked above so openCreate() finds a default channel.
+    const { lat, lon } = parseLatLonFromHash();
+    if (lat != null && lon != null) {
+      clearLatLonFromHash();
+      openCreate();
+      form.pos_source = 'fixed';
+      form.latitude = String(lat);
+      form.longitude = String(lon);
     }
   });
 
