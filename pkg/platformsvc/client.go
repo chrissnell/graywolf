@@ -32,6 +32,13 @@ type Client interface {
 	// layer. Close on the returned handle sends a final SerialClose to the
 	// server and unregisters the handle.
 	BtSerialOpen(ctx context.Context, mac string) (io.ReadWriteCloser, error)
+	// AvailableUsbSerialDevices enumerates attached serial-capable USB
+	// devices on the Android side. One-shot request/response.
+	AvailableUsbSerialDevices(ctx context.Context) ([]UsbSerialDevice, error)
+	// UsbSerialOpen opens a serial stream to the attached USB device matching
+	// vidPid ("vid:pid" hex) at baud, returning a multiplexed
+	// io.ReadWriteCloser routed independently by the dispatch layer.
+	UsbSerialOpen(ctx context.Context, vidPid string, baud uint32) (io.ReadWriteCloser, error)
 	Close() error
 }
 
