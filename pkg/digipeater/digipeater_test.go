@@ -69,7 +69,8 @@ func TestWIDEnNDecrementing(t *testing.T) {
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL-1")
 
-	// WIDE2-2 → should become WIDE2-1 (SSID decremented, not yet consumed).
+	// WIDE2-2 → mycall* should be inserted and WIDE2 decremented to
+	// WIDE2-1 (not yet consumed). Per APRS New-N paradigm.
 	rx := buildFrame(t, "KK6ABC", "APRS", []string{"WIDE2-2"}, "test")
 	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("expected digi to repeat WIDE2-2")
@@ -78,10 +79,13 @@ func TestWIDEnNDecrementing(t *testing.T) {
 	if cap == nil {
 		t.Fatalf("no tx captured")
 	}
-	if len(cap.Frame.Path) != 1 {
-		t.Fatalf("path len %d", len(cap.Frame.Path))
+	if len(cap.Frame.Path) != 2 {
+		t.Fatalf("expected inserted mycall: %v", cap.Frame.Path)
 	}
-	slot := cap.Frame.Path[0]
+	if cap.Frame.Path[0].Call != "N0CAL" || cap.Frame.Path[0].SSID != 1 || !cap.Frame.Path[0].Repeated {
+		t.Fatalf("mycall not inserted first+repeated: %+v", cap.Frame.Path[0])
+	}
+	slot := cap.Frame.Path[1]
 	if slot.Call != "WIDE2" || slot.SSID != 1 || slot.Repeated {
 		t.Fatalf("expected WIDE2-1 unconsumed, got %s repeated=%v", slot.String(), slot.Repeated)
 	}
@@ -102,7 +106,14 @@ func TestWIDE1_1Consumed(t *testing.T) {
 	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatalf("expected repeat")
 	}
-	slot := sink.Last().Frame.Path[0]
+	cap := sink.Last()
+	if len(cap.Frame.Path) != 2 {
+		t.Fatalf("expected inserted mycall: %v", cap.Frame.Path)
+	}
+	if cap.Frame.Path[0].Call != "N0CAL" || !cap.Frame.Path[0].Repeated {
+		t.Fatalf("mycall not inserted first+repeated: %+v", cap.Frame.Path[0])
+	}
+	slot := cap.Frame.Path[1]
 	if !slot.Repeated || slot.SSID != 0 {
 		t.Fatalf("WIDE1-1 should be consumed (H=1, SSID=0): %+v", slot)
 	}

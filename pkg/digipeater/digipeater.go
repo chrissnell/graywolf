@@ -488,17 +488,16 @@ func applyMatch(clone *ax25.Frame, slot int, r Rule, mycall ax25.Address) (strin
 			entry.Repeated = true
 		}
 		clone.Path[slot] = entry
-		if r.AliasType == "trace" {
-			// Insert mycall just before the alias slot so the packet
-			// carries an audit trail. Only if there's room.
-			if len(clone.Path) < ax25.MaxRepeaters && mycall.Call != "" {
-				inserted := ax25.Address{Call: mycall.Call, SSID: mycall.SSID, Repeated: true}
-				newPath := make([]ax25.Address, 0, len(clone.Path)+1)
-				newPath = append(newPath, clone.Path[:slot]...)
-				newPath = append(newPath, inserted)
-				newPath = append(newPath, clone.Path[slot:]...)
-				clone.Path = newPath
-			}
+		// Insert mycall just before the alias slot so downstream
+		// listeners can trace the actual digi chain (APRS New-N
+		// paradigm). Only if there's room.
+		if len(clone.Path) < ax25.MaxRepeaters && mycall.Call != "" {
+			inserted := ax25.Address{Call: mycall.Call, SSID: mycall.SSID, Repeated: true}
+			newPath := make([]ax25.Address, 0, len(clone.Path)+1)
+			newPath = append(newPath, clone.Path[:slot]...)
+			newPath = append(newPath, inserted)
+			newPath = append(newPath, clone.Path[slot:]...)
+			clone.Path = newPath
 		}
 		return r.AliasType + " " + entry.String(), true
 	}
