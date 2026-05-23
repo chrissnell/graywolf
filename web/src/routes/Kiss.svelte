@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { Button, Input, Select, Badge, Checkbox } from '@chrissnell/chonky-ui';
-  import { api, kissBt } from '../lib/api.js';
+  import { api, kissBt, kissUsb } from '../lib/api.js';
   import { Platform } from '../lib/platform.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -93,6 +93,7 @@
   ];
   const androidTypeOptions = [
     { value: 'bluetooth',  label: 'Bluetooth Serial' },
+    { value: 'usbserial',  label: 'USB Serial' },
     { value: 'tcp-client', label: 'Network' },
   ];
   let typeOptions = $derived(Platform.isAndroid ? androidTypeOptions : desktopTypeOptions);
@@ -158,6 +159,45 @@
       !bondedLoading &&
       !bondedError &&
       bondedDevices.length === 0,
+  );
+
+  // Attached USB serial devices, loaded lazily when the operator selects
+  // "usbserial" with the modal open. Refreshable; shape:
+  // [{vid_pid, product, manufacturer, has_permission}].
+  let usbDevices = $state([]);
+  let usbLoading = $state(false);
+  let usbError = $state('');
+
+  let usbDeviceOptions = $derived(
+    usbDevices.map((d) => ({
+      value: d.vid_pid,
+      label: d.product ? `${d.product} (${d.vid_pid})` : d.vid_pid,
+    })),
+  );
+
+  // Combined error for the USB device FormField (save-time validation
+  // takes precedence over the loader error, mirroring bondedFieldError).
+  let usbFieldError = $derived(saveError || usbError);
+
+  let usbHint = $derived(
+    !usbLoading && !usbError && usbDevices.length === 0
+      ? 'No USB serial devices detected. Plug in your KISS TNC over USB, then click Refresh. If it is plugged in but not listed, grant USB permission below.'
+      : 'Plug the KISS TNC into the tablet over USB, then refresh.',
+  );
+
+  let selectedUsbDevice = $derived(
+    usbDevices.find((d) => d.vid_pid === form.serial_device) || null,
+  );
+
+  // Show the "Grant USB permission" CTA when: on Android, usbserial type,
+  // not loading, no error, and either no device selected (needs permission
+  // to enumerate) or the selected device lacks has_permission.
+  let showUsbPermGrant = $derived(
+    Platform.isAndroid &&
+      form.type === 'usbserial' &&
+      !usbLoading &&
+      !usbError &&
+      (selectedUsbDevice ? !selectedUsbDevice.has_permission : usbDevices.length > 0 ? false : true),
   );
 
   const modeOptions = [
@@ -380,6 +420,72 @@
     }
   }
 
+  // Lazy-load attached USB serial devices the first time the operator
+  // opens the modal with the "usbserial" type selected. Mirrors the
+  // bluetooth lazy-loader pattern above. Gated on Platform.isAndroid:
+  // desktop returns 501, so we short-circuit with a friendly message.
+  $effect(() => {
+    if (form.type !== 'usbserial' || !modalOpen) return;
+    if (!Platform.isAndroid) {
+      if (!usbError) {
+        usbError = 'USB serial interfaces can only be configured from the Android app.';
+      }
+      return;
+    }
+    if (usbDevices.length === 0 && !usbLoading && !usbError) {
+      loadUsbDevices();
+    }
+  });
+
+  async function loadUsbDevices() {
+    usbLoading = true;
+    usbError = '';
+    try {
+      const resp = await kissUsb.availableDevices();
+      usbDevices = resp?.devices ?? [];
+    } catch (err) {
+      usbError = err?.message ?? 'Failed to load USB serial devices';
+    } finally {
+      usbLoading = false;
+    }
+  }
+
+  // Grant USB permission for the selected device via the Android JS bridge.
+  // Uses the shared __usbResult / __usbCallbacks dispatcher pattern (same
+  // one the PTT picker uses in androidDeviceSource.js). The dispatcher is
+  // installed idempotently so Kiss.svelte and the PTT picker can coexist.
+  // On grant, re-poll the device list so has_permission flips.
+  function requestUsbPerm() {
+    if (!Platform.isAndroid) return;
+    const bridge = globalThis.GraywolfWebInterface;
+    if (!bridge?.requestUsbPermission) return;
+    const dev = selectedUsbDevice;
+    if (!dev) return;
+    const [vidHex, pidHex] = dev.vid_pid.split(':');
+    const vid = parseInt(vidHex, 16);
+    const pid = parseInt(pidHex, 16);
+    if (Number.isNaN(vid) || Number.isNaN(pid)) return;
+    // Install the singleton dispatcher idempotently (matches androidDeviceSource.js).
+    if (!globalThis.__usbResult) {
+      globalThis.__usbResult = (id, granted) => {
+        const cb = globalThis.__usbCallbacks?.[id];
+        if (cb) cb(granted);
+        delete globalThis.__usbCallbacks?.[id];
+      };
+      globalThis.__usbCallbacks = {};
+    }
+    const callbackId = 'cb' + Math.random().toString(36).slice(2);
+    globalThis.__usbCallbacks[callbackId] = (granted) => {
+      if (granted) loadUsbDevices();
+    };
+    try {
+      bridge.requestUsbPermission(vid, pid, callbackId);
+    } catch (err) {
+      console.error('requestUsbPermission failed:', err);
+      delete globalThis.__usbCallbacks[callbackId];
+    }
+  }
+
   // Silent background fetch used only to pre-populate friendly names
   // in the table. Failures are intentionally not surfaced — the modal
   // path (loadBondedDevices) is the one that reports errors to the
@@ -441,6 +547,7 @@
         break;
       case 'serial':
       case 'bluetooth':
+      case 'usbserial':
         data.serial_device = form.serial_device || '';
         data.baud_rate = parseInt(form.baud_rate) || 9600;
         break;
@@ -477,6 +584,10 @@
       saveError = 'Pick a bonded device before saving.';
       return;
     }
+    if (form.type === 'usbserial' && !form.serial_device) {
+      saveError = 'Pick a USB serial device before saving.';
+      return;
+    }
     saveError = '';
     // Mode changes on an existing interface take effect the instant the
     // server restarts the per-interface KISS server — connected peers see
@@ -500,6 +611,7 @@
       case 'tcp-client': return Platform.isAndroid ? 'Network' : 'TCP Client';
       case 'serial':     return 'Serial';
       case 'bluetooth':  return 'Bluetooth Serial';
+      case 'usbserial':  return 'USB Serial';
       default:           return t;
     }
   }
@@ -531,6 +643,10 @@
       const dev = friendlyDevice(row);
       return dev ? `bluetooth ${dev}, ${mode}` : `bluetooth, ${mode}`;
     }
+    if (row.type === 'usbserial') {
+      const dev = (row.serial_device || '').trim();
+      return dev ? `usb ${dev}, ${mode}` : `usb, ${mode}`;
+    }
     return `#${row.id}, ${mode}`;
   }
 
@@ -539,6 +655,7 @@
     if (row.type === 'tcp-client') return `${row.remote_host}:${row.remote_port}`;
     if (row.type === 'serial') return row.serial_device || '—';
     if (row.type === 'bluetooth') return friendlyDevice(row) || '—';
+    if (row.type === 'usbserial') return row.serial_device || '—';
     return '—';
   }
 
@@ -639,6 +756,8 @@
     <Badge>TCP Server</Badge>
   {:else if value === 'bluetooth'}
     <Badge variant="info">{labelForType(value)}</Badge>
+  {:else if value === 'usbserial'}
+    <Badge variant="info">{labelForType(value)}</Badge>
   {:else if value === 'serial'}
     <Badge>{labelForType(value)}</Badge>
   {:else}
@@ -687,6 +806,8 @@
           <div class="detail-row"><span class="detail-label">Listening:</span> <span>:{row.tcp_port}</span></div>
         {:else if row.type === 'bluetooth'}
           <div class="detail-row"><span class="detail-label">Device:</span> <span>{friendlyDevice(row) || '—'}</span></div>
+        {:else if row.type === 'usbserial'}
+          <div class="detail-row"><span class="detail-label">Device:</span> <span>{row.serial_device || '—'}</span></div>
         {:else}
           <div class="detail-row"><span class="detail-label">Device:</span> <span>{row.serial_device || '—'}</span></div>
         {/if}
@@ -761,6 +882,43 @@
             </div>
           {/if}
         {/snippet}
+      </FormField>
+    {:else if form.type === 'usbserial'}
+      <FormField
+        label="USB device"
+        id="kiss-usb-device"
+        hint={usbHint}
+        error={usbFieldError}
+      >
+        {#snippet children(describedBy)}
+          <div class="bt-picker">
+            <Select
+              id="kiss-usb-device"
+              bind:value={form.serial_device}
+              options={usbDeviceOptions}
+              placeholder={usbLoading ? 'Loading…' : 'Select a USB serial device'}
+              onValueChange={() => { saveError = ''; }}
+              aria-describedby={describedBy}
+            />
+            <Button variant="secondary" onclick={loadUsbDevices} disabled={usbLoading}>
+              Refresh
+            </Button>
+          </div>
+          {#if showUsbPermGrant}
+            <div class="bt-perm-row">
+              <Button variant="secondary" onclick={requestUsbPerm}>
+                Grant USB permission
+              </Button>
+            </div>
+          {/if}
+        {/snippet}
+      </FormField>
+      <FormField
+        label="Baud Rate"
+        id="kiss-usb-baud"
+        hint="Serial line speed. Must match the TNC's configured baud rate. Default 9600."
+      >
+        <Input id="kiss-usb-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
       </FormField>
     {:else if form.type === 'serial'}
       <FormField
