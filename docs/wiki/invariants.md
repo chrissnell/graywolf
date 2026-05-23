@@ -655,3 +655,49 @@ cannot outlive the app, because no single mechanism covers both cases.
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt),
 [`../../cmd/graywolf/parentwatch.go`](../../cmd/graywolf/parentwatch.go),
 [`../../cmd/graywolf/main_android.go`](../../cmd/graywolf/main_android.go).
+
+### 37. The Android modem never goes permanently deaf (IPC re-accept + no-halt supervisor)
+
+*Why:* Two independent failure modes used to leave the modem alive but RX
+permanently dead -- no levels, no decode -- while audio capture stayed healthy:
+(1) the Rust `run_demod` outbound loop did a bare `break` on the first IPC send
+error, exiting the serve loop and silently dropping every frame + level while the
+DSP thread kept draining audio; (2) the Kotlin `Supervisor` permanently halted its
+restart loop after 3 failures in 60s (or any `onRestart` returning false), so a
+transient burst left the station deaf with no path to recovery.
+
+*How to apply:*
+- **Modem IPC re-accepts, it does not exit.** `run_demod` wraps the per-connection
+  serve loop in an outer `'serve` loop that calls
+  `IpcServer::accept_interruptible(&stop, poll)`. On any send error (frame, level,
+  or status) the inner loop breaks with `link_alive = true`, tears down just that
+  connection (`drop(handle)` + join the reader), and loops back to await the Go
+  child's reconnect. The DSP thread keeps decoding throughout. Only a `stop`
+  request or a disconnected audio channel exits `run_demod` (the single exit path,
+  which now also `stop.store(true)` before `dsp_join.join()` to fix a latent
+  DSP-thread hang).
+- **`ready` stays true across reconnects.** It is set true once at IPC bind and set
+  false only on the real exit path -- never on a mere client reconnect -- so the
+  Kotlin `modemWatcher` (which polls `modemAwaitReady`) does NOT trigger a full
+  modem restart just because the Go child reconnected.
+- **`accept_interruptible` is stop-aware.** It polls the listener non-blocking so a
+  `modemStop` is honored while waiting for reconnect; it returns `Ok(None)` when
+  `stop` is set before any client connects. The blocking `accept` and the
+  interruptible variant share `finish_accept` (sends `ModemReady`, spawns the
+  reader thread).
+- **Supervisor degrades, never halts.** Restart-decision logic lives in the pure,
+  host-testable `RestartPolicy` (sliding 60s window). Inside the window it escalates
+  through a backoff curve; once the limit is exceeded it enters DEGRADED mode and
+  keeps retrying at a long capped delay instead of returning from the restart
+  thread. An `onRestart` that returns false re-signals for another attempt rather
+  than halting. `GraywolfService` surfaces degraded state as an Android notification
+  ("graywolf modem stopped ... auto-retrying") via `onDegraded`, cleared on
+  `onHealthy`.
+- **Diagnosability:** when the DSP decodes but no IPC client is draining, dropped
+  frames are counted and a `warn!` fires every 50 drops -- a deaf-but-decoding modem
+  is visible in logcat instead of silent.
+
+Source: [`../../graywolf-modem/src/android/mod.rs`](../../graywolf-modem/src/android/mod.rs),
+[`../../graywolf-modem/src/ipc/server.rs`](../../graywolf-modem/src/ipc/server.rs),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/binaries/RestartPolicy.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/binaries/RestartPolicy.kt),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/binaries/Supervisor.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/binaries/Supervisor.kt).
