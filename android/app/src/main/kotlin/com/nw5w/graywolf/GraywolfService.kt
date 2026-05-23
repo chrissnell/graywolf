@@ -303,7 +303,7 @@ class GraywolfService : Service() {
             platformServer = PlatformServer(
                 socketPath = platformSocketPath(),
                 serverVersion = BuildConfig.VERSION_NAME,
-                schemaVersion = 2,
+                schemaVersion = 3,
             ).also { it.start() }
         } catch (e: BindContendedException) {
             // A previous instance still owns the platformsvc socket after the

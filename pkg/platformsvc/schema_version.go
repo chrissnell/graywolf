@@ -6,4 +6,4 @@ package platformsvc
 // without requiring GOOS=android. The Kotlin side must declare the
 // same value at GraywolfService.kt:schemaVersion — schema_version_test
 // asserts this.
-const SchemaVersion uint32 = 2
+const SchemaVersion uint32 = 3
