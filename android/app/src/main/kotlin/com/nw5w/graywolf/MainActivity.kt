@@ -6,6 +6,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -34,6 +35,18 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // If the system auto-relaunched us via USB_DEVICE_ATTACHED right after a
+        // deliberate swipe-stop, that "attach" is the radio's USB interfaces
+        // (CP2102N/C-Media) re-enumerating when our process released them during
+        // teardown -- not a genuine plug-in. Honor the user's intent to stop:
+        // finish without starting the service/backend. A launcher tap (action
+        // MAIN) or a genuine re-plug after the window is NOT suppressed.
+        if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED &&
+            wasRecentlyStoppedByUser(this)) {
+            Log.i(TAG, "ignoring USB-attach relaunch within stop window; staying stopped")
+            finish()
+            return
+        }
         webView = WebView(this).also {
             it.settings.javaScriptEnabled = true
             it.settings.domStorageEnabled = true
@@ -162,6 +175,9 @@ class MainActivity : Activity() {
     }
 
     private fun startEverything() {
+        // We're committing to running, so clear any prior deliberate-stop marker;
+        // future USB attaches should launch normally.
+        clearUserStopped(this)
         startForegroundService(Intent(this, GraywolfService::class.java))
         val started = System.currentTimeMillis()
         val r = object : Runnable {
@@ -222,7 +238,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        webView.destroy()
+        // The USB-attach suppression path finish()es in onCreate before webView
+        // is built, which skips straight here -- guard the lateinit.
+        if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
 
@@ -235,6 +253,14 @@ class MainActivity : Activity() {
         private const val REQ_BT_PERMS = 0x102
         private const val PREFS_NAME = "graywolf-prefs"
         private const val PREF_BATTERY_OPT_REQUESTED = "battery_opt_whitelist_requested_v1"
+        private const val PREF_USER_STOPPED_AT = "user_stopped_at_ms_v1"
+
+        // Window after a deliberate swipe-stop during which a USB_DEVICE_ATTACHED
+        // relaunch is treated as our own teardown re-enumeration (the radio's USB
+        // interfaces detach + re-attach ~2s after the process dies) rather than a
+        // genuine plug-in. Generous enough to cover slow hubs without swallowing a
+        // real re-plug seconds later.
+        private const val STOP_RELAUNCH_SUPPRESS_WINDOW_MS = 15_000L
 
         fun batteryOptWhitelistRequested(ctx: Context): Boolean =
             ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -243,6 +269,24 @@ class MainActivity : Activity() {
         fun markBatteryOptWhitelistRequested(ctx: Context) {
             ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putBoolean(PREF_BATTERY_OPT_REQUESTED, true).apply()
+        }
+
+        // Record the moment the operator deliberately stopped the station (swipe
+        // from recents). Called by GraywolfService.onTaskRemoved before stopSelf.
+        fun markUserStopped(ctx: Context) {
+            ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putLong(PREF_USER_STOPPED_AT, System.currentTimeMillis()).apply()
+        }
+
+        fun wasRecentlyStoppedByUser(ctx: Context): Boolean {
+            val at = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getLong(PREF_USER_STOPPED_AT, 0L)
+            return at != 0L && System.currentTimeMillis() - at < STOP_RELAUNCH_SUPPRESS_WINDOW_MS
+        }
+
+        fun clearUserStopped(ctx: Context) {
+            ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().remove(PREF_USER_STOPPED_AT).apply()
         }
     }
 }
