@@ -254,7 +254,7 @@ section), [`../handbook/kiss-bluetooth.html`](../handbook/kiss-bluetooth.html),
 | Modem JNI bridge | `jni/ModemBridge.kt` |
 | Platform UDS server + proto codec | `platformsvc/PlatformServer.kt`, `platformsvc/MessageHandler.kt`, `platformsvc/WireCodec.kt` |
 | USB PTT adapter (CM108 / CP2102N / AIOC / VOX) | `usb/UsbPttAdapter.kt`, `usb/PttMethodConsts.kt` |
-| USB device ownership arbiter (KISS vs. PTT claim/evict) | `usb/UsbDeviceArbiter.kt` -- tracks which USB device is claimed for KISS serial vs. PTT; `claim` evicts any prior PTT hold, `release` returns the device to the available pool |
+| USB device ownership arbiter (KISS vs. PTT) | `usb/UsbDeviceArbiter.kt` -- process-global set of deviceNames claimed by non-PTT subsystems (`claim` adds, `release` removes, `isClaimed` queries); `UsbPttAdapter` consults `isClaimed` before auto-opening. PTT eviction is a separate step: `UsbSerialFacade.open()` calls `UsbPttAdapter.evictDevice` immediately after `UsbDeviceArbiter.claim`. |
 | USB serial byte relay for KISS-over-USB-Serial | `platformsvc/UsbSerialAdapter.kt` -- owns one `UsbDeviceConnection` per handle; pump pair on worker thread; multiplexes through the platform UDS via `SerialOpen` / `SerialData` / `SerialClose` / `SerialError` proto messages |
 | USB serial permission + chip-family facade | `platformsvc/UsbSerialFacade.kt` -- enumerates connected USB serial devices (CDC-ACM, CP210x, CH34x), requests Android `UsbManager` permissions, delivers open handles to `UsbSerialAdapter` |
 | Bluetooth facade + permission/bond receivers | `platformsvc/BluetoothFacade.kt` |
