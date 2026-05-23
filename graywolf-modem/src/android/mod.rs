@@ -3,7 +3,7 @@
 #![cfg(target_os = "android")]
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
@@ -11,7 +11,10 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use jni::objects::{JClass, JString};
-use jni::sys::{jboolean, jfloat, jint, jlong, jshortArray, jsize, jstring, JNI_FALSE, JNI_TRUE, JNI_VERSION_1_6};
+use jni::sys::{
+    jboolean, jfloat, jint, jlong, jshortArray, jsize, jstring, JNI_FALSE, JNI_TRUE,
+    JNI_VERSION_1_6,
+};
 use jni::{JNIEnv, JavaVM};
 use log::{error, info, warn};
 
@@ -259,7 +262,8 @@ fn run_demod(
     // to push samples, and the demod always runs even if the Go child
     // is restarting. Without this split, the first ~1.5 s of audio
     // after every restart fills the rx sync_channel and gets dropped.
-    let server = IpcServer::bind(&socket_path).map_err(|e| format!("bind {}: {}", socket_path, e))?;
+    let server =
+        IpcServer::bind(&socket_path).map_err(|e| format!("bind {}: {}", socket_path, e))?;
     info!("ipc server bound at {}", socket_path);
     ready.store(true, Ordering::Release);
 
@@ -277,6 +281,11 @@ fn run_demod(
     let (level_tx, level_rx) = sync_channel::<DeviceLevelUpdate>(32);
     audio::install_level_tx(level_tx);
     let stop_dsp = stop.clone();
+    // Counts frames the DSP decoded but couldn't hand to the IPC link
+    // (queue full because no Go client is draining). Moved into the DSP
+    // closure; a periodic warn! makes a deaf-but-decoding modem visible
+    // in logcat instead of silently dropping.
+    let dropped_frames = Arc::new(AtomicU64::new(0));
     let dsp_join = thread::Builder::new()
         .name("graywolfmodem-dsp".into())
         .spawn(move || {
@@ -316,9 +325,18 @@ fn run_demod(
                                 timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
                             };
                             config_state::increment_rx_frames();
-                            // Drop on full — IPC thread will catch up
-                            // when the Go child connects.
-                            let _ = frames_tx.try_send(pb);
+                            // Drop on full — IPC thread will catch up when the
+                            // Go child connects. Count drops so a deaf modem
+                            // (decoding but no client draining) is diagnosable.
+                            if frames_tx.try_send(pb).is_err() {
+                                let n = dropped_frames.fetch_add(1, Ordering::Relaxed) + 1;
+                                if n % 50 == 0 {
+                                    warn!(
+                                        "demod producing but {} frames dropped (no IPC client draining)",
+                                        n
+                                    );
+                                }
+                            }
                         }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
@@ -329,189 +347,221 @@ fn run_demod(
         })
         .map_err(|e| format!("spawn dsp: {}", e))?;
 
-    // IPC accept on the original thread. Blocks until the Go child
-    // connects; while blocked, the DSP thread is already running and
-    // dropping frames into frames_rx (bounded → silent drop on full).
-    let (handle, ipc_rx, ipc_join) =
-        server.accept().map_err(|e| format!("accept: {}", e))?;
-    info!("poc-b: ipc_client_connected");
+    // Outer loop: (re)accept a Go client and serve it until the link drops,
+    // then loop back and wait for reconnect. A transient Go disconnect must
+    // NOT make RX go deaf — the DSP thread keeps decoding throughout; only
+    // the outbound IPC link is re-established. `ready` stays true the whole
+    // time (the modem is alive), so the supervisor's modemWatcher does not
+    // trigger a full restart on a mere reconnect.
+    let accept_poll = Duration::from_millis(100);
+    'serve: while !stop.load(Ordering::Relaxed) {
+        let (handle, ipc_rx, ipc_join) = match server.accept_interruptible(&stop, accept_poll) {
+            Ok(Some(triple)) => triple,
+            Ok(None) => break 'serve, // stop requested while waiting
+            Err(e) => {
+                warn!("ipc accept: {}; retrying", e);
+                continue 'serve;
+            }
+        };
+        info!("poc-b: ipc_client_connected");
 
-    let mut last_status_emit = Instant::now();
-    while !stop.load(Ordering::Relaxed) {
-        // Short timeout so the loop pumps both frame and level queues
-        // without head-of-line blocking on either.
-        match frames_rx.recv_timeout(Duration::from_millis(50)) {
-            Ok(pb) => {
-                if let Err(e) = handle.send(&IpcMessage::received_frame(pb)) {
-                    warn!("ipc send (frame): {}", e);
+        let mut last_status_emit = Instant::now();
+        // Inner loop: serve this connection. On any send error, drop the
+        // handle and break to the outer loop to await reconnect (do NOT
+        // exit run_demod — that was the bug that dropped all frames+levels
+        // while audio capture stayed healthy).
+        let link_alive = loop {
+            if stop.load(Ordering::Relaxed) {
+                break false;
+            }
+            // Short timeout so the loop pumps both frame and level queues
+            // without head-of-line blocking on either.
+            match frames_rx.recv_timeout(Duration::from_millis(50)) {
+                Ok(pb) => {
+                    if let Err(e) = handle.send(&IpcMessage::received_frame(pb)) {
+                        warn!("ipc send (frame): {}; awaiting reconnect", e);
+                        break true;
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break false,
+            }
+
+            // Drain queued level updates (~5 Hz cadence; usually 0 or 1 per
+            // tick). Non-blocking; never head-of-line-blocks the frame path.
+            let mut send_failed = false;
+            while let Ok(level) = level_rx.try_recv() {
+                if let Err(e) = handle.send(&IpcMessage::device_level_update(level)) {
+                    warn!("ipc send (level): {}; awaiting reconnect", e);
+                    send_failed = true;
                     break;
                 }
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-        }
-
-        // Drain queued level updates (~5 Hz cadence; usually 0 or 1 per
-        // tick). Non-blocking; never head-of-line-blocks the frame path.
-        while let Ok(level) = level_rx.try_recv() {
-            if let Err(e) = handle.send(&IpcMessage::device_level_update(level)) {
-                warn!("ipc send (level): {}", e);
-                break;
+            if send_failed {
+                break true;
             }
-        }
 
-        // Emit StatusUpdate once per second so the Go modembridge
-        // status_cache gets the cumulative rx_frames counter that
-        // backs the SPA Dashboard's per-channel RX counter. Audio
-        // levels are zero here -- the per-device DeviceLevelUpdate
-        // path above is the source of truth on Android.
-        let now = Instant::now();
-        if now.duration_since(last_status_emit) >= Duration::from_millis(1000) {
-            let s = StatusUpdate {
-                channel: config_state::channel_id(),
-                rx_frames: config_state::rx_frames(),
-                rx_bad_fcs: 0,
-                tx_frames: config_state::tx_frames(),
-                dcd_transitions: 0,
-                audio_level_mark: 0.0,
-                audio_level_space: 0.0,
-                audio_level_peak: 0.0,
-                dcd_state: false,
-                shutdown_complete: false,
-                timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
-            };
-            if let Err(e) = handle.send(&IpcMessage::status_update(s)) {
-                warn!("ipc send (status): {}", e);
-                break;
+            // Emit StatusUpdate once per second so the Go modembridge
+            // status_cache gets the cumulative rx_frames counter that
+            // backs the SPA Dashboard's per-channel RX counter. Audio
+            // levels are zero here -- the per-device DeviceLevelUpdate
+            // path above is the source of truth on Android.
+            let now = Instant::now();
+            if now.duration_since(last_status_emit) >= Duration::from_millis(1000) {
+                let s = StatusUpdate {
+                    channel: config_state::channel_id(),
+                    rx_frames: config_state::rx_frames(),
+                    rx_bad_fcs: 0,
+                    tx_frames: config_state::tx_frames(),
+                    dcd_transitions: 0,
+                    audio_level_mark: 0.0,
+                    audio_level_space: 0.0,
+                    audio_level_peak: 0.0,
+                    dcd_state: false,
+                    shutdown_complete: false,
+                    timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
+                };
+                if let Err(e) = handle.send(&IpcMessage::status_update(s)) {
+                    warn!("ipc send (status): {}; awaiting reconnect", e);
+                    break true;
+                }
+                last_status_emit = now;
             }
-            last_status_emit = now;
-        }
 
-        // Drain inbound IPC messages from the Go side. Previously only
-        // ConfigureChannel was handled; now the full TX dispatch is wired.
-        while let Ok(inbound) = ipc_rx.try_recv() {
-            if let IpcInbound::Message(msg) = inbound {
-                match msg.payload {
-                    Some(ipc_message::Payload::ConfigureChannel(cc)) => {
-                        let chan = cc.channel;
-                        let dev = if cc.input_device_id != 0 {
-                            cc.input_device_id
-                        } else {
-                            cc.device_id
-                        };
-                        info!(
-                            "configure channel: channel={} input_device_id={}",
-                            chan, dev
-                        );
-                        config_state::set_from_configure(chan, dev);
-                        // Capture DSP params so TransmitFrame can call
-                        // build_samples with the same baud / tone pair.
-                        config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
-                    }
-                    Some(ipc_message::Payload::ConfigurePtt(cfg)) => {
-                        let chan = cfg.channel;
-                        // Persist timing for later TransmitFrame use.
-                        config_state::set_ptt_timing(cfg.txdelay_ms, cfg.txtail_ms);
-                        match ptt_registry.build_driver(&cfg) {
-                            Ok(driver) => {
-                                if let Err(e) = tx_worker.register_driver(chan, driver) {
-                                    warn!("register_driver(channel={}): {}", chan, e);
-                                } else {
-                                    info!(
-                                        "ptt driver registered channel={} method={}",
-                                        chan, cfg.method
+            // Drain inbound IPC messages from the Go side. Previously only
+            // ConfigureChannel was handled; now the full TX dispatch is wired.
+            while let Ok(inbound) = ipc_rx.try_recv() {
+                if let IpcInbound::Message(msg) = inbound {
+                    match msg.payload {
+                        Some(ipc_message::Payload::ConfigureChannel(cc)) => {
+                            let chan = cc.channel;
+                            let dev = if cc.input_device_id != 0 {
+                                cc.input_device_id
+                            } else {
+                                cc.device_id
+                            };
+                            info!(
+                                "configure channel: channel={} input_device_id={}",
+                                chan, dev
+                            );
+                            config_state::set_from_configure(chan, dev);
+                            // Capture DSP params so TransmitFrame can call
+                            // build_samples with the same baud / tone pair.
+                            config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
+                        }
+                        Some(ipc_message::Payload::ConfigurePtt(cfg)) => {
+                            let chan = cfg.channel;
+                            // Persist timing for later TransmitFrame use.
+                            config_state::set_ptt_timing(cfg.txdelay_ms, cfg.txtail_ms);
+                            match ptt_registry.build_driver(&cfg) {
+                                Ok(driver) => {
+                                    if let Err(e) = tx_worker.register_driver(chan, driver) {
+                                        warn!("register_driver(channel={}): {}", chan, e);
+                                    } else {
+                                        info!(
+                                            "ptt driver registered channel={} method={}",
+                                            chan, cfg.method
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "build_driver(channel={} method={}): {}",
+                                        chan, cfg.method, e
                                     );
                                 }
                             }
-                            Err(e) => {
+                        }
+                        Some(ipc_message::Payload::ManualPtt(mp)) => {
+                            if let Err(e) = tx_worker.manual_key(mp.channel, mp.keyed) {
                                 warn!(
-                                    "build_driver(channel={} method={}): {}",
-                                    chan, cfg.method, e
+                                    "manual_key(channel={} keyed={}): {}",
+                                    mp.channel, mp.keyed, e
                                 );
                             }
                         }
-                    }
-                    Some(ipc_message::Payload::ManualPtt(mp)) => {
-                        if let Err(e) = tx_worker.manual_key(mp.channel, mp.keyed) {
-                            warn!(
-                                "manual_key(channel={} keyed={}): {}",
-                                mp.channel, mp.keyed, e
-                            );
-                        }
-                    }
-                    Some(ipc_message::Payload::TransmitFrame(tf)) => {
-                        let txdelay = if tf.txdelay_override_ms != 0 {
-                            tf.txdelay_override_ms
-                        } else {
-                            config_state::txdelay_ms()
-                        };
-                        let txtail = if tf.txtail_override_ms != 0 {
-                            tf.txtail_override_ms
-                        } else {
-                            config_state::txtail_ms()
-                        };
-                        match crate::tx::build_samples(
-                            &tf.data,
-                            txdelay,
-                            txtail,
-                            TARGET_SAMPLE_RATE,
-                            config_state::baud(),
-                            config_state::mark_freq(),
-                            config_state::space_freq(),
-                        ) {
-                            Ok(samples) => {
-                                let job = TxJob {
-                                    channel: tf.channel,
-                                    samples,
-                                    sample_rate: TARGET_SAMPLE_RATE,
-                                    // unused by the Android arm of process_job
-                                    // (AndroidTxSink handles audio routing via JNI)
-                                    output_device_id: 0,
-                                    sink_config: crate::audio::soundcard::SoundcardOutputConfig {
-                                        device_name: String::new(),
+                        Some(ipc_message::Payload::TransmitFrame(tf)) => {
+                            let txdelay = if tf.txdelay_override_ms != 0 {
+                                tf.txdelay_override_ms
+                            } else {
+                                config_state::txdelay_ms()
+                            };
+                            let txtail = if tf.txtail_override_ms != 0 {
+                                tf.txtail_override_ms
+                            } else {
+                                config_state::txtail_ms()
+                            };
+                            match crate::tx::build_samples(
+                                &tf.data,
+                                txdelay,
+                                txtail,
+                                TARGET_SAMPLE_RATE,
+                                config_state::baud(),
+                                config_state::mark_freq(),
+                                config_state::space_freq(),
+                            ) {
+                                Ok(samples) => {
+                                    let job = TxJob {
+                                        channel: tf.channel,
+                                        samples,
                                         sample_rate: TARGET_SAMPLE_RATE,
-                                        channels: 1,
-                                        audio_channel: 0,
-                                    },
-                                };
-                                if let Err(e) = tx_worker.transmit(job) {
-                                    warn!("transmit(channel={}): {}", tf.channel, e);
-                                } else {
-                                    config_state::increment_tx_frames();
+                                        // unused by the Android arm of process_job
+                                        // (AndroidTxSink handles audio routing via JNI)
+                                        output_device_id: 0,
+                                        sink_config:
+                                            crate::audio::soundcard::SoundcardOutputConfig {
+                                                device_name: String::new(),
+                                                sample_rate: TARGET_SAMPLE_RATE,
+                                                channels: 1,
+                                                audio_channel: 0,
+                                            },
+                                    };
+                                    if let Err(e) = tx_worker.transmit(job) {
+                                        warn!("transmit(channel={}): {}", tf.channel, e);
+                                    } else {
+                                        config_state::increment_tx_frames();
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("build_samples(channel={}): {}", tf.channel, e);
                                 }
                             }
-                            Err(e) => {
-                                warn!("build_samples(channel={}): {}", tf.channel, e);
-                            }
                         }
+                        Some(ipc_message::Payload::SetDeviceGain(sg)) => {
+                            // Live gain from the operator slider. Without this
+                            // arm it was a silent no-op on Android (gain frozen
+                            // at the modemStart boot value). Parity with the JNI
+                            // modemSetGainDb path; single global software gain so
+                            // device_id is informational.
+                            audio::set_gain_db(sg.gain_db);
+                            info!(
+                                "gain set to {:.1} dB (device_id={})",
+                                sg.gain_db, sg.device_id
+                            );
+                        }
+                        _ => {}
                     }
-                    Some(ipc_message::Payload::SetDeviceGain(sg)) => {
-                        // Live gain from the operator slider. Without this
-                        // arm it was a silent no-op on Android (gain frozen
-                        // at the modemStart boot value). Parity with the JNI
-                        // modemSetGainDb path; single global software gain so
-                        // device_id is informational.
-                        audio::set_gain_db(sg.gain_db);
-                        info!(
-                            "gain set to {:.1} dB (device_id={})",
-                            sg.gain_db, sg.device_id
-                        );
-                    }
-                    _ => {}
                 }
             }
+        };
+
+        // Tear down this connection before re-accepting (or exiting). On a
+        // transient send error (link_alive == true) we loop back and await
+        // the Go child's reconnect; the DSP thread keeps decoding meanwhile.
+        drop(handle);
+        let _ = ipc_join.join();
+        if !link_alive {
+            break 'serve;
         }
+        info!("ipc client disconnected; awaiting reconnect");
     }
 
-    // Close the write side so the reader thread observes EOF and exits.
-    drop(handle);
-    let _ = ipc_join.join();
+    // Single exit path (stop requested or audio channel disconnected). The
+    // stop.store(true) before joining the DSP thread fixes the latent hang
+    // where a bare break left the DSP thread running forever.
     audio::clear_level_tx();
-
-    // On exit (any path), flip ready to false so the supervisor's
-    // modem-health poll detects modem death even if the Go child is
-    // still alive.
     ready.store(false, Ordering::Release);
+    stop.store(true, Ordering::Release); // ensure DSP thread wakes and exits
     let _ = dsp_join.join();
     info!("demod loop exiting");
     Ok(())

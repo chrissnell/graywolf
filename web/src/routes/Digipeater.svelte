@@ -120,6 +120,13 @@
   });
   let savingConfig = $state(false);
 
+  // Last-persisted config body. The master Enable toggle auto-saves
+  // against this snapshot (see autoSaveEnabled) so flipping it never
+  // commits unsaved edits to the callsign / dedupe fields. Seeded on
+  // load and refreshed after every successful save.
+  let savedConfig = $state(/** @type {null | object} */ (null));
+  let enableSaving = $state(false);
+
   let fromCh = $derived(lookupChannel(parseInt(form.from_channel, 10)));
   let toCh = $derived(lookupChannel(parseInt(form.to_channel, 10)));
   // Backing-diff inline warning: when bridging from one backing kind
@@ -256,6 +263,11 @@
       my_call: storedMyCall,
       dedupe_window_seconds: String(data.dedupe_window_seconds || DEFAULT_DEDUPE_SECONDS),
     };
+    savedConfig = {
+      enabled: config.enabled,
+      my_call: storedMyCall,
+      dedupe_window_seconds: parseInt(config.dedupe_window_seconds, 10),
+    };
     // Derive the radio-group state from the loaded value: a stored
     // empty string means "inherit from station callsign"; non-empty
     // means the operator set an explicit override (and we want to
@@ -289,11 +301,13 @@
     }
     savingConfig = true;
     try {
-      await api.put('/digipeater', {
+      const body = {
         enabled: config.enabled,
         my_call: myCallForSave,
         dedupe_window_seconds: seconds,
-      });
+      };
+      await api.put('/digipeater', body);
+      savedConfig = body;
       // Mirror the saved value back into the form so the input shows
       // the canonicalized (trimmed / uppercased) string.
       config.my_call = myCallForSave;
@@ -321,6 +335,29 @@
     if (!stationCallsignMissing || config.enabled) return;
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
+    }
+  }
+
+  // Master Enable toggle auto-save. Flipping Enable persists immediately
+  // — only the enabled bit, merged onto the last-saved snapshot, so an
+  // in-progress callsign-override or dedupe edit is NOT committed. The
+  // station-callsign guard above already prevents the flip (and thus
+  // this handler firing) when the callsign is missing.
+  async function autoSaveEnabled(next) {
+    // Absorb the programmatic revert (next already matches saved) and
+    // guard against re-entrancy while a save is in flight.
+    if (!savedConfig || next === savedConfig.enabled || enableSaving) return;
+    enableSaving = true;
+    try {
+      const body = { ...savedConfig, enabled: next };
+      await api.put('/digipeater', body);
+      savedConfig = body;
+      toasts.success(next ? 'Digipeater enabled' : 'Digipeater disabled');
+    } catch (err) {
+      config.enabled = savedConfig.enabled;
+      toasts.error(err.message || 'Failed to update Digipeater');
+    } finally {
+      enableSaving = false;
     }
   }
 
@@ -456,6 +493,7 @@
       aria-describedby={stationCallsignMissing ? 'digi-station-banner' : undefined}
       onclick={handleEnableToggleClick}
       onkeydown={handleEnableToggleKeydown}
+      onCheckedChange={autoSaveEnabled}
     />
     <div style="margin-top: 12px;">
       <FormField label="Callsign" id="digi-call-mode"

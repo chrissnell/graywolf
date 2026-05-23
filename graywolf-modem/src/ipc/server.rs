@@ -49,6 +49,10 @@ type IpcListener = TcpListener;
 #[cfg(windows)]
 type IpcStream = TcpStream;
 
+/// Result of accepting an IPC client: the outbound handle, the inbound
+/// message channel, and the reader thread's join handle.
+type AcceptedClient = (IpcHandle, Receiver<IpcInbound>, thread::JoinHandle<()>);
+
 /// An inbound IPC message from the Go application, or a termination signal.
 pub enum IpcInbound {
     Message(IpcMessage),
@@ -173,29 +177,70 @@ impl IpcServer {
     /// socket file is cleaned up on exit.
     pub fn accept(
         &self,
-    ) -> io::Result<(IpcHandle, Receiver<IpcInbound>, thread::JoinHandle<()>)> {
+    ) -> io::Result<AcceptedClient> {
         let (stream, _addr) = self.listener.accept()?;
+        self.finish_accept(stream)
+    }
 
+    /// Build the handle/reader for an already-accepted stream. Sends
+    /// `ModemReady` and spawns the reader thread. Shared by `accept` and
+    /// `accept_interruptible`.
+    ///
+    /// The `ModemReady.version` field carries the full display string
+    /// (matching `graywolf-modem --version`) so the Go log line "modem ready
+    /// version=..." agrees with the startup banner.
+    fn finish_accept(
+        &self,
+        stream: IpcStream,
+    ) -> io::Result<AcceptedClient> {
         let reader_stream = stream.try_clone()?;
         let handle = IpcHandle { stream: Arc::new(Mutex::new(stream)) };
-
-        // Send ModemReady immediately so the Go side knows IPC is live.
-        // The version field carries the full display string (matching
-        // `graywolf-modem --version`) so the Go log line "modem ready
-        // version=..." agrees with the startup banner.
         let ready = IpcMessage::modem_ready(ModemReady {
             version: crate::full_version(),
             pid: std::process::id() as u64,
         });
         handle.send(&ready)?;
-
         let (tx, rx): (Sender<IpcInbound>, Receiver<IpcInbound>) = mpsc::channel();
         let join = thread::Builder::new()
             .name("ipc-reader".into())
             .spawn(move || reader_loop(reader_stream, tx))
             .expect("failed to spawn ipc reader thread");
-
         Ok((handle, rx, join))
+    }
+
+    /// Like `accept`, but polls the listener non-blocking so a `stop` flag
+    /// can interrupt the wait (used by the Android demod re-accept loop so
+    /// `modemStop` is honored even while waiting for the Go child to
+    /// reconnect). Returns `Ok(None)` if `stop` was set before a client
+    /// connected.
+    #[cfg(unix)]
+    pub fn accept_interruptible(
+        &self,
+        stop: &std::sync::atomic::AtomicBool,
+        poll: std::time::Duration,
+    ) -> io::Result<Option<AcceptedClient>> {
+        use std::sync::atomic::Ordering;
+        self.listener.set_nonblocking(true)?;
+        let out = loop {
+            if stop.load(Ordering::Acquire) {
+                break None;
+            }
+            match self.listener.accept() {
+                Ok((stream, _addr)) => break Some(stream),
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    thread::sleep(poll);
+                }
+                Err(e) => {
+                    let _ = self.listener.set_nonblocking(false);
+                    return Err(e);
+                }
+            }
+        };
+        self.listener.set_nonblocking(false)?;
+        match out {
+            Some(stream) => Ok(Some(self.finish_accept(stream)?)),
+            None => Ok(None),
+        }
     }
 
     #[cfg(unix)]
@@ -319,5 +364,43 @@ mod tests {
 
         // Suppress unused import warning from StartAudio in some configs.
         let _ = StartAudio {};
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn accept_interruptible_returns_none_when_stopped() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+        let dir = std::env::temp_dir().join(format!("gw-acc-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("s.sock");
+        let server = IpcServer::bind(&path).unwrap();
+        let stop = AtomicBool::new(true); // already stopped
+        let r = server
+            .accept_interruptible(&stop, Duration::from_millis(10))
+            .unwrap();
+        assert!(r.is_none(), "stopped before any client → None");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn accept_interruptible_accepts_a_client() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+        let dir = std::env::temp_dir().join(format!("gw-acc2-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("s.sock");
+        let server = IpcServer::bind(&path).unwrap();
+        let p2 = path.clone();
+        let h = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            std::os::unix::net::UnixStream::connect(&p2).unwrap()
+        });
+        let stop = AtomicBool::new(false);
+        let r = server
+            .accept_interruptible(&stop, Duration::from_millis(10))
+            .unwrap();
+        assert!(r.is_some(), "client connected → Some");
+        let _client = h.join().unwrap();
     }
 }

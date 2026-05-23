@@ -51,7 +51,12 @@ class GraywolfService : Service() {
     @Volatile private var startupThread: Thread? = null
     private var btSerialAdapter: BtSerialAdapter? = null
     private var usbSerialAdapter: UsbSerialAdapter? = null
-    private val supervisor = Supervisor(onRestart = ::supervisorRestart)
+    private val supervisor = Supervisor(
+        onRestart = ::supervisorRestart,
+        onDegraded = { showDegradedNotification() },
+        onHealthy = { clearDegradedNotification() },
+    )
+    private val degradedNotifId = NOTIF_ID + 1
 
     private val stopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -198,6 +203,28 @@ class GraywolfService : Service() {
         if (!bootModem()) return false
         audioPump.start()
         return bootGoChild()
+    }
+
+    private fun showDegradedNotification() {
+        val mgr = getSystemService(NotificationManager::class.java) ?: return
+        val notif = Notification.Builder(this, getString(R.string.notification_channel_id))
+            .setContentTitle("graywolf modem stopped")
+            .setContentText("RX/TX is down and auto-retrying. Tap to reopen.")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this, 1,
+                    Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+            )
+            .setOngoing(false)
+            .build()
+        mgr.notify(degradedNotifId, notif)
+    }
+
+    private fun clearDegradedNotification() {
+        getSystemService(NotificationManager::class.java)?.cancel(degradedNotifId)
     }
 
     override fun onCreate() {
