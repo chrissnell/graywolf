@@ -6,6 +6,7 @@ import android.util.Log
 import com.nw5w.graywolf.platformproto.GnssStatusUpdate
 import com.nw5w.graywolf.platformproto.GpsFix
 import com.nw5w.graywolf.platformproto.PlatformMessage
+import com.nw5w.graywolf.platformproto.SerialKind
 import com.nw5w.graywolf.platformproto.UsbClass
 import com.nw5w.graywolf.platformproto.UsbDevice as ProtoUsbDevice
 import com.nw5w.graywolf.platformproto.UsbDeviceListResponse
@@ -62,6 +63,17 @@ class PlatformServer(
      */
     fun attachBtAdapter(adapter: BtSerialAdapter) {
         btSerialAdapter = adapter
+    }
+
+    @Volatile private var usbSerialAdapter: UsbSerialAdapter? = null
+
+    /**
+     * Attach the UsbSerialAdapter after construction (same lifecycle reason as
+     * attachBtAdapter — its sendMessage callback closes over broadcastBt).
+     * Safe to call at most once during onCreate.
+     */
+    fun attachUsbSerialAdapter(adapter: UsbSerialAdapter) {
+        usbSerialAdapter = adapter
     }
 
     @Volatile private var usbDeviceLister: ((UsbClass) -> List<ProtoUsbDevice>)? = null
@@ -243,30 +255,35 @@ class PlatformServer(
                 // tests (which never attach one) still work.
                 when (req.bodyCase) {
                     PlatformMessage.BodyCase.SERIAL_OPEN -> {
-                        val adapter = btSerialAdapter
-                        if (adapter == null) {
-                            Log.d(TAG, "SERIAL_OPEN with no BtSerialAdapter attached; dropping")
+                        val req2 = req.serialOpen
+                        if (req2.kind == SerialKind.SERIAL_KIND_USB) {
+                            val adapter = usbSerialAdapter
+                            if (adapter == null) Log.d(TAG, "SERIAL_OPEN(USB) with no UsbSerialAdapter; dropping")
+                            else adapter.handleSerialOpen(req2)
                         } else {
-                            adapter.handleSerialOpen(req.serialOpen)
+                            val adapter = btSerialAdapter
+                            if (adapter == null) Log.d(TAG, "SERIAL_OPEN(BT) with no BtSerialAdapter; dropping")
+                            else adapter.handleSerialOpen(req2)
                         }
                         continue
                     }
                     PlatformMessage.BodyCase.SERIAL_DATA -> {
-                        val adapter = btSerialAdapter
-                        if (adapter == null) {
-                            Log.d(TAG, "SERIAL_DATA with no BtSerialAdapter attached; dropping")
-                        } else {
-                            adapter.handleSerialData(req.serialData)
-                        }
+                        // Handles are globally unique across transports; each
+                        // adapter no-ops a handle it doesn't own, so forward to
+                        // both rather than tracking handle->kind here.
+                        btSerialAdapter?.handleSerialData(req.serialData)
+                        usbSerialAdapter?.handleSerialData(req.serialData)
                         continue
                     }
                     PlatformMessage.BodyCase.SERIAL_CLOSE -> {
-                        val adapter = btSerialAdapter
-                        if (adapter == null) {
-                            Log.d(TAG, "SERIAL_CLOSE with no BtSerialAdapter attached; dropping")
-                        } else {
-                            adapter.handleSerialClose(req.serialClose)
-                        }
+                        btSerialAdapter?.handleSerialClose(req.serialClose)
+                        usbSerialAdapter?.handleSerialClose(req.serialClose)
+                        continue
+                    }
+                    PlatformMessage.BodyCase.AVAILABLE_USB_SERIAL_DEVICES_REQUEST -> {
+                        val adapter = usbSerialAdapter
+                        if (adapter == null) Log.d(TAG, "AVAILABLE_USB_SERIAL_DEVICES_REQUEST with no UsbSerialAdapter; dropping")
+                        else adapter.handleAvailableRequest()
                         continue
                     }
                     PlatformMessage.BodyCase.BONDED_BT_DEVICES_REQUEST -> {
