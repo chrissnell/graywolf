@@ -630,6 +630,18 @@ cannot outlive the app, because no single mechanism covers both cases.
   detection, stdout carries readiness; different fds, no conflict. The modem
   cdylib is in-process JNI, so it always dies with the app -- no separate
   handling needed.
+- **Single backend, serialized startup:** the platformsvc socket
+  (`<cacheDir>/platform.sock`, Linux abstract namespace) is effectively the
+  station's single-instance lock. A new instance must not start its backend
+  while a previous one is still tearing down. `MainActivity.waitForPredecessorThenStart`
+  probes the socket on a background thread (a live predecessor still accepts a
+  `LocalSocket` connect) and shows a "waiting" page until it is free, then starts
+  the foreground service. `PlatformServer.start()` additionally retries the bind
+  for `BIND_WAIT_MS` and, on timeout, throws `BindContendedException` so
+  `GraywolfService.onCreate` `stopSelf()`s cleanly -- it never lets
+  `Address already in use` crash the process, because that crash relaunches and
+  re-collides, a loop that re-enumerates the USB bus fast enough to wedge devices
+  off a powered hub.
 
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt),
 [`../../cmd/graywolf/parentwatch.go`](../../cmd/graywolf/parentwatch.go),
