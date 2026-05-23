@@ -100,22 +100,30 @@
   function ctxMenuItems() {
     const { lat, lon } = ctxMenu;
     const coords = `${fmtLat(lat)} ${fmtLon(lon)}`;
+    // Signed-decimal form -- the shape paste targets like Google Maps,
+    // OpenStreetMap, and most spreadsheets expect. 5 decimal places is
+    // ~1 m of precision, enough for any APRS use.
+    const decimal = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     const grid = toMaidenhead(lat, lon);
     return [
-      {
-        label: `Copy coordinates (${coords})`,
-        onSelect: () => copyToClipboard(coords, 'Coordinates'),
-      },
-      {
-        label: `Copy grid square (${grid})`,
-        onSelect: () => copyToClipboard(grid, 'Grid square'),
-      },
       {
         label: 'Add fixed beacon here…',
         onSelect: () => {
           const q = `lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`;
           window.location.hash = `#/beacons?${q}`;
         },
+      },
+      {
+        label: `Copy coordinates (${coords})`,
+        onSelect: () => copyToClipboard(coords, 'Coordinates'),
+      },
+      {
+        label: `Copy decimal coordinates (${decimal})`,
+        onSelect: () => copyToClipboard(decimal, 'Decimal coordinates'),
+      },
+      {
+        label: `Copy grid square (${grid})`,
+        onSelect: () => copyToClipboard(grid, 'Grid square'),
       },
     ];
   }
