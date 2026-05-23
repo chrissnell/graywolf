@@ -7,6 +7,21 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.9"
+  date: "2026-05-23"
+  style: info
+  schema_version: 1
+  link: "#/map"
+  title: "Right-click the map; USB TNC support on Android"
+  body: |
+    Right-click anywhere on the map to copy that spot's coordinates
+    or its Maidenhead grid square, or to drop a fixed beacon right
+    there. Works on macOS, Linux, and Windows.
+
+    On the upcoming Graywolf APRS Android app, you can now connect a
+    KISS TNC or radio over a USB cable, not just Bluetooth. Nothing to
+    do on other platforms.
+
 - version: "0.13.8"
   date: "2026-05-22"
   style: info
