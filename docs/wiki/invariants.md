@@ -589,3 +589,35 @@ blocking work still belongs on a worker thread.
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt),
 [`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BluetoothFacade.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BluetoothFacade.kt),
 [`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt).
+
+### 36. The Android Go child dies with the app (two-layer shutdown)
+
+*Why:* Swiping the app from recents removes the Activity but, with
+`android:stopWithTask` at its default (`false`), the foreground service keeps
+running -- so the forked Go backend would keep iGating/beaconing and the next
+launch shows stale uptime. A hard kill (Force Stop / OOM / OEM killer) can
+orphan the Go child entirely. Two independent layers guarantee the child
+cannot outlive the app, because no single mechanism covers both cases.
+
+*How to apply:*
+- **Layer 1 (clean swipe):** `GraywolfService.onTaskRemoved` calls `stopSelf()`,
+  which runs the existing `onDestroy()` teardown (`supervisor.stop()`,
+  `goLauncher.stop()` -> SIGTERM, `ModemBridge.modemStop()`, audio pumps,
+  `UsbPttAdapter.closeAll()`, `platformServer.stop()`). Keep `stopWithTask`
+  **unset** (default false) so `onTaskRemoved` is delivered; do NOT set
+  `android:stopWithTask="true"` -- the implicit stop is historically flaky
+  across OEMs and skips the deterministic log line.
+- **Layer 2 (hard-kill safety net):** `watchParentDeath` in
+  `cmd/graywolf/parentwatch.go` cancels the app context when the parent dies,
+  via two triggers -- stdin EOF (the JVM holds the write end of the child's
+  stdin pipe; the kernel closes it on app death) and a reparent poll
+  (`os.Getppid()` changes when the child reparents to init). A deadline
+  `os.Exit` backstops a hung unwind. This is separate from the stdout
+  readiness channel ([invariant 13](invariants.md)) -- stdin carries death
+  detection, stdout carries readiness; different fds, no conflict. The modem
+  cdylib is in-process JNI, so it always dies with the app -- no separate
+  handling needed.
+
+Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt),
+[`../../cmd/graywolf/parentwatch.go`](../../cmd/graywolf/parentwatch.go),
+[`../../cmd/graywolf/main_android.go`](../../cmd/graywolf/main_android.go).
