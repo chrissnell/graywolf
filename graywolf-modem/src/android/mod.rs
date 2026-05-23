@@ -3,7 +3,7 @@
 #![cfg(target_os = "android")]
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
@@ -281,6 +281,11 @@ fn run_demod(
     let (level_tx, level_rx) = sync_channel::<DeviceLevelUpdate>(32);
     audio::install_level_tx(level_tx);
     let stop_dsp = stop.clone();
+    // Counts frames the DSP decoded but couldn't hand to the IPC link
+    // (queue full because no Go client is draining). Moved into the DSP
+    // closure; a periodic warn! makes a deaf-but-decoding modem visible
+    // in logcat instead of silently dropping.
+    let dropped_frames = Arc::new(AtomicU64::new(0));
     let dsp_join = thread::Builder::new()
         .name("graywolfmodem-dsp".into())
         .spawn(move || {
@@ -320,9 +325,18 @@ fn run_demod(
                                 timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
                             };
                             config_state::increment_rx_frames();
-                            // Drop on full — IPC thread will catch up
-                            // when the Go child connects.
-                            let _ = frames_tx.try_send(pb);
+                            // Drop on full — IPC thread will catch up when the
+                            // Go child connects. Count drops so a deaf modem
+                            // (decoding but no client draining) is diagnosable.
+                            if frames_tx.try_send(pb).is_err() {
+                                let n = dropped_frames.fetch_add(1, Ordering::Relaxed) + 1;
+                                if n % 50 == 0 {
+                                    warn!(
+                                        "demod producing but {} frames dropped (no IPC client draining)",
+                                        n
+                                    );
+                                }
+                            }
                         }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
