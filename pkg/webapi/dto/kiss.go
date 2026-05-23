@@ -67,7 +67,7 @@ const (
 
 func (r KissRequest) Validate() error {
 	if !configstore.ValidKissInterfaceType(r.Type) {
-		return fmt.Errorf("type must be tcp, tcp-client, serial, or bluetooth")
+		return fmt.Errorf("type must be tcp, tcp-client, serial, bluetooth, or usbserial")
 	}
 	if r.Type == configstore.KissTypeTCP && r.TcpPort <= 0 {
 		return fmt.Errorf("tcp_port is required for tcp interfaces")
@@ -91,15 +91,17 @@ func (r KissRequest) Validate() error {
 			return fmt.Errorf("reconnect_init_ms %d must be <= reconnect_max_ms %d", r.ReconnectInitMs, r.ReconnectMaxMs)
 		}
 	}
-	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeBluetooth) && r.SerialDevice == "" {
-		return fmt.Errorf("serial_device is required for serial/bluetooth interfaces")
+	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeBluetooth || r.Type == configstore.KissTypeUsbSerial) && r.SerialDevice == "" {
+		return fmt.Errorf("serial_device is required for serial/bluetooth/usbserial interfaces")
 	}
 	// Bluetooth/RFCOMM has no baud rate (the radio link runs at its
 	// own modulation rate), so the BaudRate check only applies to
 	// real serial devices. wiring.go hardcodes BaudRate=0 for the
 	// bluetooth path; rejecting it here would deadlock valid POSTs.
-	if r.Type == configstore.KissTypeSerial && r.BaudRate == 0 {
-		return fmt.Errorf("baud_rate is required for serial interfaces")
+	// usbserial mirrors host serial: a real line speed is required
+	// (bluetooth RFCOMM has no baud, so it stays excluded).
+	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeUsbSerial) && r.BaudRate == 0 {
+		return fmt.Errorf("baud_rate is required for serial/usbserial interfaces")
 	}
 	if r.Mode != "" && !configstore.ValidKissMode(r.Mode) {
 		return fmt.Errorf("invalid mode %q: must be %q or %q", r.Mode, configstore.KissModeModem, configstore.KissModeTnc)

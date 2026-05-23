@@ -108,7 +108,7 @@ func TestKissRequest_Validate_BaudRate(t *testing.T) {
 			req: KissRequest{
 				Type: configstore.KissTypeSerial, SerialDevice: "/dev/ttyUSB0", BaudRate: 0,
 			},
-			wantErr: "baud_rate is required for serial interfaces",
+			wantErr: "baud_rate is required for serial/usbserial interfaces",
 		},
 		{
 			name: "serial with non-zero baud_rate is accepted",
@@ -350,6 +350,24 @@ func TestKissRequest_ToUpdate_TcpClientFullResourceReplace(t *testing.T) {
 				m.Mode, m.AllowTxFromGovernor)
 		}
 	})
+}
+
+func TestKissRequest_Validate_UsbSerial(t *testing.T) {
+	// Valid: device + baud present.
+	ok := KissRequest{Type: "usbserial", SerialDevice: "2341:0043", BaudRate: 9600}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("valid usbserial rejected: %v", err)
+	}
+	// Missing device.
+	noDev := KissRequest{Type: "usbserial", BaudRate: 9600}
+	if err := noDev.Validate(); err == nil {
+		t.Fatal("usbserial without serial_device should be rejected")
+	}
+	// Missing baud.
+	noBaud := KissRequest{Type: "usbserial", SerialDevice: "2341:0043"}
+	if err := noBaud.Validate(); err == nil {
+		t.Fatal("usbserial without baud_rate should be rejected")
+	}
 }
 
 // TestKissFromModel_TcpClient_Roundtrip ensures response mapping
