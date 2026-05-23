@@ -299,9 +299,9 @@ func TestBtSerialOpen_serialError_returnsTypedError(t *testing.T) {
 }
 
 // TestBtSerialOpen_clientClose_unblocksRead proves that calling the
-// underlying client's Close() wakes a blocked btReadWriteCloser.Read with
-// io.EOF instead of hanging on the now-orphaned per-handle channel.
-// Without drainBtHandles in Close(), this test would deadlock until the
+// underlying client's Close() wakes a blocked serialReadWriteCloser.Read
+// with io.EOF instead of hanging on the now-orphaned per-handle channel.
+// Without drainSerialHandles in Close(), this test would deadlock until the
 // test timeout. The 500 ms deadline is generous; the wakeup is effectively
 // immediate once the channel is closed.
 func TestBtSerialOpen_clientClose_unblocksRead(t *testing.T) {
@@ -354,7 +354,7 @@ func TestBtSerialOpen_clientClose_unblocksRead(t *testing.T) {
 	// Give the reader a beat to actually block.
 	time.Sleep(20 * time.Millisecond)
 
-	// Closing the client drains btHandles -> Read sees channel close ->
+	// Closing the client drains serialHandles -> Read sees channel close ->
 	// returns io.EOF.
 	if err := c.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -366,7 +366,7 @@ func TestBtSerialOpen_clientClose_unblocksRead(t *testing.T) {
 			t.Fatalf("Read err after client Close: got %v want io.EOF", res.err)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("Read did not return within 500ms of client Close; drainBtHandles missing?")
+		t.Fatal("Read did not return within 500ms of client Close; drainSerialHandles missing?")
 	}
 }
 
@@ -426,7 +426,7 @@ func TestBtSerialOpen_serverDisconnect_unblocksRead(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	// Closing the server side of the pipe causes the client's readLoop to
-	// hit an error and invoke handleDisconnect, which drains btHandles.
+	// hit an error and invoke handleDisconnect, which drains serialHandles.
 	srv.conn.Close()
 	srv.wg.Wait()
 
@@ -436,6 +436,6 @@ func TestBtSerialOpen_serverDisconnect_unblocksRead(t *testing.T) {
 			t.Fatalf("Read err after server disconnect: got %v want io.EOF", res.err)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("Read did not return within 500ms of server disconnect; drainBtHandles missing in handleDisconnect?")
+		t.Fatal("Read did not return within 500ms of server disconnect; drainSerialHandles missing in handleDisconnect?")
 	}
 }

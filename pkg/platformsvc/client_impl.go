@@ -41,13 +41,14 @@ type clientImpl struct {
 	requestMu sync.Mutex
 	respCh    chan *pb.PlatformMessage // re-set per request
 
-	// Multiplexed Bluetooth serial handles. Each open BtSerial stream gets
-	// a unique uint32 handle (atomic-allocated via btHandleCounter) and a
-	// dedicated inbound channel that the dispatch loop fans data/close/
-	// error frames into. btHandles is lazily allocated on first use.
-	btHandlesMu     sync.Mutex
-	btHandles       map[uint32]chan *pb.PlatformMessage
-	btHandleCounter uint32
+	// Multiplexed serial handles. Each open serial stream (Bluetooth RFCOMM
+	// or USB) gets a unique uint32 handle (atomic-allocated via
+	// serialHandleCounter) and a dedicated inbound channel that the dispatch
+	// loop fans data/close/error frames into. serialHandles is lazily
+	// allocated on first use.
+	serialHandlesMu     sync.Mutex
+	serialHandles       map[uint32]chan *pb.PlatformMessage
+	serialHandleCounter uint32
 }
 
 func newClient(socketPath string) Client {
@@ -180,13 +181,13 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 			}
 		}
 	case *pb.PlatformMessage_SerialOpenAck:
-		c.deliverBtHandle(b.SerialOpenAck.GetHandle(), msg)
+		c.deliverSerialHandle(b.SerialOpenAck.GetHandle(), msg)
 	case *pb.PlatformMessage_SerialData:
-		c.deliverBtHandle(b.SerialData.GetHandle(), msg)
+		c.deliverSerialHandle(b.SerialData.GetHandle(), msg)
 	case *pb.PlatformMessage_SerialClose:
-		c.deliverBtHandle(b.SerialClose.GetHandle(), msg)
+		c.deliverSerialHandle(b.SerialClose.GetHandle(), msg)
 	case *pb.PlatformMessage_SerialError:
-		c.deliverBtHandle(b.SerialError.GetHandle(), msg)
+		c.deliverSerialHandle(b.SerialError.GetHandle(), msg)
 	default:
 		// Response to an in-flight request. We only forward when the
 		// oneof body matches a request type we actually issue from
@@ -201,6 +202,7 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 			*pb.PlatformMessage_PttAck,
 			*pb.PlatformMessage_AudioListResp,
 			*pb.PlatformMessage_BondedBtDevicesResponse,
+			*pb.PlatformMessage_AvailableUsbSerialDevicesResponse,
 			*pb.PlatformMessage_Error:
 			c.mu.Lock()
 			ch := c.respCh
@@ -221,9 +223,9 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 // handleDisconnect is called from readLoop when the underlying conn dies.
 // It closes the in-flight response channel (if any) so a caller blocked in
 // roundTrip's select wakes up immediately rather than deadlocking until
-// ctx expires. It also drains btHandles so any blocked btReadWriteCloser.Read
-// wakes with io.EOF instead of hanging forever. The reconnect loop sees
-// c.conn == nil and re-dials.
+// ctx expires. It also drains serialHandles so any blocked
+// serialReadWriteCloser.Read wakes with io.EOF instead of hanging forever.
+// The reconnect loop sees c.conn == nil and re-dials.
 func (c *clientImpl) handleDisconnect(_ error) {
 	c.mu.Lock()
 	c.conn = nil
@@ -234,7 +236,7 @@ func (c *clientImpl) handleDisconnect(_ error) {
 		// Closing surfaces as `_, ok := <-respCh; !ok` in roundTrip.
 		close(respCh)
 	}
-	c.drainBtHandles()
+	c.drainSerialHandles()
 }
 
 func (c *clientImpl) Close() error {
@@ -246,25 +248,25 @@ func (c *clientImpl) Close() error {
 	conn := c.conn
 	c.conn = nil
 	c.mu.Unlock()
-	c.drainBtHandles()
+	c.drainSerialHandles()
 	if conn != nil {
 		return conn.Close()
 	}
 	return nil
 }
 
-// drainBtHandles closes every per-handle inbound channel and clears the
+// drainSerialHandles closes every per-handle inbound channel and clears the
 // map. Called from handleDisconnect (UDS died) and Close (client shutdown)
-// so any goroutine blocked in btReadWriteCloser.Read wakes with io.EOF
-// instead of stalling on a now-orphaned channel. Safe when btHandles is
+// so any goroutine blocked in serialReadWriteCloser.Read wakes with io.EOF
+// instead of stalling on a now-orphaned channel. Safe when serialHandles is
 // nil (initial state — never used). The map snapshot is taken under
-// btHandlesMu and the close() calls happen outside the lock to avoid
-// re-entering dispatch paths that also take btHandlesMu.
-func (c *clientImpl) drainBtHandles() {
-	c.btHandlesMu.Lock()
-	handles := c.btHandles
-	c.btHandles = nil
-	c.btHandlesMu.Unlock()
+// serialHandlesMu and the close() calls happen outside the lock to avoid
+// re-entering dispatch paths that also take serialHandlesMu.
+func (c *clientImpl) drainSerialHandles() {
+	c.serialHandlesMu.Lock()
+	handles := c.serialHandles
+	c.serialHandles = nil
+	c.serialHandlesMu.Unlock()
 	for _, ch := range handles {
 		close(ch)
 	}
@@ -329,44 +331,45 @@ func (c *clientImpl) send(msg *pb.PlatformMessage) error {
 	return writeFrame(conn, msg)
 }
 
-// nextBtHandle allocates a fresh non-zero handle ID for a new BtSerial
+// nextSerialHandle allocates a fresh non-zero handle ID for a new serial
 // stream. The first allocated handle is 1; handles never repeat within a
 // client lifetime (uint32 wraparound is not a practical concern).
-func (c *clientImpl) nextBtHandle() uint32 {
-	return atomic.AddUint32(&c.btHandleCounter, 1)
+func (c *clientImpl) nextSerialHandle() uint32 {
+	return atomic.AddUint32(&c.serialHandleCounter, 1)
 }
 
-// registerBtHandle creates a buffered inbound channel and records it under
-// btHandlesMu. Returns the channel for the caller to read from.
-func (c *clientImpl) registerBtHandle(handle uint32) chan *pb.PlatformMessage {
+// registerSerialHandle creates a buffered inbound channel and records it
+// under serialHandlesMu. Returns the channel for the caller to read from.
+func (c *clientImpl) registerSerialHandle(handle uint32) chan *pb.PlatformMessage {
 	ch := make(chan *pb.PlatformMessage, 256)
-	c.btHandlesMu.Lock()
-	if c.btHandles == nil {
-		c.btHandles = make(map[uint32]chan *pb.PlatformMessage)
+	c.serialHandlesMu.Lock()
+	if c.serialHandles == nil {
+		c.serialHandles = make(map[uint32]chan *pb.PlatformMessage)
 	}
-	c.btHandles[handle] = ch
-	c.btHandlesMu.Unlock()
+	c.serialHandles[handle] = ch
+	c.serialHandlesMu.Unlock()
 	return ch
 }
 
-// removeBtHandle removes the inbound channel for handle. Idempotent; safe
+// removeSerialHandle removes the inbound channel for handle. Idempotent; safe
 // to call multiple times. Does not close the channel — the caller is
 // responsible for any reader synchronization (e.g. via a separate done
 // signal).
-func (c *clientImpl) removeBtHandle(handle uint32) {
-	c.btHandlesMu.Lock()
-	delete(c.btHandles, handle)
-	c.btHandlesMu.Unlock()
+func (c *clientImpl) removeSerialHandle(handle uint32) {
+	c.serialHandlesMu.Lock()
+	delete(c.serialHandles, handle)
+	c.serialHandlesMu.Unlock()
 }
 
-// deliverBtHandle fans an incoming BT serial frame (Ack/Data/Close/Error)
-// to the per-handle channel. Non-blocking: if the channel is full the
-// frame is dropped. The 256-frame buffer makes this rare under normal
-// load; a sustained overflow indicates a stalled reader.
-func (c *clientImpl) deliverBtHandle(handle uint32, msg *pb.PlatformMessage) {
-	c.btHandlesMu.Lock()
-	ch := c.btHandles[handle]
-	c.btHandlesMu.Unlock()
+// deliverSerialHandle fans an incoming serial frame (Ack/Data/Close/Error)
+// for the multiplexed serial transport to the per-handle channel.
+// Non-blocking: if the channel is full the frame is dropped. The 256-frame
+// buffer makes this rare under normal load; a sustained overflow indicates
+// a stalled reader.
+func (c *clientImpl) deliverSerialHandle(handle uint32, msg *pb.PlatformMessage) {
+	c.serialHandlesMu.Lock()
+	ch := c.serialHandles[handle]
+	c.serialHandlesMu.Unlock()
 	if ch == nil {
 		return
 	}

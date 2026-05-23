@@ -76,8 +76,8 @@ func (c *clientImpl) BtSerialOpen(ctx context.Context, mac string) (io.ReadWrite
 		return nil, ErrClosed
 	}
 
-	handle := c.nextBtHandle()
-	inbound := c.registerBtHandle(handle)
+	handle := c.nextSerialHandle()
+	inbound := c.registerSerialHandle(handle)
 
 	req := &pb.PlatformMessage{Body: &pb.PlatformMessage_SerialOpen{
 		SerialOpen: &pb.SerialOpen{
@@ -87,7 +87,7 @@ func (c *clientImpl) BtSerialOpen(ctx context.Context, mac string) (io.ReadWrite
 		},
 	}}
 	if err := c.send(req); err != nil {
-		c.removeBtHandle(handle)
+		c.removeSerialHandle(handle)
 		return nil, fmt.Errorf("platformsvc: send SerialOpen: %w", err)
 	}
 
@@ -95,7 +95,7 @@ func (c *clientImpl) BtSerialOpen(ctx context.Context, mac string) (io.ReadWrite
 	for {
 		select {
 		case <-ctx.Done():
-			c.removeBtHandle(handle)
+			c.removeSerialHandle(handle)
 			// Best-effort: tell the server we're abandoning this handle
 			// so it can tear down any in-progress connect attempt.
 			_ = c.send(&pb.PlatformMessage{Body: &pb.PlatformMessage_SerialClose{
@@ -103,27 +103,27 @@ func (c *clientImpl) BtSerialOpen(ctx context.Context, mac string) (io.ReadWrite
 			}})
 			return nil, ctx.Err()
 		case <-c.closeCh:
-			c.removeBtHandle(handle)
+			c.removeSerialHandle(handle)
 			return nil, ErrClosed
 		case msg, ok := <-inbound:
 			if !ok {
-				c.removeBtHandle(handle)
+				c.removeSerialHandle(handle)
 				return nil, ErrDisconnected
 			}
 			switch b := msg.GetBody().(type) {
 			case *pb.PlatformMessage_SerialOpenAck:
 				ack := b.SerialOpenAck
 				if !ack.GetOk() {
-					c.removeBtHandle(handle)
+					c.removeSerialHandle(handle)
 					return nil, fmt.Errorf("platformsvc: SerialOpen denied: %s", ack.GetError())
 				}
 				return newBtReadWriteCloser(c, handle, inbound), nil
 			case *pb.PlatformMessage_SerialError:
 				se := b.SerialError
-				c.removeBtHandle(handle)
+				c.removeSerialHandle(handle)
 				return nil, &SerialErrorErr{Code: se.GetCode(), Detail: se.GetDetail()}
 			case *pb.PlatformMessage_SerialClose:
-				c.removeBtHandle(handle)
+				c.removeSerialHandle(handle)
 				return nil, fmt.Errorf("platformsvc: server closed before ack: %s", b.SerialClose.GetReason())
 			default:
 				// Unexpected payload for this handle before ack; ignore
@@ -279,7 +279,7 @@ func (r *btReadWriteCloser) Close() error {
 		if err != nil && !errors.Is(err, ErrClosed) {
 			r.closeErr = err
 		}
-		r.c.removeBtHandle(r.handle)
+		r.c.removeSerialHandle(r.handle)
 	})
 	return r.closeErr
 }
