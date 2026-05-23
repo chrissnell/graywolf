@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -22,6 +24,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.nw5w.graywolf.webview.WebAppInterface
 import com.nw5w.graywolf.webview.WebBridgeIds
+import java.io.IOException
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -178,6 +181,74 @@ class MainActivity : Activity() {
         // We're committing to running, so clear any prior deliberate-stop marker;
         // future USB attaches should launch normally.
         clearUserStopped(this)
+        // Wait for any previous instance to fully exit before starting a new
+        // backend. A live predecessor still answers on the platformsvc socket;
+        // starting now would collide on the bind and (historically) crash-loop,
+        // churning the USB bus. The probe blocks, so it runs on a background
+        // thread; UI updates post back to the main thread.
+        waitForPredecessorThenStart()
+    }
+
+    // Background-threaded probe of the platformsvc abstract socket. While a
+    // predecessor answers, show the waiting page and re-probe every
+    // PROBE_STEP_MS; once it stops answering (or PROBE_TIMEOUT_MS elapses)
+    // start the foreground service and begin the readiness poll.
+    private fun waitForPredecessorThenStart() {
+        val socketName = GraywolfService.platformSocketName(this)
+        Thread({
+            val deadline = System.currentTimeMillis() + PROBE_TIMEOUT_MS
+            var shownWaiting = false
+            while (predecessorAlive(socketName) && System.currentTimeMillis() < deadline) {
+                if (!shownWaiting) {
+                    shownWaiting = true
+                    mainHandler.post { showWaitingPage() }
+                }
+                try {
+                    Thread.sleep(PROBE_STEP_MS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            mainHandler.post { startServiceAndAwaitReady() }
+        }, "predecessor-wait").apply { isDaemon = true; start() }
+    }
+
+    // True if a previous backend still accepts connections on the abstract
+    // platformsvc socket. connect() throwing (refused / no such address) means
+    // the address is free.
+    private fun predecessorAlive(socketName: String): Boolean {
+        val s = LocalSocket()
+        return try {
+            s.connect(LocalSocketAddress(socketName, LocalSocketAddress.Namespace.ABSTRACT))
+            true
+        } catch (_: IOException) {
+            false
+        } finally {
+            try { s.close() } catch (_: IOException) { /* ignore */ }
+        }
+    }
+
+    private fun showWaitingPage() {
+        val html = """
+            <!doctype html><html><head><meta name="viewport"
+            content="width=device-width,initial-scale=1">
+            <style>
+              html,body{height:100%;margin:0;background:#0b0d10;color:#cfd6e4;
+                font-family:-apple-system,Roboto,sans-serif;
+                display:flex;align-items:center;justify-content:center}
+              .box{text-align:center;padding:2rem}
+              .t{font-size:1.1rem;margin-bottom:.5rem}
+              .s{font-size:.85rem;color:#8b94a7}
+            </style></head><body><div class="box">
+            <div class="t">Waiting for the previous session to close&hellip;</div>
+            <div class="s">Graywolf is shutting down a prior instance before starting.</div>
+            </div></body></html>
+        """.trimIndent()
+        webView.loadData(html, "text/html", "utf-8")
+    }
+
+    private fun startServiceAndAwaitReady() {
         startForegroundService(Intent(this, GraywolfService::class.java))
         val started = System.currentTimeMillis()
         val r = object : Runnable {
@@ -261,6 +332,13 @@ class MainActivity : Activity() {
         // genuine plug-in. Generous enough to cover slow hubs without swallowing a
         // real re-plug seconds later.
         private const val STOP_RELAUNCH_SUPPRESS_WINDOW_MS = 15_000L
+
+        // Predecessor-exit probe cadence and ceiling. The probe runs off the
+        // main thread; the timeout is a safety valve so a stuck/zombie
+        // predecessor can't block launch forever -- on timeout we start anyway
+        // and PlatformServer.start()'s own bounded retry is the final backstop.
+        private const val PROBE_STEP_MS = 200L
+        private const val PROBE_TIMEOUT_MS = 12_000L
 
         fun batteryOptWhitelistRequested(ctx: Context): Boolean =
             ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
