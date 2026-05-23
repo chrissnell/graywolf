@@ -49,6 +49,10 @@ type IpcListener = TcpListener;
 #[cfg(windows)]
 type IpcStream = TcpStream;
 
+/// Result of accepting an IPC client: the outbound handle, the inbound
+/// message channel, and the reader thread's join handle.
+type AcceptedClient = (IpcHandle, Receiver<IpcInbound>, thread::JoinHandle<()>);
+
 /// An inbound IPC message from the Go application, or a termination signal.
 pub enum IpcInbound {
     Message(IpcMessage),
@@ -173,7 +177,7 @@ impl IpcServer {
     /// socket file is cleaned up on exit.
     pub fn accept(
         &self,
-    ) -> io::Result<(IpcHandle, Receiver<IpcInbound>, thread::JoinHandle<()>)> {
+    ) -> io::Result<AcceptedClient> {
         let (stream, _addr) = self.listener.accept()?;
         self.finish_accept(stream)
     }
@@ -188,7 +192,7 @@ impl IpcServer {
     fn finish_accept(
         &self,
         stream: IpcStream,
-    ) -> io::Result<(IpcHandle, Receiver<IpcInbound>, thread::JoinHandle<()>)> {
+    ) -> io::Result<AcceptedClient> {
         let reader_stream = stream.try_clone()?;
         let handle = IpcHandle { stream: Arc::new(Mutex::new(stream)) };
         let ready = IpcMessage::modem_ready(ModemReady {
@@ -214,7 +218,7 @@ impl IpcServer {
         &self,
         stop: &std::sync::atomic::AtomicBool,
         poll: std::time::Duration,
-    ) -> io::Result<Option<(IpcHandle, Receiver<IpcInbound>, thread::JoinHandle<()>)>> {
+    ) -> io::Result<Option<AcceptedClient>> {
         use std::sync::atomic::Ordering;
         self.listener.set_nonblocking(true)?;
         let out = loop {
