@@ -399,6 +399,16 @@ object UsbPttAdapter : UsbPttCallback {
         }
     }
 
+    /**
+     * Release any PTT handle currently held on [dev]. Called by the KISS
+     * USB-serial path before it opens the device, so a CP210x the PTT adapter
+     * grabbed (before the operator configured it as a serial TNC) is freed.
+     * No-op if no PTT handle is open on the device.
+     */
+    fun evictDevice(dev: UsbDevice) {
+        closeForDevice(dev)
+    }
+
     private fun requestPermission(dev: UsbDevice) {
         val intent = Intent(ACTION_USB_PERMISSION).setPackage(appContext.packageName)
         val flags = if (Build.VERSION.SDK_INT >= 31) {
@@ -422,6 +432,10 @@ object UsbPttAdapter : UsbPttCallback {
      * transfers can stall it long enough to trip Input-dispatch ANR.
      */
     internal fun tryOpen(dev: UsbDevice) {
+        if (UsbDeviceArbiter.isClaimed(dev.deviceName)) {
+            Log.i(TAG, "tryOpen ${dev.deviceName}: claimed by KISS serial; skipping PTT open")
+            return
+        }
         val role = classify(dev)
         Log.i(TAG, "tryOpen ${dev.deviceName} role=$role")
         when (role) {
