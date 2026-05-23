@@ -33,7 +33,9 @@ import com.nw5w.graywolf.platformsvc.BtSerialAdapter
 import com.nw5w.graywolf.platformsvc.BindContendedException
 import com.nw5w.graywolf.platformsvc.PlatformServer
 import com.nw5w.graywolf.platformsvc.SystemBluetoothFacade
+import com.nw5w.graywolf.platformsvc.SystemUsbSerialFacade
 import com.nw5w.graywolf.platformsvc.UsbDeviceLister
+import com.nw5w.graywolf.platformsvc.UsbSerialAdapter
 import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.io.File
 import kotlin.concurrent.thread
@@ -48,6 +50,7 @@ class GraywolfService : Service() {
     // (see onCreate). onDestroy joins it before tearing those resources down.
     @Volatile private var startupThread: Thread? = null
     private var btSerialAdapter: BtSerialAdapter? = null
+    private var usbSerialAdapter: UsbSerialAdapter? = null
     private val supervisor = Supervisor(onRestart = ::supervisorRestart)
 
     private val stopReceiver = object : BroadcastReceiver() {
@@ -92,6 +95,23 @@ class GraywolfService : Service() {
                 }
                 else -> { /* BOND_BONDING or other transient -- ignore */ }
             }
+        }
+    }
+
+    // USB detach: tell the USB-serial adapter so it can emit a recoverable
+    // SerialError + close the handle (SerialSupervisor then auto-reconnects on
+    // re-attach). Distinct from UsbPttAdapter's own detach receiver — both fire
+    // and handle their own concern.
+    private val usbDetachReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            if (intent.action != UsbManager.ACTION_USB_DEVICE_DETACHED) return
+            val dev: android.hardware.usb.UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, android.hardware.usb.UsbDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            }
+            if (dev != null) usbSerialAdapter?.onUsbDetached(dev.deviceName)
         }
     }
 
@@ -201,6 +221,11 @@ class GraywolfService : Service() {
                 IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
                 Context.RECEIVER_NOT_EXPORTED,
             )
+            registerReceiver(
+                usbDetachReceiver,
+                IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED),
+                Context.RECEIVER_NOT_EXPORTED,
+            )
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(stopReceiver, IntentFilter(ACTION_STOP))
@@ -208,6 +233,11 @@ class GraywolfService : Service() {
             registerReceiver(
                 bondReceiver,
                 IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
+            )
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(
+                usbDetachReceiver,
+                IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED),
             )
         }
         val stopIntent = Intent(ACTION_STOP).setPackage(packageName)
@@ -327,6 +357,15 @@ class GraywolfService : Service() {
             sendMessage = { msg -> platformServer!!.broadcastBt(msg) },
         ).also { platformServer!!.attachBtAdapter(it) }
 
+        // USB serial KISS TNC adapter (sibling of btSerialAdapter). Same
+        // post-start() wiring because its sendMessage closes over broadcastBt.
+        usbSerialAdapter = UsbSerialAdapter(
+            facade = SystemUsbSerialFacade(
+                getSystemService(UsbManager::class.java)
+            ),
+            sendMessage = { msg -> platformServer!!.broadcastBt(msg) },
+        ).also { platformServer!!.attachUsbSerialAdapter(it) }
+
         // USB enumeration provider for the unified PTT tab. The Go side
         // calls platformsvc.ListUsbDevices() when the operator opens the
         // Change Device dialog on Android. No permission is required to
@@ -401,6 +440,8 @@ class GraywolfService : Service() {
         // -- it MUST run before platformServer.stop() tears the socket down.
         btSerialAdapter?.shutdown()
         btSerialAdapter = null
+        usbSerialAdapter?.shutdown()
+        usbSerialAdapter = null
         platformServer?.stop()
         ModemBridge.modemStop()
         try {
@@ -408,6 +449,9 @@ class GraywolfService : Service() {
         } catch (_: IllegalArgumentException) { /* idempotent */ }
         try {
             unregisterReceiver(bondReceiver)
+        } catch (_: IllegalArgumentException) { /* idempotent */ }
+        try {
+            unregisterReceiver(usbDetachReceiver)
         } catch (_: IllegalArgumentException) { /* idempotent */ }
         super.onDestroy()
     }
