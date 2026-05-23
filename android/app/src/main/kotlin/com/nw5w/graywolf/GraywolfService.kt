@@ -30,6 +30,7 @@ import com.nw5w.graywolf.binaries.Supervisor
 import com.nw5w.graywolf.gps.GpsAdapter
 import com.nw5w.graywolf.jni.ModemBridge
 import com.nw5w.graywolf.platformsvc.BtSerialAdapter
+import com.nw5w.graywolf.platformsvc.BindContendedException
 import com.nw5w.graywolf.platformsvc.PlatformServer
 import com.nw5w.graywolf.platformsvc.SystemBluetoothFacade
 import com.nw5w.graywolf.platformsvc.UsbDeviceLister
@@ -93,8 +94,7 @@ class GraywolfService : Service() {
     private fun socketPath(): String =
         File(cacheDir, "graywolf-modem.sock").absolutePath
 
-    private fun platformSocketPath(): String =
-        File(cacheDir, "platform.sock").absolutePath
+    private fun platformSocketPath(): String = platformSocketName(this)
 
     /**
      * Read the active network's DNS server list from ConnectivityManager
@@ -279,11 +279,21 @@ class GraywolfService : Service() {
         // Bring up the Go ↔ Kotlin platform contract before exec'ing the Go child.
         // Phase 2: Hello + GpsFix only; the Go child connects, handshakes, and
         // logs the schema version. Real GpsFix producer is wired in phase 4.
-        platformServer = PlatformServer(
-            socketPath = platformSocketPath(),
-            serverVersion = BuildConfig.VERSION_NAME,
-            schemaVersion = 2,
-        ).also { it.start() }
+        try {
+            platformServer = PlatformServer(
+                socketPath = platformSocketPath(),
+                serverVersion = BuildConfig.VERSION_NAME,
+                schemaVersion = 2,
+            ).also { it.start() }
+        } catch (e: BindContendedException) {
+            // A previous instance still owns the platformsvc socket after the
+            // bounded wait. Don't crash (that would relaunch and re-collide);
+            // bow out and let the surviving instance keep running. The UI-gated
+            // launch path normally prevents reaching here.
+            Log.w(TAG, "platformsvc address owned by another instance; stopping this duplicate", e)
+            stopSelf()
+            return
+        }
         gpsAdapter = GpsAdapter(this, platformServer!!).also { it.start() }
 
         // Bluetooth-classic KISS TNC adapter. Wired AFTER PlatformServer.start()
@@ -374,6 +384,13 @@ class GraywolfService : Service() {
 
     companion object {
         private const val TAG = "GraywolfService"
+
+        // The abstract-namespace socket name PlatformServer binds. Exposed so
+        // MainActivity can probe whether a previous backend is still alive
+        // (connect succeeds) before starting a new one. Must match
+        // platformSocketPath() exactly.
+        fun platformSocketName(ctx: android.content.Context): String =
+            java.io.File(ctx.cacheDir, "platform.sock").absolutePath
         private const val NOTIF_ID = 0x6757
         const val ACTION_STOP = "com.nw5w.graywolf.STOP"
 
