@@ -1892,6 +1892,30 @@ func (a *App) kissComponent() namedComponent {
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
 					continue
+				case configstore.KissTypeUsbSerial:
+					// USB serial mirrors the host serial path: vid:pid lives
+					// in ki.Device, baud is required, mode is operator-chosen.
+					// kissSerialOpenFunc routes vid:pid strings to
+					// platformsvc.UsbSerialOpen on Android (nil elsewhere).
+					if ki.Device == "" || ki.BaudRate == 0 {
+						continue
+					}
+					a.kissMgr.StartSerial(ctx, ki.ID, kiss.SerialConfig{
+						Name:                name,
+						Device:              ki.Device,
+						BaudRate:            ki.BaudRate,
+						Mode:                mode,
+						ChannelMap:          map[uint8]uint32{0: ch},
+						ReconnectInitMs:     ki.ReconnectInitMs,
+						ReconnectMaxMs:      ki.ReconnectMaxMs,
+						Logger:              a.logger,
+						TncIngressRateHz:    ki.TncIngressRateHz,
+						TncIngressBurst:     ki.TncIngressBurst,
+						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						OnReload:            a.notifyTxBackendReload,
+						OpenFunc:            a.kissSerialOpenFunc(),
+					})
+					continue
 				default:
 					continue
 				}
