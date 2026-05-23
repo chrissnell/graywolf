@@ -35,6 +35,8 @@ message PlatformMessage {
     SerialError serial_error = 22;
     BondedBtDevicesRequest bonded_bt_devices_request = 23;
     BondedBtDevicesResponse bonded_bt_devices_response = 24;
+    AvailableUsbSerialDevicesRequest available_usb_serial_devices_request = 25;
+    AvailableUsbSerialDevicesResponse available_usb_serial_devices_response = 26;
   }
 }
 
@@ -201,18 +203,18 @@ message GnssStatusUpdate {
 }
 
 // SerialKind classifies a transport-agnostic byte stream the platform
-// service is asked to open. Open-ended so a future USB-serial KISS path
-// can reuse the same SerialOpen/Data/Close family.
+// service is asked to open.
 enum SerialKind {
   SERIAL_KIND_UNSPECIFIED = 0;
   SERIAL_KIND_BLUETOOTH   = 1;
-  // SERIAL_KIND_USB reserved for future use.
+  SERIAL_KIND_USB         = 2;
 }
 
 message SerialOpen {
   uint32     handle  = 1;
   SerialKind kind    = 2;
-  string     address = 3;  // bluetooth: MAC ("AA:BB:CC:DD:EE:FF")
+  string     address = 3;  // bluetooth: MAC ("AA:BB:CC:DD:EE:FF"); usb: "vid:pid" hex ("2341:0043")
+  uint32     baud    = 4;  // usb: line speed (required); ignored by bluetooth
 }
 
 message SerialOpenAck {
@@ -243,6 +245,18 @@ message BondedBtDevicesResponse {
   message Device {
     string mac  = 1;
     string name = 2;
+  }
+  repeated Device devices = 1;
+}
+
+message AvailableUsbSerialDevicesRequest {}
+
+message AvailableUsbSerialDevicesResponse {
+  message Device {
+    string vid_pid        = 1;  // "2341:0043"
+    string product        = 2;
+    string manufacturer   = 3;
+    bool   has_permission = 4;
   }
   repeated Device devices = 1;
 }

@@ -245,13 +245,13 @@ func (ErrorCode) EnumDescriptor() ([]byte, []int) {
 }
 
 // SerialKind classifies a transport-agnostic byte stream the platform
-// service is asked to open. Open-ended so a future USB-serial KISS path
-// can reuse the same SerialOpen/Data/Close family.
+// service is asked to open.
 type SerialKind int32
 
 const (
 	SerialKind_SERIAL_KIND_UNSPECIFIED SerialKind = 0
-	SerialKind_SERIAL_KIND_BLUETOOTH   SerialKind = 1 // SERIAL_KIND_USB reserved for future use.
+	SerialKind_SERIAL_KIND_BLUETOOTH   SerialKind = 1
+	SerialKind_SERIAL_KIND_USB         SerialKind = 2
 )
 
 // Enum value maps for SerialKind.
@@ -259,10 +259,12 @@ var (
 	SerialKind_name = map[int32]string{
 		0: "SERIAL_KIND_UNSPECIFIED",
 		1: "SERIAL_KIND_BLUETOOTH",
+		2: "SERIAL_KIND_USB",
 	}
 	SerialKind_value = map[string]int32{
 		"SERIAL_KIND_UNSPECIFIED": 0,
 		"SERIAL_KIND_BLUETOOTH":   1,
+		"SERIAL_KIND_USB":         2,
 	}
 )
 
@@ -325,6 +327,8 @@ type PlatformMessage struct {
 	//	*PlatformMessage_SerialError
 	//	*PlatformMessage_BondedBtDevicesRequest
 	//	*PlatformMessage_BondedBtDevicesResponse
+	//	*PlatformMessage_AvailableUsbSerialDevicesRequest
+	//	*PlatformMessage_AvailableUsbSerialDevicesResponse
 	Body          isPlatformMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -583,6 +587,24 @@ func (x *PlatformMessage) GetBondedBtDevicesResponse() *BondedBtDevicesResponse 
 	return nil
 }
 
+func (x *PlatformMessage) GetAvailableUsbSerialDevicesRequest() *AvailableUsbSerialDevicesRequest {
+	if x != nil {
+		if x, ok := x.Body.(*PlatformMessage_AvailableUsbSerialDevicesRequest); ok {
+			return x.AvailableUsbSerialDevicesRequest
+		}
+	}
+	return nil
+}
+
+func (x *PlatformMessage) GetAvailableUsbSerialDevicesResponse() *AvailableUsbSerialDevicesResponse {
+	if x != nil {
+		if x, ok := x.Body.(*PlatformMessage_AvailableUsbSerialDevicesResponse); ok {
+			return x.AvailableUsbSerialDevicesResponse
+		}
+	}
+	return nil
+}
+
 type isPlatformMessage_Body interface {
 	isPlatformMessage_Body()
 }
@@ -683,6 +705,14 @@ type PlatformMessage_BondedBtDevicesResponse struct {
 	BondedBtDevicesResponse *BondedBtDevicesResponse `protobuf:"bytes,24,opt,name=bonded_bt_devices_response,json=bondedBtDevicesResponse,proto3,oneof"`
 }
 
+type PlatformMessage_AvailableUsbSerialDevicesRequest struct {
+	AvailableUsbSerialDevicesRequest *AvailableUsbSerialDevicesRequest `protobuf:"bytes,25,opt,name=available_usb_serial_devices_request,json=availableUsbSerialDevicesRequest,proto3,oneof"`
+}
+
+type PlatformMessage_AvailableUsbSerialDevicesResponse struct {
+	AvailableUsbSerialDevicesResponse *AvailableUsbSerialDevicesResponse `protobuf:"bytes,26,opt,name=available_usb_serial_devices_response,json=availableUsbSerialDevicesResponse,proto3,oneof"`
+}
+
 func (*PlatformMessage_Hello) isPlatformMessage_Body() {}
 
 func (*PlatformMessage_GpsFix) isPlatformMessage_Body() {}
@@ -730,6 +760,10 @@ func (*PlatformMessage_SerialError) isPlatformMessage_Body() {}
 func (*PlatformMessage_BondedBtDevicesRequest) isPlatformMessage_Body() {}
 
 func (*PlatformMessage_BondedBtDevicesResponse) isPlatformMessage_Body() {}
+
+func (*PlatformMessage_AvailableUsbSerialDevicesRequest) isPlatformMessage_Body() {}
+
+func (*PlatformMessage_AvailableUsbSerialDevicesResponse) isPlatformMessage_Body() {}
 
 type Hello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1952,7 +1986,8 @@ type SerialOpen struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Handle        uint32                 `protobuf:"varint,1,opt,name=handle,proto3" json:"handle,omitempty"`
 	Kind          SerialKind             `protobuf:"varint,2,opt,name=kind,proto3,enum=graywolf.platform.SerialKind" json:"kind,omitempty"`
-	Address       string                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"` // bluetooth: MAC ("AA:BB:CC:DD:EE:FF")
+	Address       string                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"` // bluetooth: MAC ("AA:BB:CC:DD:EE:FF"); usb: "vid:pid" hex ("2341:0043")
+	Baud          uint32                 `protobuf:"varint,4,opt,name=baud,proto3" json:"baud,omitempty"`      // usb: line speed (required); ignored by bluetooth
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2006,6 +2041,13 @@ func (x *SerialOpen) GetAddress() string {
 		return x.Address
 	}
 	return ""
+}
+
+func (x *SerialOpen) GetBaud() uint32 {
+	if x != nil {
+		return x.Baud
+	}
+	return 0
 }
 
 type SerialOpenAck struct {
@@ -2312,6 +2354,86 @@ func (x *BondedBtDevicesResponse) GetDevices() []*BondedBtDevicesResponse_Device
 	return nil
 }
 
+type AvailableUsbSerialDevicesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AvailableUsbSerialDevicesRequest) Reset() {
+	*x = AvailableUsbSerialDevicesRequest{}
+	mi := &file_platform_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AvailableUsbSerialDevicesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableUsbSerialDevicesRequest) ProtoMessage() {}
+
+func (x *AvailableUsbSerialDevicesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_platform_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableUsbSerialDevicesRequest.ProtoReflect.Descriptor instead.
+func (*AvailableUsbSerialDevicesRequest) Descriptor() ([]byte, []int) {
+	return file_platform_proto_rawDescGZIP(), []int{28}
+}
+
+type AvailableUsbSerialDevicesResponse struct {
+	state         protoimpl.MessageState                      `protogen:"open.v1"`
+	Devices       []*AvailableUsbSerialDevicesResponse_Device `protobuf:"bytes,1,rep,name=devices,proto3" json:"devices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AvailableUsbSerialDevicesResponse) Reset() {
+	*x = AvailableUsbSerialDevicesResponse{}
+	mi := &file_platform_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AvailableUsbSerialDevicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableUsbSerialDevicesResponse) ProtoMessage() {}
+
+func (x *AvailableUsbSerialDevicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_platform_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableUsbSerialDevicesResponse.ProtoReflect.Descriptor instead.
+func (*AvailableUsbSerialDevicesResponse) Descriptor() ([]byte, []int) {
+	return file_platform_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *AvailableUsbSerialDevicesResponse) GetDevices() []*AvailableUsbSerialDevicesResponse_Device {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
 type BondedBtDevicesResponse_Device struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Mac           string                 `protobuf:"bytes,1,opt,name=mac,proto3" json:"mac,omitempty"`
@@ -2322,7 +2444,7 @@ type BondedBtDevicesResponse_Device struct {
 
 func (x *BondedBtDevicesResponse_Device) Reset() {
 	*x = BondedBtDevicesResponse_Device{}
-	mi := &file_platform_proto_msgTypes[28]
+	mi := &file_platform_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2334,7 +2456,7 @@ func (x *BondedBtDevicesResponse_Device) String() string {
 func (*BondedBtDevicesResponse_Device) ProtoMessage() {}
 
 func (x *BondedBtDevicesResponse_Device) ProtoReflect() protoreflect.Message {
-	mi := &file_platform_proto_msgTypes[28]
+	mi := &file_platform_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2364,11 +2486,79 @@ func (x *BondedBtDevicesResponse_Device) GetName() string {
 	return ""
 }
 
+type AvailableUsbSerialDevicesResponse_Device struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	VidPid        string                 `protobuf:"bytes,1,opt,name=vid_pid,json=vidPid,proto3" json:"vid_pid,omitempty"` // "2341:0043"
+	Product       string                 `protobuf:"bytes,2,opt,name=product,proto3" json:"product,omitempty"`
+	Manufacturer  string                 `protobuf:"bytes,3,opt,name=manufacturer,proto3" json:"manufacturer,omitempty"`
+	HasPermission bool                   `protobuf:"varint,4,opt,name=has_permission,json=hasPermission,proto3" json:"has_permission,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AvailableUsbSerialDevicesResponse_Device) Reset() {
+	*x = AvailableUsbSerialDevicesResponse_Device{}
+	mi := &file_platform_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AvailableUsbSerialDevicesResponse_Device) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableUsbSerialDevicesResponse_Device) ProtoMessage() {}
+
+func (x *AvailableUsbSerialDevicesResponse_Device) ProtoReflect() protoreflect.Message {
+	mi := &file_platform_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableUsbSerialDevicesResponse_Device.ProtoReflect.Descriptor instead.
+func (*AvailableUsbSerialDevicesResponse_Device) Descriptor() ([]byte, []int) {
+	return file_platform_proto_rawDescGZIP(), []int{29, 0}
+}
+
+func (x *AvailableUsbSerialDevicesResponse_Device) GetVidPid() string {
+	if x != nil {
+		return x.VidPid
+	}
+	return ""
+}
+
+func (x *AvailableUsbSerialDevicesResponse_Device) GetProduct() string {
+	if x != nil {
+		return x.Product
+	}
+	return ""
+}
+
+func (x *AvailableUsbSerialDevicesResponse_Device) GetManufacturer() string {
+	if x != nil {
+		return x.Manufacturer
+	}
+	return ""
+}
+
+func (x *AvailableUsbSerialDevicesResponse_Device) GetHasPermission() bool {
+	if x != nil {
+		return x.HasPermission
+	}
+	return false
+}
+
 var File_platform_proto protoreflect.FileDescriptor
 
 const file_platform_proto_rawDesc = "" +
 	"\n" +
-	"\x0eplatform.proto\x12\x11graywolf.platform\"\xed\r\n" +
+	"\x0eplatform.proto\x12\x11graywolf.platform\"\x80\x10\n" +
 	"\x0fPlatformMessage\x120\n" +
 	"\x05hello\x18\x01 \x01(\v2\x18.graywolf.platform.HelloH\x00R\x05hello\x124\n" +
 	"\agps_fix\x18\x02 \x01(\v2\x19.graywolf.platform.GpsFixH\x00R\x06gpsFix\x12F\n" +
@@ -2400,7 +2590,9 @@ const file_platform_proto_rawDesc = "" +
 	"\fserial_close\x18\x15 \x01(\v2\x1e.graywolf.platform.SerialCloseH\x00R\vserialClose\x12C\n" +
 	"\fserial_error\x18\x16 \x01(\v2\x1e.graywolf.platform.SerialErrorH\x00R\vserialError\x12f\n" +
 	"\x19bonded_bt_devices_request\x18\x17 \x01(\v2).graywolf.platform.BondedBtDevicesRequestH\x00R\x16bondedBtDevicesRequest\x12i\n" +
-	"\x1abonded_bt_devices_response\x18\x18 \x01(\v2*.graywolf.platform.BondedBtDevicesResponseH\x00R\x17bondedBtDevicesResponseB\x06\n" +
+	"\x1abonded_bt_devices_response\x18\x18 \x01(\v2*.graywolf.platform.BondedBtDevicesResponseH\x00R\x17bondedBtDevicesResponse\x12\x85\x01\n" +
+	"$available_usb_serial_devices_request\x18\x19 \x01(\v23.graywolf.platform.AvailableUsbSerialDevicesRequestH\x00R availableUsbSerialDevicesRequest\x12\x88\x01\n" +
+	"%available_usb_serial_devices_response\x18\x1a \x01(\v24.graywolf.platform.AvailableUsbSerialDevicesResponseH\x00R!availableUsbSerialDevicesResponseB\x06\n" +
 	"\x04body\"|\n" +
 	"\x05Hello\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12%\n" +
@@ -2492,12 +2684,13 @@ const file_platform_proto_rawDesc = "" +
 	"\fsats_in_view\x18\x01 \x01(\rR\n" +
 	"satsInView\x12\x1b\n" +
 	"\tsats_used\x18\x02 \x01(\rR\bsatsUsed\x12.\n" +
-	"\x04sats\x18\x03 \x03(\v2\x1a.graywolf.platform.SatInfoR\x04sats\"q\n" +
+	"\x04sats\x18\x03 \x03(\v2\x1a.graywolf.platform.SatInfoR\x04sats\"\x85\x01\n" +
 	"\n" +
 	"SerialOpen\x12\x16\n" +
 	"\x06handle\x18\x01 \x01(\rR\x06handle\x121\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1d.graywolf.platform.SerialKindR\x04kind\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddress\"M\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x12\n" +
+	"\x04baud\x18\x04 \x01(\rR\x04baud\"M\n" +
 	"\rSerialOpenAck\x12\x16\n" +
 	"\x06handle\x18\x01 \x01(\rR\x06handle\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
@@ -2518,7 +2711,15 @@ const file_platform_proto_rawDesc = "" +
 	"\adevices\x18\x01 \x03(\v21.graywolf.platform.BondedBtDevicesResponse.DeviceR\adevices\x1a.\n" +
 	"\x06Device\x12\x10\n" +
 	"\x03mac\x18\x01 \x01(\tR\x03mac\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name*}\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\"\n" +
+	" AvailableUsbSerialDevicesRequest\"\x83\x02\n" +
+	"!AvailableUsbSerialDevicesResponse\x12U\n" +
+	"\adevices\x18\x01 \x03(\v2;.graywolf.platform.AvailableUsbSerialDevicesResponse.DeviceR\adevices\x1a\x86\x01\n" +
+	"\x06Device\x12\x17\n" +
+	"\avid_pid\x18\x01 \x01(\tR\x06vidPid\x12\x18\n" +
+	"\aproduct\x18\x02 \x01(\tR\aproduct\x12\"\n" +
+	"\fmanufacturer\x18\x03 \x01(\tR\fmanufacturer\x12%\n" +
+	"\x0ehas_permission\x18\x04 \x01(\bR\rhasPermission*}\n" +
 	"\tGpsSource\x12\x16\n" +
 	"\x12GPS_SOURCE_UNKNOWN\x10\x00\x12\x1c\n" +
 	"\x18GPS_SOURCE_ANDROID_FUSED\x10\x01\x12\x1a\n" +
@@ -2543,11 +2744,12 @@ const file_platform_proto_rawDesc = "" +
 	"\x16ERROR_INVALID_ARGUMENT\x10\x03\x12\x1b\n" +
 	"\x17ERROR_PERMISSION_DENIED\x10\x04\x12\x13\n" +
 	"\x0fERROR_NOT_FOUND\x10\x05\x12\x12\n" +
-	"\x0eERROR_INTERNAL\x10\x06*D\n" +
+	"\x0eERROR_INTERNAL\x10\x06*Y\n" +
 	"\n" +
 	"SerialKind\x12\x1b\n" +
 	"\x17SERIAL_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
-	"\x15SERIAL_KIND_BLUETOOTH\x10\x01Bc\n" +
+	"\x15SERIAL_KIND_BLUETOOTH\x10\x01\x12\x13\n" +
+	"\x0fSERIAL_KIND_USB\x10\x02Bc\n" +
 	"\x1fcom.nw5w.graywolf.platformprotoP\x01Z>github.com/chrissnell/graywolf/pkg/platformproto;platformprotob\x06proto3"
 
 var (
@@ -2563,42 +2765,45 @@ func file_platform_proto_rawDescGZIP() []byte {
 }
 
 var file_platform_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_platform_proto_goTypes = []any{
-	(GpsSource)(0),                         // 0: graywolf.platform.GpsSource
-	(UsbClass)(0),                          // 1: graywolf.platform.UsbClass
-	(PttMethod)(0),                         // 2: graywolf.platform.PttMethod
-	(ErrorCode)(0),                         // 3: graywolf.platform.ErrorCode
-	(SerialKind)(0),                        // 4: graywolf.platform.SerialKind
-	(*PlatformMessage)(nil),                // 5: graywolf.platform.PlatformMessage
-	(*Hello)(nil),                          // 6: graywolf.platform.Hello
-	(*GpsFix)(nil),                         // 7: graywolf.platform.GpsFix
-	(*BatteryState)(nil),                   // 8: graywolf.platform.BatteryState
-	(*UsbDevice)(nil),                      // 9: graywolf.platform.UsbDevice
-	(*UsbAttach)(nil),                      // 10: graywolf.platform.UsbAttach
-	(*UsbDetach)(nil),                      // 11: graywolf.platform.UsbDetach
-	(*UsbDeviceListRequest)(nil),           // 12: graywolf.platform.UsbDeviceListRequest
-	(*UsbDeviceListResponse)(nil),          // 13: graywolf.platform.UsbDeviceListResponse
-	(*UsbSelectRequest)(nil),               // 14: graywolf.platform.UsbSelectRequest
-	(*UsbSelectResponse)(nil),              // 15: graywolf.platform.UsbSelectResponse
-	(*PttKeyRequest)(nil),                  // 16: graywolf.platform.PttKeyRequest
-	(*PttUnkeyRequest)(nil),                // 17: graywolf.platform.PttUnkeyRequest
-	(*PttAck)(nil),                         // 18: graywolf.platform.PttAck
-	(*AudioDeviceListRequest)(nil),         // 19: graywolf.platform.AudioDeviceListRequest
-	(*AudioDevice)(nil),                    // 20: graywolf.platform.AudioDevice
-	(*AudioDeviceListResponse)(nil),        // 21: graywolf.platform.AudioDeviceListResponse
-	(*AudioRouteChanged)(nil),              // 22: graywolf.platform.AudioRouteChanged
-	(*Error)(nil),                          // 23: graywolf.platform.Error
-	(*SatInfo)(nil),                        // 24: graywolf.platform.SatInfo
-	(*GnssStatusUpdate)(nil),               // 25: graywolf.platform.GnssStatusUpdate
-	(*SerialOpen)(nil),                     // 26: graywolf.platform.SerialOpen
-	(*SerialOpenAck)(nil),                  // 27: graywolf.platform.SerialOpenAck
-	(*SerialData)(nil),                     // 28: graywolf.platform.SerialData
-	(*SerialClose)(nil),                    // 29: graywolf.platform.SerialClose
-	(*SerialError)(nil),                    // 30: graywolf.platform.SerialError
-	(*BondedBtDevicesRequest)(nil),         // 31: graywolf.platform.BondedBtDevicesRequest
-	(*BondedBtDevicesResponse)(nil),        // 32: graywolf.platform.BondedBtDevicesResponse
-	(*BondedBtDevicesResponse_Device)(nil), // 33: graywolf.platform.BondedBtDevicesResponse.Device
+	(GpsSource)(0),                                   // 0: graywolf.platform.GpsSource
+	(UsbClass)(0),                                    // 1: graywolf.platform.UsbClass
+	(PttMethod)(0),                                   // 2: graywolf.platform.PttMethod
+	(ErrorCode)(0),                                   // 3: graywolf.platform.ErrorCode
+	(SerialKind)(0),                                  // 4: graywolf.platform.SerialKind
+	(*PlatformMessage)(nil),                          // 5: graywolf.platform.PlatformMessage
+	(*Hello)(nil),                                    // 6: graywolf.platform.Hello
+	(*GpsFix)(nil),                                   // 7: graywolf.platform.GpsFix
+	(*BatteryState)(nil),                             // 8: graywolf.platform.BatteryState
+	(*UsbDevice)(nil),                                // 9: graywolf.platform.UsbDevice
+	(*UsbAttach)(nil),                                // 10: graywolf.platform.UsbAttach
+	(*UsbDetach)(nil),                                // 11: graywolf.platform.UsbDetach
+	(*UsbDeviceListRequest)(nil),                     // 12: graywolf.platform.UsbDeviceListRequest
+	(*UsbDeviceListResponse)(nil),                    // 13: graywolf.platform.UsbDeviceListResponse
+	(*UsbSelectRequest)(nil),                         // 14: graywolf.platform.UsbSelectRequest
+	(*UsbSelectResponse)(nil),                        // 15: graywolf.platform.UsbSelectResponse
+	(*PttKeyRequest)(nil),                            // 16: graywolf.platform.PttKeyRequest
+	(*PttUnkeyRequest)(nil),                          // 17: graywolf.platform.PttUnkeyRequest
+	(*PttAck)(nil),                                   // 18: graywolf.platform.PttAck
+	(*AudioDeviceListRequest)(nil),                   // 19: graywolf.platform.AudioDeviceListRequest
+	(*AudioDevice)(nil),                              // 20: graywolf.platform.AudioDevice
+	(*AudioDeviceListResponse)(nil),                  // 21: graywolf.platform.AudioDeviceListResponse
+	(*AudioRouteChanged)(nil),                        // 22: graywolf.platform.AudioRouteChanged
+	(*Error)(nil),                                    // 23: graywolf.platform.Error
+	(*SatInfo)(nil),                                  // 24: graywolf.platform.SatInfo
+	(*GnssStatusUpdate)(nil),                         // 25: graywolf.platform.GnssStatusUpdate
+	(*SerialOpen)(nil),                               // 26: graywolf.platform.SerialOpen
+	(*SerialOpenAck)(nil),                            // 27: graywolf.platform.SerialOpenAck
+	(*SerialData)(nil),                               // 28: graywolf.platform.SerialData
+	(*SerialClose)(nil),                              // 29: graywolf.platform.SerialClose
+	(*SerialError)(nil),                              // 30: graywolf.platform.SerialError
+	(*BondedBtDevicesRequest)(nil),                   // 31: graywolf.platform.BondedBtDevicesRequest
+	(*BondedBtDevicesResponse)(nil),                  // 32: graywolf.platform.BondedBtDevicesResponse
+	(*AvailableUsbSerialDevicesRequest)(nil),         // 33: graywolf.platform.AvailableUsbSerialDevicesRequest
+	(*AvailableUsbSerialDevicesResponse)(nil),        // 34: graywolf.platform.AvailableUsbSerialDevicesResponse
+	(*BondedBtDevicesResponse_Device)(nil),           // 35: graywolf.platform.BondedBtDevicesResponse.Device
+	(*AvailableUsbSerialDevicesResponse_Device)(nil), // 36: graywolf.platform.AvailableUsbSerialDevicesResponse.Device
 }
 var file_platform_proto_depIdxs = []int32{
 	6,  // 0: graywolf.platform.PlatformMessage.hello:type_name -> graywolf.platform.Hello
@@ -2625,25 +2830,28 @@ var file_platform_proto_depIdxs = []int32{
 	30, // 21: graywolf.platform.PlatformMessage.serial_error:type_name -> graywolf.platform.SerialError
 	31, // 22: graywolf.platform.PlatformMessage.bonded_bt_devices_request:type_name -> graywolf.platform.BondedBtDevicesRequest
 	32, // 23: graywolf.platform.PlatformMessage.bonded_bt_devices_response:type_name -> graywolf.platform.BondedBtDevicesResponse
-	0,  // 24: graywolf.platform.GpsFix.source:type_name -> graywolf.platform.GpsSource
-	1,  // 25: graywolf.platform.UsbDevice.classes:type_name -> graywolf.platform.UsbClass
-	9,  // 26: graywolf.platform.UsbAttach.device:type_name -> graywolf.platform.UsbDevice
-	1,  // 27: graywolf.platform.UsbDeviceListRequest.class_filter:type_name -> graywolf.platform.UsbClass
-	9,  // 28: graywolf.platform.UsbDeviceListResponse.devices:type_name -> graywolf.platform.UsbDevice
-	2,  // 29: graywolf.platform.PttKeyRequest.method:type_name -> graywolf.platform.PttMethod
-	2,  // 30: graywolf.platform.PttUnkeyRequest.method:type_name -> graywolf.platform.PttMethod
-	20, // 31: graywolf.platform.AudioDeviceListResponse.devices:type_name -> graywolf.platform.AudioDevice
-	20, // 32: graywolf.platform.AudioRouteChanged.current_inputs:type_name -> graywolf.platform.AudioDevice
-	20, // 33: graywolf.platform.AudioRouteChanged.current_outputs:type_name -> graywolf.platform.AudioDevice
-	3,  // 34: graywolf.platform.Error.code:type_name -> graywolf.platform.ErrorCode
-	24, // 35: graywolf.platform.GnssStatusUpdate.sats:type_name -> graywolf.platform.SatInfo
-	4,  // 36: graywolf.platform.SerialOpen.kind:type_name -> graywolf.platform.SerialKind
-	33, // 37: graywolf.platform.BondedBtDevicesResponse.devices:type_name -> graywolf.platform.BondedBtDevicesResponse.Device
-	38, // [38:38] is the sub-list for method output_type
-	38, // [38:38] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	33, // 24: graywolf.platform.PlatformMessage.available_usb_serial_devices_request:type_name -> graywolf.platform.AvailableUsbSerialDevicesRequest
+	34, // 25: graywolf.platform.PlatformMessage.available_usb_serial_devices_response:type_name -> graywolf.platform.AvailableUsbSerialDevicesResponse
+	0,  // 26: graywolf.platform.GpsFix.source:type_name -> graywolf.platform.GpsSource
+	1,  // 27: graywolf.platform.UsbDevice.classes:type_name -> graywolf.platform.UsbClass
+	9,  // 28: graywolf.platform.UsbAttach.device:type_name -> graywolf.platform.UsbDevice
+	1,  // 29: graywolf.platform.UsbDeviceListRequest.class_filter:type_name -> graywolf.platform.UsbClass
+	9,  // 30: graywolf.platform.UsbDeviceListResponse.devices:type_name -> graywolf.platform.UsbDevice
+	2,  // 31: graywolf.platform.PttKeyRequest.method:type_name -> graywolf.platform.PttMethod
+	2,  // 32: graywolf.platform.PttUnkeyRequest.method:type_name -> graywolf.platform.PttMethod
+	20, // 33: graywolf.platform.AudioDeviceListResponse.devices:type_name -> graywolf.platform.AudioDevice
+	20, // 34: graywolf.platform.AudioRouteChanged.current_inputs:type_name -> graywolf.platform.AudioDevice
+	20, // 35: graywolf.platform.AudioRouteChanged.current_outputs:type_name -> graywolf.platform.AudioDevice
+	3,  // 36: graywolf.platform.Error.code:type_name -> graywolf.platform.ErrorCode
+	24, // 37: graywolf.platform.GnssStatusUpdate.sats:type_name -> graywolf.platform.SatInfo
+	4,  // 38: graywolf.platform.SerialOpen.kind:type_name -> graywolf.platform.SerialKind
+	35, // 39: graywolf.platform.BondedBtDevicesResponse.devices:type_name -> graywolf.platform.BondedBtDevicesResponse.Device
+	36, // 40: graywolf.platform.AvailableUsbSerialDevicesResponse.devices:type_name -> graywolf.platform.AvailableUsbSerialDevicesResponse.Device
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_platform_proto_init() }
@@ -2676,6 +2884,8 @@ func file_platform_proto_init() {
 		(*PlatformMessage_SerialError)(nil),
 		(*PlatformMessage_BondedBtDevicesRequest)(nil),
 		(*PlatformMessage_BondedBtDevicesResponse)(nil),
+		(*PlatformMessage_AvailableUsbSerialDevicesRequest)(nil),
+		(*PlatformMessage_AvailableUsbSerialDevicesResponse)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2683,7 +2893,7 @@ func file_platform_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_platform_proto_rawDesc), len(file_platform_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   29,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
