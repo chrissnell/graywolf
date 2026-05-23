@@ -28,6 +28,13 @@
   });
   let loading = $state(false);
 
+  // Last-persisted config body. The master Enable toggle auto-saves
+  // against this snapshot (see autoSaveEnabled) so flipping it never
+  // commits unsaved edits to the other fields. Seeded on load and
+  // refreshed after every successful save.
+  let savedConfig = $state(/** @type {null | object} */ (null));
+  let enableSaving = $state(false);
+
   // Station callsign (read-only on this page). Loaded alongside the
   // iGate config; failure is non-fatal — we treat a failed load as
   // "missing" so the banner renders and the toggle is aria-disabled,
@@ -277,6 +284,7 @@
           software_name: data.software_name,
           software_version: data.software_version,
         };
+        savedConfig = buildBody();
         filters = await api.get('/igate/filters') || [];
       })(),
     ]);
@@ -306,31 +314,36 @@
     return true;
   }
 
+  // Build the PUT body explicitly from form state — do NOT spread
+  // `form`. The iGate PUT decoder uses DisallowUnknownFields (Phase
+  // 3B), so an unexpected `callsign`/`passcode` key would return 400.
+  // Shared by handleSave and the savedConfig seed so the auto-save
+  // snapshot shape can't drift from the explicit-save shape.
+  function buildBody() {
+    return {
+      enabled: form.enabled,
+      server: form.server,
+      port: parseInt(form.port),
+      server_filter: form.server_filter,
+      tx_channel: parseInt(form.tx_channel),
+      simulation_mode: form.simulation_mode,
+      gate_rf_to_is: form.gate_rf_to_is,
+      gate_is_to_rf: form.gate_is_to_rf,
+      rf_channel: form.rf_channel,
+      max_msg_hops: form.max_msg_hops,
+      software_name: form.software_name,
+      software_version: form.software_version,
+    };
+  }
+
   async function handleSave(e) {
     e.preventDefault();
     if (!validateConfig()) return;
     loading = true;
     try {
-      // Build the save body explicitly — do NOT spread `form`. The
-      // iGate PUT decoder uses DisallowUnknownFields (Phase 3B), so an
-      // unexpected `callsign`/`passcode` key would return 400 even
-      // though both were removed from the form state above. Being
-      // explicit also makes future DTO drift a compile-time concern.
-      const body = {
-        enabled: form.enabled,
-        server: form.server,
-        port: parseInt(form.port),
-        server_filter: form.server_filter,
-        tx_channel: parseInt(form.tx_channel),
-        simulation_mode: form.simulation_mode,
-        gate_rf_to_is: form.gate_rf_to_is,
-        gate_is_to_rf: form.gate_is_to_rf,
-        rf_channel: form.rf_channel,
-        max_msg_hops: form.max_msg_hops,
-        software_name: form.software_name,
-        software_version: form.software_version,
-      };
+      const body = buildBody();
       await api.put('/igate/config', body);
+      savedConfig = body;
       toasts.success('iGate config saved');
       refreshChannels();
     } catch (err) {
@@ -360,6 +373,37 @@
     if (!stationCallsignMissing || form.enabled) return;
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
+    }
+  }
+
+  // Master Enable toggle auto-save. Flipping Enable persists immediately
+  // — only the enabled bit, merged onto the last-saved snapshot, so
+  // unsaved edits to the other fields are NOT committed. The
+  // station-callsign guard above already prevents the flip (and thus
+  // this handler firing) when the callsign is missing.
+  async function autoSaveEnabled(next) {
+    // Absorb the programmatic revert (next already matches saved) and
+    // guard against re-entrancy while a save is in flight.
+    if (!savedConfig || next === savedConfig.enabled || enableSaving) return;
+    // Preserve the disabled-Save safety: never auto-enable onto a
+    // non-TX-capable channel. Disabling is always allowed.
+    if (next && txBlock) {
+      form.enabled = savedConfig.enabled;
+      toasts.error(`Cannot enable iGate: TX channel not TX-capable — ${txBlock.reason}.`);
+      return;
+    }
+    enableSaving = true;
+    try {
+      const body = { ...savedConfig, enabled: next };
+      await api.put('/igate/config', body);
+      savedConfig = body;
+      toasts.success(next ? 'iGate enabled' : 'iGate disabled');
+      refreshChannels();
+    } catch (err) {
+      form.enabled = savedConfig.enabled;
+      toasts.error(err.message || 'Failed to update iGate');
+    } finally {
+      enableSaving = false;
     }
   }
 
@@ -525,6 +569,7 @@
         aria-describedby={stationCallsignMissing ? 'igate-station-banner' : undefined}
         onclick={handleEnableToggleClick}
         onkeydown={handleEnableToggleKeydown}
+        onCheckedChange={autoSaveEnabled}
       />
       <div style="margin-top: 16px;">
         <FormField label="APRS-IS Server" id="ig-server">
