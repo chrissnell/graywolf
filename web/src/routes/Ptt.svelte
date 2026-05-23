@@ -17,6 +17,7 @@
     modemBackedChannels as computeModemBacked,
     channelsNeedingPtt as computeChannelsNeedingPtt,
     showAddButton as computeShowAddButton,
+    pttDetectionBlockedReason,
   } from './ptt/channelSelector.js';
 
   let items = $state([]);
@@ -70,6 +71,13 @@
   let modemChannels = $derived(computeModemBacked(channels));
   let channelsNeedingPttList = $derived(computeChannelsNeedingPtt(channels, pttByChannel));
   let showAddPttButton = $derived(computeShowAddButton(channels, pttByChannel));
+
+  // When no channel can accept a new PTT config, the detected-device cards
+  // are inert: clicking them only fired a transient toast (issue: "clicking
+  // the device does nothing"). Disable the cards and show inline guidance
+  // instead. null => actionable; otherwise a reason code drives the notice.
+  let pttBlockedReason = $derived(pttDetectionBlockedReason(channels, pttByChannel));
+  let canConfigureDetected = $derived(pttBlockedReason === null);
 
   function channelName(id) {
     const c = channels.find(c => c.id === id);
@@ -374,6 +382,22 @@
 
 <!-- Available devices from hardware scan -->
 {#if available.length > 0}
+  <!-- Inline guidance when nothing is eligible: the cards below are
+       disabled, so explain why and where to go instead of leaving the
+       operator clicking a dead card. -->
+  {#if pttBlockedReason}
+    <div class="detected-blocked-notice" role="status" style="margin-top: 24px;">
+      {#if pttBlockedReason === 'no-modem-channel'}
+        These devices are detected but can't be configured yet. PTT attaches to an
+        audio-modem channel — <a href="#/channels">create one on the Channels page</a>
+        first, then return here to assign a device.
+      {:else}
+        Every modem-backed channel already has a PTT configuration. Edit an existing
+        configuration above to change its device.
+      {/if}
+    </div>
+  {/if}
+
   <!-- Recommended section: prominent, visually distinct -->
   {#if recommendedDevices.length > 0}
     <section class="detected-section detected-recommended" style="margin-top: 24px;">
@@ -386,7 +410,7 @@
       </header>
       <div class="avail-grid avail-grid-prominent">
         {#each recommendedDevices as dev}
-          <button class="avail-card avail-card-recommended" onclick={() => configureFromDetected(dev)}>
+          <button class="avail-card avail-card-recommended" disabled={!canConfigureDetected} onclick={() => configureFromDetected(dev)}>
             <div class="avail-header">
               <strong class="avail-name">{dev.description || dev.name}</strong>
               <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
@@ -411,7 +435,7 @@
       </header>
       <div class="avail-grid avail-grid-compact">
         {#each otherDevices as dev}
-          <button class="avail-card avail-card-muted" onclick={() => configureFromDetected(dev)}>
+          <button class="avail-card avail-card-muted" disabled={!canConfigureDetected} onclick={() => configureFromDetected(dev)}>
             <div class="avail-header">
               <strong class="avail-name">{dev.description || dev.name}</strong>
               <Badge variant={typeBadgeVariant(dev.type)} title={typeBadgeTitle(dev.type)}>
@@ -589,6 +613,23 @@
     color: var(--text-muted);
   }
 
+  /* Inline guidance shown when the detected cards are disabled. */
+  .detected-blocked-notice {
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent, #3b82f6);
+    border-radius: var(--radius);
+  }
+  .detected-blocked-notice a {
+    color: var(--accent, #3b82f6);
+    font-weight: 600;
+  }
+
   /* Shared card grid/base */
   .avail-grid {
     display: grid;
@@ -618,12 +659,17 @@
     font-size: 13px;
     transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.08s;
   }
-  .avail-card:hover {
+  .avail-card:not(:disabled):hover {
     border-color: var(--accent);
     background: var(--bg-secondary);
   }
-  .avail-card:active {
+  .avail-card:not(:disabled):active {
     transform: translateY(1px);
+  }
+  /* Inert when no channel can accept a PTT config — see pttBlockedReason. */
+  .avail-card:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 
   /* Recommended variant: visually prominent, success-tinted accent */
@@ -634,7 +680,7 @@
   .avail-card-recommended .avail-name {
     color: var(--text-primary);
   }
-  .avail-card-recommended:hover {
+  .avail-card-recommended:not(:disabled):hover {
     border-color: var(--success, #3fb950);
     background: color-mix(in srgb, var(--success, #3fb950) 10%, var(--bg-secondary));
     box-shadow: 0 1px 4px color-mix(in srgb, var(--success, #3fb950) 20%, transparent);
@@ -659,7 +705,7 @@
   .avail-card-muted .avail-path {
     font-size: 11px;
   }
-  .avail-card-muted:hover {
+  .avail-card-muted:not(:disabled):hover {
     opacity: 1;
     background: var(--bg-tertiary);
     border-color: var(--border-color);

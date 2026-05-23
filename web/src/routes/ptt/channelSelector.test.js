@@ -7,6 +7,7 @@ import {
   channelsNeedingPtt,
   showChannelSelector,
   showAddButton,
+  pttDetectionBlockedReason,
 } from './channelSelector.js';
 
 test('modemBackedChannels filters out channels with null input_device_id', () => {
@@ -43,4 +44,23 @@ test('showAddButton is true when at least one channel needs PTT', () => {
   assert.equal(showAddButton([c1], new Map()), true);
   assert.equal(showAddButton([c1], new Map([[1, {}]])), false);
   assert.equal(showAddButton([], new Map()), false);
+});
+
+test('pttDetectionBlockedReason is null when a channel can accept a PTT config', () => {
+  const c1 = { id: 1, input_device_id: 10 };
+  assert.equal(pttDetectionBlockedReason([c1], new Map()), null);
+});
+
+test('pttDetectionBlockedReason flags no-modem-channel when no audio-modem channel exists', () => {
+  // Zero channels at all.
+  assert.equal(pttDetectionBlockedReason([], new Map()), 'no-modem-channel');
+  // Only KISS-TNC channels (input_device_id == null) — none are PTT-eligible.
+  const kiss = [{ id: 1, input_device_id: null }];
+  assert.equal(pttDetectionBlockedReason(kiss, new Map()), 'no-modem-channel');
+});
+
+test('pttDetectionBlockedReason flags all-configured when every modem channel already has PTT', () => {
+  const c1 = { id: 1, input_device_id: 10 };
+  const pttByChannel = new Map([[1, { method: 'serial_dtr' }]]);
+  assert.equal(pttDetectionBlockedReason([c1], pttByChannel), 'all-configured');
 });
