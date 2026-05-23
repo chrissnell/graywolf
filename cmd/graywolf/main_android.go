@@ -60,6 +60,22 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Orphan safety net: if the Android app process dies without the
+	// Service running onDestroy (Force Stop, OOM, OEM killer), nothing
+	// else SIGTERMs us and this Go server would keep iGating to the
+	// internet. watchParentDeath cancels ctx the moment the parent dies
+	// so a.Run unwinds gracefully (closes APRS-IS, flushes DB); the
+	// deadline backstop force-exits if that unwind hangs. (Layer 1 --
+	// GraywolfService.onTaskRemoved -- handles the clean swipe case; this
+	// covers the hard kills onDestroy never sees.)
+	go watchParentDeath(os.Stdin, os.Getppid, time.Second, func() {
+		cancel()
+		time.AfterFunc(5*time.Second, func() {
+			logger.Error("graywolf-android: shutdown deadline exceeded after parent death; forcing exit")
+			os.Exit(0)
+		})
+	})
+
 	a := app.New(cfg, logger)
 
 	cli, err := platformConnect(ctx, logger, os.Getenv("GRAYWOLF_PLATFORM_SOCKET"))

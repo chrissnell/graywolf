@@ -329,6 +329,24 @@ class GraywolfService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // Swiping the app from recents removes the Activity but, with
+    // android:stopWithTask unset (default false), the foreground service
+    // keeps running and so would the forked Go backend. Stop ourselves so
+    // onDestroy's full teardown runs (supervisor, Go child SIGTERM, modem,
+    // audio, USB PTT, platform server). A fresh launch then rebuilds the
+    // service -- re-enumerating USB and rebooting the modem -- which is
+    // also exactly what hot-swap recovery needs.
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(TAG, "onTaskRemoved: task swiped away, stopping service")
+        // Mark this as a deliberate stop so the USB_DEVICE_ATTACHED relaunch
+        // caused by our own teardown releasing the radio (the interfaces
+        // re-enumerate ~2s later) is suppressed in MainActivity rather than
+        // silently reviving the station the operator just dismissed.
+        MainActivity.markUserStopped(this)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         supervisor.stop()
         goListenerReady = false
