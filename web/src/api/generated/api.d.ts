@@ -790,6 +790,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kiss/available-usb-serial-devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List attached USB serial devices (Android only) */
+        get: operations["getAvailableUsbSerialDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kiss/bonded-bt-devices": {
         parameters: {
             query?: never;
@@ -3149,6 +3166,15 @@ export interface components {
              *     UART, or a previously-running graywolf process).
              */
             used?: boolean;
+        };
+        "webapi.AvailableUsbSerialDevice": {
+            has_permission?: boolean;
+            manufacturer?: string;
+            product?: string;
+            vid_pid?: string;
+        };
+        "webapi.AvailableUsbSerialDevicesResponse": {
+            devices?: components["schemas"]["webapi.AvailableUsbSerialDevice"][];
         };
         "webapi.BondedBtDevice": {
             mac?: string;
@@ -6362,6 +6388,44 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAvailableUsbSerialDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.AvailableUsbSerialDevicesResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
                 headers: {
                     [name: string]: unknown;
                 };
