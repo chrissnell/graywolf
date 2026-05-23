@@ -28,6 +28,15 @@ import kotlin.concurrent.thread
  * Uses android.net.LocalServerSocket (API 1) with NAMESPACE_FILESYSTEM
  * so the Go side dials the path with net.Dialer{} "unix" unchanged.
  */
+/**
+ * Thrown by PlatformServer.start() when the abstract-namespace address is
+ * still held by a previous instance after the bounded wait. The caller
+ * (GraywolfService.onCreate) treats this as "another instance owns the
+ * station" and stops itself cleanly rather than crashing the process.
+ */
+class BindContendedException(name: String, cause: Throwable) :
+    java.io.IOException("platformsvc address still in use after wait: $name", cause)
+
 class PlatformServer(
     private val socketPath: String,
     private val serverVersion: String,
@@ -111,16 +120,44 @@ class PlatformServer(
      * supports.
      */
     fun start() {
-        // Lesson: feedback_uds_unlink_before_bind. The Service can be
-        // killed/restarted by the OS; the prior socket file lingers.
-        File(socketPath).delete()
-
-        prodListener = LocalServerSocket(socketPath)
+        // The abstract-namespace address frees the instant the holding
+        // process dies, so "Address already in use" means a previous
+        // instance is still tearing down. Wait for it briefly rather than
+        // crashing -- a single bind attempt here is what produced the
+        // relaunch->crash->relaunch loop that churned the USB bus.
+        prodListener = bindWithRetry()
         running = true
         acceptThread = thread(start = true, isDaemon = true, name = "platformsvc-accept") {
             prodAcceptLoop()
         }
         Log.i(TAG, "PlatformServer bound at $socketPath")
+    }
+
+    // Bind, retrying on "Address already in use" until the predecessor frees
+    // the abstract address or BIND_WAIT_MS elapses. Throws BindContendedException
+    // on timeout so the caller can stopSelf() cleanly instead of crashing.
+    private fun bindWithRetry(): LocalServerSocket {
+        val deadline = System.currentTimeMillis() + BIND_WAIT_MS
+        var attempt = 0
+        while (true) {
+            try {
+                return LocalServerSocket(socketPath)
+            } catch (e: IOException) {
+                if (System.currentTimeMillis() >= deadline) {
+                    throw BindContendedException(socketPath, e)
+                }
+                if (attempt == 0) {
+                    Log.w(TAG, "platformsvc address busy; waiting for previous instance to exit")
+                }
+                attempt++
+                try {
+                    Thread.sleep(BIND_RETRY_STEP_MS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw BindContendedException(socketPath, e)
+                }
+            }
+        }
     }
 
     /**
@@ -311,6 +348,15 @@ class PlatformServer(
 
     companion object {
         private const val TAG = "PlatformServer"
+
+        // Total time start() waits for a predecessor to free the abstract
+        // address before giving up. Kept short because the only main-thread
+        // caller is a START_STICKY restart's onCreate (ANR budget ~5s); the
+        // common case binds on the first attempt. The UI-gated launch path
+        // (MainActivity) already waits off the main thread, so this is only
+        // a backstop.
+        private const val BIND_WAIT_MS = 3_000L
+        private const val BIND_RETRY_STEP_MS = 100L
     }
 }
 
