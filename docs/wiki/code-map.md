@@ -212,7 +212,7 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 | `src/components/` | Reusable: ConfirmDialog, DataTable, FormField, Modal, NewsPopup, PacketLogViewer, PageHeader, ReleaseNoteCard, Sidebar, StationCallsignBanner, SymbolPicker, UpdateAvailableBanner |
 | `src/components/messages/remote_actions/` | Outbound Actions UI: `RemoteActionsDrawer` (zap-icon-anchored thread drawer), `MacroTile` + `MacroEditRow` (fire / edit modes), `FreeFormSender` (ad-hoc `@@<otp>#cmd`), `CredentialsModal` + `EditCredentialModal` + `CredentialPicker` (TOTP secret CRUD), `ReplyBubbleAdornment` (zap-tagged inbound badge). See [`remote-actions.md`](remote-actions.md). |
 | `src/lib/remote_actions/` | Outbound Actions client lib: typed API wrapper, reactive store (Svelte 5 runes singleton), TOTP countdown timer, reply correlation (60s window + status-prefix allowlist), wire-string assembler + send helper that piggy-backs on `POST /api/messages`. |
-| `src/lib/map/` | MapLibre integration (data-store, map-store, layers, sources, popups, APRS icons) |
+| `src/lib/map/` | MapLibre integration (data-store, map-store, layers, sources, popups, APRS icons, right-click `map-context-menu.svelte` — Copy GPS / Copy grid / Add fixed beacon here; the last item deep-links into `Beacons.svelte` via `#/beacons?lat=…&lon=…`, which its `onMount` parses to prefill the create modal) |
 | `src/lib/maps/` | Offline-maps client glue (downloads-store, state-bounds, state-list, state-picker) |
 | `src/lib/settings/` | Reactive prefs stores (units, maps, messages-preferences, theme) |
 | `src/lib/themes/`, `themes/` | Theme registry + static CSS theme files |

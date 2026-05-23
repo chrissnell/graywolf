@@ -9,6 +9,7 @@
   import maplibregl from 'maplibre-gl';
   import MaplibreMap from '../lib/map/maplibre-map.svelte';
   import InfoPanel from '../lib/map/info-panel.svelte';
+  import MapContextMenu from '../lib/map/map-context-menu.svelte';
   import { createDataStore } from '../lib/map/data-store.svelte.js';
   import { mountStationsLayer } from '../lib/map/layers/stations.js';
   import { mountTrailsLayer } from '../lib/map/layers/trails.js';
@@ -20,6 +21,9 @@
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
   import { toMaidenhead } from '../lib/map/maidenhead.js';
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
+  import { toasts } from '../lib/stores.js';
+  import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
+  import Copy from 'lucide-svelte/icons/copy';
 
   // Values are seconds (data store wants ms; multiplied at dispatch).
   const TIMERANGES_S = [
@@ -79,6 +83,64 @@
   let timerangeSec = $state(Math.floor(dataStore.timerangeMs / 1000));
   let coordText = $state('');
   let zoomLevel = $state(null);
+
+  // Right-click context menu (background only — station markers keep
+  // their own left-click popup). The menu is positioned in viewport
+  // coords; the map listener supplies them on contextmenu.
+  let ctxMenu = $state({ open: false, x: 0, y: 0, lat: 0, lon: 0 });
+  function closeCtxMenu() {
+    ctxMenu.open = false;
+  }
+  async function copyToClipboard(text, label) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toasts.success(`${label} copied`);
+    } catch {
+      toasts.error('Clipboard unavailable');
+    }
+  }
+  // Hemispheric coords shown once in the menu header; the copy items
+  // carry short labels so the menu stays narrow.
+  function ctxMenuHeader() {
+    return `${fmtLat(ctxMenu.lat)} ${fmtLon(ctxMenu.lon)}`;
+  }
+  function ctxMenuItems() {
+    const { lat, lon } = ctxMenu;
+    const coords = `${fmtLat(lat)} ${fmtLon(lon)}`;
+    // Signed-decimal form -- the shape paste targets like Google Maps,
+    // OpenStreetMap, and most spreadsheets expect. 5 decimal places is
+    // ~1 m of precision, enough for any APRS use.
+    const decimal = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    const grid = toMaidenhead(lat, lon);
+    return [
+      {
+        label: 'Add fixed beacon here',
+        icon: MapPinPlus,
+        primary: true,
+        onSelect: () => {
+          const q = `lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`;
+          window.location.hash = `#/beacons?${q}`;
+        },
+      },
+      { divider: true },
+      {
+        label: 'Copy coordinates',
+        icon: Copy,
+        onSelect: () => copyToClipboard(coords, 'Coordinates'),
+      },
+      {
+        label: 'Copy decimal',
+        icon: Copy,
+        onSelect: () => copyToClipboard(decimal, 'Decimal coordinates'),
+      },
+      {
+        label: 'Copy grid',
+        icon: Copy,
+        hint: grid,
+        onSelect: () => copyToClipboard(grid, 'Grid square'),
+      },
+    ];
+  }
 
   // Tick once a second so "5s ago" stays accurate without hammering the
   // status-bar derived state from elsewhere.
@@ -252,6 +314,38 @@
     // is fine without an explicit rAF gate.
     map.on('mousemove', (e) => updateCoordText(e.lngLat));
     map.on('mouseout', () => (coordText = ''));
+
+    // Right-click background → open context menu. Bail when the click
+    // landed on a station marker (or any DOM child of one): markers own
+    // a left-click popup and we don't want to fight that surface.
+    map.on('contextmenu', (e) => {
+      const target = e.originalEvent?.target;
+      if (target && target.closest && target.closest('.gw-station-marker')) {
+        return;
+      }
+      e.preventDefault?.();
+      e.originalEvent?.preventDefault?.();
+      // position:fixed menu wants viewport coords, not canvas-relative
+      // (which is what e.point gives us). originalEvent.clientX/Y is the
+      // right surface, with a fallback to e.point in the unlikely case
+      // where the synthetic event lacks an originalEvent.
+      const oe = e.originalEvent;
+      const vx = oe?.clientX ?? e.point.x;
+      const vy = oe?.clientY ?? e.point.y;
+      ctxMenu = {
+        open: true,
+        x: vx,
+        y: vy,
+        lat: e.lngLat.lat,
+        lon: e.lngLat.lng,
+      };
+      // Suppress hover overlays while the menu is up.
+      closePopup();
+      hoverPathLayer?.clear();
+    });
+    // Any camera change closes the menu — its anchor lat/lon would drift.
+    map.on('movestart', closeCtxMenu);
+    map.on('zoomstart', closeCtxMenu);
 
     dataStore.start();
   }
@@ -546,6 +640,15 @@
       {#if coordText}{coordText} &middot; {/if}z {zoomLevel?.toFixed(1) ?? ''}
     </div>
   {/if}
+
+  <MapContextMenu
+    open={ctxMenu.open}
+    x={ctxMenu.x}
+    y={ctxMenu.y}
+    header={ctxMenu.open ? ctxMenuHeader() : ''}
+    items={ctxMenu.open ? ctxMenuItems() : []}
+    onclose={closeCtxMenu}
+  />
 
   <!-- Status bar (bottom-center; legacy placement so it doesn't sit
        under the sidebar on narrow desktop windows). -->
