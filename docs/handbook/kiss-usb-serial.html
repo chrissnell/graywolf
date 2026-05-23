@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KISS over USB Serial &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="kiss-serial.html">KISS over Serial</a>
+      <a href="kiss-usb-serial.html">KISS over USB Serial</a>
+      <a href="kiss-bluetooth.html">KISS over Bluetooth</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>KISS over USB Serial</h1>
+    <p class="subtitle">Connect a serial KISS TNC directly to an Android tablet over USB.</p>
+
+    <div class="callout info">
+      <span class="callout-icon">i</span>
+      <div class="callout-body">
+        <p>
+          This interface type is available on Android only. Configure it
+          from the graywolf app on your Android tablet. On macOS, Linux, and
+          Windows, use <a href="kiss-serial.html">KISS over Serial</a> instead.
+        </p>
+      </div>
+    </div>
+
+    <h2>Overview</h2>
+
+    <p>
+      Some TNCs and radios speak KISS natively over a serial port. When you
+      plug one of these devices into an Android tablet over USB, graywolf
+      can use it as a full radio channel -- beacon into it, digipeat across
+      it, and iGate from it -- without an audio modem or a network
+      connection between graywolf and the device.
+    </p>
+
+    <p>
+      Common examples include the Kenwood TH-D75 (which appears as a USB
+      serial device and speaks KISS when placed in packet mode), Mobilinkd
+      TNCs, and USB-to-serial cables such as Digirig, CP210x-based cables,
+      and CH34x-based cables connected to a radio with a serial KISS port.
+    </p>
+
+    <p>
+      Graywolf opens the USB serial connection, reads KISS frames as they
+      arrive, and writes KISS frames when transmitting. The device handles
+      all RF carrier sensing, timing, and actual transmission; graywolf is
+      just the packet router on top.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">i</span>
+      <div class="callout-body">
+        <p>
+          Putting the radio or TNC into KISS mode is the operator's
+          responsibility. Graywolf opens the connection and begins
+          speaking KISS immediately; it does not send any AT commands or
+          mode-switching sequences. Consult your device's manual for the
+          procedure to enter KISS mode before connecting it in graywolf.
+        </p>
+      </div>
+    </div>
+
+    <h2>Supported Devices</h2>
+
+    <p>
+      Graywolf recognizes USB serial devices based on their USB vendor and
+      product identifiers. The device picker in the graywolf app lists every
+      connected device that uses a supported USB serial chip, showing the
+      product name alongside the vendor:product ID pair.
+    </p>
+
+    <p>
+      Supported chip families include:
+    </p>
+
+    <ul>
+      <li>CDC-ACM devices (Kenwood TH-D74, TH-D75, Mobilinkd, AIOC, and most
+        radios with a built-in USB serial port)</li>
+      <li>Silicon Labs CP210x (Digirig and similar USB-to-serial cables)</li>
+      <li>WCH CH34x (common USB-to-serial cables)</li>
+    </ul>
+
+    <p>
+      If your device does not appear in the list, confirm it uses one of
+      these chip families. Devices that present only as audio or HID
+      interfaces (with no serial chip) will not appear.
+    </p>
+
+    <h2>Baud Rate</h2>
+
+    <p>
+      The baud rate you enter in graywolf must match the baud rate
+      configured on the device. Common values:
+    </p>
+
+    <ul>
+      <li><strong>9600</strong> -- the most common default for TNCs
+        and many radios with built-in KISS serial support.</li>
+      <li><strong>4800</strong> -- used by some older TNCs and
+        low-speed configurations.</li>
+      <li><strong>19200</strong>, <strong>38400</strong>,
+        <strong>57600</strong>, <strong>115200</strong> -- higher
+        speeds used by some modern USB TNCs; check your device's
+        documentation.</li>
+    </ul>
+
+    <p>
+      A baud-rate mismatch produces garbage framing. If the KISS
+      interface appears connected but no frames arrive (or arrive as
+      decode errors), verify that both sides are set to the same rate.
+    </p>
+
+    <h2>Configuration</h2>
+
+    <h3>Step 1 -- Create a KISS-only channel</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Radio &rarr; Channels</strong> in the graywolf app.</li>
+      <li>Tap <strong>+ Add Channel</strong>.</li>
+      <li>In the channel-type segmented control at the top of the form,
+        choose <strong>KISS-TNC only</strong>. The audio device, modem
+        type, and TX timing fields disappear -- a KISS-only channel
+        is a logical routing lane, not a modulated radio channel.</li>
+      <li>Name it to reflect the attached device (for example,
+        <code>TH-D75</code> or <code>Mobilinkd</code>). Give it a
+        channel number that does not collide with your existing RF
+        channels.</li>
+      <li>Tap <strong>Save</strong>. The channel appears on the list
+        with a <strong>KISS-TNC only</strong> badge. Its backing shows
+        <strong>-- Unbound</strong> until you attach the USB serial
+        KISS interface below.</li>
+    </ol>
+
+    <h3>Step 2 -- Plug in the device</h3>
+
+    <p>
+      Connect the serial KISS TNC to the tablet's USB port. Use an OTG
+      (On-The-Go) adapter or hub if your tablet has a USB-C or Micro-USB
+      port and the cable has a standard-A connector.
+    </p>
+
+    <h3>Step 3 -- Grant USB permission</h3>
+
+    <p>
+      Android requires explicit permission before any app can access a USB
+      device. When graywolf first sees a newly plugged serial device, it
+      requests permission from the operating system. Android shows a system
+      dialog asking whether to allow graywolf to access the device. Tap
+      <strong>OK</strong>. After you grant permission, the device appears
+      in the picker.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">i</span>
+      <div class="callout-body">
+        <p>
+          Permission is granted once per device per app install. If you
+          unplug and replug the same device later, graywolf reconnects
+          automatically without showing the dialog again. If you see the
+          dialog again after a replug, it means the device was fully
+          re-enumerated by Android with new identifiers (this can happen
+          on some OTG hubs).
+        </p>
+      </div>
+    </div>
+
+    <p>
+      On the KISS TNC configuration form, tap <strong>Grant USB
+      permission</strong> if the button appears. This sends the
+      permission request and refreshes the device list. The button
+      disappears once permission is granted.
+    </p>
+
+    <h3>Step 4 -- Create a USB Serial KISS interface</h3>
+
+    <ol class="steps">
+      <li>Open <strong>Interfaces &rarr; KISS TNC</strong> (the page
+        is titled <strong>KISS Interfaces</strong>).</li>
+      <li>Tap <strong>+ Add KISS</strong>.</li>
+      <li>In the <strong>Type</strong> field, choose
+        <strong>USB Serial</strong>.</li>
+      <li>In the <strong>Device</strong> picker, select your device
+        from the list. Each entry shows the product name and the
+        USB vendor:product ID (for example,
+        <code>TH-D75 [35BF:0004]</code> or
+        <code>Digirig Mobile [10C4:EA60]</code>). If no devices
+        appear, confirm the cable is plugged in and USB permission
+        has been granted.</li>
+      <li>Set <strong>Baud Rate</strong> to match the rate configured
+        on the device (9600 is the most common starting point).</li>
+      <li>In the <strong>Channel</strong> picker, select the KISS-only
+        channel you just created.</li>
+      <li>Set <strong>Mode</strong> to <strong>TNC</strong>. In TNC
+        mode the interface is treated as a radio, not a software
+        client. This also reveals the transmit opt-in checkbox.</li>
+      <li>Check the box labeled <strong>Allow digipeater/beacon/iGate
+        to transmit on this interface</strong> to allow graywolf's
+        TX pipeline to send frames to the device. Without this
+        checkbox the interface only receives.</li>
+      <li>Tap <strong>Create</strong>. Graywolf opens the USB serial
+        connection immediately. The row's status badge shows
+        <strong>Connected</strong> if the device opened successfully.
+        The channel's backing on the Channels page flips to
+        <strong>&#x25CF; Live</strong>.</li>
+    </ol>
+
+    <div class="callout warn">
+      <span class="callout-icon">!</span>
+      <div class="callout-body">
+        <p>
+          Make sure the device is already in KISS mode before saving
+          the interface in graywolf. Graywolf does not issue any
+          mode-switch commands; it assumes the connection is already
+          speaking KISS when it opens it.
+        </p>
+      </div>
+    </div>
+
+    <h2>Reconnect Behavior</h2>
+
+    <p>
+      If the device is unplugged, graywolf detects the disconnect and
+      marks the interface as reconnecting. When you plug the device back
+      in, Android notifies graywolf and the connection is re-established
+      automatically. You do not need to restart the app or reconfigure the
+      interface. The channel returns to
+      <strong>&#x25CF; Live</strong> status once the connection is open.
+    </p>
+
+    <p>
+      Editing the device, baud rate, or mode on the KISS TNC page and
+      tapping Save triggers a hot reload: graywolf closes the existing
+      connection and re-opens it with the new settings.
+    </p>
+
+    <h2 id="ptt-conflict">USB Serial and PTT</h2>
+
+    <p>
+      A USB-to-serial cable such as a Digirig or a CP210x or CH34x cable
+      can serve as either a PTT keying device or a serial KISS TNC, but
+      not both at once. When you configure a cable as a USB Serial KISS
+      interface, graywolf claims that USB device exclusively for KISS use
+      and releases any PTT claim on it. If the same cable was previously
+      used for PTT, that PTT configuration stops working until you
+      reassign it to a different device.
+    </p>
+
+    <p>
+      To use one cable for PTT and a separate cable for KISS serial, plug
+      in two cables and configure them independently. The device picker
+      shows each cable by its product name and vendor:product ID.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">i</span>
+      <div class="callout-body">
+        <p>
+          CDC-ACM devices such as the Kenwood TH-D75 and the AIOC present
+          a single USB interface that carries both the serial data and the
+          PTT signal inside the KISS stream. They are not affected by this
+          limitation -- KISS takes full ownership of the device and PTT is
+          handled by the TNC itself.
+        </p>
+      </div>
+    </div>
+
+    <h2>Troubleshooting</h2>
+
+    <h3>Device does not appear in the list</h3>
+
+    <ol>
+      <li>Confirm the cable is fully seated in the tablet's USB port and
+        the tablet's USB OTG adapter (if used) is working.</li>
+      <li>Confirm the device uses a supported chip (CDC-ACM, CP210x, or
+        CH34x). A USB audio-only or HID-only device will not appear.</li>
+      <li>Tap <strong>Grant USB permission</strong> on the KISS interface
+        form. The system permission dialog may be waiting behind another
+        app.</li>
+      <li>Unplug and replug the cable. If the device re-enumerates,
+        Android delivers a fresh attach event and graywolf refreshes
+        the list.</li>
+    </ol>
+
+    <h3>Interface connects but no frames arrive</h3>
+
+    <ol>
+      <li>Confirm the device is actually in KISS mode. Most radios and
+        TNCs default to a human-readable command mode and must be
+        explicitly switched. Consult your device's manual.</li>
+      <li>Verify the baud rate matches on both sides. A mismatch
+        produces garbage bytes that the KISS framer discards.</li>
+      <li>Confirm the device is transmitting. On a radio such as the
+        TH-D75, the APRS channel must be active and a beacon must be
+        due -- the port is silent between packets.</li>
+      <li>Check the <strong>Logs</strong> page in the graywolf app for
+        any serial framing or open errors.</li>
+    </ol>
+
+    <h3>My beacon on the channel does not transmit</h3>
+
+    <ul>
+      <li><strong>Transmit checkbox is off.</strong> Open the KISS
+        interface, confirm Mode is <code>TNC</code> and the
+        <strong>Allow digipeater/beacon/iGate to transmit on this
+        interface</strong> box is checked.</li>
+      <li><strong>Device is not open.</strong> The status badge on the
+        KISS page shows <strong>Reconnecting</strong> if graywolf
+        cannot open the device. Confirm the cable is plugged in and
+        USB permission has been granted.</li>
+      <li><strong>Channel is unbound.</strong> If you created the
+        channel but never attached the USB serial interface to it, the
+        channel's backing is <strong>-- Unbound</strong> and no frame
+        goes anywhere.</li>
+    </ul>
+
+    <h2>Known-Working Devices</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Device</th><th>USB ID</th><th>Baud Rate</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Kenwood TH-D75</td>
+              <td><code>35BF:0004</code></td>
+              <td>9600</td>
+              <td>Enable packet mode in the radio's menu and set the
+                data speed to 9600 bps. The radio must be tuned to an
+                APRS frequency.</td>
+            </tr>
+            <tr>
+              <td>Kenwood TH-D74</td>
+              <td><code>35BF:0003</code></td>
+              <td>9600</td>
+              <td>Similar to the TH-D75. Use the radio's APRS menu to
+                confirm it is in packet / KISS mode.</td>
+            </tr>
+            <tr>
+              <td>Digirig Mobile</td>
+              <td><code>10C4:EA60</code> (CP210x)</td>
+              <td>9600</td>
+              <td>Connect Digirig to the radio's data port. Set the
+                radio's packet port to 9600 baud and enable KISS mode.</td>
+            </tr>
+            <tr>
+              <td>Mobilinkd TNC4</td>
+              <td>varies by revision</td>
+              <td>38400</td>
+              <td>Configure via the Mobilinkd app before connecting to
+                graywolf. KISS mode is selected in the app. Baud rate
+                may vary by firmware version; confirm in the app.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Related Pages</h2>
+
+    <ul>
+      <li><a href="kiss.html">KISS TNC</a> -- TCP server and
+        client KISS interfaces.</li>
+      <li><a href="kiss-serial.html">KISS over Serial</a> -- serial KISS
+        on macOS, Linux, and Windows.</li>
+      <li><a href="kiss-bluetooth.html">KISS over Bluetooth</a> -- RFCOMM
+        Bluetooth KISS on Android.</li>
+      <li><a href="channels.html">Radio Channels</a> -- channel
+        types, backing, and TX timing.</li>
+      <li><a href="configurations.html">Known-Working Configs</a>
+        -- example hardware configurations.</li>
+    </ul>
+
+    <nav class="page-nav">
+      <a href="kiss-serial.html">
+        <span class="label">Previous</span>
+        KISS over Serial
+      </a>
+      <a href="kiss-bluetooth.html" class="next">
+        <span class="label">Next</span>
+        KISS over Bluetooth
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>
