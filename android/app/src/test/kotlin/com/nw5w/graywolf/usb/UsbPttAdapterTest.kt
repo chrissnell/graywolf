@@ -41,7 +41,7 @@ class UsbPttAdapterTest {
     // -----------------------------------------------------------------------
     @Test fun `pttSet CP2102N_RTS keyed delegates to setRts and returns true`() {
         val port = mock<UsbSerialPort>()
-        UsbPttAdapter.cp2102n = UsbPttAdapter.Cp2102nHandle(mockDevice(), port)
+        UsbPttAdapter.cp2102n = UsbPttAdapter.Cp2102nHandle(mockDevice(), port, mock<UsbDeviceConnection>())
 
         val result = UsbPttAdapter.pttSet(PttMethodConsts.PTT_METHOD_CP2102N_RTS, true)
 
@@ -51,7 +51,7 @@ class UsbPttAdapterTest {
 
     @Test fun `pttSet CP2102N_RTS unkeyed delegates to setRts and returns true`() {
         val port = mock<UsbSerialPort>()
-        UsbPttAdapter.cp2102n = UsbPttAdapter.Cp2102nHandle(mockDevice(), port)
+        UsbPttAdapter.cp2102n = UsbPttAdapter.Cp2102nHandle(mockDevice(), port, mock<UsbDeviceConnection>())
 
         val result = UsbPttAdapter.pttSet(PttMethodConsts.PTT_METHOD_CP2102N_RTS, false)
 
@@ -74,7 +74,7 @@ class UsbPttAdapterTest {
     // -----------------------------------------------------------------------
     @Test fun `pttSet AIOC_CDC_DTR keyed drives DTR=true and RTS=false`() {
         val port = mock<UsbSerialPort>()
-        UsbPttAdapter.aioc = UsbPttAdapter.AiocHandle(mockDevice(), port)
+        UsbPttAdapter.aioc = UsbPttAdapter.AiocHandle(mockDevice(), port, mock<UsbDeviceConnection>())
 
         val result = UsbPttAdapter.pttSet(PttMethodConsts.PTT_METHOD_AIOC_CDC_DTR, true)
 
@@ -86,7 +86,7 @@ class UsbPttAdapterTest {
 
     @Test fun `pttSet AIOC_CDC_DTR unkeyed drives DTR=false and RTS=false`() {
         val port = mock<UsbSerialPort>()
-        UsbPttAdapter.aioc = UsbPttAdapter.AiocHandle(mockDevice(), port)
+        UsbPttAdapter.aioc = UsbPttAdapter.AiocHandle(mockDevice(), port, mock<UsbDeviceConnection>())
 
         val result = UsbPttAdapter.pttSet(PttMethodConsts.PTT_METHOD_AIOC_CDC_DTR, false)
 

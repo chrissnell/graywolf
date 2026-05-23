@@ -66,7 +66,7 @@ class UsbPttAdapterEnumerateForJsTest {
     // -----------------------------------------------------------------------
     @Test
     fun `enumerateForJs returns empty array when no devices attached`() {
-        whenever(mockUsbManager.deviceList).thenReturn(emptyMap())
+        whenever(mockUsbManager.deviceList).thenReturn(HashMap())
 
         val result = JSONArray(UsbPttAdapter.enumerateForJs().toString())
 
@@ -91,7 +91,7 @@ class UsbPttAdapterEnumerateForJsTest {
             hasPermission = false,
         )
         whenever(mockUsbManager.deviceList).thenReturn(
-            mapOf("/dev/bus/usb/001/001" to dev1, "/dev/bus/usb/001/002" to dev2)
+            hashMapOf("/dev/bus/usb/001/001" to dev1, "/dev/bus/usb/001/002" to dev2)
         )
         whenever(mockUsbManager.hasPermission(dev1)).thenReturn(true)
         whenever(mockUsbManager.hasPermission(dev2)).thenReturn(false)
@@ -125,7 +125,7 @@ class UsbPttAdapterEnumerateForJsTest {
     // -----------------------------------------------------------------------
     @Test
     fun `requestPermissionFor with no matching device fires callback false synchronously`() {
-        whenever(mockUsbManager.deviceList).thenReturn(emptyMap())
+        whenever(mockUsbManager.deviceList).thenReturn(HashMap())
 
         var callbackResult: Boolean? = null
         UsbPttAdapter.requestPermissionFor(vid = 0x10C4, pid = 0xEA60) { granted ->
@@ -137,13 +137,13 @@ class UsbPttAdapterEnumerateForJsTest {
 
     @Test
     fun `requestPermissionFor with no matching device does not call requestPermission`() {
-        whenever(mockUsbManager.deviceList).thenReturn(emptyMap())
+        whenever(mockUsbManager.deviceList).thenReturn(HashMap())
 
         UsbPttAdapter.requestPermissionFor(vid = 0x10C4, pid = 0xEA60) {}
 
         // requestPermission() calls usbManager.requestPermission(device, pi).
         // With no device found it should never touch usbManager.requestPermission.
-        verify(mockUsbManager, never()).requestPermission(any(), any())
+        verify(mockUsbManager, never()).requestPermission(any<UsbDevice>(), any())
     }
 
     // -----------------------------------------------------------------------
@@ -158,7 +158,7 @@ class UsbPttAdapterEnumerateForJsTest {
             hasPermission = true,
         )
         whenever(mockUsbManager.deviceList).thenReturn(
-            mapOf("/dev/bus/usb/001/001" to dev)
+            hashMapOf("/dev/bus/usb/001/001" to dev)
         )
         whenever(mockUsbManager.hasPermission(dev)).thenReturn(true)
         // openDevice can return null; tryOpen handles the null case gracefully.
