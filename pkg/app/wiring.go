@@ -1344,6 +1344,12 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// responds 501 Not Implemented (see btsource_default.go).
 	apiSrv.SetBtSource(a.btSourceForWebapi())
 
+	// USB serial device source. Android returns a live adapter backed by
+	// the platformsvc client (see usbserialsource_android.go); desktop
+	// builds return nil so GET /api/kiss/available-usb-serial-devices
+	// responds 501 Not Implemented (see usbserialsource_default.go).
+	apiSrv.SetUsbSerialSource(a.usbSerialSourceForWebapi())
+
 	// PTT device source for the unified PTT tab. Android returns a
 	// live adapter backed by the platformsvc client (see
 	// pttsource_android.go) so GET /api/ptt/available enumerates
