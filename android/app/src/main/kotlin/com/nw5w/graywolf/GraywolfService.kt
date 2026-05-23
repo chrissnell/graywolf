@@ -36,6 +36,7 @@ import com.nw5w.graywolf.platformsvc.SystemBluetoothFacade
 import com.nw5w.graywolf.platformsvc.UsbDeviceLister
 import com.nw5w.graywolf.usb.UsbPttAdapter
 import java.io.File
+import kotlin.concurrent.thread
 
 class GraywolfService : Service() {
     private val audioPump = AudioPump()
@@ -43,6 +44,9 @@ class GraywolfService : Service() {
     private var goLauncher: GoLauncher? = null
     private var platformServer: PlatformServer? = null
     private var gpsAdapter: GpsAdapter? = null
+    // Worker that runs the blocking audio/USB HAL init off the main thread
+    // (see onCreate). onDestroy joins it before tearing those resources down.
+    @Volatile private var startupThread: Thread? = null
     private var btSerialAdapter: BtSerialAdapter? = null
     private val supervisor = Supervisor(onRestart = ::supervisorRestart)
 
@@ -271,10 +275,26 @@ class GraywolfService : Service() {
         audioTxPump = txPump
         ModemBridge.installAudioTxCallback(txPump)
 
-        // Start TX audio + USB PTT adapter after FGS is active (spec §3.1).
-        txPump.start()
+        // USB PTT adapter init is cheap (stores context, gets the USB service,
+        // registers a receiver) and must precede enumerate(); keep it on the main
+        // thread so onResume's enumerate() never races an uninitialized adapter.
         UsbPttAdapter.init(applicationContext)
-        UsbPttAdapter.enumerate()
+
+        // AudioTrack construction + setPreferredDevice and USB device opens are
+        // synchronous HAL/binder calls that block for seconds when a USB audio
+        // dongle is wedged -- a real failure mode on this hardware, since a churned
+        // hub can wedge a Digirig. On the main thread that ANRs onCreate within 5s
+        // (lessons: feedback_android_usb_open_worker_thread,
+        // feedback_android_audiotxpump_main_thread_anr). Run them off the main
+        // thread: the modem TX/PTT callbacks are already installed above and
+        // tolerate the brief window before this completes (AudioTxPump drops audio
+        // while track is null; UsbPttAdapter re-enumerates when a handle is absent).
+        // These are output-path only -- no ordering dependency on modem boot below.
+        // onDestroy joins this thread (bounded) before tearing the same resources down.
+        startupThread = thread(start = true, isDaemon = true, name = "graywolf-io-init") {
+            txPump.start()
+            UsbPttAdapter.enumerate()
+        }
 
         // Bring up the Go ↔ Kotlin platform contract before exec'ing the Go child.
         // Phase 2: Hello + GpsFix only; the Go child connects, handshakes, and
@@ -360,6 +380,16 @@ class GraywolfService : Service() {
     override fun onDestroy() {
         supervisor.stop()
         goListenerReady = false
+        // The off-main-thread audio/USB init (onCreate) may still be in flight --
+        // wait for it (bounded) before stopping txPump / closing USB handles, so we
+        // don't tear down a half-built AudioTrack or open USB handle. If it's wedged
+        // on the HAL the join times out and teardown proceeds; the daemon thread dies
+        // with the process. The wait runs here, not on input dispatch, so it can't ANR.
+        startupThread?.let {
+            it.interrupt()
+            it.join(2_000)
+        }
+        startupThread = null
         gpsAdapter?.stop()
         gpsAdapter = null
         goLauncher?.stop()
