@@ -642,6 +642,15 @@ cannot outlive the app, because no single mechanism covers both cases.
   `Address already in use` crash the process, because that crash relaunches and
   re-collides, a loop that re-enumerates the USB bus fast enough to wedge devices
   off a powered hub.
+- **No blocking HAL calls on the main thread in `onCreate`:** `AudioTxPump.start()`
+  (AudioTrack build + `setPreferredDevice`) and `UsbPttAdapter.enumerate()` (USB
+  device opens) are synchronous HAL/binder calls that block for seconds when a USB
+  audio dongle is wedged, ANR'ing the process within ~5s. `GraywolfService.onCreate`
+  runs them on a `graywolf-io-init` worker thread (the modem TX/PTT callbacks are
+  installed first and tolerate the brief gap); `onDestroy` joins that worker
+  (bounded) before tearing the same resources down. The cheap `UsbPttAdapter.init()`
+  stays on the main thread so `MainActivity.onResume`'s `enumerate()` never races an
+  uninitialized adapter.
 
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt),
 [`../../cmd/graywolf/parentwatch.go`](../../cmd/graywolf/parentwatch.go),
