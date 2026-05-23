@@ -372,7 +372,7 @@ func TestBtSerialOpen_clientClose_unblocksRead(t *testing.T) {
 
 // TestBtSerialOpen_serverDisconnect_unblocksRead proves the same property
 // for handleDisconnect: when the UDS dies (server-side conn.Close), the
-// client's drainBtHandles call from handleDisconnect must wake any blocked
+// client's drainSerialHandles call from handleDisconnect must wake any blocked
 // per-handle Read with io.EOF.
 func TestBtSerialOpen_serverDisconnect_unblocksRead(t *testing.T) {
 	srv, c := newBtTestServer(t)
