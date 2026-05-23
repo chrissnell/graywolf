@@ -2400,6 +2400,24 @@ definitions:
           UART, or a previously-running graywolf process).
         type: boolean
     type: object
+  webapi.AvailableUsbSerialDevice:
+    properties:
+      has_permission:
+        type: boolean
+      manufacturer:
+        type: string
+      product:
+        type: string
+      vid_pid:
+        type: string
+    type: object
+  webapi.AvailableUsbSerialDevicesResponse:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/webapi.AvailableUsbSerialDevice'
+        type: array
+    type: object
   webapi.BondedBtDevice:
     properties:
       mac:
@@ -5093,6 +5111,29 @@ paths:
       security:
         - CookieAuth: []
       summary: Reconnect a KISS tcp-client interface now
+      tags:
+        - kiss
+  /kiss/available-usb-serial-devices:
+    get:
+      operationId: getAvailableUsbSerialDevices
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.AvailableUsbSerialDevicesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List attached USB serial devices (Android only)
       tags:
         - kiss
   /kiss/bonded-bt-devices:

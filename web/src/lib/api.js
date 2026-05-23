@@ -79,6 +79,14 @@ export const kissBt = {
   bondedDevices: () => api.get('/kiss/bonded-bt-devices'),
 };
 
+// kissUsb groups the KISS-over-USB-serial helpers (Android-only; the device
+// list endpoint returns 501 on desktop hosts).
+export const kissUsb = {
+  // availableDevices fetches attached serial-capable USB devices.
+  // Shape: { devices: [{vid_pid, product, manufacturer, has_permission}] }.
+  availableDevices: () => api.get('/kiss/available-usb-serial-devices'),
+};
+
 // --- Mock data for development without backend ---
 
 function delay(data) {
@@ -116,6 +124,13 @@ const mockBondedBtDevices = {
   devices: [
     { mac: '00:11:22:33:44:55', name: 'Mobilinkd TNC3' },
     { mac: 'AA:BB:CC:DD:EE:FF', name: 'Kenwood TH-D74' },
+  ],
+};
+
+const mockAvailableUsbSerialDevices = {
+  devices: [
+    { vid_pid: '2341:0043', product: 'TH-D75', manufacturer: 'Kenwood', has_permission: true },
+    { vid_pid: '10c4:ea60', product: 'Digirig CP2102N', manufacturer: 'Silicon Labs', has_permission: false },
   ],
 };
 
@@ -205,6 +220,7 @@ function getMockData(method, path, body) {
   if (path.match(/^\/kiss\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/kiss\/\d+$/) && method === 'DELETE') return delay(null);
   if (path === '/kiss/bonded-bt-devices' && method === 'GET') return delay(mockBondedBtDevices);
+  if (path === '/kiss/available-usb-serial-devices' && method === 'GET') return delay(mockAvailableUsbSerialDevices);
 
   // AGW
   if (path === '/agw' && method === 'GET') return delay(mockAgw);

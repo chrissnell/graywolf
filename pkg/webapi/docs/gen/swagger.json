@@ -3416,6 +3416,43 @@
                 }
             }
         },
+        "/kiss/available-usb-serial-devices": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "List attached USB serial devices (Android only)",
+                "operationId": "getAvailableUsbSerialDevices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.AvailableUsbSerialDevicesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/kiss/bonded-bt-devices": {
             "get": {
                 "security": [
@@ -10298,6 +10335,34 @@
                 "used": {
                     "description": "Used is true when another driver has claimed this line (e.g. SPI, I2C,\nUART, or a previously-running graywolf process).",
                     "type": "boolean"
+                }
+            }
+        },
+        "webapi.AvailableUsbSerialDevice": {
+            "type": "object",
+            "properties": {
+                "has_permission": {
+                    "type": "boolean"
+                },
+                "manufacturer": {
+                    "type": "string"
+                },
+                "product": {
+                    "type": "string"
+                },
+                "vid_pid": {
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.AvailableUsbSerialDevicesResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.AvailableUsbSerialDevice"
+                    }
                 }
             }
         },
