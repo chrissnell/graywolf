@@ -225,6 +225,60 @@
       </div>
     </div>
 
+    <h2>Objects</h2>
+
+    <p>
+      An <strong>object</strong> beacon transmits a named item (a repeater,
+      a hospital, an event site) on behalf of someone else. The packet
+      carries both the object name and your station callsign as the
+      transmitting source, so APRS clients like aprs.fi display it as
+      <em>NAME (via YOUR-CALL)</em> &mdash; making it clear who is
+      injecting the object onto the network.
+    </p>
+
+    <p>
+      Use an object beacon (rather than the <code>Override station
+      callsign</code> checkbox on a Position beacon) whenever the item
+      you are beaconing is not your own station. Overriding the callsign
+      makes the packet look as if that name is a real station on the
+      air, which other operators have no way to attribute back to you.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>object_name</code></td>
+              <td>&mdash;</td>
+              <td>1&ndash;9 character object name shown on APRS maps</td>
+            </tr>
+            <tr>
+              <td><code>latitude</code></td>
+              <td>&mdash;</td>
+              <td>Fixed latitude (decimal degrees, north positive)</td>
+            </tr>
+            <tr>
+              <td><code>longitude</code></td>
+              <td>&mdash;</td>
+              <td>Fixed longitude (decimal degrees, east positive)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Object beacons accept the same <code>Position source</code> choice
+      as Position beacons &mdash; either fixed coordinates or the live
+      GPS fix. Fixed is the common case (the object is somewhere other
+      than your station), but GPS-sourced object positions are
+      supported for moving objects that you want to label by name.
+    </p>
+
     <h2>Symbols</h2>
 
     <p>

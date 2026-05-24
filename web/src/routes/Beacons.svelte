@@ -90,6 +90,7 @@
   // openEdit's Object.assign still covers the full form snapshot and
   // we don't need a parallel lifecycle for the checkbox.
   let form = $state({
+    type: 'position', object_name: '',
     channel: '', callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
@@ -259,6 +260,8 @@
       return;
     }
     editing = null;
+    form.type = 'position';
+    form.object_name = '';
     form.channel = String(channels[0].id);
     form.callsign = '';
     form.callsign_override = false;
@@ -292,6 +295,8 @@
     // Mutate form in place (rather than reassigning) so nested bind:value
     // on the RadioGroup picks up the new value reliably.
     Object.assign(form, row, {
+      type: row.type || 'position',
+      object_name: row.object_name || '',
       channel: String(row.channel),
       callsign: rowCall,
       callsign_override: rowCall !== '',
@@ -333,6 +338,19 @@
     if (!Number.isFinite(channelId) || channelId <= 0) {
       toasts.error('Channel required');
       return;
+    }
+    // Object beacons carry a 1-9 char name in the info field (APRS101).
+    if (form.type === 'object') {
+      const n = (form.object_name || '').trim();
+      if (!n) {
+        toasts.error('Object name required');
+        return;
+      }
+      if (n.length > 9) {
+        toasts.error('Object name must be 9 characters or fewer');
+        return;
+      }
+      form.object_name = n;
     }
     const useGps = form.pos_source === 'gps';
     const latStr = form.latitude.trim();
@@ -407,10 +425,15 @@
     }
   }
 
+  function beaconLabel(row) {
+    if (row.type === 'object' && row.object_name) return row.object_name;
+    return row.callsign || stationCallsign || '(unset)';
+  }
+
   async function handleSendNow(row) {
     try {
       await api.post(`/beacons/${row.id}/send`, {});
-      toasts.success(`Beacon sent: ${row.callsign || stationCallsign || '(unset)'}`);
+      toasts.success(`Beacon sent: ${beaconLabel(row)}`);
     } catch (err) {
       toasts.error(err.message);
     }
@@ -472,7 +495,10 @@
                 <span class="symbol-swatch-overlay">{b.overlay}</span>
               {/if}
             </span>
-            {#if b.callsign}
+            {#if b.type === 'object' && b.object_name}
+              <span class="beacon-callsign">{b.object_name}</span>
+              <span class="beacon-callsign-inherited">via {b.callsign || stationCallsign || '(not set)'}</span>
+            {:else if b.callsign}
               <span class="beacon-callsign">{b.callsign}</span>
             {:else if stationCallsign}
               <span class="beacon-callsign">{stationCallsign}</span>
@@ -483,6 +509,9 @@
           </div>
           <div class="beacon-badges">
             <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
+            {#if b.type === 'object'}
+              <Badge variant="info">Object</Badge>
+            {/if}
             {#if b.send_to_aprs_is}
               <Badge variant="info">APRS-IS</Badge>
             {/if}
@@ -613,6 +642,24 @@
       <div style="margin-bottom: 12px;">
         <Toggle bind:checked={form.enabled} label="Enabled" />
       </div>
+      <FormField label="Type" id="bcn-type">
+        <RadioGroup bind:value={form.type}>
+          <div class="pos-source-row">
+            <Radio value="position" label="Position" />
+            <Radio value="object" label="Object" />
+          </div>
+        </RadioGroup>
+        <div class="type-hint">
+          <div><strong>Position:</strong> a beacon for a station.</div>
+          <div><strong>Object:</strong> a named item such as a repeater, event site, hospital.</div>
+        </div>
+      </FormField>
+      {#if form.type === 'object'}
+        <FormField label="Object name" id="bcn-objname"
+          hint="1-9 characters. Appears as the object's label on APRS maps.">
+          <Input id="bcn-objname" bind:value={form.object_name} placeholder="Object callsign" maxlength="9" />
+        </FormField>
+      {/if}
       <FormField label="Channel" id="bcn-channel"
         hint="Radio channel this beacon transmits on. Defined on the Channels page.">
         <ChannelListbox
@@ -747,7 +794,7 @@
   <AlertDialog.Content>
     <AlertDialog.Title>Delete Beacon</AlertDialog.Title>
     <AlertDialog.Description>
-      Are you sure you want to delete the beacon for "{deleteTarget?.callsign || stationCallsign || '(unset)'}"? This cannot be undone.
+      Are you sure you want to delete the beacon for "{deleteTarget ? beaconLabel(deleteTarget) : '(unset)'}"? This cannot be undone.
     </AlertDialog.Description>
     <div class="modal-footer">
       <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
@@ -964,6 +1011,15 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .type-hint {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--color-text-muted, #888);
+    line-height: 1.4;
   }
   .symbol-swatch {
     flex: 0 0 auto;
