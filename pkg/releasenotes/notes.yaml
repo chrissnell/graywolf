@@ -7,6 +7,18 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.10"
+  date: "2026-05-23"
+  style: info
+  schema_version: 1
+  link: "#/channels"
+  title: "Simpler channel deletion"
+  body: |
+    Deleting a channel now just asks you to confirm with a button,
+    instead of making you type the channel's exact name first. This
+    also fixes a problem where deleting a channel did nothing on the
+    Android app.
+
 - version: "0.13.9"
   date: "2026-05-23"
   style: info
