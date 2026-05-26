@@ -1,4 +1,4 @@
-# Channel CW ID — Design
+# Channel TX Test Signals — Design
 
 **Date:** 2026-05-26
 **Status:** Approved for planning
@@ -13,25 +13,41 @@ Two related changes:
    because opening the output stream while capture is active returns "device no
    longer available." It is a soundcard toy that does not exercise the radio.
 
-2. **Add a per-channel "Send CW ID" button** that transmits the station
-   callsign in Morse through the channel's real TX path: key PTT → play
-   on/off-keyed CW audio → unkey. This is a genuine end-to-end TX self-test
-   (PTT keying + audio routing + deviation, all verifiable by ear on a second
-   radio) and doubles as legal station identification.
+2. **Add a per-channel "Test TX" dropdown menu** that transmits a chosen test
+   signal through the channel's real TX path: key PTT → play audio → unkey.
+   This is a genuine end-to-end TX self-test (PTT keying + audio routing +
+   deviation, all verifiable by ear or meter on a second radio). The CW option
+   doubles as legal station identification.
+
+   The menu offers four options:
+   - **Send callsign in CW** — the station callsign in Morse (~20 WPM, 700 Hz).
+   - **Send 1200 Hz tone** — a steady 1200 Hz tone for 3 seconds.
+   - **Send 2400 Hz tone** — a steady 2400 Hz tone for 3 seconds.
+   - **Send 1200/2400 Hz alternating tone** — alternating between the two for
+     3 seconds.
 
 This effectively moves the "test transmit" concept from Audio Interfaces (where
 PTT/TX has no meaning) up to Channels (where it does).
 
 ## Decisions (from brainstorming)
 
-- **Scope:** Manual button only. No automatic/periodic CW ID timer.
-- **CW parameters:** Hardcoded defaults — ~20 WPM, ~700 Hz sidetone, PARIS
-  timing. No UI, no config schema.
-- **Callsign source:** `Store.ResolveStationCallsign(ctx)` (the centralized
-  station callsign). If empty or N0CALL, refuse with a clear error and never
-  key the radio. N0CALL must never reach the air.
-- **Button placement:** A per-channel action in `ChannelRow.svelte`, alongside
-  Edit/Delete. Disabled/hidden for non-TX-capable channels.
+- **Scope:** Manual menu only. No automatic/periodic timers.
+- **UI:** A "Test TX" button on each channel row opens a chonky-ui
+  `DropdownMenu` with the four options. Shown only for TX-capable channels.
+- **CW parameters:** Hardcoded — 20 WPM, 700 Hz sidetone, PARIS timing.
+- **Tone parameters:** Hardcoded — 3 second duration; alternating tone switches
+  every 200 ms (≈2.5 Hz warble). 1200 Hz and 2400 Hz are the two tone
+  frequencies (1200 is the Bell 202 mark tone; the pair exercises AFSK-style
+  deviation).
+- **Callsign source / guard:** the CW option resolves
+  `Store.ResolveStationCallsign(ctx)` (the centralized station callsign) and
+  refuses (HTTP 422) with a clear error if it is empty or N0CALL — N0CALL must
+  never reach the air. The three tone options do **not** require a callsign and
+  work regardless of station-callsign state.
+- **Where the "recipes" live:** the four UI options map to hardcoded parameter
+  sets in one place in Go (the webapi handler). The Rust modem is a pure
+  renderer keyed by a numeric `kind` + parameters — no hardcoded frequencies or
+  durations buried in Rust.
 
 ## Architecture
 
@@ -58,100 +74,138 @@ Delete the entire chain:
 
 Regenerate API types (`web/src/api/generated/api.d.ts`) and Swagger docs.
 
-### Part 2 — Channel CW ID
+### Part 2 — Channel TX test signals
 
 Reuses the existing TX worker, which already keys PTT → submits samples →
 drains → unkeys per channel via `TxJob { samples: Vec<i16>, sample_rate }`
-(`graywolf-modem/src/modem/tx_worker.rs`). CW is just a different way to
-generate those samples.
-
-**Approach A (chosen):** dedicated IPC message; the modem owns CW synthesis.
+(`graywolf-modem/src/modem/tx_worker.rs`). Every test signal is just a
+different way to *generate* those samples.
 
 #### IPC
 
-- New `TransmitCwId { request_id, channel, callsign }` request message.
-- New `CwIdResult { request_id, success, error }` result message (mirrors
-  `TestToneResult`).
-- Added to the `.proto`, regenerated into `graywolf.pb.go` and `proto.rs`.
+A single request message carries a numeric `kind` plus parameters; Go fills in
+the hardcoded values per UI option. Using a plain `uint32 kind` (not a proto
+enum) avoids prost enum-prefix-naming fragility.
+
+```proto
+// Go -> Rust: transmit a TX test signal on a channel. kind selects the
+// generator: 0 = station callsign in CW, 1 = steady tone, 2 = alternating
+// tone. Go fills the relevant parameters; the modem is a pure renderer.
+message TransmitTestSignal {
+  uint32 request_id = 1;   // echoed back in TestSignalResult
+  uint32 channel = 2;      // selects output device + PTT driver
+  uint32 kind = 3;         // 0=CW callsign, 1=steady tone, 2=alternating
+  string callsign = 4;     // kind 0; already resolved + uppercased by Go
+  uint32 cw_wpm = 5;       // kind 0
+  uint32 freq_a_hz = 6;    // CW sidetone (kind 0) / tone (kind 1) / tone A (kind 2)
+  uint32 freq_b_hz = 7;    // tone B (kind 2)
+  uint32 duration_ms = 8;  // kinds 1, 2
+  uint32 alt_period_ms = 9;// kind 2: ms per tone before switching
+}
+
+message TestSignalResult {
+  uint32 request_id = 1;
+  bool success = 2;
+  string error = 3;        // empty on success
+}
+```
+
+Oneof field numbers: `TestSignalResult` takes RX id **9** (next free after the
+Test Tone removal frees 6); `TransmitTestSignal` takes TX id **22** (next free
+after 21).
 
 #### Rust modem
 
-- New pure `morse` module:
-  - `encode(callsign: &str) -> Vec<Symbol>` where `Symbol` ∈ {Dit, Dah,
-    intra-char gap, inter-char gap, word gap}. Unknown characters are skipped.
-  - `synthesize(symbols, sample_rate, wpm, tone_hz) -> Vec<i16>` using PARIS
-    timing (dit = 1.2 / wpm seconds), a ~700 Hz sine gated on for key-down with
-    short rise/fall ramps to avoid key clicks.
-  - Both pure and unit-tested (timing lengths, symbol mapping, empty/invalid
-    input).
-- `handle_transmit_cw_id(req)`: build samples via the `morse` module, submit a
-  `TxJob` to the TX worker for `req.channel`, reply with `CwIdResult`. PTT
-  key/unkey is handled by the worker. Errors (no TX device/driver for the
-  channel, worker failure) map to `success: false` with a message.
-- New `Some(Payload::TransmitCwId(..))` match arm; `CwIdResult` added to the
-  inbound-ignore list.
+A pure `txtest` module (no I/O), unit-tested:
+- `encode(&str) -> Vec<Segment>` — Morse symbol/timing encoder (skips unknown
+  characters).
+- `cw_samples(callsign, sample_rate, wpm, tone_hz) -> Vec<i16>` — encode +
+  synthesize the on/off-keyed sidetone (PARIS timing, raised-cosine edges).
+- `tone_samples(sample_rate, freq_hz, duration_ms) -> Vec<i16>` — steady sine
+  with edge ramps.
+- `alternating_samples(sample_rate, freq_a, freq_b, duration_ms, period_ms) ->
+  Vec<i16>` — phase-continuous frequency switching (no click at the switch),
+  with outer edge ramps.
 
-#### Go bridge
-
-- `TransmitCwID(ctx, channel uint32, callsign string) error` in
-  `pkg/modembridge/requests.go`, mirroring the request/dispatcher pattern of
-  the existing typed requests; a `cwIdDispatcher` in `bridge.go` and dispatch
-  in `session.go`; a `bridge_stop_test.go` case so it unblocks on stop.
+`handle_transmit_test_signal` resolves channel + audio config exactly like
+`handle_transmit_frame`, picks the generator by `kind`, applies output gain,
+submits a `TxJob` to the TX worker, and replies with `TestSignalResult`. PTT
+key/unkey is handled by the worker.
 
 #### Go webapi
 
-- `POST /api/channels/{id}/cw-id`:
-  1. Parse channel ID.
-  2. `ResolveStationCallsign` → on empty/N0CALL, `422` with a clear message
-     ("set your station callsign before sending CW ID").
-  3. `requireTxCapableChannel` → on failure, `409`/`422` consistent with the
-     beacon-send path.
-  4. `bridge.TransmitCwID` → on failure, `503`/`500` as appropriate.
-  5. `200 { "status": "sent" }`.
-- New DTO `CwIdResponse { Status string }` in `pkg/webapi/dto`.
-- Op-id entry; Swagger annotations; regenerated docs + `api.d.ts`.
+`POST /api/channels/{id}/test-tx` with body `{ "signal": "<id>" }` where
+`<id>` ∈ `cw | tone1200 | tone2400 | alt`. The handler:
+1. Parses channel ID and the signal id (unknown id → 400).
+2. For `cw` only: `ResolveStationCallsign` → 422 on empty/N0CALL.
+3. `requireTxCapableChannel` → 409 on failure.
+4. Maps the signal id to a hardcoded `modembridge.TestSignalParams`
+   (kind + frequencies + duration + period + callsign/wpm) and calls
+   `bridge.TransmitTestSignal` → 503 on failure.
+5. `200 { "status": "sent" }`.
+
+The four recipes (the single source of the hardcoded values):
+
+| signal      | kind | callsign | wpm | freq_a | freq_b | duration | alt_period |
+|-------------|------|----------|-----|--------|--------|----------|------------|
+| `cw`        | 0    | resolved | 20  | 700    | —      | —        | —          |
+| `tone1200`  | 1    | —        | —   | 1200   | —      | 3000 ms  | —          |
+| `tone2400`  | 1    | —        | —   | 2400   | —      | 3000 ms  | —          |
+| `alt`       | 2    | —        | —   | 1200   | 2400   | 3000 ms  | 200 ms     |
+
+#### Go bridge
+
+`TransmitTestSignal(ctx, params TestSignalParams) error`, mirroring the
+existing typed request/dispatcher pattern; a dispatcher in `bridge.go`, dispatch
+in `session.go`, and a `bridge_stop_test.go` case so it unblocks on stop.
 
 #### Frontend
 
-- In `web/src/routes/channels/ChannelRow.svelte`, add a "Send CW ID" `Button`
-  (ghost variant) in the action row next to Edit/Delete. Show only for
-  TX-capable channels (same condition that gates the RX/TX badge / PTT
-  indicator — modem-backed channel with an output device). On click, `POST` the
-  endpoint; success → toast "Sent CW ID on \"<channel>\""; failure → error
-  toast with the server message. Disable the button while in flight.
+In `web/src/routes/channels/ChannelRow.svelte`, replace the Edit/Delete-only
+action row with a chonky-ui `DropdownMenu` ("Test TX ▾" trigger) holding four
+`DropdownMenu.Item`s, shown only for TX-capable channels (same condition that
+gates the RX/TX badge / PTT indicator: modem-backed channel with an output
+device). Each item `POST`s `/channels/{id}/test-tx` with its signal id. One
+in-flight flag disables the trigger while a signal is transmitting. Success →
+toast; failure → error toast with the server message (e.g. the CW
+callsign-missing 422).
 
 ### Wiki maintenance
 
-- `docs/wiki/code-map.md`: record the new `/api/channels/{id}/cw-id` endpoint
-  and the `morse` modem module; remove Test Tone references.
-- `docs/wiki/invariants.md`: add "CW ID never keys the radio with an empty or
-  N0CALL callsign."
+- `docs/wiki/code-map.md`: record the new `/api/channels/{id}/test-tx` endpoint,
+  the `txtest` modem module, and the `TransmitTestSignal`/`TestSignalResult`
+  IPC messages. Remove Test Tone references.
+- `docs/wiki/invariants.md`: add "the CW test signal never keys the radio with
+  an empty or N0CALL callsign."
 
 ## Error handling
 
-- Empty/N0CALL callsign → refuse before any IPC; nothing is keyed.
-- Non-TX channel → refuse before any IPC.
-- Modem-side failure (no driver/sink, submit error) → `CwIdResult.success =
-  false`; the TX worker's existing sequencing guarantees PTT is released on
+- CW with empty/N0CALL callsign → refuse before any IPC (422); nothing keyed.
+- Unknown signal id → 400 before any IPC.
+- Non-TX channel → 409 before any IPC.
+- Modem-side failure (no driver/sink, submit error) → `TestSignalResult.success
+  = false`; the TX worker's existing sequencing guarantees PTT is released on
   submit failure (no stuck-keyed radio).
 
 ## Testing
 
-- **Rust:** unit tests for `morse::encode` (symbol mapping, unknown-char skip)
-  and `morse::synthesize` (sample-count vs. WPM timing, non-empty output,
-  ramping). A handler test that a `TransmitCwId` with no registered
-  driver/sink yields `success: false`.
-- **Go:** webapi tests for the three refusal paths (empty callsign, N0CALL,
-  non-TX channel) and the success path (bridge stub returns nil). Bridge
-  stop-test case for `TransmitCwID`.
-- **Frontend:** button visibility gating by TX capability; success/error toast
-  on stubbed responses.
+- **Rust:** unit tests for `encode` (symbol mapping, unknown-char skip, gaps),
+  `cw_samples` (length vs WPM, non-empty), `tone_samples` (length vs duration,
+  non-silent), `alternating_samples` (length, non-silent). Handler test that an
+  unknown channel yields `success: false`.
+- **Go:** webapi tests for refusal paths (CW empty callsign → 422, CW N0CALL →
+  422, unknown signal → 400, non-TX channel → 409) and success paths (each of
+  the four signals with a bridge stub returning nil → 200). Bridge stop-test
+  case for `TransmitTestSignal`.
+- **Frontend:** menu visibility gating by TX capability; each item posts the
+  right signal id; success/error toast on stubbed responses.
 - **Removal:** confirm the Test Tone route/handler/DTO/UI are gone and tests
   referencing them are removed, not skipped.
 
 ## Out of scope (YAGNI)
 
 - Automatic/periodic station ID timer.
-- Configurable WPM / tone frequency.
+- Configurable WPM / tone frequency / duration in the UI or config schema.
 - Per-channel callsign override (uses the station callsign).
 - Any CW receive/decode.
+- Tone frequencies beyond the three fixed options.

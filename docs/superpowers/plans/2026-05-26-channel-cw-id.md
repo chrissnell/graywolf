@@ -1,16 +1,16 @@
-# Channel CW ID Implementation Plan
+# Channel TX Test Signals Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove the broken audio Test Tone feature and add a per-channel "Send CW ID" button that transmits the station callsign in Morse through the channel's real TX path (key PTT → CW audio → unkey).
+**Goal:** Remove the broken audio Test Tone feature and add a per-channel "Test TX" dropdown menu offering four TX test signals — station callsign in CW, a 1200 Hz tone, a 2400 Hz tone, and a 1200/2400 Hz alternating tone — each transmitted through the channel's real TX path (key PTT → audio → unkey).
 
-**Architecture:** A new `TransmitCwId` IPC message carries `{channel, callsign}` from Go to the Rust modem. A pure Rust `morse` module turns the callsign into i16 PCM samples (hardcoded 20 WPM / 700 Hz, PARIS timing); the modem submits them as a `TxJob` to the existing TX worker, which keys/unkeys PTT automatically — exactly like `handle_transmit_frame`. Go resolves the centralized station callsign and refuses to key the radio on an empty or N0CALL callsign.
+**Architecture:** A new `TransmitTestSignal` IPC message carries `{channel, kind, callsign, freqs, duration…}` from Go to the Rust modem. A pure Rust `txtest` module synthesizes i16 PCM (CW via a Morse encoder, plus steady and alternating tone generators); the modem submits the samples as a `TxJob` to the existing TX worker, which keys/unkeys PTT automatically — exactly like `handle_transmit_frame`. The four UI options map to hardcoded parameter sets in one place in Go. The CW option resolves the centralized station callsign and refuses (422) to key the radio on an empty or N0CALL callsign; the three tones need no callsign.
 
-**Tech Stack:** Rust (graywolf-modem, prost protobuf), Go (webapi + modembridge, protoc-gen-go), Svelte 5 (web UI, chonky-ui), Protocol Buffers IPC.
+**Tech Stack:** Rust (graywolf-modem, prost protobuf), Go (webapi + modembridge, protoc-gen-go), Svelte 5 (web UI, chonky-ui `DropdownMenu`), Protocol Buffers IPC.
 
 **Reference spec:** `docs/superpowers/specs/2026-05-26-channel-cw-id-design.md`
 
-**Branch:** `feature/channel-cw-id` (already created; the design doc commit is its first commit).
+**Branch:** `feature/channel-cw-id` (already created; the design + plan commits are its first commits).
 
 ---
 
@@ -24,7 +24,7 @@
 - **Go tests (webapi + bridge):** `go test ./pkg/webapi/... ./pkg/modembridge/...`
 - **Docs drift check:** `make docs-check`
 
-> Note: `cfg(linux)` Rust cannot fully compile on the dev Mac (see project memory). `cargo test -p graywolf-modem` for the pure `morse` module and host-buildable code works; full-modem on-target verification happens in CI / on-device. Where a step's Rust build is expected to need CI, the step says so.
+> Note: `cfg(linux)` Rust cannot fully compile on the dev Mac (see project memory). `cargo test -p graywolf-modem` for the pure `txtest` module and host-buildable code works; full-modem on-target verification happens in CI / on-device. Where a step's Rust build is expected to need CI, the step says so.
 
 ---
 
@@ -73,8 +73,6 @@ Remove this block from the output-device actions (around line 405):
 
 - [ ] **Step 3: Delete the `testingTone` state declaration**
 
-Find and remove the line declaring `testingTone` (search the file):
-
 Run: `grep -n "testingTone" web/src/routes/AudioDevices.svelte`
 Delete the remaining declaration line (e.g. `let testingTone = $state(null);`). After this, the grep must return nothing.
 
@@ -120,17 +118,7 @@ Expected: no output.
 
 - [ ] **Step 3: Remove the DTO**
 
-In `pkg/webapi/dto/audio_device.go`, delete the `TestToneResponse` type and its doc comment (around line 131):
-
-```go
-// TestToneResponse is the body returned by POST /api/audio-devices/{id}/test-tone
-// ...
-type TestToneResponse struct {
-	Status string `json:"status" example:"ok"`
-}
-```
-
-(Confirm exact field by reading lines 131-136 first.)
+In `pkg/webapi/dto/audio_device.go`, delete the `TestToneResponse` type and its doc comment (around line 131). Read lines 131-136 first to match exactly.
 
 - [ ] **Step 4: Remove the op-id constant**
 
@@ -222,6 +210,7 @@ git commit -m "Remove test tone request path from modem bridge"
 
 **Files:**
 - Modify: `graywolf-modem/src/modem/mod.rs`
+- Modify: `graywolf-modem/src/ipc/proto.rs`
 
 - [ ] **Step 1: Remove the dispatch arm**
 
@@ -304,7 +293,7 @@ Delete the `message PlayTestTone { ... }` block (around line 243-249) and the `m
 - [ ] **Step 3: Regenerate Go bindings**
 
 Run: `make proto`
-Expected: succeeds; `pkg/ipcproto/graywolf.pb.go` no longer contains `PlayTestTone` or `TestToneResult`.
+Expected: succeeds.
 
 Run: `grep -c "PlayTestTone\|TestToneResult" pkg/ipcproto/graywolf.pb.go`
 Expected: `0`.
@@ -312,12 +301,12 @@ Expected: `0`.
 - [ ] **Step 4: Regenerate Rust bindings + build**
 
 Run: `cargo build -p graywolf-modem 2>&1 | tail -20`
-Expected: build proceeds past codegen with no `TestTone`/`PlayTestTone` errors (prost regenerates from the edited proto via build.rs). Defer to CI if the host can't finish a `cfg(linux)` build.
+Expected: build proceeds past codegen with no `TestTone`/`PlayTestTone` errors. Defer to CI if the host can't finish a `cfg(linux)` build.
 
 - [ ] **Step 5: Regenerate docs and API types**
 
 Run: `make docs && cd web && npm run api:generate && cd ..`
-Expected: succeeds. `web/src/api/generated/api.d.ts` no longer references `test-tone`.
+Expected: succeeds.
 
 Run: `grep -rn "test-tone\|TestTone" web/src/api/generated/api.d.ts pkg/webapi/docs/gen/`
 Expected: no output.
@@ -336,25 +325,25 @@ git commit -m "Remove test tone IPC messages and regenerate bindings"
 
 ---
 
-# PART B — Add Channel CW ID
+# PART B — Add Channel TX Test Signals
 
-## Task B1: Pure Rust `morse` module (TDD)
+## Task B1: Pure Rust `txtest` module (TDD)
 
 **Files:**
-- Create: `graywolf-modem/src/morse.rs`
-- Modify: `graywolf-modem/src/lib.rs` (add `pub(crate) mod morse;`)
+- Create: `graywolf-modem/src/txtest.rs`
+- Modify: `graywolf-modem/src/lib.rs` (add `pub(crate) mod txtest;`)
 
 - [ ] **Step 1: Register the module**
 
 In `graywolf-modem/src/lib.rs`, add alongside the other top-level module declarations:
 
 ```rust
-pub(crate) mod morse;
+pub(crate) mod txtest;
 ```
 
 - [ ] **Step 2: Write the failing tests**
 
-Create `graywolf-modem/src/morse.rs` with the test module only first:
+Create `graywolf-modem/src/txtest.rs` with the test module only first:
 
 ```rust
 #[cfg(test)]
@@ -371,7 +360,6 @@ mod tests {
 
     #[test]
     fn encode_inter_character_gap() {
-        // "EE" => dit, 3-unit inter-char gap, dit
         assert_eq!(encode("EE"), vec![on(1), off(3), on(1)]);
     }
 
@@ -387,59 +375,95 @@ mod tests {
         assert_eq!(
             encode("A B"),
             vec![
-                on(1), off(1), on(3),          // A
-                off(7),                         // word gap
-                on(3), off(1), on(1), off(1), on(1), off(1), on(1), // B
+                on(1), off(1), on(3),
+                off(7),
+                on(3), off(1), on(1), off(1), on(1), off(1), on(1),
             ]
         );
     }
 
     #[test]
     fn encode_skips_unknown_chars() {
-        // '@' has no Morse representation; result equals "EE".
         assert_eq!(encode("E@E"), encode("EE"));
     }
 
     #[test]
-    fn synthesize_dit_length_matches_wpm() {
+    fn cw_samples_dit_length_matches_wpm() {
         // 20 WPM at 48 kHz: dit = 1.2/20 s = 60 ms = 2880 samples.
-        let samples = synthesize(&encode("E"), 48_000, 20, 700.0);
-        assert_eq!(samples.len(), 2880);
-        assert!(samples.iter().any(|&s| s != 0), "tone must be non-silent");
+        let s = cw_samples("E", 48_000, 20, 700.0);
+        assert_eq!(s.len(), 2880);
+        assert!(s.iter().any(|&v| v != 0), "tone must be non-silent");
     }
 
     #[test]
-    fn synthesize_empty_is_empty() {
-        assert!(synthesize(&[], 48_000, 20, 700.0).is_empty());
+    fn cw_samples_empty_callsign_is_empty() {
+        assert!(cw_samples("", 48_000, 20, 700.0).is_empty());
+    }
+
+    #[test]
+    fn tone_samples_length_and_nonsilent() {
+        // 3000 ms at 48 kHz = 144000 samples.
+        let s = tone_samples(48_000, 1200.0, 3000);
+        assert_eq!(s.len(), 144_000);
+        assert!(s.iter().any(|&v| v != 0));
+    }
+
+    #[test]
+    fn alternating_samples_length_and_nonsilent() {
+        let s = alternating_samples(48_000, 1200.0, 2400.0, 3000, 200);
+        assert_eq!(s.len(), 144_000);
+        assert!(s.iter().any(|&v| v != 0));
     }
 }
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cargo test -p graywolf-modem morse:: 2>&1 | tail -20`
-Expected: FAIL — `encode`, `synthesize`, `Segment` not found.
+Run: `cargo test -p graywolf-modem txtest:: 2>&1 | tail -20`
+Expected: FAIL — `encode`, `cw_samples`, `tone_samples`, `alternating_samples`, `Segment` not found.
 
 - [ ] **Step 4: Implement the module**
 
-Prepend the implementation above the test module in `graywolf-modem/src/morse.rs`:
+Prepend the implementation above the test module in `graywolf-modem/src/txtest.rs`:
 
 ```rust
-//! Pure CW (Morse) generation for station identification.
+//! Pure TX test-signal generation: CW (Morse) station ID and steady /
+//! alternating test tones.
 //!
-//! No I/O and no audio device — this turns a callsign string into i16 PCM
-//! samples. The modem submits those samples as a normal TxJob, so PTT
-//! keying and play-out reuse the existing TX worker path.
+//! No I/O and no audio device — this turns parameters into i16 PCM samples.
+//! The modem submits the samples as a normal TxJob, so PTT keying and
+//! play-out reuse the existing TX worker path.
 
-/// One keyed or unkeyed span, measured in Morse time units (1 unit = 1 dit).
+const AMP: f32 = 0.6 * 32767.0;
+const RAMP_MS: f32 = 5.0;
+
+/// One keyed or unkeyed CW span, in Morse time units (1 unit = 1 dit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Segment {
     pub on: bool,
     pub units: u32,
 }
 
-/// Dot/dash pattern for a character, or None when there is no standard
-/// Morse representation (encode skips those).
+fn ramp_samples(sample_rate: u32) -> usize {
+    ((sample_rate as f32) * RAMP_MS / 1000.0) as usize
+}
+
+/// Apply a raised-cosine rise/fall (in place) to suppress edge clicks.
+fn apply_edges(buf: &mut [i16], ramp: usize) {
+    let n = buf.len();
+    let r = ramp.min(n / 2);
+    if r == 0 {
+        return;
+    }
+    for i in 0..r {
+        let env = 0.5 * (1.0 - (std::f32::consts::PI * i as f32 / r as f32).cos());
+        buf[i] = (buf[i] as f32 * env) as i16;
+        buf[n - 1 - i] = (buf[n - 1 - i] as f32 * env) as i16;
+    }
+}
+
+/// Dot/dash pattern for a character, or None when there is no standard Morse
+/// representation (encode skips those).
 fn pattern(c: char) -> Option<&'static str> {
     Some(match c.to_ascii_uppercase() {
         'A' => ".-", 'B' => "-...", 'C' => "-.-.", 'D' => "-..",
@@ -490,54 +514,79 @@ pub fn encode(text: &str) -> Vec<Segment> {
     out
 }
 
-/// Synthesize keyed segments to i16 PCM at `sample_rate`. `wpm` sets dit
-/// length via PARIS timing (dit = 1.2 / wpm seconds); `tone_hz` is the
-/// sidetone. Keyed spans get a 5 ms raised-cosine rise/fall to suppress key
-/// clicks; unkeyed spans are silence.
-pub fn synthesize(segments: &[Segment], sample_rate: u32, wpm: u32, tone_hz: f32) -> Vec<i16> {
+/// CW: encode `callsign` and render the on/off-keyed sidetone at `wpm`
+/// (PARIS timing) and `tone_hz`, with raised-cosine edges on each keyed span.
+/// Returns empty if the callsign has no renderable characters.
+pub fn cw_samples(callsign: &str, sample_rate: u32, wpm: u32, tone_hz: f32) -> Vec<i16> {
+    let segments = encode(callsign);
     let wpm = wpm.max(1);
-    let dit_samples = ((sample_rate as f64) * 1.2 / (wpm as f64)).round() as usize;
-    let total: usize = segments.iter().map(|s| dit_samples * s.units as usize).sum();
-    let mut out = Vec::with_capacity(total);
-    const AMP: f32 = 0.6 * 32767.0;
-    let ramp = ((sample_rate as f32) * 0.005) as usize; // 5 ms
+    let dit = ((sample_rate as f64) * 1.2 / wpm as f64).round() as usize;
+    let ramp = ramp_samples(sample_rate);
     let w = 2.0 * std::f32::consts::PI * tone_hz / sample_rate as f32;
-    for seg in segments {
-        let n = dit_samples * seg.units as usize;
+    let mut out: Vec<i16> = Vec::new();
+    for seg in &segments {
+        let n = dit * seg.units as usize;
         if !seg.on {
             out.extend(std::iter::repeat(0i16).take(n));
             continue;
         }
-        let r = ramp.min(n / 2);
+        let start = out.len();
         for i in 0..n {
-            let env = if r > 0 && i < r {
-                0.5 * (1.0 - (std::f32::consts::PI * i as f32 / r as f32).cos())
-            } else if r > 0 && i >= n - r {
-                0.5 * (1.0 - (std::f32::consts::PI * (n - 1 - i) as f32 / r as f32).cos())
-            } else {
-                1.0
-            };
-            let s = (w * i as f32).sin() * AMP * env;
-            out.push(s as i16);
+            out.push(((w * i as f32).sin() * AMP) as i16);
         }
+        let end = out.len();
+        apply_edges(&mut out[start..end], ramp);
     }
+    out
+}
+
+/// Steady sine of `freq_hz` for `duration_ms`, with edge ramps.
+pub fn tone_samples(sample_rate: u32, freq_hz: f32, duration_ms: u32) -> Vec<i16> {
+    let n = (sample_rate as u64 * duration_ms as u64 / 1000) as usize;
+    let w = 2.0 * std::f32::consts::PI * freq_hz / sample_rate as f32;
+    let mut out: Vec<i16> = (0..n).map(|i| ((w * i as f32).sin() * AMP) as i16).collect();
+    apply_edges(&mut out, ramp_samples(sample_rate));
+    out
+}
+
+/// Alternating tone: switch between `freq_a` and `freq_b` every `period_ms`
+/// for `duration_ms`. Phase-continuous (a running phase accumulator) so the
+/// frequency switches don't click; raised-cosine ramps on the outer edges.
+pub fn alternating_samples(
+    sample_rate: u32,
+    freq_a: f32,
+    freq_b: f32,
+    duration_ms: u32,
+    period_ms: u32,
+) -> Vec<i16> {
+    let n = (sample_rate as u64 * duration_ms as u64 / 1000) as usize;
+    let per = ((sample_rate as u64 * period_ms.max(1) as u64 / 1000) as usize).max(1);
+    let mut out: Vec<i16> = Vec::with_capacity(n);
+    let mut phase = 0.0f32;
+    let two_pi = 2.0 * std::f32::consts::PI;
+    for i in 0..n {
+        let f = if (i / per) % 2 == 0 { freq_a } else { freq_b };
+        phase += two_pi * f / sample_rate as f32;
+        out.push((phase.sin() * AMP) as i16);
+    }
+    apply_edges(&mut out, ramp_samples(sample_rate));
     out
 }
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo test -p graywolf-modem morse:: 2>&1 | tail -20`
-Expected: all 7 tests PASS.
+Run: `cargo test -p graywolf-modem txtest:: 2>&1 | tail -20`
+Expected: all 9 tests PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add graywolf-modem/src/morse.rs graywolf-modem/src/lib.rs
-git commit -m "Add pure CW (Morse) sample-generation module"
+git add graywolf-modem/src/txtest.rs graywolf-modem/src/lib.rs
+git commit -m "Add pure TX test-signal module (CW, steady tone, alternating tone)"
 ```
 
-## Task B2: Add the CW ID IPC messages and regenerate bindings
+## Task B2: Add the TX test-signal IPC messages and regenerate bindings
 
 **Files:**
 - Modify: `proto/graywolf.proto`
@@ -546,16 +595,16 @@ git commit -m "Add pure CW (Morse) sample-generation module"
 
 - [ ] **Step 1: Add oneof entries**
 
-In `proto/graywolf.proto`, inside `oneof payload`, add to the Rust→Go group (use field **9**, the next free RX id):
+In `proto/graywolf.proto`, inside `oneof payload`, add to the Rust→Go group (field **9**, the next free RX id):
 
 ```proto
-    CwIdResult cw_id_result = 9;
+    TestSignalResult test_signal_result = 9;
 ```
 
-and to the Go→Rust group (use field **22**, the next free TX id):
+and to the Go→Rust group (field **22**, the next free TX id):
 
 ```proto
-    TransmitCwId transmit_cw_id = 22;
+    TransmitTestSignal transmit_test_signal = 22;
 ```
 
 - [ ] **Step 2: Add message definitions**
@@ -563,19 +612,26 @@ and to the Go→Rust group (use field **22**, the next free TX id):
 Add near the other audio/PTT messages:
 
 ```proto
-// Go -> Rust: transmit the station callsign as CW (Morse) for ID / TX
-// self-test. Callsign is already resolved and uppercased by Go.
-message TransmitCwId {
-  uint32 request_id = 1;        // echoed back in CwIdResult
-  uint32 channel = 2;           // selects output device + PTT driver
-  string callsign = 3;
+// Go -> Rust: transmit a TX test signal on a channel. kind selects the
+// generator: 0 = station callsign in CW, 1 = steady tone, 2 = alternating
+// tone. Go fills the relevant parameters; the modem is a pure renderer.
+message TransmitTestSignal {
+  uint32 request_id = 1;     // echoed back in TestSignalResult
+  uint32 channel = 2;        // selects output device + PTT driver
+  uint32 kind = 3;           // 0=CW callsign, 1=steady tone, 2=alternating
+  string callsign = 4;       // kind 0; already resolved + uppercased by Go
+  uint32 cw_wpm = 5;         // kind 0
+  uint32 freq_a_hz = 6;      // CW sidetone (0) / tone (1) / tone A (2)
+  uint32 freq_b_hz = 7;      // tone B (kind 2)
+  uint32 duration_ms = 8;    // kinds 1, 2
+  uint32 alt_period_ms = 9;  // kind 2: ms per tone before switching
 }
 
-// Result of a CW ID transmission attempt (submission to the TX worker).
-message CwIdResult {
+// Result of a TX test-signal submission to the TX worker.
+message TestSignalResult {
   uint32 request_id = 1;
   bool success = 2;
-  string error = 3;             // empty on success
+  string error = 3;          // empty on success
 }
 ```
 
@@ -584,25 +640,25 @@ message CwIdResult {
 Run: `make proto`
 Expected: succeeds.
 
-Run: `grep -c "TransmitCwId\|CwIdResult" pkg/ipcproto/graywolf.pb.go`
-Expected: non-zero (types generated).
+Run: `grep -c "TransmitTestSignal\|TestSignalResult" pkg/ipcproto/graywolf.pb.go`
+Expected: non-zero.
 
 - [ ] **Step 4: Add the Rust proto.rs helper**
 
-In `graywolf-modem/src/ipc/proto.rs`, add a constructor mirroring the others (next to where `test_tone_result` used to be):
+In `graywolf-modem/src/ipc/proto.rs`, add a constructor mirroring the others:
 
 ```rust
-    pub fn cw_id_result(r: CwIdResult) -> Self {
-        Self { payload: Some(ipc_message::Payload::CwIdResult(r)) }
+    pub fn test_signal_result(r: TestSignalResult) -> Self {
+        Self { payload: Some(ipc_message::Payload::TestSignalResult(r)) }
     }
 ```
 
-Ensure `CwIdResult` is imported in that file's `use` block (mirror how the other result types are imported).
+Ensure `TestSignalResult` is imported in that file's `use` block (mirror the other result types).
 
 - [ ] **Step 5: Build Rust to regenerate prost bindings**
 
 Run: `cargo build -p graywolf-modem 2>&1 | tail -20`
-Expected: codegen succeeds; `CwIdResult` / `TransmitCwId` resolve. (`cw_id_result` is unused until Task B3 — a dead-code warning is acceptable here.)
+Expected: codegen succeeds; `TestSignalResult` / `TransmitTestSignal` resolve. (`test_signal_result` is unused until Task B3 — a dead-code warning is acceptable here.)
 
 - [ ] **Step 6: Verify Go compiles**
 
@@ -613,43 +669,40 @@ Expected: PASS.
 
 ```bash
 git add proto/graywolf.proto pkg/ipcproto/graywolf.pb.go graywolf-modem/src/ipc/proto.rs
-git commit -m "Add TransmitCwId and CwIdResult IPC messages"
+git commit -m "Add TransmitTestSignal and TestSignalResult IPC messages"
 ```
 
-## Task B3: Rust modem CW ID handler
+## Task B3: Rust modem test-signal handler
 
 **Files:**
 - Modify: `graywolf-modem/src/modem/mod.rs`
 
 - [ ] **Step 1: Import the new result type**
 
-In the `use crate::ipc::proto::{...}` block (around line 29), add `CwIdResult` to the imported names.
+In the `use crate::ipc::proto::{...}` block (around line 29), add `TestSignalResult` to the imported names.
 
 - [ ] **Step 2: Add the dispatch arm**
 
 In the inbound-payload `match` (near the `Some(Payload::TransmitFrame(tf))` arm, around line 338), add:
 
 ```rust
-            Some(Payload::TransmitCwId(req)) => {
-                self.handle_transmit_cw_id(req);
+            Some(Payload::TransmitTestSignal(req)) => {
+                self.handle_transmit_test_signal(req);
             }
 ```
 
-- [ ] **Step 3: Add `CwIdResult` to the inbound-ignore list**
+- [ ] **Step 3: Add `TestSignalResult` to the inbound-ignore list**
 
-In the ignore arm (the `|`-chain of Rust→Go types, around line 353), add `| Some(Payload::CwIdResult(_))`.
+In the ignore arm (the `|`-chain of Rust→Go types, around line 353), add `| Some(Payload::TestSignalResult(_))`.
 
 - [ ] **Step 4: Implement the handler**
 
-Add this method to the same `impl` block that holds `handle_transmit_frame` (place it right after `handle_transmit_frame`, before the closing `}` of the impl). It mirrors `handle_transmit_frame`'s channel/audio-config resolution, but builds samples from the `morse` module and replies with a `CwIdResult`:
+Add this method to the same `impl` block that holds `handle_transmit_frame` (place it right after `handle_transmit_frame`). It mirrors that method's channel/audio-config resolution, picks the generator by `kind`, applies gain, submits a `TxJob`, and replies with `TestSignalResult`:
 
 ```rust
-    fn handle_transmit_cw_id(&mut self, req: crate::ipc::proto::TransmitCwId) {
-        const CW_WPM: u32 = 20;
-        const CW_TONE_HZ: f32 = 700.0;
-
-        let reply = |success: bool, error: String| {
-            let _ = self.handle.send(&IpcMessage::cw_id_result(crate::ipc::proto::CwIdResult {
+    fn handle_transmit_test_signal(&mut self, req: crate::ipc::proto::TransmitTestSignal) {
+        let reply = |handle: &IpcHandle, success: bool, error: String| {
+            let _ = handle.send(&IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
                 request_id: req.request_id,
                 success,
                 error,
@@ -666,24 +719,41 @@ Add this method to the same `impl` block that holds `handle_transmit_frame` (pla
         let ccfg = match self.channel_configs.get(&req.channel) {
             Some(c) => c.clone(),
             None => {
-                reply(false, format!("unknown channel {}", req.channel));
+                reply(&self.handle, false, format!("unknown channel {}", req.channel));
                 return;
             }
         };
         let acfg = match self.audio_configs.get(&ccfg.output_device_id) {
             Some(a) => a.clone(),
             None => {
-                reply(false, format!("no audio config for output device {}", ccfg.output_device_id));
+                reply(&self.handle, false, format!("no audio config for output device {}", ccfg.output_device_id));
                 return;
             }
         };
 
-        let segments = crate::morse::encode(&req.callsign);
-        if segments.is_empty() {
-            reply(false, "callsign produced no CW symbols".to_string());
-            return;
-        }
-        let mut samples = crate::morse::synthesize(&segments, acfg.sample_rate, CW_WPM, CW_TONE_HZ);
+        let sr = acfg.sample_rate;
+        let mut samples = match req.kind {
+            0 => {
+                let s = crate::txtest::cw_samples(&req.callsign, sr, req.cw_wpm.max(1), req.freq_a_hz as f32);
+                if s.is_empty() {
+                    reply(&self.handle, false, "callsign produced no CW symbols".to_string());
+                    return;
+                }
+                s
+            }
+            1 => crate::txtest::tone_samples(sr, req.freq_a_hz as f32, req.duration_ms),
+            2 => crate::txtest::alternating_samples(
+                sr,
+                req.freq_a_hz as f32,
+                req.freq_b_hz as f32,
+                req.duration_ms,
+                req.alt_period_ms,
+            ),
+            other => {
+                reply(&self.handle, false, format!("unknown test signal kind {}", other));
+                return;
+            }
+        };
 
         // Apply output device gain, matching handle_transmit_frame.
         if let Some(gain_atom) = self.gain_atoms.get(&ccfg.output_device_id) {
@@ -700,11 +770,11 @@ Add this method to the same `impl` block that holds `handle_transmit_frame` (pla
         let job = tx_worker::TxJob {
             channel: req.channel,
             samples,
-            sample_rate: acfg.sample_rate,
+            sample_rate: sr,
             output_device_id: ccfg.output_device_id,
             sink_config: audio::soundcard::SoundcardOutputConfig {
                 device_name: acfg.device_name.clone(),
-                sample_rate: acfg.sample_rate,
+                sample_rate: sr,
                 channels: acfg.channels,
                 audio_channel: ccfg.output_channel,
             },
@@ -713,31 +783,36 @@ Add this method to the same `impl` block that holds `handle_transmit_frame` (pla
         match self.tx_worker.transmit(job) {
             Ok(()) => {
                 *self.tx_frames.entry(req.channel).or_default() += 1;
-                reply(true, String::new());
+                reply(&self.handle, true, String::new());
             }
-            Err(e) => reply(false, e),
+            Err(e) => reply(&self.handle, false, e),
         }
     }
 ```
 
-> Note: `channel_configs`/`audio_configs` are cloned here (rather than borrowed) so the later `&mut self` calls (`apply_ptt_config`, `tx_worker.transmit`, `tx_frames`) don't conflict with the immutable borrow. If `ChannelConfig`/`AudioConfig` are not `Clone`, read their definitions and copy out only the fields used above (`output_device_id`, `output_channel`, `sample_rate`, `device_name`, `channels`) into locals before the mutable calls.
+> Note: `channel_configs`/`audio_configs` are cloned so the later `&mut self`
+> calls don't conflict with the immutable borrow. If `ChannelConfig`/`AudioConfig`
+> are not `Clone`, read their definitions and copy out only the fields used
+> (`output_device_id`, `output_channel`, `sample_rate`, `device_name`,
+> `channels`) into locals before the mutable calls. The `reply` closure takes
+> `&self.handle` explicitly to avoid capturing `self`.
 
 - [ ] **Step 5: Verify (compile-check; CI for full target)**
 
 Run: `cargo build -p graywolf-modem 2>&1 | tail -30`
-Expected: compiles, or fails only on unrelated `cfg(linux)`-only code. No errors mentioning `handle_transmit_cw_id`, `morse`, `CwIdResult`, or `TransmitCwId`. If the host can't finish, note it; CI is the gate.
+Expected: compiles, or fails only on unrelated `cfg(linux)`-only code. No errors mentioning `handle_transmit_test_signal`, `txtest`, `TestSignalResult`, or `TransmitTestSignal`. If the host can't finish, note it; CI is the gate.
 
-Run: `cargo test -p graywolf-modem morse:: 2>&1 | tail -5`
-Expected: morse tests still PASS.
+Run: `cargo test -p graywolf-modem txtest:: 2>&1 | tail -5`
+Expected: txtest tests still PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add graywolf-modem/src/modem/mod.rs
-git commit -m "Handle TransmitCwId in the modem: synthesize CW and submit a TxJob"
+git commit -m "Handle TransmitTestSignal in the modem: render CW/tone and submit a TxJob"
 ```
 
-## Task B4: Go bridge `TransmitCwID`
+## Task B4: Go bridge `TransmitTestSignal`
 
 **Files:**
 - Modify: `pkg/modembridge/requests.go`
@@ -750,40 +825,60 @@ git commit -m "Handle TransmitCwId in the modem: synthesize CW and submit a TxJo
 In `pkg/modembridge/bridge.go`, add the field next to the other dispatchers:
 
 ```go
-	cwDispatcher *dispatcher[*pb.CwIdResult]
+	testSignalDispatcher *dispatcher[*pb.TestSignalResult]
 ```
 
 and in `New`, next to the other dispatcher inits:
 
 ```go
-		cwDispatcher: newDispatcher[*pb.CwIdResult](),
+		testSignalDispatcher: newDispatcher[*pb.TestSignalResult](),
 ```
 
-- [ ] **Step 2: Add the `TransmitCwID` method**
+- [ ] **Step 2: Add the params type and `TransmitTestSignal` method**
 
 In `pkg/modembridge/requests.go`, add (mirrors the former `PlayTestTone` pattern):
 
 ```go
-// TransmitCwID asks the Rust modem to transmit the given callsign as CW
-// (Morse) on the named channel and waits for the submission result. The
-// modem keys PTT, plays the CW audio, and unkeys via the TX worker.
-func (b *Bridge) TransmitCwID(ctx context.Context, channel uint32, callsign string) error {
+// TestSignalParams describes one TX test signal. Kind: 0=CW callsign,
+// 1=steady tone, 2=alternating tone. Unused fields for a given kind are
+// ignored by the modem.
+type TestSignalParams struct {
+	Channel     uint32
+	Kind        uint32
+	Callsign    string
+	CwWpm       uint32
+	FreqAHz     uint32
+	FreqBHz     uint32
+	DurationMs  uint32
+	AltPeriodMs uint32
+}
+
+// TransmitTestSignal asks the Rust modem to transmit a TX test signal on a
+// channel and waits for the submission result. The modem keys PTT, plays the
+// audio, and unkeys via the TX worker.
+func (b *Bridge) TransmitTestSignal(ctx context.Context, p TestSignalParams) error {
 	if b.State() != StateRunning {
 		return errors.New("modembridge: not in RUNNING state")
 	}
 
-	reqID, ch := b.cwDispatcher.Register()
-	defer b.cwDispatcher.Cancel(reqID)
+	reqID, ch := b.testSignalDispatcher.Register()
+	defer b.testSignalDispatcher.Cancel(reqID)
 
-	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_TransmitCwId{
-		TransmitCwId: &pb.TransmitCwId{
-			RequestId: reqID,
-			Channel:   channel,
-			Callsign:  callsign,
+	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_TransmitTestSignal{
+		TransmitTestSignal: &pb.TransmitTestSignal{
+			RequestId:   reqID,
+			Channel:     p.Channel,
+			Kind:        p.Kind,
+			Callsign:    p.Callsign,
+			CwWpm:       p.CwWpm,
+			FreqAHz:     p.FreqAHz,
+			FreqBHz:     p.FreqBHz,
+			DurationMs:  p.DurationMs,
+			AltPeriodMs: p.AltPeriodMs,
 		},
 	}}
 	if err := b.sendIPC(msg); err != nil {
-		return fmt.Errorf("send TransmitCwId: %w", err)
+		return fmt.Errorf("send TransmitTestSignal: %w", err)
 	}
 
 	timer := time.NewTimer(5 * time.Second)
@@ -794,40 +889,48 @@ func (b *Bridge) TransmitCwID(ctx context.Context, channel uint32, callsign stri
 			return errBridgeStopped
 		}
 		if !resp.Success {
-			return fmt.Errorf("CW ID failed: %s", resp.Error)
+			return fmt.Errorf("test signal failed: %s", resp.Error)
 		}
 		return nil
 	case <-timer.C:
-		return errors.New("modembridge: CW ID timeout")
+		return errors.New("modembridge: test signal timeout")
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func (b *Bridge) dispatchCwIdResponse(r *pb.CwIdResult) {
-	b.cwDispatcher.Deliver(r.RequestId, r)
+func (b *Bridge) dispatchTestSignalResponse(r *pb.TestSignalResult) {
+	b.testSignalDispatcher.Deliver(r.RequestId, r)
 }
 ```
+
+> Verify the generated Go field names against `pkg/ipcproto/graywolf.pb.go`
+> after `make proto` — protoc-gen-go names `cw_wpm` → `CwWpm`, `freq_a_hz` →
+> `FreqAHz`, `alt_period_ms` → `AltPeriodMs`, `transmit_test_signal` →
+> `IpcMessage_TransmitTestSignal` / field `TransmitTestSignal`. Adjust if the
+> generated names differ.
 
 - [ ] **Step 3: Add the session dispatch case**
 
 In `pkg/modembridge/session.go`, in the inbound `switch`, add:
 
 ```go
-	case *pb.IpcMessage_CwIdResult:
-		b.dispatchCwIdResponse(p.CwIdResult)
+	case *pb.IpcMessage_TestSignalResult:
+		b.dispatchTestSignalResponse(p.TestSignalResult)
 ```
 
 - [ ] **Step 4: Add the stop-test coverage**
 
 In `pkg/modembridge/bridge_stop_test.go`, mirror the existing dispatcher patterns. Read the file first, then:
 
-- Add a test-case entry that calls `b.TransmitCwID(context.Background(), 0, "N0CALL")` and asserts it unblocks with `errBridgeStopped` (mirror the former `PlayTestTone` entry shape).
-- Add `"cw": adaptPbCwIdResult(cwCh),` to the channel map and declare `cwCh` like the others.
+- Add a test-case entry that calls
+  `b.TransmitTestSignal(context.Background(), modembridge.TestSignalParams{Channel: 0, Kind: 1, FreqAHz: 1200, DurationMs: 100})`
+  (use the package-internal form — no `modembridge.` prefix since the test is in-package; check the file's package clause) and asserts it unblocks with `errBridgeStopped` (mirror the former `PlayTestTone` entry shape).
+- Add `"testsignal": adaptPbTestSignalResult(testSignalCh),` to the channel map and declare `testSignalCh` like the others.
 - Add the adapter:
 
 ```go
-func adaptPbCwIdResult(c <-chan *pb.CwIdResult) <-chan any {
+func adaptPbTestSignalResult(c <-chan *pb.TestSignalResult) <-chan any {
 	out := make(chan any)
 	go func() {
 		defer close(out)
@@ -850,16 +953,16 @@ Expected: PASS.
 
 ```bash
 git add pkg/modembridge/
-git commit -m "Add TransmitCwID request path to modem bridge"
+git commit -m "Add TransmitTestSignal request path to modem bridge"
 ```
 
-## Task B5: Go webapi `POST /api/channels/{id}/cw-id`
+## Task B5: Go webapi `POST /api/channels/{id}/test-tx`
 
 **Files:**
 - Modify: `pkg/webapi/channels.go`
-- Modify: `pkg/webapi/dto/` (add `CwIdResponse` — put it in the channels DTO file; find it via grep below)
+- Modify: `pkg/webapi/dto/` (channels DTO file — find via grep)
 - Modify: `pkg/webapi/docs/op_ids.go`
-- Test: `pkg/webapi/channels_cw_id_test.go` (create)
+- Test: `pkg/webapi/channels_test_tx_test.go` (create)
 
 - [ ] **Step 1: Locate the channels DTO file**
 
@@ -867,8 +970,14 @@ Run: `grep -rln "ChannelResponse\|BeaconSendResponse" pkg/webapi/dto/`
 Use the file that holds channel-related DTOs (likely `pkg/webapi/dto/channel.go`). Add there:
 
 ```go
-// CwIdResponse is the body returned by POST /api/channels/{id}/cw-id.
-type CwIdResponse struct {
+// TestSignalRequest is the body for POST /api/channels/{id}/test-tx.
+// Signal is one of: "cw", "tone1200", "tone2400", "alt".
+type TestSignalRequest struct {
+	Signal string `json:"signal" example:"cw"`
+}
+
+// TestSignalResponse is the body returned by POST /api/channels/{id}/test-tx.
+type TestSignalResponse struct {
 	Status string `json:"status" example:"sent"`
 }
 ```
@@ -878,7 +987,7 @@ type CwIdResponse struct {
 In `pkg/webapi/docs/op_ids.go`, near `OpManualPtt`/`OpSendBeacon`, add:
 
 ```go
-	OpSendCwID = "sendCwId"
+	OpSendTestSignal = "sendTestSignal"
 ```
 
 - [ ] **Step 3: Register the route**
@@ -886,29 +995,44 @@ In `pkg/webapi/docs/op_ids.go`, near `OpManualPtt`/`OpSendBeacon`, add:
 In `pkg/webapi/channels.go`, in `registerChannels`, add after the `ptt` route:
 
 ```go
-	mux.HandleFunc("POST /api/channels/{id}/cw-id", s.sendCwID)
+	mux.HandleFunc("POST /api/channels/{id}/test-tx", s.sendTestSignal)
 ```
 
 - [ ] **Step 4: Write the handler**
 
-In `pkg/webapi/channels.go`, add (mirrors `manualPtt` + the beacon refusal mapping). Ensure imports include `errors` and `github.com/chrissnell/graywolf/pkg/callsign`:
+In `pkg/webapi/channels.go`, add (mirrors `manualPtt` + the beacon refusal mapping). Ensure imports include `errors` and `github.com/chrissnell/graywolf/pkg/callsign` and `github.com/chrissnell/graywolf/pkg/modembridge`:
 
 ```go
-// sendCwID transmits the station callsign as CW (Morse) on a channel. It
-// refuses to key the radio when the station callsign is empty or N0CALL,
-// and when the channel is not TX-capable.
+// CW / tone recipe constants — the single source of the hardcoded test-signal
+// parameters. The four UI options map to these.
+const (
+	cwTestWpm       = 20
+	cwTestToneHz    = 700
+	toneTestDurMs   = 3000
+	altTestPeriodMs = 200
+	toneTestLowHz   = 1200
+	toneTestHighHz  = 2400
+)
+
+// sendTestSignal transmits a TX test signal (CW callsign or a tone) on a
+// channel. The "cw" signal refuses to key the radio when the station callsign
+// is empty or N0CALL; tone signals need no callsign. All signals require a
+// TX-capable channel.
 //
-// @Summary  Send CW ID (station callsign in Morse) on a channel
+// @Summary  Send a TX test signal (CW callsign or tone) on a channel
 // @Tags     Channels
-// @ID       sendCwId
+// @ID       sendTestSignal
+// @Accept   json
 // @Produce  json
 // @Param    id path int true "Channel ID"
-// @Success  200 {object} dto.CwIdResponse
+// @Param    body body dto.TestSignalRequest true "Signal to send"
+// @Success  200 {object} dto.TestSignalResponse
+// @Failure  400 {object} webtypes.ErrorResponse
 // @Failure  409 {object} webtypes.ErrorResponse
 // @Failure  422 {object} webtypes.ErrorResponse
 // @Failure  503 {object} webtypes.ErrorResponse
-// @Router   /channels/{id}/cw-id [post]
-func (s *Server) sendCwID(w http.ResponseWriter, r *http.Request) {
+// @Router   /channels/{id}/test-tx [post]
+func (s *Server) sendTestSignal(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r.PathValue("id"))
 	if err != nil {
 		badRequest(w, "invalid channel id")
@@ -919,16 +1043,47 @@ func (s *Server) sendCwID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	call, err := s.store.ResolveStationCallsign(r.Context())
-	if err != nil {
-		switch {
-		case errors.Is(err, callsign.ErrCallsignEmpty):
-			writeJSON(w, http.StatusUnprocessableEntity, webtypes.ErrorResponse{Error: "set your station callsign before sending CW ID"})
-		case errors.Is(err, callsign.ErrCallsignN0Call):
-			writeJSON(w, http.StatusUnprocessableEntity, webtypes.ErrorResponse{Error: "station callsign is still N0CALL; set a real callsign before sending CW ID"})
-		default:
-			s.internalError(w, r, "resolve station callsign", err)
+	var req dto.TestSignalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		badRequest(w, "invalid request body: "+err.Error())
+		return
+	}
+
+	params := modembridge.TestSignalParams{Channel: id}
+	switch req.Signal {
+	case "cw":
+		call, err := s.store.ResolveStationCallsign(r.Context())
+		if err != nil {
+			switch {
+			case errors.Is(err, callsign.ErrCallsignEmpty):
+				writeJSON(w, http.StatusUnprocessableEntity, webtypes.ErrorResponse{Error: "set your station callsign before sending CW ID"})
+			case errors.Is(err, callsign.ErrCallsignN0Call):
+				writeJSON(w, http.StatusUnprocessableEntity, webtypes.ErrorResponse{Error: "station callsign is still N0CALL; set a real callsign before sending CW ID"})
+			default:
+				s.internalError(w, r, "resolve station callsign", err)
+			}
+			return
 		}
+		params.Kind = 0
+		params.Callsign = call
+		params.CwWpm = cwTestWpm
+		params.FreqAHz = cwTestToneHz
+	case "tone1200":
+		params.Kind = 1
+		params.FreqAHz = toneTestLowHz
+		params.DurationMs = toneTestDurMs
+	case "tone2400":
+		params.Kind = 1
+		params.FreqAHz = toneTestHighHz
+		params.DurationMs = toneTestDurMs
+	case "alt":
+		params.Kind = 2
+		params.FreqAHz = toneTestLowHz
+		params.FreqBHz = toneTestHighHz
+		params.DurationMs = toneTestDurMs
+		params.AltPeriodMs = altTestPeriodMs
+	default:
+		badRequest(w, "unknown signal: "+req.Signal)
 		return
 	}
 
@@ -937,32 +1092,39 @@ func (s *Server) sendCwID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.bridge.TransmitCwID(r.Context(), id, call); err != nil {
+	if err := s.bridge.TransmitTestSignal(r.Context(), params); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, dto.CwIdResponse{Status: "sent"})
+	writeJSON(w, http.StatusOK, dto.TestSignalResponse{Status: "sent"})
 }
 ```
 
-> Verify the exact import path/alias for `webtypes` and `dto` at the top of `channels.go` and match them (they are already used by sibling handlers in this file).
+> Verify the exact import aliases for `webtypes`, `dto`, and `modembridge` at
+> the top of `channels.go` and match them (sibling handlers already use
+> `webtypes` and `dto`; confirm whether `modembridge` is already imported and
+> under what name). Confirm `s.bridge` has type `*modembridge.Bridge` (the
+> `manualPtt` handler calls `s.bridge.ManualPttWithWatchdog`, so the field
+> exists).
 
 - [ ] **Step 5: Write the test**
 
-Create `pkg/webapi/channels_cw_id_test.go`. Read an existing webapi test (e.g. `pkg/webapi/beacons_send_test.go`) first to copy the exact server-construction/test harness helpers used in this package (store setup, bridge stub, request helper). Then assert these cases:
+Create `pkg/webapi/channels_test_tx_test.go`. Read `pkg/webapi/beacons_send_test.go` first to copy the exact server-construction / store / bridge-stub harness this package uses. Then assert:
 
-- Empty station callsign → `422`.
-- N0CALL station callsign → `422`.
-- Non-TX channel → `409`.
-- Valid callsign + TX-capable channel + bridge stub returning nil → `200` with `{"status":"sent"}`.
+- `cw` with empty station callsign → `422`.
+- `cw` with N0CALL station callsign → `422`.
+- unknown signal (e.g. `{"signal":"bogus"}`) → `400`.
+- non-TX channel (any valid signal) → `409`.
+- `tone1200` on a TX-capable channel with the bridge stub returning nil → `200` and body `{"status":"sent"}`.
+- (Optional but cheap) `cw` with a valid station callsign + TX channel → `200`, and assert the stub received `Kind==0`, `Callsign` non-empty, `FreqAHz==700`.
 
-Use the package's existing patterns for stubbing `s.bridge.TransmitCwID` (e.g. an interface stub or fake bridge already present). If the bridge field is a concrete `*modembridge.Bridge`, follow how `manualPtt`/beacon tests inject a fake — replicate that mechanism rather than inventing a new one.
+Use the package's existing mechanism for stubbing the bridge (interface stub / fake). If `s.bridge` is a concrete `*modembridge.Bridge`, replicate exactly how `manualPtt`/beacon tests inject a fake rather than inventing a new mechanism. If the harness only supports a real bridge in `StateRunning`, follow the beacon-send test's approach for driving `TransmitTestSignal` to a deterministic result.
 
 - [ ] **Step 6: Run the test**
 
-Run: `go test ./pkg/webapi/ -run CwId -v`
-Expected: PASS (all four cases).
+Run: `go test ./pkg/webapi/ -run TestSignal -v`
+Expected: PASS (all cases).
 
 - [ ] **Step 7: Full webapi build + test**
 
@@ -972,8 +1134,8 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add pkg/webapi/channels.go pkg/webapi/dto/ pkg/webapi/docs/op_ids.go pkg/webapi/channels_cw_id_test.go
-git commit -m "Add channel CW ID REST endpoint with callsign and TX-capability guards"
+git add pkg/webapi/channels.go pkg/webapi/dto/ pkg/webapi/docs/op_ids.go pkg/webapi/channels_test_tx_test.go
+git commit -m "Add channel TX test-signal REST endpoint with callsign and TX-capability guards"
 ```
 
 ## Task B6: Regenerate docs and API types
@@ -988,7 +1150,7 @@ Expected: succeeds.
 
 - [ ] **Step 2: Verify the new endpoint is present**
 
-Run: `grep -rn "cw-id\|sendCwId" pkg/webapi/docs/gen/swagger.json web/src/api/generated/api.d.ts`
+Run: `grep -rn "test-tx\|sendTestSignal" pkg/webapi/docs/gen/swagger.json web/src/api/generated/api.d.ts`
 Expected: matches in both.
 
 - [ ] **Step 3: Docs drift check**
@@ -1000,62 +1162,99 @@ Expected: no drift.
 
 ```bash
 git add pkg/webapi/docs/gen web/src/api/generated/api.d.ts
-git commit -m "Regenerate API docs and types for CW ID endpoint"
+git commit -m "Regenerate API docs and types for TX test-signal endpoint"
 ```
 
-## Task B7: Frontend "Send CW ID" button
+## Task B7: Frontend "Test TX" dropdown menu
 
 **Files:**
 - Modify: `web/src/routes/channels/ChannelRow.svelte`
 
-The click handler runs inline in `ChannelRow` (with local in-flight state), matching how `AudioDevices.svelte` handled Test Tone. The button is gated by the same TX-capability condition the PTT indicator uses: `!isKissOnly && channel.output_device_id && channel.output_device_id !== 0`.
+The click handlers run inline in `ChannelRow` (with a single local in-flight
+flag), matching how `AudioDevices.svelte` handled Test Tone. The menu is gated
+by the same TX-capability condition the PTT indicator uses:
+`!isKissOnly && channel.output_device_id && channel.output_device_id !== 0`.
 
-- [ ] **Step 1: Add the API + toast imports and local state**
+- [ ] **Step 1: Add imports, state, and the send function**
 
-In the `<script>` block of `ChannelRow.svelte`, add to imports:
+In the `<script>` block of `ChannelRow.svelte`, add `DropdownMenu` to the chonky-ui import (it already imports `{ Badge, Button }`):
+
+```javascript
+  import { Badge, Button, DropdownMenu } from '@chrissnell/chonky-ui';
+```
+
+Add to the imports:
 
 ```javascript
   import { api } from '../../lib/api.js';
   import { toasts } from '../../lib/stores.js';
 ```
 
-> Verify the relative depth: `ChannelRow.svelte` is in `web/src/routes/channels/`, so `lib` is two levels up (`../../lib/...`). Confirm against how `channelBacking.js` is imported (`../../lib/...`) at the top of the file.
+> Verify the relative depth: `ChannelRow.svelte` is in `web/src/routes/channels/`,
+> so `lib` is two levels up. Confirm against the existing `../../lib/channelBacking.js`
+> import at the top of the file.
 
 After the `$props()` line, add:
 
 ```javascript
-  let sendingCwId = $state(false);
+  let sendingSignal = $state(false);
 
-  async function sendCwId() {
-    sendingCwId = true;
+  const SIGNAL_LABELS = {
+    cw: 'Send callsign in CW',
+    tone1200: 'Send 1200 Hz tone',
+    tone2400: 'Send 2400 Hz tone',
+    alt: 'Send 1200/2400 Hz alternating tone',
+  };
+
+  async function sendTestSignal(signal) {
+    sendingSignal = true;
     try {
-      await api.post(`/channels/${channel.id}/cw-id`);
-      toasts.success(`Sent CW ID on "${channel.name}"`);
+      await api.post(`/channels/${channel.id}/test-tx`, { signal });
+      toasts.success(`Sent "${SIGNAL_LABELS[signal]}" on "${channel.name}"`);
     } catch (err) {
-      toasts.error(`CW ID failed: ${err.message}`);
+      toasts.error(`Test TX failed: ${err.message}`);
     } finally {
-      sendingCwId = false;
+      sendingSignal = false;
     }
   }
 ```
 
-> Confirm the channel display field name (`channel.name`) by checking how the row already renders the channel title; use whatever field that markup uses.
+> Confirm the channel display field (`channel.name`) and the `api.post(url, body)`
+> signature against `web/src/lib/api.js` and an existing caller (e.g.
+> `AudioDevices.svelte` calls `api.post('/audio-devices/${id}/test-tone')` with
+> no body; check how a body is passed elsewhere — `grep -n "api.post" web/src`).
+> Adjust the call to the project's actual `api.post` body convention.
 
-- [ ] **Step 2: Add the button to the action row**
+- [ ] **Step 2: Add the menu to the action row**
 
-In the action row that currently holds Edit/Delete (around line 139), add the CW ID button before Edit, gated on TX capability:
+In the action row that currently holds Edit/Delete (around line 139), add the dropdown before Edit, gated on TX capability:
 
 ```svelte
   {#if !isKissOnly && channel.output_device_id && channel.output_device_id !== 0}
-    <Button variant="ghost" onclick={sendCwId} disabled={sendingCwId}>
-      {sendingCwId ? 'Sending…' : 'Send CW ID'}
-    </Button>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger>
+        <Button variant="ghost" disabled={sendingSignal}>
+          {sendingSignal ? 'Sending…' : 'Test TX ▾'}
+        </Button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Content>
+        <DropdownMenu.Item onSelect={() => sendTestSignal('cw')}>Send callsign in CW</DropdownMenu.Item>
+        <DropdownMenu.Item onSelect={() => sendTestSignal('tone1200')}>Send 1200 Hz tone</DropdownMenu.Item>
+        <DropdownMenu.Item onSelect={() => sendTestSignal('tone2400')}>Send 2400 Hz tone</DropdownMenu.Item>
+        <DropdownMenu.Item onSelect={() => sendTestSignal('alt')}>Send 1200/2400 Hz alternating tone</DropdownMenu.Item>
+      </DropdownMenu.Content>
+    </DropdownMenu.Root>
   {/if}
   <Button variant="ghost" onclick={() => onEdit?.(channel)}>Edit</Button>
   <Button variant="danger" onclick={() => onDelete?.(channel)}>Delete</Button>
 ```
 
-(Keep the existing Edit/Delete buttons; only add the guarded CW ID button.)
+> The `DropdownMenu` compound API (`Root` / `Trigger` / `Content` / `Item`
+> with `onSelect`+`disabled`) is confirmed from chonky-ui's type definitions.
+> If `Trigger` does not accept a nested `<Button>` cleanly (some trigger
+> components render their own button), check
+> `node_modules/@chrissnell/chonky-ui/dist/components/DropdownMenu/DropdownMenuTrigger.svelte`
+> and adapt (e.g. apply the trigger's `class` to style it as a button).
 
 - [ ] **Step 3: Build the frontend**
 
@@ -1064,13 +1263,16 @@ Expected: build succeeds.
 
 - [ ] **Step 4: Manual verification (record result)**
 
-Run the app and confirm: the "Send CW ID" button appears only on modem-backed TX channels (not on KISS-only or RX-only rows); clicking a TX channel shows a success toast (or a clear error toast if no station callsign is set). Note the observed result in the task checklist.
+Run the app and confirm: the "Test TX" menu appears only on modem-backed TX
+channels (not on KISS-only or RX-only rows); the four items are present;
+choosing a tone shows a success toast; choosing "Send callsign in CW" with no
+station callsign set shows a clear error toast. Note the observed result.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add web/src/routes/channels/ChannelRow.svelte
-git commit -m "Add Send CW ID button to TX-capable channel rows"
+git commit -m "Add Test TX dropdown menu to TX-capable channel rows"
 ```
 
 ## Task B8: Update the wiki
@@ -1081,24 +1283,28 @@ git commit -m "Add Send CW ID button to TX-capable channel rows"
 
 - [ ] **Step 1: Update code-map**
 
-In `docs/wiki/code-map.md`: remove any Test Tone / `playTestTone` / `play_test_tone` references; add the new `POST /api/channels/{id}/cw-id` endpoint (handler `sendCwID` in `pkg/webapi/channels.go`), the `graywolf-modem/src/morse.rs` module, and the `TransmitCwId`/`CwIdResult` IPC messages. Keep it to navigation-level pointers, not internals.
+In `docs/wiki/code-map.md`: remove any Test Tone / `playTestTone` / `play_test_tone` references; add the new `POST /api/channels/{id}/test-tx` endpoint (handler `sendTestSignal` in `pkg/webapi/channels.go`), the `graywolf-modem/src/txtest.rs` module, and the `TransmitTestSignal`/`TestSignalResult` IPC messages. Navigation-level pointers only.
 
 - [ ] **Step 2: Update invariants**
 
-In `docs/wiki/invariants.md`, add an invariant:
+In `docs/wiki/invariants.md`, add:
 
-> **CW ID never keys the radio with an empty or N0CALL callsign.** `POST /api/channels/{id}/cw-id` resolves the station callsign via `Store.ResolveStationCallsign` and returns 422 before any IPC if it is empty or N0CALL.
+> **The CW test signal never keys the radio with an empty or N0CALL callsign.**
+> `POST /api/channels/{id}/test-tx` with `signal=cw` resolves the station
+> callsign via `Store.ResolveStationCallsign` and returns 422 before any IPC if
+> it is empty or N0CALL. The tone signals (`tone1200`, `tone2400`, `alt`) do not
+> use the callsign.
 
 - [ ] **Step 3: Verify references**
 
 Run: `grep -rn "test tone\|Test Tone\|test-tone\|playTestTone" docs/wiki/`
-Expected: no output (all Test Tone mentions removed from the wiki).
+Expected: no output.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add docs/wiki/code-map.md docs/wiki/invariants.md
-git commit -m "Update wiki for channel CW ID; drop test tone references"
+git commit -m "Update wiki for channel TX test signals; drop test tone references"
 ```
 
 ---
@@ -1106,16 +1312,33 @@ git commit -m "Update wiki for channel CW ID; drop test tone references"
 ## Final verification (whole feature)
 
 - [ ] **Go:** `go build ./... && go test ./pkg/webapi/... ./pkg/modembridge/... ./pkg/ipcproto/...` → PASS
-- [ ] **Rust (host-buildable parts):** `cargo test -p graywolf-modem morse::` → PASS; `cargo build -p graywolf-modem` → no CW/test-tone errors (full `cfg(linux)` build via CI)
+- [ ] **Rust (host-buildable parts):** `cargo test -p graywolf-modem txtest::` → PASS; `cargo build -p graywolf-modem` → no test-signal/test-tone errors (full `cfg(linux)` build via CI)
 - [ ] **Frontend:** `cd web && npm run build` → PASS
 - [ ] **Docs:** `make docs-check` → no drift
 - [ ] **No stragglers:** `grep -rn "test_tone\|TestTone\|test-tone\|playTestTone\|PlayTestTone" pkg/ graywolf-modem/src/ web/src/ proto/ docs/wiki/` → no output
-- [ ] **On-device (CI build + radio):** confirm clicking "Send CW ID" keys PTT and the callsign is audible/decodable in Morse on a second radio, and that an unset callsign yields a clear refusal.
+- [ ] **On-device (CI build + radio):** each menu item keys PTT and transmits the expected signal (callsign decodable in Morse; steady 1200/2400 tones; audible warble for alternating), all verifiable on a second radio; CW with an unset callsign yields a clear refusal.
 
 ---
 
 ## Self-review notes (author)
 
-- **Spec coverage:** Part A removes Test Tone across all six layers named in the spec (UI, webapi, bridge, proto, Rust handler, regen). Part B covers the IPC messages, Rust `morse` + handler, Go bridge, webapi endpoint with all three refusal guards + success, frontend button gated by TX capability, and wiki updates — matching the spec's architecture and testing sections.
-- **Type consistency:** Go `TransmitCwID`/`pb.TransmitCwId`/`pb.CwIdResult`/`OpSendCwID`/`dto.CwIdResponse`; Rust `morse::encode`/`morse::synthesize`/`Segment`/`handle_transmit_cw_id`/`IpcMessage::cw_id_result`; proto field ids 9 (RX) and 22 (TX) are the next free numbers after the Part A removals; frontend `sendCwId`/`sendingCwId`. Names are used identically across tasks.
-- **No placeholders:** every code step shows complete code; verification steps give exact commands and expected output. Cross-file uncertainties (DTO file location, test harness shape, `webtypes` alias, Clone-ability of config structs, import depth) are flagged with a grep/read-first instruction rather than guessed.
+- **Spec coverage:** Part A removes Test Tone across all six layers. Part B
+  covers the `TransmitTestSignal`/`TestSignalResult` IPC, the `txtest` Rust
+  module (CW + tone + alternating) and handler dispatching on `kind`, the Go
+  bridge `TransmitTestSignal` + `TestSignalParams`, the webapi endpoint with the
+  four hardcoded recipes and all guards (CW callsign 422, unknown signal 400,
+  non-TX 409, success 200), the chonky-ui `DropdownMenu` frontend gated by TX
+  capability, and wiki updates — matching the revised spec.
+- **Type consistency:** Go `TransmitTestSignal`/`TestSignalParams`/
+  `pb.TransmitTestSignal`/`pb.TestSignalResult`/`OpSendTestSignal`/
+  `dto.TestSignalRequest`/`dto.TestSignalResponse`; Rust `txtest::encode`/
+  `cw_samples`/`tone_samples`/`alternating_samples`/`Segment`/
+  `handle_transmit_test_signal`/`IpcMessage::test_signal_result`; proto fields 9
+  (RX) and 22 (TX); `kind` values 0/1/2 are used identically in proto comments,
+  the Rust match, and the Go recipe switch; frontend signal ids
+  `cw`/`tone1200`/`tone2400`/`alt` match the Go handler switch exactly.
+- **No placeholders:** every code step shows complete code; verification steps
+  give exact commands and expected output. Cross-file uncertainties (DTO file
+  location, generated Go field names, `api.post` body convention, `Clone`-ability
+  of config structs, `DropdownMenu.Trigger` nesting, import depth/aliases) are
+  flagged with grep/read-first instructions rather than guessed.
