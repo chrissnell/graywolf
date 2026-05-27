@@ -346,13 +346,18 @@ impl Modem {
                 self.graceful_shutdown();
                 return true;
             }
+            Some(Payload::TransmitTestSignal(_req)) => {
+                // Handled in B3; stub to satisfy exhaustive match.
+                eprintln!("graywolf-modem: TransmitTestSignal not yet implemented");
+            }
             Some(Payload::ReceivedFrame(_))
             | Some(Payload::DcdChange(_))
             | Some(Payload::StatusUpdate(_))
             | Some(Payload::ModemReady(_))
             | Some(Payload::AudioDeviceList(_))
             | Some(Payload::DeviceLevelUpdate(_))
-            | Some(Payload::InputLevelScanResult(_)) => {
+            | Some(Payload::InputLevelScanResult(_))
+            | Some(Payload::TestSignalResult(_)) => {
                 // Rust → Go only; ignore if echoed back.
             }
             None => {}

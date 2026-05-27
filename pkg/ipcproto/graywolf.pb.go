@@ -89,6 +89,7 @@ type IpcMessage struct {
 	//	*IpcMessage_AudioDeviceList
 	//	*IpcMessage_DeviceLevelUpdate
 	//	*IpcMessage_InputLevelScanResult
+	//	*IpcMessage_TestSignalResult
 	//	*IpcMessage_TransmitFrame
 	//	*IpcMessage_ConfigureChannel
 	//	*IpcMessage_ConfigureAudio
@@ -100,6 +101,7 @@ type IpcMessage struct {
 	//	*IpcMessage_SetDeviceGain
 	//	*IpcMessage_ScanInputLevels
 	//	*IpcMessage_ManualPtt
+	//	*IpcMessage_TransmitTestSignal
 	Payload       isIpcMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -205,6 +207,15 @@ func (x *IpcMessage) GetInputLevelScanResult() *InputLevelScanResult {
 	return nil
 }
 
+func (x *IpcMessage) GetTestSignalResult() *TestSignalResult {
+	if x != nil {
+		if x, ok := x.Payload.(*IpcMessage_TestSignalResult); ok {
+			return x.TestSignalResult
+		}
+	}
+	return nil
+}
+
 func (x *IpcMessage) GetTransmitFrame() *TransmitFrame {
 	if x != nil {
 		if x, ok := x.Payload.(*IpcMessage_TransmitFrame); ok {
@@ -304,6 +315,15 @@ func (x *IpcMessage) GetManualPtt() *ManualPtt {
 	return nil
 }
 
+func (x *IpcMessage) GetTransmitTestSignal() *TransmitTestSignal {
+	if x != nil {
+		if x, ok := x.Payload.(*IpcMessage_TransmitTestSignal); ok {
+			return x.TransmitTestSignal
+		}
+	}
+	return nil
+}
+
 type isIpcMessage_Payload interface {
 	isIpcMessage_Payload()
 }
@@ -335,6 +355,10 @@ type IpcMessage_DeviceLevelUpdate struct {
 
 type IpcMessage_InputLevelScanResult struct {
 	InputLevelScanResult *InputLevelScanResult `protobuf:"bytes,8,opt,name=input_level_scan_result,json=inputLevelScanResult,proto3,oneof"`
+}
+
+type IpcMessage_TestSignalResult struct {
+	TestSignalResult *TestSignalResult `protobuf:"bytes,9,opt,name=test_signal_result,json=testSignalResult,proto3,oneof"`
 }
 
 type IpcMessage_TransmitFrame struct {
@@ -382,6 +406,10 @@ type IpcMessage_ManualPtt struct {
 	ManualPtt *ManualPtt `protobuf:"bytes,21,opt,name=manual_ptt,json=manualPtt,proto3,oneof"` // Go → Rust: manual PTT toggle for testing
 }
 
+type IpcMessage_TransmitTestSignal struct {
+	TransmitTestSignal *TransmitTestSignal `protobuf:"bytes,22,opt,name=transmit_test_signal,json=transmitTestSignal,proto3,oneof"`
+}
+
 func (*IpcMessage_ReceivedFrame) isIpcMessage_Payload() {}
 
 func (*IpcMessage_DcdChange) isIpcMessage_Payload() {}
@@ -395,6 +423,8 @@ func (*IpcMessage_AudioDeviceList) isIpcMessage_Payload() {}
 func (*IpcMessage_DeviceLevelUpdate) isIpcMessage_Payload() {}
 
 func (*IpcMessage_InputLevelScanResult) isIpcMessage_Payload() {}
+
+func (*IpcMessage_TestSignalResult) isIpcMessage_Payload() {}
 
 func (*IpcMessage_TransmitFrame) isIpcMessage_Payload() {}
 
@@ -417,6 +447,8 @@ func (*IpcMessage_SetDeviceGain) isIpcMessage_Payload() {}
 func (*IpcMessage_ScanInputLevels) isIpcMessage_Payload() {}
 
 func (*IpcMessage_ManualPtt) isIpcMessage_Payload() {}
+
+func (*IpcMessage_TransmitTestSignal) isIpcMessage_Payload() {}
 
 // A successfully decoded AX.25 frame with demodulator metadata.
 type ReceivedFrame struct {
@@ -2019,11 +2051,184 @@ func (x *InputDeviceLevel) GetError() string {
 	return ""
 }
 
+// Go -> Rust: transmit a TX test signal on a channel. kind selects the
+// generator: 0 = station callsign in CW, 1 = steady tone, 2 = alternating
+// tone. Go fills the relevant parameters; the modem is a pure renderer.
+type TransmitTestSignal struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     uint32                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`         // echoed back in TestSignalResult
+	Channel       uint32                 `protobuf:"varint,2,opt,name=channel,proto3" json:"channel,omitempty"`                              // selects output device + PTT driver
+	Kind          uint32                 `protobuf:"varint,3,opt,name=kind,proto3" json:"kind,omitempty"`                                    // 0=CW callsign, 1=steady tone, 2=alternating
+	Callsign      string                 `protobuf:"bytes,4,opt,name=callsign,proto3" json:"callsign,omitempty"`                             // kind 0; already resolved + uppercased by Go
+	CwWpm         uint32                 `protobuf:"varint,5,opt,name=cw_wpm,json=cwWpm,proto3" json:"cw_wpm,omitempty"`                     // kind 0
+	FreqAHz       uint32                 `protobuf:"varint,6,opt,name=freq_a_hz,json=freqAHz,proto3" json:"freq_a_hz,omitempty"`             // CW sidetone (0) / tone (1) / tone A (2)
+	FreqBHz       uint32                 `protobuf:"varint,7,opt,name=freq_b_hz,json=freqBHz,proto3" json:"freq_b_hz,omitempty"`             // tone B (kind 2)
+	DurationMs    uint32                 `protobuf:"varint,8,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`      // kinds 1, 2
+	AltPeriodMs   uint32                 `protobuf:"varint,9,opt,name=alt_period_ms,json=altPeriodMs,proto3" json:"alt_period_ms,omitempty"` // kind 2: ms per tone before switching
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransmitTestSignal) Reset() {
+	*x = TransmitTestSignal{}
+	mi := &file_graywolf_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransmitTestSignal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransmitTestSignal) ProtoMessage() {}
+
+func (x *TransmitTestSignal) ProtoReflect() protoreflect.Message {
+	mi := &file_graywolf_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransmitTestSignal.ProtoReflect.Descriptor instead.
+func (*TransmitTestSignal) Descriptor() ([]byte, []int) {
+	return file_graywolf_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *TransmitTestSignal) GetRequestId() uint32 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *TransmitTestSignal) GetChannel() uint32 {
+	if x != nil {
+		return x.Channel
+	}
+	return 0
+}
+
+func (x *TransmitTestSignal) GetKind() uint32 {
+	if x != nil {
+		return x.Kind
+	}
+	return 0
+}
+
+func (x *TransmitTestSignal) GetCallsign() string {
+	if x != nil {
+		return x.Callsign
+	}
+	return ""
+}
+
+func (x *TransmitTestSignal) GetCwWpm() uint32 {
+	if x != nil {
+		return x.CwWpm
+	}
+	return 0
+}
+
+func (x *TransmitTestSignal) GetFreqAHz() uint32 {
+	if x != nil {
+		return x.FreqAHz
+	}
+	return 0
+}
+
+func (x *TransmitTestSignal) GetFreqBHz() uint32 {
+	if x != nil {
+		return x.FreqBHz
+	}
+	return 0
+}
+
+func (x *TransmitTestSignal) GetDurationMs() uint32 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *TransmitTestSignal) GetAltPeriodMs() uint32 {
+	if x != nil {
+		return x.AltPeriodMs
+	}
+	return 0
+}
+
+// Result of a TX test-signal submission to the TX worker.
+type TestSignalResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     uint32                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"` // empty on success
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestSignalResult) Reset() {
+	*x = TestSignalResult{}
+	mi := &file_graywolf_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestSignalResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestSignalResult) ProtoMessage() {}
+
+func (x *TestSignalResult) ProtoReflect() protoreflect.Message {
+	mi := &file_graywolf_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestSignalResult.ProtoReflect.Descriptor instead.
+func (*TestSignalResult) Descriptor() ([]byte, []int) {
+	return file_graywolf_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *TestSignalResult) GetRequestId() uint32 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *TestSignalResult) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *TestSignalResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_graywolf_proto protoreflect.FileDescriptor
 
 const file_graywolf_proto_rawDesc = "" +
 	"\n" +
-	"\x0egraywolf.proto\x12\bgraywolf\"\xc7\t\n" +
+	"\x0egraywolf.proto\x12\bgraywolf\"\xe5\n" +
+	"\n" +
 	"\n" +
 	"IpcMessage\x12@\n" +
 	"\x0ereceived_frame\x18\x01 \x01(\v2\x17.graywolf.ReceivedFrameH\x00R\rreceivedFrame\x124\n" +
@@ -2034,7 +2239,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"modemReady\x12G\n" +
 	"\x11audio_device_list\x18\x05 \x01(\v2\x19.graywolf.AudioDeviceListH\x00R\x0faudioDeviceList\x12M\n" +
 	"\x13device_level_update\x18\a \x01(\v2\x1b.graywolf.DeviceLevelUpdateH\x00R\x11deviceLevelUpdate\x12W\n" +
-	"\x17input_level_scan_result\x18\b \x01(\v2\x1e.graywolf.InputLevelScanResultH\x00R\x14inputLevelScanResult\x12@\n" +
+	"\x17input_level_scan_result\x18\b \x01(\v2\x1e.graywolf.InputLevelScanResultH\x00R\x14inputLevelScanResult\x12J\n" +
+	"\x12test_signal_result\x18\t \x01(\v2\x1a.graywolf.TestSignalResultH\x00R\x10testSignalResult\x12@\n" +
 	"\x0etransmit_frame\x18\n" +
 	" \x01(\v2\x17.graywolf.TransmitFrameH\x00R\rtransmitFrame\x12I\n" +
 	"\x11configure_channel\x18\v \x01(\v2\x1a.graywolf.ConfigureChannelH\x00R\x10configureChannel\x12C\n" +
@@ -2049,7 +2255,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x0fset_device_gain\x18\x13 \x01(\v2\x17.graywolf.SetDeviceGainH\x00R\rsetDeviceGain\x12G\n" +
 	"\x11scan_input_levels\x18\x14 \x01(\v2\x19.graywolf.ScanInputLevelsH\x00R\x0fscanInputLevels\x124\n" +
 	"\n" +
-	"manual_ptt\x18\x15 \x01(\v2\x13.graywolf.ManualPttH\x00R\tmanualPttB\t\n" +
+	"manual_ptt\x18\x15 \x01(\v2\x13.graywolf.ManualPttH\x00R\tmanualPtt\x12P\n" +
+	"\x14transmit_test_signal\x18\x16 \x01(\v2\x1c.graywolf.TransmitTestSignalH\x00R\x12transmitTestSignalB\t\n" +
 	"\apayload\"\xb7\x02\n" +
 	"\rReceivedFrame\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x18\n" +
@@ -2199,7 +2406,24 @@ const file_graywolf_proto_rawDesc = "" +
 	"\tpeak_dbfs\x18\x02 \x01(\x02R\bpeakDbfs\x12\x1d\n" +
 	"\n" +
 	"has_signal\x18\x03 \x01(\bR\thasSignal\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error*o\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\x91\x02\n" +
+	"\x12TransmitTestSignal\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\rR\trequestId\x12\x18\n" +
+	"\achannel\x18\x02 \x01(\rR\achannel\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\rR\x04kind\x12\x1a\n" +
+	"\bcallsign\x18\x04 \x01(\tR\bcallsign\x12\x15\n" +
+	"\x06cw_wpm\x18\x05 \x01(\rR\x05cwWpm\x12\x1a\n" +
+	"\tfreq_a_hz\x18\x06 \x01(\rR\afreqAHz\x12\x1a\n" +
+	"\tfreq_b_hz\x18\a \x01(\rR\afreqBHz\x12\x1f\n" +
+	"\vduration_ms\x18\b \x01(\rR\n" +
+	"durationMs\x12\"\n" +
+	"\ralt_period_ms\x18\t \x01(\rR\valtPeriodMs\"a\n" +
+	"\x10TestSignalResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\rR\trequestId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error*o\n" +
 	"\x0fAudioDeviceKind\x12!\n" +
 	"\x1dAUDIO_DEVICE_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17AUDIO_DEVICE_KIND_INPUT\x10\x01\x12\x1c\n" +
@@ -2218,7 +2442,7 @@ func file_graywolf_proto_rawDescGZIP() []byte {
 }
 
 var file_graywolf_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_graywolf_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_graywolf_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_graywolf_proto_goTypes = []any{
 	(AudioDeviceKind)(0),          // 0: graywolf.AudioDeviceKind
 	(*IpcMessage)(nil),            // 1: graywolf.IpcMessage
@@ -2242,6 +2466,8 @@ var file_graywolf_proto_goTypes = []any{
 	(*ManualPtt)(nil),             // 19: graywolf.ManualPtt
 	(*InputLevelScanResult)(nil),  // 20: graywolf.InputLevelScanResult
 	(*InputDeviceLevel)(nil),      // 21: graywolf.InputDeviceLevel
+	(*TransmitTestSignal)(nil),    // 22: graywolf.TransmitTestSignal
+	(*TestSignalResult)(nil),      // 23: graywolf.TestSignalResult
 }
 var file_graywolf_proto_depIdxs = []int32{
 	2,  // 0: graywolf.IpcMessage.received_frame:type_name -> graywolf.ReceivedFrame
@@ -2251,25 +2477,27 @@ var file_graywolf_proto_depIdxs = []int32{
 	6,  // 4: graywolf.IpcMessage.audio_device_list:type_name -> graywolf.AudioDeviceList
 	17, // 5: graywolf.IpcMessage.device_level_update:type_name -> graywolf.DeviceLevelUpdate
 	20, // 6: graywolf.IpcMessage.input_level_scan_result:type_name -> graywolf.InputLevelScanResult
-	8,  // 7: graywolf.IpcMessage.transmit_frame:type_name -> graywolf.TransmitFrame
-	9,  // 8: graywolf.IpcMessage.configure_channel:type_name -> graywolf.ConfigureChannel
-	10, // 9: graywolf.IpcMessage.configure_audio:type_name -> graywolf.ConfigureAudio
-	11, // 10: graywolf.IpcMessage.configure_ptt:type_name -> graywolf.ConfigurePtt
-	12, // 11: graywolf.IpcMessage.start_audio:type_name -> graywolf.StartAudio
-	13, // 12: graywolf.IpcMessage.stop_audio:type_name -> graywolf.StopAudio
-	14, // 13: graywolf.IpcMessage.shutdown:type_name -> graywolf.Shutdown
-	15, // 14: graywolf.IpcMessage.enumerate_audio_devices:type_name -> graywolf.EnumerateAudioDevices
-	16, // 15: graywolf.IpcMessage.set_device_gain:type_name -> graywolf.SetDeviceGain
-	18, // 16: graywolf.IpcMessage.scan_input_levels:type_name -> graywolf.ScanInputLevels
-	19, // 17: graywolf.IpcMessage.manual_ptt:type_name -> graywolf.ManualPtt
-	7,  // 18: graywolf.AudioDeviceList.devices:type_name -> graywolf.AudioDeviceInfo
-	0,  // 19: graywolf.AudioDeviceInfo.kind:type_name -> graywolf.AudioDeviceKind
-	21, // 20: graywolf.InputLevelScanResult.devices:type_name -> graywolf.InputDeviceLevel
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	23, // 7: graywolf.IpcMessage.test_signal_result:type_name -> graywolf.TestSignalResult
+	8,  // 8: graywolf.IpcMessage.transmit_frame:type_name -> graywolf.TransmitFrame
+	9,  // 9: graywolf.IpcMessage.configure_channel:type_name -> graywolf.ConfigureChannel
+	10, // 10: graywolf.IpcMessage.configure_audio:type_name -> graywolf.ConfigureAudio
+	11, // 11: graywolf.IpcMessage.configure_ptt:type_name -> graywolf.ConfigurePtt
+	12, // 12: graywolf.IpcMessage.start_audio:type_name -> graywolf.StartAudio
+	13, // 13: graywolf.IpcMessage.stop_audio:type_name -> graywolf.StopAudio
+	14, // 14: graywolf.IpcMessage.shutdown:type_name -> graywolf.Shutdown
+	15, // 15: graywolf.IpcMessage.enumerate_audio_devices:type_name -> graywolf.EnumerateAudioDevices
+	16, // 16: graywolf.IpcMessage.set_device_gain:type_name -> graywolf.SetDeviceGain
+	18, // 17: graywolf.IpcMessage.scan_input_levels:type_name -> graywolf.ScanInputLevels
+	19, // 18: graywolf.IpcMessage.manual_ptt:type_name -> graywolf.ManualPtt
+	22, // 19: graywolf.IpcMessage.transmit_test_signal:type_name -> graywolf.TransmitTestSignal
+	7,  // 20: graywolf.AudioDeviceList.devices:type_name -> graywolf.AudioDeviceInfo
+	0,  // 21: graywolf.AudioDeviceInfo.kind:type_name -> graywolf.AudioDeviceKind
+	21, // 22: graywolf.InputLevelScanResult.devices:type_name -> graywolf.InputDeviceLevel
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_graywolf_proto_init() }
@@ -2285,6 +2513,7 @@ func file_graywolf_proto_init() {
 		(*IpcMessage_AudioDeviceList)(nil),
 		(*IpcMessage_DeviceLevelUpdate)(nil),
 		(*IpcMessage_InputLevelScanResult)(nil),
+		(*IpcMessage_TestSignalResult)(nil),
 		(*IpcMessage_TransmitFrame)(nil),
 		(*IpcMessage_ConfigureChannel)(nil),
 		(*IpcMessage_ConfigureAudio)(nil),
@@ -2296,6 +2525,7 @@ func file_graywolf_proto_init() {
 		(*IpcMessage_SetDeviceGain)(nil),
 		(*IpcMessage_ScanInputLevels)(nil),
 		(*IpcMessage_ManualPtt)(nil),
+		(*IpcMessage_TransmitTestSignal)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2303,7 +2533,7 @@ func file_graywolf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_graywolf_proto_rawDesc), len(file_graywolf_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

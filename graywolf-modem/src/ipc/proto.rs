@@ -29,6 +29,9 @@ impl IpcMessage {
     pub fn input_level_scan_result(r: InputLevelScanResult) -> Self {
         Self { payload: Some(ipc_message::Payload::InputLevelScanResult(r)) }
     }
+    pub fn test_signal_result(r: TestSignalResult) -> Self {
+        Self { payload: Some(ipc_message::Payload::TestSignalResult(r)) }
+    }
 }
 
 #[cfg(test)]
