@@ -94,7 +94,20 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		if b.ObjectName == "" {
 			return "", fmt.Errorf("object beacon missing object_name")
 		}
-		return ObjectInfo(b.ObjectName, true, "", b.Lat, b.Lon, b.SymbolTable, b.SymbolCode, phg, comment), nil
+		lat, lon := b.Lat, b.Lon
+		if b.UseGps {
+			if s.cache == nil {
+				return "", fmt.Errorf("object beacon: use_gps set but no GPS cache configured")
+			}
+			fix, ok := s.cache.Get()
+			if !ok {
+				return "", fmt.Errorf("object beacon: use_gps set but no GPS fix available")
+			}
+			lat, lon = fix.Latitude, fix.Longitude
+		} else if lat == 0 && lon == 0 {
+			return "", fmt.Errorf("object beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)")
+		}
+		return ObjectInfo(b.ObjectName, true, "", lat, lon, b.SymbolTable, b.SymbolCode, phg, comment), nil
 
 	case TypeCustom:
 		if b.CustomInfo == "" {
