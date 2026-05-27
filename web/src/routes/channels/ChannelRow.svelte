@@ -167,10 +167,9 @@
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Content>
-          <DropdownMenu.Item onSelect={() => sendTestSignal('cw')}>Send callsign in CW</DropdownMenu.Item>
-          <DropdownMenu.Item onSelect={() => sendTestSignal('tone1200')}>Send 1200 Hz tone</DropdownMenu.Item>
-          <DropdownMenu.Item onSelect={() => sendTestSignal('tone2400')}>Send 2400 Hz tone</DropdownMenu.Item>
-          <DropdownMenu.Item onSelect={() => sendTestSignal('alt')}>Send 1200/2400 Hz alternating tone</DropdownMenu.Item>
+          {#each Object.entries(SIGNAL_LABELS) as [sig, label]}
+            <DropdownMenu.Item onSelect={() => sendTestSignal(sig)}>{label}</DropdownMenu.Item>
+          {/each}
         </DropdownMenu.Content>
       </DropdownMenu.Root>
     {/if}
