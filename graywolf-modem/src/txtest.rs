@@ -137,7 +137,8 @@ pub fn alternating_samples(
     let two_pi = 2.0 * std::f32::consts::PI;
     for i in 0..n {
         let f = if (i / per) % 2 == 0 { freq_a } else { freq_b };
-        phase += two_pi * f / sample_rate as f32;
+        // Wrap to keep f32 phase precise over long durations.
+        phase = (phase + two_pi * f / sample_rate as f32) % two_pi;
         out.push((phase.sin() * AMP) as i16);
     }
     apply_edges(&mut out, ramp_samples(sample_rate));
@@ -211,5 +212,22 @@ mod tests {
         let s = alternating_samples(48_000, 1200.0, 2400.0, 3000, 200);
         assert_eq!(s.len(), 144_000);
         assert!(s.iter().any(|&v| v != 0));
+    }
+
+    #[test]
+    fn alternating_samples_actually_alternates_frequency() {
+        // 200 ms period at 48 kHz = 9600 samples/block. Block 0 renders
+        // freq_a (1200 Hz), block 1 renders freq_b (2400 Hz). The higher
+        // tone must show clearly more zero crossings than the lower one.
+        let s = alternating_samples(48_000, 1200.0, 2400.0, 3000, 200);
+        let per = 9600usize;
+        let zero_crossings =
+            |w: &[i16]| w.windows(2).filter(|p| (p[0] >= 0) != (p[1] >= 0)).count();
+        let lo = zero_crossings(&s[0..per]);
+        let hi = zero_crossings(&s[per..2 * per]);
+        assert!(
+            hi > lo * 3 / 2,
+            "freq_b block ({hi} crossings) should clearly exceed freq_a block ({lo})"
+        );
     }
 }
