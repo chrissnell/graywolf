@@ -158,14 +158,14 @@ pub struct Modem {
 
     // Pre-resolved cpal output device handles, keyed by device_id.
     // Populated in start_audio() before input streams open and reused
-    // by both the TX worker and test-tone playback. On Linux/ALSA,
+    // by the TX worker for all transmit playback. On Linux/ALSA,
     // cpal's device enumeration fails once a capture stream holds the
     // hardware, so these must be resolved while the device is idle.
     output_devices: HashMap<u32, cpal::Device>,
 
     // Pre-negotiated output stream params (channels + sample_format),
-    // cached at start_audio time when the device is idle. The test-
-    // tone path uses these to avoid calling supported_output_configs()
+    // cached at start_audio time when the device is idle. The TX
+    // path uses these to avoid calling supported_output_configs()
     // on a device cpal has lost the ability to enumerate (e.g. while a
     // capture stream is active on the same AIOC hardware, or after a
     // USB-EMI hub event invalidates the cached handle).
@@ -382,10 +382,10 @@ impl Modem {
         }
 
         // Pre-resolve output devices before opening input streams.
-        // This lets the TX worker and test-tone path use cached Device
-        // handles without enumerating at transmit time. Also pre-
-        // negotiate channel count + sample format while the device is
-        // idle, so later test-tone clicks don't have to call
+        // This lets the TX worker use cached Device handles without
+        // enumerating at transmit time. Also pre-negotiate channel
+        // count + sample format while the device is idle, so later
+        // transmits don't have to call
         // supported_output_configs() (which fails once an input capture
         // stream holds the same hardware).
         self.output_devices.clear();
@@ -418,7 +418,7 @@ impl Modem {
                             self.output_configs_cache.insert(dev_id, (ch, f));
                         } else {
                             eprintln!(
-                                "graywolf-modem: failed to pre-negotiate output configs for device_id={} ({}); test-tone may fail later if device gets busy",
+                                "graywolf-modem: failed to pre-negotiate output configs for device_id={} ({}); TX may fail later if device gets busy",
                                 dev_id, acfg.device_name
                             );
                         }
