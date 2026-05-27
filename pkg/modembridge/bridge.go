@@ -86,8 +86,9 @@ type Bridge struct {
 	status *statusCache
 
 	// Two request/response dispatchers, one per IPC exchange kind.
-	enumDispatcher *dispatcher[*pb.AudioDeviceList]
-	scanDispatcher *dispatcher[*pb.InputLevelScanResult]
+	enumDispatcher       *dispatcher[*pb.AudioDeviceList]
+	scanDispatcher       *dispatcher[*pb.InputLevelScanResult]
+	testSignalDispatcher *dispatcher[*pb.TestSignalResult]
 
 	// pttWatchdog auto-unkeys channels whose manual PTT has been held
 	// longer than 10s without a heartbeat.
@@ -130,8 +131,9 @@ func New(cfg Config) *Bridge {
 		frames:         make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
 		dcd:            pub,
 		status:         newStatusCache(),
-		enumDispatcher: newDispatcher[*pb.AudioDeviceList](),
-		scanDispatcher: newDispatcher[*pb.InputLevelScanResult](),
+		enumDispatcher:       newDispatcher[*pb.AudioDeviceList](),
+		scanDispatcher:       newDispatcher[*pb.InputLevelScanResult](),
+		testSignalDispatcher: newDispatcher[*pb.TestSignalResult](),
 	}
 	// pttWatchdog auto-unkeys channels after 10s of no heartbeat. The
 	// unkey closure captures b so it can call ManualPtt(ch, false)
@@ -196,6 +198,7 @@ func (b *Bridge) Stop() {
 func (b *Bridge) supervise(ctx context.Context) {
 	b.enumDispatcher.Reset()
 	b.scanDispatcher.Reset()
+	b.testSignalDispatcher.Reset()
 	b.status.Reset()
 	// Cancel any watchdog timers left over from a prior session so a
 	// stale timer can't fire an auto-unkey into a freshly-spawned modem
@@ -221,6 +224,7 @@ func (b *Bridge) supervise(ctx context.Context) {
 func (b *Bridge) closePendingRequests() {
 	b.enumDispatcher.Close()
 	b.scanDispatcher.Close()
+	b.testSignalDispatcher.Close()
 }
 
 // State returns the current supervisor state.

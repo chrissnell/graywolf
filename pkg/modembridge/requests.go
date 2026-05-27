@@ -80,6 +80,70 @@ func (b *Bridge) ScanInputLevels(ctx context.Context) ([]InputLevel, error) {
 	}
 }
 
+// TestSignalParams describes one TX test signal. Kind: 0=CW callsign,
+// 1=steady tone, 2=alternating tone. Unused fields for a given kind are
+// ignored by the modem.
+type TestSignalParams struct {
+	Channel     uint32
+	Kind        uint32
+	Callsign    string
+	CwWpm       uint32
+	FreqAHz     uint32
+	FreqBHz     uint32
+	DurationMs  uint32
+	AltPeriodMs uint32
+}
+
+// TransmitTestSignal asks the Rust modem to transmit a TX test signal on a
+// channel and waits for the submission result. The modem keys PTT, plays the
+// audio, and unkeys via the TX worker.
+func (b *Bridge) TransmitTestSignal(ctx context.Context, p TestSignalParams) error {
+	if b.State() != StateRunning {
+		return errors.New("modembridge: not in RUNNING state")
+	}
+
+	reqID, ch := b.testSignalDispatcher.Register()
+	defer b.testSignalDispatcher.Cancel(reqID)
+
+	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_TransmitTestSignal{
+		TransmitTestSignal: &pb.TransmitTestSignal{
+			RequestId:   reqID,
+			Channel:     p.Channel,
+			Kind:        p.Kind,
+			Callsign:    p.Callsign,
+			CwWpm:       p.CwWpm,
+			FreqAHz:     p.FreqAHz,
+			FreqBHz:     p.FreqBHz,
+			DurationMs:  p.DurationMs,
+			AltPeriodMs: p.AltPeriodMs,
+		},
+	}}
+	if err := b.sendIPC(msg); err != nil {
+		return fmt.Errorf("send TransmitTestSignal: %w", err)
+	}
+
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case resp := <-ch:
+		if resp == nil {
+			return errBridgeStopped
+		}
+		if !resp.Success {
+			return fmt.Errorf("test signal failed: %s", resp.Error)
+		}
+		return nil
+	case <-timer.C:
+		return errors.New("modembridge: test signal timeout")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (b *Bridge) dispatchTestSignalResponse(r *pb.TestSignalResult) {
+	b.testSignalDispatcher.Deliver(r.RequestId, r)
+}
+
 // dispatch hooks invoked by dispatchIPC when the matching response
 // arrives from the modem.
 func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {

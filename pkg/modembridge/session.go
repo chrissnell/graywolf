@@ -128,6 +128,8 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 		b.updateDeviceLevelCache(p.DeviceLevelUpdate)
 	case *pb.IpcMessage_InputLevelScanResult:
 		b.dispatchScanResponse(p.InputLevelScanResult)
+	case *pb.IpcMessage_TestSignalResult:
+		b.dispatchTestSignalResponse(p.TestSignalResult)
 	default:
 		b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 	}

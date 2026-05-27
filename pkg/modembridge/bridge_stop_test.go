@@ -39,6 +39,14 @@ func TestBridgeStopCancelsPendingRequests(t *testing.T) {
 				return err
 			},
 		},
+		{
+			name: "TransmitTestSignal",
+			call: func(b *Bridge) error {
+				return b.TransmitTestSignal(context.Background(), TestSignalParams{
+					Channel: 0, Kind: 1, FreqAHz: 1200, DurationMs: 100,
+				})
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -84,13 +92,15 @@ func TestBridgeStopClosesDispatchers(t *testing.T) {
 	// observe that Close drains them.
 	_, enumCh := b.enumDispatcher.Register()
 	_, scanCh := b.scanDispatcher.Register()
+	_, testSignalCh := b.testSignalDispatcher.Register()
 
 	b.closePendingRequests()
 
 	// Every waiting channel should receive a zero value (closed channel).
 	for name, ch := range map[string]<-chan any{
-		"enum": adaptPbAudioDeviceList(enumCh),
-		"scan": adaptPbInputLevelScanResult(scanCh),
+		"enum":       adaptPbAudioDeviceList(enumCh),
+		"scan":       adaptPbInputLevelScanResult(scanCh),
+		"testsignal": adaptPbTestSignalResult(testSignalCh),
 	} {
 		select {
 		case v, ok := <-ch:
@@ -127,6 +137,17 @@ func adaptPbInputLevelScanResult(c <-chan *pb.InputLevelScanResult) <-chan any {
 	}()
 	return out
 }
+func adaptPbTestSignalResult(c <-chan *pb.TestSignalResult) <-chan any {
+	out := make(chan any, 1)
+	go func() {
+		v, ok := <-c
+		if ok {
+			out <- v
+		}
+		close(out)
+	}()
+	return out
+}
 
 // TestBridgeRegistrationAfterStopRejects verifies that once
 // closePendingRequests has nil'd the dispatch maps, a caller that forces
@@ -145,5 +166,8 @@ func TestBridgeRegistrationAfterStopRejects(t *testing.T) {
 	}
 	if _, err := b.ScanInputLevels(context.Background()); !errors.Is(err, errBridgeStopped) {
 		t.Errorf("ScanInputLevels err = %v, want errBridgeStopped", err)
+	}
+	if err := b.TransmitTestSignal(context.Background(), TestSignalParams{}); !errors.Is(err, errBridgeStopped) {
+		t.Errorf("TransmitTestSignal err = %v, want errBridgeStopped", err)
 	}
 }
