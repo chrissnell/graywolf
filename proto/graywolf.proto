@@ -24,7 +24,6 @@ message IpcMessage {
     StatusUpdate status_update = 3;
     ModemReady modem_ready = 4;
     AudioDeviceList audio_device_list = 5;
-    TestToneResult test_tone_result = 6;
     DeviceLevelUpdate device_level_update = 7;
     InputLevelScanResult input_level_scan_result = 8;
 
@@ -37,7 +36,6 @@ message IpcMessage {
     StopAudio stop_audio = 15;
     Shutdown shutdown = 16;
     EnumerateAudioDevices enumerate_audio_devices = 17;
-    PlayTestTone play_test_tone = 18;
     SetDeviceGain set_device_gain = 19;
     ScanInputLevels scan_input_levels = 20;
     ManualPtt manual_ptt = 21;           // Go → Rust: manual PTT toggle for testing
@@ -237,22 +235,6 @@ message Shutdown {
 message EnumerateAudioDevices {
   uint32 request_id = 1;        // echoed back in AudioDeviceList
   bool include_output = 2;      // include output devices in response
-}
-
-// Request a brief test tone on an output device.
-message PlayTestTone {
-  uint32 request_id = 1;        // echoed back in TestToneResult
-  string device_name = 2;       // cpal output device name
-  uint32 sample_rate = 3;
-  uint32 channels = 4;
-  uint32 device_id = 5;         // configstore ID for gain lookup and level metering
-}
-
-// Result of a test tone attempt.
-message TestToneResult {
-  uint32 request_id = 1;
-  bool success = 2;
-  string error = 3;             // empty on success
 }
 
 // Set software gain for an audio device (live update, no restart).

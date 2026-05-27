@@ -355,8 +355,6 @@ impl Modem {
             | Some(Payload::InputLevelScanResult(_)) => {
                 // Rust → Go only; ignore if echoed back.
             }
-            // Proto variants removed in A5; no-op until then.
-            Some(Payload::PlayTestTone(_)) | Some(Payload::TestToneResult(_)) => {}
             None => {}
         }
         false
