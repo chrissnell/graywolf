@@ -321,11 +321,3 @@ func (s *Server) setAudioDeviceGain(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, dto.AudioDeviceFromModel(*dev))
 }
-
-// audioDeviceName picks the cpal device name from an AudioDevice.
-func audioDeviceName(d *configstore.AudioDevice) string {
-	if d.SourcePath != "" {
-		return d.SourcePath
-	}
-	return d.Name
-}
