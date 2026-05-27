@@ -32,8 +32,9 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | FLAC test vector playback | `audio/flac.rs` |
 | Stdin raw i16 PCM | `audio/stdin_raw.rs` |
 | SDR UDP audio bridge | `sdr/mod.rs` |
-| Modem orchestration | `modem/mod.rs` |
+| Modem orchestration + `TransmitTestSignal` / `TestSignalResult` IPC handler (`handle_transmit_test_signal`) | `modem/mod.rs` |
 | TX worker thread (owns sinks + PTT) | `modem/tx_worker.rs` |
+| CW / tone PCM synthesis for TX test signals | `txtest.rs` |
 | PTT method enum + factory | `tx/ptt.rs` |
 | Serial RTS/DTR PTT (Unix `ioctl(TIOCMSET)`) | `tx/ptt_unix.rs` |
 | Serial PTT (Windows `EscapeCommFunction`) | `tx/ptt_win.rs` |
@@ -65,7 +66,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | `app` (USB serial source) | Build-tag dispatch for the USB serial device source (Android vs. stub) | `pkg/app/usbserialsource_android.go`, `pkg/app/usbserialsource_default.go` |
 | `agw` | AGWPE TCP server (direwolf-compatible subset: R/G/g/k/K/m/X/x/y/Y/V) | `server.go`, `protocol.go` |
 | `ipcproto` | Generated Go bindings for `proto/graywolf.proto` | `graywolf.pb.go` (regen via `make proto`) |
-| `modembridge` | Supervises Rust modem child + IPC state machine + dispatcher + status cache + DCD publisher | `bridge.go`, `supervisor.go`, `ipc_unix.go`, `ipc_windows.go`, `dispatcher.go`, `session.go`, `status_cache.go` |
+| `modembridge` | Supervises Rust modem child + IPC state machine + dispatcher + status cache + DCD publisher. `Bridge.TransmitTestSignal` sends the `TransmitTestSignal` IPC message and returns a `TestSignalResult`. | `bridge.go`, `supervisor.go`, `ipc_unix.go`, `ipc_windows.go`, `dispatcher.go`, `session.go`, `status_cache.go` |
 | `txgovernor` | Centralized TX gate: per-channel rate limits, dedup, priority queue | `governor.go`, `pqueue.go`, `sink.go` |
 
 See [`../handbook/kiss.html`](../handbook/kiss.html), [`../handbook/agwpe.html`](../handbook/agwpe.html), [`../handbook/remote-kiss-tnc.html`](../handbook/remote-kiss-tnc.html).
@@ -149,6 +150,14 @@ The split is enforced by [invariant 9](invariants.md).
 | UI | `web/src/routes/Channels.svelte` shows mode selector + badge; `web/src/routes/MessagesSettings.svelte` shows messages TX-channel selector filtered to non-packet channels. |
 
 See [invariant 23](invariants.md) for the TX-gating contract.
+
+### Channel TX test signal
+
+| Surface | Where |
+|---|---|
+| REST endpoint | `pkg/webapi/channels.go` -- `sendTestSignal` handles `POST /api/channels/{id}/test-tx`; validates callsign before IPC (see [invariant 39](invariants.md)). |
+| Go bridge call | `pkg/modembridge` -- `Bridge.TransmitTestSignal` sends the `TransmitTestSignal` proto message and returns `TestSignalResult`. |
+| Rust handler | `graywolf-modem/src/modem/mod.rs` -- `handle_transmit_test_signal` dispatches to `graywolf-modem/src/txtest.rs` for PCM synthesis. |
 
 ## Go service: web
 

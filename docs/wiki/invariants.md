@@ -734,3 +734,16 @@ that could conflict.
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbDeviceArbiter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbDeviceArbiter.kt),
 [`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialFacade.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialFacade.kt),
 [`../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/usb/UsbPttAdapter.kt).
+
+### 39. The CW test signal never keys the radio with an empty or N0CALL callsign
+
+`POST /api/channels/{id}/test-tx` with `signal=cw` resolves the station
+callsign via `Store.ResolveStationCallsign` and returns 422 before any IPC if
+it is empty or N0CALL. The tone signals (`tone1200`, `tone2400`, `alt`) do not
+use the callsign.
+
+*Why:* A CW ID that transmits nothing (or the literal string "N0CALL") gives
+no useful identification and violates the intent of the feature.
+
+Source: [`../../pkg/webapi/channels.go`](../../pkg/webapi/channels.go)
+(`sendTestSignal`).
