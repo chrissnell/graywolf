@@ -357,10 +357,11 @@
     const lonStr = form.longitude.trim();
     const lat = latStr === '' ? 0 : parseFloat(latStr);
     const lon = lonStr === '' ? 0 : parseFloat(lonStr);
-    // Convert altitude input to feet for the API
+    // Convert altitude input to feet for the API. Object reports don't
+    // carry altitude (the ObjectInfo encoder has no /A= field), so skip it.
     const altNorm = altInput.replace(',', '.').trim();
     let altFt = null;
-    if (altNorm !== '') {
+    if (form.type !== 'object' && altNorm !== '') {
       const altVal = parseFloat(altNorm);
       if (Number.isNaN(altVal)) {
         altError = 'Altitude must be a number';
@@ -657,7 +658,7 @@
       {#if form.type === 'object'}
         <FormField label="Object name" id="bcn-objname"
           hint="1-9 characters. Appears as the object's label on APRS maps.">
-          <Input id="bcn-objname" bind:value={form.object_name} placeholder="Object callsign" maxlength="9" />
+          <Input id="bcn-objname" bind:value={form.object_name} placeholder="e.g. FIELDDAY" maxlength="9" />
         </FormField>
       {/if}
       <FormField label="Channel" id="bcn-channel"
@@ -670,7 +671,14 @@
           capabilityFilter={txPredicate}
         />
       </FormField>
-      <FormField label="Callsign" id="bcn-call" error={callsignError}>
+      <FormField
+        label={form.type === 'object' ? 'Transmitting station (via)' : 'Callsign'}
+        id="bcn-call"
+        error={callsignError}
+        hint={form.type === 'object'
+          ? "The object is attributed to this station on APRS maps as “NAME (via callsign)”. Leave unchecked to transmit it under your station callsign."
+          : undefined}
+      >
         <div class="callsign-row">
           <Input
             id="bcn-call"
@@ -681,7 +689,7 @@
           />
           <label class="callsign-override-label" for="bcn-call-override">
             <Checkbox id="bcn-call-override" bind:checked={form.callsign_override} />
-            <span>Override station callsign</span>
+            <span>{form.type === 'object' ? 'Use a different callsign' : 'Override station callsign'}</span>
           </label>
         </div>
       </FormField>
@@ -718,7 +726,9 @@
 
     <div class="beacon-form-col">
       <FormField label="Position source" id="bcn-pos-source"
-        hint="Choose whether this beacon's coordinates come from the live GPS fix or from fixed values you enter below.">
+        hint={form.type === 'object'
+          ? "Choose whether this object's coordinates come from the live GPS fix or from fixed values you enter below."
+          : "Choose whether this beacon's coordinates come from the live GPS fix or from fixed values you enter below."}>
         <RadioGroup bind:value={form.pos_source}>
           <div class="pos-source-row">
             <Radio value="gps" label="Use latest fix from GPS" />
@@ -735,19 +745,21 @@
           hint="Decimal degrees, east positive (e.g. -122.4 for San Francisco; 151.2 for Sydney).">
           <Input id="bcn-lon" bind:value={form.longitude} placeholder="-122.4" />
         </FormField>
-        <FormField label="Altitude" id="bcn-alt"
-          hint="Antenna height above sea level in {altUnit}. Optional; leave blank or 0 to omit.">
-          <div class="alt-row">
-            <Input id="bcn-alt" bind:value={altInput} placeholder={altUnit === 'feet' ? '0 ft' : '0 m'}
-              type="text" inputmode="decimal" error={altError} oninput={() => altError = ''} />
-            <div class="unit-toggle" role="group" aria-label="Altitude unit">
-              <button type="button" class="unit-btn" class:unit-active={altUnit === 'feet'}
-                onclick={() => toggleAltUnit('feet')}>ft</button>
-              <button type="button" class="unit-btn" class:unit-active={altUnit === 'meters'}
-                onclick={() => toggleAltUnit('meters')}>m</button>
+        {#if form.type !== 'object'}
+          <FormField label="Altitude" id="bcn-alt"
+            hint="Antenna height above sea level in {altUnit}. Optional; leave blank or 0 to omit.">
+            <div class="alt-row">
+              <Input id="bcn-alt" bind:value={altInput} placeholder={altUnit === 'feet' ? '0 ft' : '0 m'}
+                type="text" inputmode="decimal" error={altError} oninput={() => altError = ''} />
+              <div class="unit-toggle" role="group" aria-label="Altitude unit">
+                <button type="button" class="unit-btn" class:unit-active={altUnit === 'feet'}
+                  onclick={() => toggleAltUnit('feet')}>ft</button>
+                <button type="button" class="unit-btn" class:unit-active={altUnit === 'meters'}
+                  onclick={() => toggleAltUnit('meters')}>m</button>
+              </div>
             </div>
-          </div>
-        </FormField>
+          </FormField>
+        {/if}
       {/if}
       <FormField label="Interval (seconds)" id="bcn-interval">
         <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
