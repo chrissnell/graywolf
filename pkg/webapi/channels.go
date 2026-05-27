@@ -649,6 +649,7 @@ const (
 // @Failure  400 {object} webtypes.ErrorResponse
 // @Failure  409 {object} webtypes.ErrorResponse
 // @Failure  422 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
 // @Failure  503 {object} webtypes.ErrorResponse
 // @Security CookieAuth
 // @Router   /channels/{id}/test-tx [post]
@@ -669,9 +670,22 @@ func (s *Server) sendTestSignal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params := modembridge.TestSignalParams{Channel: id}
-	switch req.Signal {
-	case "cw":
+	// Validate the signal (400) before checking channel capability (409) so a
+	// malformed request is rejected on its own terms; then the more
+	// fundamental TX-capability error precedes the cw-only callsign guard (422).
+	params, ok := buildTestSignalParams(id, req.Signal)
+	if !ok {
+		badRequest(w, "unknown signal: "+req.Signal)
+		return
+	}
+
+	if err := s.requireTxCapableChannel(r.Context(), "channel", id); err != nil {
+		writeJSON(w, http.StatusConflict, webtypes.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	// The cw signal keys the radio with the station callsign; refuse if unset.
+	if req.Signal == "cw" {
 		call, err := s.store.ResolveStationCallsign(r.Context())
 		if err != nil {
 			switch {
@@ -684,8 +698,25 @@ func (s *Server) sendTestSignal(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		params.Kind = 0 // CW callsign
 		params.Callsign = call
+	}
+
+	if err := s.bridge.TransmitTestSignal(r.Context(), params); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dto.TestSignalResponse{Status: "sent"})
+}
+
+// buildTestSignalParams maps a UI signal id to modem TX test-signal parameters.
+// The "cw" case leaves Callsign empty for the caller to fill from resolved
+// station config. ok is false for an unrecognized signal id.
+func buildTestSignalParams(channelID uint32, signal string) (modembridge.TestSignalParams, bool) {
+	params := modembridge.TestSignalParams{Channel: channelID}
+	switch signal {
+	case "cw":
+		params.Kind = 0 // CW callsign
 		params.CwWpm = cwTestWpm
 		params.FreqAHz = cwTestToneHz
 	case "tone1200":
@@ -703,21 +734,9 @@ func (s *Server) sendTestSignal(w http.ResponseWriter, r *http.Request) {
 		params.DurationMs = toneTestDurMs
 		params.AltPeriodMs = altTestPeriodMs
 	default:
-		badRequest(w, "unknown signal: "+req.Signal)
-		return
+		return modembridge.TestSignalParams{}, false
 	}
-
-	if err := s.requireTxCapableChannel(r.Context(), "channel", id); err != nil {
-		writeJSON(w, http.StatusConflict, webtypes.ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	if err := s.bridge.TransmitTestSignal(r.Context(), params); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, dto.TestSignalResponse{Status: "sent"})
+	return params, true
 }
 
 // manualPtt keys or unkeys the radio on the given channel for SPA testing.

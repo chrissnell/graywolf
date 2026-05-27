@@ -4468,6 +4468,10 @@ paths:
           description: Unprocessable Entity
           schema:
             $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
