@@ -6,6 +6,7 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.util.Log
 import com.nw5w.graywolf.jni.AudioTxCallback
@@ -27,6 +28,12 @@ class AudioTxPump(
 
     @Volatile private var track: AudioTrack? = null
     @Volatile private var routedDevice: String = "<none>"
+    @Volatile private var sampleRateHz: Int = 22050
+    // Cumulative frames handed to AudioTrack.write — the ceiling for
+    // presentedFrames() so getTimestamp extrapolation can't over-report.
+    @Volatile private var framesWritten: Long = 0L
+    // Reused across drain polls; getTimestamp fills it in place.
+    private val timestamp = AudioTimestamp()
 
     private val am: AudioManager by lazy {
         appContext.getSystemService(AudioManager::class.java)
@@ -67,6 +74,10 @@ class AudioTxPump(
 
     fun start(sampleRate: Int = 22050) {
         if (track != null) return
+        sampleRateHz = sampleRate
+        // New track → playback head restarts at 0, so the presentedFrames
+        // ceiling must too.
+        framesWritten = 0L
 
         val t: AudioTrack = if (trackFactory != null) {
             trackFactory.invoke(sampleRate)
@@ -126,7 +137,33 @@ class AudioTxPump(
      */
     override fun pushSamples(samples: ShortArray, count: Int): Int {
         val t = track ?: return -1
-        return t.write(samples, 0, count, AudioTrack.WRITE_BLOCKING)
+        val written = t.write(samples, 0, count, AudioTrack.WRITE_BLOCKING)
+        if (written > 0) framesWritten += written
+        return written
+    }
+
+    /**
+     * Frames physically presented at the output. Primary source is
+     * AudioTrack.getTimestamp (its framePosition/nanoTime reference the output,
+     * so extrapolating to now accounts for the full HAL→USB latency). When the
+     * timestamp is unavailable (common right after play() and on some USB
+     * stacks) we fall back to the mixer playback head, which excludes that
+     * latency but never over-reports. The result is clamped to framesWritten so
+     * a stale timestamp during an inter-transmission underrun can't extrapolate
+     * past what we actually wrote and make the Rust drain loop unkey early.
+     */
+    override fun presentedFrames(): Long {
+        val t = track ?: return 0L
+        val written = framesWritten
+        val raw: Long = if (t.getTimestamp(timestamp)) {
+            val elapsedNs = System.nanoTime() - timestamp.nanoTime
+            val extra = if (elapsedNs > 0) elapsedNs * sampleRateHz / 1_000_000_000L else 0L
+            timestamp.framePosition + extra
+        } else {
+            // Int frame counter; mask to unsigned 32-bit for the wrap boundary.
+            t.playbackHeadPosition.toLong() and 0xFFFF_FFFFL
+        }
+        return minOf(raw, written)
     }
 
     fun stop() {

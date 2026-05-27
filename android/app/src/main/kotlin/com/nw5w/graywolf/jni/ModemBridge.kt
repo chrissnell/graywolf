@@ -26,6 +26,16 @@ interface UsbPttCallback {
  */
 interface AudioTxCallback {
     fun pushSamples(samples: ShortArray, count: Int): Int
+
+    /**
+     * Number of frames physically presented at the audio output since the
+     * track started. The Rust TX drain loop subtracts the position captured at
+     * key-up and holds PTT until this reaches the submitted frame count, so the
+     * txtail (and frame data) aren't clipped by the AudioTrack/USB output
+     * latency. Includes that latency via AudioTrack.getTimestamp; never reports
+     * more than has been written.
+     */
+    fun presentedFrames(): Long
 }
 
 object ModemBridge {
