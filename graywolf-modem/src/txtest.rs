@@ -98,7 +98,7 @@ pub fn cw_samples(callsign: &str, sample_rate: u32, wpm: u32, tone_hz: f32) -> V
     for seg in &segments {
         let n = dit * seg.units as usize;
         if !seg.on {
-            out.extend(std::iter::repeat(0i16).take(n));
+            out.extend(std::iter::repeat_n(0i16, n));
             continue;
         }
         let start = out.len();
@@ -136,7 +136,7 @@ pub fn alternating_samples(
     let mut phase = 0.0f32;
     let two_pi = 2.0 * std::f32::consts::PI;
     for i in 0..n {
-        let f = if (i / per) % 2 == 0 { freq_a } else { freq_b };
+        let f = if (i / per).is_multiple_of(2) { freq_a } else { freq_b };
         // Wrap to keep f32 phase precise over long durations.
         phase = (phase + two_pi * f / sample_rate as f32) % two_pi;
         out.push((phase.sin() * AMP) as i16);
