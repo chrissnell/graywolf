@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/webtypes"
 )
 
@@ -140,6 +141,40 @@ func TestSendTestSignal_NonTxChannelReturns409(t *testing.T) {
 	}
 	if er.Error == "" {
 		t.Errorf("expected non-empty error message in 409 body")
+	}
+}
+
+// TestBuildTestSignalParams pins the four UI signal ids to their modem TX
+// parameters. This guards the hardcoded recipe table against a silent swap
+// (e.g. tone1200<->tone2400 frequencies, or a wrong Kind) that the HTTP-level
+// guard tests would not catch.
+func TestBuildTestSignalParams(t *testing.T) {
+	const ch = 7
+	tests := []struct {
+		signal string
+		want   modembridge.TestSignalParams
+	}{
+		{"cw", modembridge.TestSignalParams{Channel: ch, Kind: 0, CwWpm: cwTestWpm, FreqAHz: cwTestToneHz}},
+		{"tone1200", modembridge.TestSignalParams{Channel: ch, Kind: 1, FreqAHz: toneTestLowHz, DurationMs: toneTestDurMs}},
+		{"tone2400", modembridge.TestSignalParams{Channel: ch, Kind: 1, FreqAHz: toneTestHighHz, DurationMs: toneTestDurMs}},
+		{"alt", modembridge.TestSignalParams{Channel: ch, Kind: 2, FreqAHz: toneTestLowHz, FreqBHz: toneTestHighHz, DurationMs: toneTestDurMs, AltPeriodMs: altTestPeriodMs}},
+	}
+	for _, tt := range tests {
+		got, ok := buildTestSignalParams(ch, tt.signal)
+		if !ok {
+			t.Errorf("%s: ok = false, want true", tt.signal)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("%s: got %+v, want %+v", tt.signal, got, tt.want)
+		}
+	}
+	// cw must leave Callsign empty for the handler to fill from station config.
+	if got, _ := buildTestSignalParams(ch, "cw"); got.Callsign != "" {
+		t.Errorf("cw: Callsign = %q, want empty (handler fills it)", got.Callsign)
+	}
+	if _, ok := buildTestSignalParams(ch, "bogus"); ok {
+		t.Errorf("bogus: ok = true, want false")
 	}
 }
 

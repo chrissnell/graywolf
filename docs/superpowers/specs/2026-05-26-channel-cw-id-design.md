@@ -136,12 +136,14 @@ key/unkey is handled by the worker.
 
 `POST /api/channels/{id}/test-tx` with body `{ "signal": "<id>" }` where
 `<id>` ∈ `cw | tone1200 | tone2400 | alt`. The handler:
-1. Parses channel ID and the signal id (unknown id → 400).
-2. For `cw` only: `ResolveStationCallsign` → 422 on empty/N0CALL.
-3. `requireTxCapableChannel` → 409 on failure.
-4. Maps the signal id to a hardcoded `modembridge.TestSignalParams`
-   (kind + frequencies + duration + period + callsign/wpm) and calls
-   `bridge.TransmitTestSignal` → 503 on failure.
+1. Parses channel ID and maps the signal id to a hardcoded
+   `modembridge.TestSignalParams` (kind + frequencies + duration + period +
+   wpm); unknown id → 400.
+2. `requireTxCapableChannel` → 409 on failure (the channel-config error
+   precedes the cw-only callsign guard).
+3. For `cw` only: `ResolveStationCallsign` → 422 on empty/N0CALL, then fills
+   `params.Callsign`.
+4. `bridge.TransmitTestSignal` → 503 on failure.
 5. `200 { "status": "sent" }`.
 
 The four recipes (the single source of the hardcoded values):
