@@ -639,7 +639,7 @@ const (
 // TX-capable channel.
 //
 // @Summary  Send a TX test signal (CW callsign or tone) on a channel
-// @Tags     Channels
+// @Tags     channels
 // @ID       sendTestSignal
 // @Accept   json
 // @Produce  json
@@ -650,6 +650,7 @@ const (
 // @Failure  409 {object} webtypes.ErrorResponse
 // @Failure  422 {object} webtypes.ErrorResponse
 // @Failure  503 {object} webtypes.ErrorResponse
+// @Security CookieAuth
 // @Router   /channels/{id}/test-tx [post]
 func (s *Server) sendTestSignal(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r.PathValue("id"))
@@ -683,20 +684,20 @@ func (s *Server) sendTestSignal(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		params.Kind = 0
+		params.Kind = 0 // CW callsign
 		params.Callsign = call
 		params.CwWpm = cwTestWpm
 		params.FreqAHz = cwTestToneHz
 	case "tone1200":
-		params.Kind = 1
+		params.Kind = 1 // steady tone
 		params.FreqAHz = toneTestLowHz
 		params.DurationMs = toneTestDurMs
 	case "tone2400":
-		params.Kind = 1
+		params.Kind = 1 // steady tone
 		params.FreqAHz = toneTestHighHz
 		params.DurationMs = toneTestDurMs
 	case "alt":
-		params.Kind = 2
+		params.Kind = 2 // alternating tone
 		params.FreqAHz = toneTestLowHz
 		params.FreqBHz = toneTestHighHz
 		params.DurationMs = toneTestDurMs
