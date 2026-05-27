@@ -11,7 +11,7 @@ import (
 )
 
 // TestBridgeStopCancelsPendingRequests verifies that callers blocked in
-// EnumerateAudioDevices / ScanInputLevels / PlayTestTone are unblocked with
+// EnumerateAudioDevices / ScanInputLevels are unblocked with
 // errBridgeStopped when the supervisor closes their dispatch channels,
 // instead of waiting out the 5s / 30s per-call timeout.
 //
@@ -73,7 +73,7 @@ func TestBridgeStopCancelsPendingRequests(t *testing.T) {
 }
 
 // TestBridgeStopClosesDispatchers verifies that closePendingRequests marks
-// the three dispatchers closed so a caller that races past the
+// the two dispatchers closed so a caller that races past the
 // StateRunning fast-path check sees a closed channel from Register and
 // rejects itself instead of leaking an entry into a dispatcher that will
 // never be drained again.
@@ -103,7 +103,7 @@ func TestBridgeStopClosesDispatchers(t *testing.T) {
 	}
 }
 
-// The three tiny adapters below widen the typed dispatcher reply channels
+// The two tiny adapters below widen the typed dispatcher reply channels
 // to <-chan any so the preceding table-driven test can share one select.
 func adaptPbAudioDeviceList(c <-chan *pb.AudioDeviceList) <-chan any {
 	out := make(chan any, 1)

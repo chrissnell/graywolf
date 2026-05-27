@@ -213,7 +213,7 @@ func (b *Bridge) supervise(ctx context.Context) {
 	b.sup.Run(ctx)
 }
 
-// closePendingRequests closes every reply channel in the three dispatchers
+// closePendingRequests closes every reply channel in the two dispatchers
 // so callers blocked in their per-call select unblock immediately. Must
 // only be invoked from supervise()'s defer chain; at that point the
 // session goroutine has already returned, so no Deliver is in flight
