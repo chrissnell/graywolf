@@ -126,11 +126,11 @@ func New(cfg Config) *Bridge {
 	}
 	pub := newDcdPublisher(cfg.Logger, dcdDropHook)
 	b := &Bridge{
-		cfg:            cfg,
-		logger:         cfg.Logger,
-		frames:         make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
-		dcd:            pub,
-		status:         newStatusCache(),
+		cfg:                  cfg,
+		logger:               cfg.Logger,
+		frames:               make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
+		dcd:                  pub,
+		status:               newStatusCache(),
 		enumDispatcher:       newDispatcher[*pb.AudioDeviceList](),
 		scanDispatcher:       newDispatcher[*pb.InputLevelScanResult](),
 		testSignalDispatcher: newDispatcher[*pb.TestSignalResult](),
@@ -364,7 +364,7 @@ func (b *Bridge) GetAllDeviceLevels() map[uint32]*DeviceLevel {
 
 // updateStatusCache and updateDeviceLevelCache are called by dispatchIPC
 // when StatusUpdate / DeviceLevelUpdate messages arrive.
-func (b *Bridge) updateStatusCache(s *pb.StatusUpdate)       { b.status.UpdateStatus(s) }
+func (b *Bridge) updateStatusCache(s *pb.StatusUpdate)           { b.status.UpdateStatus(s) }
 func (b *Bridge) updateDeviceLevelCache(u *pb.DeviceLevelUpdate) { b.status.UpdateDeviceLevel(u) }
 
 // InjectSendFnForTest installs a fake send function so tests can capture
