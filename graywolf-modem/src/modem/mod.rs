@@ -1062,6 +1062,14 @@ impl Modem {
 
     /// Render a TX test signal (CW callsign, steady tone, or alternating tones)
     /// and submit it to the TX worker, mirroring handle_transmit_frame's pattern.
+    /// Send a TestSignalResult reply to Go. Borrows only `self.handle`, so it
+    /// composes with the surrounding `&mut self` work in the handler below.
+    fn reply_test_signal(&self, request_id: u32, success: bool, error: String) {
+        let _ = self.handle.send(&IpcMessage::test_signal_result(
+            crate::ipc::proto::TestSignalResult { request_id, success, error },
+        ));
+    }
+
     fn handle_transmit_test_signal(&mut self, req: crate::ipc::proto::TransmitTestSignal) {
         // Lazy rigctld retry, same as handle_transmit_frame.
         if self.ptt_rigctld_pending.contains(&req.channel) {
@@ -1070,33 +1078,25 @@ impl Modem {
             }
         }
 
-        let (output_device_id, output_channel) =
-            match self.channel_configs.get(&req.channel) {
-                Some(c) => (c.output_device_id, c.output_channel),
-                None => {
-                    let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
-                        request_id: req.request_id,
-                        success: false,
-                        error: format!("unknown channel {}", req.channel),
-                    });
-                    let _ = self.handle.send(&msg);
-                    return;
-                }
-            };
+        let (output_device_id, output_channel) = match self.channel_configs.get(&req.channel) {
+            Some(c) => (c.output_device_id, c.output_channel),
+            None => {
+                self.reply_test_signal(req.request_id, false, format!("unknown channel {}", req.channel));
+                return;
+            }
+        };
 
-        let (device_name, sample_rate, channels) =
-            match self.audio_configs.get(&output_device_id) {
-                Some(a) => (a.device_name.clone(), a.sample_rate, a.channels),
-                None => {
-                    let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
-                        request_id: req.request_id,
-                        success: false,
-                        error: format!("no audio config for output device {}", output_device_id),
-                    });
-                    let _ = self.handle.send(&msg);
-                    return;
-                }
-            };
+        let (device_name, sample_rate, channels) = match self.audio_configs.get(&output_device_id) {
+            Some(a) => (a.device_name.clone(), a.sample_rate, a.channels),
+            None => {
+                self.reply_test_signal(
+                    req.request_id,
+                    false,
+                    format!("no audio config for output device {}", output_device_id),
+                );
+                return;
+            }
+        };
 
         let mut samples = match req.kind {
             0 => {
@@ -1107,12 +1107,7 @@ impl Modem {
                     req.freq_a_hz as f32,
                 );
                 if s.is_empty() {
-                    let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
-                        request_id: req.request_id,
-                        success: false,
-                        error: "callsign produced no CW symbols".to_string(),
-                    });
-                    let _ = self.handle.send(&msg);
+                    self.reply_test_signal(req.request_id, false, "callsign produced no CW symbols".to_string());
                     return;
                 }
                 s
@@ -1126,17 +1121,13 @@ impl Modem {
                 req.alt_period_ms,
             ),
             other => {
-                let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
-                    request_id: req.request_id,
-                    success: false,
-                    error: format!("unknown test signal kind {}", other),
-                });
-                let _ = self.handle.send(&msg);
+                self.reply_test_signal(req.request_id, false, format!("unknown test signal kind {}", other));
                 return;
             }
         };
 
-        // Apply output device gain, matching handle_transmit_frame.
+        // Apply output device gain, matching handle_transmit_frame. Live level
+        // metering / DeviceLevelUpdate is intentionally omitted for test signals.
         if let Some(gain_atom) = self.gain_atoms.get(&output_device_id) {
             let gain_db = f32::from_bits(gain_atom.load(std::sync::atomic::Ordering::Relaxed));
             if gain_db.abs() > f32::EPSILON {
@@ -1164,21 +1155,9 @@ impl Modem {
         match self.tx_worker.transmit(job) {
             Ok(()) => {
                 *self.tx_frames.entry(req.channel).or_default() += 1;
-                let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
-                    request_id: req.request_id,
-                    success: true,
-                    error: String::new(),
-                });
-                let _ = self.handle.send(&msg);
+                self.reply_test_signal(req.request_id, true, String::new());
             }
-            Err(e) => {
-                let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
-                    request_id: req.request_id,
-                    success: false,
-                    error: e,
-                });
-                let _ = self.handle.send(&msg);
-            }
+            Err(e) => self.reply_test_signal(req.request_id, false, e),
         }
     }
 }
