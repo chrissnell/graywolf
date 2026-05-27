@@ -33,6 +33,7 @@ const (
 	OpGetChannelStats     = "getChannelStats"
 	OpGetChannelReferrers = "getChannelReferrers"
 	OpManualPtt           = "manualPtt"
+	OpSendTestSignal      = "sendTestSignal"
 )
 
 // Beacons resource — /api/beacons (Phase 2).

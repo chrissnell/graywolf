@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
@@ -31,6 +32,7 @@ func (s *Server) registerChannels(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/channels/{id}/stats", s.getChannelStats)
 	mux.HandleFunc("GET /api/channels/{id}/referrers", s.getChannelReferrers)
 	mux.HandleFunc("POST /api/channels/{id}/ptt", s.manualPtt)
+	mux.HandleFunc("POST /api/channels/{id}/test-tx", s.sendTestSignal)
 }
 
 // listChannels returns every configured channel.
@@ -618,6 +620,103 @@ func (s *Server) getChannelStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	notFound(w)
+}
+
+// CW / tone recipe constants — the single source of the hardcoded test-signal
+// parameters. The four UI options map to these.
+const (
+	cwTestWpm       = 20
+	cwTestToneHz    = 700
+	toneTestDurMs   = 3000
+	altTestPeriodMs = 200
+	toneTestLowHz   = 1200
+	toneTestHighHz  = 2400
+)
+
+// sendTestSignal transmits a TX test signal (CW callsign or a tone) on a
+// channel. The "cw" signal refuses to key the radio when the station callsign
+// is empty or N0CALL; tone signals need no callsign. All signals require a
+// TX-capable channel.
+//
+// @Summary  Send a TX test signal (CW callsign or tone) on a channel
+// @Tags     Channels
+// @ID       sendTestSignal
+// @Accept   json
+// @Produce  json
+// @Param    id path int true "Channel ID"
+// @Param    body body dto.TestSignalRequest true "Signal to send"
+// @Success  200 {object} dto.TestSignalResponse
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  409 {object} webtypes.ErrorResponse
+// @Failure  422 {object} webtypes.ErrorResponse
+// @Failure  503 {object} webtypes.ErrorResponse
+// @Router   /channels/{id}/test-tx [post]
+func (s *Server) sendTestSignal(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid channel id")
+		return
+	}
+	if s.bridge == nil {
+		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: "bridge not available"})
+		return
+	}
+
+	var req dto.TestSignalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		badRequest(w, "invalid request body: "+err.Error())
+		return
+	}
+
+	params := modembridge.TestSignalParams{Channel: id}
+	switch req.Signal {
+	case "cw":
+		call, err := s.store.ResolveStationCallsign(r.Context())
+		if err != nil {
+			switch {
+			case errors.Is(err, callsign.ErrCallsignEmpty):
+				writeJSON(w, http.StatusUnprocessableEntity, webtypes.ErrorResponse{Error: "set your station callsign before sending CW ID"})
+			case errors.Is(err, callsign.ErrCallsignN0Call):
+				writeJSON(w, http.StatusUnprocessableEntity, webtypes.ErrorResponse{Error: "station callsign is still N0CALL; set a real callsign before sending CW ID"})
+			default:
+				s.internalError(w, r, "resolve station callsign", err)
+			}
+			return
+		}
+		params.Kind = 0
+		params.Callsign = call
+		params.CwWpm = cwTestWpm
+		params.FreqAHz = cwTestToneHz
+	case "tone1200":
+		params.Kind = 1
+		params.FreqAHz = toneTestLowHz
+		params.DurationMs = toneTestDurMs
+	case "tone2400":
+		params.Kind = 1
+		params.FreqAHz = toneTestHighHz
+		params.DurationMs = toneTestDurMs
+	case "alt":
+		params.Kind = 2
+		params.FreqAHz = toneTestLowHz
+		params.FreqBHz = toneTestHighHz
+		params.DurationMs = toneTestDurMs
+		params.AltPeriodMs = altTestPeriodMs
+	default:
+		badRequest(w, "unknown signal: "+req.Signal)
+		return
+	}
+
+	if err := s.requireTxCapableChannel(r.Context(), "channel", id); err != nil {
+		writeJSON(w, http.StatusConflict, webtypes.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	if err := s.bridge.TransmitTestSignal(r.Context(), params); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dto.TestSignalResponse{Status: "sent"})
 }
 
 // manualPtt keys or unkeys the radio on the given channel for SPA testing.

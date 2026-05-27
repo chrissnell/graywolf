@@ -339,6 +339,17 @@ func ChannelFromModel(m configstore.Channel) ChannelResponse {
 	}
 }
 
+// TestSignalRequest is the body for POST /api/channels/{id}/test-tx.
+// Signal is one of: "cw", "tone1200", "tone2400", "alt".
+type TestSignalRequest struct {
+	Signal string `json:"signal" example:"cw"`
+}
+
+// TestSignalResponse is the body returned by POST /api/channels/{id}/test-tx.
+type TestSignalResponse struct {
+	Status string `json:"status" example:"sent"`
+}
+
 // ChannelsFromModels maps a slice for list responses.
 func ChannelsFromModels(ms []configstore.Channel) []ChannelResponse {
 	out := make([]ChannelResponse, len(ms))
