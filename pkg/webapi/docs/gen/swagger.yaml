@@ -2121,6 +2121,18 @@ definitions:
       ok:
         type: boolean
     type: object
+  dto.TestSignalRequest:
+    properties:
+      signal:
+        example: cw
+        type: string
+    type: object
+  dto.TestSignalResponse:
+    properties:
+      status:
+        example: sent
+        type: string
+    type: object
   dto.ThemeConfigRequest:
     properties:
       id:
@@ -4418,6 +4430,51 @@ paths:
       security:
         - CookieAuth: []
       summary: Get channel stats
+      tags:
+        - channels
+  /channels/{id}/test-tx:
+    post:
+      consumes:
+        - application/json
+      operationId: sendTestSignal
+      parameters:
+        - description: Channel ID
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Signal to send
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TestSignalRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TestSignalResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Send a TX test signal (CW callsign or tone) on a channel
       tags:
         - channels
   /digipeater:
