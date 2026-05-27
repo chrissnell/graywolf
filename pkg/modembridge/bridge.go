@@ -5,7 +5,7 @@
 //   - supervisor owns the child process lifecycle and stdout ring buffer.
 //   - ipcLoop owns per-session framing-level send/recv.
 //   - dispatcher correlates request IDs with reply channels for the
-//     three request/response IPC exchanges.
+//     two request/response IPC exchanges.
 //   - dcdPublisher fans out DcdChange events with slow-subscriber drop
 //     accounting.
 //   - statusCache holds per-channel stats and per-device audio levels,
@@ -85,9 +85,8 @@ type Bridge struct {
 	// on every supervise iteration.
 	status *statusCache
 
-	// Three request/response dispatchers, one per IPC exchange kind.
+	// Two request/response dispatchers, one per IPC exchange kind.
 	enumDispatcher *dispatcher[*pb.AudioDeviceList]
-	toneDispatcher *dispatcher[*pb.TestToneResult]
 	scanDispatcher *dispatcher[*pb.InputLevelScanResult]
 
 	// pttWatchdog auto-unkeys channels whose manual PTT has been held
@@ -132,7 +131,6 @@ func New(cfg Config) *Bridge {
 		dcd:            pub,
 		status:         newStatusCache(),
 		enumDispatcher: newDispatcher[*pb.AudioDeviceList](),
-		toneDispatcher: newDispatcher[*pb.TestToneResult](),
 		scanDispatcher: newDispatcher[*pb.InputLevelScanResult](),
 	}
 	// pttWatchdog auto-unkeys channels after 10s of no heartbeat. The
@@ -197,7 +195,6 @@ func (b *Bridge) Stop() {
 // bound to Start/Stop rather than scattered across individual pieces.
 func (b *Bridge) supervise(ctx context.Context) {
 	b.enumDispatcher.Reset()
-	b.toneDispatcher.Reset()
 	b.scanDispatcher.Reset()
 	b.status.Reset()
 	// Cancel any watchdog timers left over from a prior session so a
@@ -223,7 +220,6 @@ func (b *Bridge) supervise(ctx context.Context) {
 // and double-close is impossible.
 func (b *Bridge) closePendingRequests() {
 	b.enumDispatcher.Close()
-	b.toneDispatcher.Close()
 	b.scanDispatcher.Close()
 }
 

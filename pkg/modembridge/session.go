@@ -124,8 +124,6 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 		b.dispatchDcd(p.DcdChange)
 	case *pb.IpcMessage_AudioDeviceList:
 		b.dispatchEnumResponse(p.AudioDeviceList)
-	case *pb.IpcMessage_TestToneResult:
-		b.dispatchToneResponse(p.TestToneResult)
 	case *pb.IpcMessage_DeviceLevelUpdate:
 		b.updateDeviceLevelCache(p.DeviceLevelUpdate)
 	case *pb.IpcMessage_InputLevelScanResult:

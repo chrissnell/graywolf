@@ -39,12 +39,6 @@ func TestBridgeStopCancelsPendingRequests(t *testing.T) {
 				return err
 			},
 		},
-		{
-			name: "PlayTestTone",
-			call: func(b *Bridge) error {
-				return b.PlayTestTone(context.Background(), 0, "fake", 48000, 1)
-			},
-		},
 	}
 
 	for _, tc := range cases {
@@ -89,7 +83,6 @@ func TestBridgeStopClosesDispatchers(t *testing.T) {
 	// Register a pending entry in each dispatcher directly so we can
 	// observe that Close drains them.
 	_, enumCh := b.enumDispatcher.Register()
-	_, toneCh := b.toneDispatcher.Register()
 	_, scanCh := b.scanDispatcher.Register()
 
 	b.closePendingRequests()
@@ -97,7 +90,6 @@ func TestBridgeStopClosesDispatchers(t *testing.T) {
 	// Every waiting channel should receive a zero value (closed channel).
 	for name, ch := range map[string]<-chan any{
 		"enum": adaptPbAudioDeviceList(enumCh),
-		"tone": adaptPbTestToneResult(toneCh),
 		"scan": adaptPbInputLevelScanResult(scanCh),
 	} {
 		select {
@@ -114,17 +106,6 @@ func TestBridgeStopClosesDispatchers(t *testing.T) {
 // The three tiny adapters below widen the typed dispatcher reply channels
 // to <-chan any so the preceding table-driven test can share one select.
 func adaptPbAudioDeviceList(c <-chan *pb.AudioDeviceList) <-chan any {
-	out := make(chan any, 1)
-	go func() {
-		v, ok := <-c
-		if ok {
-			out <- v
-		}
-		close(out)
-	}()
-	return out
-}
-func adaptPbTestToneResult(c <-chan *pb.TestToneResult) <-chan any {
 	out := make(chan any, 1)
 	go func() {
 		v, ok := <-c
@@ -164,8 +145,5 @@ func TestBridgeRegistrationAfterStopRejects(t *testing.T) {
 	}
 	if _, err := b.ScanInputLevels(context.Background()); !errors.Is(err, errBridgeStopped) {
 		t.Errorf("ScanInputLevels err = %v, want errBridgeStopped", err)
-	}
-	if err := b.PlayTestTone(context.Background(), 0, "x", 48000, 1); !errors.Is(err, errBridgeStopped) {
-		t.Errorf("PlayTestTone err = %v, want errBridgeStopped", err)
 	}
 }

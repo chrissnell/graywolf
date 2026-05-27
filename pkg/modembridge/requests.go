@@ -80,48 +80,6 @@ func (b *Bridge) ScanInputLevels(ctx context.Context) ([]InputLevel, error) {
 	}
 }
 
-// PlayTestTone asks the Rust modem to play a test tone on the named output
-// device and waits for the result. Follows the same request/response
-// pattern as EnumerateAudioDevices.
-func (b *Bridge) PlayTestTone(ctx context.Context, deviceID uint32, deviceName string, sampleRate, channels uint32) error {
-	if b.State() != StateRunning {
-		return errors.New("modembridge: not in RUNNING state")
-	}
-
-	reqID, ch := b.toneDispatcher.Register()
-	defer b.toneDispatcher.Cancel(reqID)
-
-	msg := &pb.IpcMessage{Payload: &pb.IpcMessage_PlayTestTone{
-		PlayTestTone: &pb.PlayTestTone{
-			RequestId:  reqID,
-			DeviceName: deviceName,
-			SampleRate: sampleRate,
-			Channels:   channels,
-			DeviceId:   deviceID,
-		},
-	}}
-	if err := b.sendIPC(msg); err != nil {
-		return fmt.Errorf("send PlayTestTone: %w", err)
-	}
-
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
-	select {
-	case resp := <-ch:
-		if resp == nil {
-			return errBridgeStopped
-		}
-		if !resp.Success {
-			return fmt.Errorf("test tone failed: %s", resp.Error)
-		}
-		return nil
-	case <-timer.C:
-		return errors.New("modembridge: test tone timeout")
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 // dispatch hooks invoked by dispatchIPC when the matching response
 // arrives from the modem.
 func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
@@ -129,9 +87,6 @@ func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
 }
 func (b *Bridge) dispatchScanResponse(r *pb.InputLevelScanResult) {
 	b.scanDispatcher.Deliver(r.RequestId, r)
-}
-func (b *Bridge) dispatchToneResponse(r *pb.TestToneResult) {
-	b.toneDispatcher.Deliver(r.RequestId, r)
 }
 
 func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
