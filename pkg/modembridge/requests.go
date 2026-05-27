@@ -94,9 +94,11 @@ type TestSignalParams struct {
 	AltPeriodMs uint32
 }
 
-// TransmitTestSignal asks the Rust modem to transmit a TX test signal on a
-// channel and waits for the submission result. The modem keys PTT, plays the
-// audio, and unkeys via the TX worker.
+// TransmitTestSignal asks the Rust modem to queue a TX test signal on a
+// channel. It returns once the modem has accepted the job for transmission;
+// PTT keying, audio play-out, and unkey then happen asynchronously on the TX
+// worker thread (so the 5s wait below is for the IPC round-trip, not the
+// signal's duration).
 func (b *Bridge) TransmitTestSignal(ctx context.Context, p TestSignalParams) error {
 	if b.State() != StateRunning {
 		return errors.New("modembridge: not in RUNNING state")
@@ -140,10 +142,6 @@ func (b *Bridge) TransmitTestSignal(ctx context.Context, p TestSignalParams) err
 	}
 }
 
-func (b *Bridge) dispatchTestSignalResponse(r *pb.TestSignalResult) {
-	b.testSignalDispatcher.Deliver(r.RequestId, r)
-}
-
 // dispatch hooks invoked by dispatchIPC when the matching response
 // arrives from the modem.
 func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
@@ -151,6 +149,9 @@ func (b *Bridge) dispatchEnumResponse(list *pb.AudioDeviceList) {
 }
 func (b *Bridge) dispatchScanResponse(r *pb.InputLevelScanResult) {
 	b.scanDispatcher.Deliver(r.RequestId, r)
+}
+func (b *Bridge) dispatchTestSignalResponse(r *pb.TestSignalResult) {
+	b.testSignalDispatcher.Deliver(r.RequestId, r)
 }
 
 func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
