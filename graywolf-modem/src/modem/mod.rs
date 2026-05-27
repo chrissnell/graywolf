@@ -346,9 +346,8 @@ impl Modem {
                 self.graceful_shutdown();
                 return true;
             }
-            Some(Payload::TransmitTestSignal(_req)) => {
-                // Handled in B3; stub to satisfy exhaustive match.
-                eprintln!("graywolf-modem: TransmitTestSignal not yet implemented");
+            Some(Payload::TransmitTestSignal(req)) => {
+                self.handle_transmit_test_signal(req);
             }
             Some(Payload::ReceivedFrame(_))
             | Some(Payload::DcdChange(_))
@@ -1059,6 +1058,128 @@ impl Modem {
             return;
         }
         *self.tx_frames.entry(tf.channel).or_default() += 1;
+    }
+
+    /// Render a TX test signal (CW callsign, steady tone, or alternating tones)
+    /// and submit it to the TX worker, mirroring handle_transmit_frame's pattern.
+    fn handle_transmit_test_signal(&mut self, req: crate::ipc::proto::TransmitTestSignal) {
+        // Lazy rigctld retry, same as handle_transmit_frame.
+        if self.ptt_rigctld_pending.contains(&req.channel) {
+            if let Some(cfg) = self.ptt_cfgs.get(&req.channel).cloned() {
+                self.apply_ptt_config(cfg);
+            }
+        }
+
+        let (output_device_id, output_channel) =
+            match self.channel_configs.get(&req.channel) {
+                Some(c) => (c.output_device_id, c.output_channel),
+                None => {
+                    let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
+                        request_id: req.request_id,
+                        success: false,
+                        error: format!("unknown channel {}", req.channel),
+                    });
+                    let _ = self.handle.send(&msg);
+                    return;
+                }
+            };
+
+        let (device_name, sample_rate, channels) =
+            match self.audio_configs.get(&output_device_id) {
+                Some(a) => (a.device_name.clone(), a.sample_rate, a.channels),
+                None => {
+                    let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
+                        request_id: req.request_id,
+                        success: false,
+                        error: format!("no audio config for output device {}", output_device_id),
+                    });
+                    let _ = self.handle.send(&msg);
+                    return;
+                }
+            };
+
+        let mut samples = match req.kind {
+            0 => {
+                let s = crate::txtest::cw_samples(
+                    &req.callsign,
+                    sample_rate,
+                    req.cw_wpm.max(1),
+                    req.freq_a_hz as f32,
+                );
+                if s.is_empty() {
+                    let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
+                        request_id: req.request_id,
+                        success: false,
+                        error: "callsign produced no CW symbols".to_string(),
+                    });
+                    let _ = self.handle.send(&msg);
+                    return;
+                }
+                s
+            }
+            1 => crate::txtest::tone_samples(sample_rate, req.freq_a_hz as f32, req.duration_ms),
+            2 => crate::txtest::alternating_samples(
+                sample_rate,
+                req.freq_a_hz as f32,
+                req.freq_b_hz as f32,
+                req.duration_ms,
+                req.alt_period_ms,
+            ),
+            other => {
+                let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
+                    request_id: req.request_id,
+                    success: false,
+                    error: format!("unknown test signal kind {}", other),
+                });
+                let _ = self.handle.send(&msg);
+                return;
+            }
+        };
+
+        // Apply output device gain, matching handle_transmit_frame.
+        if let Some(gain_atom) = self.gain_atoms.get(&output_device_id) {
+            let gain_db = f32::from_bits(gain_atom.load(std::sync::atomic::Ordering::Relaxed));
+            if gain_db.abs() > f32::EPSILON {
+                let gain_linear = 10f32.powf(gain_db / 20.0);
+                for s in samples.iter_mut() {
+                    let amplified = (*s as f32) * gain_linear;
+                    *s = amplified.clamp(-32767.0, 32767.0) as i16;
+                }
+            }
+        }
+
+        let job = tx_worker::TxJob {
+            channel: req.channel,
+            samples,
+            sample_rate,
+            output_device_id,
+            sink_config: audio::soundcard::SoundcardOutputConfig {
+                device_name,
+                sample_rate,
+                channels,
+                audio_channel: output_channel,
+            },
+        };
+
+        match self.tx_worker.transmit(job) {
+            Ok(()) => {
+                *self.tx_frames.entry(req.channel).or_default() += 1;
+                let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
+                    request_id: req.request_id,
+                    success: true,
+                    error: String::new(),
+                });
+                let _ = self.handle.send(&msg);
+            }
+            Err(e) => {
+                let msg = IpcMessage::test_signal_result(crate::ipc::proto::TestSignalResult {
+                    request_id: req.request_id,
+                    success: false,
+                    error: e,
+                });
+                let _ = self.handle.send(&msg);
+            }
+        }
     }
 }
 
