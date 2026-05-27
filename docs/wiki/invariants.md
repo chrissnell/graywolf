@@ -88,6 +88,30 @@ from the in-use-output snapshot, one entry per physical card, without
 opening the device — so a configured output never vanishes from
 detection while audio is running.
 
+**8b. PTT unkey waits for physical playout, not buffer submission.**
+`drive_tx_cycle` (`modem/tx_worker.rs`) holds PTT keyed until
+`sink.drained_samples() >= watermark` **and** the expected audio duration
+has elapsed — the two-gate "hybrid drain". The txdelay preamble and txtail
+postamble are baked into the PCM buffer by `tx::build_samples`, so there is
+**no** `thread::sleep` between drain and unkey (guarded by
+`drive_tx_cycle_adds_no_artificial_delay_*`). The catch: `drained_samples()`
+must report *frames physically emitted from the DAC*, not frames *submitted*.
+On desktop cpal supplies this. On Android `AudioTrack.write(WRITE_BLOCKING)`
+returns when samples are merely *accepted into the ring buffer*, so
+`AndroidTxSink::drained_samples` (`android/audio_tx.rs`) instead queries the
+`presentedFrames()` JNI downcall — Kotlin `AudioTrack.getTimestamp`, which
+includes HAL→USB output latency — and subtracts the position captured at
+key-up. Reverting it to the submitted count reintroduces TX-tail clipping
+(the tail, and real frame data when output latency exceeds the configured
+txtail, is cut off as PTT drops while audio is still in flight). Bias is
+always toward over-holding: `presentedFrames` clamps to frames-written, and a
+failed downcall degrades to the submitted count so the wall-clock gate still
+bounds the wait.
+
+Source: [`../../graywolf-modem/src/modem/tx_worker.rs`](../../graywolf-modem/src/modem/tx_worker.rs) (`drive_tx_cycle`);
+[`../../graywolf-modem/src/android/audio_tx.rs`](../../graywolf-modem/src/android/audio_tx.rs) (`AndroidTxSink`);
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/audio/AudioTxPump.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/audio/AudioTxPump.kt) (`presentedFrames`).
+
 ### 9. PTT enumeration vs. driving split
 
 *Why:* Go enumerates PTT hardware and Rust drives it, so both sides must agree on the identifier scheme passed via `ConfigurePtt.method` and `ConfigurePtt.device`.
