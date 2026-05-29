@@ -196,6 +196,12 @@ func (d *Digipeater) SetRules(rules []Rule) {
 	d.mu.Unlock()
 }
 
+// SetBlocklist replaces the block list under the list's own lock. Safe
+// for live reconfig. nil clears the list.
+func (d *Digipeater) SetBlocklist(entries []blocklist.Entry) {
+	d.blocklist.Set(entries)
+}
+
 // SetMyCall updates the local callsign for preemptive digi.
 func (d *Digipeater) SetMyCall(a ax25.Address) {
 	d.mu.Lock()
@@ -226,6 +232,20 @@ func RulesFromStore(rows []configstore.DigipeaterRule) []Rule {
 			Action:      r.Action,
 			Priority:    r.Priority,
 		})
+	}
+	return out
+}
+
+// BlocklistFromStore converts configstore rows to local blocklist
+// entries, skipping disabled rows so the engine never has to filter at
+// match time. Mirrors RulesFromStore.
+func BlocklistFromStore(rows []configstore.DigipeaterBlocklist) []blocklist.Entry {
+	out := make([]blocklist.Entry, 0, len(rows))
+	for _, r := range rows {
+		if !r.Enabled {
+			continue
+		}
+		out = append(out, blocklist.Entry{Pattern: r.Pattern, Reason: r.Reason})
 	}
 	return out
 }
@@ -269,6 +289,23 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 		d.logger.Warn("digipeater: dropping frame — mycall is unset or N0CALL",
 			"source", frame.Source.String(),
 			"mycall", mycall.String())
+		return false
+	}
+
+	// Block-list check. Source-address deny list, digipeater-scope
+	// only — see docs/wiki/invariants.md. Runs before dedup so a
+	// blocked source neither churns the dedup window nor inflates the
+	// Deduped counter (which is reserved for legitimate-but-duplicate
+	// frames). blocklist.List has its own RWMutex so no engine-level
+	// lock is required here.
+	if entry, hit := d.blocklist.Matches(frame.Source); hit {
+		d.mu.Lock()
+		d.stats.Blocked++
+		d.mu.Unlock()
+		d.logger.Debug("digipeater: source blocked",
+			"source", frame.Source.String(),
+			"pattern", entry.Pattern,
+			"reason", entry.Reason)
 		return false
 	}
 
