@@ -3923,6 +3923,37 @@
                 }
             }
         },
+        "/maps/local-bounds": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Get the bbox of every completed offline map",
+                "operationId": "getMapsLocalBounds",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.LocalBounds"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/messages": {
             "get": {
                 "security": [
@@ -9118,6 +9149,15 @@
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.LocalBounds": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "array",
+                "items": {
+                    "type": "number"
                 }
             }
         },

@@ -913,6 +913,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/maps/local-bounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the bbox of every completed offline map */
+        get: operations["getMapsLocalBounds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages": {
         parameters: {
             query?: never;
@@ -2555,6 +2572,9 @@ export interface components {
             tnc_ingress_burst?: number;
             tnc_ingress_rate_hz?: number;
             type?: string;
+        };
+        "dto.LocalBounds": {
+            [key: string]: number[];
         };
         "dto.MapsConfigRequest": {
             source?: string;
@@ -6890,6 +6910,35 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMapsLocalBounds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.LocalBounds"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

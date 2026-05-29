@@ -1460,6 +1460,12 @@ definitions:
       type:
         type: string
     type: object
+  dto.LocalBounds:
+    additionalProperties:
+      items:
+        type: number
+      type: array
+    type: object
   dto.MapsConfigRequest:
     properties:
       source:
@@ -5321,6 +5327,25 @@ paths:
       security:
         - CookieAuth: []
       summary: Start an offline download
+      tags:
+        - maps
+  /maps/local-bounds:
+    get:
+      operationId: getMapsLocalBounds
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.LocalBounds'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get the bbox of every completed offline map
       tags:
         - maps
   /messages:
