@@ -7,6 +7,25 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.12"
+  date: "2026-05-29"
+  style: info
+  schema_version: 1
+  link: "#/beacons"
+  title: "Beacons: pick the position report format and use position ambiguity"
+  body: |
+    You can now pick the format each beacon uses on the air -- Compressed
+    is the densest and most precise, Uncompressed is the standard form,
+    and Mic-E is the most efficient. Mic-E is coming in the next release;
+    pick it in the form to see it, but for now save with Compressed or
+    Uncompressed.
+
+    Uncompressed beacons can also use position ambiguity to publish a
+    deliberately coarse position. Pick Block, Neighborhood, Town, or
+    Region in the beacon form. Useful for home QTH privacy or for group
+    meetups where address-level precision isn't wanted. Existing beacons
+    keep transmitting exactly the same packets they always did.
+
 - version: "0.13.11"
   date: "2026-05-27"
   style: info
