@@ -231,7 +231,8 @@ func (m *Manager) Start(ctx context.Context, slug string, bbox *[4]float64) erro
 // encodeBBox writes [w,s,e,n] as the JSON array used on the wire and
 // in the maps_downloads.bbox column. We hand-format instead of going
 // through encoding/json so the result is deterministic (no insertion
-// of spaces, stable float formatting via 'g' verb with -1 precision).
+// of spaces, stable float formatting via 'f' verb with -1 precision
+// — the shortest decimal representation that round-trips).
 func encodeBBox(b [4]float64) string {
 	return fmt.Sprintf("[%s,%s,%s,%s]",
 		strconv.FormatFloat(b[0], 'f', -1, 64),

@@ -163,17 +163,20 @@ func NewWithDiskCache(baseURL string, tokenProvider func(context.Context) string
 // loadFromDisk seeds c.cached from <diskCacheDir>/catalog.json when
 // present. Failures are silent — disk persistence is best-effort, and
 // a missing or corrupt file falls back to fetching from the network.
-// fetchedAt is set from the file mtime so the cached entry is
-// treated as expired and the first Get() triggers a refresh.
+//
+// fetchedAt is left at the zero value (not the file mtime) so the
+// disk-seeded entry is always considered expired: the first Get()
+// triggers a network refresh, and only if that refresh fails does
+// the stale-on-error branch fall back to the on-disk copy. Using the
+// file mtime would let a reboot inside the TTL window serve disk
+// content as "fresh" and skip the warm-up entirely — defeating the
+// point of disk persistence (a lifeline for offline operation, not a
+// shortcut around the TTL).
 func (c *Cache) loadFromDisk() {
 	if c.diskCacheDir == "" {
 		return
 	}
 	path := filepath.Join(c.diskCacheDir, "catalog.json")
-	info, err := os.Stat(path)
-	if err != nil {
-		return
-	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return
@@ -187,7 +190,7 @@ func (c *Cache) loadFromDisk() {
 	}
 	out.indexSlugs()
 	c.cached = &out
-	c.fetchedAt = info.ModTime()
+	// fetchedAt stays at time.Time{} — see comment above.
 }
 
 // saveToDisk writes c.cached atomically to <diskCacheDir>/catalog.json.

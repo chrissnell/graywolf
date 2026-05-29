@@ -78,3 +78,71 @@ func TestUpsertMapsDownload_SecondCallUpdatesNotInserts(t *testing.T) {
 		t.Fatalf("status not updated: %q", second.Status)
 	}
 }
+
+// TestUpsertMapsDownload_NilBBoxPreservesExisting locks in the
+// status-transition contract: once Start has snapshotted a bbox into
+// the row, subsequent upserts that don't populate BBox (m.fail, the
+// in-run "downloading" Content-Length update, and the final "complete"
+// transition) must NOT wipe the bbox column. A regression here means
+// every completed download serves a NULL bbox to /api/maps/local-bounds,
+// silently breaking offline render across reboots.
+func TestUpsertMapsDownload_NilBBoxPreservesExisting(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	bbox := `[-109.05,36.99,-102.04,41]`
+
+	if err := s.UpsertMapsDownload(ctx, MapsDownload{
+		Slug: "state/colorado", Status: "downloading", BBox: &bbox,
+	}); err != nil {
+		t.Fatalf("initial upsert: %v", err)
+	}
+
+	// Transition without populating BBox -- this is what manager.fail()
+	// and the in-run "complete" path do.
+	if err := s.UpsertMapsDownload(ctx, MapsDownload{
+		Slug: "state/colorado", Status: "complete",
+	}); err != nil {
+		t.Fatalf("transition upsert: %v", err)
+	}
+
+	got, err := s.GetMapsDownload(ctx, "state/colorado")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != "complete" {
+		t.Fatalf("status: got %q want complete", got.Status)
+	}
+	if got.BBox == nil {
+		t.Fatalf("bbox was wiped by status transition")
+	}
+	if *got.BBox != bbox {
+		t.Fatalf("bbox: got %q want %q", *got.BBox, bbox)
+	}
+}
+
+// TestUpsertMapsDownload_NilBBoxOnFreshInsertStaysNull covers the
+// converse: a slug whose first-ever Upsert has no BBox (Start was
+// called with bbox=nil because the catalog had no bbox on that
+// region) lands with BBox=NULL and stays NULL across subsequent
+// transitions. The startup backfill is the only thing allowed to
+// populate it from there.
+func TestUpsertMapsDownload_NilBBoxOnFreshInsertStaysNull(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.UpsertMapsDownload(ctx, MapsDownload{
+		Slug: "state/wyoming", Status: "downloading",
+	}); err != nil {
+		t.Fatalf("initial upsert: %v", err)
+	}
+	if err := s.UpsertMapsDownload(ctx, MapsDownload{
+		Slug: "state/wyoming", Status: "complete",
+	}); err != nil {
+		t.Fatalf("transition upsert: %v", err)
+	}
+
+	got, _ := s.GetMapsDownload(ctx, "state/wyoming")
+	if got.BBox != nil {
+		t.Fatalf("expected NULL bbox throughout, got %q", *got.BBox)
+	}
+}

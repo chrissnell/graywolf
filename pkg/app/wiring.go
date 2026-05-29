@@ -1258,6 +1258,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 			if err == nil {
 				if !healthy {
 					a.logger.Info("maps catalog reachable again")
+					healthy = true
 				}
 				return
 			}
