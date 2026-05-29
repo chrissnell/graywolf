@@ -35,9 +35,14 @@ func TestBeaconRequest_Validate_PositionFormat(t *testing.T) {
 			r.PositionFormat = "uncompressed"
 			r.Ambiguity = 5
 		}, "ambiguity must be 0..4"},
-		{"mic_e_rejected_phase1", func(r *BeaconRequest) {
+		{"mic_e_accepted", func(r *BeaconRequest) {
 			r.PositionFormat = "mic_e"
-		}, "Mic-E TX is not yet supported"},
+			r.Ambiguity = 2
+		}, ""},
+		{"mic_e_amb_too_high", func(r *BeaconRequest) {
+			r.PositionFormat = "mic_e"
+			r.Ambiguity = 5
+		}, "ambiguity must be 0..4"},
 		{"unknown_format", func(r *BeaconRequest) {
 			r.PositionFormat = "bogus"
 		}, "position_format must be one of"},

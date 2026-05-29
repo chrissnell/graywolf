@@ -70,10 +70,8 @@ type BeaconRequest struct {
 // canonical source of truth.
 //
 // position_format and ambiguity are also validated against APRS101
-// constraints: ambiguity must be 0..4; only uncompressed (today) and
-// mic_e (Phase 2) carry ambiguity bytes, so compressed must keep
-// ambiguity at zero. Mic-E is rejected in Phase 1 with a "coming next
-// release" message — the encoder is not wired yet.
+// constraints: ambiguity must be 0..4; only uncompressed and mic_e
+// carry ambiguity bytes, so compressed must keep ambiguity at zero.
 func (r BeaconRequest) Validate() error {
 	switch r.Type {
 	case "position", "igate":
@@ -87,10 +85,8 @@ func (r BeaconRequest) Validate() error {
 			if r.Ambiguity != 0 {
 				return fmt.Errorf("ambiguity must be 0 when position_format is compressed")
 			}
-		case "uncompressed":
+		case "uncompressed", "mic_e":
 			// fall through to ambiguity range check below
-		case "mic_e":
-			return fmt.Errorf("Mic-E TX is not yet supported; coming in the next release")
 		default:
 			return fmt.Errorf("position_format must be one of compressed, uncompressed, mic_e (got %q)", r.PositionFormat)
 		}
