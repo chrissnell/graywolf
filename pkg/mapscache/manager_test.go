@@ -381,3 +381,77 @@ func TestStart_NilBBoxLeavesColumnNull(t *testing.T) {
 		t.Fatalf("expected NULL bbox, got %q", *row.BBox)
 	}
 }
+
+func TestBackfillBBoxes_FillsNullForCompletedRows(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	// Seed a completed row without a bbox and write a fake archive at
+	// the path the manager expects.
+	if err := store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+		Slug: "state/colorado", Status: "complete",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	archive := mgr.PathFor("state/colorado")
+	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	hdr := buildPMTilesV3Header(t, -109.05, 36.99, -102.04, 41.0)
+	if err := os.WriteFile(archive, hdr, 0o644); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	if err := mgr.BackfillBBoxes(ctx); err != nil {
+		t.Fatalf("BackfillBBoxes: %v", err)
+	}
+	row, _ := store.GetMapsDownload(ctx, "state/colorado")
+	if row.BBox == nil {
+		t.Fatalf("bbox still NULL after backfill")
+	}
+	want := `[-109.05,36.99,-102.04,41]`
+	if *row.BBox != want {
+		t.Fatalf("bbox: got %q want %q", *row.BBox, want)
+	}
+}
+
+func TestBackfillBBoxes_LeavesPopulatedRowsAlone(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	existing := `[1,2,3,4]`
+	if err := store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+		Slug: "state/colorado", Status: "complete", BBox: &existing,
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// No archive on disk -- if backfill tried to read it, it would
+	// log a warning. The bbox value being unchanged proves the
+	// populated row was skipped without an archive read.
+	if err := mgr.BackfillBBoxes(ctx); err != nil {
+		t.Fatalf("BackfillBBoxes: %v", err)
+	}
+	row, _ := store.GetMapsDownload(ctx, "state/colorado")
+	if row.BBox == nil || *row.BBox != existing {
+		t.Fatalf("expected bbox %q preserved, got %v", existing, row.BBox)
+	}
+}
+
+func TestBackfillBBoxes_SkipsMissingArchives(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	if err := store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+		Slug: "state/ghost", Status: "complete",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// No archive on disk. Backfill should log and continue, not error.
+	if err := mgr.BackfillBBoxes(ctx); err != nil {
+		t.Fatalf("BackfillBBoxes returned error on missing archive: %v", err)
+	}
+	row, _ := store.GetMapsDownload(ctx, "state/ghost")
+	if row.BBox != nil {
+		t.Fatalf("expected bbox to remain NULL for missing archive, got %q", *row.BBox)
+	}
+}

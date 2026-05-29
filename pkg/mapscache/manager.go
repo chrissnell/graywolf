@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -238,6 +239,43 @@ func encodeBBox(b [4]float64) string {
 		strconv.FormatFloat(b[2], 'f', -1, 64),
 		strconv.FormatFloat(b[3], 'f', -1, 64),
 	)
+}
+
+// BackfillBBoxes scans every completed maps_downloads row whose BBox
+// column is NULL and fills it in by reading the bbox from the
+// corresponding on-disk pmtiles archive header. Idempotent: rows that
+// already have a bbox are skipped without touching the filesystem.
+// Per-row failures (missing archive, malformed header) are logged at
+// WARN and don't abort the pass — the render path falls back to the
+// catalog for those slugs and a later re-download repopulates them.
+//
+// Called once at startup from pkg/app/wiring.go after
+// MigrateMapsDownloadSlugs. Cheap on warm installs (every row is
+// already populated); only does work on the first start after upgrade.
+func (m *Manager) BackfillBBoxes(ctx context.Context) error {
+	rows, err := m.store.ListMapsDownloads(ctx)
+	if err != nil {
+		return fmt.Errorf("list downloads: %w", err)
+	}
+	for _, r := range rows {
+		if r.Status != "complete" || r.BBox != nil {
+			continue
+		}
+		path := m.PathFor(r.Slug)
+		bbox, err := ReadArchiveBBox(path)
+		if err != nil {
+			slog.Warn("mapscache bbox backfill: skipping",
+				"slug", r.Slug, "path", path, "err", err)
+			continue
+		}
+		encoded := encodeBBox(bbox)
+		r.BBox = &encoded
+		if err := m.store.UpsertMapsDownload(ctx, r); err != nil {
+			slog.Warn("mapscache bbox backfill: upsert failed",
+				"slug", r.Slug, "err", err)
+		}
+	}
+	return nil
 }
 
 // Delete cancels any in-flight download for slug, removes the

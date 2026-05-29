@@ -1259,8 +1259,14 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	if err := a.store.MigrateMapsDownloadSlugs(context.Background()); err != nil {
 		return fmt.Errorf("migrate maps_downloads slugs: %w", err)
 	}
+	if err := a.store.MigrateMapsDownloadBBox(context.Background()); err != nil {
+		return fmt.Errorf("migrate maps_downloads bbox column: %w", err)
+	}
 	if err := mapsCache.MigrateLegacyArchives(context.Background()); err != nil {
 		a.logger.Warn("legacy archive migration failed", "err", err)
+	}
+	if err := mapsCache.BackfillBBoxes(context.Background()); err != nil {
+		a.logger.Warn("bbox backfill failed", "err", err)
 	}
 
 	apiSrv, err := webapi.NewServer(webapi.Config{
