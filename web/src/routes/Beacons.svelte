@@ -1079,19 +1079,20 @@
   .bcn-amb-select {
     margin-top: 0.5rem;
     padding: 0.4rem 0.5rem;
-    border: 1px solid var(--color-border, #444);
+    border: 1px solid var(--color-border);
     border-radius: 4px;
-    background: var(--color-input-bg, #1e1e1e);
-    color: inherit;
+    background: var(--color-bg);
+    color: var(--color-text);
     width: 100%;
     max-width: 360px;
+    font: inherit;
   }
   .bcn-dest-autocomp {
     padding: 0.4rem 0.6rem;
-    background: var(--color-input-disabled-bg, #2a2a2a);
-    border: 1px dashed var(--color-border, #444);
+    background: var(--color-surface);
+    border: 1px dashed var(--color-border);
     border-radius: 4px;
-    color: var(--color-text-muted, #aaa);
+    color: var(--color-text-muted);
     font-style: italic;
   }
   .type-hint {

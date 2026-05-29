@@ -87,23 +87,54 @@ func TestMicEPositionInfo_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestMicEPositionInfo_AmbiguityDestRoundTrip exercises ambiguity
-// levels 1..4 and confirms the destination carries the K/L/Z space
-// variants in the right slots. The info-field longitude bytes are
-// blanked too, so the parser flags them as ambiguous; we only assert
-// the destination round-trip here (the destination's latitude digits
-// must still decode at the appropriate precision).
-func TestMicEPositionInfo_AmbiguityDestRoundTrip(t *testing.T) {
-	for level := 1; level <= 4; level++ {
-		destCall := MicEDestination(37.4092, -122.1404, level)
-		if len(destCall) != 6 {
-			t.Fatalf("level %d: dest len %d", level, len(destCall))
+// TestMicEPositionInfo_AmbiguityRoundTrip exercises ambiguity levels
+// 1..4 end to end: build a Mic-E frame with the new encoder, parse it
+// through aprs.Parse, and confirm the position decodes without error
+// at the expected precision. Regression test for the
+// "Invalid characters in mic-e information field" rejection that
+// FAP / aprs.fi emitted when the longitude info bytes were
+// space-blanked (issue surfaced 2026-05-29 on NW5W-5 Suncrest
+// digi beacon).
+func TestMicEPositionInfo_AmbiguityRoundTrip(t *testing.T) {
+	// Suncrest-ish coords from the originally failing packet.
+	const lat = 40.4756
+	const lon = -111.8456
+	srcAddr, _ := ax25.ParseAddress("N0CALL-5")
+	// Tolerance is generous enough to swallow truncation rounding plus
+	// the encoder's normal sub-hundredth quantization. Maps to
+	// roughly "the visible precision at the given ambiguity level".
+	tolByLevel := []float64{0.001, 0.005, 0.05, 0.5, 5.0}
+	for level := 0; level <= 4; level++ {
+		info := MicEPositionInfo(lat, lon, 0, 0, 0, '/', '>', false, level, "")
+		// Hard requirement (FAP-compat): no space bytes in the 3
+		// longitude info-field positions (info[1..3]).
+		for i := 1; i <= 3; i++ {
+			if info[i] == ' ' {
+				t.Errorf("level %d: info byte %d is ASCII space; FAP/aprs.fi rejects this", level, i)
+			}
 		}
+		destCall := MicEDestination(lat, lon, level)
 		destAddr, err := ax25.ParseAddress(destCall)
 		if err != nil {
 			t.Fatalf("level %d: ParseAddress(%q): %v", level, destCall, err)
 		}
-		_ = destAddr
+		frame, err := ax25.NewUIFrame(srcAddr, destAddr, nil, []byte(info))
+		if err != nil {
+			t.Fatalf("level %d: NewUIFrame: %v", level, err)
+		}
+		p, err := aprs.Parse(frame)
+		if err != nil {
+			t.Fatalf("level %d: aprs.Parse: %v (dest=%q info=%q)", level, err, destCall, info)
+		}
+		if p.MicE == nil || p.Position == nil {
+			t.Fatalf("level %d: no Mic-E position parsed: %+v", level, p)
+		}
+		if absf(p.Position.Latitude-lat) > tolByLevel[level] {
+			t.Errorf("level %d: lat got %v want ~%v (tol %v)", level, p.Position.Latitude, lat, tolByLevel[level])
+		}
+		if absf(p.Position.Longitude-lon) > tolByLevel[level] {
+			t.Errorf("level %d: lon got %v want ~%v (tol %v)", level, p.Position.Longitude, lon, tolByLevel[level])
+		}
 	}
 }
 

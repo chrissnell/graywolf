@@ -93,19 +93,24 @@ func micELonFields(lon float64) (degAdjusted int, offset100 bool, west bool) {
 }
 
 // micELonBytes returns the 3-byte longitude info-field bytes per
-// APRS101 ch 10. Ambiguity blanks trailing positions in the
-// minute / hundredths bytes with ASCII space 0x20; the parser side
-// (pkg/aprs/mice.go) reports an ErrMicELonAmbiguous error for those
-// frames, so callers that care about the ambiguity bits must inspect
-// the destination instead (where K/L/Z variants survive parsing).
+// APRS101 ch 10. Ambiguity truncates the longitude minutes /
+// hundredths to the appropriate precision so the wire bytes stay
+// valid: APRS101 technically allows ASCII space (0x20) at the blanked
+// positions, but FAP (the parser aprs.fi uses) rejects the resulting
+// frame as "Invalid characters in mic-e information field". The
+// destination's K/L/Z variants still signal the ambiguity level to
+// receivers that care, and the position is genuinely coarsened by
+// truncation, so privacy is preserved without breaking compatibility.
+//
+// Precision per ambiguity level:
+//
+//	0: full (1/100 minute)
+//	1: 1/10 minute
+//	2: 1 minute
+//	3: 10 minutes
+//	4: 1 degree
 func micELonBytes(lon float64, ambiguity int) [3]byte {
 	degAdjusted, _, _ := micELonFields(lon)
-	// Degrees byte: just value + 28. For 0-9 the resulting raw byte is
-	// in 28-37 (control chars) but the APRS101 parser accepts them; we
-	// do not use the +80 alternate range because the in-tree decoder
-	// has no branch for that variant. For values >= 100 the caller has
-	// already subtracted 100 (offset100 is set in the destination).
-	degByte := byte(degAdjusted + 28)
 
 	absLon := lon
 	if absLon < 0 {
@@ -125,6 +130,30 @@ func micELonBytes(lon float64, ambiguity int) [3]byte {
 		minWhole = 0 // wrap; the degree byte already covers this case
 	}
 
+	// Coarsen by truncation to match the destination's K/L/Z blanking.
+	// Truncation (rather than round-to-nearest) keeps the encoded value
+	// at or below the operator's true position so the wire matches the
+	// "digit blanked" semantics the receiver sees in the destination.
+	switch {
+	case ambiguity >= 4:
+		minWhole = 0
+		minFrac = 0
+	case ambiguity >= 3:
+		minWhole = (minWhole / 10) * 10
+		minFrac = 0
+	case ambiguity >= 2:
+		minFrac = 0
+	case ambiguity >= 1:
+		minFrac = (minFrac / 10) * 10
+	}
+
+	// Degrees byte: just value + 28. For 0-9 the resulting raw byte is
+	// in 28-37 (control chars) but the APRS101 parser accepts them; we
+	// do not use the +80 alternate range because the in-tree decoder
+	// has no branch for that variant. For values >= 100 the caller has
+	// already subtracted 100 (offset100 is set in the destination).
+	degByte := byte(degAdjusted + 28)
+
 	// Minutes byte: value + 28; if value < 10, also +60 so the byte
 	// stays printable and outside the control range (APRS101 ch 10
 	// minutes encoding).
@@ -135,16 +164,6 @@ func micELonBytes(lon float64, ambiguity int) [3]byte {
 	minByte := byte(m + 28)
 	hundByte := byte(minFrac + 28)
 
-	// Ambiguity: APRS101 ch 10 blanks the matching positions with
-	// ASCII space (0x20). Note this makes the longitude undecodable
-	// from the info field alone; the receiving parser surfaces the
-	// blanked bytes via the K/L/Z variants in the destination instead.
-	if ambiguity >= 1 {
-		hundByte = 0x20
-	}
-	if ambiguity >= 2 {
-		minByte = 0x20
-	}
 	return [3]byte{degByte, minByte, hundByte}
 }
 
