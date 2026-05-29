@@ -105,6 +105,16 @@ const (
 	OpDeleteDigipeaterRule = "deleteDigipeaterRule"
 )
 
+// Digipeater blocklist resource — /api/digipeater/blocklist (global
+// source-address deny list, digipeater-scope only; see
+// docs/wiki/invariants.md).
+const (
+	OpListDigipeaterBlocklist   = "listDigipeaterBlocklist"
+	OpCreateDigipeaterBlocklist = "createDigipeaterBlocklist"
+	OpUpdateDigipeaterBlocklist = "updateDigipeaterBlocklist"
+	OpDeleteDigipeaterBlocklist = "deleteDigipeaterBlocklist"
+)
+
 // Igate RF filters resource — /api/igate/filters (Phase 2). The
 // singleton config at /api/igate/config is Phase 3's concern — see
 // the Phase 3 block below.

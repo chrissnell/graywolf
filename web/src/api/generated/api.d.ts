@@ -573,6 +573,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/digipeater/blocklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List digipeater blocklist entries */
+        get: operations["listDigipeaterBlocklist"];
+        put?: never;
+        /** Create digipeater blocklist entry */
+        post: operations["createDigipeaterBlocklist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/digipeater/blocklist/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update digipeater blocklist entry */
+        put: operations["updateDigipeaterBlocklist"];
+        post?: never;
+        /** Delete digipeater blocklist entry */
+        delete: operations["deleteDigipeaterBlocklist"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/digipeater/rules": {
         parameters: {
             query?: never;
@@ -2285,6 +2321,17 @@ export interface components {
             /** @description "sent" */
             status?: string;
         };
+        "dto.BlocklistEntryRequest": {
+            enabled?: boolean;
+            pattern?: string;
+            reason?: string;
+        };
+        "dto.BlocklistEntryResponse": {
+            enabled?: boolean;
+            id?: number;
+            pattern?: string;
+            reason?: string;
+        };
         "dto.Catalog": {
             countries?: components["schemas"]["dto.CatalogCountry"][];
             generatedAt?: string;
@@ -3466,6 +3513,12 @@ export interface components {
         "dto.IGateRfFilterRequest": {
             content: {
                 "application/json": components["schemas"]["dto.IGateRfFilterRequest"];
+            };
+        };
+        /** @description Blocklist entry */
+        "dto.BlocklistEntryRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.BlocklistEntryRequest"];
             };
         };
         /** @description Tx-timing definition */
@@ -5786,6 +5839,180 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlocklistEntryResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlocklistEntryRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlocklistEntryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlocklistEntryRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlocklistEntryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

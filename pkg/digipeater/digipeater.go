@@ -29,6 +29,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/digipeater/blocklist"
 	"github.com/chrissnell/graywolf/pkg/internal/dedup"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -93,12 +94,18 @@ type Config struct {
 	// does-anything behavior). Lookup errors are silently ignored
 	// (fail-open).
 	ChannelModes configstore.ChannelModeLookup
+
+	// Blocklist names source addresses that must never be digipeated.
+	// Replaced under lock via SetBlocklist for live reconfig. Nil/empty
+	// means no block list (current behavior).
+	Blocklist []blocklist.Entry
 }
 
 // Stats exposes counters.
 type Stats struct {
 	Packets uint64 // successfully digipeated
 	Deduped uint64 // dropped as duplicate
+	Blocked uint64 // dropped because source matched the block list
 }
 
 // Digipeater is the engine.
@@ -114,8 +121,9 @@ type Digipeater struct {
 
 	channelModes configstore.ChannelModeLookup
 
-	dedup *dedup.Window[string, struct{}]
-	stats Stats
+	dedup     *dedup.Window[string, struct{}]
+	blocklist *blocklist.List
+	stats     Stats
 }
 
 // New builds a Digipeater. Resolves cfg.MyCall (override) against
@@ -160,6 +168,7 @@ func New(cfg Config) (*Digipeater, error) {
 		onDedup:      cfg.OnDedup,
 		channelModes: cfg.ChannelModes,
 		dedup:        dedup.New[string, struct{}](dedup.Config{TTL: cfg.DedupeWindow}),
+		blocklist:    blocklist.New(cfg.Blocklist),
 	}, nil
 }
 
@@ -185,6 +194,12 @@ func (d *Digipeater) SetRules(rules []Rule) {
 	d.mu.Lock()
 	d.rules = append([]Rule(nil), rules...)
 	d.mu.Unlock()
+}
+
+// SetBlocklist replaces the block list under the list's own lock. Safe
+// for live reconfig. nil clears the list.
+func (d *Digipeater) SetBlocklist(entries []blocklist.Entry) {
+	d.blocklist.Set(entries)
 }
 
 // SetMyCall updates the local callsign for preemptive digi.
@@ -217,6 +232,20 @@ func RulesFromStore(rows []configstore.DigipeaterRule) []Rule {
 			Action:      r.Action,
 			Priority:    r.Priority,
 		})
+	}
+	return out
+}
+
+// BlocklistFromStore converts configstore rows to local blocklist
+// entries, skipping disabled rows so the engine never has to filter at
+// match time. Mirrors RulesFromStore.
+func BlocklistFromStore(rows []configstore.DigipeaterBlocklist) []blocklist.Entry {
+	out := make([]blocklist.Entry, 0, len(rows))
+	for _, r := range rows {
+		if !r.Enabled {
+			continue
+		}
+		out = append(out, blocklist.Entry{Pattern: r.Pattern, Reason: r.Reason})
 	}
 	return out
 }
@@ -260,6 +289,23 @@ func (d *Digipeater) Handle(ctx context.Context, rxChannel uint32, frame *ax25.F
 		d.logger.Warn("digipeater: dropping frame — mycall is unset or N0CALL",
 			"source", frame.Source.String(),
 			"mycall", mycall.String())
+		return false
+	}
+
+	// Block-list check. Source-address deny list, digipeater-scope
+	// only — see docs/wiki/invariants.md. Runs before dedup so a
+	// blocked source neither churns the dedup window nor inflates the
+	// Deduped counter (which is reserved for legitimate-but-duplicate
+	// frames). blocklist.List has its own RWMutex so no engine-level
+	// lock is required here.
+	if entry, hit := d.blocklist.Matches(frame.Source); hit {
+		d.mu.Lock()
+		d.stats.Blocked++
+		d.mu.Unlock()
+		d.logger.Debug("digipeater: source blocked",
+			"source", frame.Source.String(),
+			"pattern", entry.Pattern,
+			"reason", entry.Reason)
 		return false
 	}
 

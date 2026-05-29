@@ -300,6 +300,29 @@ type DigipeaterRule struct {
 	UpdatedAt   time.Time `json:"-"`
 }
 
+// DigipeaterBlocklist is one source-address pattern that the digipeater
+// engine must refuse to digipeat. Global (channel-agnostic). The
+// engine consults this list strictly inside pkg/digipeater/digipeater.go's
+// Handle — no other RX consumer reads it (see docs/wiki/invariants.md).
+//
+// Pattern syntax (canonical, uppercase, validated at the API
+// boundary by pkg/digipeater/blocklist.ValidatePattern):
+//
+//	CALL       — exact source, SSID 0 only (bare callsign)
+//	CALL-N     — exact source, specific SSID 0..15
+//	CALL-*     — any non-zero SSID for that base callsign
+//
+// No CreatedAt/UpdatedAt: the spec deliberately omits audit
+// timestamps to keep the row tiny. Pattern carries a unique index;
+// duplicate inserts return a GORM unique-violation that the webapi
+// layer maps to HTTP 409.
+type DigipeaterBlocklist struct {
+	ID      uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Pattern string `gorm:"not null;uniqueIndex" json:"pattern"`
+	Reason  string `json:"reason"`
+	Enabled bool   `gorm:"not null;default:true" json:"enabled"`
+}
+
 // IGateConfig is a singleton (id=1) row for the iGate.
 //
 // Callsign and Passcode columns remain in the DB for forward-safety on
