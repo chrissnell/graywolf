@@ -76,7 +76,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 
 | Package | Purpose | Handbook |
 |---|---|---|
-| `beacon` | Position/object/tracker/custom/igate beacon scheduler (min-heap), smart-beacon, encoder | [`../handbook/beacons.html`](../handbook/beacons.html) |
+| `beacon` | Position/object/tracker/custom/igate beacon scheduler (min-heap), smart-beacon, encoder. Per-beacon `position_format` column ('compressed'\|'uncompressed'\|'mic_e', added in configstore migration 23) selects the wire encoding; uncompressed beacons honor `ambiguity` 0..4 via `aprs.ApplyLatLonAmbiguity`. Encoder entry points: `pkg/beacon/builder.go` switches on `Format`; `PositionInfo` (uncompressed, APRS101 ch 6) and `CompressedPositionInfo` (APRS101 ch 9) live in `pkg/beacon/encoder.go`. Mic-E is rejected at the DTO until the Phase 2 encoder lands. | [`../handbook/beacons.html`](../handbook/beacons.html) |
 | `digipeater` | WIDEn-N / TRACEn-N digipeater with preemptive digi and per-channel dedup | [`../handbook/digipeater.html`](../handbook/digipeater.html) |
 | `igate` | APRS-IS bidirectional gateway: client/login/filter, RF<->IS gating, third-party encap, TNC2 | [`../handbook/igate.html`](../handbook/igate.html) |
 | `igate/filters` | IS->RF rule engine (priority-ordered, deny by default) | [`../handbook/igate.html`](../handbook/igate.html) |
