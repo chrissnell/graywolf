@@ -2164,6 +2164,7 @@ func (a *App) digipeaterComponent() namedComponent {
 		if err != nil || cfg == nil {
 			a.digi.SetEnabled(false)
 			a.digi.SetRules(nil)
+			a.digi.SetBlocklist(nil)
 			return
 		}
 		// Resolve per-digipeater override against the station callsign.
@@ -2180,6 +2181,7 @@ func (a *App) digipeaterComponent() namedComponent {
 				"override", cfg.MyCall, "err", err)
 			a.digi.SetEnabled(false)
 			a.digi.SetRules(nil)
+			a.digi.SetBlocklist(nil)
 			return
 		}
 		mycall, err := ax25.ParseAddress(resolved)
@@ -2188,6 +2190,7 @@ func (a *App) digipeaterComponent() namedComponent {
 				"value", resolved, "err", err)
 			a.digi.SetEnabled(false)
 			a.digi.SetRules(nil)
+			a.digi.SetBlocklist(nil)
 			return
 		}
 		a.digi.SetMyCall(mycall)
@@ -2198,6 +2201,15 @@ func (a *App) digipeaterComponent() namedComponent {
 			rules = nil
 		}
 		a.digi.SetRules(digipeater.RulesFromStore(rules))
+		// Block list mirrors the rules path: any webapi mutation
+		// fires the same digipeaterReload signal, so this branch
+		// runs and pushes a refreshed snapshot into the engine.
+		bl, err := a.store.ListDigipeaterBlocklist(ctx)
+		if err != nil {
+			a.logger.Warn("digipeater blocklist load", "err", err)
+			bl = nil
+		}
+		a.digi.SetBlocklist(digipeater.BlocklistFromStore(bl))
 		a.digi.SetEnabled(cfg.Enabled)
 	}
 
