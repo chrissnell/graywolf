@@ -261,8 +261,13 @@
         {@const cat = catalogStore.catalog}
         {@const total = cat ? cat.countries.length + cat.provinces.length + cat.states.length : 0}
         <p class="source-offline-hint">
-          Using offline tiles for {downloadsState.completed.size}
-          of {total} region{total === 1 ? '' : 's'}.
+          {#if total > 0}
+            Using offline tiles for {downloadsState.completed.size}
+            of {total} region{total === 1 ? '' : 's'}.
+          {:else}
+            Using offline tiles for {downloadsState.completed.size}
+            region{downloadsState.completed.size === 1 ? '' : 's'}.
+          {/if}
           Areas without offline coverage fall back to online.
         </p>
       {/if}
