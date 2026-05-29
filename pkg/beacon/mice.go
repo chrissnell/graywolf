@@ -93,14 +93,17 @@ func micELonFields(lon float64) (degAdjusted int, offset100 bool, west bool) {
 }
 
 // micELonBytes returns the 3-byte longitude info-field bytes per
-// APRS101 ch 10. Ambiguity truncates the longitude minutes /
-// hundredths to the appropriate precision so the wire bytes stay
-// valid: APRS101 technically allows ASCII space (0x20) at the blanked
-// positions, but FAP (the parser aprs.fi uses) rejects the resulting
-// frame as "Invalid characters in mic-e information field". The
-// destination's K/L/Z variants still signal the ambiguity level to
-// receivers that care, and the position is genuinely coarsened by
-// truncation, so privacy is preserved without breaking compatibility.
+// APRS101 ch 10. Ambiguity in Mic-E is signaled only by the
+// destination callsign's K/L/Z space variants; the info-field
+// longitude bytes always carry value bytes (none of them are ASCII
+// space) and the receiver discards the trailing minute digits at
+// decode time based on the level it read from the destination.
+//
+// We truncate the longitude minutes / hundredths here so that the
+// position we put on the wire matches the precision the receiver will
+// recompute -- there's no point sending full-precision GPS bytes that
+// the receiver is going to throw away, and truncating ensures the
+// destination's K/L/Z signal lines up with the emitted longitude.
 //
 // Precision per ambiguity level:
 //

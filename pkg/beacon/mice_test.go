@@ -90,11 +90,18 @@ func TestMicEPositionInfo_RoundTrip(t *testing.T) {
 // TestMicEPositionInfo_AmbiguityRoundTrip exercises ambiguity levels
 // 1..4 end to end: build a Mic-E frame with the new encoder, parse it
 // through aprs.Parse, and confirm the position decodes without error
-// at the expected precision. Regression test for the
-// "Invalid characters in mic-e information field" rejection that
-// FAP / aprs.fi emitted when the longitude info bytes were
-// space-blanked (issue surfaced 2026-05-29 on NW5W-5 Suncrest
-// digi beacon).
+// at the expected precision.
+//
+// Regression test for a 2026-05-29 NW5W-5 Suncrest digi beacon that
+// aprs.fi rejected as "Invalid characters in mic-e information
+// field" because the encoder was emitting ASCII space (0x20) at the
+// blanked longitude positions. APRS101 ch 10 specifies ambiguity
+// only via the destination's K/L/Z variants -- the info-field
+// longitude bytes always carry numeric value bytes, and the receiver
+// is responsible for discarding trailing minute digits based on the
+// destination level. Emitting 0x20 there was a spec violation on our
+// part; every value-byte-only parser (including FAP, the one aprs.fi
+// uses) correctly rejected the frame.
 func TestMicEPositionInfo_AmbiguityRoundTrip(t *testing.T) {
 	// Suncrest-ish coords from the originally failing packet.
 	const lat = 40.4756
@@ -106,11 +113,12 @@ func TestMicEPositionInfo_AmbiguityRoundTrip(t *testing.T) {
 	tolByLevel := []float64{0.001, 0.005, 0.05, 0.5, 5.0}
 	for level := 0; level <= 4; level++ {
 		info := MicEPositionInfo(lat, lon, 0, 0, 0, '/', '>', false, level, "")
-		// Hard requirement (FAP-compat): no space bytes in the 3
-		// longitude info-field positions (info[1..3]).
+		// APRS101 ch 10 says the longitude info-field bytes are value
+		// bytes only (no ambiguity space-blanking in the info field).
+		// Anything in 0x1c..0x20 is a spec violation here.
 		for i := 1; i <= 3; i++ {
 			if info[i] == ' ' {
-				t.Errorf("level %d: info byte %d is ASCII space; FAP/aprs.fi rejects this", level, i)
+				t.Errorf("level %d: info byte %d is ASCII space (per APRS101 ch 10 these bytes are value-only)", level, i)
 			}
 		}
 		destCall := MicEDestination(lat, lon, level)
