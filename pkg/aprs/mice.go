@@ -27,10 +27,19 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 )
 
-// Mic-E message labels (code 0..7). Code 0 is the "off-duty" default.
+// Mic-E message labels indexed by the 3-bit message code (ABC bits
+// from destination slots 0..2) per APRS101 ch 10 table 8. Bit pattern
+// 111 (decimal 7) is M0 = Off Duty (the standard "nothing wrong, not
+// transmitting anything special" code); bit pattern 000 (decimal 0)
+// is M7 = Emergency. The original implementation here had the table
+// reversed, which canceled out internally against the symmetrically
+// wrong MicEMessageOffDuty constant in pkg/beacon/mice.go -- but
+// every external decoder (FAP, aprs.fi, direwolf, YAAC) reads bits
+// 000 as Emergency, so graywolf beacons configured for Off Duty
+// were appearing on aprs.fi as Emergency.
 var miceMessageLabels = [8]string{
-	"Off Duty", "En Route", "In Service", "Returning",
-	"Committed", "Special", "Priority", "Emergency",
+	"Emergency", "Priority", "Special", "Committed",
+	"Returning", "In Service", "En Route", "Off Duty",
 }
 
 // parseMicE is invoked when the info field starts with '\'' or '`'.

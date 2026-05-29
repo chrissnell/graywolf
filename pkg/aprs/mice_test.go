@@ -295,3 +295,30 @@ func TestEncodeMicEDest_Ambiguity(t *testing.T) {
 		})
 	}
 }
+
+// TestMicEMessageLabels_MatchAPRS101 locks in the spec-correct
+// indexing of the message-code label table per APRS101 ch 10 table 8:
+// the 3-bit code is the decimal value of the ABC message bits read
+// from destination slots 0..2. Bits 111 (decimal 7) = M0 = Off Duty;
+// bits 000 (decimal 0) = M7 = Emergency. The table was historically
+// inverted, which silently agreed with a symmetrically wrong encoder
+// constant in pkg/beacon/mice.go but disagreed with every external
+// decoder. Reproducing the indexing here so a future regression
+// (well-intentioned alphabetization, for example) breaks loudly.
+func TestMicEMessageLabels_MatchAPRS101(t *testing.T) {
+	want := map[int]string{
+		0: "Emergency", // ABC = 000
+		1: "Priority",  // ABC = 001
+		2: "Special",   // ABC = 010
+		3: "Committed", // ABC = 011
+		4: "Returning", // ABC = 100
+		5: "In Service",
+		6: "En Route",
+		7: "Off Duty", // ABC = 111
+	}
+	for code, label := range want {
+		if got := miceMessageLabels[code]; got != label {
+			t.Errorf("miceMessageLabels[%d] = %q, want %q (APRS101 ch 10 table 8)", code, got, label)
+		}
+	}
+}

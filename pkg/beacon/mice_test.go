@@ -8,6 +8,41 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 )
 
+// TestMicEPositionInfo_MessageCode_IsOffDuty locks in the spec-correct
+// message code per APRS101 ch 10 table 8: bits ABC = 111 (decimal 7)
+// = M0 = Off Duty. An earlier draft set MicEMessageOffDuty = 0, which
+// transmits as bits ABC = 000 = M7 = Emergency. The graywolf parser
+// had a symmetrically inverted label table so internal round-trips
+// silently agreed -- but every spec-correct decoder (FAP, aprs.fi,
+// direwolf, YAAC) flagged graywolf beacons as Emergency. This test
+// would have caught the bug.
+func TestMicEPositionInfo_MessageCode_IsOffDuty(t *testing.T) {
+	info := MicEPositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, 0, "")
+	destCall := MicEDestination(37.4092, -122.1404, 0)
+	destAddr, err := ax25.ParseAddress(destCall)
+	if err != nil {
+		t.Fatalf("ParseAddress(%q): %v", destCall, err)
+	}
+	srcAddr, _ := ax25.ParseAddress("N0CALL")
+	frame, err := ax25.NewUIFrame(srcAddr, destAddr, nil, []byte(info))
+	if err != nil {
+		t.Fatalf("NewUIFrame: %v", err)
+	}
+	p, err := aprs.Parse(frame)
+	if err != nil {
+		t.Fatalf("aprs.Parse: %v", err)
+	}
+	if p.MicE == nil {
+		t.Fatalf("no Mic-E parsed: %+v", p)
+	}
+	if p.MicE.MessageCode != 7 {
+		t.Errorf("MessageCode = %d, want 7 (M0 = Off Duty per APRS101 ch 10)", p.MicE.MessageCode)
+	}
+	if p.MicE.MessageText != "Off Duty" {
+		t.Errorf("MessageText = %q, want %q", p.MicE.MessageText, "Off Duty")
+	}
+}
+
 // TestMicEPositionInfo_RoundTrip encodes a position via the new Mic-E
 // encoder and parses it back via pkg/aprs to confirm the wire bytes
 // survive a full encode -> parse round trip. Mic-E requires the parser

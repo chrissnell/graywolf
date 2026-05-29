@@ -8,10 +8,12 @@ import (
 )
 
 // MicEMessageOffDuty is the Mic-E message code emitted for every
-// graywolf-originated Mic-E beacon. APRS101 ch 10 table 8 defines codes
-// M0..M7; M0 ("Off Duty") is the most innocuous standard code and the
-// spec deferred operator-selectable codes to a future plan.
-const MicEMessageOffDuty = 0
+// graywolf-originated Mic-E beacon. APRS101 ch 10 table 8 numbers the
+// 3-bit codes by their decimal bit value: ABC = 111 (decimal 7) is
+// M0 = Off Duty (the innocuous "nothing special" code), ABC = 000
+// (decimal 0) is M7 = Emergency. We want Off Duty by default --
+// operator-selectable codes are deferred to a future plan.
+const MicEMessageOffDuty = 7
 
 // MicEDestination returns the 6-character AX.25 destination callsign
 // for a Mic-E transmission. Ambiguity blanks trailing latitude digits
