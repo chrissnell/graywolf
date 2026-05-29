@@ -289,6 +289,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerMaps(mux)
 	s.registerCatalog(mux)
 	s.registerDownloads(mux)
+	s.registerLocalBounds(mux)
 	s.registerActions(mux)
 	s.registerOTPCredentials(mux)
 	s.registerActionListeners(mux)
