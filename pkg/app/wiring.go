@@ -1235,10 +1235,11 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// path on every download request. Token comes from the same place
 	// mapsCache reads it (singleton MapsConfig) so re-registration
 	// rotates the bearer for catalog fetches too.
-	catalog := mapscatalog.New(
+	catalog := mapscatalog.NewWithDiskCache(
 		mapscache.DefaultMapsBaseURL,
 		mapsTokenProvider,
 		time.Hour,
+		a.cfg.TileCacheDir,
 	)
 	// Best-effort warm; failures are non-fatal -- Get() will retry on
 	// the first request that needs the catalog.
