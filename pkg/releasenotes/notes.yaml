@@ -7,18 +7,19 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
-- version: "0.13.13"
+- version: "0.13.12"
   date: "2026-05-29"
   style: cta
   schema_version: 1
   link: "#/beacons"
-  title: "Beacons: pick the position report format and use position ambiguity"
+  title: "Beacons: pick a position format and use position ambiguity, plus digipeater and map fixes"
   body: |
-    You can now pick the format each beacon uses on the air -- Compressed
-    is the densest and most precise, Uncompressed is the standard form,
-    and Mic-E is the most efficient. Mic-E is the standard for mobile and
-    tracker stations; if you have a tracker beacon, consider switching it
-    to Mic-E -- shorter packets, less channel time, same precision.
+    Beacons: you can now pick the format each beacon uses on the air --
+    Compressed is the densest and most precise, Uncompressed is the
+    standard form, and Mic-E is the most efficient. Mic-E is the
+    standard for mobile and tracker stations; if you have a tracker
+    beacon, consider switching it to Mic-E -- shorter packets, less
+    channel time, same precision.
 
     Uncompressed and Mic-E beacons can also use position ambiguity to
     publish a deliberately coarse position. Pick Block, Neighborhood,
@@ -27,20 +28,23 @@
     Existing beacons keep transmitting exactly the same packets they
     always did.
 
-- version: "0.13.12"
-  date: "2026-05-29"
-  style: info
-  schema_version: 1
-  link: "#/digipeater"
-  title: "Block a station from being digipeated"
-  body: |
-    The Digipeater settings page now has a Blocked Stations list. Add
-    a callsign -- with or without an SSID, with a trailing wildcard
-    like CALL-* if you want every SSID -- and the digipeater will
-    stop repeating that station's frames. The iGate and packet log
+    Digipeater: the Digipeater settings page now has a Blocked Stations
+    list. Add a callsign -- with or without an SSID, with a trailing
+    wildcard like CALL-* if you want every SSID -- and the digipeater
+    will stop repeating that station's frames. The iGate and packet log
     are not affected: you'll still see and log the original traffic.
     Useful when one nearby station is flooding the channel with
     malformed beacons or you just want it off the digipeater chain.
+
+    Offline maps: a downloaded map region now keeps rendering even
+    when the host can't reach the map catalog server -- previously a
+    region could stop drawing after a reboot if the catalog was
+    unreachable.
+
+    Live map: stations whose last position is outside your current
+    view no longer linger as stale markers when you pan or zoom, and
+    trail dots now respect the time-range filter -- a 15-minute window
+    no longer shows trail positions from days ago.
 
 - version: "0.13.11"
   date: "2026-05-27"
