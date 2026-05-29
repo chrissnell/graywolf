@@ -453,6 +453,30 @@ func applyAmbiguity(b []byte, amb int, positions []int) {
 	}
 }
 
+// ApplyLatLonAmbiguity returns latStr and lonStr with the trailing
+// minute/hundredth positions blanked per APRS101 ch 6 table 8. Levels:
+//
+//	0 — no ambiguity (input returned unchanged)
+//	1 — nearest 1/10 minute (one digit blanked)
+//	2 — nearest minute (two digits blanked)
+//	3 — nearest 10 minutes (three digits blanked, including a degree digit)
+//	4 — nearest degree (four digits blanked)
+//
+// The dot stays in the string at its original column; only digits are
+// replaced with ASCII space. Out-of-range levels are clamped to 0..4 to
+// match the private byte-level helper used by the parser side.
+//
+// latStr must be the 8-byte "DDMM.hhN" form (N or S). lonStr must be
+// the 9-byte "DDDMM.hhE" form (E or W). The function does not validate
+// shape; the caller is responsible for passing well-formed strings.
+func ApplyLatLonAmbiguity(latStr, lonStr string, level int) (string, string) {
+	lat := []byte(latStr)
+	lon := []byte(lonStr)
+	applyAmbiguity(lat, level, []int{6, 5, 3, 2})
+	applyAmbiguity(lon, level, []int{7, 6, 4, 3})
+	return string(lat), string(lon)
+}
+
 // Helpers --------------------------------------------------------------
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
