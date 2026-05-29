@@ -532,3 +532,50 @@ func TestStations_ObjectDTO(t *testing.T) {
 		t.Errorf("symbol = %q/%q", dtos[0].SymbolTable, dtos[0].SymbolCode)
 	}
 }
+
+// TestStations_TrailPositionsTrimmedByTimerange asserts that a station
+// whose head position is fresh but whose trail extends back beyond the
+// requested timerange ships only the in-window positions. Guards
+// against the case where a currently-active station's trail dots
+// stretch back days because the cache holds up to MaxTrailLen history
+// entries regardless of age.
+func TestStations_TrailPositionsTrimmedByTimerange(t *testing.T) {
+	now := time.Now()
+	s := stationcache.Station{
+		Key:      "stn:KC7RUF-4",
+		Callsign: "KC7RUF-4",
+		Symbol:   [2]byte{'/', '>'},
+		Via:      "rf",
+		Positions: []stationcache.Position{
+			{Lat: 35, Lon: -95, Timestamp: now.Add(-1 * time.Minute)},     // head -- fresh
+			{Lat: 35.01, Lon: -95.01, Timestamp: now.Add(-10 * time.Minute)}, // inside 15min
+			{Lat: 35.02, Lon: -95.02, Timestamp: now.Add(-30 * time.Minute)}, // outside 15min
+			{Lat: 35.03, Lon: -95.03, Timestamp: now.Add(-24 * time.Hour)},   // way outside
+		},
+		LastHeard: now.Add(-1 * time.Minute),
+	}
+	cache := &mockStationCache{stations: []stationcache.Station{s}}
+	h := stationsHandler(cache)
+
+	// 15-minute window: expect head + the -10min position only.
+	dtos := decodeStations(t, getStations(t, h, "bbox="+defaultBBox+"&timerange=900", nil))
+	if len(dtos) != 1 {
+		t.Fatalf("got %d stations, want 1", len(dtos))
+	}
+	if got := len(dtos[0].Positions); got != 2 {
+		t.Fatalf("got %d positions, want 2 (head + within-window)", got)
+	}
+
+	// 1-hour window: head + the -10min and -30min positions; -24h dropped.
+	dtos = decodeStations(t, getStations(t, h, "bbox="+defaultBBox+"&timerange=3600", nil))
+	if got := len(dtos[0].Positions); got != 3 {
+		t.Fatalf("1h window: got %d positions, want 3", got)
+	}
+
+	// Delta mode keeps emitting only positions[0] regardless of cutoff.
+	since := now.Add(-2 * time.Minute).Format(time.RFC3339Nano)
+	dtos = decodeStations(t, getStations(t, h, "bbox="+defaultBBox+"&timerange=900&since="+since, nil))
+	if got := len(dtos[0].Positions); got != 1 {
+		t.Fatalf("delta mode: got %d positions, want 1", got)
+	}
+}

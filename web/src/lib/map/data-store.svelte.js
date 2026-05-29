@@ -236,11 +236,32 @@ export function createDataStore() {
 
   // --- Imperative API ---
 
+  // pruneOutOfBounds drops stations whose primary position is outside
+  // the supplied bbox. Called from setBounds so a pan or zoom-in
+  // doesn't leave stale markers from the prior viewport floating around
+  // after the next /api/stations fetch (the server only returns
+  // stations inside the new bbox, so without this they'd never be
+  // removed from the SvelteMap).
+  function pruneOutOfBounds(b) {
+    if (!b) return;
+    for (const [callsign, s] of stations) {
+      const p = s.positions && s.positions[0];
+      if (!p) continue;
+      if (p.lat < b.swLat || p.lat > b.neLat ||
+          p.lon < b.swLon || p.lon > b.neLon) {
+        stations.delete(callsign);
+        trails.delete(callsign);
+        weather.delete(callsign);
+      }
+    }
+  }
+
   function setBounds(next) {
     // next: { swLat, swLon, neLat, neLon }
     if (bboxEqual(bbox, next)) return;
     bbox = next;
     invalidate();
+    pruneOutOfBounds(next);
     if (started) {
       // Force an immediate refresh on bounds change.
       clearTimeout(timer);
