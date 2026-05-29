@@ -29,18 +29,42 @@
 
 - version: "0.13.12"
   date: "2026-05-29"
-  style: info
+  style: cta
   schema_version: 1
-  link: "#/digipeater"
-  title: "Block a station from being digipeated"
+  link: "#/beacons"
+  title: "Beacons: position format and ambiguity, plus digipeater and map fixes"
   body: |
-    The Digipeater settings page now has a Blocked Stations list. Add
-    a callsign -- with or without an SSID, with a trailing wildcard
-    like CALL-* if you want every SSID -- and the digipeater will
-    stop repeating that station's frames. The iGate and packet log
+    Beacons: you can now pick the format each beacon uses on the air --
+    Compressed is the densest and most precise, Uncompressed is the
+    standard form, and Mic-E is the most efficient. Mic-E is the
+    standard for mobile and tracker stations; if you have a tracker
+    beacon, consider switching it to Mic-E -- shorter packets, less
+    channel time, same precision.
+
+    Uncompressed and Mic-E beacons can also use position ambiguity to
+    publish a deliberately coarse position. Pick Block, Neighborhood,
+    Town, or Region in the beacon form. Useful for home QTH privacy or
+    for group meetups where address-level precision isn't wanted.
+    Existing beacons keep transmitting exactly the same packets they
+    always did.
+
+    Digipeater: the Digipeater settings page now has a Blocked Stations
+    list. Add a callsign -- with or without an SSID, with a trailing
+    wildcard like CALL-* if you want every SSID -- and the digipeater
+    will stop repeating that station's frames. The iGate and packet log
     are not affected: you'll still see and log the original traffic.
     Useful when one nearby station is flooding the channel with
     malformed beacons or you just want it off the digipeater chain.
+
+    Offline maps: a downloaded map region now keeps rendering even
+    when the host can't reach the map catalog server -- previously a
+    region could stop drawing after a reboot if the catalog was
+    unreachable.
+
+    Live map: stations whose last position is outside your current
+    view no longer linger as stale markers when you pan or zoom, and
+    trail dots now respect the time-range filter -- a 15-minute window
+    no longer shows trail positions from days ago.
 
 - version: "0.13.11"
   date: "2026-05-27"
