@@ -7,6 +7,21 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.12"
+  date: "2026-05-29"
+  style: info
+  schema_version: 1
+  link: "#/digipeater"
+  title: "Block a station from being digipeated"
+  body: |
+    The Digipeater settings page now has a Blocked Stations list. Add
+    a callsign -- with or without an SSID, with a trailing wildcard
+    like CALL-* if you want every SSID -- and the digipeater will
+    stop repeating that station's frames. The iGate and packet log
+    are not affected: you'll still see and log the original traffic.
+    Useful when one nearby station is flooding the channel with
+    malformed beacons or you just want it off the digipeater chain.
+
 - version: "0.13.11"
   date: "2026-05-27"
   style: info

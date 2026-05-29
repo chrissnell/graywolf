@@ -77,7 +77,8 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 | Package | Purpose | Handbook |
 |---|---|---|
 | `beacon` | Position/object/tracker/custom/igate beacon scheduler (min-heap), smart-beacon, encoder | [`../handbook/beacons.html`](../handbook/beacons.html) |
-| `digipeater` | WIDEn-N / TRACEn-N digipeater with preemptive digi and per-channel dedup | [`../handbook/digipeater.html`](../handbook/digipeater.html) |
+| `digipeater` | WIDEn-N / TRACEn-N digipeater with preemptive digi, per-channel dedup, and a source-address block list (digipeater-only) | [`../handbook/digipeater.html`](../handbook/digipeater.html) |
+| `digipeater/blocklist` | Source-address pattern validator and matcher used only by the digipeater engine | — |
 | `igate` | APRS-IS bidirectional gateway: client/login/filter, RF<->IS gating, third-party encap, TNC2 | [`../handbook/igate.html`](../handbook/igate.html) |
 | `igate/filters` | IS->RF rule engine (priority-ordered, deny by default) | [`../handbook/igate.html`](../handbook/igate.html) |
 | `messages` | APRS messaging domain: router, store (GORM), sender, retry, invite, tactical_set, bots, preferences, event_hub, local_tx_ring, **preflight** (shared auto-ACK + dedup transport, owned by `messages.Service`, consulted by both `messages.Router` and `actions.Classifier`) | [`../handbook/messaging.html`](../handbook/messaging.html) |

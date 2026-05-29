@@ -126,3 +126,41 @@ func DigipeaterRulesFromModels(ms []configstore.DigipeaterRule) []DigipeaterRule
 	}
 	return out
 }
+
+// BlocklistEntryRequest is the body accepted by POST/PUT on
+// /api/digipeater/blocklist[/{id}]. Pattern is validated and
+// canonicalized server-side by pkg/digipeater/blocklist.ValidatePattern;
+// the canonical form is what gets stored and returned.
+//
+// Enabled is *bool so omitting the field on create means "default true".
+// On update the omitted-means-unchanged semantic does not apply: the
+// handler uses a Save-style replace so callers must send every field
+// they want to keep.
+type BlocklistEntryRequest struct {
+	Pattern string `json:"pattern"`
+	Reason  string `json:"reason"`
+	Enabled *bool  `json:"enabled,omitempty"`
+}
+
+// Validate is a no-op on this DTO. Pattern syntax is validated in the
+// handler via blocklist.ValidatePattern so the canonical form (used by
+// both storage and matching) is computed in one place; Reason length is
+// trimmed and capped there too. The handler also maps the unique-index
+// violation to 409.
+func (r BlocklistEntryRequest) Validate() error { return nil }
+
+type BlocklistEntryResponse struct {
+	ID      uint32 `json:"id"`
+	Pattern string `json:"pattern"`
+	Reason  string `json:"reason"`
+	Enabled bool   `json:"enabled"`
+}
+
+func BlocklistEntryFromModel(m configstore.DigipeaterBlocklist) BlocklistEntryResponse {
+	return BlocklistEntryResponse{
+		ID:      m.ID,
+		Pattern: m.Pattern,
+		Reason:  m.Reason,
+		Enabled: m.Enabled,
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/digipeater/blocklist"
 	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 )
 
@@ -405,5 +406,138 @@ func TestDigipeaterPerRulePacketModeToChannel(t *testing.T) {
 	}
 	if ch := sink.Last().Channel; ch != 3 {
 		t.Fatalf("TX channel = %d, want 3", ch)
+	}
+}
+
+func TestHandle_BlockedSourceShortCircuits(t *testing.T) {
+	t.Parallel()
+	rules := []Rule{{
+		FromChannel: 1, ToChannel: 1,
+		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
+	}}
+	d, sink := newTestDigi(t, rules, "N0CAL-1")
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*", Reason: "test"}})
+
+	rx := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "blocked")
+	if d.Handle(context.Background(), 1, rx, ingress.Modem()) {
+		t.Fatal("Handle returned true for blocked source")
+	}
+	if sink.Len() != 0 {
+		t.Fatalf("submit called: sink len=%d", sink.Len())
+	}
+	stats := d.Stats()
+	if stats.Blocked != 1 {
+		t.Fatalf("Blocked=%d, want 1", stats.Blocked)
+	}
+	if stats.Packets != 0 {
+		t.Fatalf("Packets=%d, want 0", stats.Packets)
+	}
+	if stats.Deduped != 0 {
+		t.Fatalf("Deduped=%d, want 0", stats.Deduped)
+	}
+}
+
+func TestHandle_BlockedSourceBeforeDedup(t *testing.T) {
+	// A blocked frame must not consume the dedup window. We send the
+	// same blocked frame twice; if the block check ran AFTER dedup we
+	// would see Deduped==1 on the second call.
+	t.Parallel()
+	rules := []Rule{{
+		FromChannel: 1, ToChannel: 1,
+		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
+	}}
+	d, _ := newTestDigi(t, rules, "N0CAL-1")
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*"}})
+
+	rx1 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "same")
+	rx2 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "same")
+	d.Handle(context.Background(), 1, rx1, ingress.Modem())
+	d.Handle(context.Background(), 1, rx2, ingress.Modem())
+
+	stats := d.Stats()
+	if stats.Blocked != 2 {
+		t.Fatalf("Blocked=%d, want 2", stats.Blocked)
+	}
+	if stats.Deduped != 0 {
+		t.Fatalf("Deduped=%d, want 0 (block check must precede dedup)", stats.Deduped)
+	}
+}
+
+func TestHandle_NonBlockedFrameStillDigis(t *testing.T) {
+	t.Parallel()
+	rules := []Rule{{
+		FromChannel: 1, ToChannel: 1,
+		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
+	}}
+	d, sink := newTestDigi(t, rules, "N0CAL-1")
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "OTHRCL-*"}})
+
+	rx := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "ok")
+	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
+		t.Fatal("expected non-blocked frame to be digipeated")
+	}
+	if sink.Len() != 1 {
+		t.Fatalf("sink len=%d, want 1", sink.Len())
+	}
+	if d.Stats().Blocked != 0 {
+		t.Fatalf("Blocked=%d, want 0", d.Stats().Blocked)
+	}
+}
+
+func TestSetBlocklist_LiveReconfig(t *testing.T) {
+	t.Parallel()
+	rules := []Rule{{
+		FromChannel: 1, ToChannel: 1,
+		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
+	}}
+	d, sink := newTestDigi(t, rules, "N0CAL-1")
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*"}})
+
+	rx1 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "first")
+	if d.Handle(context.Background(), 1, rx1, ingress.Modem()) {
+		t.Fatal("first frame should be blocked")
+	}
+	if sink.Len() != 0 {
+		t.Fatalf("sink len=%d after block, want 0", sink.Len())
+	}
+
+	d.SetBlocklist(nil)
+	rx2 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "second")
+	if !d.Handle(context.Background(), 1, rx2, ingress.Modem()) {
+		t.Fatal("after SetBlocklist(nil) frame should digi")
+	}
+	if sink.Len() != 1 {
+		t.Fatalf("sink len=%d after unblock, want 1", sink.Len())
+	}
+
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "OTHRCL-*"}})
+	rx3 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "third")
+	if !d.Handle(context.Background(), 1, rx3, ingress.Modem()) {
+		t.Fatal("frame with non-matching block list should digi")
+	}
+
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*"}})
+	rx4 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "fourth")
+	if d.Handle(context.Background(), 1, rx4, ingress.Modem()) {
+		t.Fatal("frame should be re-blocked after re-adding pattern")
+	}
+}
+
+func TestBlocklistFromStore_EnabledOnly(t *testing.T) {
+	t.Parallel()
+	rows := []configstore.DigipeaterBlocklist{
+		{Pattern: "BADCAL-*", Reason: "noisy", Enabled: true},
+		{Pattern: "OTHER-1", Reason: "disabled", Enabled: false},
+		{Pattern: "THIRD", Reason: "", Enabled: true},
+	}
+	got := BlocklistFromStore(rows)
+	if len(got) != 2 {
+		t.Fatalf("len=%d, want 2 (disabled row dropped)", len(got))
+	}
+	if got[0].Pattern != "BADCAL-*" || got[0].Reason != "noisy" {
+		t.Fatalf("entry 0 = %+v", got[0])
+	}
+	if got[1].Pattern != "THIRD" {
+		t.Fatalf("entry 1 = %+v", got[1])
 	}
 }

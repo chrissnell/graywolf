@@ -118,6 +118,28 @@
     priority: 100,
     enabled: true,
   });
+  // --- Blocked Stations -------------------------------------------------
+  let blocklist = $state([]);
+  let blockModalOpen = $state(false);
+  let blockEditing = $state(null);
+  let blockForm = $state({
+    pattern: '',
+    reason: '',
+    enabled: true,
+  });
+  let blockSaving = $state(false);
+  let blockConfirmOpen = $state(false);
+  let blockConfirmMessage = $state('');
+  let blockPendingDeleteId = $state(null);
+
+  const BLOCK_COLUMNS = [
+    { key: 'pattern', label: 'Pattern' },
+    { key: 'reason', label: 'Reason' },
+    { key: 'enabled', label: 'Enabled' },
+  ];
+
+  let displayBlocklist = $derived(blocklist.map(b => ({ ...b })));
+
   let savingConfig = $state(false);
 
   // Last-persisted config body. The master Enable toggle auto-saves
@@ -275,6 +297,7 @@
     callsignMode = storedMyCall ? 'override' : 'inherit';
     myCallInput = storedMyCall;
     rules = await api.get('/digipeater/rules') || [];
+    blocklist = await api.get('/digipeater/blocklist') || [];
     startChannelsStore();
   });
 
@@ -474,6 +497,100 @@
       rules = await api.get('/digipeater/rules') || [];
     } catch (err) {
       toasts.error(err.message);
+    }
+  }
+
+  function openBlockCreate() {
+    blockEditing = null;
+    blockForm = { pattern: '', reason: '', enabled: true };
+    blockModalOpen = true;
+  }
+
+  function openBlockEdit(row) {
+    blockEditing = row;
+    blockForm = {
+      pattern: row.pattern || '',
+      reason: row.reason || '',
+      enabled: row.enabled ?? true,
+    };
+    blockModalOpen = true;
+  }
+
+  // Client-side mirror of pkg/digipeater/blocklist.ValidatePattern for
+  // instant feedback. The server remains authoritative — any error it
+  // returns is displayed verbatim.
+  function clientValidatePattern(s) {
+    const trimmed = (s || '').trim();
+    if (!trimmed) return 'Pattern is empty';
+    if (trimmed === '*' || trimmed === '-' || trimmed === '-*') {
+      return 'Pattern is too broad';
+    }
+    return null;
+  }
+
+  async function handleBlockSave() {
+    const pattern = blockForm.pattern.trim();
+    const localErr = clientValidatePattern(pattern);
+    if (localErr) {
+      toasts.error(localErr);
+      return;
+    }
+    blockSaving = true;
+    try {
+      const body = {
+        pattern,
+        reason: (blockForm.reason || '').trim(),
+        enabled: blockForm.enabled,
+      };
+      if (blockEditing) {
+        await api.put(`/digipeater/blocklist/${blockEditing.id}`, body);
+        toasts.success('Block list entry updated');
+      } else {
+        await api.post('/digipeater/blocklist', body);
+        toasts.success('Block list entry created');
+      }
+      blockModalOpen = false;
+      blocklist = await api.get('/digipeater/blocklist') || [];
+    } catch (err) {
+      toasts.error(err.message || 'Failed to save block list entry');
+    } finally {
+      blockSaving = false;
+    }
+  }
+
+  function handleBlockDelete(row) {
+    blockPendingDeleteId = row.id;
+    blockConfirmMessage = `Delete block list entry for "${row.pattern}"?`;
+    blockConfirmOpen = true;
+  }
+
+  async function confirmBlockDelete() {
+    const id = blockPendingDeleteId;
+    blockPendingDeleteId = null;
+    if (id == null) return;
+    try {
+      await api.delete(`/digipeater/blocklist/${id}`);
+      toasts.success('Block list entry deleted');
+      blocklist = await api.get('/digipeater/blocklist') || [];
+    } catch (err) {
+      toasts.error(err.message || 'Failed to delete block list entry');
+    }
+  }
+
+  // Per-row auto-save when the operator flips the Enabled column toggle.
+  async function autoSaveBlockEnabled(row, next) {
+    if (next === row.enabled) return;
+    try {
+      await api.put(`/digipeater/blocklist/${row.id}`, {
+        pattern: row.pattern,
+        reason: row.reason || '',
+        enabled: next,
+      });
+      blocklist = await api.get('/digipeater/blocklist') || [];
+      toasts.success(next ? 'Block list entry enabled' : 'Block list entry disabled');
+    } catch (err) {
+      toasts.error(err.message || 'Failed to update entry');
+      blocklist = await api.get('/digipeater/blocklist') || [];
     }
   }
 </script>
@@ -690,6 +807,53 @@
       >{editing ? 'Save' : 'Create'}</Button>
     </div>
 </Modal>
+
+<div style="margin-top: 48px;">
+  <PageHeader title="Blocked Stations" subtitle="Frames from these stations will not be digipeated. The iGate, packet log, and other receivers are unaffected.">
+    <Button variant="primary" onclick={openBlockCreate}>+ Add blocked station</Button>
+  </PageHeader>
+  <DataTable
+    columns={BLOCK_COLUMNS}
+    rows={displayBlocklist}
+    onEdit={openBlockEdit}
+    onDelete={handleBlockDelete}
+    cells={{ enabled: blockEnabledCell }}
+  />
+</div>
+
+{#snippet blockEnabledCell(_value, row)}
+  <Toggle
+    checked={row.enabled}
+    onCheckedChange={(next) => autoSaveBlockEnabled(row, next)}
+    aria-label="Enable block list entry for {row.pattern}"
+  />
+{/snippet}
+
+<Modal bind:open={blockModalOpen} title={blockEditing ? 'Edit Blocked Station' : 'Add Blocked Station'}>
+  <FormField label="Pattern" id="block-pattern"
+    hint="e.g. BADCAL, BADCAL-9, or BADCAL-*">
+    <Input id="block-pattern" bind:value={blockForm.pattern} placeholder="BADCAL-*" autocomplete="off" spellcheck={false} />
+  </FormField>
+  <FormField label="Reason (optional)" id="block-reason"
+    hint="Free text, max 256 characters. Shown in debug logs when this pattern blocks a frame.">
+    <Input id="block-reason" bind:value={blockForm.reason} placeholder="e.g. malformed beacons" />
+  </FormField>
+  <Toggle bind:checked={blockForm.enabled} label="Enabled" />
+  <div class="modal-actions">
+    <Button onclick={() => blockModalOpen = false}>Cancel</Button>
+    <Button variant="primary" onclick={handleBlockSave} disabled={blockSaving}>
+      {blockEditing ? 'Save' : 'Create'}
+    </Button>
+  </div>
+</Modal>
+
+<ConfirmDialog
+  bind:open={blockConfirmOpen}
+  title="Delete Blocked Station"
+  message={blockConfirmMessage}
+  confirmLabel="Delete"
+  onConfirm={confirmBlockDelete}
+/>
 
 <ConfirmDialog
   bind:open={confirmOpen}

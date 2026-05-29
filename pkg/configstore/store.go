@@ -150,6 +150,7 @@ func (s *Store) Migrate() error {
 		&TxTiming{},
 		&DigipeaterConfig{},
 		&DigipeaterRule{},
+		&DigipeaterBlocklist{},
 		&IGateConfig{},
 		&IGateRfFilter{},
 		&Beacon{},
@@ -1168,6 +1169,37 @@ func (s *Store) UpdateDigipeaterRule(ctx context.Context, r *DigipeaterRule) err
 }
 func (s *Store) DeleteDigipeaterRule(ctx context.Context, id uint32) error {
 	return s.db.WithContext(ctx).Delete(&DigipeaterRule{}, id).Error
+}
+
+// ---------------------------------------------------------------------------
+// DigipeaterBlocklist
+// ---------------------------------------------------------------------------
+
+// ListDigipeaterBlocklist returns every block-list row ordered by id
+// ascending so the UI renders in insertion order.
+func (s *Store) ListDigipeaterBlocklist(ctx context.Context) ([]DigipeaterBlocklist, error) {
+	var out []DigipeaterBlocklist
+	return out, s.db.WithContext(ctx).Order("id").Find(&out).Error
+}
+
+func (s *Store) GetDigipeaterBlocklistEntry(ctx context.Context, id uint32) (*DigipeaterBlocklist, error) {
+	var e DigipeaterBlocklist
+	if err := s.db.WithContext(ctx).First(&e, id).Error; err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+func (s *Store) CreateDigipeaterBlocklistEntry(ctx context.Context, e *DigipeaterBlocklist) error {
+	return s.db.WithContext(ctx).Create(e).Error
+}
+
+func (s *Store) UpdateDigipeaterBlocklistEntry(ctx context.Context, e *DigipeaterBlocklist) error {
+	return s.db.WithContext(ctx).Save(e).Error
+}
+
+func (s *Store) DeleteDigipeaterBlocklistEntry(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&DigipeaterBlocklist{}, id).Error
 }
 
 // ---------------------------------------------------------------------------

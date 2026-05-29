@@ -999,3 +999,89 @@ func TestNormalizeKissInterface_TcpClientTxDefault(t *testing.T) {
 		}
 	})
 }
+
+func TestDigipeaterBlocklistAutoMigrate(t *testing.T) {
+	s := newTestStore(t)
+	row := &DigipeaterBlocklist{Pattern: "BADCAL-9", Reason: "test", Enabled: true}
+	if err := s.DB().Create(row).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if row.ID == 0 {
+		t.Fatal("expected autoincrement id")
+	}
+	var got DigipeaterBlocklist
+	if err := s.DB().First(&got, row.ID).Error; err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if got.Pattern != "BADCAL-9" || got.Reason != "test" || !got.Enabled {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+}
+
+func TestDigipeaterBlocklistCRUD(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	e := &DigipeaterBlocklist{Pattern: "BADCAL-*", Reason: "malformed beacons", Enabled: true}
+	if err := s.CreateDigipeaterBlocklistEntry(ctx, e); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if e.ID == 0 {
+		t.Fatal("expected autoincrement id")
+	}
+
+	got, err := s.GetDigipeaterBlocklistEntry(ctx, e.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Pattern != "BADCAL-*" || got.Reason != "malformed beacons" || !got.Enabled {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+
+	got.Reason = "still bad"
+	got.Enabled = false
+	if err := s.UpdateDigipeaterBlocklistEntry(ctx, got); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got2, err := s.GetDigipeaterBlocklistEntry(ctx, e.ID)
+	if err != nil {
+		t.Fatalf("Get after Update: %v", err)
+	}
+	if got2.Reason != "still bad" || got2.Enabled {
+		t.Fatalf("update did not persist: %+v", got2)
+	}
+
+	all, err := s.ListDigipeaterBlocklist(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("List len=%d, want 1", len(all))
+	}
+
+	if err := s.DeleteDigipeaterBlocklistEntry(ctx, e.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := s.GetDigipeaterBlocklistEntry(ctx, e.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("Get after Delete: want ErrRecordNotFound, got %v", err)
+	}
+}
+
+func TestDigipeaterBlocklistUniquePatternConflict(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	first := &DigipeaterBlocklist{Pattern: "KK6XYZ-9"}
+	if err := s.CreateDigipeaterBlocklistEntry(ctx, first); err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+	dup := &DigipeaterBlocklist{Pattern: "KK6XYZ-9"}
+	err := s.CreateDigipeaterBlocklistEntry(ctx, dup)
+	if err == nil {
+		t.Fatal("expected unique-index conflict on duplicate pattern, got nil")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "unique") &&
+		!strings.Contains(strings.ToLower(err.Error()), "constraint") {
+		t.Fatalf("expected unique/constraint error, got: %v", err)
+	}
+}

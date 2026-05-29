@@ -3,8 +3,10 @@ package webapi
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/digipeater/blocklist"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
@@ -18,6 +20,10 @@ func (s *Server) registerDigipeater(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/digipeater/rules", s.createDigipeaterRule)
 	mux.HandleFunc("PUT /api/digipeater/rules/{id}", s.updateDigipeaterRule)
 	mux.HandleFunc("DELETE /api/digipeater/rules/{id}", s.deleteDigipeaterRule)
+	mux.HandleFunc("GET /api/digipeater/blocklist", s.listDigipeaterBlocklist)
+	mux.HandleFunc("POST /api/digipeater/blocklist", s.createDigipeaterBlocklist)
+	mux.HandleFunc("PUT /api/digipeater/blocklist/{id}", s.updateDigipeaterBlocklist)
+	mux.HandleFunc("DELETE /api/digipeater/blocklist/{id}", s.deleteDigipeaterBlocklist)
 }
 
 // getDigipeaterConfig returns the singleton digipeater config. If no
@@ -255,4 +261,161 @@ func (s *Server) signalDigipeaterReload() {
 	case s.digipeaterReload <- struct{}{}:
 	default:
 	}
+}
+
+// reasonMaxLen caps user-supplied reason text. 256 chars is enough for
+// any sensible operator note and keeps the column small.
+const reasonMaxLen = 256
+
+// listDigipeaterBlocklist returns every entry id-ascending.
+//
+// @Summary  List digipeater blocklist entries
+// @Tags     digipeater
+// @ID       listDigipeaterBlocklist
+// @Produce  json
+// @Success  200 {array}  dto.BlocklistEntryResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /digipeater/blocklist [get]
+func (s *Server) listDigipeaterBlocklist(w http.ResponseWriter, r *http.Request) {
+	handleList[configstore.DigipeaterBlocklist](s, w, r, "list digipeater blocklist",
+		s.store.ListDigipeaterBlocklist, dto.BlocklistEntryFromModel)
+}
+
+// createDigipeaterBlocklist validates the pattern, persists the entry,
+// and fires the digipeater reload signal so the live engine picks up
+// the new list. Duplicate patterns return 409.
+//
+// @Summary  Create digipeater blocklist entry
+// @Tags     digipeater
+// @ID       createDigipeaterBlocklist
+// @Accept   json
+// @Produce  json
+// @Param    body body     dto.BlocklistEntryRequest true "Blocklist entry"
+// @Success  201  {object} dto.BlocklistEntryResponse
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  409  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /digipeater/blocklist [post]
+func (s *Server) createDigipeaterBlocklist(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[dto.BlocklistEntryRequest](r)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	canonical, err := blocklist.ValidatePattern(req.Pattern)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	m := configstore.DigipeaterBlocklist{
+		Pattern: canonical,
+		Reason:  trimReason(req.Reason),
+		Enabled: enabled,
+	}
+	if err := s.store.CreateDigipeaterBlocklistEntry(r.Context(), &m); err != nil {
+		if isUniqueConstraintErr(err) {
+			conflict(w, "pattern already exists")
+			return
+		}
+		s.internalError(w, r, "create digipeater blocklist", err)
+		return
+	}
+	s.signalDigipeaterReload()
+	writeJSON(w, http.StatusCreated, dto.BlocklistEntryFromModel(m))
+}
+
+// updateDigipeaterBlocklist replaces the entry with the given id.
+//
+// @Summary  Update digipeater blocklist entry
+// @Tags     digipeater
+// @ID       updateDigipeaterBlocklist
+// @Accept   json
+// @Produce  json
+// @Param    id   path     int                       true "Entry id"
+// @Param    body body     dto.BlocklistEntryRequest true "Blocklist entry"
+// @Success  200  {object} dto.BlocklistEntryResponse
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  404  {object} webtypes.ErrorResponse
+// @Failure  409  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /digipeater/blocklist/{id} [put]
+func (s *Server) updateDigipeaterBlocklist(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid id")
+		return
+	}
+	req, err := decodeJSON[dto.BlocklistEntryRequest](r)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	canonical, err := blocklist.ValidatePattern(req.Pattern)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	m := configstore.DigipeaterBlocklist{
+		ID:      id,
+		Pattern: canonical,
+		Reason:  trimReason(req.Reason),
+		Enabled: enabled,
+	}
+	if err := s.store.UpdateDigipeaterBlocklistEntry(r.Context(), &m); err != nil {
+		if isUniqueConstraintErr(err) {
+			conflict(w, "pattern already exists")
+			return
+		}
+		s.internalError(w, r, "update digipeater blocklist", err)
+		return
+	}
+	s.signalDigipeaterReload()
+	writeJSON(w, http.StatusOK, dto.BlocklistEntryFromModel(m))
+}
+
+// deleteDigipeaterBlocklist removes the entry with the given id.
+//
+// @Summary  Delete digipeater blocklist entry
+// @Tags     digipeater
+// @ID       deleteDigipeaterBlocklist
+// @Param    id  path int true "Entry id"
+// @Success  204 "No Content"
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /digipeater/blocklist/{id} [delete]
+func (s *Server) deleteDigipeaterBlocklist(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid id")
+		return
+	}
+	if err := s.store.DeleteDigipeaterBlocklistEntry(r.Context(), id); err != nil {
+		s.internalError(w, r, "delete digipeater blocklist", err)
+		return
+	}
+	s.signalDigipeaterReload()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// trimReason normalizes operator-supplied reason text: trim whitespace
+// and cap at reasonMaxLen bytes so a misconfigured client can't bloat
+// the DB.
+func trimReason(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > reasonMaxLen {
+		s = s[:reasonMaxLen]
+	}
+	return s
 }

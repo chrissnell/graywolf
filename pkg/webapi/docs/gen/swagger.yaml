@@ -931,6 +931,26 @@ definitions:
         description: '"sent"'
         type: string
     type: object
+  dto.BlocklistEntryRequest:
+    properties:
+      enabled:
+        type: boolean
+      pattern:
+        type: string
+      reason:
+        type: string
+    type: object
+  dto.BlocklistEntryResponse:
+    properties:
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      pattern:
+        type: string
+      reason:
+        type: string
+    type: object
   dto.Catalog:
     properties:
       countries:
@@ -4535,6 +4555,131 @@ paths:
       security:
         - CookieAuth: []
       summary: Update digipeater config
+      tags:
+        - digipeater
+  /digipeater/blocklist:
+    get:
+      operationId: listDigipeaterBlocklist
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.BlocklistEntryResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List digipeater blocklist entries
+      tags:
+        - digipeater
+    post:
+      consumes:
+        - application/json
+      operationId: createDigipeaterBlocklist
+      parameters:
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create digipeater blocklist entry
+      tags:
+        - digipeater
+  /digipeater/blocklist/{id}:
+    delete:
+      operationId: deleteDigipeaterBlocklist
+      parameters:
+        - description: Entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete digipeater blocklist entry
+      tags:
+        - digipeater
+    put:
+      consumes:
+        - application/json
+      operationId: updateDigipeaterBlocklist
+      parameters:
+        - description: Entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update digipeater blocklist entry
       tags:
         - digipeater
   /digipeater/rules:
