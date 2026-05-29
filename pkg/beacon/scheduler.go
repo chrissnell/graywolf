@@ -388,7 +388,30 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 		s.logger.Warn("beacon build", "id", b.ID, "type", b.Type, "err", err)
 		return &SendNowError{Kind: SendNowErrorBuild, Err: err}
 	}
-	frame, err := ax25.NewUIFrame(b.Source, b.Dest, b.Path, []byte(info))
+	// Mic-E carries position bits in the destination callsign itself
+	// (APRS101 ch 10), so the AX.25 destination must be derived from
+	// the same lat/lon the info-field encoder used. Override b.Dest
+	// here so the configured destination (e.g. APGRWO) is replaced.
+	dest := b.Dest
+	if b.Format == "mic_e" && (b.Type == TypePosition || b.Type == TypeIGate || b.Type == TypeTracker) {
+		lat, lon := b.Lat, b.Lon
+		if b.UseGps && s.cache != nil {
+			if fix, ok := s.cache.Get(); ok {
+				lat, lon = fix.Latitude, fix.Longitude
+			}
+		}
+		micEDestCall := MicEDestination(lat, lon, b.Ambiguity)
+		parsed, perr := ax25.ParseAddress(micEDestCall)
+		if perr != nil {
+			s.logger.Warn("beacon mic_e dest parse", "id", b.ID, "call", micEDestCall, "err", perr)
+			if eo, ok := s.observer.(ErrorObserver); ok && eo != nil {
+				eo.OnEncodeError(name)
+			}
+			return &SendNowError{Kind: SendNowErrorEncode, Err: perr}
+		}
+		dest = parsed
+	}
+	frame, err := ax25.NewUIFrame(b.Source, dest, b.Path, []byte(info))
 	if err != nil {
 		// AX.25 encode failure (almost always a malformed callsign).
 		// Warn-level because the operator needs to fix the config;
@@ -423,7 +446,7 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 	// do not cause SendNow to report failure: the RF leg already
 	// succeeded, and an offline IS path is normal.
 	if b.SendToAPRSIS && s.isSink != nil {
-		line := formatTNC2(b.Source, b.Dest, b.Path, info)
+		line := formatTNC2(b.Source, dest, b.Path, info)
 		if err := s.isSink.SendLine(line); err != nil {
 			s.logger.Warn("beacon aprs-is send", "id", b.ID, "name", name, "err", err)
 		} else {

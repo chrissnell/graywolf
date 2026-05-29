@@ -74,7 +74,10 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		case "uncompressed":
 			return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment, b.Ambiguity), nil
 		case "mic_e":
-			return "", fmt.Errorf("%s beacon: mic_e format not supported yet", b.Type)
+			if phg != "" {
+				s.logger.Debug("PHG dropped from Mic-E beacon (no slot in wire format)", "id", b.ID, "type", b.Type)
+			}
+			return MicEPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, b.Ambiguity, comment), nil
 		default:
 			return "", fmt.Errorf("%s beacon: unknown position_format %q", b.Type, b.Format)
 		}
@@ -105,7 +108,7 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		case "uncompressed":
 			return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment, b.Ambiguity), nil
 		case "mic_e":
-			return "", fmt.Errorf("tracker beacon: mic_e format not supported yet")
+			return MicEPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, b.Ambiguity, comment), nil
 		default:
 			return "", fmt.Errorf("tracker beacon: unknown position_format %q", b.Format)
 		}
