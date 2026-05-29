@@ -29,6 +29,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/digipeater/blocklist"
 	"github.com/chrissnell/graywolf/pkg/internal/dedup"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -93,12 +94,18 @@ type Config struct {
 	// does-anything behavior). Lookup errors are silently ignored
 	// (fail-open).
 	ChannelModes configstore.ChannelModeLookup
+
+	// Blocklist names source addresses that must never be digipeated.
+	// Replaced under lock via SetBlocklist for live reconfig. Nil/empty
+	// means no block list (current behavior).
+	Blocklist []blocklist.Entry
 }
 
 // Stats exposes counters.
 type Stats struct {
 	Packets uint64 // successfully digipeated
 	Deduped uint64 // dropped as duplicate
+	Blocked uint64 // dropped because source matched the block list
 }
 
 // Digipeater is the engine.
@@ -114,8 +121,9 @@ type Digipeater struct {
 
 	channelModes configstore.ChannelModeLookup
 
-	dedup *dedup.Window[string, struct{}]
-	stats Stats
+	dedup     *dedup.Window[string, struct{}]
+	blocklist *blocklist.List
+	stats     Stats
 }
 
 // New builds a Digipeater. Resolves cfg.MyCall (override) against
@@ -160,6 +168,7 @@ func New(cfg Config) (*Digipeater, error) {
 		onDedup:      cfg.OnDedup,
 		channelModes: cfg.ChannelModes,
 		dedup:        dedup.New[string, struct{}](dedup.Config{TTL: cfg.DedupeWindow}),
+		blocklist:    blocklist.New(cfg.Blocklist),
 	}, nil
 }
 
