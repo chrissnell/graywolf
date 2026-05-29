@@ -523,8 +523,15 @@ type MapsDownload struct {
 	BytesDownloaded int64     `gorm:"not null;default:0" json:"bytes_downloaded"`
 	DownloadedAt    time.Time `json:"downloaded_at"`
 	ErrorMessage    string    `gorm:"not null;default:''" json:"error_message,omitempty"`
-	CreatedAt       time.Time `json:"-"`
-	UpdatedAt       time.Time `json:"-"`
+	// BBox is the catalog bbox snapshot captured at download-record
+	// creation time, JSON-encoded as "[west, south, east, north]".
+	// Nullable: legacy rows from pre-bbox installs hold NULL until the
+	// startup backfill reads the value from the pmtiles archive header.
+	// Render-path correctness depends on this column being populated
+	// for every completed download.
+	BBox      *string   `gorm:"column:bbox;type:text" json:"bbox,omitempty"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 }
 
 // GPSConfig is a singleton (id=1) row for the GPS receiver.

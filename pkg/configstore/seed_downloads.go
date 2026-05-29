@@ -74,6 +74,7 @@ func (s *Store) UpsertMapsDownload(ctx context.Context, d MapsDownload) error {
 		"bytes_downloaded": d.BytesDownloaded,
 		"downloaded_at":    d.DownloadedAt,
 		"error_message":    d.ErrorMessage,
+		"bbox":             d.BBox, // nil => NULL; *string => TEXT
 	}
 	if d.ID == 0 {
 		return db.Model(&MapsDownload{}).Create(cols).Error
