@@ -362,6 +362,7 @@ const (
 	OpStartMapsDownload     = "startMapsDownload"
 	OpDeleteMapsDownload    = "deleteMapsDownload"
 	OpGetMapsCatalog        = "getMapsCatalog"
+	OpGetMapsLocalBounds    = "getMapsLocalBounds"
 )
 
 // Actions resource — /api/actions and friends. Remote command system
