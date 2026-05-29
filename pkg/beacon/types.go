@@ -36,7 +36,8 @@ type Config struct {
 	SymbolCode  byte
 	Comment     string
 	CommentCmd  []string // already-split argv; empty = static comment
-	Compress    bool     // use 13-byte base-91 compressed position format
+	Format      string   // "compressed" | "uncompressed" | "mic_e" (APRS101 ch 9/6/10)
+	Ambiguity   int      // 0..4; trailing position digits blanked per APRS101 ch 6 table 8
 	Messaging   bool
 	ObjectName  string             // for TypeObject
 	CustomInfo  string             // for TypeCustom (raw info field override)
