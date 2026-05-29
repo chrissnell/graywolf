@@ -999,3 +999,21 @@ func TestNormalizeKissInterface_TcpClientTxDefault(t *testing.T) {
 		}
 	})
 }
+
+func TestDigipeaterBlocklistAutoMigrate(t *testing.T) {
+	s := newTestStore(t)
+	row := &DigipeaterBlocklist{Pattern: "N1ROG-9", Reason: "test", Enabled: true}
+	if err := s.DB().Create(row).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if row.ID == 0 {
+		t.Fatal("expected autoincrement id")
+	}
+	var got DigipeaterBlocklist
+	if err := s.DB().First(&got, row.ID).Error; err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if got.Pattern != "N1ROG-9" || got.Reason != "test" || !got.Enabled {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+}

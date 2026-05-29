@@ -150,6 +150,7 @@ func (s *Store) Migrate() error {
 		&TxTiming{},
 		&DigipeaterConfig{},
 		&DigipeaterRule{},
+		&DigipeaterBlocklist{},
 		&IGateConfig{},
 		&IGateRfFilter{},
 		&Beacon{},
