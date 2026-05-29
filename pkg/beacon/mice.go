@@ -1,0 +1,199 @@
+package beacon
+
+import (
+	"math"
+	"strings"
+
+	"github.com/chrissnell/graywolf/pkg/aprs"
+)
+
+// MicEMessageOffDuty is the Mic-E message code emitted for every
+// graywolf-originated Mic-E beacon. APRS101 ch 10 table 8 defines codes
+// M0..M7; M0 ("Off Duty") is the most innocuous standard code and the
+// spec deferred operator-selectable codes to a future plan.
+const MicEMessageOffDuty = 0
+
+// MicEDestination returns the 6-character AX.25 destination callsign
+// for a Mic-E transmission. Ambiguity blanks trailing latitude digits
+// per APRS101 ch 10 table 9 (K/L/Z variants); it is applied identically
+// to the uncompressed path so a Mic-E beacon and an uncompressed beacon
+// at the same ambiguity level publish the same effective precision.
+//
+// The callsign is built by aprs.EncodeMicEDest; this wrapper hides the
+// per-beacon "did the longitude need the +100 offset?" computation
+// from the scheduler so it doesn't have to duplicate the lat/lon
+// preprocessing the info-field encoder already does.
+func MicEDestination(lat, lon float64, ambiguity int) string {
+	_, offset100, west := micELonFields(lon)
+	return aprs.EncodeMicEDest(lat, MicEMessageOffDuty, offset100, west, ambiguity)
+}
+
+// MicEPositionInfo builds an APRS101 ch 10 Mic-E info field for the
+// given fix. The caller is responsible for swapping the AX.25
+// destination with MicEDestination at frame-build time; the bytes
+// returned here cover only the info portion (data-type indicator
+// through to the comment).
+//
+// course is degrees (1..360, 0 means "no course"); speedKt is knots;
+// altM is metres (emitted as a 4-byte "XYZ}" base-91 extension when
+// non-zero per APRS101 ch 10). ambiguity (0..4) blanks the trailing
+// longitude minutes / hundredths bytes with ASCII space; the
+// destination's latitude blanking is performed by MicEDestination.
+//
+// Mic-E preempts PHG: there is no PHG slot in the wire format. The
+// builder drops PHG silently before invoking this encoder.
+func MicEPositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, ambiguity int, comment string) string {
+	if symbolTable == 0 {
+		symbolTable = '/'
+	}
+	if symbolCode == 0 {
+		symbolCode = '-'
+	}
+	// Data-type indicator: backtick = messaging-capable / current GPS;
+	// apostrophe = non-messaging / old style. APRS101 ch 10.
+	dti := byte('\'')
+	if messaging {
+		dti = '`'
+	}
+
+	lonBytes := micELonBytes(lon, ambiguity)
+	csBytes := micESpeedCourse(speedKt, course)
+
+	var sb strings.Builder
+	sb.WriteByte(dti)
+	sb.Write(lonBytes[:])
+	sb.Write(csBytes[:])
+	sb.WriteByte(symbolCode)
+	sb.WriteByte(symbolTable)
+	if altM != 0 {
+		sb.WriteString(micEAltitudeExt(altM))
+	}
+	if comment != "" {
+		sb.WriteString(comment)
+	}
+	return sb.String()
+}
+
+// micELonFields returns the longitude degree value (with the +100
+// adjustment applied when the source longitude falls in the
+// +/-100..180 band), whether that adjustment was needed, and whether
+// the longitude is west. Mirrors the parser-side logic in
+// pkg/aprs/mice.go so a round-trip is byte-clean.
+func micELonFields(lon float64) (degAdjusted int, offset100 bool, west bool) {
+	west = lon < 0
+	absLon := lon
+	if absLon < 0 {
+		absLon = -absLon
+	}
+	d := int(absLon)
+	if d >= 100 {
+		return d - 100, true, west
+	}
+	return d, false, west
+}
+
+// micELonBytes returns the 3-byte longitude info-field bytes per
+// APRS101 ch 10. Ambiguity blanks trailing positions in the
+// minute / hundredths bytes with ASCII space 0x20; the parser side
+// (pkg/aprs/mice.go) reports an ErrMicELonAmbiguous error for those
+// frames, so callers that care about the ambiguity bits must inspect
+// the destination instead (where K/L/Z variants survive parsing).
+func micELonBytes(lon float64, ambiguity int) [3]byte {
+	degAdjusted, _, _ := micELonFields(lon)
+	// Degrees byte: just value + 28. For 0-9 the resulting raw byte is
+	// in 28-37 (control chars) but the APRS101 parser accepts them; we
+	// do not use the +80 alternate range because the in-tree decoder
+	// has no branch for that variant. For values >= 100 the caller has
+	// already subtracted 100 (offset100 is set in the destination).
+	degByte := byte(degAdjusted + 28)
+
+	absLon := lon
+	if absLon < 0 {
+		absLon = -absLon
+	}
+	// Recover the minutes portion from the fractional degrees.
+	frac := absLon - math.Trunc(absLon)
+	minF := frac * 60.0
+	minWhole := int(minF)
+	minFrac := int(math.Round((minF - float64(minWhole)) * 100.0))
+	// Float carry guard: rounding may push minFrac to 100.
+	if minFrac >= 100 {
+		minFrac = 0
+		minWhole++
+	}
+	if minWhole >= 60 {
+		minWhole = 0 // wrap; the degree byte already covers this case
+	}
+
+	// Minutes byte: value + 28; if value < 10, also +60 so the byte
+	// stays printable and outside the control range (APRS101 ch 10
+	// minutes encoding).
+	m := minWhole
+	if m < 10 {
+		m += 60
+	}
+	minByte := byte(m + 28)
+	hundByte := byte(minFrac + 28)
+
+	// Ambiguity: APRS101 ch 10 blanks the matching positions with
+	// ASCII space (0x20). Note this makes the longitude undecodable
+	// from the info field alone; the receiving parser surfaces the
+	// blanked bytes via the K/L/Z variants in the destination instead.
+	if ambiguity >= 1 {
+		hundByte = 0x20
+	}
+	if ambiguity >= 2 {
+		minByte = 0x20
+	}
+	return [3]byte{degByte, minByte, hundByte}
+}
+
+// micESpeedCourse encodes speed (knots) and course (degrees) into the
+// three-byte triplet per APRS101 ch 10:
+//
+//	chr1 = SP/10 + 28
+//	chr2 = (SP%10)*10 + DC/100 + 28
+//	chr3 = DC%100 + 28
+//
+// where SP is speed in knots (0..799) and DC is course in degrees
+// (1..360). When the caller passes course=0 ("unknown"), the encoded
+// course is 0 too (parser flags HasCourse=false).
+func micESpeedCourse(speedKt float64, course int) [3]byte {
+	sp := int(math.Round(speedKt))
+	if sp < 0 {
+		sp = 0
+	}
+	if sp > 799 {
+		sp = 799
+	}
+	if course < 0 {
+		course = 0
+	}
+	if course > 360 {
+		course = course % 360
+	}
+	chr1 := byte(sp/10) + 28
+	chr2 := byte((sp%10)*10+course/100) + 28
+	chr3 := byte(course%100) + 28
+	return [3]byte{chr1, chr2, chr3}
+}
+
+// micEAltitudeExt returns the 4-byte altitude extension "XYZ}" where
+// XYZ are 3 base-91 digits (each +33 offset) encoding metres + 10000
+// (APRS101 ch 10). The trailing "}" is the marker the parser side
+// scans for to detect the extension.
+func micEAltitudeExt(altM float64) string {
+	v := int(math.Round(altM)) + 10000
+	if v < 0 {
+		v = 0
+	}
+	if v > 91*91*91-1 {
+		v = 91*91*91 - 1
+	}
+	out := make([]byte, 4)
+	out[0] = byte(v/(91*91)) + 33
+	out[1] = byte((v/91)%91) + 33
+	out[2] = byte(v%91) + 33
+	out[3] = '}'
+	return string(out)
+}
