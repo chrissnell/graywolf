@@ -8144,9 +8144,6 @@
                 "comment_cmd": {
                     "type": "string"
                 },
-                "compress": {
-                    "type": "boolean"
-                },
                 "custom_info": {
                     "type": "string"
                 },
@@ -8193,6 +8190,9 @@
                     "type": "string"
                 },
                 "path": {
+                    "type": "string"
+                },
+                "position_format": {
                     "type": "string"
                 },
                 "power": {
@@ -8266,9 +8266,6 @@
                 "comment_cmd": {
                     "type": "string"
                 },
-                "compress": {
-                    "type": "boolean"
-                },
                 "custom_info": {
                     "type": "string"
                 },
@@ -8318,6 +8315,9 @@
                     "type": "string"
                 },
                 "path": {
+                    "type": "string"
+                },
+                "position_format": {
                     "type": "string"
                 },
                 "power": {

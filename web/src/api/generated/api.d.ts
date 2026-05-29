@@ -2205,7 +2205,6 @@ export interface components {
             channel?: number;
             comment?: string;
             comment_cmd?: string;
-            compress?: boolean;
             custom_info?: string;
             delay_seconds?: number;
             destination?: string;
@@ -2222,6 +2221,7 @@ export interface components {
             object_name?: string;
             overlay?: string;
             path?: string;
+            position_format?: string;
             power?: number;
             sb_fast_rate?: number;
             sb_fast_speed?: number;
@@ -2246,7 +2246,6 @@ export interface components {
             channel?: number;
             comment?: string;
             comment_cmd?: string;
-            compress?: boolean;
             custom_info?: string;
             delay_seconds?: number;
             destination?: string;
@@ -2264,6 +2263,7 @@ export interface components {
             object_name?: string;
             overlay?: string;
             path?: string;
+            position_format?: string;
             power?: number;
             sb_fast_rate?: number;
             sb_fast_speed?: number;
