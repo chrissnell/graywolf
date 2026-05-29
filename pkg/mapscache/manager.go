@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -192,7 +193,13 @@ func (m *Manager) List(ctx context.Context) ([]Status, error) {
 // otherwise — re-downloads succeed by replacing the file atomically.
 // The caller does not block: this returns as soon as the goroutine
 // is spawned.
-func (m *Manager) Start(ctx context.Context, slug string) error {
+//
+// bbox is the catalog-supplied bbox snapshot in [west, south, east,
+// north] degrees, persisted into the maps_downloads row so the render
+// path can serve offline tiles without consulting the remote catalog
+// after a reboot. Pass nil only when no bbox is available; the startup
+// backfill will fill it in from the pmtiles header later.
+func (m *Manager) Start(ctx context.Context, slug string, bbox *[4]float64) error {
 	m.mu.Lock()
 	if _, busy := m.inflight[slug]; busy {
 		m.mu.Unlock()
@@ -206,13 +213,31 @@ func (m *Manager) Start(ctx context.Context, slug string) error {
 	// Persist a "downloading" row up front so a GET right after Start
 	// returns the right state even before the goroutine grabs the
 	// semaphore.
-	_ = m.store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+	row := configstore.MapsDownload{
 		Slug:   slug,
 		Status: "downloading",
-	})
+	}
+	if bbox != nil {
+		encoded := encodeBBox(*bbox)
+		row.BBox = &encoded
+	}
+	_ = m.store.UpsertMapsDownload(ctx, row)
 
 	go m.run(dlCtx, a)
 	return nil
+}
+
+// encodeBBox writes [w,s,e,n] as the JSON array used on the wire and
+// in the maps_downloads.bbox column. We hand-format instead of going
+// through encoding/json so the result is deterministic (no insertion
+// of spaces, stable float formatting via 'g' verb with -1 precision).
+func encodeBBox(b [4]float64) string {
+	return fmt.Sprintf("[%s,%s,%s,%s]",
+		strconv.FormatFloat(b[0], 'f', -1, 64),
+		strconv.FormatFloat(b[1], 'f', -1, 64),
+		strconv.FormatFloat(b[2], 'f', -1, 64),
+		strconv.FormatFloat(b[3], 'f', -1, 64),
+	)
 }
 
 // Delete cancels any in-flight download for slug, removes the

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/chrissnell/graywolf/pkg/mapscache"
+	"github.com/chrissnell/graywolf/pkg/mapscatalog"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
@@ -167,11 +168,25 @@ func (s *Server) startDownload(w http.ResponseWriter, r *http.Request) {
 		serviceUnavailable(w, "maps cache not initialized")
 		return
 	}
-	slug, ok := s.resolveSlug(w, r)
+	slug, ok := s.validSlugGrammar(w, r)
 	if !ok {
 		return
 	}
-	if err := s.mapsCache.Start(r.Context(), slug); err != nil {
+	if s.catalog == nil {
+		serviceUnavailable(w, "maps catalog not initialized")
+		return
+	}
+	cat, err := s.catalog.Get(r.Context())
+	if err != nil {
+		s.internalError(w, r, "catalog lookup", err)
+		return
+	}
+	bbox, found := lookupCatalogBBox(cat, slug)
+	if !found {
+		badRequest(w, "unknown slug")
+		return
+	}
+	if err := s.mapsCache.Start(r.Context(), slug, bbox); err != nil {
 		if errors.Is(err, mapscache.ErrAlreadyInflight) {
 			writeJSON(w, http.StatusConflict, map[string]string{
 				"error":   "already_inflight",
@@ -188,6 +203,39 @@ func (s *Server) startDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, toDTO(st))
+}
+
+// lookupCatalogBBox returns the bbox for a namespaced slug in the
+// catalog, or (nil, false) if the slug names no published archive.
+// The boolean covers both "slug not in catalog" (caller returns 400)
+// and "slug in catalog but bbox missing" (caller still starts the
+// download; render-path bounds come from the backfill).
+func lookupCatalogBBox(c mapscatalog.Catalog, slug string) (*[4]float64, bool) {
+	kind, a, b, ok := parseSlug(slug)
+	if !ok {
+		return nil, false
+	}
+	switch kind {
+	case "state":
+		for _, st := range c.States {
+			if st.Slug == a {
+				return st.BBox, true
+			}
+		}
+	case "country":
+		for _, x := range c.Countries {
+			if x.ISO2 == a {
+				return x.BBox, true
+			}
+		}
+	case "province":
+		for _, p := range c.Provinces {
+			if p.ISO2 == a && p.Slug == b {
+				return p.BBox, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // @Summary  Delete an offline download
