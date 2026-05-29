@@ -747,3 +747,23 @@ no useful identification and violates the intent of the feature.
 
 Source: [`../../pkg/webapi/channels.go`](../../pkg/webapi/channels.go)
 (`sendTestSignal`).
+
+### 40. Digipeater block list is digipeater-only
+
+[`pkg/digipeater/blocklist`](../../pkg/digipeater/blocklist) is consulted
+only by [`pkg/digipeater/digipeater.go`](../../pkg/digipeater/digipeater.go)'s
+`Handle`. Frames whose source matches an enabled entry are not digipeated;
+every other RX consumer (iGate, packet log, dashboard, station cache,
+messages router, AGW/KISS fanouts) is unaffected and still sees the frame.
+
+*Why:* operators commonly want to silence a misbehaving station's
+digipeated copies without losing the ability to see, log, or gate that
+station's original RF or APRS-IS appearances. A shared "blocked
+stations" surface across subsystems would conflate two different
+operator intents.
+
+*How to apply:* never import `pkg/digipeater/blocklist` outside
+`pkg/digipeater/`. If another subsystem grows a similar need, give it
+its own list. The regression test in
+[`pkg/app/wiring_blocklist_isolation_test.go`](../../pkg/app/wiring_blocklist_isolation_test.go)
+locks the invariant in behaviorally.
