@@ -1241,13 +1241,41 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		time.Hour,
 		a.cfg.TileCacheDir,
 	)
-	// Best-effort warm; failures are non-fatal -- Get() will retry on
-	// the first request that needs the catalog.
+	// Warm the catalog in the background with exponential backoff,
+	// capped at 1 hour. Only emit a single state-change ERROR when we
+	// transition from healthy -> failing (and a single INFO when we
+	// recover); intermediate retries log at DEBUG so an offline Pi
+	// doesn't dominate the log buffer. The on-disk catalog.json keeps
+	// the picker functional while the warm-up retries.
 	go func() {
-		warmCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if _, err := catalog.Refresh(warmCtx); err != nil {
-			a.logger.Warn("maps catalog warm-up failed", "err", err)
+		backoff := 30 * time.Second
+		const maxBackoff = time.Hour
+		healthy := true
+		for {
+			warmCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			_, err := catalog.Refresh(warmCtx)
+			cancel()
+			if err == nil {
+				if !healthy {
+					a.logger.Info("maps catalog reachable again")
+				}
+				return
+			}
+			if healthy {
+				a.logger.Error("maps catalog warm-up failed; will retry quietly", "err", err)
+				healthy = false
+			} else {
+				a.logger.Debug("maps catalog retry failed", "err", err, "next_retry_in", backoff)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}()
 
