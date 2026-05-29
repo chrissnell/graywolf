@@ -234,8 +234,19 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 |---|---|
 | Auth registration + bearer token | [`../../pkg/mapsauth/client.go`](../../pkg/mapsauth/client.go) |
 | Tile cache (PMTiles, atomic writes) | [`../../pkg/mapscache/manager.go`](../../pkg/mapscache/manager.go), `atomic_writer.go` |
+| PMTiles v3 header bbox reader (used by the startup backfill) | [`../../pkg/mapscache/pmtiles_header.go`](../../pkg/mapscache/pmtiles_header.go) |
+| Render-path bounds (offline-safe; reads `maps_downloads.bbox`, no remote dep) | [`../../pkg/webapi/local_bounds.go`](../../pkg/webapi/local_bounds.go) (`GET /api/maps/local-bounds`) |
+| Catalog fetcher + disk fallback for the region picker | [`../../pkg/mapscatalog/catalog.go`](../../pkg/mapscatalog/catalog.go) (`NewWithDiskCache` writes/reads `<TileCacheDir>/catalog.json`) |
 | Web-side glue | `web/src/lib/maps/`, `web/src/routes/MapsSettings.svelte` |
+| Web local-bounds store (consumed by gw-tile protocol) | `web/src/lib/maps/local-bounds-store.svelte.js` |
 | Map render | `web/src/lib/map/`, `web/src/routes/LiveMapV2.svelte` |
+
+The render path (the `gw-tile://` MapLibre protocol) reads bounds from
+`/api/maps/local-bounds`, NOT the catalog. This is what lets the map
+serve already-downloaded regions on a host that has never reached
+maps.nw5w.com in the current boot. The picker still reads the catalog
+(via `/api/maps/catalog`), with a disk fallback so the operator sees
+the last-known region list when offline.
 
 PMTiles infrastructure (manifest gen, R2 sync, Cloudflare Worker) is in
 `~/dev/graywolf-maps`, not here. See [invariant 7](invariants.md).
