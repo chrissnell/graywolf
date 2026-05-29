@@ -5,6 +5,7 @@
   import { validateCallsign } from '../lib/maps/callsign.js';
   import { downloadsState } from '../lib/maps/downloads-store.svelte.js';
   import { catalogStore } from '../lib/maps/catalog-store.svelte.js';
+  import { localBoundsStore } from '../lib/maps/local-bounds-store.svelte.js';
   import { formatBytes } from '../lib/maps/format-bytes.js';
   import RegionPicker from '../lib/maps/region-picker.svelte';
   import PageHeader from '../components/PageHeader.svelte';
@@ -22,6 +23,7 @@
   onMount(() => {
     mapsState.fetchConfig();
     catalogStore.load();
+    localBoundsStore.load();
     downloadsState.refresh().then(() => {
       if (
         [...downloadsState.items.values()].some(

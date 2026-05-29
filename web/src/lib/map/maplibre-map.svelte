@@ -14,6 +14,7 @@
   import { osmRasterStyle } from './sources/osm-raster.js';
   import { downloadsState } from '../maps/downloads-store.svelte.js';
   import { catalogStore } from '../maps/catalog-store.svelte.js';
+  import { localBoundsStore } from '../maps/local-bounds-store.svelte.js';
   import { createFederatedProtocol } from './sources/gw-federated-protocol.js';
 
   let { initialCenter = [-98, 39], initialZoom = 4, oncreate = null } = $props();
@@ -47,7 +48,7 @@
     if (gwTileRegistered) return;
     const federated = createFederatedProtocol({
       completedSlugsProvider: () => downloadsState.completed,
-      boundsBySlugProvider: () => catalogStore.boundsBySlug,
+      boundsBySlugProvider: () => localBoundsStore.boundsBySlug,
       fetchOnline: async (z, x, y, signal) => {
         const base = `https://maps.nw5w.com/${z}/${x}/${y}.mvt`;
         const url = bearerToken
@@ -175,7 +176,8 @@
   }
 
   onMount(async () => {
-    catalogStore.load(); // fire-and-forget; bounds become available when ready
+    catalogStore.load(); // fire-and-forget; picker uses these
+    localBoundsStore.load(); // fire-and-forget; render path uses these
     ensureGwTileProtocol();
     // Hydrate mapsState + downloadsState before the first style build
     // so the first paint reflects the persisted source choice and any
