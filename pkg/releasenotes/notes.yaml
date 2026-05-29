@@ -12,7 +12,7 @@
   style: cta
   schema_version: 1
   link: "#/beacons"
-  title: "Beacons: pick a position format and use position ambiguity, plus digipeater and map fixes"
+  title: "Beacons: position format and ambiguity, plus digipeater and map fixes"
   body: |
     Beacons: you can now pick the format each beacon uses on the air --
     Compressed is the densest and most precise, Uncompressed is the
