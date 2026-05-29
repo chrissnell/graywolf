@@ -20,9 +20,9 @@ func TestBlockedSourceStillReachesNonDigiConsumers(t *testing.T) {
 	h := newKissTncHarness(t)
 	defer h.stop()
 
-	h.app.digi.SetBlocklist([]blocklist.Entry{{Pattern: "N1ROG-*", Reason: "isolation test"}})
+	h.app.digi.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*", Reason: "isolation test"}})
 
-	src := mustAddrApp(t, "N1ROG-9")
+	src := mustAddrApp(t, "BADCAL-9")
 	dest := mustAddrApp(t, "APRS")
 	path := []ax25.Address{mustAddrApp(t, "WIDE2-2")}
 	f, err := ax25.NewUIFrame(src, dest, path, []byte("=4900.00N/12300.00W>blocked"))

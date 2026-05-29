@@ -808,7 +808,7 @@
     </div>
 </Modal>
 
-<div style="margin-top: 20px;">
+<div style="margin-top: 48px;">
   <PageHeader title="Blocked Stations" subtitle="Frames from these stations will not be digipeated. The iGate, packet log, and other receivers are unaffected.">
     <Button variant="primary" onclick={openBlockCreate}>+ Add blocked station</Button>
   </PageHeader>
@@ -831,8 +831,8 @@
 
 <Modal bind:open={blockModalOpen} title={blockEditing ? 'Edit Blocked Station' : 'Add Blocked Station'}>
   <FormField label="Pattern" id="block-pattern"
-    hint="e.g. N1ROG, N1ROG-9, or N1ROG-*">
-    <Input id="block-pattern" bind:value={blockForm.pattern} placeholder="N1ROG-*" autocomplete="off" spellcheck={false} />
+    hint="e.g. BADCAL, BADCAL-9, or BADCAL-*">
+    <Input id="block-pattern" bind:value={blockForm.pattern} placeholder="BADCAL-*" autocomplete="off" spellcheck={false} />
   </FormField>
   <FormField label="Reason (optional)" id="block-reason"
     hint="Free text, max 256 characters. Shown in debug logs when this pattern blocks a frame.">

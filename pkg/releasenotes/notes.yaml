@@ -16,7 +16,7 @@
   body: |
     The Digipeater settings page now has a Blocked Stations list. Add
     a callsign -- with or without an SSID, with a trailing wildcard
-    like N1ROG-* if you want every SSID -- and the digipeater will
+    like CALL-* if you want every SSID -- and the digipeater will
     stop repeating that station's frames. The iGate and packet log
     are not affected: you'll still see and log the original traffic.
     Useful when one nearby station is flooding the channel with

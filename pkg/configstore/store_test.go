@@ -1002,7 +1002,7 @@ func TestNormalizeKissInterface_TcpClientTxDefault(t *testing.T) {
 
 func TestDigipeaterBlocklistAutoMigrate(t *testing.T) {
 	s := newTestStore(t)
-	row := &DigipeaterBlocklist{Pattern: "N1ROG-9", Reason: "test", Enabled: true}
+	row := &DigipeaterBlocklist{Pattern: "BADCAL-9", Reason: "test", Enabled: true}
 	if err := s.DB().Create(row).Error; err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -1013,7 +1013,7 @@ func TestDigipeaterBlocklistAutoMigrate(t *testing.T) {
 	if err := s.DB().First(&got, row.ID).Error; err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	if got.Pattern != "N1ROG-9" || got.Reason != "test" || !got.Enabled {
+	if got.Pattern != "BADCAL-9" || got.Reason != "test" || !got.Enabled {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 }
@@ -1022,7 +1022,7 @@ func TestDigipeaterBlocklistCRUD(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
-	e := &DigipeaterBlocklist{Pattern: "N1ROG-*", Reason: "malformed beacons", Enabled: true}
+	e := &DigipeaterBlocklist{Pattern: "BADCAL-*", Reason: "malformed beacons", Enabled: true}
 	if err := s.CreateDigipeaterBlocklistEntry(ctx, e); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1034,7 +1034,7 @@ func TestDigipeaterBlocklistCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got.Pattern != "N1ROG-*" || got.Reason != "malformed beacons" || !got.Enabled {
+	if got.Pattern != "BADCAL-*" || got.Reason != "malformed beacons" || !got.Enabled {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 

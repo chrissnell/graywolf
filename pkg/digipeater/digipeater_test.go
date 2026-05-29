@@ -416,9 +416,9 @@ func TestHandle_BlockedSourceShortCircuits(t *testing.T) {
 		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL-1")
-	d.SetBlocklist([]blocklist.Entry{{Pattern: "N1ROG-*", Reason: "test"}})
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*", Reason: "test"}})
 
-	rx := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "blocked")
+	rx := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "blocked")
 	if d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatal("Handle returned true for blocked source")
 	}
@@ -447,10 +447,10 @@ func TestHandle_BlockedSourceBeforeDedup(t *testing.T) {
 		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
 	}}
 	d, _ := newTestDigi(t, rules, "N0CAL-1")
-	d.SetBlocklist([]blocklist.Entry{{Pattern: "N1ROG-*"}})
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*"}})
 
-	rx1 := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "same")
-	rx2 := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "same")
+	rx1 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "same")
+	rx2 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "same")
 	d.Handle(context.Background(), 1, rx1, ingress.Modem())
 	d.Handle(context.Background(), 1, rx2, ingress.Modem())
 
@@ -472,7 +472,7 @@ func TestHandle_NonBlockedFrameStillDigis(t *testing.T) {
 	d, sink := newTestDigi(t, rules, "N0CAL-1")
 	d.SetBlocklist([]blocklist.Entry{{Pattern: "OTHRCL-*"}})
 
-	rx := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "ok")
+	rx := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "ok")
 	if !d.Handle(context.Background(), 1, rx, ingress.Modem()) {
 		t.Fatal("expected non-blocked frame to be digipeated")
 	}
@@ -491,9 +491,9 @@ func TestSetBlocklist_LiveReconfig(t *testing.T) {
 		Alias: "WIDE", AliasType: "widen", MaxHops: 2, Action: "repeat",
 	}}
 	d, sink := newTestDigi(t, rules, "N0CAL-1")
-	d.SetBlocklist([]blocklist.Entry{{Pattern: "N1ROG-*"}})
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*"}})
 
-	rx1 := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "first")
+	rx1 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "first")
 	if d.Handle(context.Background(), 1, rx1, ingress.Modem()) {
 		t.Fatal("first frame should be blocked")
 	}
@@ -502,7 +502,7 @@ func TestSetBlocklist_LiveReconfig(t *testing.T) {
 	}
 
 	d.SetBlocklist(nil)
-	rx2 := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "second")
+	rx2 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "second")
 	if !d.Handle(context.Background(), 1, rx2, ingress.Modem()) {
 		t.Fatal("after SetBlocklist(nil) frame should digi")
 	}
@@ -511,13 +511,13 @@ func TestSetBlocklist_LiveReconfig(t *testing.T) {
 	}
 
 	d.SetBlocklist([]blocklist.Entry{{Pattern: "OTHRCL-*"}})
-	rx3 := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "third")
+	rx3 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "third")
 	if !d.Handle(context.Background(), 1, rx3, ingress.Modem()) {
 		t.Fatal("frame with non-matching block list should digi")
 	}
 
-	d.SetBlocklist([]blocklist.Entry{{Pattern: "N1ROG-*"}})
-	rx4 := buildFrame(t, "N1ROG-9", "APRS", []string{"WIDE2-2"}, "fourth")
+	d.SetBlocklist([]blocklist.Entry{{Pattern: "BADCAL-*"}})
+	rx4 := buildFrame(t, "BADCAL-9", "APRS", []string{"WIDE2-2"}, "fourth")
 	if d.Handle(context.Background(), 1, rx4, ingress.Modem()) {
 		t.Fatal("frame should be re-blocked after re-adding pattern")
 	}
@@ -526,7 +526,7 @@ func TestSetBlocklist_LiveReconfig(t *testing.T) {
 func TestBlocklistFromStore_EnabledOnly(t *testing.T) {
 	t.Parallel()
 	rows := []configstore.DigipeaterBlocklist{
-		{Pattern: "N1ROG-*", Reason: "noisy", Enabled: true},
+		{Pattern: "BADCAL-*", Reason: "noisy", Enabled: true},
 		{Pattern: "OTHER-1", Reason: "disabled", Enabled: false},
 		{Pattern: "THIRD", Reason: "", Enabled: true},
 	}
@@ -534,7 +534,7 @@ func TestBlocklistFromStore_EnabledOnly(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("len=%d, want 2 (disabled row dropped)", len(got))
 	}
-	if got[0].Pattern != "N1ROG-*" || got[0].Reason != "noisy" {
+	if got[0].Pattern != "BADCAL-*" || got[0].Reason != "noisy" {
 		t.Fatalf("entry 0 = %+v", got[0])
 	}
 	if got[1].Pattern != "THIRD" {

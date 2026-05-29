@@ -141,14 +141,14 @@ func TestDigipeaterBlocklist_PostHappyPathCanonicalizes(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	body := `{"pattern":"  n1rog-*  ","reason":"noisy"}`
+	body := `{"pattern":"  badcal-*  ","reason":"noisy"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/digipeater/blocklist", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status=%d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"pattern": "N1ROG-*"`) {
+	if !strings.Contains(rec.Body.String(), `"pattern": "BADCAL-*"`) {
 		t.Fatalf("response missing canonical pattern: %s", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), `"enabled": true`) {
@@ -192,7 +192,7 @@ func TestDigipeaterBlocklist_GetPutDeleteRoundTrip(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/digipeater/blocklist",
-		strings.NewReader(`{"pattern": "N1ROG-9","reason":"r1"}`))
+		strings.NewReader(`{"pattern": "BADCAL-9","reason":"r1"}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -205,13 +205,13 @@ func TestDigipeaterBlocklist_GetPutDeleteRoundTrip(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status=%d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `"pattern": "N1ROG-9"`) {
+	if !strings.Contains(rec.Body.String(), `"pattern": "BADCAL-9"`) {
 		t.Fatalf("GET body missing entry: %s", rec.Body.String())
 	}
 
-	id := extractFirstIDForPattern(t, rec.Body.String(), "N1ROG-9")
+	id := extractFirstIDForPattern(t, rec.Body.String(), "BADCAL-9")
 
-	put := `{"pattern": "N1ROG-9","reason": "r2","enabled": false}`
+	put := `{"pattern": "BADCAL-9","reason": "r2","enabled": false}`
 	req = httptest.NewRequest(http.MethodPut,
 		"/api/digipeater/blocklist/"+strconv.FormatUint(uint64(id), 10),
 		strings.NewReader(put))
@@ -239,7 +239,7 @@ func TestDigipeaterBlocklist_GetPutDeleteRoundTrip(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("final GET status=%d", rec.Code)
 	}
-	if strings.Contains(rec.Body.String(), `"pattern": "N1ROG-9"`) {
+	if strings.Contains(rec.Body.String(), `"pattern": "BADCAL-9"`) {
 		t.Fatalf("entry still present after delete: %s", rec.Body.String())
 	}
 }

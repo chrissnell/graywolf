@@ -10,13 +10,13 @@ func TestValidatePattern(t *testing.T) {
 		wantErr bool
 	}{
 		// Valid forms — canonicalized to uppercase, trimmed.
-		{"bare call", "N1ROG", "N1ROG", false},
-		{"lowercase canonicalized", "n1rog", "N1ROG", false},
+		{"bare call", "BADCAL", "BADCAL", false},
+		{"lowercase canonicalized", "badcal", "BADCAL", false},
 		{"surrounding whitespace trimmed", "  KK6XYZ-9  ", "KK6XYZ-9", false},
-		{"call-0 preserved distinct from bare", "N1ROG-0", "N1ROG-0", false},
-		{"call-15 boundary", "N1ROG-15", "N1ROG-15", false},
-		{"wildcard form", "N1ROG-*", "N1ROG-*", false},
-		{"wildcard mixed case", "n1rog-*", "N1ROG-*", false},
+		{"call-0 preserved distinct from bare", "BADCAL-0", "BADCAL-0", false},
+		{"call-15 boundary", "BADCAL-15", "BADCAL-15", false},
+		{"wildcard form", "BADCAL-*", "BADCAL-*", false},
+		{"wildcard mixed case", "badcal-*", "BADCAL-*", false},
 		{"6-char callsign", "WB6ABC", "WB6ABC", false},
 		{"6-char with ssid", "WB6ABC-9", "WB6ABC-9", false},
 
@@ -32,10 +32,10 @@ func TestValidatePattern(t *testing.T) {
 		{"7-char call", "ABCDEFG", "", true},
 		{"wildcard inside call", "N1*ROG", "", true},
 		{"wildcard inside call with ssid", "N1*-9", "", true},
-		{"ssid > 15", "N1ROG-16", "", true},
-		{"negative ssid", "N1ROG--1", "", true},
-		{"non-numeric ssid", "N1ROG-X", "", true},
-		{"ssid with trailing junk", "N1ROG-9X", "", true},
+		{"ssid > 15", "BADCAL-16", "", true},
+		{"negative ssid", "BADCAL--1", "", true},
+		{"non-numeric ssid", "BADCAL-X", "", true},
+		{"ssid with trailing junk", "BADCAL-9X", "", true},
 		{"invalid char in call", "N1R!G", "", true},
 		{"space inside call", "N1 ROG", "", true},
 	}

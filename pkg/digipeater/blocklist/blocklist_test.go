@@ -25,77 +25,77 @@ func TestListMatches(t *testing.T) {
 	}{
 		{
 			name:    "bare matches SSID 0 only",
-			entries: []Entry{{Pattern: "N1ROG"}},
-			src:     "N1ROG",
-			wantHit: true, wantPat: "N1ROG",
+			entries: []Entry{{Pattern: "BADCAL"}},
+			src:     "BADCAL",
+			wantHit: true, wantPat: "BADCAL",
 		},
 		{
 			name:    "bare does not match SSID > 0",
-			entries: []Entry{{Pattern: "N1ROG"}},
-			src:     "N1ROG-9",
+			entries: []Entry{{Pattern: "BADCAL"}},
+			src:     "BADCAL-9",
 			wantHit: false,
 		},
 		{
 			name:    "CALL-0 matches bare source",
-			entries: []Entry{{Pattern: "N1ROG-0"}},
-			src:     "N1ROG",
-			wantHit: true, wantPat: "N1ROG-0",
+			entries: []Entry{{Pattern: "BADCAL-0"}},
+			src:     "BADCAL",
+			wantHit: true, wantPat: "BADCAL-0",
 		},
 		{
 			name:    "CALL-N exact match",
-			entries: []Entry{{Pattern: "N1ROG-9"}},
-			src:     "N1ROG-9",
-			wantHit: true, wantPat: "N1ROG-9",
+			entries: []Entry{{Pattern: "BADCAL-9"}},
+			src:     "BADCAL-9",
+			wantHit: true, wantPat: "BADCAL-9",
 		},
 		{
 			name:    "CALL-N does not match different SSID",
-			entries: []Entry{{Pattern: "N1ROG-9"}},
-			src:     "N1ROG-1",
+			entries: []Entry{{Pattern: "BADCAL-9"}},
+			src:     "BADCAL-1",
 			wantHit: false,
 		},
 		{
 			name:    "wildcard matches any non-zero SSID",
-			entries: []Entry{{Pattern: "N1ROG-*"}},
-			src:     "N1ROG-1",
-			wantHit: true, wantPat: "N1ROG-*",
+			entries: []Entry{{Pattern: "BADCAL-*"}},
+			src:     "BADCAL-1",
+			wantHit: true, wantPat: "BADCAL-*",
 		},
 		{
 			name:    "wildcard matches SSID 15",
-			entries: []Entry{{Pattern: "N1ROG-*"}},
-			src:     "N1ROG-15",
-			wantHit: true, wantPat: "N1ROG-*",
+			entries: []Entry{{Pattern: "BADCAL-*"}},
+			src:     "BADCAL-15",
+			wantHit: true, wantPat: "BADCAL-*",
 		},
 		{
 			name:    "wildcard does NOT match bare callsign",
-			entries: []Entry{{Pattern: "N1ROG-*"}},
-			src:     "N1ROG",
+			entries: []Entry{{Pattern: "BADCAL-*"}},
+			src:     "BADCAL",
 			wantHit: false,
 		},
 		{
 			name:    "wildcard does not match different base",
-			entries: []Entry{{Pattern: "N1ROG-*"}},
+			entries: []Entry{{Pattern: "BADCAL-*"}},
 			src:     "OTHER-9",
 			wantHit: false,
 		},
 		{
 			name: "first hit wins",
 			entries: []Entry{
-				{Pattern: "N1ROG-*", Reason: "first"},
-				{Pattern: "N1ROG-9", Reason: "second"},
+				{Pattern: "BADCAL-*", Reason: "first"},
+				{Pattern: "BADCAL-9", Reason: "second"},
 			},
-			src:     "N1ROG-9",
-			wantHit: true, wantPat: "N1ROG-*",
+			src:     "BADCAL-9",
+			wantHit: true, wantPat: "BADCAL-*",
 		},
 		{
 			name:    "case-insensitive match against source",
-			entries: []Entry{{Pattern: "N1ROG-9"}},
-			src:     "n1rog-9",
-			wantHit: true, wantPat: "N1ROG-9",
+			entries: []Entry{{Pattern: "BADCAL-9"}},
+			src:     "badcal-9",
+			wantHit: true, wantPat: "BADCAL-9",
 		},
 		{
 			name:    "empty list never matches",
 			entries: nil,
-			src:     "N1ROG-9",
+			src:     "BADCAL-9",
 			wantHit: false,
 		},
 	}
@@ -115,12 +115,12 @@ func TestListMatches(t *testing.T) {
 }
 
 func TestListSetReplacesEntries(t *testing.T) {
-	l := New([]Entry{{Pattern: "N1ROG-9"}})
-	if _, hit := l.Matches(mustAddr(t, "N1ROG-9")); !hit {
+	l := New([]Entry{{Pattern: "BADCAL-9"}})
+	if _, hit := l.Matches(mustAddr(t, "BADCAL-9")); !hit {
 		t.Fatal("expected initial hit")
 	}
 	l.Set([]Entry{{Pattern: "OTHER-1"}})
-	if _, hit := l.Matches(mustAddr(t, "N1ROG-9")); hit {
+	if _, hit := l.Matches(mustAddr(t, "BADCAL-9")); hit {
 		t.Fatal("expected old entry to be gone after Set")
 	}
 	if _, hit := l.Matches(mustAddr(t, "OTHER-1")); !hit {
