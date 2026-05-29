@@ -135,14 +135,7 @@
   let txBlockAllowsSave = $derived(
     !!editing && form.enabled === false,
   );
-  // Phase 1 gate: the API rejects mic_e writes. Mirror the rejection in
-  // the form so the operator sees the Save-disable before the network
-  // round trip -- and so they can't accidentally fire a 400 every time
-  // they tab through the radio.
-  let saveBlocked = $derived(
-    (!!txBlock && !txBlockAllowsSave) ||
-    (form.position_format === 'mic_e' && form.type === 'position'),
-  );
+  let saveBlocked = $derived(!!txBlock && !txBlockAllowsSave);
   // The format radio + ambiguity sub-block apply only to types that
   // carry an APRS101 ch 6/9/10 position field. Object and custom
   // beacons hide the whole section. The Beacons UI today only exposes
@@ -757,12 +750,6 @@
               <Radio value="mic_e" label="Mic-E (most efficient)" />
             </div>
           </RadioGroup>
-          {#if form.position_format === 'mic_e'}
-            <div class="mic-e-coming-soon" role="alert">
-              Mic-E TX support is shipping in the next release. Save with
-              Uncompressed for now.
-            </div>
-          {/if}
         </FormField>
         {#if showAmbiguity}
           <FormField label="Position ambiguity" id="bcn-ambiguity"
@@ -1088,14 +1075,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  .mic-e-coming-soon {
-    margin-top: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border-left: 3px solid var(--color-warning, #c47900);
-    background: rgba(196, 121, 0, 0.08);
-    font-size: 0.9rem;
-    line-height: 1.4;
   }
   .bcn-amb-select {
     margin-top: 0.5rem;
