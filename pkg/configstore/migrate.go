@@ -187,6 +187,14 @@ type migration struct {
 //	    (gpio_pin outside 1..4) coerce to ptt_method=1
 //	    (PTT_METHOD_CP2102N_RTS). Non-android rows are untouched.
 //	    Idempotent via the ptt_method=0 guard.
+//	23 — beacon_position_format: replace the legacy beacons.compress
+//	    bool with a beacons.position_format enum string column
+//	    ('compressed' | 'uncompressed' | 'mic_e'). AutoMigrate adds
+//	    position_format with default 'compressed'; this migration flips
+//	    rows where compress=0 to 'uncompressed' and then DROPs the
+//	    legacy column. Required by the per-beacon format selector
+//	    and uncompressed-only position ambiguity. See
+//	    docs/superpowers/plans/2026-05-29-beacon-position-format-and-ambiguity.md.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -210,6 +218,7 @@ var schemaMigrations = []migration{
 	{version: 20, name: "kiss_tcp_client_tx_default", phase: postAutoMigrate, run: migrateKissTcpClientTxDefault},
 	{version: 21, name: "audio_devices_clamp_sample_rate", phase: postAutoMigrate, run: migrateClampAudioSampleRate},
 	{version: 22, name: "ptt_android_method_field", phase: postAutoMigrate, run: migratePttAndroidMethodField},
+	{version: 23, name: "beacon_position_format", phase: postAutoMigrate, run: migrateBeaconPositionFormat},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -263,7 +272,20 @@ func (s *Store) runMigrations(phase migrationPhase) error {
 // Earlier versions defaulted the column to false but never wired it to
 // the encoder, so any stored 0 is a legacy artifact, not an operator
 // choice. Runs exactly once per database.
+//
+// As of migration 23 the compress column is removed from the schema in
+// favor of position_format. Fresh databases AutoMigrated against the
+// post-23 struct therefore never have a compress column to update; gate
+// the UPDATE on column existence so this migration stays a no-op on
+// those databases. Pre-23 databases still hit the original path.
 func migrateBeaconCompressDefault(tx *gorm.DB) error {
+	has, err := columnExists(tx, "beacons", "compress")
+	if err != nil {
+		return fmt.Errorf("probe beacons.compress: %w", err)
+	}
+	if !has {
+		return nil
+	}
 	return tx.Exec("UPDATE beacons SET compress = 1 WHERE compress = 0").Error
 }
 
