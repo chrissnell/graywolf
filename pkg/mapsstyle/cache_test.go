@@ -1,9 +1,13 @@
 package mapsstyle
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -124,5 +128,50 @@ func TestCache_WriteIsAtomic(t *testing.T) {
 		if strings.HasSuffix(e.Name(), ".tmp") {
 			t.Fatalf("leftover temp file: %s", e.Name())
 		}
+	}
+}
+
+func TestCache_FetchUpstream(t *testing.T) {
+	var got atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Add(1)
+		if r.URL.Path != "/style/americana-roboto/style.json" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("t") != "abc" {
+			t.Errorf("expected ?t=abc, got %q", r.URL.RawQuery)
+		}
+		w.Write([]byte(`{"upstream":true}`))
+	}))
+	defer srv.Close()
+
+	c := New(Config{
+		BaseURL:       srv.URL,
+		CacheDir:      t.TempDir(),
+		TokenProvider: func(context.Context) string { return "abc" },
+	})
+	body, ct, err := c.fetchUpstream(context.Background(), "americana-roboto/style.json")
+	if err != nil {
+		t.Fatalf("fetchUpstream: %v", err)
+	}
+	if string(body) != `{"upstream":true}` {
+		t.Fatalf("body: %s", body)
+	}
+	if ct != "application/json" {
+		t.Fatalf("content-type: %s", ct)
+	}
+	if got.Load() != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", got.Load())
+	}
+}
+
+func TestCache_FetchUpstream_404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	c := New(Config{BaseURL: srv.URL, CacheDir: t.TempDir()})
+	if _, _, err := c.fetchUpstream(context.Background(), "tiles.json"); err == nil {
+		t.Fatalf("expected error on 404")
 	}
 }

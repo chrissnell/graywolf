@@ -211,7 +211,41 @@ func (c *Cache) writeDisk(rel string, body []byte) error {
 	return nil
 }
 
-// suppress unused-import noise until upstream-fetch lands in the next
-// task. Removed there.
-var _ = io.Discard
-var _ = http.MethodGet
+// fetchUpstream fetches rel from the upstream worker and returns the
+// body + content-type. Does NOT write to disk; the caller is
+// responsible for persistence so the same fetch can be used by both
+// the pull-through Get and the download-piggyback glyph pre-warm.
+func (c *Cache) fetchUpstream(ctx context.Context, rel string) ([]byte, string, error) {
+	u, err := upstreamURL(c.baseURL, rel)
+	if err != nil {
+		return nil, "", err
+	}
+	if tok := c.tokenFn(ctx); tok != "" {
+		parsed, err := url.Parse(u)
+		if err != nil {
+			return nil, "", fmt.Errorf("parse upstream URL: %w", err)
+		}
+		q := parsed.Query()
+		q.Set("t", tok)
+		parsed.RawQuery = q.Encode()
+		u = parsed.String()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("upstream %s: %w", rel, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, "", fmt.Errorf("upstream %s: HTTP %d: %s", rel, resp.StatusCode, string(body))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read upstream %s: %w", rel, err)
+	}
+	return body, contentTypeFor(rel), nil
+}
