@@ -251,6 +251,11 @@ jobs:
     name: Windows Installer
     runs-on: windows-latest
     needs: release
+    # NSIS computes VIProductVersion from github.ref_name and requires
+    # X.X.X.X format. On workflow_dispatch the ref is a branch name
+    # ("feat/foo") which fails that check. The real-tag release path
+    # (push tag v*) still runs as before.
+    if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
