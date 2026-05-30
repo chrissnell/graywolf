@@ -9274,6 +9274,10 @@
                 "channel": {
                     "type": "integer"
                 },
+                "gate_tx_to_is": {
+                    "description": "GateTxToIs opts a Mode=modem KISS interface in to gating frames\nsubmitted by connected KISS clients to APRS-IS, after the TX\ngovernor has accepted them. The iGate's own filter chain still\nruns, so this only opens the gate — it does not bypass NOGATE /\nRFONLY / TCPIP markers or the operator's filter rules. Default\nfalse on all migrated rows; meaningless in Mode=tnc (which\nalready feeds the iGate via the RX fanout) and silently ignored\nthere by the server.",
+                    "type": "boolean"
+                },
                 "mode": {
                     "type": "string"
                 },
@@ -9324,6 +9328,9 @@
                 },
                 "connected_since": {
                     "type": "integer"
+                },
+                "gate_tx_to_is": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "integer"

@@ -1400,6 +1400,17 @@ definitions:
         type: integer
       channel:
         type: integer
+      gate_tx_to_is:
+        description: |-
+          GateTxToIs opts a Mode=modem KISS interface in to gating frames
+          submitted by connected KISS clients to APRS-IS, after the TX
+          governor has accepted them. The iGate's own filter chain still
+          runs, so this only opens the gate — it does not bypass NOGATE /
+          RFONLY / TCPIP markers or the operator's filter rules. Default
+          false on all migrated rows; meaningless in Mode=tnc (which
+          already feeds the iGate via the RX fanout) and silently ignored
+          there by the server.
+        type: boolean
       mode:
         type: string
       reconnect_init_ms:
@@ -1438,6 +1449,8 @@ definitions:
         type: integer
       connected_since:
         type: integer
+      gate_tx_to_is:
+        type: boolean
       id:
         type: integer
       last_error:
