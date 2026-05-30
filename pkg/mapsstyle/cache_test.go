@@ -1,6 +1,11 @@
 package mapsstyle
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestCleanRelPath(t *testing.T) {
 	cases := []struct {
@@ -70,6 +75,54 @@ func TestContentTypeFor(t *testing.T) {
 	for in, want := range cases {
 		if got := contentTypeFor(in); got != want {
 			t.Errorf("contentTypeFor(%q) = %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestCache_DiskReadWrite(t *testing.T) {
+	dir := t.TempDir()
+	c := New(Config{BaseURL: "https://maps.nw5w.com", CacheDir: dir})
+
+	if _, _, err := c.readDisk("americana-roboto/style.json"); err == nil {
+		t.Fatalf("expected miss on empty disk")
+	}
+
+	body := []byte(`{"name":"test"}`)
+	if err := c.writeDisk("americana-roboto/style.json", body); err != nil {
+		t.Fatalf("writeDisk: %v", err)
+	}
+	got, ct, err := c.readDisk("americana-roboto/style.json")
+	if err != nil {
+		t.Fatalf("readDisk: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Fatalf("body mismatch: got %q want %q", got, body)
+	}
+	if ct != "application/json" {
+		t.Fatalf("content-type: got %q want application/json", ct)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "americana-roboto", "style.json")); err != nil {
+		t.Fatalf("file not at expected path: %v", err)
+	}
+}
+
+func TestCache_WriteIsAtomic(t *testing.T) {
+	dir := t.TempDir()
+	c := New(Config{BaseURL: "https://maps.nw5w.com", CacheDir: dir})
+	if err := c.writeDisk("tiles.json", []byte(`v1`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.writeDisk("tiles.json", []byte(`v2`)); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Fatalf("leftover temp file: %s", e.Name())
 		}
 	}
 }
