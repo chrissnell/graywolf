@@ -264,7 +264,7 @@ func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
 	}
 	// Fast path: disk hit.
 	if body, ct, err := c.readDisk(cleaned); err == nil {
-		return body, ct, nil
+		return c.maybeRewrite(cleaned, body, ct)
 	}
 
 	// Coalesce concurrent misses.
@@ -276,7 +276,11 @@ func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
 		case <-ctx.Done():
 			return nil, "", ctx.Err()
 		}
-		return c.readDisk(cleaned)
+		body, ct, err := c.readDisk(cleaned)
+		if err != nil {
+			return nil, "", err
+		}
+		return c.maybeRewrite(cleaned, body, ct)
 	}
 	ch := make(chan struct{})
 	c.inflight[cleaned] = ch
@@ -297,5 +301,20 @@ func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return body, ct, nil
+	return c.maybeRewrite(cleaned, body, ct)
+}
+
+// maybeRewrite applies the URL rewriter to style.json responses and
+// passes other paths through unchanged. A rewrite failure logs a WARN
+// and falls back to the raw bytes (degraded but not broken).
+func (c *Cache) maybeRewrite(rel string, body []byte, ct string) ([]byte, string, error) {
+	if rel != "americana-roboto/style.json" || c.localPrefix == "" {
+		return body, ct, nil
+	}
+	rew, rerr := RewriteStyleJSON(body, c.localPrefix)
+	if rerr != nil {
+		c.logger.Warn("mapsstyle: rewrite style.json failed, serving raw", "err", rerr)
+		return body, ct, nil
+	}
+	return rew, ct, nil
 }

@@ -239,3 +239,21 @@ func TestCache_Get_RejectsBadPath(t *testing.T) {
 		t.Fatalf("expected rejection of path traversal")
 	}
 }
+
+func TestCache_Get_RewritesStyleJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"glyphs":"https://maps.nw5w.com/style/roboto-glyphs/{fontstack}/{range}.pbf","sprite":"https://maps.nw5w.com/style/americana/sprites/sprite","sources":{}}`))
+	}))
+	defer srv.Close()
+	c := New(Config{BaseURL: srv.URL, CacheDir: t.TempDir(), LocalPrefix: "/api/maps/style"})
+	body, _, err := c.Get(context.Background(), "americana-roboto/style.json")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !strings.Contains(string(body), `"glyphs":"/api/maps/style/roboto-glyphs/{fontstack}/{range}.pbf"`) {
+		t.Fatalf("glyphs not rewritten in served body: %s", body)
+	}
+	if !strings.Contains(string(body), `"sprite":"/api/maps/style/americana/sprites/sprite"`) {
+		t.Fatalf("sprite not rewritten: %s", body)
+	}
+}
