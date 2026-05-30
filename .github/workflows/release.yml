@@ -26,19 +26,11 @@ jobs:
             arch: arm64
             platform: linux
             use_cross: true
-          # FOLLOWUP: armv6 (Pi 1 / Pi Zero / Pi Zero W) build is
-          # temporarily removed for v0.13.6. cross-rs upstream image
-          # changes broke the libudev linkage path
-          # (getrandom@GLIBC_2.25 missing because the installed libudev
-          # is newer than the sysroot glibc). The PKG_CONFIG_* and
-          # CFLAGS_* env-var fixes elsewhere in this file are kept
-          # and will still be useful when the row is restored. See
-          # project memory: project_followup_armv6_release.
-          # - os: ubuntu-latest
-          #   target: arm-unknown-linux-gnueabihf
-          #   arch: arm
-          #   platform: linux
-          #   use_cross: true
+          - os: ubuntu-latest
+            target: arm-unknown-linux-gnueabihf
+            arch: arm
+            platform: linux
+            use_cross: true
           - os: macos-15
             target: x86_64-apple-darwin
             arch: amd64
@@ -218,13 +210,10 @@ jobs:
 
       - name: Arrange Rust binaries for GoReleaser
         run: |
-          # FOLLOWUP: armv6 (linux_arm) artifact is temporarily missing
-          # because the rust-build matrix row is commented out above.
-          # Restore both lines together when armv6 cross-compile is fixed.
-          mkdir -p rust-bin/{linux_amd64,linux_arm64,darwin_amd64,darwin_arm64,windows_amd64}
+          mkdir -p rust-bin/{linux_amd64,linux_arm64,linux_arm,darwin_amd64,darwin_arm64,windows_amd64}
           cp rust-artifacts/rust-linux-amd64/graywolf-modem       rust-bin/linux_amd64/
           cp rust-artifacts/rust-linux-arm64/graywolf-modem       rust-bin/linux_arm64/
-          # cp rust-artifacts/rust-linux-arm/graywolf-modem         rust-bin/linux_arm/
+          cp rust-artifacts/rust-linux-arm/graywolf-modem         rust-bin/linux_arm/
           cp rust-artifacts/rust-darwin-amd64/graywolf-modem      rust-bin/darwin_amd64/
           cp rust-artifacts/rust-darwin-arm64/graywolf-modem      rust-bin/darwin_arm64/
           cp rust-artifacts/rust-windows-amd64/graywolf-modem.exe rust-bin/windows_amd64/
