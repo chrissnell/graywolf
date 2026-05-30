@@ -5506,6 +5506,40 @@ paths:
       summary: Get the bbox of every completed offline map
       tags:
         - maps
+  /maps/style/{path}:
+    get:
+      operationId: getMapsStyleAsset
+      parameters:
+        - description: Relative asset path under the upstream worker (e.g. americana-roboto/style.json, americana/sprites/sprite.png, roboto-glyphs/Roboto%20Regular/0-255.pbf, tiles.json)
+          in: path
+          name: path
+          required: true
+          type: string
+      produces:
+        - application/json
+        - application/octet-stream
+      responses:
+        "200":
+          description: Asset body; content-type matches the asset
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Serve a cached MapLibre style asset
+      tags:
+        - maps
   /messages:
     get:
       operationId: listMessages
