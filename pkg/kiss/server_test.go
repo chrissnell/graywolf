@@ -2,6 +2,7 @@ package kiss
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/internal/testsync"
 	"github.com/chrissnell/graywolf/pkg/internal/testtx"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
 
 // dialWhenReady opens a TCP connection to addr, retrying while the
@@ -402,5 +404,96 @@ func TestServerTncRateLimitDrops(t *testing.T) {
 	case <-serveDone:
 	case <-time.After(2 * time.Second):
 		t.Fatal("serve did not return")
+	}
+}
+
+// errSink always returns the configured error from Submit. Used to
+// prove OnClientTxAccepted does NOT fire when the TX governor rejects
+// the frame.
+type errSink struct{ err error }
+
+func (s *errSink) Submit(_ context.Context, _ uint32, _ *ax25.Frame, _ txgovernor.SubmitSource) error {
+	return s.err
+}
+
+// TestServerGateTxToIsHookFires asserts that in ModeModem with
+// GateTxToIs=true the OnClientTxAccepted hook fires exactly once per
+// KISS frame the sink accepted, with the mapped channel + the decoded
+// AX.25 frame. It also asserts the hook does NOT fire when the flag
+// is off, and does NOT fire when the sink rejects the frame.
+func TestServerGateTxToIsHookFires(t *testing.T) {
+	type call struct {
+		channel uint32
+		src     string
+	}
+
+	cases := []struct {
+		name          string
+		gate          bool
+		useErrSink    bool
+		wantHookCalls int
+	}{
+		{"hook fires when gate on + sink accepts", true, false, 1},
+		{"no hook when gate off + sink accepts", false, false, 0},
+		{"no hook when sink rejects", true, true, 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var sink txgovernor.TxSink
+			if tc.useErrSink {
+				sink = &errSink{err: errors.New("rejected")}
+			} else {
+				sink = newFakeSink()
+			}
+
+			gotCalls := make(chan call, 4)
+			srv := NewServer(ServerConfig{
+				InterfaceID: 42,
+				Name:        "t",
+				ListenAddr:  "127.0.0.1:0",
+				Sink:        sink,
+				ChannelMap:  map[uint8]uint32{0: 7},
+				Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Mode:        ModeModem,
+				GateTxToIs:  tc.gate,
+				OnClientTxAccepted: func(ctx context.Context, channel uint32, f *ax25.Frame) {
+					gotCalls <- call{channel: channel, src: f.Source.String()}
+				},
+			})
+
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv.cfg.ListenAddr = ln.Addr().String()
+			_ = ln.Close()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			serveDone := make(chan struct{})
+			go func() { _ = srv.ListenAndServe(ctx); close(serveDone) }()
+
+			feedFrame(t, srv.cfg.ListenAddr, kissUIFrameBytes(t, "hello"))
+
+			// Give the dispatcher time to run.
+			deadline := time.After(500 * time.Millisecond)
+			tally := 0
+		loop:
+			for {
+				select {
+				case <-gotCalls:
+					tally++
+				case <-deadline:
+					break loop
+				}
+			}
+			if tally != tc.wantHookCalls {
+				t.Fatalf("hook fired %d times, want %d", tally, tc.wantHookCalls)
+			}
+
+			cancel()
+			<-serveDone
+		})
 	}
 }
