@@ -249,3 +249,53 @@ func (c *Cache) fetchUpstream(ctx context.Context, rel string) ([]byte, string, 
 	}
 	return body, contentTypeFor(rel), nil
 }
+
+// Get returns the body + content-type for rel. Tries disk first; on
+// miss, fetches upstream and writes to disk before returning. Returns
+// an error if the path is unsafe or both disk + upstream are
+// unavailable.
+//
+// Concurrent Gets for the same rel coalesce: the first caller fetches,
+// subsequent callers wait and re-read from disk.
+func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
+	cleaned, ok := cleanRelPath(rel)
+	if !ok {
+		return nil, "", fmt.Errorf("mapsstyle: rejected path %q", rel)
+	}
+	// Fast path: disk hit.
+	if body, ct, err := c.readDisk(cleaned); err == nil {
+		return body, ct, nil
+	}
+
+	// Coalesce concurrent misses.
+	c.mu.Lock()
+	if ch, busy := c.inflight[cleaned]; busy {
+		c.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return nil, "", ctx.Err()
+		}
+		return c.readDisk(cleaned)
+	}
+	ch := make(chan struct{})
+	c.inflight[cleaned] = ch
+	c.mu.Unlock()
+
+	body, ct, err := c.fetchUpstream(ctx, cleaned)
+	if err == nil {
+		if werr := c.writeDisk(cleaned, body); werr != nil {
+			c.logger.Warn("mapsstyle: write disk failed", "rel", cleaned, "err", werr)
+		}
+	}
+
+	c.mu.Lock()
+	delete(c.inflight, cleaned)
+	c.mu.Unlock()
+	close(ch)
+
+	if err != nil {
+		return nil, "", err
+	}
+	return body, ct, nil
+}

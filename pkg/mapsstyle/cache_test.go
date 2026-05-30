@@ -175,3 +175,67 @@ func TestCache_FetchUpstream_404(t *testing.T) {
 		t.Fatalf("expected error on 404")
 	}
 }
+
+func TestCache_Get_DiskHit(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		w.Write([]byte(`{"upstream":true}`))
+	}))
+	defer srv.Close()
+
+	c := New(Config{BaseURL: srv.URL, CacheDir: t.TempDir()})
+	if err := c.writeDisk("tiles.json", []byte(`{"cached":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	body, ct, err := c.Get(context.Background(), "tiles.json")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(body) != `{"cached":true}` {
+		t.Fatalf("expected disk hit, got %s", body)
+	}
+	if ct != "application/json" {
+		t.Fatalf("content-type: %s", ct)
+	}
+	if upstreamCalls.Load() != 0 {
+		t.Fatalf("expected 0 upstream calls, got %d", upstreamCalls.Load())
+	}
+}
+
+func TestCache_Get_DiskMissTriggersPullThrough(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"fresh":true}`))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	c := New(Config{BaseURL: srv.URL, CacheDir: dir})
+	body, ct, err := c.Get(context.Background(), "tiles.json")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(body) != `{"fresh":true}` {
+		t.Fatalf("body: %s", body)
+	}
+	if ct != "application/json" {
+		t.Fatalf("ct: %s", ct)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tiles.json")); err != nil {
+		t.Fatalf("expected disk write, got %v", err)
+	}
+}
+
+func TestCache_Get_BothMissReturnsUpstreamErr(t *testing.T) {
+	// Closed-port URL => upstream fetch immediately fails.
+	c := New(Config{BaseURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+	if _, _, err := c.Get(context.Background(), "tiles.json"); err == nil {
+		t.Fatalf("expected error when both disk and upstream fail")
+	}
+}
+
+func TestCache_Get_RejectsBadPath(t *testing.T) {
+	c := New(Config{BaseURL: "https://x", CacheDir: t.TempDir()})
+	if _, _, err := c.Get(context.Background(), "../etc/passwd"); err == nil {
+		t.Fatalf("expected rejection of path traversal")
+	}
+}
