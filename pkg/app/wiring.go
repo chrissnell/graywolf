@@ -34,6 +34,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/mapscache"
 	"github.com/chrissnell/graywolf/pkg/mapscatalog"
+	"github.com/chrissnell/graywolf/pkg/mapsstyle"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
@@ -1300,6 +1301,20 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		a.logger.Warn("bbox backfill failed", "err", err)
 	}
 
+	// Style asset cache: browser-triggered pull-through cache for
+	// style.json, shields.json, sprite, glyph PBFs, and tiles.json.
+	// Persists under <TileCacheDir>/style/. No startup network: graywolf
+	// boots fine offline, the first online browser request hydrates the
+	// cache. Map downloads piggyback a full glyph pre-warm so an offline
+	// browser later has the full label set. See pkg/mapsstyle + issue #204.
+	styleCache := mapsstyle.New(mapsstyle.Config{
+		BaseURL:       mapscache.DefaultMapsBaseURL,
+		CacheDir:      filepath.Join(a.cfg.TileCacheDir, "style"),
+		TokenProvider: mapsTokenProvider,
+		LocalPrefix:   "/api/maps/style",
+		Logger:        a.logger.With("component", "mapsstyle"),
+	})
+
 	apiSrv, err := webapi.NewServer(webapi.Config{
 		Store:         a.store,
 		Bridge:        a.bridge,
@@ -1310,6 +1325,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Version:       a.cfg.Version,
 		MapsCache:     mapsCache,
 		Catalog:       catalog,
+		Style:         styleCache,
 		Demo:          a.cfg.Demo,
 	})
 	if err != nil {
