@@ -129,6 +129,7 @@ schema types.
 | APRS-IS (`rotate.aprs2.net` etc.) | iGate session, login, filter, RF<->IS gating | [`../../pkg/igate/`](../../pkg/igate/) | [`../handbook/igate.html`](../handbook/igate.html) |
 | `auth.nw5w.com` | graywolf-maps registration; per-device bearer token | [`../../pkg/mapsauth/`](../../pkg/mapsauth/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
 | `maps.nw5w.com` | tile fetch + offline PMTiles downloads (states, countries, provinces) | [`../../pkg/mapscache/`](../../pkg/mapscache/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
+| `maps.nw5w.com` (style assets) | proxied via `/api/maps/style/{path}` from a disk cache; pull-through on first browser request | [`../../pkg/mapsstyle/`](../../pkg/mapsstyle/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
 | GitHub Releases | Daily update poll | [`../../pkg/updatescheck/`](../../pkg/updatescheck/) | (no dedicated page) |
 | `flare.nw5w.com` | graywolf flare submission receiver (graywolf-flare-server, see https://github.com/chrissnell/graywolf-flare-server) | [`../../pkg/diagcollect/submit/`](../../pkg/diagcollect/submit/) | (no dedicated handbook page yet) |
 
@@ -195,6 +196,42 @@ prefix and `.pmtiles` suffix, sets the rest as the slug, and delegates
 to `webapi.Server.ServeTilesPMTiles`. Catalog membership is rechecked
 on every tile request; the cache is in-process so the cost is a map
 lookup.
+
+### Offline maps style assets
+
+The MapLibre style depends on a set of resources hosted by the graywolf-maps
+Worker: `style.json`, `shields.json`, sprite (JSON + PNG + 2x PNG), per-fontstack
+glyph PBFs, and `tiles.json`. Graywolf proxies all of these at
+`GET /api/maps/style/{path}` from a disk-backed pull-through cache rooted at
+`<TileCacheDir>/style/`. There is no startup network access: graywolf boots
+fine offline. The first online browser request for any style asset hydrates
+that asset to disk; every subsequent request (online or offline, same
+browser or LAN guest) serves from disk.
+
+`POST /api/maps/downloads/{slug}` piggybacks a background glyph pre-warm:
+the operator is provably online when starting a region download, so this
+is the right moment to top up the long tail of glyph ranges that MapLibre
+may never request before the user goes offline. The pre-warm reads the
+cached style.json (which the download path also seeds), discovers
+fontstacks via `text-font` layer keys, and fetches each glyph range
+0-255 through 65280-65535 per fontstack with a "stop after 4 consecutive
+404s" bail-out per fontstack. Best-effort; failures are logged at DEBUG.
+
+The `style.json` body is rewritten on every serve so its `glyphs`,
+`sprite`, and `sources.*.url` fields point at the local proxy instead
+of `maps.nw5w.com`. The terrarium elevation source on `s3.amazonaws.com`
+is left untouched — DEM/hillshading is out of scope for the offline
+path.
+
+Failure modes:
+- Never-online + no cache: 502 from the proxy; the map fails visibly
+  in the browser. Acceptable: a never-online host also has no tiles.
+- Online + no cache: first request hydrates upstream-to-disk in a few
+  hundred ms, then renders normally. Concurrent first requests for the
+  same asset are coalesced (one upstream call, all callers share).
+- Online + stale cache: cache copies survive across restarts; refresh
+  happens implicitly on the next map download via the prewarm hook,
+  which re-fetches the eagerly-needed assets.
 
 ## Off-repo, operator-managed (Linux service install)
 
