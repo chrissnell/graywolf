@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -70,6 +71,7 @@ type Manager struct {
 	onFrameIngress        func(ifaceID uint32, mode Mode)
 	onBroadcastSuppressed func(recipientID uint32)
 	rxIngress             func(rf *pb.ReceivedFrame, src ingress.Source)
+	onClientTxAccepted    func(ctx context.Context, ifaceID, channel uint32, f *ax25.Frame)
 	clock                 Clock
 	mu                    sync.Mutex
 	// running maps DB ID → running server state.
@@ -155,6 +157,14 @@ type ManagerConfig struct {
 	// later via SetRxIngress; configs started before it is set run
 	// without TNC routing (frames are dropped with a warning).
 	RxIngress func(rf *pb.ReceivedFrame, src ingress.Source)
+	// OnClientTxAccepted, if non-nil, is installed on every Server /
+	// Client / Serial launched by this Manager. The Manager wraps it
+	// with the per-interface DB row ID so the wiring layer can route
+	// the gated submission through one shared App method without each
+	// transport having to know its own ID. The wrapped hook only
+	// fires inside the Server/Client dispatch path when the
+	// per-interface GateTxToIs flag is set.
+	OnClientTxAccepted func(ctx context.Context, ifaceID, channel uint32, f *ax25.Frame)
 	// Clock is the rate-limiter time source installed on every Server.
 	// nil selects wall time; tests inject a fake clock.
 	Clock Clock
@@ -198,6 +208,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 		onFrameIngress:        cfg.OnFrameIngress,
 		onBroadcastSuppressed: cfg.OnBroadcastSuppressed,
 		rxIngress:             cfg.RxIngress,
+		onClientTxAccepted:    cfg.OnClientTxAccepted,
 		clock:                 cfg.Clock,
 		running:               make(map[uint32]*managedServer),
 		onTxQueueDepth:        cfg.OnTxQueueDepth,
@@ -249,6 +260,13 @@ func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 		ifaceID := id
 		fn := m.onFrameIngress
 		cfg.OnFrameIngress = func(mode Mode) { fn(ifaceID, mode) }
+	}
+	if cfg.OnClientTxAccepted == nil && m.onClientTxAccepted != nil {
+		ifaceID := id
+		fn := m.onClientTxAccepted
+		cfg.OnClientTxAccepted = func(ctx context.Context, channel uint32, f *ax25.Frame) {
+			fn(ctx, ifaceID, channel, f)
+		}
 	}
 	if cfg.RxIngress == nil {
 		cfg.RxIngress = m.rxIngress
@@ -371,6 +389,13 @@ func (m *Manager) StartClient(parent context.Context, id uint32, cfg ClientConfi
 		fn := m.onFrameIngress
 		cfg.OnFrameIngress = func(mode Mode) { fn(ifaceID, mode) }
 	}
+	if cfg.OnClientTxAccepted == nil && m.onClientTxAccepted != nil {
+		ifaceID := id
+		fn := m.onClientTxAccepted
+		cfg.OnClientTxAccepted = func(ctx context.Context, channel uint32, f *ax25.Frame) {
+			fn(ctx, ifaceID, channel, f)
+		}
+	}
 	if cfg.RxIngress == nil {
 		cfg.RxIngress = m.rxIngress
 	}
@@ -477,6 +502,7 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 		TncIngressRateHz:    cfg.TncIngressRateHz,
 		TncIngressBurst:     cfg.TncIngressBurst,
 		AllowTxFromGovernor: cfg.AllowTxFromGovernor,
+		GateTxToIs:          cfg.GateTxToIs,
 	}
 	scfg.Sink = m.sink
 	if cfg.Logger != nil {
@@ -491,6 +517,13 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 		ifaceID := id
 		fn := m.onFrameIngress
 		scfg.OnFrameIngress = func(mode Mode) { fn(ifaceID, mode) }
+	}
+	if scfg.OnClientTxAccepted == nil && m.onClientTxAccepted != nil {
+		ifaceID := id
+		fn := m.onClientTxAccepted
+		scfg.OnClientTxAccepted = func(ctx context.Context, channel uint32, f *ax25.Frame) {
+			fn(ctx, ifaceID, channel, f)
+		}
 	}
 	// Two-step RxIngress wiring identical to Start:
 	// assign the manager-level callback, then unconditionally wrap it for

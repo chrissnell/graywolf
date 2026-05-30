@@ -45,6 +45,11 @@ type SerialConfig struct {
 	TncIngressRateHz    uint32
 	TncIngressBurst     uint32
 	AllowTxFromGovernor bool
+	// GateTxToIs mirrors ServerConfig.GateTxToIs for the wrapping
+	// Server constructed in StartSerial. Only meaningful when Mode ==
+	// ModeModem; the field is read unconditionally and the server's
+	// dispatch path enforces the mode gate.
+	GateTxToIs bool
 	// OnReload fires on every state transition so the wiring layer can
 	// rebuild the tx backend. Mirrors ClientConfig.OnReload.
 	OnReload func()

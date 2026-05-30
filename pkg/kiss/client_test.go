@@ -480,3 +480,72 @@ func TestClient_DialErrorSetsLastError(t *testing.T) {
 // constant in tx_queue.go during refactors.
 var _ = ErrBackendDown
 var _ = io.EOF
+
+// TestClientGateTxToIsHookFires mirrors the server-side hook test
+// (TestServerGateTxToIsHookFires) for the Client.dispatchDataFrame
+// path. Calls dispatchDataFrame directly to keep the test focused on
+// the dispatch decision rather than on transport plumbing.
+func TestClientGateTxToIsHookFires(t *testing.T) {
+	cases := []struct {
+		name          string
+		gate          bool
+		useErrSink    bool
+		wantHookCalls int
+	}{
+		{"hook fires when gate on + sink accepts", true, false, 1},
+		{"no hook when gate off + sink accepts", false, false, 0},
+		{"no hook when sink rejects", true, true, 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var sink txgovernor.TxSink
+			if tc.useErrSink {
+				sink = &errSink{err: errors.New("rejected")}
+			} else {
+				sink = newFakeSink()
+			}
+
+			gotCalls := make(chan struct{}, 4)
+			c := newClient(ClientConfig{
+				InterfaceID: 99,
+				Name:        "t",
+				Logger:      silentLogger(),
+				Sink:        sink,
+				ChannelMap:  map[uint8]uint32{0: 7},
+				Mode:        ModeModem,
+				GateTxToIs:  tc.gate,
+				OnClientTxAccepted: func(ctx context.Context, channel uint32, f *ax25.Frame) {
+					gotCalls <- struct{}{}
+				},
+			})
+
+			src, _ := ax25.ParseAddress("N0CALL")
+			dst, _ := ax25.ParseAddress("APRS")
+			ax := &ax25.Frame{
+				Source:  src,
+				Dest:    dst,
+				Control: ax25.ControlUI,
+				PID:     ax25.PIDNoLayer3,
+				Info:    []byte("hello"),
+			}
+			c.dispatchDataFrame(context.Background(), "test", 7, ax, []byte("rawbytes"), ModeModem)
+
+			// Drain the channel non-blocking.
+			tally := 0
+			deadline := time.After(200 * time.Millisecond)
+		loop:
+			for {
+				select {
+				case <-gotCalls:
+					tally++
+				case <-deadline:
+					break loop
+				}
+			}
+			if tally != tc.wantHookCalls {
+				t.Fatalf("hook fired %d times, want %d", tally, tc.wantHookCalls)
+			}
+		})
+	}
+}

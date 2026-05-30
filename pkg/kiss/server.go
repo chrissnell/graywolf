@@ -104,6 +104,17 @@ type ServerConfig struct {
 	// (the server does not consult it directly); the manager reads it
 	// to decide whether to construct the queue.
 	AllowTxFromGovernor bool
+	// GateTxToIs: when true and Mode == ModeModem, the dispatcher fires
+	// OnClientTxAccepted after every KISS frame Sink.Submit accepted.
+	// Meaningless when Mode == ModeTnc (the RX fanout there already
+	// feeds the iGate). Default false.
+	GateTxToIs bool
+	// OnClientTxAccepted, when non-nil and GateTxToIs is true, is
+	// invoked from the ModeModem branch of dispatchDataFrame AFTER
+	// Sink.Submit returns nil. Wiring uses it to offer the parsed
+	// APRS packet to the iGate's RF→IS gate. The hook MUST be
+	// non-blocking — it runs on the per-connection read goroutine.
+	OnClientTxAccepted func(ctx context.Context, channel uint32, f *ax25.Frame)
 }
 
 // Server is a multi-client KISS TCP server. A single Server instance
@@ -387,6 +398,10 @@ func (s *Server) dispatchDataFrame(ctx context.Context, remote string, channel u
 			})
 			if err != nil {
 				s.logger.Warn("tx governor rejected kiss frame", "err", err)
+				return
+			}
+			if s.cfg.GateTxToIs && s.cfg.OnClientTxAccepted != nil {
+				s.cfg.OnClientTxAccepted(ctx, channel, ax)
 			}
 		}
 	}

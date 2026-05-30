@@ -501,6 +501,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			a.metrics.ObserveKissIngressFrame(ifaceID, string(mode))
 		},
 		OnBroadcastSuppressed: a.metrics.ObserveKissBroadcastSuppressed,
+		OnClientTxAccepted:    a.kissClientTxGateToIs,
 		RxIngress:             a.kissTncProduce,
 		OnTxQueueDepth:        a.metrics.SetKissInstanceTxQueueDepth,
 		// OnTxQueueDrop surfaces per-instance tx drops to the Phase 4
@@ -1884,6 +1885,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 					})
 					continue
@@ -1907,6 +1909,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
@@ -1930,6 +1933,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
@@ -1954,6 +1958,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
@@ -1971,6 +1976,7 @@ func (a *App) kissComponent() namedComponent {
 					TncIngressRateHz:    ki.TncIngressRateHz,
 					TncIngressBurst:     ki.TncIngressBurst,
 					AllowTxFromGovernor: ki.AllowTxFromGovernor,
+					GateTxToIs:          ki.GateTxToIs,
 					OnClientChange: func(n int) {
 						a.metrics.SetKissClients(name, n)
 					},

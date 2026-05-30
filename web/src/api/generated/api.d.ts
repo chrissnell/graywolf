@@ -2571,6 +2571,17 @@ export interface components {
             allow_tx_from_governor?: boolean;
             baud_rate?: number;
             channel?: number;
+            /**
+             * @description GateTxToIs opts a Mode=modem KISS interface in to gating frames
+             *     submitted by connected KISS clients to APRS-IS, after the TX
+             *     governor has accepted them. The iGate's own filter chain still
+             *     runs, so this only opens the gate — it does not bypass NOGATE /
+             *     RFONLY / TCPIP markers or the operator's filter rules. Default
+             *     false on all migrated rows; meaningless in Mode=tnc (which
+             *     already feeds the iGate via the RX fanout) and silently ignored
+             *     there by the server.
+             */
+            gate_tx_to_is?: boolean;
             mode?: string;
             reconnect_init_ms?: number;
             reconnect_max_ms?: number;
@@ -2594,6 +2605,7 @@ export interface components {
             baud_rate?: number;
             channel?: number;
             connected_since?: number;
+            gate_tx_to_is?: boolean;
             id?: number;
             last_error?: string;
             mode?: string;

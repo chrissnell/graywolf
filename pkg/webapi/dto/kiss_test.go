@@ -388,3 +388,25 @@ func TestKissFromModel_TcpClient_Roundtrip(t *testing.T) {
 		t.Errorf("reconnect in response=%d..%d", resp.ReconnectInitMs, resp.ReconnectMaxMs)
 	}
 }
+
+// TestKissRequest_GateTxToIs_RoundTrip verifies the new field survives
+// the DTO -> model -> DTO cycle unchanged for both true and false.
+func TestKissRequest_GateTxToIs_RoundTrip(t *testing.T) {
+	for _, want := range []bool{false, true} {
+		req := KissRequest{
+			Type:       configstore.KissTypeTCP,
+			TcpPort:    8001,
+			Channel:    1,
+			Mode:       configstore.KissModeModem,
+			GateTxToIs: want,
+		}
+		m := req.ToModel()
+		if m.GateTxToIs != want {
+			t.Fatalf("ToModel: GateTxToIs=%v, want %v", m.GateTxToIs, want)
+		}
+		resp := KissFromModel(m)
+		if resp.GateTxToIs != want {
+			t.Fatalf("KissFromModel: GateTxToIs=%v, want %v", resp.GateTxToIs, want)
+		}
+	}
+}

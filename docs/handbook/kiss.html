@@ -199,6 +199,14 @@
               <td><code>true</code></td>
               <td>Interface active/inactive</td>
             </tr>
+            <tr>
+              <td><code>gate_tx_to_is</code></td>
+              <td><code>false</code></td>
+              <td>When <code>mode=modem</code>, also forward packets submitted by
+              connected KISS clients to APRS-IS through your iGate. The iGate
+              must be enabled; its filter rules (NOGATE / RFONLY / TCPIP)
+              still apply. Has no effect when <code>mode=tnc</code>.</td>
+            </tr>
           </tbody>
         </table>
       </div>

@@ -219,6 +219,7 @@ var schemaMigrations = []migration{
 	{version: 21, name: "audio_devices_clamp_sample_rate", phase: postAutoMigrate, run: migrateClampAudioSampleRate},
 	{version: 22, name: "ptt_android_method_field", phase: postAutoMigrate, run: migratePttAndroidMethodField},
 	{version: 23, name: "beacon_position_format", phase: postAutoMigrate, run: migrateBeaconPositionFormat},
+	{version: 24, name: "kiss_gate_tx_to_is", phase: postAutoMigrate, run: migrateKissGateTxToIs},
 }
 
 // runMigrations applies every pending migration in the given phase,
