@@ -149,6 +149,16 @@ type KissInterface struct {
 	// Modem-mode rows ignore this flag entirely (they TX via Submit,
 	// they don't receive TX from the governor).
 	AllowTxFromGovernor bool `gorm:"column:allow_tx_from_governor;not null;default:false" json:"allow_tx_from_governor"`
+	// GateTxToIs: when true and Mode == KissModeModem, frames a
+	// connected KISS client submits for TX are ALSO offered to the
+	// iGate's RF→IS gate after Sink.Submit accepts them. The standard
+	// iGate filters (NOGATE / RFONLY / TCPIP path markers + operator
+	// filter rules) still apply, so the toggle only opens the gate; it
+	// does not bypass policy. Meaningless in Mode==KissModeTnc (that
+	// path already feeds the iGate via the RX fanout), so the wiring
+	// reads the field unconditionally and the server only consults it
+	// inside the modem branch.
+	GateTxToIs bool `gorm:"column:gate_tx_to_is;not null;default:false" json:"gate_tx_to_is"`
 	// NeedsReconfig is set to true when a referential cascade (Phase 5)
 	// nulls this row's Channel. Phase 3 merely declares the column so
 	// the shape is stable before the cascade logic lands; no code reads
