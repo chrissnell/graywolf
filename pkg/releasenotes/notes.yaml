@@ -7,6 +7,21 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.13"
+  date: "2026-05-29"
+  style: info
+  schema_version: 1
+  link: "#/kiss"
+  title: "Optionally iGate packets sent from your KISS app"
+  body: |
+    If you point YAAC, Xastir, APRSdroid, or another KISS client at
+    Graywolf for transmission, you can now have those packets reach
+    APRS-IS without configuring a separate APRS-IS connection in the
+    client. Open Settings, edit the KISS interface, and turn on
+    "Also forward transmissions from connected clients to APRS-IS".
+    Only available on Modem-mode interfaces; the iGate must be on,
+    and its existing filter rules still apply.
+
 - version: "0.13.12"
   date: "2026-05-29"
   style: cta
