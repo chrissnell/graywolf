@@ -477,6 +477,7 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 		TncIngressRateHz:    cfg.TncIngressRateHz,
 		TncIngressBurst:     cfg.TncIngressBurst,
 		AllowTxFromGovernor: cfg.AllowTxFromGovernor,
+		GateTxToIs:          cfg.GateTxToIs,
 	}
 	scfg.Sink = m.sink
 	if cfg.Logger != nil {
