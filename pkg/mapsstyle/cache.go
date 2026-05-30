@@ -145,6 +145,10 @@ type Cache struct {
 
 	mu       sync.Mutex
 	inflight map[string]chan struct{}
+
+	prewarmMaxRange    int // highest Unicode block index probed (default 255)
+	prewarmStop404     int // bail per fontstack after N consecutive 404s (default 4)
+	prewarmConcurrency int // concurrent glyph fetches (default 4)
 }
 
 // New constructs a Cache.
@@ -161,15 +165,19 @@ func New(cfg Config) *Cache {
 	if tokenFn == nil {
 		tokenFn = func(context.Context) string { return "" }
 	}
-	return &Cache{
-		baseURL:     cfg.BaseURL,
-		cacheDir:    cfg.CacheDir,
-		tokenFn:     tokenFn,
-		httpClient:  hc,
-		localPrefix: cfg.LocalPrefix,
-		logger:      logger,
-		inflight:    map[string]chan struct{}{},
+	cache := &Cache{
+		baseURL:            cfg.BaseURL,
+		cacheDir:           cfg.CacheDir,
+		tokenFn:            tokenFn,
+		httpClient:         hc,
+		localPrefix:        cfg.LocalPrefix,
+		logger:             logger,
+		inflight:           map[string]chan struct{}{},
+		prewarmMaxRange:    255,
+		prewarmStop404:     4,
+		prewarmConcurrency: 4,
 	}
+	return cache
 }
 
 // readDisk returns the cached body + content-type for rel, or an error
