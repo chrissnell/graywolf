@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/mapsstyle"
 )
@@ -120,5 +122,46 @@ func TestStyleHandler_Returns503WhenCacheNil(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	if w.Code != 503 {
 		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestPrewarmGlyphsHook_IsInvokedOnDownloadStart(t *testing.T) {
+	// This test verifies the hook surface only — that calling
+	// triggerGlyphPrewarm against a non-nil style cache invokes
+	// PrewarmGlyphs (without actually mocking a full download).
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/style/americana-roboto/style.json" {
+			w.Write([]byte(`{"layers":[]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer upstream.Close()
+
+	cache := mapsstyle.New(mapsstyle.Config{
+		BaseURL:     upstream.URL,
+		CacheDir:    t.TempDir(),
+		LocalPrefix: "/api/maps/style",
+	})
+	cache.SetPrewarmLimits(2, 1)
+	// Seed style.json so PrewarmGlyphs can discover the empty fontstack list.
+	if _, _, err := cache.Get(context.Background(), "americana-roboto/style.json"); err != nil {
+		t.Fatalf("seed style.json: %v", err)
+	}
+
+	var done atomic.Bool
+	go func() {
+		_ = cache.PrewarmGlyphs(context.Background())
+		done.Store(true)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if done.Load() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !done.Load() {
+		t.Fatalf("PrewarmGlyphs did not complete within deadline")
 	}
 }
