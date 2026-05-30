@@ -147,6 +147,17 @@ type ClientConfig struct {
 	TncIngressBurst  uint32
 	// RxIngress is the TNC-mode inbound sink. Mirrors server.go.
 	RxIngress func(rf *pb.ReceivedFrame, src ingress.Source)
+	// GateTxToIs: when true and Mode == ModeModem, the dispatcher fires
+	// OnClientTxAccepted after every KISS frame Sink.Submit accepted.
+	// Meaningless when Mode == ModeTnc (the RX fanout there already
+	// feeds the iGate). Default false.
+	GateTxToIs bool
+	// OnClientTxAccepted, when non-nil and GateTxToIs is true, is
+	// invoked from the ModeModem branch of dispatchDataFrame AFTER
+	// Sink.Submit returns nil. Wiring uses it to offer the parsed
+	// APRS packet to the iGate's RF→IS gate. The hook MUST be
+	// non-blocking — it runs on the client's read goroutine.
+	OnClientTxAccepted func(ctx context.Context, channel uint32, f *ax25.Frame)
 	// Clock is the rate-limiter's time source. nil → wall time.
 	Clock Clock
 	// OnFrameIngress is invoked for every successfully-decoded data
@@ -455,6 +466,10 @@ func (c *Client) dispatchDataFrame(ctx context.Context, remote string, channel u
 			})
 			if err != nil {
 				c.logger.Warn("tx governor rejected kiss frame", "err", err)
+				return
+			}
+			if c.cfg.GateTxToIs && c.cfg.OnClientTxAccepted != nil {
+				c.cfg.OnClientTxAccepted(ctx, channel, ax)
 			}
 		}
 	}
