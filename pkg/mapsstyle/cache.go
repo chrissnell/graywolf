@@ -13,6 +13,8 @@
 package mapsstyle
 
 import (
+	"fmt"
+	"net/url"
 	"path"
 	"strings"
 )
@@ -49,4 +51,44 @@ func cleanRelPath(rel string) (string, bool) {
 		return cleaned, true
 	}
 	return "", false
+}
+
+// upstreamURL maps a cleaned relative path to its absolute upstream
+// URL. tiles.json lives at the worker root; everything else is under
+// /style/. Fontstack directory names are URL-escaped path-segment-wise
+// (space -> %20) since the worker is HTTP and disk uses literal spaces.
+func upstreamURL(baseURL, rel string) (string, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse baseURL: %w", err)
+	}
+	if rel == "tiles.json" {
+		u.Path = "/tiles.json"
+		return u.String(), nil
+	}
+	segs := strings.Split(rel, "/")
+	escaped := make([]string, 0, len(segs)+1)
+	escaped = append(escaped, "style")
+	for _, s := range segs {
+		escaped = append(escaped, url.PathEscape(s))
+	}
+	// Set both Path (unescaped) and RawPath (escaped) so url.String()
+	// emits the pre-escaped form instead of double-escaping %20 -> %2520.
+	u.Path = "/" + path.Join(append([]string{"style"}, segs...)...)
+	u.RawPath = "/" + strings.Join(escaped, "/")
+	return u.String(), nil
+}
+
+// contentTypeFor derives the Content-Type from the path extension.
+// Unknown extensions fall back to application/octet-stream.
+func contentTypeFor(rel string) string {
+	switch path.Ext(rel) {
+	case ".json":
+		return "application/json"
+	case ".png":
+		return "image/png"
+	case ".pbf":
+		return "application/x-protobuf"
+	}
+	return "application/octet-stream"
 }
