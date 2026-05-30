@@ -25,11 +25,20 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # hidapi (CM108 HID PTT) and nusb (USB topology enumeration) require host
-# OS facilities (libudev / IOKit / SetupAPI) that aren't available on
-# Android, and CM108 PTT isn't a target for Android anyway. Limit them
-# to desktop targets so the POC-A cross-compile doesn't drag in libudev.
+# OS facilities (IOKit / SetupAPI) that aren't available on Android, and
+# CM108 PTT isn't a target for Android anyway. Limit them to desktop
+# targets so the Android cross-compile doesn't drag them in.
+#
+# linux-native-basic-udev selects hidapi's pure-Rust hidraw backend with
+# the basic-udev pure-Rust enumeration crate. No libudev build/runtime
+# dep on Linux. Same kernel /dev/hidraw* interface for I/O; device
+# discovery walks /sys/class/hidraw/ directly. macOS (IOKit) and Windows
+# (SetupAPI) backends compile via cfg(target_os = ...) gates and are
+# unaffected. Avoid the "linux-native" feature: it still pulls the
+# libudev-FFI udev crate, which would defeat the point of the swap and
+# re-trigger the cross-rs armv6 link failure.
 [target.'cfg(not(target_os = "android"))'.dependencies]
-hidapi = "2.6"
+hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 nusb = "0.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
