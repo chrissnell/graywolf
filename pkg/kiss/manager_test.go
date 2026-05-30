@@ -401,11 +401,9 @@ func TestManagerThreadsOnClientTxAcceptedWithIfaceID(t *testing.T) {
 	}
 	defer mgr.StopAll()
 
-	// Give the listeners a moment to bind.
-	time.Sleep(50 * time.Millisecond)
-
-	// Feed one frame at each server. feedFrame + kissUIFrameBytes are
-	// defined in server_test.go (same package).
+	// feedFrame + kissUIFrameBytes are defined in server_test.go (same
+	// package). feedFrame's dialWhenReady already retries until the
+	// listener is bound, so no explicit pre-feed sleep is needed.
 	for _, s := range starts {
 		feedFrame(t, addrs[s.id], kissUIFrameBytes(t, "hello"))
 	}
