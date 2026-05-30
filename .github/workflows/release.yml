@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    # Lets us manually exercise the cross-rs + GoReleaser pipeline on a
+    # branch without cutting a release tag. Useful for verifying
+    # cross-compile changes (e.g. the armv6 / hidapi linux-native-basic-udev
+    # swap) before pushing a real tag and getting stuck in the retag dance.
+    # GoReleaser will still run on the dispatched ref; it builds + packages
+    # but won't upload because there's no associated tag.
 
 permissions:
   contents: write
@@ -226,7 +233,10 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean
+          # On a tag push we cut a real release; on workflow_dispatch we
+          # run in snapshot mode so the build pipeline executes end-to-end
+          # without needing a tag context (no upload, no draft release).
+          args: ${{ github.event_name == 'workflow_dispatch' && 'release --snapshot --clean' || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
