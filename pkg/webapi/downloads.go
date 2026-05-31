@@ -1,9 +1,11 @@
 package webapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/mapscache"
 	"github.com/chrissnell/graywolf/pkg/mapscatalog"
@@ -196,6 +198,25 @@ func (s *Server) startDownload(w http.ResponseWriter, r *http.Request) {
 		}
 		s.internalError(w, r, "start download", err)
 		return
+	}
+	// Piggyback: the user is provably online right now. Fire off a
+	// best-effort glyph pre-warm so an offline browser later has the
+	// full label set, not just the ranges the browser happened to
+	// request during this online session. Detached goroutine: the
+	// download response should not wait on the upstream fan-out.
+	if s.style != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			// Seed style.json first so fontstacks are discoverable.
+			if _, _, err := s.style.Get(ctx, "americana-roboto/style.json"); err != nil {
+				s.logger.Debug("style prewarm: seed style.json failed", "err", err)
+				return
+			}
+			if err := s.style.PrewarmGlyphs(ctx); err != nil {
+				s.logger.Debug("style prewarm: glyph fetch returned errors", "err", err)
+			}
+		}()
 	}
 	st, err := s.mapsCache.Status(r.Context(), slug)
 	if err != nil {

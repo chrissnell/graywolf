@@ -69,44 +69,23 @@
     }
   }
 
-  // Cache the upstream americana style.json across style swaps so we
-  // don't re-fetch every time downloads change. The cache is in-memory
-  // only; a full page reload always re-fetches from the network.
+  // The style.json (and its referenced glyphs, sprite, shields, and
+  // tiles.json) are served by graywolf itself via /api/maps/style/...
+  // The Go side (pkg/mapsstyle) is a pull-through cache: first online
+  // request hydrates the disk, subsequent requests (online or offline)
+  // serve from disk. No localStorage hack needed since persistence is
+  // server-side, which means LAN guests and post-IP-change sessions
+  // share a single cache. See issue #204.
   //
-  // Freshness: maps.nw5w.com serves style.json with `Cache-Control:
-  // no-cache` so the browser revalidates with origin on every request
-  // and we never sit on a stale style after a deploy. Tiles still go
-  // through CF's edge cache untouched.
-  //
-  // Offline: we save the most recent successful response into
-  // localStorage so that an operator who loaded the app online and
-  // later went offline still gets a working style. A first-ever load
-  // with no network can't be saved by anything we do here — it has to
-  // fail visibly so the operator knows to come online once.
-  const STYLE_URL = 'https://maps.nw5w.com/style/americana-roboto/style.json';
-  const STYLE_CACHE_KEY = 'graywolf:upstream-style:v1';
+  // In-memory cache across style swaps avoids re-fetching the same
+  // bytes when toggling federated mode or flipping map sources.
+  const STYLE_URL = '/api/maps/style/americana-roboto/style.json';
   let cachedUpstreamStyle = null;
 
   async function fetchUpstreamStyle() {
-    try {
-      const res = await fetch(STYLE_URL);
-      if (!res.ok) throw new Error(`fetch upstream style: ${res.status}`);
-      const text = await res.text();
-      try {
-        localStorage.setItem(STYLE_CACHE_KEY, text);
-      } catch {
-        // Quota or disabled storage — non-fatal; next online load retries.
-      }
-      return JSON.parse(text);
-    } catch (err) {
-      const cached = localStorage.getItem(STYLE_CACHE_KEY);
-      if (!cached) throw err;
-      console.warn(
-        '[graywolf] upstream style fetch failed, using cached fallback:',
-        err,
-      );
-      return JSON.parse(cached);
-    }
+    const res = await fetch(STYLE_URL);
+    if (!res.ok) throw new Error(`fetch style: ${res.status}`);
+    return await res.json();
   }
 
   async function buildGraywolfStyle({ federated }) {
@@ -146,9 +125,6 @@
       if (bearerToken) {
         return { url, headers: { Authorization: `Bearer ${bearerToken}` } };
       }
-      return { url };
-    }
-    if (url.startsWith('https://maps.nw5w.com/style/')) {
       return { url };
     }
     if (url.startsWith('https://maps.nw5w.com/') && bearerToken) {
@@ -218,7 +194,7 @@
     // that start with "shield" so non-shield missing images (e.g. POI
     // runtime sprites) fall through.
     new URLShieldRenderer(
-      'https://maps.nw5w.com/style/americana/shields.json',
+      '/api/maps/style/americana/shields.json',
       {
         parse: (id) => {
           // image-id format: "shield\n<network>\n<ref>\n<name>"
