@@ -4151,6 +4151,59 @@
                 }
             }
         },
+        "/maps/style/{path}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json",
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Serve a cached MapLibre style asset",
+                "operationId": "getMapsStyleAsset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Relative asset path under the upstream worker (e.g. americana-roboto/style.json, americana/sprites/sprite.png, roboto-glyphs/Roboto%20Regular/0-255.pbf, tiles.json)",
+                        "name": "path",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Asset body; content-type matches the asset",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/messages": {
             "get": {
                 "security": [

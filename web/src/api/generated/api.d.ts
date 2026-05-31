@@ -966,6 +966,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/maps/style/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve a cached MapLibre style asset */
+        get: operations["getMapsStyleAsset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages": {
         parameters: {
             query?: never;
@@ -7178,6 +7195,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMapsStyleAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Relative asset path under the upstream worker (e.g. americana-roboto/style.json, americana/sprites/sprite.png, roboto-glyphs/Roboto%20Regular/0-255.pbf, tiles.json) */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Asset body; content-type matches the asset */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                    "application/octet-stream": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                    "application/octet-stream": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                    "application/octet-stream": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };
