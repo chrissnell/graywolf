@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 )
 
 // discoverFontstacks parses style.json bytes and returns the union of
@@ -71,12 +69,13 @@ func (c *Cache) SetPrewarmLimits(maxRange, stopAfterConsecutive404 int) {
 // 0..prewarmMaxRange for each fontstack. Per fontstack, after
 // prewarmStop404 consecutive 404s the walk bails on that stack.
 //
-// Best-effort: returns the first error encountered after all in-flight
-// fetches complete; callers (the map-download piggyback) should log
-// and move on.
+// Serial by design: each range is fetched in order so the
+// consecutive-404 counter advances correctly. The total wall-clock is
+// bounded by the caller's context (the map-download piggyback uses a
+// 5-minute deadline). Best-effort — returns the first genuine error,
+// callers log and move on.
 //
-// Idempotent — files already on disk are skipped by Get's disk-first
-// fast path.
+// Idempotent — files already on disk are skipped.
 func (c *Cache) PrewarmGlyphs(ctx context.Context) error {
 	stylePath := filepath.Join(c.cacheDir, "americana-roboto", "style.json")
 	body, err := os.ReadFile(stylePath)
@@ -92,16 +91,12 @@ func (c *Cache) PrewarmGlyphs(ctx context.Context) error {
 		return nil
 	}
 
-	sem := make(chan struct{}, c.prewarmConcurrency)
-	var wg sync.WaitGroup
-	var fetched atomic.Int64
-	var firstErr atomic.Pointer[error]
+	var fetched int64
+	var firstErr error
 	for _, fs := range fonts {
-		fs := fs
 		consecutive404 := 0
 		for r := 0; r <= c.prewarmMaxRange; r++ {
 			if ctx.Err() != nil {
-				wg.Wait()
 				return ctx.Err()
 			}
 			rel := glyphRel(fs, r)
@@ -110,15 +105,12 @@ func (c *Cache) PrewarmGlyphs(ctx context.Context) error {
 				consecutive404 = 0
 				continue
 			}
-			select {
-			case <-ctx.Done():
-				wg.Wait()
-				return ctx.Err()
-			case sem <- struct{}{}:
+			ok, ferr := c.prewarmOne(ctx, rel)
+			if ferr != nil && firstErr == nil {
+				firstErr = ferr
 			}
-			wg.Add(1)
-			ok := c.prewarmOne(ctx, rel, sem, &wg, &fetched, &firstErr)
 			if ok {
+				fetched++
 				consecutive404 = 0
 				continue
 			}
@@ -131,47 +123,27 @@ func (c *Cache) PrewarmGlyphs(ctx context.Context) error {
 			}
 		}
 	}
-	wg.Wait()
 	c.logger.Info("mapsstyle: glyph pre-warm complete",
-		"fontstacks", len(fonts), "ranges_fetched", fetched.Load())
-	if perr := firstErr.Load(); perr != nil {
-		return *perr
-	}
-	return nil
+		"fontstacks", len(fonts), "ranges_fetched", fetched)
+	return firstErr
 }
 
 // prewarmOne fetches a single glyph asset and writes it to disk. Returns
-// true on success (HTTP 200, body written). False on any failure
-// (404, network, write); the first error is captured in firstErr.
-//
-// Synchronous: the caller waits for the result so the consecutive-404
-// counter is updated correctly. The sem and wg accounting still apply
-// for symmetry with the goroutine-pool pattern, but the actual fetch
-// runs inline.
-func (c *Cache) prewarmOne(
-	ctx context.Context,
-	rel string,
-	sem chan struct{},
-	wg *sync.WaitGroup,
-	fetched *atomic.Int64,
-	firstErr *atomic.Pointer[error],
-) bool {
-	defer wg.Done()
-	defer func() { <-sem }()
+// (true, nil) on success, (false, nil) on a 404 (expected during walking),
+// or (false, err) on any other failure.
+func (c *Cache) prewarmOne(ctx context.Context, rel string) (bool, error) {
 	body, _, err := c.fetchUpstream(ctx, rel)
 	if err != nil {
 		// 404s are part of normal walking (we don't know the highest
-		// valid range up front); only capture genuine errors.
-		if !strings.Contains(err.Error(), "HTTP 404") && firstErr.Load() == nil {
-			perr := fmt.Errorf("prewarm %s: %w", rel, err)
-			firstErr.CompareAndSwap(nil, &perr)
+		// valid range up front); they're not surfaced as errors.
+		if strings.Contains(err.Error(), "HTTP 404") {
+			return false, nil
 		}
-		return false
+		return false, fmt.Errorf("prewarm %s: %w", rel, err)
 	}
 	if werr := c.writeDisk(rel, body); werr != nil {
 		c.logger.Warn("mapsstyle: write glyph failed", "rel", rel, "err", werr)
-		return false
+		return false, nil
 	}
-	fetched.Add(1)
-	return true
+	return true, nil
 }

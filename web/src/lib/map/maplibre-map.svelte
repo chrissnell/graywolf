@@ -127,9 +127,6 @@
       }
       return { url };
     }
-    if (url.startsWith('https://maps.nw5w.com/style/')) {
-      return { url };
-    }
     if (url.startsWith('https://maps.nw5w.com/') && bearerToken) {
       return { url: appendToken(url, bearerToken) };
     }

@@ -3,6 +3,8 @@ package webapi
 import (
 	"net/http"
 	"strings"
+
+	"github.com/chrissnell/graywolf/pkg/webtypes"
 )
 
 // registerStyle mounts the style-asset proxy at /api/maps/style/{path...}.
@@ -38,13 +40,13 @@ func (s *Server) getStyleAsset(w http.ResponseWriter, r *http.Request) {
 	body, ct, err := s.style.Get(r.Context(), rel)
 	if err != nil {
 		if isPathRejection(err) {
-			http.NotFound(w, r)
+			notFound(w)
 			return
 		}
 		// All other failures are "upstream unreachable and nothing on
 		// disk." 502 (Bad Gateway) is the closest semantic match: an
 		// upstream we depend on is unavailable.
-		http.Error(w, "upstream unavailable", http.StatusBadGateway)
+		writeJSON(w, http.StatusBadGateway, webtypes.ErrorResponse{Error: "upstream unavailable"})
 		return
 	}
 	w.Header().Set("Content-Type", ct)
