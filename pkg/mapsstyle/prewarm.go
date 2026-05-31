@@ -137,7 +137,6 @@ func (c *Cache) PrewarmGlyphs(ctx context.Context) error {
 	if perr := firstErr.Load(); perr != nil {
 		return *perr
 	}
-	_ = strings.TrimSpace // keep strings import used in case the file is refactored to share helpers
 	return nil
 }
 
