@@ -7,6 +7,19 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.15"
+  date: "2026-06-02"
+  style: info
+  schema_version: 1
+  title: "Linux audio detection fixed when radio is plugged in after boot"
+  body: |
+    If your USB radio or sound card was connected after the graywolf
+    service started, Detect Audio came up empty and channels would
+    not bind even when you typed the right ALSA device name. A
+    systemd hardening flag we were shipping was the culprit on
+    several Linux distributions. Upgrade and restart graywolf;
+    nothing else to do on your end.
+
 - version: "0.13.14"
   date: "2026-06-01"
   style: info
