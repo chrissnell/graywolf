@@ -48,12 +48,6 @@ ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
-# ProtectClock=yes removed (issue #207): the implied DeviceAllow revokes
-# /dev/rtc*, which on some kernels prevents ALSA's timer init from
-# registering USB Audio class cards. Failure is silent — cpal enumeration
-# returns no entry for the card while `arecord -L` still lists it. We
-# don't grant CAP_SYS_TIME, so the process can't change the clock without
-# this directive anyway.
 ProtectHostname=yes
 
 # Execution hardening
