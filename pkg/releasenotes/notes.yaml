@@ -7,6 +7,23 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.14"
+  date: "2026-06-01"
+  style: info
+  schema_version: 1
+  link: "#/maps"
+  title: "Offline maps work for the whole LAN now"
+  body: |
+    The offline-maps setup was not fully offline-ready in v0.13.12:
+    the map style file was still being pulled from the maps host
+    by the browser, so if your laptop's IP changed (WiFi to
+    hotspot) or if a guest joined your LAN, the map came up blank.
+    Graywolf now caches the style itself, so once you have loaded
+    the map page once with Graywolf online, every browser on your
+    network can render it even with the internet down. If you
+    click Download on a region, the label fonts for that region
+    get pre-warmed in the background so an offline pan finds them.
+
 - version: "0.13.13"
   date: "2026-05-30"
   style: info
