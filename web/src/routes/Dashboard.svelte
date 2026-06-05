@@ -3,6 +3,7 @@
   import { Button, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { formatAltitude, formatSpeed } from '../lib/settings/units.js';
+  import { beaconLabel } from '../lib/beaconLabel.js';
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
 
@@ -204,7 +205,7 @@
                 onclick={() => sendBeaconNow(bcn.id)}
                 disabled={sendingBeacon[bcn.id]}
               >
-                {sendingBeacon[bcn.id] ? 'Sent!' : `Beacon Now: ${bcn.callsign || stationCallsign}`}
+                {sendingBeacon[bcn.id] ? 'Sent!' : `Beacon Now: ${beaconLabel(bcn, stationCallsign)}`}
               </Button>
             {/each}
           </div>
