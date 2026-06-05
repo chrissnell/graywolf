@@ -442,11 +442,6 @@
     }
   }
 
-  function beaconLabel(row) {
-    if (row.type === 'object' && row.object_name) return row.object_name;
-    return row.callsign || stationCallsign || '(unset)';
-  }
-
   async function handleSendNow(row) {
     try {
       await api.post(`/beacons/${row.id}/send`, {});
