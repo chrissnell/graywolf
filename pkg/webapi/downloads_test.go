@@ -275,7 +275,7 @@ func TestDeleteMapsDownload_Idempotent(t *testing.T) {
 
 	// Drive a download to completion so DELETE has both a row and a
 	// file to remove.
-	if err := mgr.Start(context.Background(), "state/ohio"); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !waitFor(t, 3*time.Second, func() bool {
@@ -544,5 +544,63 @@ func TestStartMapsDownload_NotInCatalog(t *testing.T) {
 	}
 	if !strings.Contains(body["error"], "unknown slug") {
 		t.Errorf("expected 'unknown slug', got %q", body["error"])
+	}
+}
+
+// TestStartDownload_PersistsBBoxFromCatalog wires a catalog stub whose
+// state row carries an explicit bbox. After POST /api/maps/downloads,
+// the maps_downloads row must hold the bbox snapshot encoded as the
+// canonical "[w,s,e,n]" string. Guards the offline-render durability
+// contract: render bounds come from this snapshot, not the live
+// catalog after the next boot.
+func TestStartDownload_PersistsBBoxFromCatalog(t *testing.T) {
+	// Catalog stub returning one state with a bbox.
+	bboxRef := [4]float64{-109.05, 36.99, -102.04, 41.0}
+	catalogSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(mapscatalog.Catalog{
+			SchemaVersion: 1,
+			GeneratedAt:   "now",
+			States: []mapscatalog.State{
+				{Slug: "colorado", Name: "Colorado", SizeBytes: 100, SHA256: "x", BBox: &bboxRef},
+			},
+		})
+	}))
+	t.Cleanup(catalogSrv.Close)
+
+	// Tile upstream — returns a tiny complete body. The bbox row is
+	// upserted synchronously in Start() before the download goroutine
+	// runs, so the test only needs to observe the row, not block the
+	// download.
+	tileSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("pmtiles-bytes"))
+	}))
+	t.Cleanup(tileSrv.Close)
+
+	srv, _ := newTestServer(t)
+	cacheDir := t.TempDir()
+	mgr := mapscache.New(cacheDir, srv.store, func(context.Context) string { return "" }, tileSrv.URL, 1)
+	srv.mapsCache = mgr
+	srv.catalog = mapscatalog.New(catalogSrv.URL, func(context.Context) string { return "" }, time.Hour)
+	mux := newDownloadsMux(srv)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/maps/downloads/state/colorado", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status: got %d want 202; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Allow the goroutine to finish persisting the bbox.
+	want := `[-109.05,36.99,-102.04,41]`
+	if !waitFor(t, 2*time.Second, func() bool {
+		row, _ := srv.store.GetMapsDownload(context.Background(), "state/colorado")
+		return row.BBox != nil && *row.BBox == want
+	}) {
+		row, _ := srv.store.GetMapsDownload(context.Background(), "state/colorado")
+		var got string
+		if row.BBox != nil {
+			got = *row.BBox
+		}
+		t.Fatalf("bbox never reached %q (last seen: %q)", want, got)
 	}
 }

@@ -124,12 +124,12 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 		b.dispatchDcd(p.DcdChange)
 	case *pb.IpcMessage_AudioDeviceList:
 		b.dispatchEnumResponse(p.AudioDeviceList)
-	case *pb.IpcMessage_TestToneResult:
-		b.dispatchToneResponse(p.TestToneResult)
 	case *pb.IpcMessage_DeviceLevelUpdate:
 		b.updateDeviceLevelCache(p.DeviceLevelUpdate)
 	case *pb.IpcMessage_InputLevelScanResult:
 		b.dispatchScanResponse(p.InputLevelScanResult)
+	case *pb.IpcMessage_TestSignalResult:
+		b.dispatchTestSignalResponse(p.TestSignalResult)
 	default:
 		b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 	}

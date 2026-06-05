@@ -21,7 +21,7 @@ func TestMicEDestEncoding(t *testing.T) {
 		{45.25, 7, false, false, 1},
 	}
 	for _, tc := range cases {
-		dest := EncodeMicEDest(tc.lat, tc.msg, tc.offset, tc.west)
+		dest := EncodeMicEDest(tc.lat, tc.msg, tc.offset, tc.west, 0)
 		if len(dest) != 6 {
 			t.Fatalf("dest len %d", len(dest))
 		}
@@ -61,7 +61,7 @@ func TestMicEDestEncoding(t *testing.T) {
 
 func TestParseMicEFrame(t *testing.T) {
 	// Build a synthetic Mic-E frame: lat 35.5 N, lon -72.5 W, msg "En Route".
-	dest := EncodeMicEDest(35.5, 1, false, true) // lat, msg=1, offset=0, west
+	dest := EncodeMicEDest(35.5, 1, false, true, 0) // lat, msg=1, offset=0, west
 	destAddr, err := ax25.ParseAddress(dest)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestParseMicEAltitude(t *testing.T) {
 	// the symbol table. Encoded value + 10000 = meters.
 	// Pick a target altitude of 1234 m → raw = 11234 → base-91 digits:
 	// 11234 = 1*91*91 + 32*91 + 41 → digits (1,32,41) → bytes 34, 65, 74.
-	dest := EncodeMicEDest(35.5, 0, false, true)
+	dest := EncodeMicEDest(35.5, 0, false, true, 0)
 	destAddr, _ := ax25.ParseAddress(dest)
 	srcAddr, _ := ax25.ParseAddress("W1AW")
 	info := []byte{
@@ -232,4 +232,93 @@ func abs(x float64) float64 {
 		return -x
 	}
 	return x
+}
+
+// TestEncodeMicEDest_Ambiguity confirms the K/L/Z space-variant
+// replacement on the latitude digits per APRS101 ch 10 round-trips
+// through the local decoder for all four ambiguity levels and for
+// every hemisphere/offset combination.
+func TestEncodeMicEDest_Ambiguity(t *testing.T) {
+	// lat must be in -90..90; the longitude offset bit is independent
+	// of the latitude value (it flags that the longitude needed +100,
+	// not the latitude).
+	cases := []struct {
+		name    string
+		lat     float64
+		msg     int
+		offset  bool
+		west    bool
+		wantNS  float64 // 1 N, -1 S
+		wantOff int
+		wantEW  float64 // 1 E, -1 W
+	}{
+		{"north_e_no_offset", 37.4092, 0, false, false, 1, 0, 1},
+		{"north_e_offset_flag", 37.4092, 0, true, false, 1, 100, 1},
+		{"south_w_no_offset", -37.4092, 0, false, true, -1, 0, -1},
+		{"south_w_offset_flag", -37.4092, 0, true, true, -1, 100, -1},
+		{"north_w_no_offset", 37.4092, 0, false, true, 1, 0, -1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for level := 0; level <= 4; level++ {
+				got := EncodeMicEDest(tc.lat, tc.msg, tc.offset, tc.west, level)
+				if len(got) != 6 {
+					t.Fatalf("level %d: unexpected length: %q", level, got)
+				}
+				dlat, _, dns, doff, dew, err := decodeMicEDest(got)
+				if err != nil {
+					t.Fatalf("level %d: decodeMicEDest(%q): %v", level, got, err)
+				}
+				if dns != tc.wantNS {
+					t.Errorf("level %d: ns sign %v want %v (dest=%q)", level, dns, tc.wantNS, got)
+				}
+				if doff != tc.wantOff {
+					t.Errorf("level %d: lon offset %d want %d (dest=%q)", level, doff, tc.wantOff, got)
+				}
+				if dew != tc.wantEW {
+					t.Errorf("level %d: ew sign %v want %v (dest=%q)", level, dew, tc.wantEW, got)
+				}
+				// Tolerance grows with ambiguity level. Level 1 = 1/100
+				// minute (~0.000167 deg) but the encoder also rounds the
+				// fractional minute into an integer hundredth, so 0.001
+				// is a safe floor. Levels 2..4 broaden to ~0.01, ~0.1,
+				// ~1.0 degrees.
+				wantLat := tc.lat
+				if wantLat < 0 {
+					wantLat = -wantLat
+				}
+				tol := []float64{0.001, 0.01, 0.1, 1.0, 10.0}[level]
+				if abs(dlat-wantLat) > tol {
+					t.Errorf("level %d: lat %.4f want ~%.4f (tol %.3f) (dest=%q)", level, dlat, wantLat, tol, got)
+				}
+			}
+		})
+	}
+}
+
+// TestMicEMessageLabels_MatchAPRS101 locks in the spec-correct
+// indexing of the message-code label table per APRS101 ch 10 table 8:
+// the 3-bit code is the decimal value of the ABC message bits read
+// from destination slots 0..2. Bits 111 (decimal 7) = M0 = Off Duty;
+// bits 000 (decimal 0) = M7 = Emergency. The table was historically
+// inverted, which silently agreed with a symmetrically wrong encoder
+// constant in pkg/beacon/mice.go but disagreed with every external
+// decoder. Reproducing the indexing here so a future regression
+// (well-intentioned alphabetization, for example) breaks loudly.
+func TestMicEMessageLabels_MatchAPRS101(t *testing.T) {
+	want := map[int]string{
+		0: "Emergency", // ABC = 000
+		1: "Priority",  // ABC = 001
+		2: "Special",   // ABC = 010
+		3: "Committed", // ABC = 011
+		4: "Returning", // ABC = 100
+		5: "In Service",
+		6: "En Route",
+		7: "Off Duty", // ABC = 111
+	}
+	for code, label := range want {
+		if got := miceMessageLabels[code]; got != label {
+			t.Errorf("miceMessageLabels[%d] = %q, want %q (APRS101 ch 10 table 8)", code, got, label)
+		}
+	}
 }

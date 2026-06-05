@@ -26,8 +26,7 @@ use crate::hdlc::DecodedFrame;
 use crate::ipc::proto::{
     ipc_message::Payload, AudioDeviceInfo, AudioDeviceKind, AudioDeviceList, ConfigureChannel,
     ConfigurePtt, DcdChange, DeviceLevelUpdate, EnumerateAudioDevices, InputDeviceLevel,
-    InputLevelScanResult, IpcMessage, ReceivedFrame, ScanInputLevels, StatusUpdate, TestToneResult,
-    TransmitFrame,
+    InputLevelScanResult, IpcMessage, ReceivedFrame, ScanInputLevels, StatusUpdate, TransmitFrame,
 };
 use crate::ipc::server::{IpcHandle, IpcInbound};
 use crate::modem_9600::Demod9600;
@@ -159,14 +158,14 @@ pub struct Modem {
 
     // Pre-resolved cpal output device handles, keyed by device_id.
     // Populated in start_audio() before input streams open and reused
-    // by both the TX worker and test-tone playback. On Linux/ALSA,
+    // by the TX worker for all transmit playback. On Linux/ALSA,
     // cpal's device enumeration fails once a capture stream holds the
     // hardware, so these must be resolved while the device is idle.
     output_devices: HashMap<u32, cpal::Device>,
 
     // Pre-negotiated output stream params (channels + sample_format),
-    // cached at start_audio time when the device is idle. The test-
-    // tone path uses these to avoid calling supported_output_configs()
+    // cached at start_audio time when the device is idle. The TX
+    // path uses these to avoid calling supported_output_configs()
     // on a device cpal has lost the ability to enumerate (e.g. while a
     // capture stream is active on the same AIOC hardware, or after a
     // USB-EMI hub event invalidates the cached handle).
@@ -319,9 +318,6 @@ impl Modem {
             Some(Payload::EnumerateAudioDevices(req)) => {
                 self.handle_enumerate_devices(req);
             }
-            Some(Payload::PlayTestTone(req)) => {
-                self.handle_play_test_tone(req);
-            }
             Some(Payload::ScanInputLevels(req)) => {
                 self.handle_scan_input_levels(req);
             }
@@ -350,14 +346,17 @@ impl Modem {
                 self.graceful_shutdown();
                 return true;
             }
+            Some(Payload::TransmitTestSignal(req)) => {
+                self.handle_transmit_test_signal(req);
+            }
             Some(Payload::ReceivedFrame(_))
             | Some(Payload::DcdChange(_))
             | Some(Payload::StatusUpdate(_))
             | Some(Payload::ModemReady(_))
             | Some(Payload::AudioDeviceList(_))
-            | Some(Payload::TestToneResult(_))
             | Some(Payload::DeviceLevelUpdate(_))
-            | Some(Payload::InputLevelScanResult(_)) => {
+            | Some(Payload::InputLevelScanResult(_))
+            | Some(Payload::TestSignalResult(_)) => {
                 // Rust → Go only; ignore if echoed back.
             }
             None => {}
@@ -385,10 +384,10 @@ impl Modem {
         }
 
         // Pre-resolve output devices before opening input streams.
-        // This lets the TX worker and test-tone path use cached Device
-        // handles without enumerating at transmit time. Also pre-
-        // negotiate channel count + sample format while the device is
-        // idle, so later test-tone clicks don't have to call
+        // This lets the TX worker use cached Device handles without
+        // enumerating at transmit time. Also pre-negotiate channel
+        // count + sample format while the device is idle, so later
+        // transmits don't have to call
         // supported_output_configs() (which fails once an input capture
         // stream holds the same hardware).
         self.output_devices.clear();
@@ -421,7 +420,7 @@ impl Modem {
                             self.output_configs_cache.insert(dev_id, (ch, f));
                         } else {
                             eprintln!(
-                                "graywolf-modem: failed to pre-negotiate output configs for device_id={} ({}); test-tone may fail later if device gets busy",
+                                "graywolf-modem: failed to pre-negotiate output configs for device_id={} ({}); TX may fail later if device gets busy",
                                 dev_id, acfg.device_name
                             );
                         }
@@ -771,27 +770,6 @@ impl Modem {
             .ok();
     }
 
-    fn handle_play_test_tone(&self, req: crate::ipc::proto::PlayTestTone) {
-        let device_id = req.device_id;
-        let gain_atom = self.gain_atoms
-            .get(&device_id)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(AtomicU32::new(0f32.to_bits())));
-        let handle = self.handle.clone();
-        let cached_device = self.output_devices.get(&device_id).cloned();
-        let cached_config = self.output_configs_cache.get(&device_id).copied();
-        std::thread::Builder::new()
-            .name("test-tone".into())
-            .spawn(move || {
-                let result = play_test_tone_blocking(
-                    &req, &handle, device_id, &gain_atom, cached_device, cached_config,
-                );
-                let msg = IpcMessage::test_tone_result(result);
-                let _ = handle.send(&msg);
-            })
-            .ok();
-    }
-
     fn emit_status(&mut self, final_: bool) {
         // One StatusUpdate per configured channel so the dashboard can show
         // correct per-channel RX/TX counters in multi-channel setups. Audio
@@ -1080,6 +1058,107 @@ impl Modem {
             return;
         }
         *self.tx_frames.entry(tf.channel).or_default() += 1;
+    }
+
+    /// Render a TX test signal (CW callsign, steady tone, or alternating tones)
+    /// and submit it to the TX worker, mirroring handle_transmit_frame's pattern.
+    /// Send a TestSignalResult reply to Go. Borrows only `self.handle`, so it
+    /// composes with the surrounding `&mut self` work in the handler below.
+    fn reply_test_signal(&self, request_id: u32, success: bool, error: String) {
+        let _ = self.handle.send(&IpcMessage::test_signal_result(
+            crate::ipc::proto::TestSignalResult { request_id, success, error },
+        ));
+    }
+
+    fn handle_transmit_test_signal(&mut self, req: crate::ipc::proto::TransmitTestSignal) {
+        // Lazy rigctld retry, same as handle_transmit_frame.
+        if self.ptt_rigctld_pending.contains(&req.channel) {
+            if let Some(cfg) = self.ptt_cfgs.get(&req.channel).cloned() {
+                self.apply_ptt_config(cfg);
+            }
+        }
+
+        let (output_device_id, output_channel) = match self.channel_configs.get(&req.channel) {
+            Some(c) => (c.output_device_id, c.output_channel),
+            None => {
+                self.reply_test_signal(req.request_id, false, format!("unknown channel {}", req.channel));
+                return;
+            }
+        };
+
+        let (device_name, sample_rate, channels) = match self.audio_configs.get(&output_device_id) {
+            Some(a) => (a.device_name.clone(), a.sample_rate, a.channels),
+            None => {
+                self.reply_test_signal(
+                    req.request_id,
+                    false,
+                    format!("no audio config for output device {}", output_device_id),
+                );
+                return;
+            }
+        };
+
+        let mut samples = match req.kind {
+            0 => {
+                let s = crate::txtest::cw_samples(
+                    &req.callsign,
+                    sample_rate,
+                    req.cw_wpm.max(1),
+                    req.freq_a_hz as f32,
+                );
+                if s.is_empty() {
+                    self.reply_test_signal(req.request_id, false, "callsign produced no CW symbols".to_string());
+                    return;
+                }
+                s
+            }
+            1 => crate::txtest::tone_samples(sample_rate, req.freq_a_hz as f32, req.duration_ms),
+            2 => crate::txtest::alternating_samples(
+                sample_rate,
+                req.freq_a_hz as f32,
+                req.freq_b_hz as f32,
+                req.duration_ms,
+                req.alt_period_ms,
+            ),
+            other => {
+                self.reply_test_signal(req.request_id, false, format!("unknown test signal kind {}", other));
+                return;
+            }
+        };
+
+        // Apply output device gain, matching handle_transmit_frame. Live level
+        // metering / DeviceLevelUpdate is intentionally omitted for test signals.
+        if let Some(gain_atom) = self.gain_atoms.get(&output_device_id) {
+            let gain_db = f32::from_bits(gain_atom.load(std::sync::atomic::Ordering::Relaxed));
+            if gain_db.abs() > f32::EPSILON {
+                let gain_linear = 10f32.powf(gain_db / 20.0);
+                for s in samples.iter_mut() {
+                    let amplified = (*s as f32) * gain_linear;
+                    *s = amplified.clamp(-32767.0, 32767.0) as i16;
+                }
+            }
+        }
+
+        let job = tx_worker::TxJob {
+            channel: req.channel,
+            samples,
+            sample_rate,
+            output_device_id,
+            sink_config: audio::soundcard::SoundcardOutputConfig {
+                device_name,
+                sample_rate,
+                channels,
+                audio_channel: output_channel,
+            },
+        };
+
+        match self.tx_worker.transmit(job) {
+            Ok(()) => {
+                *self.tx_frames.entry(req.channel).or_default() += 1;
+                self.reply_test_signal(req.request_id, true, String::new());
+            }
+            Err(e) => self.reply_test_signal(req.request_id, false, e),
+        }
     }
 }
 
@@ -2208,186 +2287,6 @@ fn now_ns() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0)
-}
-
-fn play_test_tone_blocking(
-    req: &crate::ipc::proto::PlayTestTone,
-    handle: &IpcHandle,
-    device_id: u32,
-    gain_atom: &Arc<AtomicU32>,
-    cached_device: Option<cpal::Device>,
-    cached_config: Option<(u16, cpal::SampleFormat)>,
-) -> TestToneResult {
-    use cpal::traits::{DeviceTrait, StreamTrait};
-    use std::sync::atomic::{AtomicBool, AtomicU64};
-
-    // Resolve the cpal Device + channel count for the test tone.
-    //
-    // The cpal supported_output_configs() call fails with "device no
-    // longer available" when called while another stream (input
-    // capture) is already active on the same hardware (e.g. AIOC's
-    // shared input/output PCM). For that reason we prefer the
-    // pre-negotiated channel count cached at start_audio time, when
-    // the device was idle and queryable. Falls back to runtime
-    // negotiation only when no cached config exists (e.g. fresh
-    // ConfigureAudio for a device that hadn't been part of any
-    // channel yet).
-    let sample_rate = if req.sample_rate > 0 { req.sample_rate } else { 48000 };
-    let preferred_ch = req.channels.max(1) as u16;
-
-    fn resolve_fresh(name: &str) -> Result<cpal::Device, String> {
-        use cpal::traits::HostTrait;
-        let host = cpal::default_host();
-        let devs = host.output_devices()
-            .map_err(|e| format!("enumerate output devices: {}", e))?;
-        audio::soundcard::find_device_by_id(devs, name)
-            .ok_or_else(|| format!("output device not found: {}", name))
-    }
-
-    let device = match cached_device {
-        Some(d) => d,
-        None => match resolve_fresh(&req.device_name) {
-            Ok(d) => d,
-            Err(e) => return TestToneResult {
-                request_id: req.request_id,
-                success: false,
-                error: e,
-            },
-        },
-    };
-
-    let channels = match cached_config {
-        Some((ch, _fmt)) => ch,
-        None => {
-            // No cached config -- either device wasn't pre-resolved
-            // (legacy path) or pre-negotiation failed at start_audio.
-            // Fall back to a live supported_output_configs probe;
-            // this is the path that fails when the device is busy,
-            // but it is also the only path that can recover for
-            // configurations the cache doesn't cover.
-            match audio::soundcard::negotiate_channels(
-                &device,
-                sample_rate,
-                preferred_ch,
-                "output",
-                |d| d.supported_output_configs(),
-            ) {
-                Ok(c) => c,
-                Err(e) => return TestToneResult {
-                    request_id: req.request_id,
-                    success: false,
-                    error: e,
-                },
-            }
-        }
-    };
-
-    let config = cpal::StreamConfig {
-        channels,
-        sample_rate,
-        buffer_size: cpal::BufferSize::Default,
-    };
-
-    let tone_freq = 1000.0_f64;
-    let amplitude = 0.5_f64; // -6 dBFS
-    let duration_samples = (sample_rate as u64) * 3 / 2; // 1.5 seconds
-    let phase_inc = tone_freq * 2.0 * std::f64::consts::PI / sample_rate as f64;
-
-    let phase_counter = Arc::new(AtomicU64::new(0));
-    let done = Arc::new(AtomicBool::new(false));
-
-    let pc = phase_counter.clone();
-    let d = done.clone();
-    let ch = channels as usize;
-    let dur = duration_samples;
-    let ga = gain_atom.clone();
-
-    let stream = match device.build_output_stream(
-        &config,
-        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            let gain_db = f32::from_bits(ga.load(Ordering::Relaxed));
-            let gain_linear = if gain_db.abs() > f32::EPSILON {
-                10f32.powf(gain_db / 20.0)
-            } else {
-                1.0
-            };
-            for frame in data.chunks_mut(ch) {
-                let sample_idx = pc.fetch_add(1, Ordering::Relaxed);
-                let raw = if sample_idx < dur {
-                    (sample_idx as f64 * phase_inc).sin() * amplitude
-                } else {
-                    d.store(true, Ordering::Relaxed);
-                    0.0
-                };
-                let gained = (raw as f32) * gain_linear;
-                let out = gained.clamp(-1.0, 1.0);
-                for s in frame.iter_mut() {
-                    *s = out;
-                }
-            }
-        },
-        move |e| eprintln!("graywolf-modem: test tone stream error: {}", e),
-        None,
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            return TestToneResult {
-                request_id: req.request_id,
-                success: false,
-                error: format!("build output stream: {}", e),
-            };
-        }
-    };
-
-    if let Err(e) = stream.play() {
-        return TestToneResult {
-            request_id: req.request_id,
-            success: false,
-            error: format!("play stream: {}", e),
-        };
-    }
-
-    // Wait for tone to finish, emitting level updates at ~5 Hz
-    while !done.load(Ordering::Relaxed) {
-        let gain_db = f32::from_bits(gain_atom.load(Ordering::Relaxed));
-        let gain_linear = 10f32.powf(gain_db / 20.0);
-        let effective_amp = (amplitude as f32) * gain_linear;
-        let peak_dbfs = if effective_amp > 0.0 {
-            (20.0 * effective_amp.log10()).clamp(-60.0, 0.0)
-        } else {
-            -60.0
-        };
-        let rms_dbfs = if effective_amp > 0.0 {
-            // RMS of sine = peak / sqrt(2), i.e. -3.01 dB below peak
-            (peak_dbfs - 3.01).max(-60.0)
-        } else {
-            -60.0
-        };
-        let _ = handle.send(&IpcMessage::device_level_update(DeviceLevelUpdate {
-            device_id,
-            peak_dbfs,
-            rms_dbfs,
-            clipping: effective_amp > 1.0,
-        }));
-        std::thread::sleep(Duration::from_millis(200));
-    }
-
-    // Final silent level after tone ends
-    let _ = handle.send(&IpcMessage::device_level_update(DeviceLevelUpdate {
-        device_id,
-        peak_dbfs: -60.0,
-        rms_dbfs: -60.0,
-        clipping: false,
-    }));
-
-    std::thread::sleep(Duration::from_millis(100));
-    drop(stream);
-
-    TestToneResult {
-        request_id: req.request_id,
-        success: true,
-        error: String::new(),
-    }
 }
 
 #[cfg(test)]

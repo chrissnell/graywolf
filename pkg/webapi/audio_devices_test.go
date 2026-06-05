@@ -295,40 +295,6 @@ func TestAudioDeviceSetGain_OutOfRange(t *testing.T) {
 	}
 }
 
-// TestAudioDeviceTestTone_RejectsInputDevice guards the new playTestTone
-// handler name: input devices can't play tones.
-func TestAudioDeviceTestTone_RejectsInputDevice(t *testing.T) {
-	srv, _ := newTestServer(t)
-	mux := http.NewServeMux()
-	srv.RegisterRoutes(mux)
-
-	// Seeded device id=1 is direction=input.
-	req := httptest.NewRequest(http.MethodPost, "/api/audio-devices/1/test-tone", nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-// TestAudioDeviceTestTone_MissingDevice returns 404 rather than 500
-// even though the bridge is not running in tests — the store lookup
-// fails first.
-func TestAudioDeviceTestTone_MissingDevice(t *testing.T) {
-	srv, _ := newTestServer(t)
-	mux := http.NewServeMux()
-	srv.RegisterRoutes(mux)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/audio-devices/9999/test-tone", nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
 // TestAudioDeviceGetLevels_NilBridgeReturnsEmptyObject verifies the
 // levels endpoint renders an empty object when the bridge is nil —
 // matching the pre-refactor behavior ("{}") so the UI's meter

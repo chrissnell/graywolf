@@ -149,6 +149,16 @@ type KissInterface struct {
 	// Modem-mode rows ignore this flag entirely (they TX via Submit,
 	// they don't receive TX from the governor).
 	AllowTxFromGovernor bool `gorm:"column:allow_tx_from_governor;not null;default:false" json:"allow_tx_from_governor"`
+	// GateTxToIs: when true and Mode == KissModeModem, frames a
+	// connected KISS client submits for TX are ALSO offered to the
+	// iGate's RF→IS gate after Sink.Submit accepts them. The standard
+	// iGate filters (NOGATE / RFONLY / TCPIP path markers + operator
+	// filter rules) still apply, so the toggle only opens the gate; it
+	// does not bypass policy. Meaningless in Mode==KissModeTnc (that
+	// path already feeds the iGate via the RX fanout), so the wiring
+	// reads the field unconditionally and the server only consults it
+	// inside the modem branch.
+	GateTxToIs bool `gorm:"column:gate_tx_to_is;not null;default:false" json:"gate_tx_to_is"`
 	// NeedsReconfig is set to true when a referential cascade (Phase 5)
 	// nulls this row's Channel. Phase 3 merely declares the column so
 	// the shape is stable before the cascade logic lands; no code reads
@@ -298,6 +308,29 @@ type DigipeaterRule struct {
 	Enabled     bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt   time.Time `json:"-"`
 	UpdatedAt   time.Time `json:"-"`
+}
+
+// DigipeaterBlocklist is one source-address pattern that the digipeater
+// engine must refuse to digipeat. Global (channel-agnostic). The
+// engine consults this list strictly inside pkg/digipeater/digipeater.go's
+// Handle — no other RX consumer reads it (see docs/wiki/invariants.md).
+//
+// Pattern syntax (canonical, uppercase, validated at the API
+// boundary by pkg/digipeater/blocklist.ValidatePattern):
+//
+//	CALL       — exact source, SSID 0 only (bare callsign)
+//	CALL-N     — exact source, specific SSID 0..15
+//	CALL-*     — any non-zero SSID for that base callsign
+//
+// No CreatedAt/UpdatedAt: the spec deliberately omits audit
+// timestamps to keep the row tiny. Pattern carries a unique index;
+// duplicate inserts return a GORM unique-violation that the webapi
+// layer maps to HTTP 409.
+type DigipeaterBlocklist struct {
+	ID      uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Pattern string `gorm:"not null;uniqueIndex" json:"pattern"`
+	Reason  string `json:"reason"`
+	Enabled bool   `gorm:"not null;default:true" json:"enabled"`
 }
 
 // IGateConfig is a singleton (id=1) row for the iGate.
@@ -523,8 +556,15 @@ type MapsDownload struct {
 	BytesDownloaded int64     `gorm:"not null;default:0" json:"bytes_downloaded"`
 	DownloadedAt    time.Time `json:"downloaded_at"`
 	ErrorMessage    string    `gorm:"not null;default:''" json:"error_message,omitempty"`
-	CreatedAt       time.Time `json:"-"`
-	UpdatedAt       time.Time `json:"-"`
+	// BBox is the catalog bbox snapshot captured at download-record
+	// creation time, JSON-encoded as "[west, south, east, north]".
+	// Nullable: legacy rows from pre-bbox installs hold NULL until the
+	// startup backfill reads the value from the pmtiles archive header.
+	// Render-path correctness depends on this column being populated
+	// for every completed download.
+	BBox      *string   `gorm:"column:bbox;type:text" json:"bbox,omitempty"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 }
 
 // GPSConfig is a singleton (id=1) row for the GPS receiver.
@@ -556,7 +596,7 @@ type Beacon struct {
 	SymbolTable  string  `gorm:"not null;default:'/'" json:"symbol_table"`
 	Symbol       string  `gorm:"not null;default:'-'" json:"symbol"`
 	Overlay      string  `json:"overlay"`                                 // alternate symbol table overlay character
-	Compress     bool    `gorm:"not null;default:true" json:"compress"`   // use 13-byte base-91 compressed position encoding (APRS101 ch 9)
+	PositionFormat string `gorm:"not null;default:'compressed'" json:"position_format"` // compressed | uncompressed | mic_e (APRS101 ch 9/6/10)
 	Messaging    bool    `gorm:"not null;default:false" json:"messaging"` // '=' instead of '!' prefix
 	Comment      string  `json:"comment"`
 	CommentCmd   string  `json:"comment_cmd"`                      // shell command whose stdout is appended as comment

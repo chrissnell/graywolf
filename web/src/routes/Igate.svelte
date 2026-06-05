@@ -495,7 +495,11 @@
   // 503; we treat that as "off" rather than an error so the badge stays
   // honest. Polled every 10s so the operator sees reconnects without a
   // page reload.
-  let igateStatus = $state(/** @type {null | {connected:boolean, last_connected?:string, server?:string}} */ (null));
+  let igateStatus = $state(
+    /** @type {null | {connected:boolean, last_connected?:string, server?:string, rf_to_is_gated?:number, rf_to_is_dropped?:number, is_to_rf_gated?:number, packets_filtered?:number}} */ (
+      null
+    )
+  );
   let igateStatusLoaded = $state(false);
 
   async function loadIgateStatus() {
@@ -545,6 +549,36 @@
     <span class="status-detail">{statusDetail}</span>
   {/if}
 </div>
+
+{#if igateStatus}
+  <!--
+    Process-lifetime counters from /api/igate. RF→IS gated bumps on
+    every accepted RF (or kiss-modem gate-tx-to-is) packet. RF→IS
+    dropped bumps when the gate fires while the iGate is disconnected.
+    These are the primary diagnostic the operator has for "is the
+    gate hook actually firing for my KISS-client traffic?" — pair with
+    the per-packet `kiss gate-tx-to-is` log line at INFO for the
+    drop-reason breakdown.
+  -->
+  <div class="counter-row" data-testid="igate-counters">
+    <span class="counter">
+      <span class="counter-label">RF→IS gated</span>
+      <span class="counter-value">{igateStatus.rf_to_is_gated ?? 0}</span>
+    </span>
+    <span class="counter">
+      <span class="counter-label">RF→IS dropped</span>
+      <span class="counter-value">{igateStatus.rf_to_is_dropped ?? 0}</span>
+    </span>
+    <span class="counter">
+      <span class="counter-label">IS→RF gated</span>
+      <span class="counter-value">{igateStatus.is_to_rf_gated ?? 0}</span>
+    </span>
+    <span class="counter">
+      <span class="counter-label">Filtered</span>
+      <span class="counter-value">{igateStatus.packets_filtered ?? 0}</span>
+    </span>
+  </div>
+{/if}
 
 <div class="tabs">
   <button class="tab" class:active={activeTab === 'config'} onclick={() => activeTab = 'config'}>Connection</button>
@@ -773,6 +807,27 @@
   }
   .status-row .status-detail {
     color: var(--text-secondary);
+  }
+  .counter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin: -8px 0 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .counter {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .counter-label {
+    color: var(--text-secondary);
+  }
+  .counter-value {
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
   }
   .tabs {
     display: flex;

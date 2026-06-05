@@ -27,10 +27,19 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 )
 
-// Mic-E message labels (code 0..7). Code 0 is the "off-duty" default.
+// Mic-E message labels indexed by the 3-bit message code (ABC bits
+// from destination slots 0..2) per APRS101 ch 10 table 8. Bit pattern
+// 111 (decimal 7) is M0 = Off Duty (the standard "nothing wrong, not
+// transmitting anything special" code); bit pattern 000 (decimal 0)
+// is M7 = Emergency. The original implementation here had the table
+// reversed, which canceled out internally against the symmetrically
+// wrong MicEMessageOffDuty constant in pkg/beacon/mice.go -- but
+// every external decoder (FAP, aprs.fi, direwolf, YAAC) reads bits
+// 000 as Emergency, so graywolf beacons configured for Off Duty
+// were appearing on aprs.fi as Emergency.
 var miceMessageLabels = [8]string{
-	"Off Duty", "En Route", "In Service", "Returning",
-	"Committed", "Special", "Priority", "Emergency",
+	"Emergency", "Priority", "Special", "Committed",
+	"Returning", "In Service", "En Route", "Off Duty",
 }
 
 // parseMicE is invoked when the info field starts with '\'' or '`'.
@@ -438,7 +447,14 @@ func decodeMicEManufacturer(rest []byte) (string, string) {
 // EncodeMicEDest builds the 6-character destination callsign for a
 // Mic-E transmission from a latitude and the message bits / hemisphere
 // selectors. Exposed for the beacon encoder and unit tests.
-func EncodeMicEDest(lat float64, msgCode int, lonOffset100 bool, westLong bool) string {
+//
+// ambiguity is 0..4 per APRS101 ch 6 table 8; non-zero replaces the
+// trailing latitude digits with the K/L/Z "space" variants per
+// APRS101 ch 10 so the receiving parser still recovers the slot's
+// high bit (message bit / N-S / longitude offset / E-W) even though
+// the digit value is intentionally erased. Out-of-range levels are
+// clamped to 0..4.
+func EncodeMicEDest(lat float64, msgCode int, lonOffset100 bool, westLong bool, ambiguity int) string {
 	north := lat >= 0
 	if lat < 0 {
 		lat = -lat
@@ -454,10 +470,24 @@ func EncodeMicEDest(lat float64, msgCode int, lonOffset100 bool, westLong bool) 
 		msgCode&0x2 != 0,
 		msgCode&0x1 != 0,
 	}
+	if ambiguity < 0 {
+		ambiguity = 0
+	}
+	if ambiguity > 4 {
+		ambiguity = 4
+	}
+	// Blanking order mirrors APRS101 ch 6 table 8:
+	//   level 1 → slot 5 (1/100 minute)
+	//   level 2 → slots 4..5
+	//   level 3 → slots 3..5
+	//   level 4 → slots 2..5
+	blankFrom := 6 - ambiguity
+	if ambiguity == 0 {
+		blankFrom = 6
+	}
 	out := make([]byte, 6)
 	for i := 0; i < 6; i++ {
 		d := byte(digits[i])
-		var c byte
 		highBit := false
 		switch i {
 		case 0, 1, 2:
@@ -469,7 +499,23 @@ func EncodeMicEDest(lat float64, msgCode int, lonOffset100 bool, westLong bool) 
 		case 5:
 			highBit = westLong
 		}
-		if highBit {
+		var c byte
+		if i >= blankFrom {
+			// Space variant: 'L' if the slot's high bit is 0, 'Z' (or
+			// 'K' equivalently) if it is 1. The parser side accepts K
+			// and Z interchangeably; we use Z for all non-message-bit
+			// slots and K for the message-bit slot at i=2 to match the
+			// dominant APRS101 ch 10 examples.
+			if highBit {
+				if i == 2 {
+					c = 'K'
+				} else {
+					c = 'Z'
+				}
+			} else {
+				c = 'L'
+			}
+		} else if highBit {
 			c = 'P' + d
 		} else {
 			c = '0' + d

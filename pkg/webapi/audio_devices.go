@@ -11,9 +11,9 @@ import (
 
 // registerAudioDevices installs the /api/audio-devices route tree on
 // mux using Go 1.22+ method-scoped patterns. Sub-resource routes
-// (/available, /scan-levels, /levels, /{id}/test-tone, /{id}/gain) are
-// registered as method-scoped patterns so mux precedence correctly
-// prefers literal segments over the {id} wildcard.
+// (/available, /scan-levels, /levels, /{id}/gain) are registered as
+// method-scoped patterns so mux precedence correctly prefers literal
+// segments over the {id} wildcard.
 //
 // Operation IDs used in the swag annotation blocks below are frozen
 // against the constants in pkg/webapi/docs/op_ids.go. The
@@ -24,7 +24,6 @@ func (s *Server) registerAudioDevices(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/audio-devices/available", s.listAvailableAudioDevices)
 	mux.HandleFunc("POST /api/audio-devices/scan-levels", s.scanAudioDeviceLevels)
 	mux.HandleFunc("GET /api/audio-devices/levels", s.getAudioDeviceLevels)
-	mux.HandleFunc("POST /api/audio-devices/{id}/test-tone", s.playTestTone)
 	mux.HandleFunc("PUT /api/audio-devices/{id}/gain", s.setAudioDeviceGain)
 	mux.HandleFunc("GET /api/audio-devices/{id}", s.getAudioDevice)
 	mux.HandleFunc("PUT /api/audio-devices/{id}", s.updateAudioDevice)
@@ -264,50 +263,6 @@ func (s *Server) getAudioDeviceLevels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.bridge.GetAllDeviceLevels())
 }
 
-// playTestTone plays a 1 kHz test tone on the specified output device
-// for a fixed duration. Fails with 400 if the device is an input
-// device, 404 if the device id is unknown, 503 if the bridge is not
-// wired, and 500 if the bridge IPC call fails.
-//
-// @Summary  Play test tone on audio device
-// @Tags     audio-devices
-// @ID       playTestTone
-// @Produce  json
-// @Param    id  path     int true "Audio device id"
-// @Success  200 {object} dto.TestToneResponse
-// @Failure  400 {object} webtypes.ErrorResponse
-// @Failure  404 {object} webtypes.ErrorResponse
-// @Failure  500 {object} webtypes.ErrorResponse
-// @Failure  503 {object} webtypes.ErrorResponse
-// @Security CookieAuth
-// @Router   /audio-devices/{id}/test-tone [post]
-func (s *Server) playTestTone(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(r.PathValue("id"))
-	if err != nil {
-		badRequest(w, "invalid id")
-		return
-	}
-	if s.bridge == nil {
-		writeJSON(w, http.StatusServiceUnavailable, webtypes.ErrorResponse{Error: "bridge not available"})
-		return
-	}
-	dev, err := s.store.GetAudioDevice(r.Context(), id)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, webtypes.ErrorResponse{Error: "device not found"})
-		return
-	}
-	if dev.Direction != "output" {
-		badRequest(w, "test tone only supported on output devices")
-		return
-	}
-	deviceName := audioDeviceName(dev)
-	if err := s.bridge.PlayTestTone(r.Context(), id, deviceName, dev.SampleRate, dev.Channels); err != nil {
-		s.internalError(w, r, "play test tone", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, dto.TestToneResponse{Status: "ok"})
-}
-
 // setAudioDeviceGain updates the software gain for a device and pushes
 // the new value live to the modem (so the operator hears the change
 // immediately without a full reconfig). The persisted value is used by
@@ -365,12 +320,4 @@ func (s *Server) setAudioDeviceGain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, dto.AudioDeviceFromModel(*dev))
-}
-
-// audioDeviceName picks the cpal device name from an AudioDevice.
-func audioDeviceName(d *configstore.AudioDevice) string {
-	if d.SourcePath != "" {
-		return d.SourcePath
-	}
-	return d.Name
 }

@@ -56,8 +56,26 @@ func (o *IgateOutput) SendPacket(_ context.Context, pkt *aprs.DecodedAPRSPacket)
 	if ig == nil {
 		return nil
 	}
-	ig.gateRFToIS(pkt)
+	_ = ig.gateRFToIS(pkt)
 	return nil
+}
+
+// GateClientTx runs the same RF→IS gate pipeline as SendPacket and
+// returns the outcome reason so the caller can log per-packet
+// visibility. Used by the kiss-modem gate hook in pkg/app to surface
+// which branch fired for a connected KISS client's transmission. When
+// the iGate is disabled or the output is uninitialized, returns the
+// sentinel reasons "no-output" / "igate-disabled" rather than a real
+// gating outcome.
+func (o *IgateOutput) GateClientTx(_ context.Context, pkt *aprs.DecodedAPRSPacket) GateReason {
+	if o == nil {
+		return GateReason("no-output")
+	}
+	ig := o.ig.Load()
+	if ig == nil {
+		return GateReason("igate-disabled")
+	}
+	return ig.gateRFToIS(pkt)
 }
 
 // Close is a no-op; the iGate itself owns its lifecycle.

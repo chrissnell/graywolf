@@ -28,15 +28,18 @@ import (
 // PHG extension). PHG occupies the same slot as CSE/SPD and is
 // meaningless for moving stations, so it is only emitted when both
 // course and speed are zero.
-func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, phg string, comment string) string {
+//
+// ambiguity is 0..4 per APRS101 ch 6 table 8; non-zero replaces
+// trailing position digits in the lat/lon bytes with ASCII space.
+// Values outside the range are clamped (see aprs.ApplyLatLonAmbiguity).
+func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, phg string, comment string, ambiguity int) string {
 	if symbolTable == 0 {
 		symbolTable = '/'
 	}
 	if symbolCode == 0 {
 		symbolCode = '-'
 	}
-	latS := encodeLat(lat)
-	lonS := encodeLon(lon)
+	latS, lonS := aprs.ApplyLatLonAmbiguity(encodeLat(lat), encodeLon(lon), ambiguity)
 	prefix := byte('!')
 	if messaging {
 		prefix = '='

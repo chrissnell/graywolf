@@ -151,6 +151,7 @@ func TestScheduler_TrackerFromGPS(t *testing.T) {
 		Delay:   10 * time.Millisecond,
 		Every:   1 * time.Second,
 		Slot:    -1,
+		Format:  "uncompressed",
 		Enabled: true,
 	}})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -190,6 +191,7 @@ func TestScheduler_PositionUseGps(t *testing.T) {
 			UseGps:      useGps,
 			Lat:         lat,
 			Lon:         lon,
+			Format:      "uncompressed",
 			SymbolTable: '/',
 			SymbolCode:  '-',
 			Comment:     "test",

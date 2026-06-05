@@ -94,6 +94,7 @@ pub mod modem_9600;
 pub mod fx25;
 pub mod il2p;
 pub mod tx;
+pub(crate) mod txtest;
 // CM108 HID PTT and USB topology enumeration depend on hidapi / nusb,
 // which require host-OS facilities (libudev / IOKit / SetupAPI) that
 // aren't present on Android. The Android target uses different audio

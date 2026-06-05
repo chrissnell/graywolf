@@ -34,32 +34,32 @@ type BeaconRequest struct {
 	SymbolTable   string  `json:"symbol_table"`
 	Symbol        string  `json:"symbol"`
 	Overlay       string  `json:"overlay"`
-	Compress      bool    `json:"compress"`
-	Messaging     bool    `json:"messaging"`
-	Comment       string  `json:"comment"`
-	CommentCmd    string  `json:"comment_cmd"`
-	CustomInfo    string  `json:"custom_info"`
-	ObjectName    string  `json:"object_name"`
-	Power         uint32  `json:"power"`
-	Height        uint32  `json:"height"`
-	Gain          uint32  `json:"gain"`
-	Dir           uint32  `json:"dir"`
-	Freq          string  `json:"freq"`
-	Tone          string  `json:"tone"`
-	FreqOffset    string  `json:"freq_offset"`
-	DelaySeconds  uint32  `json:"delay_seconds"`
-	EverySeconds  uint32  `json:"interval"`
-	SlotSeconds   int32   `json:"slot_seconds"`
-	SmartBeacon   bool    `json:"smart_beacon"`
-	SbFastSpeed   uint32  `json:"sb_fast_speed"`
-	SbSlowSpeed   uint32  `json:"sb_slow_speed"`
-	SbFastRate    uint32  `json:"sb_fast_rate"`
-	SbSlowRate    uint32  `json:"sb_slow_rate"`
-	SbTurnAngle   uint32  `json:"sb_turn_angle"`
-	SbTurnSlope   uint32  `json:"sb_turn_slope"`
-	SbMinTurnTime uint32  `json:"sb_min_turn_time"`
-	SendToAPRSIS  bool    `json:"send_to_aprs_is"`
-	Enabled       bool    `json:"enabled"`
+	PositionFormat string  `json:"position_format"`
+	Messaging      bool    `json:"messaging"`
+	Comment        string  `json:"comment"`
+	CommentCmd     string  `json:"comment_cmd"`
+	CustomInfo     string  `json:"custom_info"`
+	ObjectName     string  `json:"object_name"`
+	Power          uint32  `json:"power"`
+	Height         uint32  `json:"height"`
+	Gain           uint32  `json:"gain"`
+	Dir            uint32  `json:"dir"`
+	Freq           string  `json:"freq"`
+	Tone           string  `json:"tone"`
+	FreqOffset     string  `json:"freq_offset"`
+	DelaySeconds   uint32  `json:"delay_seconds"`
+	EverySeconds   uint32  `json:"interval"`
+	SlotSeconds    int32   `json:"slot_seconds"`
+	SmartBeacon    bool    `json:"smart_beacon"`
+	SbFastSpeed    uint32  `json:"sb_fast_speed"`
+	SbSlowSpeed    uint32  `json:"sb_slow_speed"`
+	SbFastRate     uint32  `json:"sb_fast_rate"`
+	SbSlowRate     uint32  `json:"sb_slow_rate"`
+	SbTurnAngle    uint32  `json:"sb_turn_angle"`
+	SbTurnSlope    uint32  `json:"sb_turn_slope"`
+	SbMinTurnTime  uint32  `json:"sb_min_turn_time"`
+	SendToAPRSIS   bool    `json:"send_to_aprs_is"`
+	Enabled        bool    `json:"enabled"`
 }
 
 // Validate rejects configurations that would cause the scheduler to
@@ -68,6 +68,10 @@ type BeaconRequest struct {
 // coordinates. The Callsign override field is no longer validated here
 // — empty / nil mean "inherit from StationConfig", which is now the
 // canonical source of truth.
+//
+// position_format and ambiguity are also validated against APRS101
+// constraints: ambiguity must be 0..4; only uncompressed and mic_e
+// carry ambiguity bytes, so compressed must keep ambiguity at zero.
 func (r BeaconRequest) Validate() error {
 	switch r.Type {
 	case "position", "igate":
@@ -75,7 +79,36 @@ func (r BeaconRequest) Validate() error {
 			return fmt.Errorf("latitude/longitude required when use_gps is false")
 		}
 	}
+	if r.Type == "position" || r.Type == "tracker" || r.Type == "igate" {
+		switch r.PositionFormat {
+		case "", "compressed":
+			if r.Ambiguity != 0 {
+				return fmt.Errorf("ambiguity must be 0 when position_format is compressed")
+			}
+		case "uncompressed", "mic_e":
+			// fall through to ambiguity range check below
+		default:
+			return fmt.Errorf("position_format must be one of compressed, uncompressed, mic_e (got %q)", r.PositionFormat)
+		}
+		if r.Ambiguity > 4 {
+			return fmt.Errorf("ambiguity must be 0..4 (got %d)", r.Ambiguity)
+		}
+	}
 	return nil
+}
+
+// normalizedFormat returns the position_format value to persist:
+// empty or unknown becomes "compressed" so the DB column never holds a
+// surprise string. Validate() rejects unknown values up front so this
+// helper only papers over the empty-string default the form may emit
+// before client-side defaults bind.
+func (r BeaconRequest) normalizedFormat() string {
+	switch r.PositionFormat {
+	case "compressed", "uncompressed", "mic_e":
+		return r.PositionFormat
+	default:
+		return "compressed"
+	}
 }
 
 // callsignValue resolves the request's pointer callsign into the
@@ -104,7 +137,7 @@ func (r BeaconRequest) ToModel() configstore.Beacon {
 		SymbolTable:   r.SymbolTable,
 		Symbol:        r.Symbol,
 		Overlay:       r.Overlay,
-		Compress:      r.Compress,
+		PositionFormat: r.normalizedFormat(),
 		Messaging:     r.Messaging,
 		Comment:       r.Comment,
 		CommentCmd:    r.CommentCmd,
@@ -163,7 +196,7 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 		SymbolTable:   r.SymbolTable,
 		Symbol:        r.Symbol,
 		Overlay:       r.Overlay,
-		Compress:      r.Compress,
+		PositionFormat: r.normalizedFormat(),
 		Messaging:     r.Messaging,
 		Comment:       r.Comment,
 		CommentCmd:    r.CommentCmd,
@@ -210,8 +243,8 @@ type BeaconResponse struct {
 	SymbolTable   string  `json:"symbol_table"`
 	Symbol        string  `json:"symbol"`
 	Overlay       string  `json:"overlay"`
-	Compress      bool    `json:"compress"`
-	Messaging     bool    `json:"messaging"`
+	PositionFormat string  `json:"position_format"`
+	Messaging      bool    `json:"messaging"`
 	Comment       string  `json:"comment"`
 	CommentCmd    string  `json:"comment_cmd"`
 	CustomInfo    string  `json:"custom_info"`
@@ -254,7 +287,7 @@ func BeaconFromModel(m configstore.Beacon) BeaconResponse {
 		SymbolTable:   m.SymbolTable,
 		Symbol:        m.Symbol,
 		Overlay:       m.Overlay,
-		Compress:      m.Compress,
+		PositionFormat: m.PositionFormat,
 		Messaging:     m.Messaging,
 		Comment:       m.Comment,
 		CommentCmd:    m.CommentCmd,

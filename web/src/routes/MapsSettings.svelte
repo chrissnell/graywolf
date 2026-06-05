@@ -5,6 +5,7 @@
   import { validateCallsign } from '../lib/maps/callsign.js';
   import { downloadsState } from '../lib/maps/downloads-store.svelte.js';
   import { catalogStore } from '../lib/maps/catalog-store.svelte.js';
+  import { localBoundsStore } from '../lib/maps/local-bounds-store.svelte.js';
   import { formatBytes } from '../lib/maps/format-bytes.js';
   import RegionPicker from '../lib/maps/region-picker.svelte';
   import PageHeader from '../components/PageHeader.svelte';
@@ -22,6 +23,7 @@
   onMount(() => {
     mapsState.fetchConfig();
     catalogStore.load();
+    localBoundsStore.load();
     downloadsState.refresh().then(() => {
       if (
         [...downloadsState.items.values()].some(
@@ -259,8 +261,13 @@
         {@const cat = catalogStore.catalog}
         {@const total = cat ? cat.countries.length + cat.provinces.length + cat.states.length : 0}
         <p class="source-offline-hint">
-          Using offline tiles for {downloadsState.completed.size}
-          of {total} region{total === 1 ? '' : 's'}.
+          {#if total > 0}
+            Using offline tiles for {downloadsState.completed.size}
+            of {total} region{total === 1 ? '' : 's'}.
+          {:else}
+            Using offline tiles for {downloadsState.completed.size}
+            region{downloadsState.completed.size === 1 ? '' : 's'}.
+          {/if}
           Areas without offline coverage fall back to online.
         </p>
       {/if}

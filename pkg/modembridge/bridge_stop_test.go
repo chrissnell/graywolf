@@ -11,7 +11,7 @@ import (
 )
 
 // TestBridgeStopCancelsPendingRequests verifies that callers blocked in
-// EnumerateAudioDevices / ScanInputLevels / PlayTestTone are unblocked with
+// EnumerateAudioDevices / ScanInputLevels are unblocked with
 // errBridgeStopped when the supervisor closes their dispatch channels,
 // instead of waiting out the 5s / 30s per-call timeout.
 //
@@ -40,9 +40,11 @@ func TestBridgeStopCancelsPendingRequests(t *testing.T) {
 			},
 		},
 		{
-			name: "PlayTestTone",
+			name: "TransmitTestSignal",
 			call: func(b *Bridge) error {
-				return b.PlayTestTone(context.Background(), 0, "fake", 48000, 1)
+				return b.TransmitTestSignal(context.Background(), TestSignalParams{
+					Channel: 0, Kind: 1, FreqAHz: 1200, DurationMs: 100,
+				})
 			},
 		},
 	}
@@ -79,7 +81,7 @@ func TestBridgeStopCancelsPendingRequests(t *testing.T) {
 }
 
 // TestBridgeStopClosesDispatchers verifies that closePendingRequests marks
-// the three dispatchers closed so a caller that races past the
+// the two dispatchers closed so a caller that races past the
 // StateRunning fast-path check sees a closed channel from Register and
 // rejects itself instead of leaking an entry into a dispatcher that will
 // never be drained again.
@@ -89,16 +91,16 @@ func TestBridgeStopClosesDispatchers(t *testing.T) {
 	// Register a pending entry in each dispatcher directly so we can
 	// observe that Close drains them.
 	_, enumCh := b.enumDispatcher.Register()
-	_, toneCh := b.toneDispatcher.Register()
 	_, scanCh := b.scanDispatcher.Register()
+	_, testSignalCh := b.testSignalDispatcher.Register()
 
 	b.closePendingRequests()
 
 	// Every waiting channel should receive a zero value (closed channel).
 	for name, ch := range map[string]<-chan any{
-		"enum": adaptPbAudioDeviceList(enumCh),
-		"tone": adaptPbTestToneResult(toneCh),
-		"scan": adaptPbInputLevelScanResult(scanCh),
+		"enum":       adaptPbAudioDeviceList(enumCh),
+		"scan":       adaptPbInputLevelScanResult(scanCh),
+		"testsignal": adaptPbTestSignalResult(testSignalCh),
 	} {
 		select {
 		case v, ok := <-ch:
@@ -111,7 +113,7 @@ func TestBridgeStopClosesDispatchers(t *testing.T) {
 	}
 }
 
-// The three tiny adapters below widen the typed dispatcher reply channels
+// The two tiny adapters below widen the typed dispatcher reply channels
 // to <-chan any so the preceding table-driven test can share one select.
 func adaptPbAudioDeviceList(c <-chan *pb.AudioDeviceList) <-chan any {
 	out := make(chan any, 1)
@@ -124,7 +126,7 @@ func adaptPbAudioDeviceList(c <-chan *pb.AudioDeviceList) <-chan any {
 	}()
 	return out
 }
-func adaptPbTestToneResult(c <-chan *pb.TestToneResult) <-chan any {
+func adaptPbInputLevelScanResult(c <-chan *pb.InputLevelScanResult) <-chan any {
 	out := make(chan any, 1)
 	go func() {
 		v, ok := <-c
@@ -135,7 +137,7 @@ func adaptPbTestToneResult(c <-chan *pb.TestToneResult) <-chan any {
 	}()
 	return out
 }
-func adaptPbInputLevelScanResult(c <-chan *pb.InputLevelScanResult) <-chan any {
+func adaptPbTestSignalResult(c <-chan *pb.TestSignalResult) <-chan any {
 	out := make(chan any, 1)
 	go func() {
 		v, ok := <-c
@@ -165,7 +167,7 @@ func TestBridgeRegistrationAfterStopRejects(t *testing.T) {
 	if _, err := b.ScanInputLevels(context.Background()); !errors.Is(err, errBridgeStopped) {
 		t.Errorf("ScanInputLevels err = %v, want errBridgeStopped", err)
 	}
-	if err := b.PlayTestTone(context.Background(), 0, "x", 48000, 1); !errors.Is(err, errBridgeStopped) {
-		t.Errorf("PlayTestTone err = %v, want errBridgeStopped", err)
+	if err := b.TransmitTestSignal(context.Background(), TestSignalParams{}); !errors.Is(err, errBridgeStopped) {
+		t.Errorf("TransmitTestSignal err = %v, want errBridgeStopped", err)
 	}
 }

@@ -24,7 +24,6 @@
   let deleteAffectedChannels = $state([]);
   let deleteCascadeAcked = $state(false);
   let deviceLevels = $state({});
-  let testingTone = $state(null);
   let gainTimers = {};
   let isWindows = $state(false);
 
@@ -61,18 +60,6 @@
     try {
       deviceLevels = await api.get('/audio-devices/levels') || {};
     } catch (_) {}
-  }
-
-  async function playTestTone(dev) {
-    testingTone = dev.id;
-    try {
-      await api.post(`/audio-devices/${dev.id}/test-tone`);
-      toasts.success(`Test tone played on "${dev.name}"`);
-    } catch (err) {
-      toasts.error(`Test tone failed: ${err.message}`);
-    } finally {
-      testingTone = null;
-    }
   }
 
   // Slider operates directly in dB: -60 to +12
@@ -407,15 +394,6 @@
           </div>
         </div>
         <div class="device-actions">
-          {#if dev.direction === 'output'}
-            <Button
-              variant="ghost"
-              onclick={() => playTestTone(dev)}
-              disabled={testingTone === dev.id}
-            >
-              {testingTone === dev.id ? 'Playing...' : 'Test Tone'}
-            </Button>
-          {/if}
           <Button variant="ghost" onclick={() => openEdit(dev)}>Edit</Button>
           <Button variant="danger" onclick={() => confirmDelete(dev)}>Delete</Button>
         </div>

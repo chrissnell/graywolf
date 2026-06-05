@@ -54,7 +54,7 @@ func TestManager_HappyPath(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/georgia"); err != nil {
+	if err := mgr.Start(context.Background(), "state/georgia", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,10 +97,10 @@ func TestManager_AlreadyInflight(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/texas"); err != nil {
+	if err := mgr.Start(context.Background(), "state/texas", nil); err != nil {
 		t.Fatal(err)
 	}
-	err := mgr.Start(context.Background(), "state/texas")
+	err := mgr.Start(context.Background(), "state/texas", nil)
 	if !errors.Is(err, ErrAlreadyInflight) {
 		t.Fatalf("expected ErrAlreadyInflight, got %v", err)
 	}
@@ -113,7 +113,7 @@ func TestManager_DeleteDuringActiveDownload(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/ohio"); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio", nil); err != nil {
 		t.Fatal(err)
 	}
 	// Give the goroutine a moment to start the request
@@ -138,7 +138,7 @@ func TestManager_BadUpstreamStatus(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/florida"); err != nil {
+	if err := mgr.Start(context.Background(), "state/florida", nil); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -180,7 +180,7 @@ func TestManager_RetryAfterError(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	_ = mgr.Start(context.Background(), "state/ohio")
+	_ = mgr.Start(context.Background(), "state/ohio", nil)
 	// Wait for first attempt to fail
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -192,7 +192,7 @@ func TestManager_RetryAfterError(t *testing.T) {
 	}
 
 	// Second attempt
-	if err := mgr.Start(context.Background(), "state/ohio"); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio", nil); err != nil {
 		t.Fatal(err)
 	}
 	deadline = time.Now().Add(2 * time.Second)
@@ -334,5 +334,124 @@ func TestPathFor(t *testing.T) {
 		if got := m.PathFor(tc.slug); got != tc.want {
 			t.Errorf("PathFor(%q) = %q, want %q", tc.slug, got, tc.want)
 		}
+	}
+}
+
+// silentUpstream returns 500 so any download spawned by Start() fails
+// fast — bbox-persistence tests only need to observe the initial row
+// upsert, not a completed transfer.
+func silentUpstream() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }
+}
+
+func TestStart_SnapshotsBBoxIntoFirstRow(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	bbox := [4]float64{-109.05, 36.99, -102.04, 41.0}
+	if err := mgr.Start(ctx, "state/colorado", &bbox); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	row, err := store.GetMapsDownload(ctx, "state/colorado")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if row.BBox == nil {
+		t.Fatalf("expected bbox to be persisted, got NULL")
+	}
+	want := `[-109.05,36.99,-102.04,41]`
+	if *row.BBox != want {
+		t.Fatalf("bbox: got %q want %q", *row.BBox, want)
+	}
+}
+
+func TestStart_NilBBoxLeavesColumnNull(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	if err := mgr.Start(ctx, "state/wyoming", nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	row, err := store.GetMapsDownload(ctx, "state/wyoming")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if row.BBox != nil {
+		t.Fatalf("expected NULL bbox, got %q", *row.BBox)
+	}
+}
+
+func TestBackfillBBoxes_FillsNullForCompletedRows(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	// Seed a completed row without a bbox and write a fake archive at
+	// the path the manager expects.
+	if err := store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+		Slug: "state/colorado", Status: "complete",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	archive := mgr.PathFor("state/colorado")
+	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	hdr := buildPMTilesV3Header(t, -109.05, 36.99, -102.04, 41.0)
+	if err := os.WriteFile(archive, hdr, 0o644); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	if err := mgr.BackfillBBoxes(ctx); err != nil {
+		t.Fatalf("BackfillBBoxes: %v", err)
+	}
+	row, _ := store.GetMapsDownload(ctx, "state/colorado")
+	if row.BBox == nil {
+		t.Fatalf("bbox still NULL after backfill")
+	}
+	want := `[-109.05,36.99,-102.04,41]`
+	if *row.BBox != want {
+		t.Fatalf("bbox: got %q want %q", *row.BBox, want)
+	}
+}
+
+func TestBackfillBBoxes_LeavesPopulatedRowsAlone(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	existing := `[1,2,3,4]`
+	if err := store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+		Slug: "state/colorado", Status: "complete", BBox: &existing,
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// No archive on disk -- if backfill tried to read it, it would
+	// log a warning. The bbox value being unchanged proves the
+	// populated row was skipped without an archive read.
+	if err := mgr.BackfillBBoxes(ctx); err != nil {
+		t.Fatalf("BackfillBBoxes: %v", err)
+	}
+	row, _ := store.GetMapsDownload(ctx, "state/colorado")
+	if row.BBox == nil || *row.BBox != existing {
+		t.Fatalf("expected bbox %q preserved, got %v", existing, row.BBox)
+	}
+}
+
+func TestBackfillBBoxes_SkipsMissingArchives(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	if err := store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+		Slug: "state/ghost", Status: "complete",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// No archive on disk. Backfill should log and continue, not error.
+	if err := mgr.BackfillBBoxes(ctx); err != nil {
+		t.Fatalf("BackfillBBoxes returned error on missing archive: %v", err)
+	}
+	row, _ := store.GetMapsDownload(ctx, "state/ghost")
+	if row.BBox != nil {
+		t.Fatalf("expected bbox to remain NULL for missing archive, got %q", *row.BBox)
 	}
 }

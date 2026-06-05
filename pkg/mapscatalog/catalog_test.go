@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -127,5 +130,61 @@ func TestGet_AppendsToken(t *testing.T) {
 	q, _ := seenQuery.Load().(string)
 	if q != "t=abc123" {
 		t.Fatalf("expected t=abc123, got %q", q)
+	}
+}
+
+func TestNew_LoadsDiskCacheWhenPresent(t *testing.T) {
+	dir := t.TempDir()
+	contents := `{"schemaVersion":1,"generatedAt":"2026-05-01","countries":[],"provinces":[],"states":[{"slug":"colorado","name":"Colorado","sizeBytes":100,"sha256":"x","bbox":[-109,37,-102,41]}]}`
+	if err := os.WriteFile(filepath.Join(dir, "catalog.json"), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	// Upstream that returns 500 -- forces stale-on-error path.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer upstream.Close()
+
+	c := NewWithDiskCache(upstream.URL, func(context.Context) string { return "" }, time.Hour, dir)
+	got, err := c.Get(context.Background())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(got.States) != 1 || got.States[0].Slug != "colorado" {
+		t.Fatalf("expected colorado from disk cache, got %+v", got.States)
+	}
+}
+
+func TestFetch_WritesDiskCacheOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"schemaVersion":1,"generatedAt":"x","countries":[],"provinces":[],"states":[{"slug":"utah","name":"Utah","sizeBytes":1,"sha256":"x"}]}`))
+	}))
+	defer upstream.Close()
+
+	c := NewWithDiskCache(upstream.URL, func(context.Context) string { return "" }, time.Hour, dir)
+	if _, err := c.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(dir, "catalog.json"))
+	if err != nil {
+		t.Fatalf("read disk cache: %v", err)
+	}
+	if !strings.Contains(string(b), `"utah"`) {
+		t.Fatalf("disk cache missing utah: %s", string(b))
+	}
+}
+
+func TestNew_NoDiskCacheStillFunctions(t *testing.T) {
+	// Existing call site behavior: New() with no disk cache still works.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"schemaVersion":1,"generatedAt":"x","countries":[],"provinces":[],"states":[]}`))
+	}))
+	defer upstream.Close()
+	c := New(upstream.URL, func(context.Context) string { return "" }, time.Hour)
+	if _, err := c.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
 	}
 }

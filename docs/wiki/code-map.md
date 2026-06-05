@@ -32,8 +32,9 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | FLAC test vector playback | `audio/flac.rs` |
 | Stdin raw i16 PCM | `audio/stdin_raw.rs` |
 | SDR UDP audio bridge | `sdr/mod.rs` |
-| Modem orchestration | `modem/mod.rs` |
+| Modem orchestration + `TransmitTestSignal` / `TestSignalResult` IPC handler (`handle_transmit_test_signal`) | `modem/mod.rs` |
 | TX worker thread (owns sinks + PTT) | `modem/tx_worker.rs` |
+| CW / tone PCM synthesis for TX test signals | `txtest.rs` |
 | PTT method enum + factory | `tx/ptt.rs` |
 | Serial RTS/DTR PTT (Unix `ioctl(TIOCMSET)`) | `tx/ptt_unix.rs` |
 | Serial PTT (Windows `EscapeCommFunction`) | `tx/ptt_win.rs` |
@@ -59,13 +60,13 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | `ax25conn` | LAPB v2.0 (mod-8) + mod-128 data-link state machine. Outbound-only client; SABME -> DM(F=1) auto-falls-back to SABM. Per-session goroutine over (local, peer, channel); RX dispatched from `pkg/app/rxfanout.go`, TX through `pkg/txgovernor`. CONNECTED state emits an `OutLinkStats` snapshot at 1Hz via `statsTick` for the telemetry side panel. Behavioral edge cases attributed to Linux `net/ax25/` (v6.12) and ax25-tools — per-state kernel-source citations in [`pkg/ax25conn/CREDITS.md`](../../pkg/ax25conn/CREDITS.md). | `session.go`, `manager.go`, `transitions_*.go`, `control.go`, `frame.go`, `timers.go`, `heartbeat.go`, `stats_tick_test.go`, `events.go`, `state.go`, `defaults.go` |
 | `ax25termws` | One-bridge-per-WebSocket glue between `pkg/ax25conn.Manager` and the `/api/ax25/terminal` endpoint. JSON envelopes: `connect`, `data`, `disconnect`, `abort`, `transcript_set`, `raw_tail_subscribe`/`raw_tail_unsubscribe` C→S; `state`, `data_rx`, `link_stats`, `error`, `raw_tail` S→C. `data_rx` uses a blocking send so the LAPB window propagates back-pressure into the peer; control envelopes use non-blocking sends with drop+warn. The bridge optionally adapts a `TranscriptRecorder` and a `*packetlog.Log` for raw-tail mode. | `envelope.go`, `bridge.go` |
 | `aprs` | APRS info-field parsing (positions, messages, weather, telemetry, mic-e, plus assorted extensions -- see [glossary.md](glossary.md)) | `parse.go`, `position.go`, `mice.go`, `message.go`, `weather.go`, ... |
-| `kiss` | KISS framing + TCP server + TCP client + serial supervisor + multi-port manager + tx queue + ratelimit | `framing.go`, `server.go`, `client.go`, `serial.go`, `manager.go`, `tx_queue.go` |
+| `kiss` | KISS framing + TCP server + TCP client + serial supervisor + multi-port manager + tx queue + ratelimit. Per-interface `gate_tx_to_is` flag, when set on a Mode=modem interface, gates frames accepted by `Sink.Submit` into the iGate's RF→IS path via `Server.OnClientTxAccepted`/`Client.OnClientTxAccepted` (wired from `App.kissClientTxGateToIs`). The flag is inert in Mode=tnc because the RX fanout already feeds the iGate (see `pkg/app/rxfanout.go:107-127`). | `framing.go`, `server.go`, `client.go`, `serial.go`, `manager.go`, `tx_queue.go` |
 | `platformsvc` (USB serial) | Android USB serial open + device enumeration; Go side of the platform UDS serial transport | `pkg/platformsvc/usbserial.go` (`UsbSerialOpen`, `AvailableUsbSerialDevices`), `pkg/platformsvc/serialstream.go` (shared `serialReadWriteCloser` / `openSerialStream` / `SerialError`) |
 | `webapi` (USB serial) | REST endpoint listing connected USB serial devices | `pkg/webapi/kiss_usb.go` (`GET /api/kiss/available-usb-serial-devices`) |
 | `app` (USB serial source) | Build-tag dispatch for the USB serial device source (Android vs. stub) | `pkg/app/usbserialsource_android.go`, `pkg/app/usbserialsource_default.go` |
 | `agw` | AGWPE TCP server (direwolf-compatible subset: R/G/g/k/K/m/X/x/y/Y/V) | `server.go`, `protocol.go` |
 | `ipcproto` | Generated Go bindings for `proto/graywolf.proto` | `graywolf.pb.go` (regen via `make proto`) |
-| `modembridge` | Supervises Rust modem child + IPC state machine + dispatcher + status cache + DCD publisher | `bridge.go`, `supervisor.go`, `ipc_unix.go`, `ipc_windows.go`, `dispatcher.go`, `session.go`, `status_cache.go` |
+| `modembridge` | Supervises Rust modem child + IPC state machine + dispatcher + status cache + DCD publisher. `Bridge.TransmitTestSignal` sends the `TransmitTestSignal` IPC message and returns a `TestSignalResult`. | `bridge.go`, `supervisor.go`, `ipc_unix.go`, `ipc_windows.go`, `dispatcher.go`, `session.go`, `status_cache.go` |
 | `txgovernor` | Centralized TX gate: per-channel rate limits, dedup, priority queue | `governor.go`, `pqueue.go`, `sink.go` |
 
 See [`../handbook/kiss.html`](../handbook/kiss.html), [`../handbook/agwpe.html`](../handbook/agwpe.html), [`../handbook/remote-kiss-tnc.html`](../handbook/remote-kiss-tnc.html).
@@ -75,8 +76,9 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 
 | Package | Purpose | Handbook |
 |---|---|---|
-| `beacon` | Position/object/tracker/custom/igate beacon scheduler (min-heap), smart-beacon, encoder | [`../handbook/beacons.html`](../handbook/beacons.html) |
-| `digipeater` | WIDEn-N / TRACEn-N digipeater with preemptive digi and per-channel dedup | [`../handbook/digipeater.html`](../handbook/digipeater.html) |
+| `beacon` | Position/object/tracker/custom/igate beacon scheduler (min-heap), smart-beacon, encoder. Per-beacon `position_format` column ('compressed'\|'uncompressed'\|'mic_e', added in configstore migration 23) selects the wire encoding; uncompressed and Mic-E beacons honor `ambiguity` 0..4 via `aprs.ApplyLatLonAmbiguity` and the K/L/Z destination variants. Encoder entry points: `pkg/beacon/builder.go` switches on `Format`; `PositionInfo` (uncompressed, APRS101 ch 6) and `CompressedPositionInfo` (APRS101 ch 9) live in `pkg/beacon/encoder.go`; `MicEPositionInfo` + `MicEDestination` (APRS101 ch 10) live in `pkg/beacon/mice.go`. Mic-E swaps the AX.25 destination with the lat-derived destination at frame-build time in `scheduler.go`. | [`../handbook/beacons.html`](../handbook/beacons.html) |
+| `digipeater` | WIDEn-N / TRACEn-N digipeater with preemptive digi, per-channel dedup, and a source-address block list (digipeater-only) | [`../handbook/digipeater.html`](../handbook/digipeater.html) |
+| `digipeater/blocklist` | Source-address pattern validator and matcher used only by the digipeater engine | — |
 | `igate` | APRS-IS bidirectional gateway: client/login/filter, RF<->IS gating, third-party encap, TNC2 | [`../handbook/igate.html`](../handbook/igate.html) |
 | `igate/filters` | IS->RF rule engine (priority-ordered, deny by default) | [`../handbook/igate.html`](../handbook/igate.html) |
 | `messages` | APRS messaging domain: router, store (GORM), sender, retry, invite, tactical_set, bots, preferences, event_hub, local_tx_ring, **preflight** (shared auto-ACK + dedup transport, owned by `messages.Service`, consulted by both `messages.Router` and `actions.Classifier`) | [`../handbook/messaging.html`](../handbook/messaging.html) |
@@ -149,6 +151,14 @@ The split is enforced by [invariant 9](invariants.md).
 | UI | `web/src/routes/Channels.svelte` shows mode selector + badge; `web/src/routes/MessagesSettings.svelte` shows messages TX-channel selector filtered to non-packet channels. |
 
 See [invariant 23](invariants.md) for the TX-gating contract.
+
+### Channel TX test signal
+
+| Surface | Where |
+|---|---|
+| REST endpoint | `pkg/webapi/channels.go` -- `sendTestSignal` handles `POST /api/channels/{id}/test-tx`; validates callsign before IPC (see [invariant 39](invariants.md)). |
+| Go bridge call | `pkg/modembridge` -- `Bridge.TransmitTestSignal` sends the `TransmitTestSignal` proto message and returns `TestSignalResult`. |
+| Rust handler | `graywolf-modem/src/modem/mod.rs` -- `handle_transmit_test_signal` dispatches to `graywolf-modem/src/txtest.rs` for PCM synthesis. |
 
 ## Go service: web
 
@@ -225,8 +235,20 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 |---|---|
 | Auth registration + bearer token | [`../../pkg/mapsauth/client.go`](../../pkg/mapsauth/client.go) |
 | Tile cache (PMTiles, atomic writes) | [`../../pkg/mapscache/manager.go`](../../pkg/mapscache/manager.go), `atomic_writer.go` |
+| PMTiles v3 header bbox reader (used by the startup backfill) | [`../../pkg/mapscache/pmtiles_header.go`](../../pkg/mapscache/pmtiles_header.go) |
+| Render-path bounds (offline-safe; reads `maps_downloads.bbox`, no remote dep) | [`../../pkg/webapi/local_bounds.go`](../../pkg/webapi/local_bounds.go) (`GET /api/maps/local-bounds`) |
+| Catalog fetcher + disk fallback for the region picker | [`../../pkg/mapscatalog/catalog.go`](../../pkg/mapscatalog/catalog.go) (`NewWithDiskCache` writes/reads `<TileCacheDir>/catalog.json`) |
+| Style/glyph/sprite/shields/tiles.json pull-through cache, served at `/api/maps/style/{path}` | [`../../pkg/mapsstyle/`](../../pkg/mapsstyle/) |
 | Web-side glue | `web/src/lib/maps/`, `web/src/routes/MapsSettings.svelte` |
+| Web local-bounds store (consumed by gw-tile protocol) | `web/src/lib/maps/local-bounds-store.svelte.js` |
 | Map render | `web/src/lib/map/`, `web/src/routes/LiveMapV2.svelte` |
+
+The render path (the `gw-tile://` MapLibre protocol) reads bounds from
+`/api/maps/local-bounds`, NOT the catalog. This is what lets the map
+serve already-downloaded regions on a host that has never reached
+maps.nw5w.com in the current boot. The picker still reads the catalog
+(via `/api/maps/catalog`), with a disk fallback so the operator sees
+the last-known region list when offline.
 
 PMTiles infrastructure (manifest gen, R2 sync, Cloudflare Worker) is in
 `~/dev/graywolf-maps`, not here. See [invariant 7](invariants.md).

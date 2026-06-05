@@ -168,3 +168,36 @@ func TestParseNeverPanics(t *testing.T) {
 		}()
 	}
 }
+
+func TestApplyLatLonAmbiguity(t *testing.T) {
+	const lat = "3724.55N"
+	const lon = "12208.42W"
+	cases := []struct {
+		level   int
+		wantLat string
+		wantLon string
+	}{
+		{0, "3724.55N", "12208.42W"},
+		{1, "3724.5 N", "12208.4 W"},
+		{2, "3724.  N", "12208.  W"},
+		{3, "372 .  N", "1220 .  W"},
+		{4, "37  .  N", "122  .  W"},
+	}
+	for _, tc := range cases {
+		gotLat, gotLon := ApplyLatLonAmbiguity(lat, lon, tc.level)
+		if gotLat != tc.wantLat {
+			t.Errorf("level %d: lat=%q want %q", tc.level, gotLat, tc.wantLat)
+		}
+		if gotLon != tc.wantLon {
+			t.Errorf("level %d: lon=%q want %q", tc.level, gotLon, tc.wantLon)
+		}
+	}
+	gotLat, gotLon := ApplyLatLonAmbiguity(lat, lon, 99)
+	if gotLat != "37  .  N" || gotLon != "122  .  W" {
+		t.Errorf("clamp: got lat=%q lon=%q", gotLat, gotLon)
+	}
+	gotLat, gotLon = ApplyLatLonAmbiguity(lat, lon, -3)
+	if gotLat != lat || gotLon != lon {
+		t.Errorf("negative: got lat=%q lon=%q", gotLat, gotLon)
+	}
+}

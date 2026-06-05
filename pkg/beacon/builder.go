@@ -14,6 +14,14 @@ import (
 // nothing in here touches scheduler state beyond the GPS cache and the
 // version string used for {{version}} expansion.
 func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
+	// Clamp ambiguity at the encoder boundary. The DTO is the primary
+	// guard; this is the belt-and-suspenders backstop for hand-edited
+	// SQL rows where ambiguity could be set out of range.
+	if b.Ambiguity > 4 {
+		s.logger.Warn("beacon ambiguity out of range; clamping to 4",
+			"id", b.ID, "type", b.Type, "ambiguity", b.Ambiguity)
+		b.Ambiguity = 4
+	}
 	comment := ExpandComment(b.Comment, s.version)
 	if len(b.CommentCmd) > 0 {
 		out, err := RunCommentCmd(ctx, b.CommentCmd, 5*time.Second)
@@ -60,10 +68,19 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		} else if lat == 0 && lon == 0 {
 			return "", fmt.Errorf("%s beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)", b.Type)
 		}
-		if b.Compress {
+		switch b.Format {
+		case "compressed", "":
 			return CompressedPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment), nil
+		case "uncompressed":
+			return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment, b.Ambiguity), nil
+		case "mic_e":
+			if phg != "" {
+				s.logger.Debug("PHG dropped from Mic-E beacon (no slot in wire format)", "id", b.ID, "type", b.Type)
+			}
+			return MicEPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, b.Ambiguity, comment), nil
+		default:
+			return "", fmt.Errorf("%s beacon: unknown position_format %q", b.Type, b.Format)
 		}
-		return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment), nil
 
 	case TypeTracker:
 		if s.cache == nil {
@@ -85,10 +102,16 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 			altM = fix.Altitude
 		}
 		// Trackers never emit PHG — CSE/SPD occupies the same slot.
-		if b.Compress {
+		switch b.Format {
+		case "compressed", "":
 			return CompressedPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment), nil
+		case "uncompressed":
+			return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment, b.Ambiguity), nil
+		case "mic_e":
+			return MicEPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, b.Ambiguity, comment), nil
+		default:
+			return "", fmt.Errorf("tracker beacon: unknown position_format %q", b.Format)
 		}
-		return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment), nil
 
 	case TypeObject:
 		if b.ObjectName == "" {

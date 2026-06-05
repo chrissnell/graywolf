@@ -128,12 +128,6 @@ func (r AudioDeviceSetGainRequest) Validate() error {
 	return nil
 }
 
-// TestToneResponse is the body returned by POST /api/audio-devices/{id}/test-tone
-// on success. Preserves the pre-typed `{"status":"ok"}` wire shape.
-type TestToneResponse struct {
-	Status string `json:"status"`
-}
-
 // AudioDeviceLevelsResponse is the body returned by
 // GET /api/audio-devices/levels — a map from device id to the latest
 // cached peak/rms/clipping measurement. Swag cannot render a keyed

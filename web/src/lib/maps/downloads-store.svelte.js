@@ -7,10 +7,15 @@
 // through unchanged.
 
 import { toasts } from '../stores.js';
+import { localBoundsStore } from './local-bounds-store.svelte.js';
 
 export const downloadsState = (() => {
   let items = $state(new Map()); // slug -> {state, bytes_total, bytes_downloaded, downloaded_at, error_message}
   let pollHandle = null;
+  // Tracks the previous count of completed rows so a transition
+  // into 'complete' triggers a single local-bounds refresh -- the
+  // new region must be renderable without a page reload.
+  let prevCompletedSize = 0;
 
   async function refresh() {
     try {
@@ -21,6 +26,11 @@ export const downloadsState = (() => {
       const next = new Map();
       for (const r of arr) next.set(r.slug, r);
       items = next;
+      const completedNow = [...next.values()].filter((v) => v.state === 'complete').length;
+      if (completedNow !== prevCompletedSize) {
+        prevCompletedSize = completedNow;
+        localBoundsStore.refresh();
+      }
     } catch {
       // Silent -- toasts on user-initiated actions, not background polls.
     }

@@ -1,5 +1,5 @@
 <script>
-  import { Badge, Button } from '@chrissnell/chonky-ui';
+  import { Badge, Button, DropdownMenu } from '@chrissnell/chonky-ui';
   import {
     healthGlyph,
     healthText,
@@ -14,8 +14,31 @@
     pttState,
     ariaLabel as pttAriaLabel,
   } from '../../lib/channelPtt.js';
+  import { api } from '../../lib/api.js';
+  import { toasts } from '../../lib/stores.js';
 
   let { channel, txTiming, audioDevices = [], onEdit, onDelete } = $props();
+
+  let sendingSignal = $state(false);
+
+  const SIGNAL_LABELS = {
+    cw: 'Send callsign in CW',
+    tone1200: 'Send 1200 Hz tone',
+    tone2400: 'Send 2400 Hz tone',
+    alt: 'Send 1200/2400 Hz alternating tone',
+  };
+
+  async function sendTestSignal(signal) {
+    sendingSignal = true;
+    try {
+      await api.post(`/channels/${channel.id}/test-tx`, { signal });
+      toasts.success(`Sent "${SIGNAL_LABELS[signal]}" on "${channel.name}"`);
+    } catch (err) {
+      toasts.error(`Test TX failed: ${err.message}`);
+    } finally {
+      sendingSignal = false;
+    }
+  }
 
   let isKissOnly = $derived(channel.input_device_id == null);
 
@@ -136,6 +159,20 @@
   </div>
 
   <div class="channel-actions">
+    {#if !isKissOnly && channel.output_device_id && channel.output_device_id !== 0}
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
+          <Button variant="ghost" disabled={sendingSignal}>
+            {sendingSignal ? 'Sending…' : 'Test TX ▾'}
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content>
+          {#each Object.entries(SIGNAL_LABELS) as [sig, label]}
+            <DropdownMenu.Item onSelect={() => sendTestSignal(sig)}>{label}</DropdownMenu.Item>
+          {/each}
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+    {/if}
     <Button variant="ghost" onclick={() => onEdit?.(channel)}>Edit</Button>
     <Button variant="danger" onclick={() => onDelete?.(channel)}>Delete</Button>
   </div>

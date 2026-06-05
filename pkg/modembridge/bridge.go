@@ -5,7 +5,7 @@
 //   - supervisor owns the child process lifecycle and stdout ring buffer.
 //   - ipcLoop owns per-session framing-level send/recv.
 //   - dispatcher correlates request IDs with reply channels for the
-//     three request/response IPC exchanges.
+//     two request/response IPC exchanges.
 //   - dcdPublisher fans out DcdChange events with slow-subscriber drop
 //     accounting.
 //   - statusCache holds per-channel stats and per-device audio levels,
@@ -85,10 +85,10 @@ type Bridge struct {
 	// on every supervise iteration.
 	status *statusCache
 
-	// Three request/response dispatchers, one per IPC exchange kind.
-	enumDispatcher *dispatcher[*pb.AudioDeviceList]
-	toneDispatcher *dispatcher[*pb.TestToneResult]
-	scanDispatcher *dispatcher[*pb.InputLevelScanResult]
+	// Two request/response dispatchers, one per IPC exchange kind.
+	enumDispatcher       *dispatcher[*pb.AudioDeviceList]
+	scanDispatcher       *dispatcher[*pb.InputLevelScanResult]
+	testSignalDispatcher *dispatcher[*pb.TestSignalResult]
 
 	// pttWatchdog auto-unkeys channels whose manual PTT has been held
 	// longer than 10s without a heartbeat.
@@ -126,14 +126,14 @@ func New(cfg Config) *Bridge {
 	}
 	pub := newDcdPublisher(cfg.Logger, dcdDropHook)
 	b := &Bridge{
-		cfg:            cfg,
-		logger:         cfg.Logger,
-		frames:         make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
-		dcd:            pub,
-		status:         newStatusCache(),
-		enumDispatcher: newDispatcher[*pb.AudioDeviceList](),
-		toneDispatcher: newDispatcher[*pb.TestToneResult](),
-		scanDispatcher: newDispatcher[*pb.InputLevelScanResult](),
+		cfg:                  cfg,
+		logger:               cfg.Logger,
+		frames:               make(chan *pb.ReceivedFrame, cfg.FrameBufferSize),
+		dcd:                  pub,
+		status:               newStatusCache(),
+		enumDispatcher:       newDispatcher[*pb.AudioDeviceList](),
+		scanDispatcher:       newDispatcher[*pb.InputLevelScanResult](),
+		testSignalDispatcher: newDispatcher[*pb.TestSignalResult](),
 	}
 	// pttWatchdog auto-unkeys channels after 10s of no heartbeat. The
 	// unkey closure captures b so it can call ManualPtt(ch, false)
@@ -197,8 +197,8 @@ func (b *Bridge) Stop() {
 // bound to Start/Stop rather than scattered across individual pieces.
 func (b *Bridge) supervise(ctx context.Context) {
 	b.enumDispatcher.Reset()
-	b.toneDispatcher.Reset()
 	b.scanDispatcher.Reset()
+	b.testSignalDispatcher.Reset()
 	b.status.Reset()
 	// Cancel any watchdog timers left over from a prior session so a
 	// stale timer can't fire an auto-unkey into a freshly-spawned modem
@@ -216,15 +216,15 @@ func (b *Bridge) supervise(ctx context.Context) {
 	b.sup.Run(ctx)
 }
 
-// closePendingRequests closes every reply channel in the three dispatchers
+// closePendingRequests closes every reply channel in the two dispatchers
 // so callers blocked in their per-call select unblock immediately. Must
 // only be invoked from supervise()'s defer chain; at that point the
 // session goroutine has already returned, so no Deliver is in flight
 // and double-close is impossible.
 func (b *Bridge) closePendingRequests() {
 	b.enumDispatcher.Close()
-	b.toneDispatcher.Close()
 	b.scanDispatcher.Close()
+	b.testSignalDispatcher.Close()
 }
 
 // State returns the current supervisor state.
@@ -364,7 +364,7 @@ func (b *Bridge) GetAllDeviceLevels() map[uint32]*DeviceLevel {
 
 // updateStatusCache and updateDeviceLevelCache are called by dispatchIPC
 // when StatusUpdate / DeviceLevelUpdate messages arrive.
-func (b *Bridge) updateStatusCache(s *pb.StatusUpdate)       { b.status.UpdateStatus(s) }
+func (b *Bridge) updateStatusCache(s *pb.StatusUpdate)           { b.status.UpdateStatus(s) }
 func (b *Bridge) updateDeviceLevelCache(u *pb.DeviceLevelUpdate) { b.status.UpdateDeviceLevel(u) }
 
 // InjectSendFnForTest installs a fake send function so tests can capture

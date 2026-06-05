@@ -236,23 +236,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/audio-devices/{id}/test-tone": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Play test tone on audio device */
-        post: operations["playTestTone"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -555,6 +538,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/{id}/test-tx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a TX test signal (CW callsign or tone) on a channel */
+        post: operations["sendTestSignal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/digipeater": {
         parameters: {
             query?: never;
@@ -568,6 +568,42 @@ export interface paths {
         put: operations["updateDigipeaterConfig"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/digipeater/blocklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List digipeater blocklist entries */
+        get: operations["listDigipeaterBlocklist"];
+        put?: never;
+        /** Create digipeater blocklist entry */
+        post: operations["createDigipeaterBlocklist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/digipeater/blocklist/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update digipeater blocklist entry */
+        put: operations["updateDigipeaterBlocklist"];
+        post?: never;
+        /** Delete digipeater blocklist entry */
+        delete: operations["deleteDigipeaterBlocklist"];
         options?: never;
         head?: never;
         patch?: never;
@@ -908,6 +944,40 @@ export interface paths {
         post: operations["startMapsDownload"];
         /** Delete an offline download */
         delete: operations["deleteMapsDownload"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maps/local-bounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the bbox of every completed offline map */
+        get: operations["getMapsLocalBounds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maps/style/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve a cached MapLibre style asset */
+        get: operations["getMapsStyleAsset"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2188,7 +2258,6 @@ export interface components {
             channel?: number;
             comment?: string;
             comment_cmd?: string;
-            compress?: boolean;
             custom_info?: string;
             delay_seconds?: number;
             destination?: string;
@@ -2205,6 +2274,7 @@ export interface components {
             object_name?: string;
             overlay?: string;
             path?: string;
+            position_format?: string;
             power?: number;
             sb_fast_rate?: number;
             sb_fast_speed?: number;
@@ -2229,7 +2299,6 @@ export interface components {
             channel?: number;
             comment?: string;
             comment_cmd?: string;
-            compress?: boolean;
             custom_info?: string;
             delay_seconds?: number;
             destination?: string;
@@ -2247,6 +2316,7 @@ export interface components {
             object_name?: string;
             overlay?: string;
             path?: string;
+            position_format?: string;
             power?: number;
             sb_fast_rate?: number;
             sb_fast_speed?: number;
@@ -2267,6 +2337,17 @@ export interface components {
         "dto.BeaconSendResponse": {
             /** @description "sent" */
             status?: string;
+        };
+        "dto.BlocklistEntryRequest": {
+            enabled?: boolean;
+            pattern?: string;
+            reason?: string;
+        };
+        "dto.BlocklistEntryResponse": {
+            enabled?: boolean;
+            id?: number;
+            pattern?: string;
+            reason?: string;
         };
         "dto.Catalog": {
             countries?: components["schemas"]["dto.CatalogCountry"][];
@@ -2507,6 +2588,17 @@ export interface components {
             allow_tx_from_governor?: boolean;
             baud_rate?: number;
             channel?: number;
+            /**
+             * @description GateTxToIs opts a Mode=modem KISS interface in to gating frames
+             *     submitted by connected KISS clients to APRS-IS, after the TX
+             *     governor has accepted them. The iGate's own filter chain still
+             *     runs, so this only opens the gate — it does not bypass NOGATE /
+             *     RFONLY / TCPIP markers or the operator's filter rules. Default
+             *     false on all migrated rows; meaningless in Mode=tnc (which
+             *     already feeds the iGate via the RX fanout) and silently ignored
+             *     there by the server.
+             */
+            gate_tx_to_is?: boolean;
             mode?: string;
             reconnect_init_ms?: number;
             reconnect_max_ms?: number;
@@ -2530,6 +2622,7 @@ export interface components {
             baud_rate?: number;
             channel?: number;
             connected_since?: number;
+            gate_tx_to_is?: boolean;
             id?: number;
             last_error?: string;
             mode?: string;
@@ -2555,6 +2648,9 @@ export interface components {
             tnc_ingress_burst?: number;
             tnc_ingress_rate_hz?: number;
             type?: string;
+        };
+        "dto.LocalBounds": {
+            [key: string]: number[];
         };
         "dto.MapsConfigRequest": {
             source?: string;
@@ -3006,7 +3102,12 @@ export interface components {
             message?: string;
             ok?: boolean;
         };
-        "dto.TestToneResponse": {
+        "dto.TestSignalRequest": {
+            /** @example cw */
+            signal?: string;
+        };
+        "dto.TestSignalResponse": {
+            /** @example sent */
             status?: string;
         };
         "dto.ThemeConfigRequest": {
@@ -3441,6 +3542,12 @@ export interface components {
         "dto.IGateRfFilterRequest": {
             content: {
                 "application/json": components["schemas"]["dto.IGateRfFilterRequest"];
+            };
+        };
+        /** @description Blocklist entry */
+        "dto.BlocklistEntryRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.BlocklistEntryRequest"];
             };
         };
         /** @description Tx-timing definition */
@@ -4389,65 +4496,6 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
-                };
-            };
-        };
-    };
-    playTestTone: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Audio device id */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["dto.TestToneResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5679,6 +5727,79 @@ export interface operations {
             };
         };
     };
+    sendTestSignal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Signal to send */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.TestSignalRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.TestSignalResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
     getDigipeaterConfig: {
         parameters: {
             query?: never;
@@ -5747,6 +5868,180 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlocklistEntryResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlocklistEntryRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlocklistEntryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlocklistEntryRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlocklistEntryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDigipeaterBlocklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };
@@ -6871,6 +7166,89 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMapsLocalBounds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.LocalBounds"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMapsStyleAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Relative asset path under the upstream worker (e.g. americana-roboto/style.json, americana/sprites/sprite.png, roboto-glyphs/Roboto%20Regular/0-255.pbf, tiles.json) */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Asset body; content-type matches the asset */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                    "application/octet-stream": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                    "application/octet-stream": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                    "application/octet-stream": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    # Lets us manually exercise the cross-rs + GoReleaser pipeline on a
+    # branch without cutting a release tag. Useful for verifying
+    # cross-compile changes (e.g. the armv6 / hidapi linux-native-basic-udev
+    # swap) before pushing a real tag and getting stuck in the retag dance.
+    # GoReleaser will still run on the dispatched ref; it builds + packages
+    # but won't upload because there's no associated tag.
 
 permissions:
   contents: write
@@ -26,19 +33,11 @@ jobs:
             arch: arm64
             platform: linux
             use_cross: true
-          # FOLLOWUP: armv6 (Pi 1 / Pi Zero / Pi Zero W) build is
-          # temporarily removed for v0.13.6. cross-rs upstream image
-          # changes broke the libudev linkage path
-          # (getrandom@GLIBC_2.25 missing because the installed libudev
-          # is newer than the sysroot glibc). The PKG_CONFIG_* and
-          # CFLAGS_* env-var fixes elsewhere in this file are kept
-          # and will still be useful when the row is restored. See
-          # project memory: project_followup_armv6_release.
-          # - os: ubuntu-latest
-          #   target: arm-unknown-linux-gnueabihf
-          #   arch: arm
-          #   platform: linux
-          #   use_cross: true
+          - os: ubuntu-latest
+            target: arm-unknown-linux-gnueabihf
+            arch: arm
+            platform: linux
+            use_cross: true
           - os: macos-15
             target: x86_64-apple-darwin
             arch: amd64
@@ -218,13 +217,10 @@ jobs:
 
       - name: Arrange Rust binaries for GoReleaser
         run: |
-          # FOLLOWUP: armv6 (linux_arm) artifact is temporarily missing
-          # because the rust-build matrix row is commented out above.
-          # Restore both lines together when armv6 cross-compile is fixed.
-          mkdir -p rust-bin/{linux_amd64,linux_arm64,darwin_amd64,darwin_arm64,windows_amd64}
+          mkdir -p rust-bin/{linux_amd64,linux_arm64,linux_arm,darwin_amd64,darwin_arm64,windows_amd64}
           cp rust-artifacts/rust-linux-amd64/graywolf-modem       rust-bin/linux_amd64/
           cp rust-artifacts/rust-linux-arm64/graywolf-modem       rust-bin/linux_arm64/
-          # cp rust-artifacts/rust-linux-arm/graywolf-modem         rust-bin/linux_arm/
+          cp rust-artifacts/rust-linux-arm/graywolf-modem         rust-bin/linux_arm/
           cp rust-artifacts/rust-darwin-amd64/graywolf-modem      rust-bin/darwin_amd64/
           cp rust-artifacts/rust-darwin-arm64/graywolf-modem      rust-bin/darwin_arm64/
           cp rust-artifacts/rust-windows-amd64/graywolf-modem.exe rust-bin/windows_amd64/
@@ -237,7 +233,10 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean
+          # On a tag push we cut a real release; on workflow_dispatch we
+          # run in snapshot mode so the build pipeline executes end-to-end
+          # without needing a tag context (no upload, no draft release).
+          args: ${{ github.event_name == 'workflow_dispatch' && 'release --snapshot --clean' || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -248,10 +247,32 @@ jobs:
           path: dist/graywolf_windows_amd64_v1/graywolf.exe
           retention-days: 1
 
+      # On workflow_dispatch (snapshot mode) the produced .deb/.rpm/.tar.gz
+      # would otherwise evaporate with the runner. Upload them so we can
+      # download and test the artifacts on real hardware (e.g. Pi 5) before
+      # cutting a real release tag.
+      - name: Upload snapshot packages (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v5
+        with:
+          name: snapshot-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          retention-days: 7
+
   installer:
     name: Windows Installer
     runs-on: windows-latest
     needs: release
+    # NSIS computes VIProductVersion from github.ref_name and requires
+    # X.X.X.X format. On workflow_dispatch the ref is a branch name
+    # ("feat/foo") which fails that check. The real-tag release path
+    # (push tag v*) still runs as before.
+    if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v5

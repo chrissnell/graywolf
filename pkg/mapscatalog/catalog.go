@@ -14,6 +14,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -111,6 +113,11 @@ type Cache struct {
 	ttl           time.Duration
 	httpClient    *http.Client
 
+	// diskCacheDir is the directory holding the on-disk catalog.json
+	// stale fallback. Empty string disables disk persistence (existing
+	// callers that haven't migrated to NewWithDiskCache).
+	diskCacheDir string
+
 	mu        sync.Mutex
 	cached    *Catalog
 	fetchedAt time.Time
@@ -124,13 +131,101 @@ type Cache struct {
 // New constructs a Cache. baseURL is the maps host root (e.g.
 // https://maps.nw5w.com). tokenProvider returns the current bearer
 // token (may be empty for public testing). ttl is the cache lifetime;
-// 0 means always refresh.
+// 0 means always refresh. Equivalent to NewWithDiskCache with no
+// disk cache directory.
 func New(baseURL string, tokenProvider func(context.Context) string, ttl time.Duration) *Cache {
-	return &Cache{
+	return NewWithDiskCache(baseURL, tokenProvider, ttl, "")
+}
+
+// NewWithDiskCache constructs a Cache that also writes every
+// successful manifest fetch to <diskCacheDir>/catalog.json and seeds
+// the in-memory cache from that file on construction. The seeded
+// entry is treated as already-stale (fetchedAt = mtime), so the next
+// Get triggers a refresh; if the refresh fails the on-disk copy is
+// served via the existing stale-on-error path. This lets the region
+// picker show the last known catalog on an offline host instead of
+// erroring.
+//
+// The render path does NOT depend on this disk cache --
+// /api/maps/local-bounds is the offline-safe render-bounds source.
+func NewWithDiskCache(baseURL string, tokenProvider func(context.Context) string, ttl time.Duration, diskCacheDir string) *Cache {
+	c := &Cache{
 		baseURL:       baseURL,
 		tokenProvider: tokenProvider,
 		ttl:           ttl,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		diskCacheDir:  diskCacheDir,
+	}
+	c.loadFromDisk()
+	return c
+}
+
+// loadFromDisk seeds c.cached from <diskCacheDir>/catalog.json when
+// present. Failures are silent — disk persistence is best-effort, and
+// a missing or corrupt file falls back to fetching from the network.
+//
+// fetchedAt is left at the zero value (not the file mtime) so the
+// disk-seeded entry is always considered expired: the first Get()
+// triggers a network refresh, and only if that refresh fails does
+// the stale-on-error branch fall back to the on-disk copy. Using the
+// file mtime would let a reboot inside the TTL window serve disk
+// content as "fresh" and skip the warm-up entirely — defeating the
+// point of disk persistence (a lifeline for offline operation, not a
+// shortcut around the TTL).
+func (c *Cache) loadFromDisk() {
+	if c.diskCacheDir == "" {
+		return
+	}
+	path := filepath.Join(c.diskCacheDir, "catalog.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var out Catalog
+	if err := json.Unmarshal(b, &out); err != nil {
+		return
+	}
+	if out.SchemaVersion != 1 {
+		return
+	}
+	out.indexSlugs()
+	c.cached = &out
+	// fetchedAt stays at time.Time{} — see comment above.
+}
+
+// saveToDisk writes c.cached atomically to <diskCacheDir>/catalog.json.
+// Best-effort — failures (no diskCacheDir, transient I/O error) are
+// logged at WARN and do not affect the in-memory cache or the caller.
+func (c *Cache) saveToDisk(cat Catalog) {
+	if c.diskCacheDir == "" {
+		return
+	}
+	if err := os.MkdirAll(c.diskCacheDir, 0o755); err != nil {
+		slog.Warn("mapscatalog: mkdir disk cache failed", "err", err)
+		return
+	}
+	path := filepath.Join(c.diskCacheDir, "catalog.json")
+	tmp, err := os.CreateTemp(c.diskCacheDir, "catalog.json.*.tmp")
+	if err != nil {
+		slog.Warn("mapscatalog: tempfile failed", "err", err)
+		return
+	}
+	tmpName := tmp.Name()
+	enc := json.NewEncoder(tmp)
+	if err := enc.Encode(cat); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		slog.Warn("mapscatalog: encode disk cache failed", "err", err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		slog.Warn("mapscatalog: close disk cache failed", "err", err)
+		return
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		slog.Warn("mapscatalog: rename disk cache failed", "err", err)
 	}
 }
 
@@ -235,5 +330,6 @@ func (c *Cache) fetch(ctx context.Context) (Catalog, error) {
 		return Catalog{}, errors.New("unsupported manifest schemaVersion")
 	}
 	out.indexSlugs()
+	c.saveToDisk(out)
 	return out, nil
 }

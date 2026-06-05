@@ -79,7 +79,7 @@ func TestPositionInfoWithPHG(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodePHG: %v", err)
 	}
-	info := PositionInfo(36.175, -115.136, 0, 0, 2566, '/', '#', false, phg, "WA6TLW Las Vegas")
+	info := PositionInfo(36.175, -115.136, 0, 0, 2566, '/', '#', false, phg, "WA6TLW Las Vegas", 0)
 	if !strings.Contains(info, "PHG7700") {
 		t.Fatalf("missing PHG7700 in %q", info)
 	}
@@ -101,7 +101,7 @@ func TestPositionInfoWithPHG(t *testing.T) {
 // TestPositionInfoPHGSuppressedByCourse verifies PHG is omitted when
 // the station is moving (CSE/SPD wins the shared 7-byte slot).
 func TestPositionInfoPHGSuppressedByCourse(t *testing.T) {
-	info := PositionInfo(36.175, -115.136, 90, 30, 0, '/', '>', false, "PHG7700", "mobile")
+	info := PositionInfo(36.175, -115.136, 90, 30, 0, '/', '>', false, "PHG7700", "mobile", 0)
 	if strings.Contains(info, "PHG7700") {
 		t.Errorf("PHG should be suppressed when moving: %q", info)
 	}
@@ -175,5 +175,54 @@ func TestCompressedPositionInfoNoCSNoAlt(t *testing.T) {
 	}
 	if pkt.Position.HasCourse || pkt.Position.HasAlt {
 		t.Errorf("unexpected course/alt flags: %+v", pkt.Position)
+	}
+}
+
+// TestPositionInfo_Ambiguity exercises the uncompressed-position
+// ambiguity post-processing path against APRS101 ch 6 table 8. The
+// expected output bytes were computed from formatLatitude /
+// formatLongitude blanking positions.
+func TestPositionInfo_Ambiguity(t *testing.T) {
+	cases := []struct {
+		level   int
+		wantLat string // bytes at offsets 1..9 inside the info field
+		wantLon string // bytes at offsets 10..19
+	}{
+		{0, "3724.55N", "12208.42W"},
+		{1, "3724.5 N", "12208.4 W"},
+		{2, "3724.  N", "12208.  W"},
+		{3, "372 .  N", "1220 .  W"},
+		{4, "37  .  N", "122  .  W"},
+	}
+	for _, tc := range cases {
+		got := PositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, "", "", tc.level)
+		// "!" + 8-byte lat + symbol_table + 9-byte lon + symbol_code = 20 bytes.
+		if len(got) < 20 {
+			t.Fatalf("level %d: info too short: %q", tc.level, got)
+		}
+		if got[1:9] != tc.wantLat {
+			t.Errorf("level %d: lat=%q want %q", tc.level, got[1:9], tc.wantLat)
+		}
+		if got[10:19] != tc.wantLon {
+			t.Errorf("level %d: lon=%q want %q", tc.level, got[10:19], tc.wantLon)
+		}
+	}
+}
+
+// TestPositionInfo_Ambiguity_RoundTrip confirms the bytes we emit
+// survive aprs.ParseInfo and produce the expected Position.Ambiguity.
+func TestPositionInfo_Ambiguity_RoundTrip(t *testing.T) {
+	for level := 0; level <= 4; level++ {
+		info := PositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, "", "", level)
+		p, err := aprs.ParseInfo([]byte(info))
+		if err != nil {
+			t.Fatalf("level %d: aprs.ParseInfo(%q): %v", level, info, err)
+		}
+		if p.Position == nil {
+			t.Fatalf("level %d: parse produced no position: %+v", level, p)
+		}
+		if p.Position.Ambiguity != level {
+			t.Errorf("level %d: parsed ambiguity = %d", level, p.Position.Ambiguity)
+		}
 	}
 }

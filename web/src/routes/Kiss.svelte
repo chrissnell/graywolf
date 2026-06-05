@@ -236,6 +236,11 @@
       // / iGate transmission via a KISS-TNC link. Only meaningful when
       // Mode == "tnc".
       allow_tx_from_governor: false,
+      // When the operator enables this on a Mode=modem interface,
+      // frames a connected KISS client submits for TX are ALSO
+      // offered to the iGate's RF->IS gate after the TX governor
+      // accepts them. Default off — operator opts in.
+      gate_tx_to_is: false,
     };
   }
 
@@ -315,6 +320,7 @@
       tnc_ingress_rate_hz: String(row.tnc_ingress_rate_hz || 50),
       tnc_ingress_burst: String(row.tnc_ingress_burst || 100),
       allow_tx_from_governor: !!row.allow_tx_from_governor,
+      gate_tx_to_is: !!row.gate_tx_to_is,
     };
     modalOpen = true;
   }
@@ -534,6 +540,10 @@
       // validator rejects the combination (Mode!=tnc with allow=true)
       // so defensively coerce here to match UI visibility.
       allow_tx_from_governor: form.mode === 'tnc' ? !!form.allow_tx_from_governor : false,
+      // Only meaningful in Mode=modem (Mode=tnc already feeds the
+      // iGate via the RX fanout). Force false outside that mode so
+      // the persisted value matches the UI's visibility rule.
+      gate_tx_to_is: form.mode === 'modem' ? !!form.gate_tx_to_is : false,
     };
     switch (form.type) {
       case 'tcp':
@@ -959,6 +969,26 @@
         </label>
         <span class="field-warning">Do not enable this feature if your TNC is configured for digipeating or iGate mode: it will produce packet loops!</span>
       </div>
+    {/if}
+    {#if form.mode === 'modem'}
+      <!-- Gating opt-in for connected KISS clients (YAAC, Xastir,
+           APRSdroid, etc.). When enabled, packets the client submits
+           for TX are also offered to the iGate's RF->IS gate after
+           the TX governor accepts them. -->
+      <div class="field checkbox-field">
+        <label class="checkbox-row" for="kiss-gate-tx-to-is">
+          <Checkbox id="kiss-gate-tx-to-is" bind:checked={form.gate_tx_to_is} />
+          <span>Also forward transmissions from connected clients to APRS-IS</span>
+        </label>
+        <span class="field-hint">
+          Useful when a KISS app (YAAC, Xastir, APRSdroid) sends through graywolf
+          and you want its packets to reach APRS-IS without that app holding its
+          own APRS-IS connection. The iGate must be enabled; its filter rules
+          (NOGATE, RFONLY, TCPIP) still apply.
+        </span>
+      </div>
+    {/if}
+    {#if form.mode === 'tnc'}
       <!-- Per-interface ingress rate limiter. Only meaningful in TNC mode
            (Modem-mode ingest goes to the TxGovernor, not the RX fanout). -->
       <div class="advanced-section">
@@ -1038,6 +1068,12 @@
     font-size: 12px;
     color: var(--color-danger, #d32f2f);
     line-height: 1.4;
+  }
+  .field-hint {
+    display: block;
+    margin-top: 0.4rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary, #666);
   }
   .advanced-section {
     margin-top: 8px;

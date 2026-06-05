@@ -23,14 +23,14 @@ impl IpcMessage {
     pub fn audio_device_list(l: AudioDeviceList) -> Self {
         Self { payload: Some(ipc_message::Payload::AudioDeviceList(l)) }
     }
-    pub fn test_tone_result(r: TestToneResult) -> Self {
-        Self { payload: Some(ipc_message::Payload::TestToneResult(r)) }
-    }
     pub fn device_level_update(u: DeviceLevelUpdate) -> Self {
         Self { payload: Some(ipc_message::Payload::DeviceLevelUpdate(u)) }
     }
     pub fn input_level_scan_result(r: InputLevelScanResult) -> Self {
         Self { payload: Some(ipc_message::Payload::InputLevelScanResult(r)) }
+    }
+    pub fn test_signal_result(r: TestSignalResult) -> Self {
+        Self { payload: Some(ipc_message::Payload::TestSignalResult(r)) }
     }
 }
 

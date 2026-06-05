@@ -666,11 +666,33 @@ func mustEncode(f *ax25.Frame) []byte {
 	return raw
 }
 
-// gateRFToIS is called from IgateOutput.SendPacket to run the RF->IS
-// gating pipeline.
-func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
+// GateReason names the outcome of an RF→IS gating decision. Returned by
+// gateRFToIS so callers (notably the kiss-client gate hook) can surface
+// per-packet visibility into a path that is otherwise mostly silent —
+// most drops are policy-correct and shouldn't log at INFO, but operators
+// debugging "why isn't my KISS-client beacon reaching APRS-IS?" need a
+// way to see which branch fired without enabling debug logging.
+type GateReason string
+
+const (
+	GateReasonNilPacket   GateReason = "nil-packet"
+	GateReasonThirdParty  GateReason = "third-party"
+	GateReasonPathBlocks  GateReason = "path-blocks"
+	GateReasonSelfMessage GateReason = "self-message"
+	GateReasonOffline     GateReason = "offline"
+	GateReasonEncodeFail  GateReason = "encode-failed"
+	GateReasonWriteFail   GateReason = "write-failed"
+	GateReasonSimulated   GateReason = "simulated"
+	GateReasonGated       GateReason = "gated"
+)
+
+// gateRFToIS runs the RF->IS gating pipeline and returns the outcome.
+// Called from IgateOutput.SendPacket (existing RX-fanout caller, which
+// discards the result) and from IgateOutput.GateClientTx (kiss-modem
+// gate hook, which logs the reason at INFO).
+func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) GateReason {
 	if pkt == nil {
-		return
+		return GateReasonNilPacket
 	}
 	// Record every direct-RF arrival in the heard-direct tracker so
 	// the IS->RF gate knows which stations are in range for
@@ -683,13 +705,13 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	}
 	// Rule: never gate third-party traffic (already came from the net).
 	if pkt.ThirdParty != nil || pkt.Type == aprs.PacketThirdParty {
-		return
+		return GateReasonThirdParty
 	}
 	// Rule: never gate packets whose path already contains a TCPIP/
 	// TCPXX/NOGATE/RFONLY marker (the APRS-IS convention for
 	// already-gated or do-not-gate traffic).
 	if pathBlocksGating(pkt.Path) {
-		return
+		return GateReasonPathBlocks
 	}
 	// Rule: never gate a message packet that we originated ourselves.
 	// The messages sender records (source, msg_id) in the LocalOrigin
@@ -697,7 +719,7 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	// a digipeater repeat) hits the ring and is suppressed here so
 	// APRS-IS doesn't see our own outbound twice.
 	if ig.shouldSuppressLocalMessage(pkt) {
-		return
+		return GateReasonSelfMessage
 	}
 	// NOTE: no client-side dedup. IGATE-HINTS §"iGates dropping
 	// duplicate packets unnecessarily" says RX iGates must not dedup:
@@ -711,12 +733,12 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 	if !connected {
 		atomic.AddUint64(&ig.statDropped, 1)
 		ig.mDroppedOffline.Inc()
-		return
+		return GateReasonOffline
 	}
 	line, err := encodeTNC2(pkt, ig.stationCallsign)
 	if err != nil {
 		ig.logger.Debug("igate: encode tnc2 failed", "err", err)
-		return
+		return GateReasonEncodeFail
 	}
 	if ig.simulation.Load() {
 		ig.logger.Info("igate simulation send", "line", line)
@@ -725,17 +747,18 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) {
 		if ig.cfg.RfToIsHook != nil {
 			ig.cfg.RfToIsHook(pkt, line)
 		}
-		return
+		return GateReasonSimulated
 	}
 	if err := ig.client.WriteLine(line); err != nil {
 		ig.logger.Warn("igate: aprs-is write failed", "err", err)
-		return
+		return GateReasonWriteFail
 	}
 	atomic.AddUint64(&ig.statGated, 1)
 	ig.mGatedTotal.WithLabelValues("rf_to_is").Inc()
 	if ig.cfg.RfToIsHook != nil {
 		ig.cfg.RfToIsHook(pkt, line)
 	}
+	return GateReasonGated
 }
 
 func pathBlocksGating(path []string) bool {

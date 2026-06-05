@@ -75,6 +75,14 @@ func (s *Store) UpsertMapsDownload(ctx context.Context, d MapsDownload) error {
 		"downloaded_at":    d.DownloadedAt,
 		"error_message":    d.ErrorMessage,
 	}
+	// bbox is "set if non-nil, leave untouched if nil." Status
+	// transitions (fail/complete) call Upsert without populating BBox;
+	// without this guard those upserts would wipe the bbox snapshot
+	// that Start put down, defeating the offline-render contract that
+	// every completed row holds a renderable bbox.
+	if d.BBox != nil {
+		cols["bbox"] = d.BBox
+	}
 	if d.ID == 0 {
 		return db.Model(&MapsDownload{}).Create(cols).Error
 	}

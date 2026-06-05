@@ -1,11 +1,14 @@
 package webapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/mapscache"
+	"github.com/chrissnell/graywolf/pkg/mapscatalog"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
 
@@ -167,11 +170,25 @@ func (s *Server) startDownload(w http.ResponseWriter, r *http.Request) {
 		serviceUnavailable(w, "maps cache not initialized")
 		return
 	}
-	slug, ok := s.resolveSlug(w, r)
+	slug, ok := s.validSlugGrammar(w, r)
 	if !ok {
 		return
 	}
-	if err := s.mapsCache.Start(r.Context(), slug); err != nil {
+	if s.catalog == nil {
+		serviceUnavailable(w, "maps catalog not initialized")
+		return
+	}
+	cat, err := s.catalog.Get(r.Context())
+	if err != nil {
+		s.internalError(w, r, "catalog lookup", err)
+		return
+	}
+	bbox, found := lookupCatalogBBox(cat, slug)
+	if !found {
+		badRequest(w, "unknown slug")
+		return
+	}
+	if err := s.mapsCache.Start(r.Context(), slug, bbox); err != nil {
 		if errors.Is(err, mapscache.ErrAlreadyInflight) {
 			writeJSON(w, http.StatusConflict, map[string]string{
 				"error":   "already_inflight",
@@ -182,12 +199,64 @@ func (s *Server) startDownload(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "start download", err)
 		return
 	}
+	// Piggyback: the user is provably online right now. Fire off a
+	// best-effort glyph pre-warm so an offline browser later has the
+	// full label set, not just the ranges the browser happened to
+	// request during this online session. Detached goroutine: the
+	// download response should not wait on the upstream fan-out.
+	if s.style != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			// Seed style.json first so fontstacks are discoverable.
+			if _, _, err := s.style.Get(ctx, "americana-roboto/style.json"); err != nil {
+				s.logger.Debug("style prewarm: seed style.json failed", "err", err)
+				return
+			}
+			if err := s.style.PrewarmGlyphs(ctx); err != nil {
+				s.logger.Debug("style prewarm: glyph fetch returned errors", "err", err)
+			}
+		}()
+	}
 	st, err := s.mapsCache.Status(r.Context(), slug)
 	if err != nil {
 		s.internalError(w, r, "start download status", err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, toDTO(st))
+}
+
+// lookupCatalogBBox returns the bbox for a namespaced slug in the
+// catalog, or (nil, false) if the slug names no published archive.
+// The boolean covers both "slug not in catalog" (caller returns 400)
+// and "slug in catalog but bbox missing" (caller still starts the
+// download; render-path bounds come from the backfill).
+func lookupCatalogBBox(c mapscatalog.Catalog, slug string) (*[4]float64, bool) {
+	kind, a, b, ok := parseSlug(slug)
+	if !ok {
+		return nil, false
+	}
+	switch kind {
+	case "state":
+		for _, st := range c.States {
+			if st.Slug == a {
+				return st.BBox, true
+			}
+		}
+	case "country":
+		for _, x := range c.Countries {
+			if x.ISO2 == a {
+				return x.BBox, true
+			}
+		}
+	case "province":
+		for _, p := range c.Provinces {
+			if p.ISO2 == a && p.Slug == b {
+				return p.BBox, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // @Summary  Delete an offline download

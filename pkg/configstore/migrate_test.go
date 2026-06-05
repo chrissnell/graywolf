@@ -41,12 +41,11 @@ func TestFreshDatabaseUserVersion(t *testing.T) {
 
 // TestMigrationsAreIdempotentOnDisk opens a temp-file database, runs
 // Init, closes it, reopens it, and confirms (a) user_version is
-// unchanged and (b) migration 1 did not re-run. The check for (b)
-// writes a beacon row with compress=0 via raw SQL after the first
-// Init (bypassing GORM's zero-value-to-default handling for bool
-// columns) and verifies the row survives the second Init unflipped.
-// If the user_version gate is broken, migration 1's UPDATE would
-// catch that row on the second Init and flip it to 1.
+// unchanged and (b) migrations did not re-run. The check for (b) writes
+// a beacon row with position_format='uncompressed' via raw SQL after
+// the first Init and verifies the row survives the second Init
+// unflipped. If the user_version gate is broken, a future migration
+// touching position_format could rewrite the row on the second Init.
 func TestMigrationsAreIdempotentOnDisk(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "idempotent.db")
 
@@ -55,8 +54,8 @@ func TestMigrationsAreIdempotentOnDisk(t *testing.T) {
 		t.Fatalf("first Open: %v", err)
 	}
 	if err := s1.DB().Exec(`INSERT INTO beacons
-		(type, channel, callsign, destination, path, symbol_table, symbol, compress, every_seconds, slot_seconds, enabled)
-		VALUES ('position', 1, 'TEST', 'APGRWO', 'WIDE1-1', '/', '>', 0, 1800, -1, 1)`).Error; err != nil {
+		(type, channel, callsign, destination, path, symbol_table, symbol, position_format, every_seconds, slot_seconds, enabled)
+		VALUES ('position', 1, 'TEST', 'APGRWO', 'WIDE1-1', '/', '>', 'uncompressed', 1800, -1, 1)`).Error; err != nil {
 		t.Fatalf("raw insert beacon: %v", err)
 	}
 	var v1 int
@@ -79,12 +78,96 @@ func TestMigrationsAreIdempotentOnDisk(t *testing.T) {
 		t.Errorf("user_version after reopen = %d, want %d", v2, want)
 	}
 
-	var compress int
-	if err := s2.DB().Raw(`SELECT compress FROM beacons WHERE callsign = 'TEST'`).Scan(&compress).Error; err != nil {
+	// Select by ID, not callsign: seedStationConfig in seed_station.go
+	// runs on every Open and clears beacon callsigns that match the
+	// StationConfig singleton it seeds, which it derives from the only
+	// beacon row in the DB. The position_format value is what we are
+	// actually testing for idempotency.
+	var pf string
+	if err := s2.DB().Raw(`SELECT position_format FROM beacons WHERE id = 1`).Scan(&pf).Error; err != nil {
 		t.Fatalf("read beacon: %v", err)
 	}
-	if compress != 0 {
-		t.Errorf("migration 1 re-ran on reopen and flipped compress=0 to %d; user_version gate is broken", compress)
+	if pf != "uncompressed" {
+		t.Errorf("position_format = %q after reopen, want %q (user_version gate may be broken)", pf, "uncompressed")
+	}
+}
+
+// TestMigrateBeaconPositionFormatUpgrade builds a database file stamped
+// at user_version=22, seeds two beacon rows with compress=1 and
+// compress=0 via raw SQL, and confirms migration 23 backfills
+// position_format correctly and drops the compress column.
+func TestMigrateBeaconPositionFormatUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v22.db")
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	// v22 beacons schema = current GORM Beacon struct minus
+	// position_format, plus the legacy compress column. The CREATE TABLE
+	// is intentionally single-line: glebarez/sqlite's migrator parses
+	// sqlite_master.sql by line and silently loses column definitions
+	// that span multiple lines (the same gotcha called out in CLAUDE.md
+	// for multi-line FK CONSTRAINTs). Keep this in lockstep with the
+	// Beacon struct in models.go.
+	stmts := []string{
+		`CREATE TABLE beacons (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL DEFAULT 'position', channel INTEGER NOT NULL DEFAULT 1, callsign TEXT NOT NULL, destination TEXT NOT NULL DEFAULT 'APGRWO', path TEXT NOT NULL DEFAULT 'WIDE1-1', use_gps NUMERIC DEFAULT 0, latitude REAL, longitude REAL, alt_ft REAL, ambiguity INTEGER NOT NULL DEFAULT 0, symbol_table TEXT NOT NULL DEFAULT '/', symbol TEXT NOT NULL DEFAULT '-', overlay TEXT, compress NUMERIC NOT NULL DEFAULT 1, messaging NUMERIC NOT NULL DEFAULT 0, comment TEXT, comment_cmd TEXT, custom_info TEXT, object_name TEXT, power INTEGER NOT NULL DEFAULT 0, height INTEGER NOT NULL DEFAULT 0, gain INTEGER NOT NULL DEFAULT 0, dir INTEGER NOT NULL DEFAULT 0, freq TEXT, tone TEXT, freq_offset TEXT, delay_seconds INTEGER NOT NULL DEFAULT 30, every_seconds INTEGER NOT NULL DEFAULT 1800, slot_seconds INTEGER NOT NULL DEFAULT -1, smart_beacon NUMERIC NOT NULL DEFAULT 0, sb_fast_speed INTEGER DEFAULT 60, sb_slow_speed INTEGER DEFAULT 5, sb_fast_rate INTEGER DEFAULT 60, sb_slow_rate INTEGER DEFAULT 1800, sb_turn_angle INTEGER DEFAULT 30, sb_turn_slope INTEGER DEFAULT 255, sb_min_turn_time INTEGER DEFAULT 5, send_to_aprs_is NUMERIC NOT NULL DEFAULT 0, enabled NUMERIC NOT NULL DEFAULT 1, created_at DATETIME, updated_at DATETIME)`,
+		// i_gate_configs needs the legacy callsign column that
+		// seed_station.go reads via raw SQL; in production migration 11
+		// added it during the v11 → v22 path, but our fixture stamps
+		// straight at v22 so we must include it ourselves.
+		`CREATE TABLE i_gate_configs (id INTEGER PRIMARY KEY AUTOINCREMENT, enabled NUMERIC NOT NULL DEFAULT 0, server TEXT NOT NULL DEFAULT 'rotate.aprs2.net', port INTEGER NOT NULL DEFAULT 14580, callsign TEXT NOT NULL DEFAULT '', created_at DATETIME, updated_at DATETIME)`,
+		`INSERT INTO beacons (callsign, compress) VALUES ('COMP', 1)`,
+		`INSERT INTO beacons (callsign, compress) VALUES ('UNCOMP', 0)`,
+		`PRAGMA user_version = 22`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("exec %q: %v", s, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	var version int
+	s.DB().Raw("PRAGMA user_version").Scan(&version)
+	if version < 23 {
+		t.Errorf("user_version = %d, want >= 23 after migration", version)
+	}
+
+	// Select by id, not callsign: seedStationConfig in seed_station.go
+	// clears beacon callsigns that match the station singleton it seeds
+	// from the first beacon (here 'COMP'), so a WHERE callsign='COMP'
+	// would return no rows after Open. Row 1 is the seeded compress=1
+	// beacon, row 2 is compress=0.
+	var pfComp, pfUncomp string
+	if err := s.DB().Raw(`SELECT position_format FROM beacons WHERE id=1`).Scan(&pfComp).Error; err != nil {
+		t.Fatalf("read row 1 (COMP): %v", err)
+	}
+	if err := s.DB().Raw(`SELECT position_format FROM beacons WHERE id=2`).Scan(&pfUncomp).Error; err != nil {
+		t.Fatalf("read row 2 (UNCOMP): %v", err)
+	}
+	if pfComp != "compressed" {
+		t.Errorf("COMP position_format = %q, want %q", pfComp, "compressed")
+	}
+	if pfUncomp != "uncompressed" {
+		t.Errorf("UNCOMP position_format = %q, want %q", pfUncomp, "uncompressed")
+	}
+
+	var compressCols int
+	if err := s.DB().Raw(`SELECT COUNT(*) FROM pragma_table_info('beacons') WHERE name='compress'`).Scan(&compressCols).Error; err != nil {
+		t.Fatalf("probe compress column: %v", err)
+	}
+	if compressCols != 0 {
+		t.Errorf("compress column still present after migration: count=%d", compressCols)
 	}
 }
 

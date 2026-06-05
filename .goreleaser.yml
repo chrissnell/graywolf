@@ -24,15 +24,9 @@ builds:
     goarch:
       - amd64
       - arm64
-      # FOLLOWUP: armv6 (Go GOARCH=arm GOARM=6) build temporarily
-      # removed for v0.13.6. The Rust modem cross-compile broke on
-      # cross-rs upstream image changes; without rust-bin/linux_arm
-      # to package against, the Go arm6 archive would have no modem
-      # binary. Restore - arm + goarm: ["6"] when the Rust side is
-      # fixed; see project memory project_followup_armv6_release.
-      # - arm
-    # goarm:
-    #   - "6"
+      - arm
+    goarm:
+      - "6"
     ignore:
       - goos: windows
         goarch: arm64

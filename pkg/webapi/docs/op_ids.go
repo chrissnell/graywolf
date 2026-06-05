@@ -33,6 +33,7 @@ const (
 	OpGetChannelStats     = "getChannelStats"
 	OpGetChannelReferrers = "getChannelReferrers"
 	OpManualPtt           = "manualPtt"
+	OpSendTestSignal      = "sendTestSignal"
 )
 
 // Beacons resource — /api/beacons (Phase 2).
@@ -56,9 +57,9 @@ const (
 
 // Audio devices resource — /api/audio-devices (Phase 2).
 //
-// Sub-resource endpoints (available, scan-levels, levels, test-tone,
-// gain) stay under the same tag. Operation IDs follow the
-// verbResource convention so generated clients read fluently
+// Sub-resource endpoints (available, scan-levels, levels, gain) stay
+// under the same tag. Operation IDs follow the verbResource convention
+// so generated clients read fluently
 // (client.listAvailableAudioDevices(), client.setAudioDeviceGain(...)).
 const (
 	OpListAudioDevices          = "listAudioDevices"
@@ -69,7 +70,6 @@ const (
 	OpListAvailableAudioDevices = "listAvailableAudioDevices"
 	OpScanAudioDeviceLevels     = "scanAudioDeviceLevels"
 	OpGetAudioDeviceLevels      = "getAudioDeviceLevels"
-	OpPlayTestTone              = "playTestTone"
 	OpSetAudioDeviceGain        = "setAudioDeviceGain"
 )
 
@@ -103,6 +103,16 @@ const (
 	OpCreateDigipeaterRule = "createDigipeaterRule"
 	OpUpdateDigipeaterRule = "updateDigipeaterRule"
 	OpDeleteDigipeaterRule = "deleteDigipeaterRule"
+)
+
+// Digipeater blocklist resource — /api/digipeater/blocklist (global
+// source-address deny list, digipeater-scope only; see
+// docs/wiki/invariants.md).
+const (
+	OpListDigipeaterBlocklist   = "listDigipeaterBlocklist"
+	OpCreateDigipeaterBlocklist = "createDigipeaterBlocklist"
+	OpUpdateDigipeaterBlocklist = "updateDigipeaterBlocklist"
+	OpDeleteDigipeaterBlocklist = "deleteDigipeaterBlocklist"
 )
 
 // Igate RF filters resource — /api/igate/filters (Phase 2). The
@@ -362,6 +372,8 @@ const (
 	OpStartMapsDownload     = "startMapsDownload"
 	OpDeleteMapsDownload    = "deleteMapsDownload"
 	OpGetMapsCatalog        = "getMapsCatalog"
+	OpGetMapsLocalBounds    = "getMapsLocalBounds"
+	OpGetMapsStyleAsset     = "getMapsStyleAsset"
 )
 
 // Actions resource — /api/actions and friends. Remote command system

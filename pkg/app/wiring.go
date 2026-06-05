@@ -34,6 +34,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/mapscache"
 	"github.com/chrissnell/graywolf/pkg/mapscatalog"
+	"github.com/chrissnell/graywolf/pkg/mapsstyle"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
@@ -501,6 +502,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			a.metrics.ObserveKissIngressFrame(ifaceID, string(mode))
 		},
 		OnBroadcastSuppressed: a.metrics.ObserveKissBroadcastSuppressed,
+		OnClientTxAccepted:    a.kissClientTxGateToIs,
 		RxIngress:             a.kissTncProduce,
 		OnTxQueueDepth:        a.metrics.SetKissInstanceTxQueueDepth,
 		// OnTxQueueDrop surfaces per-instance tx drops to the Phase 4
@@ -1235,18 +1237,48 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// path on every download request. Token comes from the same place
 	// mapsCache reads it (singleton MapsConfig) so re-registration
 	// rotates the bearer for catalog fetches too.
-	catalog := mapscatalog.New(
+	catalog := mapscatalog.NewWithDiskCache(
 		mapscache.DefaultMapsBaseURL,
 		mapsTokenProvider,
 		time.Hour,
+		a.cfg.TileCacheDir,
 	)
-	// Best-effort warm; failures are non-fatal -- Get() will retry on
-	// the first request that needs the catalog.
+	// Warm the catalog in the background with exponential backoff,
+	// capped at 1 hour. Only emit a single state-change ERROR when we
+	// transition from healthy -> failing (and a single INFO when we
+	// recover); intermediate retries log at DEBUG so an offline Pi
+	// doesn't dominate the log buffer. The on-disk catalog.json keeps
+	// the picker functional while the warm-up retries.
 	go func() {
-		warmCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if _, err := catalog.Refresh(warmCtx); err != nil {
-			a.logger.Warn("maps catalog warm-up failed", "err", err)
+		backoff := 30 * time.Second
+		const maxBackoff = time.Hour
+		healthy := true
+		for {
+			warmCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			_, err := catalog.Refresh(warmCtx)
+			cancel()
+			if err == nil {
+				if !healthy {
+					a.logger.Info("maps catalog reachable again")
+					healthy = true
+				}
+				return
+			}
+			if healthy {
+				a.logger.Error("maps catalog warm-up failed; will retry quietly", "err", err)
+				healthy = false
+			} else {
+				a.logger.Debug("maps catalog retry failed", "err", err, "next_retry_in", backoff)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}()
 
@@ -1259,9 +1291,29 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	if err := a.store.MigrateMapsDownloadSlugs(context.Background()); err != nil {
 		return fmt.Errorf("migrate maps_downloads slugs: %w", err)
 	}
+	if err := a.store.MigrateMapsDownloadBBox(context.Background()); err != nil {
+		return fmt.Errorf("migrate maps_downloads bbox column: %w", err)
+	}
 	if err := mapsCache.MigrateLegacyArchives(context.Background()); err != nil {
 		a.logger.Warn("legacy archive migration failed", "err", err)
 	}
+	if err := mapsCache.BackfillBBoxes(context.Background()); err != nil {
+		a.logger.Warn("bbox backfill failed", "err", err)
+	}
+
+	// Style asset cache: browser-triggered pull-through cache for
+	// style.json, shields.json, sprite, glyph PBFs, and tiles.json.
+	// Persists under <TileCacheDir>/style/. No startup network: graywolf
+	// boots fine offline, the first online browser request hydrates the
+	// cache. Map downloads piggyback a full glyph pre-warm so an offline
+	// browser later has the full label set. See pkg/mapsstyle + issue #204.
+	styleCache := mapsstyle.New(mapsstyle.Config{
+		BaseURL:       mapscache.DefaultMapsBaseURL,
+		CacheDir:      filepath.Join(a.cfg.TileCacheDir, "style"),
+		TokenProvider: mapsTokenProvider,
+		LocalPrefix:   "/api/maps/style",
+		Logger:        a.logger.With("component", "mapsstyle"),
+	})
 
 	apiSrv, err := webapi.NewServer(webapi.Config{
 		Store:         a.store,
@@ -1273,6 +1325,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Version:       a.cfg.Version,
 		MapsCache:     mapsCache,
 		Catalog:       catalog,
+		Style:         styleCache,
 		Demo:          a.cfg.Demo,
 	})
 	if err != nil {
@@ -1848,6 +1901,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 					})
 					continue
@@ -1871,6 +1925,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
@@ -1894,6 +1949,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
@@ -1918,6 +1974,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
@@ -1935,6 +1992,7 @@ func (a *App) kissComponent() namedComponent {
 					TncIngressRateHz:    ki.TncIngressRateHz,
 					TncIngressBurst:     ki.TncIngressBurst,
 					AllowTxFromGovernor: ki.AllowTxFromGovernor,
+					GateTxToIs:          ki.GateTxToIs,
 					OnClientChange: func(n int) {
 						a.metrics.SetKissClients(name, n)
 					},
@@ -2128,6 +2186,7 @@ func (a *App) digipeaterComponent() namedComponent {
 		if err != nil || cfg == nil {
 			a.digi.SetEnabled(false)
 			a.digi.SetRules(nil)
+			a.digi.SetBlocklist(nil)
 			return
 		}
 		// Resolve per-digipeater override against the station callsign.
@@ -2144,6 +2203,7 @@ func (a *App) digipeaterComponent() namedComponent {
 				"override", cfg.MyCall, "err", err)
 			a.digi.SetEnabled(false)
 			a.digi.SetRules(nil)
+			a.digi.SetBlocklist(nil)
 			return
 		}
 		mycall, err := ax25.ParseAddress(resolved)
@@ -2152,6 +2212,7 @@ func (a *App) digipeaterComponent() namedComponent {
 				"value", resolved, "err", err)
 			a.digi.SetEnabled(false)
 			a.digi.SetRules(nil)
+			a.digi.SetBlocklist(nil)
 			return
 		}
 		a.digi.SetMyCall(mycall)
@@ -2162,6 +2223,15 @@ func (a *App) digipeaterComponent() namedComponent {
 			rules = nil
 		}
 		a.digi.SetRules(digipeater.RulesFromStore(rules))
+		// Block list mirrors the rules path: any webapi mutation
+		// fires the same digipeaterReload signal, so this branch
+		// runs and pushes a refreshed snapshot into the engine.
+		bl, err := a.store.ListDigipeaterBlocklist(ctx)
+		if err != nil {
+			a.logger.Warn("digipeater blocklist load", "err", err)
+			bl = nil
+		}
+		a.digi.SetBlocklist(digipeater.BlocklistFromStore(bl))
 		a.digi.SetEnabled(cfg.Enabled)
 	}
 

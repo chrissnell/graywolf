@@ -41,6 +41,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/mapsauth"
 	"github.com/chrissnell/graywolf/pkg/mapscache"
 	"github.com/chrissnell/graywolf/pkg/mapscatalog"
+	"github.com/chrissnell/graywolf/pkg/mapsstyle"
 	"github.com/chrissnell/graywolf/pkg/messages"
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
@@ -74,6 +75,7 @@ type Server struct {
 	mapsAuth          *mapsauth.Client    // client for auth.nw5w.com /register; defaulted in NewServer
 	mapsCache         *mapscache.Manager  // PMTiles cache; nil until P2-T5 wires it up — handlers return 503 when nil
 	catalog           *mapscatalog.Cache  // download catalog cache; nil until wired — handlers return 503 when nil
+	style             *mapsstyle.Cache    // style-asset cache; nil until wired — handler returns 503 when nil
 	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
 	// Nudged after any change that could alter the channel-backing
 	// map (kiss interface add/remove/mode/allow_tx flip, channel
@@ -197,6 +199,10 @@ type Config struct {
 	// /api/maps/catalog handler and slug-validation paths return 503
 	// when nil. Tests inject a Cache pointed at an httptest upstream.
 	Catalog *mapscatalog.Cache
+	// Style is the MapLibre style asset cache. Optional — the
+	// /api/maps/style/* handler returns 503 when nil. Tests inject a
+	// Cache pointed at an httptest upstream + temp dir.
+	Style *mapsstyle.Cache
 	// Demo serves canned dashboard counters from /api/status. Set by the
 	// wiring layer from app.Config.Demo. Screenshots/demos only.
 	Demo bool
@@ -233,6 +239,7 @@ func NewServer(cfg Config) (*Server, error) {
 		mapsAuth:        mapsClient,
 		mapsCache:       cfg.MapsCache,
 		catalog:         cfg.Catalog,
+		style:           cfg.Style,
 		demo:            cfg.Demo,
 	}, nil
 }
@@ -289,6 +296,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerMaps(mux)
 	s.registerCatalog(mux)
 	s.registerDownloads(mux)
+	s.registerLocalBounds(mux)
+	s.registerStyle(mux)
 	s.registerActions(mux)
 	s.registerOTPCredentials(mux)
 	s.registerActionListeners(mux)

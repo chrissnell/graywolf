@@ -45,6 +45,15 @@ type KissRequest struct {
 	// transmitting; Phase 4 sets the DTO default to true for newly
 	// created tcp-client rows.
 	AllowTxFromGovernor bool `json:"allow_tx_from_governor"`
+	// GateTxToIs opts a Mode=modem KISS interface in to gating frames
+	// submitted by connected KISS clients to APRS-IS, after the TX
+	// governor has accepted them. The iGate's own filter chain still
+	// runs, so this only opens the gate — it does not bypass NOGATE /
+	// RFONLY / TCPIP markers or the operator's filter rules. Default
+	// false on all migrated rows; meaningless in Mode=tnc (which
+	// already feeds the iGate via the RX fanout) and silently ignored
+	// there by the server.
+	GateTxToIs bool `json:"gate_tx_to_is"`
 	// Tcp-client fields (Phase 4): RemoteHost:RemotePort is the dial
 	// target; ReconnectInitMs / ReconnectMaxMs size the supervisor's
 	// exponential-backoff reconnect schedule. Unused / zero for
@@ -176,6 +185,7 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 		TncIngressRateHz:    r.TncIngressRateHz,
 		TncIngressBurst:     r.TncIngressBurst,
 		AllowTxFromGovernor: allowTx,
+		GateTxToIs:          r.GateTxToIs,
 		RemoteHost:          r.RemoteHost,
 		RemotePort:          r.RemotePort,
 		ReconnectInitMs:     initMs,
@@ -227,6 +237,7 @@ type KissResponse struct {
 	TncIngressRateHz    uint32 `json:"tnc_ingress_rate_hz"`
 	TncIngressBurst     uint32 `json:"tnc_ingress_burst"`
 	AllowTxFromGovernor bool   `json:"allow_tx_from_governor"`
+	GateTxToIs          bool   `json:"gate_tx_to_is"`
 	NeedsReconfig       bool   `json:"needs_reconfig"`
 	// Tcp-client fields (Phase 4). Zero-valued for non-tcp-client rows.
 	RemoteHost      string `json:"remote_host"`
@@ -258,6 +269,7 @@ func KissFromModel(m configstore.KissInterface) KissResponse {
 		TncIngressRateHz:    m.TncIngressRateHz,
 		TncIngressBurst:     m.TncIngressBurst,
 		AllowTxFromGovernor: m.AllowTxFromGovernor,
+		GateTxToIs:          m.GateTxToIs,
 		NeedsReconfig:       m.NeedsReconfig,
 		RemoteHost:          m.RemoteHost,
 		RemotePort:          m.RemotePort,

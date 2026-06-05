@@ -24,9 +24,9 @@ message IpcMessage {
     StatusUpdate status_update = 3;
     ModemReady modem_ready = 4;
     AudioDeviceList audio_device_list = 5;
-    TestToneResult test_tone_result = 6;
     DeviceLevelUpdate device_level_update = 7;
     InputLevelScanResult input_level_scan_result = 8;
+    TestSignalResult test_signal_result = 9;
 
     // Go application → Rust modem
     TransmitFrame transmit_frame = 10;
@@ -37,10 +37,10 @@ message IpcMessage {
     StopAudio stop_audio = 15;
     Shutdown shutdown = 16;
     EnumerateAudioDevices enumerate_audio_devices = 17;
-    PlayTestTone play_test_tone = 18;
     SetDeviceGain set_device_gain = 19;
     ScanInputLevels scan_input_levels = 20;
     ManualPtt manual_ptt = 21;           // Go → Rust: manual PTT toggle for testing
+    TransmitTestSignal transmit_test_signal = 22;
   }
 }
 
@@ -239,22 +239,6 @@ message EnumerateAudioDevices {
   bool include_output = 2;      // include output devices in response
 }
 
-// Request a brief test tone on an output device.
-message PlayTestTone {
-  uint32 request_id = 1;        // echoed back in TestToneResult
-  string device_name = 2;       // cpal output device name
-  uint32 sample_rate = 3;
-  uint32 channels = 4;
-  uint32 device_id = 5;         // configstore ID for gain lookup and level metering
-}
-
-// Result of a test tone attempt.
-message TestToneResult {
-  uint32 request_id = 1;
-  bool success = 2;
-  string error = 3;             // empty on success
-}
-
 // Set software gain for an audio device (live update, no restart).
 message SetDeviceGain {
   uint32 device_id = 1;
@@ -295,4 +279,26 @@ message InputDeviceLevel {
   float peak_dbfs = 2;          // peak level during scan
   bool has_signal = 3;          // true if peak > -40 dBFS
   string error = 4;             // non-empty if device couldn't be opened
+}
+
+// Go -> Rust: transmit a TX test signal on a channel. kind selects the
+// generator: 0 = station callsign in CW, 1 = steady tone, 2 = alternating
+// tone. Go fills the relevant parameters; the modem is a pure renderer.
+message TransmitTestSignal {
+  uint32 request_id = 1;     // echoed back in TestSignalResult
+  uint32 channel = 2;        // selects output device + PTT driver
+  uint32 kind = 3;           // 0=CW callsign, 1=steady tone, 2=alternating
+  string callsign = 4;       // kind 0; already resolved + uppercased by Go
+  uint32 cw_wpm = 5;         // kind 0
+  uint32 freq_a_hz = 6;      // CW sidetone (0) / tone (1) / tone A (2)
+  uint32 freq_b_hz = 7;      // tone B (kind 2)
+  uint32 duration_ms = 8;    // kinds 1, 2
+  uint32 alt_period_ms = 9;  // kind 2: ms per tone before switching
+}
+
+// Result of a TX test-signal submission to the TX worker.
+message TestSignalResult {
+  uint32 request_id = 1;
+  bool success = 2;
+  string error = 3;          // empty on success
 }

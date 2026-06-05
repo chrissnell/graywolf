@@ -220,10 +220,15 @@ func listStations(cache StationCache) http.HandlerFunc {
 			digiPositions = cache.Lookup(digiCallsigns)
 		}
 
-		// Build DTOs
+		// Build DTOs. The trail-cutoff trims each station's Positions
+		// slice to entries within the timerange window so trail dots
+		// don't stretch back days for a currently-active station.
+		// Delta mode emits only positions[0] anyway, so the cutoff is
+		// only consulted on full reloads.
+		trailCutoff := time.Now().Add(-timerange)
 		out := make([]StationDTO, len(stations))
 		for i, s := range stations {
-			out[i] = stationToDTO(s, isDelta, includeWeather, digiPositions)
+			out[i] = stationToDTO(s, isDelta, includeWeather, digiPositions, trailCutoff)
 		}
 
 		// Sort newest-first
@@ -288,7 +293,7 @@ func collectDigiCallsigns(stations []stationcache.Station) []string {
 	return out
 }
 
-func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos map[string]stationcache.LatLon) StationDTO {
+func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos map[string]stationcache.LatLon, trailCutoff time.Time) StationDTO {
 	dto := StationDTO{
 		Callsign:      s.Callsign,
 		IsObject:      s.IsObject,
@@ -308,9 +313,18 @@ func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos 
 	if isDelta && len(s.Positions) > 0 {
 		dto.Positions = []StationPosDTO{positionToDTO(s.Positions[0], digiPos)}
 	} else {
-		dto.Positions = make([]StationPosDTO, len(s.Positions))
+		// Trim trail positions older than trailCutoff so a station
+		// heard 2 minutes ago doesn't ship 28 days of historical
+		// breadcrumbs. positions[0] is the head and is always
+		// included even when slightly past the cutoff (its parent
+		// station passed the QueryBBox time filter; dropping the
+		// head would render a station with no current location).
+		dto.Positions = make([]StationPosDTO, 0, len(s.Positions))
 		for i, p := range s.Positions {
-			dto.Positions[i] = positionToDTO(p, digiPos)
+			if i > 0 && p.Timestamp.Before(trailCutoff) {
+				continue
+			}
+			dto.Positions = append(dto.Positions, positionToDTO(p, digiPos))
 		}
 	}
 

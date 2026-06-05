@@ -3,6 +3,7 @@ package kiss
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -10,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/chrissnell/graywolf/pkg/ax25"
 )
 
 // TestManager_Status reports every registered interface in
@@ -347,5 +350,79 @@ func TestManager_OnSerialHooksFire(t *testing.T) {
 	}
 	if len(states) == 0 {
 		t.Fatal("OnSerialStateChange never fired")
+	}
+}
+
+// TestManagerThreadsOnClientTxAcceptedWithIfaceID asserts that the
+// per-interface OnClientTxAccepted closure installed by Manager.Start
+// captures the correct interface ID. Two servers with different IDs
+// must each see their own ID arrive at the manager-level callback.
+func TestManagerThreadsOnClientTxAcceptedWithIfaceID(t *testing.T) {
+	type seen struct {
+		ifaceID uint32
+		channel uint32
+	}
+	gotCh := make(chan seen, 4)
+
+	mgr := NewManager(ManagerConfig{
+		Sink:   newFakeSink(),
+		Logger: silentLogger(),
+		OnClientTxAccepted: func(_ context.Context, ifaceID, channel uint32, _ *ax25.Frame) {
+			gotCh <- seen{ifaceID: ifaceID, channel: channel}
+		},
+	})
+
+	starts := []struct {
+		id      uint32
+		channel uint32
+	}{
+		{id: 11, channel: 7},
+		{id: 22, channel: 9},
+	}
+	addrs := make(map[uint32]string)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for _, s := range starts {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		addr := ln.Addr().String()
+		_ = ln.Close()
+		addrs[s.id] = addr
+		mgr.Start(ctx, s.id, ServerConfig{
+			Name:       fmt.Sprintf("srv-%d", s.id),
+			ListenAddr: addr,
+			ChannelMap: map[uint8]uint32{0: s.channel},
+			Logger:     silentLogger(),
+			Mode:       ModeModem,
+			GateTxToIs: true,
+		})
+	}
+	defer mgr.StopAll()
+
+	// feedFrame + kissUIFrameBytes are defined in server_test.go (same
+	// package). feedFrame's dialWhenReady already retries until the
+	// listener is bound, so no explicit pre-feed sleep is needed.
+	for _, s := range starts {
+		feedFrame(t, addrs[s.id], kissUIFrameBytes(t, "hello"))
+	}
+
+	want := map[uint32]uint32{11: 7, 22: 9}
+	deadline := time.After(2 * time.Second)
+	for len(want) > 0 {
+		select {
+		case got := <-gotCh:
+			ch, ok := want[got.ifaceID]
+			if !ok {
+				t.Fatalf("unexpected ifaceID %d in callback", got.ifaceID)
+			}
+			if got.channel != ch {
+				t.Fatalf("ifaceID=%d: channel=%d, want %d", got.ifaceID, got.channel, ch)
+			}
+			delete(want, got.ifaceID)
+		case <-deadline:
+			t.Fatalf("missing ifaceIDs: %v", want)
+		}
 	}
 }

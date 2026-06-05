@@ -24,7 +24,7 @@ export const catalogStore = (() => {
       try {
         const res = await fetch('/api/maps/catalog', { credentials: 'same-origin' });
         if (!res.ok) {
-          const msg = `catalog fetch failed (${res.status})`;
+          const msg = 'Cannot reach maps server -- downloads list may be out of date';
           error = msg;
           toasts.error(msg);
           return null;
@@ -37,8 +37,8 @@ export const catalogStore = (() => {
         }
         catalog = json;
         return json;
-      } catch (e) {
-        error = e.message ?? 'catalog network error';
+      } catch {
+        error = 'Cannot reach maps server -- downloads list may be out of date';
         toasts.error(error);
         return null;
       } finally {

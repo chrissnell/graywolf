@@ -775,8 +775,6 @@ definitions:
         type: string
       comment_cmd:
         type: string
-      compress:
-        type: boolean
       custom_info:
         type: string
       delay_seconds:
@@ -808,6 +806,8 @@ definitions:
       overlay:
         type: string
       path:
+        type: string
+      position_format:
         type: string
       power:
         type: integer
@@ -856,8 +856,6 @@ definitions:
         type: string
       comment_cmd:
         type: string
-      compress:
-        type: boolean
       custom_info:
         type: string
       delay_seconds:
@@ -891,6 +889,8 @@ definitions:
       overlay:
         type: string
       path:
+        type: string
+      position_format:
         type: string
       power:
         type: integer
@@ -929,6 +929,26 @@ definitions:
     properties:
       status:
         description: '"sent"'
+        type: string
+    type: object
+  dto.BlocklistEntryRequest:
+    properties:
+      enabled:
+        type: boolean
+      pattern:
+        type: string
+      reason:
+        type: string
+    type: object
+  dto.BlocklistEntryResponse:
+    properties:
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      pattern:
+        type: string
+      reason:
         type: string
     type: object
   dto.Catalog:
@@ -1380,6 +1400,17 @@ definitions:
         type: integer
       channel:
         type: integer
+      gate_tx_to_is:
+        description: |-
+          GateTxToIs opts a Mode=modem KISS interface in to gating frames
+          submitted by connected KISS clients to APRS-IS, after the TX
+          governor has accepted them. The iGate's own filter chain still
+          runs, so this only opens the gate — it does not bypass NOGATE /
+          RFONLY / TCPIP markers or the operator's filter rules. Default
+          false on all migrated rows; meaningless in Mode=tnc (which
+          already feeds the iGate via the RX fanout) and silently ignored
+          there by the server.
+        type: boolean
       mode:
         type: string
       reconnect_init_ms:
@@ -1418,6 +1449,8 @@ definitions:
         type: integer
       connected_since:
         type: integer
+      gate_tx_to_is:
+        type: boolean
       id:
         type: integer
       last_error:
@@ -1459,6 +1492,12 @@ definitions:
         type: integer
       type:
         type: string
+    type: object
+  dto.LocalBounds:
+    additionalProperties:
+      items:
+        type: number
+      type: array
     type: object
   dto.MapsConfigRequest:
     properties:
@@ -2121,9 +2160,16 @@ definitions:
       ok:
         type: boolean
     type: object
-  dto.TestToneResponse:
+  dto.TestSignalRequest:
+    properties:
+      signal:
+        example: cw
+        type: string
+    type: object
+  dto.TestSignalResponse:
     properties:
       status:
+        example: sent
         type: string
     type: object
   dto.ThemeConfigRequest:
@@ -3502,43 +3548,6 @@ paths:
       summary: Set audio device gain
       tags:
         - audio-devices
-  /audio-devices/{id}/test-tone:
-    post:
-      operationId: playTestTone
-      parameters:
-        - description: Audio device id
-          in: path
-          name: id
-          required: true
-          type: integer
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.TestToneResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/webtypes.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/webtypes.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/webtypes.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/webtypes.ErrorResponse'
-      security:
-        - CookieAuth: []
-      summary: Play test tone on audio device
-      tags:
-        - audio-devices
   /audio-devices/available:
     get:
       operationId: listAvailableAudioDevices
@@ -4462,6 +4471,55 @@ paths:
       summary: Get channel stats
       tags:
         - channels
+  /channels/{id}/test-tx:
+    post:
+      consumes:
+        - application/json
+      operationId: sendTestSignal
+      parameters:
+        - description: Channel ID
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Signal to send
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.TestSignalRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TestSignalResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Send a TX test signal (CW callsign or tone) on a channel
+      tags:
+        - channels
   /digipeater:
     get:
       operationId: getDigipeaterConfig
@@ -4510,6 +4568,131 @@ paths:
       security:
         - CookieAuth: []
       summary: Update digipeater config
+      tags:
+        - digipeater
+  /digipeater/blocklist:
+    get:
+      operationId: listDigipeaterBlocklist
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.BlocklistEntryResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List digipeater blocklist entries
+      tags:
+        - digipeater
+    post:
+      consumes:
+        - application/json
+      operationId: createDigipeaterBlocklist
+      parameters:
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create digipeater blocklist entry
+      tags:
+        - digipeater
+  /digipeater/blocklist/{id}:
+    delete:
+      operationId: deleteDigipeaterBlocklist
+      parameters:
+        - description: Entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete digipeater blocklist entry
+      tags:
+        - digipeater
+    put:
+      consumes:
+        - application/json
+      operationId: updateDigipeaterBlocklist
+      parameters:
+        - description: Entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BlocklistEntryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update digipeater blocklist entry
       tags:
         - digipeater
   /digipeater/rules:
@@ -5302,6 +5485,59 @@ paths:
       security:
         - CookieAuth: []
       summary: Start an offline download
+      tags:
+        - maps
+  /maps/local-bounds:
+    get:
+      operationId: getMapsLocalBounds
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.LocalBounds'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get the bbox of every completed offline map
+      tags:
+        - maps
+  /maps/style/{path}:
+    get:
+      operationId: getMapsStyleAsset
+      parameters:
+        - description: Relative asset path under the upstream worker (e.g. americana-roboto/style.json, americana/sprites/sprite.png, roboto-glyphs/Roboto%20Regular/0-255.pbf, tiles.json)
+          in: path
+          name: path
+          required: true
+          type: string
+      produces:
+        - application/json
+        - application/octet-stream
+      responses:
+        "200":
+          description: Asset body; content-type matches the asset
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Serve a cached MapLibre style asset
       tags:
         - maps
   /messages:
