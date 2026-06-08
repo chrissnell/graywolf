@@ -25,6 +25,7 @@
   import Simulation from './routes/Simulation.svelte';
   import PositionLog from './routes/PositionLog.svelte';
   import Logs from './routes/Logs.svelte';
+  import SystemLogs from './routes/SystemLogs.svelte';
   import LiveMapV2 from './routes/LiveMapV2.svelte';
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
@@ -57,6 +58,7 @@
     '/simulation': Simulation,
     '/position-log': PositionLog,
     '/logs': Logs,
+    '/system-logs': SystemLogs,
     '/preferences': Preferences,
     '/preferences/maps': MapsSettings,
     '/preferences/messages': MessagesSettings,
