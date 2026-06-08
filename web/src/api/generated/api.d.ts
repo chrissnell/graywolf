@@ -1728,6 +1728,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List system logs */
+        get: operations["listSystemLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tacticals": {
         parameters: {
             query?: never;
@@ -3438,6 +3455,28 @@ export interface components {
             server?: string;
             /** @description SimulationMode is true when RF->IS uploads are suppressed for testing. */
             simulation_mode?: boolean;
+        };
+        "webapi.SystemLogEntry": {
+            /** @description Attrs are the structured key/value attributes attached to the record; omitted when none. */
+            attrs?: {
+                [key: string]: unknown;
+            };
+            /** @description Component is the slog "component" group (e.g. "webapi"); omitted when unset. */
+            component?: string;
+            /** @description Level is the slog level: DEBUG, INFO, WARN, or ERROR. */
+            level?: string;
+            /** @description Message is the log message text. */
+            message?: string;
+            /** @description Timestamp is the RFC3339 (UTC) time the record was emitted. */
+            timestamp?: string;
+        };
+        "webapi.SystemLogsResponse": {
+            /** @description Available is false when the log buffer is disabled; Logs is then empty. */
+            available?: boolean;
+            /** @description Cursor is the RFC3339 timestamp of the newest returned record, for incremental `since` polling; omitted when empty. */
+            cursor?: string;
+            /** @description Logs are the matching records in ascending chronological order. */
+            logs?: components["schemas"]["webapi.SystemLogEntry"][];
         };
         "webapi.VersionResponse": {
             /**
@@ -9698,6 +9737,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webapi.StatusDTO"];
+                };
+            };
+        };
+    };
+    listSystemLogs: {
+        parameters: {
+            query?: {
+                /** @description Cap result count (non-negative; default 250) */
+                limit?: number;
+                /** @description Only records at or after this RFC3339 timestamp */
+                since?: string;
+                /** @description Minimum level: 'debug' includes everything; default is info */
+                level?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.SystemLogsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/chrissnell/graywolf/pkg/logbuffer"
 )
 
 // Config is the fully-resolved runtime configuration for an App instance.
@@ -106,6 +108,11 @@ type Config struct {
 	// readiness "\n" to stdout that GoLauncher waits on. Desktop
 	// builds leave it nil.
 	OnHTTPListenerReady func()
+
+	// LogBuffer is the standalone slog ring-buffer DB, set by main after
+	// setupLogger. nil when the buffer is disabled/unavailable; the
+	// /api/system-logs endpoint then reports available:false.
+	LogBuffer *logbuffer.DB
 }
 
 // DefaultConfig returns a Config populated with the same defaults

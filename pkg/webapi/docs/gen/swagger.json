@@ -63,6 +63,10 @@
             "description": "Received packet history."
         },
         {
+            "name": "system-logs",
+            "description": "Daemon log buffer: recent slog records (the lines also printed to the console)."
+        },
+        {
             "name": "stations",
             "description": "Station registry derived from received packets."
         },
@@ -6904,6 +6908,57 @@
                 }
             }
         },
+        "/system-logs": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system-logs"
+                ],
+                "summary": "List system logs",
+                "operationId": "listSystemLogs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Cap result count (non-negative; default 250)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only records at or after this RFC3339 timestamp",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Minimum level: 'debug' includes everything; default is info",
+                        "name": "level",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.SystemLogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/tacticals": {
             "post": {
                 "security": [
@@ -11149,6 +11204,52 @@
                 "simulation_mode": {
                     "description": "SimulationMode is true when RF-\u003eIS uploads are suppressed for testing.",
                     "type": "boolean"
+                }
+            }
+        },
+        "webapi.SystemLogEntry": {
+            "type": "object",
+            "properties": {
+                "attrs": {
+                    "description": "Attrs are the structured key/value attributes attached to the record; omitted when none.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "component": {
+                    "description": "Component is the slog \"component\" group (e.g. \"webapi\"); omitted when unset.",
+                    "type": "string"
+                },
+                "level": {
+                    "description": "Level is the slog level: DEBUG, INFO, WARN, or ERROR.",
+                    "type": "string"
+                },
+                "message": {
+                    "description": "Message is the log message text.",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "description": "Timestamp is the RFC3339 (UTC) time the record was emitted.",
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.SystemLogsResponse": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "description": "Available is false when the log buffer is disabled; Logs is then empty.",
+                    "type": "boolean"
+                },
+                "cursor": {
+                    "description": "Cursor is the RFC3339 timestamp of the newest returned record, for incremental `since` polling; omitted when empty.",
+                    "type": "string"
+                },
+                "logs": {
+                    "description": "Logs are the matching records in ascending chronological order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.SystemLogEntry"
+                    }
                 }
             }
         },
