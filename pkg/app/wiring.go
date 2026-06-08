@@ -1476,6 +1476,16 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
 	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
+	// /api/system-logs reads the slog ring buffer. a.cfg.LogBuffer is a
+	// concrete *logbuffer.DB that may be nil; assign through a typed
+	// interface variable so a nil DB arrives as a true nil interface
+	// (avoids the typed-nil-in-interface trap, which would make the
+	// handler think a source exists and panic on Query).
+	var logSrc webapi.SystemLogSource
+	if a.cfg.LogBuffer != nil {
+		logSrc = a.cfg.LogBuffer
+	}
+	webapi.RegisterSystemLogs(apiSrv, apiMux, logSrc)
 	// Always register /api/igate routes; the closures below load a.ig
 	// on each request so the operator's runtime enable toggle lights
 	// the endpoints up without rewiring. While disabled, the status
