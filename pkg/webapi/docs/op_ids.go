@@ -184,6 +184,11 @@ const (
 	OpListPackets = "listPackets"
 )
 
+// System logs — /api/system-logs.
+const (
+	OpListSystemLogs = "listSystemLogs"
+)
+
 // Position — /api/position plus the raw GPS-state read at
 // /api/gps/state (both @Tags position).
 const (
