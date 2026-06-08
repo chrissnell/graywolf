@@ -68,7 +68,7 @@
   }
 </script>
 
-<PageHeader title="Packet Logs" subtitle="Packet log viewer with filter/search">
+<PageHeader title="APRS Logs" subtitle="Packet log viewer with filter/search">
   <Button onclick={loadPackets} disabled={loading}>Refresh</Button>
   <Button onclick={exportCsv}>Export CSV</Button>
 </PageHeader>

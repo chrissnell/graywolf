@@ -30,7 +30,8 @@
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
-    { path: '/logs', label: 'Logs', svgIcon: 'logs' },
+    { path: '/system-logs', label: 'System Logs', svgIcon: 'system-logs' },
+    { path: '/logs', label: 'APRS Logs', svgIcon: 'logs' },
   ];
 
   const allSettingsItems = [
@@ -245,6 +246,22 @@
                 <path d="M14 3v5h5" />
                 <line x1="9" y1="13" x2="15" y2="13" />
                 <line x1="9" y1="17" x2="15" y2="17" />
+              </svg>
+            {:else if item.svgIcon === 'system-logs'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <polyline points="6 9 9 12 6 15" />
+                <line x1="12" y1="15" x2="17" y2="15" />
               </svg>
             {/if}
             {#if unread > 0}
