@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatLogsForClipboard, shouldAutoscroll, levelClass } from './systemLogs.js';
+import {
+  formatLogsForClipboard,
+  formatAttrs,
+  formatAttrValue,
+  shouldAutoscroll,
+  levelClass,
+} from './systemLogs.js';
 
 test('formatLogsForClipboard renders one tab-free line per entry', () => {
   const logs = [
@@ -12,6 +18,39 @@ test('formatLogsForClipboard renders one tab-free line per entry', () => {
     out,
     '2026-06-07T00:00:00Z INFO [webapi] started\n2026-06-07T00:00:01Z WARN careful',
   );
+});
+
+test('formatLogsForClipboard appends structured attrs', () => {
+  const logs = [
+    {
+      timestamp: '2026-06-07T00:00:00Z',
+      level: 'INFO',
+      component: 'aprs',
+      message: 'aprs packet',
+      attrs: { type: 'mic-e', source: 'NW5W-5', comment: 'Static park' },
+    },
+  ];
+  assert.equal(
+    formatLogsForClipboard(logs),
+    '2026-06-07T00:00:00Z INFO [aprs] aprs packet type=mic-e source=NW5W-5 comment="Static park"',
+  );
+});
+
+test('formatAttrs renders key=value, quoting values that need it', () => {
+  assert.equal(formatAttrs(null), '');
+  assert.equal(formatAttrs({}), '');
+  assert.equal(formatAttrs({ a: 1, b: true }), 'a=1 b=true');
+  assert.equal(formatAttrs({ path: '[K0TFU* WIDE1*]' }), 'path="[K0TFU* WIDE1*]"');
+});
+
+test('formatAttrValue quotes empty, spaced, and special values', () => {
+  assert.equal(formatAttrValue('plain'), 'plain');
+  assert.equal(formatAttrValue(''), '""');
+  assert.equal(formatAttrValue('has space'), '"has space"');
+  assert.equal(formatAttrValue('k=v'), '"k=v"');
+  assert.equal(formatAttrValue(42), '42');
+  assert.equal(formatAttrValue(null), '<nil>');
+  assert.equal(formatAttrValue({ x: 1 }), '"{\\"x\\":1}"');
 });
 
 test('formatLogsForClipboard handles empty input', () => {

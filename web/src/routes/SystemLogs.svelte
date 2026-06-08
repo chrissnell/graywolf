@@ -3,7 +3,7 @@
   import { Button, Select, Box, toast } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import { formatLogsForClipboard, shouldAutoscroll, levelClass } from '../lib/systemLogs.js';
+  import { formatLogsForClipboard, formatAttrs, shouldAutoscroll, levelClass } from '../lib/systemLogs.js';
 
   let logs = $state([]);
   let available = $state(true);
@@ -22,8 +22,8 @@
     { value: '500', label: '500 lines' },
   ];
   const levelOptions = [
-    { value: 'info', label: 'Info+' },
-    { value: 'debug', label: 'Debug (all)' },
+    { value: 'info', label: 'Info and above' },
+    { value: 'debug', label: 'Debug (everything)' },
   ];
 
   onMount(() => {
@@ -115,11 +115,17 @@
 
 <Box>
   <div class="filter-bar">
-    <div class="filter-select">
-      <Select value={level} options={levelOptions} onValueChange={onLevelChange} />
+    <div class="filter-group">
+      <label class="filter-label" for="log-level-select">Minimum log level</label>
+      <div class="filter-select">
+        <Select id="log-level-select" aria-label="Minimum log level" value={level} options={levelOptions} onValueChange={onLevelChange} />
+      </div>
     </div>
-    <div class="filter-select">
-      <Select value={limit} options={limitOptions} onValueChange={onLimitChange} />
+    <div class="filter-group">
+      <label class="filter-label" for="log-lines-select">Lines to show</label>
+      <div class="filter-select">
+        <Select id="log-lines-select" aria-label="Lines to show" value={limit} options={limitOptions} onValueChange={onLimitChange} />
+      </div>
     </div>
   </div>
 </Box>
@@ -150,6 +156,7 @@
           <span class="lvl lvl-{levelClass(entry.level)}">{entry.level}</span>
           {#if entry.component}<span class="comp">[{entry.component}]</span>{/if}
           <span class="msg">{entry.message}</span>
+          {#if entry.attrs}<span class="attrs">{formatAttrs(entry.attrs)}</span>{/if}
         </div>
       {/each}
     </div>
@@ -160,8 +167,14 @@
 </div>
 
 <style>
-  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; }
-  .filter-select { width: 160px; }
+  .filter-bar { display: flex; gap: 16px; flex-wrap: wrap; }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-label {
+    font-size: var(--text-xs, 12px);
+    color: var(--color-text-dim);
+    font-weight: 600;
+  }
+  .filter-select { width: 180px; }
   .empty { color: var(--color-text-dim); text-align: center; padding: 24px; }
 
   .log-box {
@@ -183,6 +196,7 @@
   .lvl-info { color: #6bcB77; }
   .lvl-debug { color: var(--color-text-dim); }
   .comp { color: #7aa2f7; margin-right: 8px; }
+  .attrs { color: var(--color-text-dim); margin-left: 8px; }
 
   .log-foot {
     padding: 7px 14px;
