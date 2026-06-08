@@ -49,6 +49,7 @@ var tagOrder = []tagEntry{
 
 	// --- Runtime / data -------------------------------------------------
 	{"packets", "Received packet history."},
+	{"system-logs", "Daemon log buffer: recent slog records (the lines also printed to the console)."},
 	{"stations", "Station registry derived from received packets."},
 	{"position", "Current station position."},
 	{"messages", "APRS text messaging: DMs, tactical threads, preferences, and SSE events."},
