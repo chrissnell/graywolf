@@ -1728,6 +1728,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List system logs */
+        get: operations["listSystemLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tacticals": {
         parameters: {
             query?: never;
@@ -1953,33 +1970,50 @@ export interface components {
         /** @enum {string} */
         "aprs.PacketType": "unknown" | "position" | "message" | "telemetry" | "weather" | "object" | "item" | "mic-e" | "status" | "capabilities" | "df-report" | "query" | "third-party";
         "aprs.Position": {
-            /** @description meters (0 if none reported) */
+            /**
+             * Format: float64
+             * @description meters (0 if none reported)
+             */
             altitude?: number;
             /** @description 0..4, digits of ambiguity introduced by spaces */
             ambiguity?: number;
             compressed?: boolean;
             /** @description degrees true (0..359) */
             course?: number;
-            /** @description DAO datum byte (APRS101 DAO extension), 0 if not present */
+            /**
+             * Format: int32
+             * @description DAO datum byte (APRS101 DAO extension), 0 if not present
+             */
             daodatum?: number;
             hasAlt?: boolean;
             hasCourse?: boolean;
-            /** @description decimal degrees, positive north */
+            /**
+             * Format: float64
+             * @description decimal degrees, positive north
+             */
             latitude?: number;
             /** @description true if the timestamp was the '/' local-time form (APRS101 ch 6) */
             localTime?: boolean;
-            /** @description decimal degrees, positive east */
+            /**
+             * Format: float64
+             * @description decimal degrees, positive east
+             */
             longitude?: number;
             /** @description decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present */
             phg?: components["schemas"]["aprs.PHG"];
-            /** @description knots */
+            /**
+             * Format: float64
+             * @description knots
+             */
             speed?: number;
             symbol?: components["schemas"]["aprs.Symbol"];
             /** @description nil if positionless or no embedded time */
             timestamp?: string;
         };
         "aprs.Symbol": {
+            /** Format: int32 */
             code?: number;
+            /** Format: int32 */
             table?: number;
         };
         "aprs.Telemetry": {
@@ -1988,14 +2022,20 @@ export interface components {
             analogHas?: boolean[];
             /** @description trailing free-form */
             comment?: string;
-            /** @description bits 0..7 (only lower 8) */
+            /**
+             * Format: int32
+             * @description bits 0..7 (only lower 8)
+             */
             digital?: number;
             hasDigital?: boolean;
             /** @description 0..999, -1 if absent */
             seq?: number;
         };
         "aprs.TelemetryMeta": {
-            /** @description BITS. sense-bits bitmap (active-high per bit) */
+            /**
+             * Format: int32
+             * @description BITS. sense-bits bitmap (active-high per bit)
+             */
             bits?: number;
             /** @description a, b, c coefficients per analog channel */
             eqns?: number[][];
@@ -2023,27 +2063,47 @@ export interface components {
             humidity?: number;
             /** @description watts/m^2 */
             luminosity?: number;
-            /** @description tenths of millibar (e.g. 10132 = 1013.2) */
+            /**
+             * Format: float64
+             * @description tenths of millibar (e.g. 10132 = 1013.2)
+             */
             pressure?: number;
-            /** @description hundredths of an inch */
+            /**
+             * Format: float64
+             * @description hundredths of an inch
+             */
             rain1Hour?: number;
+            /** Format: float64 */
             rain24Hour?: number;
+            /** Format: float64 */
             rainSinceMid?: number;
             /** @description raw rain counter ('#' field) */
             rawRainCounter?: number;
-            /** @description inches (via 's' after 'g') */
+            /**
+             * Format: float64
+             * @description inches (via 's' after 'g')
+             */
             snowfall24h?: number;
             /** @description one-letter software code (e.g. 'w', 'x', 'd') */
             softwareType?: string;
-            /** @description degrees F */
+            /**
+             * Format: float64
+             * @description degrees F
+             */
             temperature?: number;
             /** @description 2..4 ASCII letters identifying the unit/model */
             weatherUnitTag?: string;
             /** @description degrees true */
             windDirection?: number;
-            /** @description mph (5-minute peak) */
+            /**
+             * Format: float64
+             * @description mph (5-minute peak)
+             */
             windGust?: number;
-            /** @description mph (1-minute sustained) */
+            /**
+             * Format: float64
+             * @description mph (1-minute sustained)
+             */
             windSpeed?: number;
         };
         "configstore.Referrer": {
@@ -3438,6 +3498,28 @@ export interface components {
             server?: string;
             /** @description SimulationMode is true when RF->IS uploads are suppressed for testing. */
             simulation_mode?: boolean;
+        };
+        "webapi.SystemLogEntry": {
+            /** @description Attrs are the structured key/value attributes attached to the record; omitted when none. */
+            attrs?: {
+                [key: string]: unknown;
+            };
+            /** @description Component is the slog "component" group (e.g. "webapi"); omitted when unset. */
+            component?: string;
+            /** @description Level is the slog level: DEBUG, INFO, WARN, or ERROR. */
+            level?: string;
+            /** @description Message is the log message text. */
+            message?: string;
+            /** @description Timestamp is the RFC3339 (UTC) time the record was emitted. */
+            timestamp?: string;
+        };
+        "webapi.SystemLogsResponse": {
+            /** @description Available is false when the log buffer is disabled; Logs is then empty. */
+            available?: boolean;
+            /** @description Cursor is the RFC3339 timestamp of the newest returned record, for incremental `since` polling; omitted when empty. */
+            cursor?: string;
+            /** @description Logs are the matching records in ascending chronological order. */
+            logs?: components["schemas"]["webapi.SystemLogEntry"][];
         };
         "webapi.VersionResponse": {
             /**
@@ -9698,6 +9780,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webapi.StatusDTO"];
+                };
+            };
+        };
+    };
+    listSystemLogs: {
+        parameters: {
+            query?: {
+                /** @description Cap result count (non-negative; default 250) */
+                limit?: number;
+                /** @description Only records at or after this RFC3339 timestamp */
+                since?: string;
+                /** @description Minimum level: 'debug' includes everything; default is info */
+                level?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.SystemLogsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };
