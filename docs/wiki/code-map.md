@@ -96,7 +96,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 | `historydb` | Position-history SQLite (separate DB, schema bootstrapped on `Open`) | [`../handbook/history-database.html`](../handbook/history-database.html) |
 | `packetlog` | In-memory ring of RX/TX/IS packet records with filter-query API. Live-tail fan-out (`Subscribe`) is in `subscribe.go`; per-subscriber bounded channel, drop-on-full -- backs the AX.25 terminal raw-tail mode and any future live monitor pages. | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
 | `metrics` | Prometheus metrics + helper to fold Rust-side StatusUpdate into them | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
-| `logbuffer` | `slog.Handler` tee that persists DEBUG records into a circular SQLite ring (`graywolf-logs.db`); env-aware path (tmpfs on Pi/SD-card, disk elsewhere); feeds the `graywolf flare` diagnostic submission | (no dedicated page) |
+| `logbuffer` | `slog.Handler` tee that persists DEBUG records into a circular SQLite ring (`graywolf-logs.db`); env-aware path (tmpfs on Pi/SD-card, disk elsewhere); feeds the `graywolf flare` diagnostic submission. Read side: `(*DB).Query` (`query.go`) backs the **System Logs** UI tab via `GET /api/system-logs` (`pkg/webapi/system_logs.go`, wired out-of-band in `pkg/app/wiring.go`; the `*logbuffer.DB` handle is threaded from `cmd/graywolf/main.go`'s `setupLogger` through `app.Config.LogBuffer`, nil when persistence is disabled → endpoint reports `available:false`) | (no dedicated page) |
 | `releasenotes` | Embedded release-note YAML (`notes.yaml`); lazy parse + markdown render | (in-app "What's new") |
 
 ## Go service: PTT enumeration
