@@ -1,0 +1,24 @@
+# Per-target codegen flags.
+#
+# The 32-bit ARM hard-float release ships two distinct binaries:
+#
+#   arm-unknown-linux-gnueabihf    -> armv6, scalar VFPv2, no NEON.
+#       Covers the armv6-only Pi 1 / Pi Zero / Zero W that the handbook
+#       supports. Rust's default features for this triple are correct as-is
+#       (the triple has no NEON), so it intentionally appears nowhere below.
+#
+#   armv7-unknown-linux-gnueabihf  -> armv7-a, NEON enabled here.
+#       Rust's built-in spec for this triple defaults to "-neon" for maximum
+#       compatibility. We flip it on because every armv7-a application core
+#       people run a Linux APRS gateway on (Cortex-A7/A8/A9/A15/A17, e.g. the
+#       reporter's RV1106 Cortex-A7) has NEON. With NEON the autovectorizer
+#       can use the AFSK demod's eight-accumulator FIR loop
+#       (graywolf-modem/src/demod_afsk.rs `convolve`); without it that DSP
+#       hot path runs fully scalar and badly under-represents Graywolf on the
+#       very benchmark this build exists to support.
+#
+# We enable NEON but NOT VFPv4/FMA: Cortex-A7/A15 have fused multiply-add,
+# but A8/A9 do not, and emitting FMA there would SIGILL. +neon alone
+# vectorizes the loop and stays safe across the whole armv7-a NEON family.
+[target.armv7-unknown-linux-gnueabihf]
+rustflags = ["-C", "target-feature=+neon"]

@@ -38,6 +38,11 @@ jobs:
             arch: arm
             platform: linux
             use_cross: true
+          - os: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            arch: armv7
+            platform: linux
+            use_cross: true
           - os: macos-15
             target: x86_64-apple-darwin
             arch: amd64
@@ -110,6 +115,9 @@ jobs:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_PATH_aarch64_unknown_linux_gnu: '/usr/lib/aarch64-linux-gnu/pkgconfig'
           PKG_CONFIG_PATH_arm_unknown_linux_gnueabihf: '/usr/lib/arm-linux-gnueabihf/pkgconfig'
+          # armv7 shares the arm-linux-gnueabihf multi-arch dir with armv6;
+          # only the per-triple var name differs (cross keys on the triple).
+          PKG_CONFIG_PATH_armv7_unknown_linux_gnueabihf: '/usr/lib/arm-linux-gnueabihf/pkgconfig'
           # hidapi crate's bundled-source cc-rs compile needs libudev.h.
           # libudev-dev:<arch> installs the header at /usr/include/libudev.h
           # (Multi-Arch: same), but the cross-compiler's sysroot doesn't
@@ -123,6 +131,7 @@ jobs:
           # only the arch-independent libudev.h falls through.
           CFLAGS_aarch64_unknown_linux_gnu: '-idirafter /usr/include'
           CFLAGS_arm_unknown_linux_gnueabihf: '-idirafter /usr/include'
+          CFLAGS_armv7_unknown_linux_gnueabihf: '-idirafter /usr/include'
         run: cross build --release --target ${{ matrix.target }} --bin graywolf-modem
 
       - name: Build with cargo
@@ -217,10 +226,13 @@ jobs:
 
       - name: Arrange Rust binaries for GoReleaser
         run: |
-          mkdir -p rust-bin/{linux_amd64,linux_arm64,linux_arm,darwin_amd64,darwin_arm64,windows_amd64}
+          mkdir -p rust-bin/{linux_amd64,linux_arm64,linux_arm,linux_armv7,darwin_amd64,darwin_arm64,windows_amd64}
           cp rust-artifacts/rust-linux-amd64/graywolf-modem       rust-bin/linux_amd64/
           cp rust-artifacts/rust-linux-arm64/graywolf-modem       rust-bin/linux_arm64/
           cp rust-artifacts/rust-linux-arm/graywolf-modem         rust-bin/linux_arm/
+          # armv7 (NEON) modem -- kept distinct from the armv6 linux_arm
+          # build so the goarm=7 archive/package bundle the optimized binary.
+          cp rust-artifacts/rust-linux-armv7/graywolf-modem       rust-bin/linux_armv7/
           cp rust-artifacts/rust-darwin-amd64/graywolf-modem      rust-bin/darwin_amd64/
           cp rust-artifacts/rust-darwin-arm64/graywolf-modem      rust-bin/darwin_arm64/
           cp rust-artifacts/rust-windows-amd64/graywolf-modem.exe rust-bin/windows_amd64/
