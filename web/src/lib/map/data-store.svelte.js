@@ -65,6 +65,20 @@ export function createDataStore() {
   let backoff = POLL_BASE_MS;            // current delay; doubles on error
   let started = false;                   // start()/stop() guard
   let visibilityHandler = null;          // bound listener for cleanup
+  const newFixSubscribers = new Set();   // cb(station) for each new RX fix observed during delta polling
+
+  // Emit a "new fix" event for every newly observed RX packet. Skipped
+  // on the initial full snapshot (delta=false) and for non-RX directions
+  // — the visualization is "packet arrived at us over RF", which TX
+  // (our own beacons) and IS (iGated) don't represent.
+  function emitNewFix(station) {
+    if (newFixSubscribers.size === 0) return;
+    const dir = station?.positions?.[0]?.direction;
+    if (dir !== 'RX') return;
+    for (const cb of newFixSubscribers) {
+      try { cb(station); } catch (e) { console.error('[data-store] new-fix subscriber error', e); }
+    }
+  }
 
   // --- Reset cursors on bounds/timerange change so next poll does a full reload ---
   function invalidate() {
@@ -99,6 +113,10 @@ export function createDataStore() {
       } else if (!existing) {
         // new station with no weather — nothing to do
       }
+      // Brand-new station observed during delta polling is a fresh RX
+      // arrival worth animating. The initial full snapshot (isDelta=false)
+      // is historical and intentionally skipped.
+      if (isDelta && !existing) emitNewFix(incoming);
       return;
     }
 
@@ -126,6 +144,8 @@ export function createDataStore() {
         positions: merged,
       };
       stations.set(incoming.callsign, merged_station);
+
+      if (!dup) emitNewFix(incoming);
     }
 
     if (incoming.weather) {
@@ -336,5 +356,13 @@ export function createDataStore() {
     setTimerange,
     start,
     stop,
+
+    // Subscribe to "new RX fix" events. The callback runs once per
+    // newly-observed RX packet during delta polling; returns an
+    // unsubscribe function. Used by the packet-animation layer.
+    subscribeNewFix(cb) {
+      newFixSubscribers.add(cb);
+      return () => newFixSubscribers.delete(cb);
+    },
   };
 }

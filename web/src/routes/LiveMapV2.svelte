@@ -16,6 +16,7 @@
   import { mountWeatherLayer } from '../lib/map/layers/weather.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
+  import { mountPacketAnimationLayer } from '../lib/map/layers/packet-animation.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
@@ -52,6 +53,8 @@
   let weatherLayer = null;
   let hoverPathLayer = null;
   let myPositionLayer = null;
+  let packetAnimationLayer = null;
+  let unsubNewFix = null;
   let mapRef = null;
   let activePopup = null;
 
@@ -66,6 +69,7 @@
     trails: true,
     weather: true,
     myPosition: true,
+    packetAnimation: true,
     directRxOnly: false,
   });
 
@@ -284,6 +288,17 @@
         hoverPathLayer?.clear();
       },
     });
+    packetAnimationLayer = mountPacketAnimationLayer(map, () => {
+      const my = dataStore.myPosition;
+      return my ? { lat: my.lat, lon: my.lon } : null;
+    });
+
+    // Each new RX fix fires the animation. Gated by the toggle — when off,
+    // we skip dispatch entirely; the layer also self-gates inside animate().
+    unsubNewFix = dataStore.subscribeNewFix((station) => {
+      if (!layerToggles.packetAnimation) return;
+      packetAnimationLayer?.animate(station);
+    });
 
     function updateBounds() {
       const b = map.getBounds();
@@ -387,6 +402,10 @@
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
   });
+  $effect(() => {
+    const v = layerToggles.packetAnimation;
+    packetAnimationLayer?.setVisible(v);
+  });
   // Direct RX filter: predicate is shared across stations/trails/weather
   // so the three layers stay in lockstep. my-position is the operator's
   // own beacon and is intentionally exempt.
@@ -489,16 +508,20 @@
   onDestroy(() => {
     dataStore.stop();
     closePopup();
+    unsubNewFix?.();
+    unsubNewFix = null;
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
+    packetAnimationLayer?.destroy();
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
     hoverPathLayer = null;
     myPositionLayer = null;
+    packetAnimationLayer = null;
     mapRef = null;
     if (tickTimer) {
       clearInterval(tickTimer);
@@ -550,6 +573,14 @@
           onchange={(e) => (layerToggles.myPosition = e.currentTarget.checked)}
         />
         <span>My Position</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={layerToggles.packetAnimation}
+          onchange={(e) => (layerToggles.packetAnimation = e.currentTarget.checked)}
+        />
+        <span>Animate path</span>
       </label>
       <label class="toggle-row">
         <input
