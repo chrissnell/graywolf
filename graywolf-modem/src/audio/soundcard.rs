@@ -643,7 +643,7 @@ pub fn pick_input_probe_config(dev: &Device) -> Result<(SampleFormat, StreamConf
             if cfg.channels() < b.channels() {
                 return false;
             }
-            input_format_rank(cfg.sample_format()) >= input_format_rank(b.sample_format())
+            native_format_rank(cfg.sample_format()) >= native_format_rank(b.sample_format())
         });
         if !dominated_by_best {
             best = Some(cfg);
@@ -665,12 +665,12 @@ pub fn pick_input_probe_config(dev: &Device) -> Result<(SampleFormat, StreamConf
     ))
 }
 
-/// Rank for input sample-format preference: lower is better. Native
+/// Rank for sample-format preference: lower is better. Native
 /// integer `I16` first (every cheap USB radio codec runs it and ALSA
 /// `plughw:` streams it without resampling jitter), then `F32`, then
-/// the rest. Single source of truth shared by the runtime stream and
-/// the detection probe.
-fn input_format_rank(f: SampleFormat) -> u8 {
+/// the rest. Single source of truth shared by the capture/playback
+/// runtime streams and the detection probe.
+fn native_format_rank(f: SampleFormat) -> u8 {
     match f {
         SampleFormat::I16 => 0,
         SampleFormat::F32 => 1,
@@ -693,11 +693,46 @@ pub fn pick_input_sample_format(
     configs: &[(u16, SampleFormat, u32, u32)],
     rate: u32,
 ) -> Option<SampleFormat> {
+    pick_native_sample_format(configs, rate)
+}
+
+/// Shared selection core for both directions: from the device's
+/// advertised `(channels, format, min_rate, max_rate)` configs, keep
+/// only those whose range covers `rate`, then return the best-ranked
+/// format (`native_format_rank`, native `I16` first). Returns `None`
+/// when nothing is advertised at `rate`, so callers fall back to the
+/// cpal default. Capture and playback share this so their format choice
+/// cannot drift (invariant 33).
+fn pick_native_sample_format(
+    configs: &[(u16, SampleFormat, u32, u32)],
+    rate: u32,
+) -> Option<SampleFormat> {
     configs
         .iter()
         .filter(|&&(_ch, _f, min, max)| rate >= min && rate <= max)
-        .min_by_key(|&&(_ch, f, _min, _max)| input_format_rank(f))
+        .min_by_key(|&&(_ch, f, _min, _max)| native_format_rank(f))
         .map(|&(_ch, f, _min, _max)| f)
+}
+
+/// Pick the sample format to actually open a playback stream with, given
+/// the device's supported `(channels, format, min_rate, max_rate)`
+/// configs and the rate we will open at.
+///
+/// Same trap as capture, on the TX side (#227). `default_output_config()`
+/// on an ALSA `plughw:`/`default` PCM hands back `F32`, and opening an
+/// F32 *output* stream on the same cheap USB radio codecs (Signalink,
+/// Digirig, AIOC) makes `alsa::poll()` return POLLERR every period -- the
+/// holding thread then rebuilds with the identical bad format and floods
+/// the log forever while TX audio never reaches the rig. The RX path was
+/// fixed to never trust `default_input_config()`; this is the matching
+/// fix for TX. We pick the best format the device advertises *at the
+/// chosen rate*, preferring native `I16`, falling back to the cpal
+/// default only if the device advertises nothing usable.
+pub fn pick_output_sample_format(
+    configs: &[(u16, SampleFormat, u32, u32)],
+    rate: u32,
+) -> Option<SampleFormat> {
+    pick_native_sample_format(configs, rate)
 }
 
 /// Decide the sample rate to actually open a stream at, given the
@@ -947,7 +982,29 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     let stream_failed = Arc::new(AtomicBool::new(false));
 
     let want_ch = cfg.audio_channel as usize;
-    let sample_format = supported.sample_format();
+    // Never trust default_output_config()'s format: on an ALSA plughw:/
+    // default PCM it is F32, which POLLERR-loops cpal forever on the
+    // cheap USB radio codecs used for TX (Signalink, Digirig, AIOC) --
+    // the same failure the RX path hit (#227). Pick the format the
+    // device actually advertises at our rate, preferring native I16,
+    // and fall back to the cpal default only if it advertises nothing
+    // usable.
+    let output_cfgs: Vec<(u16, SampleFormat, u32, u32)> = device
+        .supported_output_configs()
+        .map(|it| {
+            it.map(|c| {
+                (
+                    c.channels(),
+                    c.sample_format(),
+                    c.min_sample_rate(),
+                    c.max_sample_rate(),
+                )
+            })
+            .collect()
+        })
+        .unwrap_or_default();
+    let sample_format = pick_output_sample_format(&output_cfgs, cfg.sample_rate)
+        .unwrap_or_else(|| supported.sample_format());
 
     let drained_for_thread = drained.clone();
     let submitted_for_thread = submitted.clone();
@@ -1286,6 +1343,35 @@ mod tests {
         // Nothing covers the rate.
         assert_eq!(pick_input_sample_format(&cfgs, 96_000), None);
         assert_eq!(pick_input_sample_format(&[], 48_000), None);
+    }
+
+    #[test]
+    fn pick_output_format_prefers_i16_over_f32_at_rate() {
+        // #227: the TX mirror of the AIOC case. A synthetic plug PCM
+        // advertises F32 (huge range) alongside native I16/48k. Must
+        // pick I16 -- opening the F32 output stream is what POLLERR-loops
+        // cpal on Signalink/Digirig/AIOC and floods the TX log.
+        let cfgs = [
+            (2u16, SampleFormat::F32, 4_000u32, 4_294_967_295u32),
+            (1u16, SampleFormat::I16, 48_000u32, 48_000u32),
+        ];
+        assert_eq!(pick_output_sample_format(&cfgs, 48_000), Some(SampleFormat::I16));
+    }
+
+    #[test]
+    fn pick_output_format_falls_back_and_respects_rate_bounds() {
+        // F32 used only when no I16 covers the rate.
+        let cfgs = [(1u16, SampleFormat::F32, 8_000u32, 48_000u32)];
+        assert_eq!(pick_output_sample_format(&cfgs, 48_000), Some(SampleFormat::F32));
+        // I16 exists but outside the target rate; F32 covers it.
+        let cfgs2 = [
+            (1u16, SampleFormat::I16, 8_000u32, 16_000u32),
+            (1u16, SampleFormat::F32, 8_000u32, 48_000u32),
+        ];
+        assert_eq!(pick_output_sample_format(&cfgs2, 48_000), Some(SampleFormat::F32));
+        // Nothing covers the rate / no configs → caller uses cpal default.
+        assert_eq!(pick_output_sample_format(&cfgs2, 96_000), None);
+        assert_eq!(pick_output_sample_format(&[], 48_000), None);
     }
 
     #[test]

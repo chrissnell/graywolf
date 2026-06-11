@@ -524,32 +524,44 @@ Source:
 [`../../web/src/lib/sampleRate.js`](../../web/src/lib/sampleRate.js),
 [`../../pkg/configstore/migrate_audio_devices_clamp_sample_rate.go`](../../pkg/configstore/migrate_audio_devices_clamp_sample_rate.go).
 
-### 33. Capture stream format is device-advertised, never `default_input_config()`
+### 33. Stream format is device-advertised, never `default_{input,output}_config()` (both RX and TX)
 
-`soundcard::spawn` picks the input `SampleFormat` from the device's
-*advertised* supported configs at the chosen rate, preferring native
-`I16` (`pick_input_sample_format`). It must **never** open a capture
-stream using `device.default_input_config().sample_format()`.
+`soundcard::spawn` (capture) and `soundcard::spawn_output` (playback)
+both pick the `SampleFormat` from the device's *advertised* supported
+configs at the chosen rate, preferring native `I16`
+(`pick_input_sample_format` / `pick_output_sample_format`, both ranked
+by the shared `native_format_rank`). Neither path may open a stream
+using `device.default_input_config().sample_format()` or
+`device.default_output_config().sample_format()`; the cpal default is
+only a last-resort fallback when the device advertises nothing usable
+at the rate.
 
 *Why:* On an ALSA `plughw:`/`default` PCM, cpal's
-`default_input_config()` returns **`F32`**. Opening an `F32` capture
-stream on a full-speed USB radio codec (AIOC and similar) makes cpal
-`alsa::poll()` return `POLLERR` on essentially every period -- the
-holding thread rebuilds, POLLERRs again, and loops forever (observed:
-24,344 errors in one session, RX stuck at zero with no fatal error).
-The *same hardware* streams the native `I16` config cleanly (`arecord
--f S16_LE` and the detection probe both work). The detection probe
-(`pick_input_probe_config`) already selected I16; the runtime
-`spawn()` did not, so the probe verified a config the runtime never
-used. `pick_input_sample_format` and the probe now share
-`input_format_rank` so detection and runtime cannot drift. The
-sample-*rate* clamp (invariant 32) is necessary but independent: a
-clipping analog input or an `F32` plughw stream each kill RX on their
-own.
+`default_input_config()` **and** `default_output_config()` return
+**`F32`**. Opening an `F32` stream on a full-speed USB radio codec
+(AIOC, Signalink, Digirig) makes cpal `alsa::poll()` return `POLLERR`
+on essentially every period -- the holding thread rebuilds, POLLERRs
+again, and loops forever, flooding the log. The *same hardware*
+streams the native `I16` config cleanly (`arecord -f S16_LE` /
+`aplay`).
+
+This bit RX first: capture was observed looping 24,344 errors in one
+session with RX stuck at zero and no fatal error. The capture fix
+(`pick_input_sample_format`, commit `f917b8ff`) left `spawn_output`
+still calling `default_output_config().sample_format()`, so the
+identical failure resurfaced on **TX only** (issue #227: TX floods
+`cpal output stream error: ... alsa::poll() returned POLLERR` while RX
+is fine). `spawn_output` now selects the format the same way.
+
+The detection probe (`pick_input_probe_config`) and both runtime
+selectors share `native_format_rank`, so detection and runtime cannot
+drift. The sample-*rate* clamp (invariant 32) is necessary but
+independent: a clipping analog input or an `F32` plughw stream each
+kill audio on their own.
 
 Source:
 [`../../graywolf-modem/src/audio/soundcard.rs`](../../graywolf-modem/src/audio/soundcard.rs)
-(`pick_input_sample_format`, `input_format_rank`, `pick_input_probe_config`, `spawn`).
+(`pick_input_sample_format`, `pick_output_sample_format`, `native_format_rank`, `pick_input_probe_config`, `spawn`, `spawn_output`).
 
 ### 34. KISS InterfaceType dispatch must be updated in two independent places
 
