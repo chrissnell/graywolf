@@ -115,3 +115,73 @@ func TestStaticRebeaconDirectNotMasked(t *testing.T) {
 		t.Fatalf("timestamp not advanced: got %v want %v", p.Timestamp, digipeated.Timestamp)
 	}
 }
+
+// TestStaticRebeaconUpgradeAndLatestWins pins the other two transition
+// directions of the issue #130 SQL CASE guard: a digipeated fix is upgraded
+// to direct when a direct copy arrives, and among non-direct copies the
+// latest one still wins. Together with TestStaticRebeaconDirectNotMasked
+// this locks the guard against an inverted boolean binding.
+func TestStaticRebeaconUpgradeAndLatestWins(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	base := time.Now().Add(-time.Minute)
+	mk := func(dir string, hops int, via, comment string, ts time.Time) stationcache.CacheEntry {
+		e := stationcache.CacheEntry{
+			Key: "stn:DIGI1", Callsign: "DIGI1", HasPos: true,
+			Lat: 40.0, Lon: -105.0, Symbol: [2]byte{'/', '#'},
+			Via: via, Direction: dir, Hops: hops, Comment: comment, Timestamp: ts,
+		}
+		if hops > 0 {
+			e.Path = []string{"DIGI2*", "WIDE2-1"}
+		}
+		return e
+	}
+
+	load := func() stationcache.Position {
+		stations, err := db.LoadRecent(time.Hour, 200)
+		if err != nil {
+			t.Fatalf("load recent: %v", err)
+		}
+		s := stations["stn:DIGI1"]
+		if s == nil || len(s.Positions) != 1 {
+			t.Fatalf("expected 1 station with 1 position, got %+v", s)
+		}
+		return s.Positions[0]
+	}
+
+	// Heard via a digipeater first, then directly: must upgrade to direct.
+	if err := db.WriteEntries([]stationcache.CacheEntry{mk("RX", 2, "WIDE2-1", "via digi", base)}); err != nil {
+		t.Fatalf("write digipeated: %v", err)
+	}
+	if err := db.WriteEntries([]stationcache.CacheEntry{mk("RX", 0, "", "direct", base.Add(time.Second))}); err != nil {
+		t.Fatalf("write direct: %v", err)
+	}
+	if p := load(); p.Direction != "RX" || p.Hops != 0 {
+		t.Fatalf("direct copy did not upgrade fix: Direction=%q Hops=%d", p.Direction, p.Hops)
+	}
+
+	// Among non-direct copies (no direct ever heard), latest still wins.
+	db2, err := Open(filepath.Join(t.TempDir(), "h2.db"))
+	if err != nil {
+		t.Fatalf("open h2: %v", err)
+	}
+	defer db2.Close()
+	if err := db2.WriteEntries([]stationcache.CacheEntry{mk("RX", 2, "WIDE2-1", "first digi", base)}); err != nil {
+		t.Fatalf("write first digi: %v", err)
+	}
+	if err := db2.WriteEntries([]stationcache.CacheEntry{mk("IS", 0, "is", "from aprs-is", base.Add(time.Second))}); err != nil {
+		t.Fatalf("write IS: %v", err)
+	}
+	stations, err := db2.LoadRecent(time.Hour, 200)
+	if err != nil {
+		t.Fatalf("load recent h2: %v", err)
+	}
+	p := stations["stn:DIGI1"].Positions[0]
+	if p.Direction != "IS" || p.Hops != 0 {
+		t.Fatalf("latest non-direct copy did not win: Direction=%q Hops=%d", p.Direction, p.Hops)
+	}
+}
