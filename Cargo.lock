@@ -14,8 +14,7 @@ dependencies = [
 [[package]]
 name = "alsa"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "812947049edcd670a82cd5c73c3661d2e58468577ba8489de58e1a73c04cbd5d"
+source = "git+https://github.com/diwic/alsa-rs?rev=62722db312fe078c4ab7a1f5c832e310af9d51eb#62722db312fe078c4ab7a1f5c832e310af9d51eb"
 dependencies = [
  "alsa-sys",
  "bitflags",
@@ -495,8 +494,7 @@ dependencies = [
 [[package]]
 name = "gpiocdev-uapi"
 version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbb160ed63d4235176759e49b7e26aa063603ec4547e458ab1ea98483040028c"
+source = "git+https://github.com/chrissnell/gpiocdev-rs?rev=35016676c9090834ea1e49edd5e18c9e10212f55#35016676c9090834ea1e49edd5e18c9e10212f55"
 dependencies = [
  "bitflags",
  "ioctl-sys",

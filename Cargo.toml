@@ -11,3 +11,18 @@ resolver = "2"
 # As a side effect, cargo places the shared build output at /target/ rather
 # than graywolf-modem/target/ — several path references (Makefile, main.go,
 # bridge.go, integration tests, release workflow) depend on this location.
+
+# Build fixes for the 32-bit armhf (gnueabihf) release targets, which compile
+# with RUST_LIBC_UNSTABLE_GNU_TIME_BITS=64 so the Rust libc timespec matches
+# the t64 libasound2. Under time64, libc::timespec gains a private __pad field
+# and these two crates fail to build because they construct timespec with a
+# struct literal. Both pins are behavior-identical on every other target.
+#
+#   alsa:          upstream master already fixed this (commit 62722db); the
+#                  fix is unreleased but master is still 0.11.0, a drop-in.
+#   gpiocdev-uapi: no upstream fix exists, so this points at a thin fork of
+#                  the uapi-v0.6.4 tag with the same zeroed() change. Drop it
+#                  once the fix lands upstream and is released.
+[patch.crates-io]
+alsa = { git = "https://github.com/diwic/alsa-rs", rev = "62722db312fe078c4ab7a1f5c832e310af9d51eb" }
+gpiocdev-uapi = { git = "https://github.com/chrissnell/gpiocdev-rs", rev = "35016676c9090834ea1e49edd5e18c9e10212f55" }
