@@ -78,12 +78,16 @@
     { key: 'status', label: 'Status' },
   ];
 
-  // Platform-conditional type menu. On Android, operators see only
-  // the two interface types we actually support there: Bluetooth
-  // (serial-over-RFCOMM to a paired TNC) and TCP-Client (which we
-  // relabel "Network" because that's the term Android operators
-  // expect). Desktop keeps the full set including server-listen TCP
-  // and host-serial. Platform.isAndroid is read reactively so the
+  // Platform-conditional type menu. On Android, operators see the
+  // interface types we support there: Bluetooth (serial-over-RFCOMM to
+  // a paired TNC), USB Serial, TCP-Client (which we relabel "Network"
+  // because that's the term Android operators expect), and TCP server
+  // (graywolf listens; a local KISS app — e.g. a same-device iGate
+  // client — dials in over loopback). The on-device Go binary binds
+  // the listen socket directly, so TCP server needs no platform
+  // adapter (unlike Bluetooth/USB, which relay bytes over the platform
+  // UDS); it's the same fully-supported code path as desktop. Desktop
+  // keeps host-serial too. Platform.isAndroid is read reactively so the
   // menu re-derives if the JS bridge appears/disappears mid-session
   // (rare, but the reactive shape costs us nothing).
   const desktopTypeOptions = [
@@ -94,6 +98,7 @@
   const androidTypeOptions = [
     { value: 'bluetooth',  label: 'Bluetooth Serial' },
     { value: 'usbserial',  label: 'USB Serial' },
+    { value: 'tcp',        label: 'TCP (server)' },
     { value: 'tcp-client', label: 'Network' },
   ];
   let typeOptions = $derived(Platform.isAndroid ? androidTypeOptions : desktopTypeOptions);
@@ -220,6 +225,10 @@
     return {
       type: 'tcp',
       tcp_port: TCP_PORT_DEFAULT,
+      // tcp (server) bind scope: false => listen on all interfaces
+      // (0.0.0.0), true => loopback only (127.0.0.1). Off by default to
+      // match desktop semantics; the operator opts into local-only.
+      local_only: false,
       // tcp-client fields:
       remote_host: '',
       remote_port: TCP_PORT_DEFAULT,
@@ -288,11 +297,11 @@
   function openCreate() {
     editing = null;
     form = emptyForm();
-    // The Type select only shows {bluetooth, tcp-client} on Android —
-    // the default `tcp` from emptyForm() would render an invisible
-    // selection and silently submit a server-listen interface if the
-    // operator never touched the field. Pick a visible default for
-    // the platform's actual menu.
+    // emptyForm() defaults to `tcp` (the desktop common case). On
+    // Android, Bluetooth-to-a-paired-TNC is the far more common setup,
+    // so default new interfaces there to bluetooth. (tcp is selectable
+    // on Android too — this is a default-value choice, not a menu
+    // restriction.)
     if (Platform.isAndroid) {
       form.type = 'bluetooth';
     }
@@ -310,6 +319,7 @@
     form = {
       ...row,
       tcp_port: String(row.tcp_port ?? ''),
+      local_only: !!row.local_only,
       remote_host: row.remote_host || '',
       remote_port: String(row.remote_port || ''),
       reconnect_init_ms: String(row.reconnect_init_ms || RECONNECT_INIT_DEFAULT_MS),
@@ -548,6 +558,7 @@
     switch (form.type) {
       case 'tcp':
         data.tcp_port = parseInt(form.tcp_port) || 0;
+        data.local_only = !!form.local_only;
         break;
       case 'tcp-client':
         data.remote_host = (form.remote_host || '').trim();
@@ -661,7 +672,7 @@
   }
 
   function endpointText(row) {
-    if (row.type === 'tcp') return `:${row.tcp_port}`;
+    if (row.type === 'tcp') return row.local_only ? `127.0.0.1:${row.tcp_port}` : `:${row.tcp_port}`;
     if (row.type === 'tcp-client') return `${row.remote_host}:${row.remote_port}`;
     if (row.type === 'serial') return row.serial_device || '—';
     if (row.type === 'bluetooth') return friendlyDevice(row) || '—';
@@ -813,7 +824,7 @@
             </div>
           {/if}
         {:else if row.type === 'tcp'}
-          <div class="detail-row"><span class="detail-label">Listening:</span> <span>:{row.tcp_port}</span></div>
+          <div class="detail-row"><span class="detail-label">Listening:</span> <span>{row.local_only ? `127.0.0.1:${row.tcp_port} (local only)` : `:${row.tcp_port}`}</span></div>
         {:else if row.type === 'bluetooth'}
           <div class="detail-row"><span class="detail-label">Device:</span> <span>{friendlyDevice(row) || '—'}</span></div>
         {:else if row.type === 'usbserial'}
@@ -841,6 +852,21 @@
       <FormField label="TCP Port" id="kiss-port">
         <Input id="kiss-port" bind:value={form.tcp_port} type="number" placeholder="8001" />
       </FormField>
+      <!-- Bind scope for the KISS listener. Unchecked binds all
+           interfaces (0.0.0.0); checked binds loopback (127.0.0.1) so
+           only apps on this device can connect — the common case for an
+           on-device iGate client. -->
+      <div class="field checkbox-field">
+        <label class="checkbox-row" for="kiss-local-only">
+          <Checkbox id="kiss-local-only" bind:checked={form.local_only} />
+          <span>Local only (this device)</span>
+        </label>
+        <span class="field-hint">
+          Listen on loopback (127.0.0.1) instead of every network interface.
+          Recommended when a KISS app on this same device connects in — it
+          keeps the port off your Wi-Fi/LAN.
+        </span>
+      </div>
     {:else if form.type === 'tcp-client'}
       <FormField
         label="Remote Host"

@@ -9386,6 +9386,10 @@
                     "description": "GateTxToIs opts a Mode=modem KISS interface in to gating frames\nsubmitted by connected KISS clients to APRS-IS, after the TX\ngovernor has accepted them. The iGate's own filter chain still\nruns, so this only opens the gate — it does not bypass NOGATE /\nRFONLY / TCPIP markers or the operator's filter rules. Default\nfalse on all migrated rows; meaningless in Mode=tnc (which\nalready feeds the iGate via the RX fanout) and silently ignored\nthere by the server.",
                     "type": "boolean"
                 },
+                "local_only": {
+                    "description": "LocalOnly, when set on a tcp (server-listen) interface, binds the\nKISS listener to loopback (127.0.0.1) instead of all interfaces\n(0.0.0.0). The intended use is an on-device iGate client (a KISS\napp on the same phone/host) dialing in over loopback without\nexposing the port to the LAN. Ignored for non-tcp types. Stored\nin the existing ListenAddr host -- no schema change.",
+                    "type": "boolean"
+                },
                 "mode": {
                     "type": "string"
                 },
@@ -9445,6 +9449,10 @@
                 },
                 "last_error": {
                     "type": "string"
+                },
+                "local_only": {
+                    "description": "LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface\nlistens on loopback only. Derived from the ListenAddr host.",
+                    "type": "boolean"
                 },
                 "mode": {
                     "type": "string"
