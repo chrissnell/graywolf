@@ -17,6 +17,9 @@
   import { mountWindBarbsLayer } from '../lib/map/layers/wind-barbs.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
+  import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
+  import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
+  import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
@@ -24,6 +27,7 @@
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
   import { toasts } from '../lib/stores.js';
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
+  import MapPinned from 'lucide-svelte/icons/map-pinned';
   import Copy from 'lucide-svelte/icons/copy';
 
   // Values are seconds (data store wants ms; multiplied at dispatch).
@@ -54,6 +58,7 @@
   let windBarbsLayer = null;
   let hoverPathLayer = null;
   let myPositionLayer = null;
+  let fixedPointsLayer = null;
   let mapRef = null;
   let activePopup = null;
 
@@ -68,8 +73,13 @@
     trails: true,
     weather: true,
     myPosition: true,
+    fixedPoints: true,
     directRxOnly: false,
   });
+
+  // Add-fixed-point dialog state. Opened from the context menu with the
+  // clicked coordinates; onConfirm drops the point into the store.
+  let fpDialog = $state({ open: false, lat: 0, lon: 0 });
 
   // Direct RX predicate: a station qualifies if at least one of its
   // accumulated positions arrived directly on RF (RX direction with
@@ -122,6 +132,13 @@
         onSelect: () => {
           const q = `lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`;
           window.location.hash = `#/beacons?${q}`;
+        },
+      },
+      {
+        label: 'Add fixed point here',
+        icon: MapPinned,
+        onSelect: () => {
+          fpDialog = { open: true, lat, lon };
         },
       },
       { divider: true },
@@ -218,6 +235,46 @@
     }
   }
 
+  // Clicking a fixed point opens a small popup with its name and a delete
+  // button — the issue's "delete on click", with a confirm step so a stray
+  // tap doesn't silently drop a landmark.
+  function openFixedPointPopup(map, point) {
+    closePopup();
+    const name = point.name || 'Fixed point';
+    const div = document.createElement('div');
+    div.className = 'gw-fixed-popup-body';
+    const title = document.createElement('div');
+    title.className = 'gw-fixed-popup-name';
+    title.textContent = name;
+    const coords = document.createElement('div');
+    coords.className = 'gw-fixed-popup-coords';
+    coords.textContent = `${fmtLat(point.lat)} ${fmtLon(point.lon)}`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'gw-fixed-popup-delete';
+    btn.textContent = 'Delete point';
+    btn.addEventListener('click', () => {
+      fixedPointsStore.remove(point.id);
+      closePopup();
+      toasts.success(`Removed "${name}"`);
+    });
+    div.append(title, coords, btn);
+
+    activePopup = new maplibregl.Popup({
+      offset: 18,
+      maxWidth: '260px',
+      className: 'gw-fixed-popup',
+      closeButton: true,
+      closeOnClick: true,
+    })
+      .setLngLat([point.lon, point.lat])
+      .setDOMContent(div)
+      .addTo(map);
+    activePopup.on('close', () => {
+      activePopup = null;
+    });
+  }
+
   function updateCoordText(lngLat) {
     if (!lngLat) {
       coordText = '';
@@ -280,6 +337,9 @@
         hoverPathLayer?.clear();
       },
       onMarkerClick: (s) => openStationPopup(map, s),
+    });
+    fixedPointsLayer = mountFixedPointsLayer(map, () => fixedPointsStore.points, {
+      onMarkerClick: (point) => openFixedPointPopup(map, point),
     });
     myPositionLayer = mountMyPositionLayer(map, () => dataStore.myPosition, {
       onMarkerEnter: () => {
@@ -375,6 +435,13 @@
     if (myPositionLayer) myPositionLayer.refresh();
   });
 
+  // Fixed points change independently of the station poll (operator adds /
+  // deletes them), so they get their own refresh effect tracking the store.
+  $effect(() => {
+    const _len = fixedPointsStore.points.length;
+    fixedPointsLayer?.refresh();
+  });
+
   // Push the layer toggles into the layer modules. We MUST read the
   // reactive value before the optional-chain so Svelte 5 tracks it as a
   // dependency on the initial run. With `layer?.setVisible(toggle)`, if
@@ -401,6 +468,10 @@
   $effect(() => {
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
+  });
+  $effect(() => {
+    const v = layerToggles.fixedPoints;
+    fixedPointsLayer?.setVisible(v);
   });
   // Direct RX filter: predicate is shared across stations/trails/weather/
   // wind-barbs so the layers stay in lockstep. my-position is the
@@ -511,12 +582,14 @@
     windBarbsLayer?.destroy();
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
+    fixedPointsLayer?.destroy();
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
     windBarbsLayer = null;
     hoverPathLayer = null;
     myPositionLayer = null;
+    fixedPointsLayer = null;
     mapRef = null;
     if (tickTimer) {
       clearInterval(tickTimer);
@@ -568,6 +641,14 @@
           onchange={(e) => (layerToggles.myPosition = e.currentTarget.checked)}
         />
         <span>My Position</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={layerToggles.fixedPoints}
+          onchange={(e) => (layerToggles.fixedPoints = e.currentTarget.checked)}
+        />
+        <span>Fixed Points</span>
       </label>
       <label class="toggle-row">
         <input
@@ -666,6 +747,23 @@
     header={ctxMenu.open ? ctxMenuHeader() : ''}
     items={ctxMenu.open ? ctxMenuItems() : []}
     onclose={closeCtxMenu}
+  />
+
+  <FixedPointDialog
+    bind:open={fpDialog.open}
+    lat={fpDialog.lat}
+    lon={fpDialog.lon}
+    onConfirm={({ name, table, symbol, overlay }) => {
+      const p = fixedPointsStore.add({
+        name,
+        table,
+        symbol,
+        overlay,
+        lat: fpDialog.lat,
+        lon: fpDialog.lon,
+      });
+      toasts.success(`Added "${p.name}"`);
+    }}
   />
 
   <!-- Status bar (bottom-center; legacy placement so it doesn't sit
@@ -972,6 +1070,93 @@
     border-radius: 2px;
     white-space: nowrap;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Fixed-point markers: same footprint as station markers (APRS icon +
+     label to the right), but the label chip is tinted to distinguish
+     operator-placed landmarks from heard stations. MapLibre owns the DOM,
+     so these have to be :global. */
+  :global(.gw-fixed-marker) {
+    width: 21px;
+    height: 21px;
+    cursor: pointer;
+    pointer-events: auto;
+    user-select: none;
+  }
+  :global(.gw-fixed-icon) {
+    width: 21px;
+    height: 21px;
+  }
+  :global(.gw-fixed-label) {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 4px;
+    padding: 0 4px;
+    line-height: 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: #ffffff;
+    background: rgba(28, 58, 92, 0.82);
+    border: 1px solid rgba(110, 181, 255, 0.7);
+    border-radius: 2px;
+    white-space: nowrap;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Fixed-point delete popup: theme-aware container matching station
+     popups, plus the interior name/coords/delete button. */
+  :global(.gw-fixed-popup .maplibregl-popup-content) {
+    background: var(--map-overlay-bg);
+    color: var(--map-overlay-fg);
+    border: 1px solid var(--map-overlay-border);
+    border-radius: 8px;
+    box-shadow: var(--map-overlay-shadow);
+    padding: 12px;
+    font-size: 13px;
+  }
+  :global(.gw-fixed-popup .maplibregl-popup-close-button) {
+    color: var(--map-overlay-fg);
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+  }
+  :global(.gw-fixed-popup-body) {
+    font-family: var(--font-mono);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 140px;
+  }
+  :global(.gw-fixed-popup-name) {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--color-text);
+    padding-right: 16px;
+  }
+  :global(.gw-fixed-popup-coords) {
+    font-size: 11px;
+    color: var(--color-text-muted);
+  }
+  :global(.gw-fixed-popup-delete) {
+    margin-top: 2px;
+    padding: 5px 10px;
+    border: 1px solid var(--color-danger, #d64545);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-danger, #d64545);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  :global(.gw-fixed-popup-delete:hover) {
+    background: var(--color-danger, #d64545);
+    color: #ffffff;
   }
 
   /* Station popup: theme-aware container + tip + close button. */
