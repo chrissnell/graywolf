@@ -297,11 +297,11 @@
   function openCreate() {
     editing = null;
     form = emptyForm();
-    // The Type select only shows {bluetooth, tcp-client} on Android —
-    // the default `tcp` from emptyForm() would render an invisible
-    // selection and silently submit a server-listen interface if the
-    // operator never touched the field. Pick a visible default for
-    // the platform's actual menu.
+    // emptyForm() defaults to `tcp` (the desktop common case). On
+    // Android, Bluetooth-to-a-paired-TNC is the far more common setup,
+    // so default new interfaces there to bluetooth. (tcp is selectable
+    // on Android too — this is a default-value choice, not a menu
+    // restriction.)
     if (Platform.isAndroid) {
       form.type = 'bluetooth';
     }
