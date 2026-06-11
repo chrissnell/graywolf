@@ -115,6 +115,78 @@ func TestGet_ColdFailureReturnsError(t *testing.T) {
 	}
 }
 
+func TestColdFailure_AuthErrorIsActionable(t *testing.T) {
+	cases := []struct {
+		name      string
+		token     string
+		status    int
+		body      string
+		wantParts []string
+	}{
+		{
+			name:      "invalid token",
+			token:     "stale-token",
+			status:    http.StatusUnauthorized,
+			body:      "unauthorized: missing",
+			wantParts: []string{"Graywolf Maps access was rejected", "re-register your device", "Settings tab", "HTTP 401"},
+		},
+		{
+			name:      "no token",
+			token:     "",
+			status:    http.StatusUnauthorized,
+			body:      "unauthorized: missing",
+			wantParts: []string{"To activate Graywolf Maps", "register your device", "Settings tab", "HTTP 401"},
+		},
+		{
+			name:      "forbidden",
+			token:     "revoked",
+			status:    http.StatusForbidden,
+			body:      "forbidden",
+			wantParts: []string{"Graywolf Maps access was rejected", "HTTP 403"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, tc.body, tc.status)
+			}))
+			defer srv.Close()
+
+			c := New(srv.URL, func(context.Context) string { return tc.token }, time.Hour)
+			_, err := c.Get(context.Background())
+			if err == nil {
+				t.Fatal("expected error on auth failure")
+			}
+			msg := err.Error()
+			for _, want := range tc.wantParts {
+				if !strings.Contains(msg, want) {
+					t.Errorf("error %q missing %q", msg, want)
+				}
+			}
+			// The raw upstream body must not leak into the auth message.
+			if strings.Contains(msg, "unauthorized: missing") {
+				t.Errorf("auth error leaked raw upstream body: %q", msg)
+			}
+		})
+	}
+}
+
+func TestColdFailure_NonAuthErrorIncludesStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, func(context.Context) string { return "tok" }, time.Hour)
+	_, err := c.Get(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "HTTP 500") {
+		t.Errorf("expected HTTP 500 in error, got %q", err.Error())
+	}
+}
+
 func TestGet_AppendsToken(t *testing.T) {
 	var seenQuery atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
