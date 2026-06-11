@@ -62,6 +62,9 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
         type: 'raster',
         tiles: [radarTileUrl('nexrad-n0q', 'png')],
         tileSize: 256,
+        // IEM's N0Q composite tops out ~z10; cap so MapLibre overzooms the
+        // last available tile instead of requesting non-existent z11+ tiles.
+        maxzoom: 10,
         attribution: RADAR_ATTRIBUTION,
       },
       layers: [

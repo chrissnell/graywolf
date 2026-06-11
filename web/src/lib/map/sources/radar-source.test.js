@@ -65,3 +65,22 @@ test('vector provider yields a fill layer driven by fill-opacity', () => {
   assert.equal(p.opacity.property, 'fill-opacity');
   assert.deepEqual(p.opacity.layerIds, ['radar-fill']);
 });
+
+test('fill-color step has strictly-ascending stops and lowest-band base color', () => {
+  const expr = buildDbzFillColor();
+  // expr = ['step', input, base, stop1, c1, stop2, c2, ...]
+  assert.equal(expr[2], DBZ_COLORS[DBZ_BANDS[0]], 'base output is the lowest band color');
+  let prev = -Infinity;
+  for (let i = 3; i < expr.length; i += 2) {
+    const stop = expr[i];
+    assert.ok(stop > prev, `stop ${stop} must exceed previous ${prev}`);
+    assert.equal(expr[i + 1], DBZ_COLORS[stop], `stop ${stop} maps to its palette color`);
+    prev = stop;
+  }
+});
+
+test('raster source caps maxzoom so tiles overzoom instead of 404ing', () => {
+  const p = radarProvider(RADAR_BACKEND_RASTER);
+  assert.equal(typeof p.source.maxzoom, 'number');
+  assert.ok(p.source.maxzoom >= 7 && p.source.maxzoom <= 12);
+});

@@ -370,6 +370,7 @@
     const _size = dataStore.stations.size;
     const _isMetric = unitsState.isMetric;
     const _myPos = dataStore.myPosition; // track
+    if (radarLayer) radarLayer.refresh();
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
     if (weatherLayer) weatherLayer.refresh();
