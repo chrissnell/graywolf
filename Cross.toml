@@ -35,3 +35,23 @@ passthrough = [
     "PKG_CONFIG_PATH_arm_unknown_linux_gnueabihf",
     "CFLAGS_arm_unknown_linux_gnueabihf",
 ]
+
+# 32-bit ARMv7-A hard-float (NEON). Same hardfloat ABI and the same
+# `arm-linux-gnueabihf` multi-arch tuple as the armv6 target above, so the
+# :armhf dev packages and pkg-config dir are identical -- only the Rust
+# triple differs. The two builds are kept separate so armv6-only Pi models
+# keep a scalar binary while armv7-a boards (Cortex-A7+) get the NEON build;
+# the +neon codegen flag lives in .cargo/config.toml, keyed to this triple.
+[target.armv7-unknown-linux-gnueabihf]
+pre-build = [
+    "dpkg --add-architecture armhf && apt-get update && apt-get install -y libasound2-dev:armhf libudev-dev:armhf unzip && curl -Lo /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v28.3/protoc-28.3-linux-x86_64.zip && unzip -o /tmp/protoc.zip -d /usr/local bin/protoc && chmod +x /usr/local/bin/protoc && rm /tmp/protoc.zip",
+]
+
+# Multi-arch path is shared with armv6 (both are arm-linux-gnueabihf); the
+# passthrough env var names are keyed to the Rust triple, so they differ.
+[target.armv7-unknown-linux-gnueabihf.env]
+passthrough = [
+    "PKG_CONFIG_ALLOW_CROSS",
+    "PKG_CONFIG_PATH_armv7_unknown_linux_gnueabihf",
+    "CFLAGS_armv7_unknown_linux_gnueabihf",
+]
