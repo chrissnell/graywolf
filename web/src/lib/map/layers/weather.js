@@ -19,20 +19,16 @@
 
 import maplibregl from 'maplibre-gl';
 import { unitsState } from '../../settings/units-store.svelte.js';
-import { cardinal, KMH_PER_MPH } from '../popup-helpers.js';
 
+// Wind speed/direction used to live in this chip as text; it now renders
+// as a meteorological wind barb in the dedicated wind-barbs layer (see
+// wind-barbs.js). The chip carries the remaining scalar wx -- temperature.
 function formatLabel(wx, isMetric) {
   if (!wx) return '';
   const parts = [];
   if (wx.temp_f != null) {
     const t = isMetric ? ((wx.temp_f - 32) * 5) / 9 : wx.temp_f;
     parts.push(`${Math.round(t)}°${isMetric ? 'C' : 'F'}`);
-  }
-  if (wx.wind_mph != null) {
-    const s = isMetric ? wx.wind_mph * KMH_PER_MPH : wx.wind_mph;
-    let wind = `${Math.round(s)}${isMetric ? 'km/h' : 'mph'}`;
-    if (wx.wind_dir != null) wind = `${wind} ${cardinal(wx.wind_dir)}`;
-    parts.push(wind);
   }
   return parts.join(' ');
 }

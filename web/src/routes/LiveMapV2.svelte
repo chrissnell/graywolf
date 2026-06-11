@@ -14,6 +14,7 @@
   import { mountStationsLayer } from '../lib/map/layers/stations.js';
   import { mountTrailsLayer } from '../lib/map/layers/trails.js';
   import { mountWeatherLayer } from '../lib/map/layers/weather.js';
+  import { mountWindBarbsLayer } from '../lib/map/layers/wind-barbs.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
@@ -50,6 +51,7 @@
   let stationsLayer = null;
   let trailsLayer = null;
   let weatherLayer = null;
+  let windBarbsLayer = null;
   let hoverPathLayer = null;
   let myPositionLayer = null;
   let mapRef = null;
@@ -65,6 +67,7 @@
     stations: true,
     trails: true,
     weather: true,
+    windBarbs: true,
     myPosition: true,
     directRxOnly: false,
   });
@@ -255,6 +258,9 @@
       },
     });
     weatherLayer = mountWeatherLayer(map, () => dataStore.stations);
+    // Wind barbs mount before the station markers so the (DOM) station
+    // icons stack above the barb staffs that radiate out from them.
+    windBarbsLayer = mountWindBarbsLayer(map, () => dataStore.stations);
     hoverPathLayer = mountHoverPathLayer(map, () => {
       const my = dataStore.myPosition;
       return my ? { lat: my.lat, lon: my.lon } : null;
@@ -361,6 +367,7 @@
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
     if (weatherLayer) weatherLayer.refresh();
+    if (windBarbsLayer) windBarbsLayer.refresh();
     if (myPositionLayer) myPositionLayer.refresh();
   });
 
@@ -384,18 +391,23 @@
     weatherLayer?.setVisible(v);
   });
   $effect(() => {
+    const v = layerToggles.windBarbs;
+    windBarbsLayer?.setVisible(v);
+  });
+  $effect(() => {
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
   });
-  // Direct RX filter: predicate is shared across stations/trails/weather
-  // so the three layers stay in lockstep. my-position is the operator's
-  // own beacon and is intentionally exempt.
+  // Direct RX filter: predicate is shared across stations/trails/weather/
+  // wind-barbs so the layers stay in lockstep. my-position is the
+  // operator's own beacon and is intentionally exempt.
   $effect(() => {
     const on = layerToggles.directRxOnly;
     const pred = on ? isDirectRx : null;
     stationsLayer?.setFilter(pred);
     trailsLayer?.setFilter(pred);
     weatherLayer?.setFilter(pred);
+    windBarbsLayer?.setFilter(pred);
   });
 
   // Push the timerange into the data store.
@@ -492,11 +504,13 @@
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
+    windBarbsLayer?.destroy();
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
+    windBarbsLayer = null;
     hoverPathLayer = null;
     myPositionLayer = null;
     mapRef = null;
@@ -542,6 +556,14 @@
           onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
         />
         <span>Weather</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={layerToggles.windBarbs}
+          onchange={(e) => (layerToggles.windBarbs = e.currentTarget.checked)}
+        />
+        <span>Wind barbs</span>
       </label>
       <label class="toggle-row">
         <input
@@ -1021,6 +1043,38 @@
     border-radius: 3px;
     white-space: nowrap;
     text-align: center;
+  }
+
+  /* Wind barbs -- inline SVG glyph rendered per station by
+     wind-barbs.js. The marker is inert so it never steals clicks from
+     the station icon underneath. A soft drop-shadow keeps the thin
+     strokes legible over any basemap. */
+  :global(.wb-marker) {
+    background: none !important;
+    border: none !important;
+    pointer-events: none;
+    filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.85));
+  }
+  :global(.wb-svg) {
+    overflow: visible;
+  }
+  :global(.wb-staff),
+  :global(.wb-barb) {
+    stroke: var(--wb-color, #7fdfff);
+    stroke-width: 2;
+    stroke-linecap: round;
+    fill: none;
+  }
+  :global(.wb-pennant) {
+    fill: var(--wb-color, #7fdfff);
+    stroke: var(--wb-color, #7fdfff);
+    stroke-width: 1;
+    stroke-linejoin: round;
+  }
+  :global(.wb-calm) {
+    fill: none;
+    stroke: var(--wb-color, #7fdfff);
+    stroke-width: 2;
   }
 
   /* Trail hover tooltip: small dim chip with the callsign, tip-less and
