@@ -67,7 +67,6 @@
     stations: true,
     trails: true,
     weather: true,
-    windBarbs: true,
     myPosition: true,
     directRxOnly: false,
   });
@@ -386,12 +385,12 @@
     const v = layerToggles.trails;
     trailsLayer?.setVisible(v);
   });
+  // Wind barbs ride along with the Weather overlay -- they ARE the
+  // weather wind display, so one toggle governs both the temp chip and
+  // the barb rather than splitting them across two controls.
   $effect(() => {
     const v = layerToggles.weather;
     weatherLayer?.setVisible(v);
-  });
-  $effect(() => {
-    const v = layerToggles.windBarbs;
     windBarbsLayer?.setVisible(v);
   });
   $effect(() => {
@@ -556,14 +555,6 @@
           onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
         />
         <span>Weather</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.windBarbs}
-          onchange={(e) => (layerToggles.windBarbs = e.currentTarget.checked)}
-        />
-        <span>Wind barbs</span>
       </label>
       <label class="toggle-row">
         <input
