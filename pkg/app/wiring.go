@@ -800,6 +800,31 @@ func (a *App) wireIGate(ctx context.Context) error {
 	return nil
 }
 
+// persistIGateSimulation writes the simulation-mode toggle through to
+// the stored iGate config so GET /api/igate/config (read by the
+// Simulation page on load) reflects it after a refresh. POST
+// /api/igate/simulation otherwise only flips the runtime atomic via
+// SetSimulationMode, leaving the persisted config — and therefore the
+// UI on reload — out of sync. Read-modify-write preserves every other
+// field on the singleton row. See GRA-34 / graywolf#225.
+func (a *App) persistIGateSimulation(ctx context.Context, on bool) error {
+	cfg, err := a.store.GetIGateConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("load igate config: %w", err)
+	}
+	if cfg == nil {
+		cfg = &configstore.IGateConfig{}
+	}
+	if cfg.SimulationMode == on {
+		return nil
+	}
+	cfg.SimulationMode = on
+	if err := a.store.UpsertIGateConfig(ctx, cfg); err != nil {
+		return fmt.Errorf("persist igate simulation mode: %w", err)
+	}
+	return nil
+}
+
 // buildIgateInstance constructs a fresh *igate.Igate from the supplied
 // IGateConfig. Returns (nil, "", nil) when construction is benignly
 // skipped (callsign empty/N0CALL or igate.New init failure); both cases
@@ -1488,6 +1513,16 @@ func (a *App) wireHTTP(ctx context.Context) error {
 			ig := a.ig.Load()
 			if ig == nil {
 				return igate.ErrNotEnabled
+			}
+			// Persist before flipping the runtime atomic so the stored
+			// config stays the single source of truth: the Simulation
+			// page reads simulation_mode from GET /api/igate/config on
+			// load, so without this write the toggle springs back to
+			// its persisted value on refresh (and is lost on reload,
+			// since buildIgateInstance re-seeds the atomic from config).
+			// See GRA-34 / graywolf#225.
+			if err := a.persistIGateSimulation(ctx, b); err != nil {
+				return err
 			}
 			return ig.SetSimulationMode(b)
 		},
