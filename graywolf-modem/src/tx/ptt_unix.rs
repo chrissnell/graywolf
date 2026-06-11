@@ -7,7 +7,7 @@
 //! adapters briefly bounces RTS/DTR (which would key PTT spuriously).
 //! Matches direwolf's `ptt.c` Unix path exactly.
 
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 
 use nix::fcntl::{open, OFlag};
 use nix::libc;
@@ -34,14 +34,13 @@ impl UnixSerialLines {
         // never read or write data, only toggle modem control lines
         // via ioctl, so blocking mode after open is irrelevant and we
         // deliberately don't clear O_NONBLOCK afterwards.
-        let raw = open(
+        // nix 0.30 `open` returns an OwnedFd directly (0.29 returned a RawFd).
+        let fd = open(
             path,
             OFlag::O_RDWR | OFlag::O_NOCTTY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
             Mode::empty(),
         )
         .map_err(|e| format!("open {}: {}", path, e))?;
-        // SAFETY: raw is a fresh fd we just opened and own exclusively.
-        let fd = unsafe { OwnedFd::from_raw_fd(raw) };
         Ok(Self { fd })
     }
 

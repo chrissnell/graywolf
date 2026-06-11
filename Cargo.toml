@@ -31,3 +31,8 @@ gpiocdev-uapi = { git = "https://github.com/chrissnell/gpiocdev-rs", rev = "3501
 # the v0.30.1 tag using `as _` casts instead. Our direct dep is unified to
 # 0.30 (below) so this single pin covers both it and the hidapi-pulled copy.
 nix = { git = "https://github.com/chrissnell/nix", rev = "150adaa36b24f443c0ba379d47d20e4a11f3cbbc" }
+# cpal's alsa backend does `tv_sec * 1e9 + tv_nsec` with no casts, which fails
+# under armhf t64 (i64 + i32). Fixed in cpal 0.18, but bumping to 0.18 is a real
+# API migration of our audio code; instead pin a thin fork of v0.17.3 with the
+# same `as i64` cast. Drop once we move to cpal 0.18.
+cpal = { git = "https://github.com/chrissnell/cpal", rev = "d70e985cf44f2567c2f956bc3e3786cb62244046" }

@@ -9,7 +9,7 @@
 //! transfer type. On AIOC devices, feature reports are interpreted as
 //! configuration register writes and would corrupt device settings.
 
-use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 
 use nix::fcntl::{open, OFlag};
 use nix::sys::stat::Mode;
@@ -20,14 +20,13 @@ pub(super) struct UnixCm108Gpio {
 
 impl UnixCm108Gpio {
     pub(super) fn open(path: &str) -> Result<Self, String> {
-        let raw = open(
+        // nix 0.30 `open` returns an OwnedFd directly (0.29 returned a RawFd).
+        let fd = open(
             path,
             OFlag::O_RDWR | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
             Mode::empty(),
         )
         .map_err(|e| format!("open {}: {}", path, e))?;
-        // SAFETY: raw is a fresh fd we just opened and own exclusively.
-        let fd = unsafe { OwnedFd::from_raw_fd(raw) };
         Ok(Self { fd })
     }
 }
