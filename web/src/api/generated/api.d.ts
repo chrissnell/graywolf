@@ -3526,6 +3526,12 @@ export interface components {
         "webapi.packetDTO": {
             /** @description Channel is the graywolf channel ID that observed or transmitted the packet. */
             channel?: number;
+            /**
+             * @description ChannelName is the display name of the channel that handled the packet,
+             *     resolved from the numeric Channel ID; omitted when the ID maps to no
+             *     configured channel (e.g. channel 0, used for non-RF / APRS-IS arrivals).
+             */
+            channel_name?: string;
             /** @description Decoded is the parsed APRS payload when decoding succeeded; nil otherwise. */
             decoded?: components["schemas"]["aprs.DecodedAPRSPacket"];
             /** @description Device is APRS device identification (manufacturer, model) inferred from the TOCALL field; omitted when unknown. */

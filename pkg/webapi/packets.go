@@ -15,6 +15,10 @@ import (
 // packetDTO enriches a packet log entry with device identification and distance.
 type packetDTO struct {
 	packetlog.Entry
+	// ChannelName is the display name of the channel that handled the packet,
+	// resolved from the numeric Channel ID; omitted when the ID maps to no
+	// configured channel (e.g. channel 0, used for non-RF / APRS-IS arrivals).
+	ChannelName string `json:"channel_name,omitempty"`
 	// Device is APRS device identification (manufacturer, model) inferred from the TOCALL field; omitted when unknown.
 	Device *aprs.DeviceInfo `json:"device,omitempty"`
 	// DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable.
@@ -36,8 +40,7 @@ type packetDTO struct {
 // constants in pkg/webapi/docs/op_ids.go; `make docs-lint` enforces the
 // correspondence.
 func RegisterPackets(srv *Server, mux *http.ServeMux, log *packetlog.Log, posCache gps.PositionCache) {
-	_ = srv // kept in signature for consistency with other RegisterXxx
-	mux.HandleFunc("GET /api/packets", listPackets(log, posCache))
+	mux.HandleFunc("GET /api/packets", listPackets(srv, log, posCache))
 }
 
 // listPackets returns recent APRS packets from the in-memory packet log.
@@ -58,7 +61,7 @@ func RegisterPackets(srv *Server, mux *http.ServeMux, log *packetlog.Log, posCac
 // @Failure  400 {object} webtypes.ErrorResponse
 // @Security CookieAuth
 // @Router   /packets [get]
-func listPackets(log *packetlog.Log, posCache gps.PositionCache) http.HandlerFunc {
+func listPackets(srv *Server, log *packetlog.Log, posCache gps.PositionCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		f := packetlog.Filter{
@@ -93,6 +96,19 @@ func listPackets(log *packetlog.Log, posCache gps.PositionCache) http.HandlerFun
 		}
 		entries := log.Query(f)
 
+		// Resolve channel IDs to display names once per request. The channels
+		// table is tiny, so a single ListChannels query is negligible next to
+		// the JSON encode below. A nil store (some tests) just skips names.
+		var chanNames map[uint32]string
+		if srv != nil && srv.store != nil {
+			if chs, err := srv.store.ListChannels(r.Context()); err == nil {
+				chanNames = make(map[uint32]string, len(chs))
+				for _, ch := range chs {
+					chanNames[ch.ID] = ch.Name
+				}
+			}
+		}
+
 		// Get our station position for distance calc
 		var myLat, myLon float64
 		var havePos bool
@@ -107,6 +123,7 @@ func listPackets(log *packetlog.Log, posCache gps.PositionCache) http.HandlerFun
 		out := make([]packetDTO, len(entries))
 		for i := range entries {
 			out[i].Entry = entries[i]
+			out[i].ChannelName = chanNames[entries[i].Channel]
 			enrichPacket(&out[i], havePos, myLat, myLon)
 		}
 
