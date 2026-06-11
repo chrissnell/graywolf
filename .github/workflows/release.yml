@@ -132,6 +132,18 @@ jobs:
           CFLAGS_aarch64_unknown_linux_gnu: '-idirafter /usr/include'
           CFLAGS_arm_unknown_linux_gnueabihf: '-idirafter /usr/include'
           CFLAGS_armv7_unknown_linux_gnueabihf: '-idirafter /usr/include'
+          # Build the 32-bit armhf binaries with 64-bit `time_t` so Rust's
+          # `timespec` is 16 bytes, matching post-t64 Raspberry Pi OS
+          # `libasound2t64`. Fixes the cpal/alsa-rs `get_htstamp` stack
+          # overflow that crash-loops the modem on capture (issue #231).
+          # Applies to BOTH 32-bit armhf triples (armv6 + armv7), which link
+          # the same `libasound2t64:armhf` and share the exposure -- empty
+          # elsewhere (aarch64 is already 64-bit `time_t`; libc's build.rs
+          # ignores the var on 64-bit targets anyway, and Cross.toml only
+          # passes it through for these two targets). The matching
+          # passthrough entries live in Cross.toml so the var reaches libc's
+          # build.rs in the container.
+          RUST_LIBC_UNSTABLE_GNU_TIME_BITS: ${{ (matrix.target == 'arm-unknown-linux-gnueabihf' || matrix.target == 'armv7-unknown-linux-gnueabihf') && '64' || '' }}
         run: cross build --release --target ${{ matrix.target }} --bin graywolf-modem
 
       - name: Build with cargo
