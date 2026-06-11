@@ -1499,6 +1499,18 @@ func (a *App) wireHTTP(ctx context.Context) error {
 			if ig == nil {
 				return igate.ErrNotEnabled
 			}
+			// Persist before flipping the runtime atomic so the stored
+			// config stays the single source of truth: the Simulation
+			// page reads simulation_mode from GET /api/igate/config on
+			// load, so without this write the toggle springs back to
+			// its persisted value on refresh (and is lost on reload,
+			// since buildIgateInstance re-seeds the atomic from config).
+			// SetIGateSimulationMode touches only that one column so a
+			// concurrent PUT /api/igate/config can't be clobbered.
+			// See GRA-34 / graywolf#225.
+			if err := a.store.SetIGateSimulationMode(ctx, b); err != nil {
+				return err
+			}
 			return ig.SetSimulationMode(b)
 		},
 		func() *igate.Status {
