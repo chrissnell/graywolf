@@ -128,21 +128,21 @@ func TestColdFailure_AuthErrorIsActionable(t *testing.T) {
 			token:     "stale-token",
 			status:    http.StatusUnauthorized,
 			body:      "unauthorized: missing",
-			wantParts: []string{"rejected the maps access token", "re-register", "Settings -> Maps", "HTTP 401"},
+			wantParts: []string{"Graywolf Maps access was rejected", "re-register your device", "Settings tab", "HTTP 401"},
 		},
 		{
 			name:      "no token",
 			token:     "",
 			status:    http.StatusUnauthorized,
 			body:      "unauthorized: missing",
-			wantParts: []string{"no maps access token is configured", "register this device", "Settings -> Maps", "HTTP 401"},
+			wantParts: []string{"To activate Graywolf Maps", "register your device", "Settings tab", "HTTP 401"},
 		},
 		{
 			name:      "forbidden",
 			token:     "revoked",
 			status:    http.StatusForbidden,
 			body:      "forbidden",
-			wantParts: []string{"rejected the maps access token", "HTTP 403"},
+			wantParts: []string{"Graywolf Maps access was rejected", "HTTP 403"},
 		},
 	}
 	for _, tc := range cases {

@@ -340,16 +340,16 @@ func (c *Cache) fetch(ctx context.Context) (Catalog, error) {
 // fetchError turns a non-200 manifest response into an operator-facing
 // error. Auth failures (401/403) are the common real-world case --
 // they mean the maps service rejected our credentials -- so we say so
-// in plain language and point at the fix (re-register under Settings ->
-// Maps) instead of surfacing the raw upstream body like
+// in plain language and point at the fix (register the device under the
+// Settings tab) instead of surfacing the raw upstream body like
 // "unauthorized: missing", which tells an operator nothing actionable.
 func fetchError(status int, hadToken bool, body string) error {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if !hadToken {
-			return fmt.Errorf("maps service rejected the request: no maps access token is configured -- register this device under Settings -> Maps to enable map downloads (HTTP %d)", status)
+			return fmt.Errorf("To activate Graywolf Maps, go to the Settings tab and register your device (HTTP %d)", status)
 		}
-		return fmt.Errorf("maps service rejected the maps access token (it may be invalid, expired, or revoked) -- re-register this device under Settings -> Maps to refresh it (HTTP %d)", status)
+		return fmt.Errorf("Graywolf Maps access was rejected (the token may be expired or revoked) -- go to the Settings tab and re-register your device (HTTP %d)", status)
 	default:
 		body = strings.TrimSpace(body)
 		if body == "" {
