@@ -583,7 +583,28 @@
         />
         <span>Direct RX</span>
       </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={radarSettings.visible}
+          onchange={(e) => (radarSettings.visible = e.currentTarget.checked)}
+        />
+        <span>Radar</span>
+      </label>
     </div>
+
+    <label class="timerange-label" for="radar-opacity-range">
+      Radar opacity: {Math.round(radarSettings.opacity * 100)}%
+    </label>
+    <input
+      id="radar-opacity-range"
+      type="range"
+      min="0.1"
+      max="1.0"
+      step="0.05"
+      class="radar-opacity-range"
+      bind:value={radarSettings.opacity}
+    />
 
     <label class="timerange-label" for="map-timerange-select">Time range</label>
     <select
@@ -808,6 +829,11 @@
     text-transform: uppercase;
     letter-spacing: 1px;
     color: var(--color-text-muted);
+  }
+  .radar-opacity-range {
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--color-accent, #4a9eff);
   }
   .map-timerange-select {
     width: 100%;
