@@ -17,6 +17,9 @@ func TestCountHops(t *testing.T) {
 		{"mixed used/unused", []string{"WIDE1-1", "N0CALL*", "WIDE2-1", "N1CALL*", "N2CALL*"}, 3},
 		{"trace alias used", []string{"TRACE3-2*", "K7ABC*"}, 1},
 		{"q-construct ignored", []string{"qAR*", "K7XYZ*"}, 1},
+		{"is-originated TCPIP", []string{"TCPIP*"}, 0},
+		{"third-party gated", []string{"TCPIP*", "qAC", "T2USA"}, 0},
+		{"tcpxx marker", []string{"TCPXX*", "K7ABC*"}, 1},
 	}
 	for _, tt := range tests {
 		if got := CountHops(tt.path); got != tt.want {
@@ -26,7 +29,7 @@ func TestCountHops(t *testing.T) {
 }
 
 func TestIsGenericPathAlias(t *testing.T) {
-	aliases := []string{"WIDE1-1", "WIDE2*", "RELAY", "TRACE3-3", "qAR", "qAC*"}
+	aliases := []string{"WIDE1-1", "WIDE2*", "RELAY", "TRACE3-3", "qAR", "qAC*", "TCPIP*", "TCPXX"}
 	for _, a := range aliases {
 		if !IsGenericPathAlias(a) {
 			t.Errorf("IsGenericPathAlias(%q) = false, want true", a)

@@ -773,7 +773,8 @@ locks the invariant in behaviorally.
 The displayed "hop" count for a station/packet is the number of *real*
 digipeaters that retransmitted it, not the number of path elements with
 the H-bit set (`*`). Generic routing aliases — `WIDE`, `RELAY`, `TRACE`,
-and the APRS-IS `qA*` constructs — are excluded even when flagged used,
+the APRS-IS `qA*` constructs, and the IS-injection markers `TCPIP` /
+`TCPXX` — are excluded even when flagged used,
 because a used alias rides alongside the digipeater that consumed it
 rather than being a hop of its own. Example: `SHEPRD*,WIDE1*,ELY*,WIDE2*`
 is **2** hops (SHEPRD, ELY), not 4.
