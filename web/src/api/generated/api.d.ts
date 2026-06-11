@@ -2616,6 +2616,15 @@ export interface components {
              *     there by the server.
              */
             gate_tx_to_is?: boolean;
+            /**
+             * @description LocalOnly, when set on a tcp (server-listen) interface, binds the
+             *     KISS listener to loopback (127.0.0.1) instead of all interfaces
+             *     (0.0.0.0). The intended use is an on-device iGate client (a KISS
+             *     app on the same phone/host) dialing in over loopback without
+             *     exposing the port to the LAN. Ignored for non-tcp types. Stored
+             *     in the existing ListenAddr host -- no schema change.
+             */
+            local_only?: boolean;
             mode?: string;
             reconnect_init_ms?: number;
             reconnect_max_ms?: number;
@@ -2642,6 +2651,11 @@ export interface components {
             gate_tx_to_is?: boolean;
             id?: number;
             last_error?: string;
+            /**
+             * @description LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface
+             *     listens on loopback only. Derived from the ListenAddr host.
+             */
+            local_only?: boolean;
             mode?: string;
             needs_reconfig?: boolean;
             peer_addr?: string;
