@@ -669,7 +669,7 @@
       {#if form.type === 'object'}
         <FormField label="Object name" id="bcn-objname"
           hint="1-9 characters. Appears as the object's label on APRS maps.">
-          <Input id="bcn-objname" bind:value={form.object_name} placeholder="Object callsign" maxlength="9" />
+          <Input id="bcn-objname" bind:value={form.object_name} placeholder="e.g. FIELDDAY" maxlength="9" />
         </FormField>
       {/if}
       <FormField label="Channel" id="bcn-channel"
