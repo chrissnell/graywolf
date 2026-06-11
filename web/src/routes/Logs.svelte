@@ -5,6 +5,19 @@
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { parseDisplay } from '../lib/packetColumns.js';
+  import { start as startChannelsStore, getChannel } from '../lib/stores/channels.svelte.js';
+
+  // Resolve a packet's channel id to its operator-given name for the
+  // CSV export; fall back to the raw id when the channel list hasn't
+  // loaded or the channel was deleted.
+  function channelName(p) {
+    if (p.channel == null) return '';
+    return getChannel(p.channel)?.name ?? String(p.channel);
+  }
+
+  // RFC 4180 cell: wrap in quotes and double any embedded quotes so
+  // user-defined channel names with commas or quotes don't corrupt rows.
+  const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
   let packets = $state([]);
   let filter = $state('');
@@ -22,6 +35,9 @@
   let pollTimer;
 
   onMount(() => {
+    // Idempotent — keeps the shared channel list fresh so the CSV
+    // export can map channel ids to names.
+    startChannelsStore();
     loadPackets();
     pollTimer = setInterval(loadPackets, 2000);
     return () => clearInterval(pollTimer);
@@ -55,9 +71,10 @@
   function exportCsv() {
     const rows = filtered.map((p) => {
       const { src, dst } = parseDisplay(p);
-      return `"${p.timestamp}","${p.direction}","${src}","${dst}","${p.display || ''}"`;
+      return [p.timestamp, p.direction, channelName(p), src, dst, p.display || '']
+        .map(csvCell).join(',');
     });
-    const csv = 'Timestamp,Direction,Source,Destination,Display\n' + rows.join('\n');
+    const csv = 'Timestamp,Direction,Channel,Source,Destination,Display\n' + rows.join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
