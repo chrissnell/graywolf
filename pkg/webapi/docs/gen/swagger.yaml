@@ -2852,6 +2852,12 @@ definitions:
       channel:
         description: Channel is the graywolf channel ID that observed or transmitted the packet.
         type: integer
+      channel_name:
+        description: |-
+          ChannelName is the display name of the channel that handled the packet,
+          resolved from the numeric Channel ID; omitted when the ID maps to no
+          configured channel (e.g. channel 0, used for non-RF / APRS-IS arrivals).
+        type: string
       decoded:
         allOf:
           - $ref: '#/definitions/aprs.DecodedAPRSPacket'
