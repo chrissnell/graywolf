@@ -7,6 +7,63 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.16"
+  date: "2026-06-11"
+  style: info
+  schema_version: 1
+  link: "#/system-logs"
+  title: "System Logs tab, wind barbs, VOX keying, plus map and audio fixes"
+  body: |
+    New System Logs tab: you can now read Graywolf's own daemon log
+    right in the web UI, filter it by level and number of lines, and
+    see the same structured detail it writes to the console or journal.
+    The old Logs tab that shows received traffic is now called APRS
+    Logs.
+
+    VOX radios key properly now. Pick the new VOX method on the PTT
+    settings if your radio keys off transmit audio. Graywolf sends a
+    short half-second lead-in tone ahead of each packet so the VOX
+    relay is fully closed before any data goes out, so no more clipped
+    frames.
+
+    Live map: weather stations now show standard wind barbs instead of
+    a text wind readout, so you can read speed and direction at a
+    glance.
+
+    Maps: in-progress offline map downloads now have a working Cancel
+    button that stops the transfer and cleans up the partial file. And
+    if maps will not activate, the error now tells you in plain
+    language to go to Settings and register (or re-register) your
+    device, instead of a raw server message.
+
+    Map accuracy: hop counts no longer over-count generic path aliases
+    like WIDEn-N or Internet-gated markers; stations heard both
+    directly and through a digipeater no longer disappear from the
+    Direct RX view; and western-hemisphere Mic-E position reports that
+    used to log but never plot now decode and show up on the map.
+
+    iGate: the Simulation toggle now sticks, so the page reflects
+    whether simulation is actually running after you reload or restart.
+
+    Audio: fixed a transmit problem where some USB radio interfaces
+    (Signalink, DigiRig, AIOC) flooded the log with errors and sent no
+    transmit audio. Graywolf now picks a playback format the device
+    actually supports.
+
+    Raspberry Pi and 32-bit ARM: fixed a modem crash loop on the
+    latest Raspberry Pi OS (the t64 change). There is also a new armv7l
+    build with NEON for Cortex-A7 and newer 32-bit boards that decodes
+    faster than the armv6 build. If you are not sure which 32-bit
+    download to use, the README now has a hardware selection table.
+
+    Android: the TCP (server) KISS type can be selected again so an
+    on-device iGate client can connect over loopback, with a Local only
+    option that keeps that KISS port off your LAN.
+
+    Smaller touches: the packet log now shows the channel name instead
+    of a number, and the dashboard Beacon Now button shows an object
+    beacon's object name.
+
 - version: "0.13.15"
   date: "2026-06-02"
   style: info
