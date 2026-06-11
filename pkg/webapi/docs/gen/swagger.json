@@ -3635,6 +3635,34 @@
                 }
             }
         },
+        "/kiss/available-serial-ports": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "List available host serial ports",
+                "operationId": "listAvailableKissSerialPorts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/gps.SerialPortInfo"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/kiss/available-usb-serial-devices": {
             "get": {
                 "security": [

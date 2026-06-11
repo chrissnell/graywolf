@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { Button, Input, Select, Badge, Checkbox } from '@chrissnell/chonky-ui';
-  import { api, kissBt, kissUsb } from '../lib/api.js';
+  import { api, kissBt, kissUsb, kissSerial } from '../lib/api.js';
   import { Platform } from '../lib/platform.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -31,6 +31,13 @@
   const TNC_INGRESS_RATE_DEFAULT = '50';
   const TNC_INGRESS_BURST_DEFAULT = '100';
   const BAUD_RATE_DEFAULT = '9600';
+  // Standard serial line speeds offered in the Baud Rate dropdown. Covers
+  // the rates real KISS TNCs use (1200 for classic AFSK packet, 9600 for
+  // G3RUH and most USB TNCs, up to 115200 for high-speed links). A free-form
+  // input previously accepted any value with no validation (issue #249); the
+  // dropdown removes that footgun while still preserving a non-standard rate
+  // already saved on an interface (see baudRateOptions).
+  const STANDARD_BAUD_RATES = ['1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400'];
   // Show a "stale" indicator if the 2 s poller has failed this many
   // consecutive times. At 2 s cadence, five consecutive failures ≈
   // 10 s of silence — long enough to be a real problem, short enough
@@ -204,6 +211,44 @@
       !usbError &&
       (selectedUsbDevice ? !selectedUsbDevice.has_permission : usbDevices.length > 0 ? false : true),
   );
+
+  // Host serial ports for the desktop "serial" interface type, loaded
+  // lazily the first time the operator opens the modal with type=serial
+  // (mirrors the bluetooth / usbserial lazy-loaders). Shape per entry:
+  // {path, name, description, is_usb, recommended, warning}. Enumeration
+  // is best-effort — on failure the operator falls back to typing the
+  // port path manually in the Serial Device input below the dropdown.
+  let serialPorts = $state([]);
+  let serialPortsLoading = $state(false);
+  let serialPortsError = $state('');
+
+  let serialPortOptions = $derived(
+    serialPorts.map((p) => ({
+      value: p.path,
+      label: p.description && p.description !== p.name ? `${p.description} (${p.path})` : p.path,
+    })),
+  );
+
+  let serialPortsHint = $derived(
+    serialPortsError
+      ? serialPortsError
+      : !serialPortsLoading && serialPorts.length === 0
+        ? 'No serial ports detected. Plug in the KISS TNC and click Refresh, or type the port path manually below.'
+        : 'Pick a detected port to fill in the device path, or type it manually below.',
+  );
+
+  // Baud-rate dropdown options. Built from STANDARD_BAUD_RATES, with the
+  // current form value prepended when it isn't one of the standards so
+  // editing an interface saved with a non-standard rate doesn't silently
+  // drop or rewrite it.
+  let baudRateOptions = $derived.by(() => {
+    const opts = STANDARD_BAUD_RATES.map((r) => ({ value: r, label: r }));
+    const cur = form.baud_rate;
+    if (cur && !STANDARD_BAUD_RATES.includes(String(cur))) {
+      opts.unshift({ value: String(cur), label: `${cur} (custom)` });
+    }
+    return opts;
+  });
 
   const modeOptions = [
     { value: 'modem', label: 'Modem' },
@@ -463,6 +508,30 @@
       usbError = err?.message ?? 'Failed to load USB serial devices';
     } finally {
       usbLoading = false;
+    }
+  }
+
+  // Lazy-load host serial ports the first time the operator opens the modal
+  // with the "serial" type selected. Unlike bluetooth/usbserial this works
+  // on every desktop platform (the ports are enumerated on the host running
+  // graywolf), so there's no Platform gate. Re-runs only when the gate flips
+  // back to satisfied — the operator can clear an error and click Refresh.
+  $effect(() => {
+    if (form.type !== 'serial' || !modalOpen) return;
+    if (serialPorts.length === 0 && !serialPortsLoading && !serialPortsError) {
+      loadSerialPorts();
+    }
+  });
+
+  async function loadSerialPorts() {
+    serialPortsLoading = true;
+    serialPortsError = '';
+    try {
+      serialPorts = (await kissSerial.availablePorts()) ?? [];
+    } catch (err) {
+      serialPortsError = err?.message ?? 'Failed to load serial ports';
+    } finally {
+      serialPortsLoading = false;
     }
   }
 
@@ -954,22 +1023,42 @@
         id="kiss-usb-baud"
         hint="Serial line speed. Must match the TNC's configured baud rate. Default 9600."
       >
-        <Input id="kiss-usb-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
+        <Select id="kiss-usb-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
     {:else if form.type === 'serial'}
       <FormField
+        label="Detected ports"
+        id="kiss-serial-detected"
+        hint={serialPortsHint}
+      >
+        {#snippet children(describedBy)}
+          <div class="bt-picker">
+            <Select
+              id="kiss-serial-detected"
+              bind:value={form.serial_device}
+              options={serialPortOptions}
+              placeholder={serialPortsLoading ? 'Loading…' : 'Select a detected port'}
+              aria-describedby={describedBy}
+            />
+            <Button variant="secondary" onclick={loadSerialPorts} disabled={serialPortsLoading}>
+              Refresh
+            </Button>
+          </div>
+        {/snippet}
+      </FormField>
+      <FormField
         label="Serial Device"
         id="kiss-serial"
-        hint="Serial port the KISS TNC is attached to, e.g. /dev/ttyUSB0 or /dev/ttyACM0."
+        hint="Port the KISS TNC is attached to. Linux: /dev/ttyUSB0 or /dev/ttyACM0. macOS: /dev/cu.usbserial-*. Windows: COM1, COM3. Pick from Detected ports above, or type it here."
       >
-        <Input id="kiss-serial" bind:value={form.serial_device} placeholder="/dev/ttyUSB0" />
+        <Input id="kiss-serial" bind:value={form.serial_device} placeholder="/dev/ttyUSB0 or COM3" />
       </FormField>
       <FormField
         label="Baud Rate"
         id="kiss-baud"
         hint="Serial line speed. Must match the TNC's configured baud rate. Default 9600."
       >
-        <Input id="kiss-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
+        <Select id="kiss-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
     {/if}
     <FormField label="Channel" id="kiss-channel">
