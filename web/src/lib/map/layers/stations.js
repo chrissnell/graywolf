@@ -41,10 +41,24 @@ export function mountStationsLayer(map, getStations, {
     icon.classList.add('gw-station-icon');
     root.appendChild(icon);
 
+    // Right-of-icon column: callsign on top, temperature chip beneath it.
+    // align-items:flex-end (CSS) right-justifies the temp to the callsign.
+    // The temp slot is filled by the weather layer (see weather.js) and
+    // stays hidden until then, so stations without weather show nothing.
+    const aside = document.createElement('div');
+    aside.className = 'gw-station-aside';
+
     const label = document.createElement('div');
     label.className = 'gw-station-label';
     label.textContent = s.callsign;
-    root.appendChild(label);
+    aside.appendChild(label);
+
+    const temp = document.createElement('div');
+    temp.className = 'wx-temp';
+    temp.style.display = 'none';
+    aside.appendChild(temp);
+
+    root.appendChild(aside);
 
     if (onMarkerEnter) {
       root.addEventListener('mouseenter', () => {
@@ -141,10 +155,18 @@ export function mountStationsLayer(map, getStations, {
     applyDisplay();
   }
   // Wrap refresh so newly-minted markers honor current visibility + filter.
+  // Hand the weather layer the temp slot inside a station's marker so it
+  // can write the temperature chip there (null if the marker isn't up).
+  function getTempSlot(callsign) {
+    const entry = markers.get(callsign);
+    if (!entry) return null;
+    return entry.marker.getElement().querySelector('.wx-temp');
+  }
+
   const wrappedRefresh = () => {
     refresh();
     applyDisplay();
   };
 
-  return { refresh: wrappedRefresh, destroy, setVisible, setFilter };
+  return { refresh: wrappedRefresh, destroy, setVisible, setFilter, getTempSlot };
 }

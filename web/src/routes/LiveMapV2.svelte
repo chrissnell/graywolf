@@ -14,6 +14,7 @@
   import { mountStationsLayer } from '../lib/map/layers/stations.js';
   import { mountTrailsLayer } from '../lib/map/layers/trails.js';
   import { mountWeatherLayer } from '../lib/map/layers/weather.js';
+  import { mountWindBarbsLayer } from '../lib/map/layers/wind-barbs.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
@@ -50,6 +51,7 @@
   let stationsLayer = null;
   let trailsLayer = null;
   let weatherLayer = null;
+  let windBarbsLayer = null;
   let hoverPathLayer = null;
   let myPositionLayer = null;
   let mapRef = null;
@@ -254,7 +256,15 @@
         hoverPathLayer?.clear();
       },
     });
-    weatherLayer = mountWeatherLayer(map, () => dataStore.stations);
+    // getTempSlot reaches into the station marker (assigned below) so the
+    // temperature chip renders right under the callsign, not as its own
+    // floating marker.
+    weatherLayer = mountWeatherLayer(map, () => dataStore.stations, {
+      getTempSlot: (callsign) => stationsLayer?.getTempSlot(callsign),
+    });
+    // Wind barbs mount before the station markers so the (DOM) station
+    // icons stack above the barb staffs that radiate out from them.
+    windBarbsLayer = mountWindBarbsLayer(map, () => dataStore.stations);
     hoverPathLayer = mountHoverPathLayer(map, () => {
       const my = dataStore.myPosition;
       return my ? { lat: my.lat, lon: my.lon } : null;
@@ -361,6 +371,7 @@
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
     if (weatherLayer) weatherLayer.refresh();
+    if (windBarbsLayer) windBarbsLayer.refresh();
     if (myPositionLayer) myPositionLayer.refresh();
   });
 
@@ -379,23 +390,28 @@
     const v = layerToggles.trails;
     trailsLayer?.setVisible(v);
   });
+  // Wind barbs ride along with the Weather overlay -- they ARE the
+  // weather wind display, so one toggle governs both the temp chip and
+  // the barb rather than splitting them across two controls.
   $effect(() => {
     const v = layerToggles.weather;
     weatherLayer?.setVisible(v);
+    windBarbsLayer?.setVisible(v);
   });
   $effect(() => {
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
   });
-  // Direct RX filter: predicate is shared across stations/trails/weather
-  // so the three layers stay in lockstep. my-position is the operator's
-  // own beacon and is intentionally exempt.
+  // Direct RX filter: predicate is shared across stations/trails/weather/
+  // wind-barbs so the layers stay in lockstep. my-position is the
+  // operator's own beacon and is intentionally exempt.
   $effect(() => {
     const on = layerToggles.directRxOnly;
     const pred = on ? isDirectRx : null;
     stationsLayer?.setFilter(pred);
     trailsLayer?.setFilter(pred);
     weatherLayer?.setFilter(pred);
+    windBarbsLayer?.setFilter(pred);
   });
 
   // Push the timerange into the data store.
@@ -492,11 +508,13 @@
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
+    windBarbsLayer?.destroy();
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
+    windBarbsLayer = null;
     hoverPathLayer = null;
     myPositionLayer = null;
     mapRef = null;
@@ -896,10 +914,11 @@
      override with position:relative — that pulls the marker into document
      flow and the per-marker transform stacks all of them at the canvas
      origin). The 21x21 icon child is the visual anchor (anchor:'center'
-     in stations.js puts the icon center on the lat/lon). The callsign
-     label is absolutely positioned to the right of the icon, anchored
-     within the maplibregl-applied positioning context, so its width
-     doesn't shift the icon off-target. */
+     in stations.js puts the icon center on the lat/lon). The aside column
+     (callsign + temperature) is absolutely positioned to the right of the
+     icon and vertically centered, so its width doesn't shift the icon
+     off-target. align-items:flex-end right-justifies the temp chip to the
+     callsign's right edge regardless of callsign length. */
   :global(.gw-station-marker) {
     width: 21px;
     height: 21px;
@@ -911,12 +930,18 @@
     width: 21px;
     height: 21px;
   }
-  :global(.gw-station-label) {
+  :global(.gw-station-aside) {
     position: absolute;
     left: 100%;
     top: 50%;
     transform: translateY(-50%);
     margin-left: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  :global(.gw-station-label) {
     padding: 0 4px;
     line-height: 12px;
     font-family: var(--font-mono);
@@ -930,6 +955,22 @@
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+  /* Temperature chip: sits just below the callsign, right-justified to
+     it. Filled by the weather layer; dimmer than the callsign so the
+     callsign stays the primary label. */
+  :global(.gw-station-aside .wx-temp) {
+    padding: 0 4px;
+    line-height: 13px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-dim, #c9d1d9);
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 2px;
+    white-space: nowrap;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   }
 
@@ -1004,23 +1045,37 @@
   :global(.stn-popup .b-tx) { background: rgba(210, 153, 34, 0.15); color: var(--color-warning); }
   :global(.stn-popup .b-is) { background: rgba(195, 155, 255, 0.15); color: #c39bff; }
 
-  /* Weather label chip -- ports the legacy Leaflet wx-label/wx-text
-     styling. The marker root is a maplibregl.Marker (DOM-based) so
-     these have to be :global. */
-  :global(.wx-label) {
+  /* Wind barbs -- inline SVG glyph rendered per station by
+     wind-barbs.js. The marker is inert so it never steals clicks from
+     the station icon underneath. Black strokes with a white halo so the
+     barb stays legible over both light and dark basemaps. */
+  :global(.wb-marker) {
     background: none !important;
     border: none !important;
     pointer-events: none;
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95))
+      drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.85));
   }
-  :global(.wx-text) {
-    background: rgba(22, 27, 34, 0.85);
-    color: var(--color-text-dim);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    padding: 1px 4px;
-    border-radius: 3px;
-    white-space: nowrap;
-    text-align: center;
+  :global(.wb-svg) {
+    overflow: visible;
+  }
+  :global(.wb-staff),
+  :global(.wb-barb) {
+    stroke: var(--wb-color, #111);
+    stroke-width: 2;
+    stroke-linecap: round;
+    fill: none;
+  }
+  :global(.wb-pennant) {
+    fill: var(--wb-color, #111);
+    stroke: var(--wb-color, #111);
+    stroke-width: 1;
+    stroke-linejoin: round;
+  }
+  :global(.wb-calm) {
+    fill: none;
+    stroke: var(--wb-color, #111);
+    stroke-width: 2;
   }
 
   /* Trail hover tooltip: small dim chip with the callsign, tip-less and
