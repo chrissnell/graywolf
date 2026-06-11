@@ -24,13 +24,13 @@
   let pickerOpen = $state(false);
 
   // Reset the working fields each time the dialog opens so a prior entry
-  // doesn't bleed into the next point. Default '/.' is the APRS "red dot",
-  // a neutral generic waypoint.
+  // doesn't bleed into the next point. Default '//' is the APRS "Red dot",
+  // a neutral, clearly-visible generic waypoint.
   $effect(() => {
     if (open) {
       name = '';
       table = '/';
-      symbol = '.';
+      symbol = '/';
       overlay = '';
     }
   });

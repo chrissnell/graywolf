@@ -31,11 +31,16 @@ function load() {
   }
 }
 
+// Monotonic counter so the non-crypto fallback can't collide for two
+// points added in the same millisecond. Graywolf dashboards are commonly
+// served over plain HTTP on a LAN, where crypto.randomUUID is unavailable.
+let idSeq = 0;
 function newId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return `fp-${crypto.randomUUID()}`;
   }
-  return `fp-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+  idSeq += 1;
+  return `fp-${Date.now()}-${idSeq}`;
 }
 
 export const fixedPointsStore = (() => {
@@ -60,7 +65,7 @@ export const fixedPointsStore = (() => {
         id: newId(),
         name: (name || '').trim() || 'Point',
         table: table || '/',
-        symbol: symbol || '.',
+        symbol: symbol || '/',
         overlay: overlay || '',
         lat,
         lon,
