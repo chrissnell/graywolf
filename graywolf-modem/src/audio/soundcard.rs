@@ -693,6 +693,20 @@ pub fn pick_input_sample_format(
     configs: &[(u16, SampleFormat, u32, u32)],
     rate: u32,
 ) -> Option<SampleFormat> {
+    pick_native_sample_format(configs, rate)
+}
+
+/// Shared selection core for both directions: from the device's
+/// advertised `(channels, format, min_rate, max_rate)` configs, keep
+/// only those whose range covers `rate`, then return the best-ranked
+/// format (`native_format_rank`, native `I16` first). Returns `None`
+/// when nothing is advertised at `rate`, so callers fall back to the
+/// cpal default. Capture and playback share this so their format choice
+/// cannot drift (invariant 33).
+fn pick_native_sample_format(
+    configs: &[(u16, SampleFormat, u32, u32)],
+    rate: u32,
+) -> Option<SampleFormat> {
     configs
         .iter()
         .filter(|&&(_ch, _f, min, max)| rate >= min && rate <= max)
@@ -718,11 +732,7 @@ pub fn pick_output_sample_format(
     configs: &[(u16, SampleFormat, u32, u32)],
     rate: u32,
 ) -> Option<SampleFormat> {
-    configs
-        .iter()
-        .filter(|&&(_ch, _f, min, max)| rate >= min && rate <= max)
-        .min_by_key(|&&(_ch, f, _min, _max)| native_format_rank(f))
-        .map(|&(_ch, f, _min, _max)| f)
+    pick_native_sample_format(configs, rate)
 }
 
 /// Decide the sample rate to actually open a stream at, given the
