@@ -1247,6 +1247,32 @@ func (s *Store) UpsertIGateConfig(ctx context.Context, c *IGateConfig) error {
 	})
 }
 
+// SetIGateSimulationMode updates only the simulation_mode column on the
+// singleton iGate config row, in a single transaction. It deliberately
+// does NOT read-modify-write the whole struct: the simulation toggle
+// (POST /api/igate/simulation) and the full config save (PUT
+// /api/igate/config) both mutate this row, and a whole-row Save from a
+// stale snapshot would silently revert whatever the other writer just
+// changed. Touching one column keeps the two writers from clobbering
+// each other's sibling fields. When no row exists yet (fresh install) a
+// singleton row is created carrying just the toggle; the remaining
+// columns take their gorm defaults, which the read path re-defaults
+// anyway.
+func (s *Store) SetIGateSimulationMode(ctx context.Context, on bool) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var c IGateConfig
+		err := tx.Order("id").First(&c).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(&IGateConfig{SimulationMode: on}).Error
+		}
+		if err != nil {
+			return err
+		}
+		return tx.Model(&IGateConfig{}).Where("id = ?", c.ID).
+			UpdateColumn("simulation_mode", on).Error
+	})
+}
+
 func (s *Store) ListIGateRfFilters(ctx context.Context) ([]IGateRfFilter, error) {
 	var out []IGateRfFilter
 	return out, s.db.WithContext(ctx).Order("priority, id").Find(&out).Error
