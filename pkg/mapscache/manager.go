@@ -415,6 +415,16 @@ func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 }
 
 func (m *Manager) fail(ctx context.Context, slug string, err error) {
+	// A user-initiated cancel (Delete) cancels the download context,
+	// which surfaces here as an error from http.Do or writeAtomic. In
+	// that case Delete has already removed the persisted row and the
+	// on-disk file; writing an "error" row now would resurrect a phantom
+	// entry and flash a spurious failure in the UI. cancel() returns
+	// before the goroutine unblocks, so ctx.Err() is reliably non-nil on
+	// the cancel path -- skip the write entirely.
+	if ctx.Err() != nil {
+		return
+	}
 	_ = m.store.UpsertMapsDownload(ctx, configstore.MapsDownload{
 		Slug: slug, Status: "error", ErrorMessage: err.Error(),
 	})
