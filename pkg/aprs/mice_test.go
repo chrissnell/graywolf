@@ -206,24 +206,34 @@ func TestParseMicEDelInLonRejected(t *testing.T) {
 	}
 }
 
-// TestParseMicELonOverflowRejected covers the post-offset range guard
-// independently of the sentinel-byte check. A radio that encodes raw
-// degrees 80..99 with the +100° offset bit set produces 180..199 — a
-// value the spec does not allow. Reject rather than wrap to the
-// antimeridian.
-func TestParseMicELonOverflowRejected(t *testing.T) {
+// TestParseMicELonOffsetNormalises locks in the APRS101 ch 10 rule that
+// the +100° offset is added BEFORE the 180..189 / 190..199 wrap-range
+// normalisation. Raw degrees byte 'l' (108-28 = 80) with the offset bit
+// set gives 180, which the spec normalises to 100° — a perfectly valid
+// longitude, not an overflow. A prior revision applied the fixup first
+// and then rejected the post-offset 180 as out of range, silently
+// dropping every offset (>= 100°) Mic-E station (issue #219). This is
+// the exact byte that regression hinged on, so assert it decodes.
+func TestParseMicELonOffsetNormalises(t *testing.T) {
 	srcAddr, _ := ax25.ParseAddress("N0CALL")
 	destAddr, _ := ax25.ParseAddress("U3SUY8") // offset bit set on dest[4]='Y'
-	// Raw degrees byte = 80 + 28 = 108 ('l'). With offset +100 = 180,
-	// out of range. Use printable bytes so the sentinel check does not
-	// fire first.
+	// Raw degrees byte = 80 + 28 = 108 ('l'); offset +100 -> 180 -> 100°.
 	info := []byte{'`', 'l', 'A', 'A', 'A', 'A', 'A', '-', '/'}
 	f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Parse(f); !errors.Is(err, ErrMicELonAmbiguous) {
-		t.Fatalf("wrong error: %v", err)
+	pkt, err := Parse(f)
+	if err != nil {
+		t.Fatalf("Parse: %v (offset longitude must decode, not be rejected)", err)
+	}
+	if pkt.Position == nil {
+		t.Fatal("Position is nil — offset Mic-E longitude failed to decode")
+	}
+	// 'l'/'A'/'A' -> 100 deg, 37 min, 37 hundredths, East (dest[5]='8').
+	wantLon := 100.0 + (37.0+37.0/100.0)/60.0
+	if abs(pkt.Position.Longitude-wantLon) > 0.001 {
+		t.Errorf("lon = %.4f, want ~%.4f", pkt.Position.Longitude, wantLon)
 	}
 }
 
@@ -320,5 +330,90 @@ func TestMicEMessageLabels_MatchAPRS101(t *testing.T) {
 		if got := miceMessageLabels[code]; got != label {
 			t.Errorf("miceMessageLabels[%d] = %q, want %q (APRS101 ch 10 table 8)", code, got, label)
 		}
+	}
+}
+
+// TestMicE_OffsetLongitude_Issue219 is a regression test built from
+// real APRS-IS packets attached to GitHub issue #219. The reporter was
+// connected to APRS-IS (no RF) and every Mic-E station in the western
+// US silently failed to plot, while the same stations appeared on
+// aprs.fi. Root cause: decodeMicELon applied the 180..189 / 190..199
+// wrap-range normalisation BEFORE adding the destination's +100°
+// longitude offset, instead of after as APRS101 ch 10 requires. With
+// the wrong order, raw degree byte 'r' (0x72 -> 86) plus the +100
+// offset lands at 186 with no fixup applied, tripping the final
+// out-of-range guard and dropping the packet. These stations are all
+// near 106..120°W, so they all require the offset and all regressed.
+func TestMicE_OffsetLongitude_Issue219(t *testing.T) {
+	cases := []struct {
+		name    string
+		dest    string
+		body    []byte // info field after the leading '`' type byte, first 3 = longitude
+		wantLon float64
+	}{
+		// W7PA-9>T2SUTU,...:`rDO"\>/]"F!}
+		{"T2SUTU", "T2SUTU", []byte{'r', 'D', 'O'}, -106.6752},
+		// W7PA-9>T2SVXT,...:`rB9"f;>/]"Ex}
+		{"T2SVXT", "T2SVXT", []byte{'r', 'B', '9'}, -106.6382},
+		// KG7HPT-9>TRUQUW,...:`r0+l ...
+		{"TRUQUW", "TRUQUW", []byte{'r', '0', '+'}, -106.3358},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, _, off, ew, err := decodeMicEDest(tc.dest)
+			if err != nil {
+				t.Fatalf("decodeMicEDest(%q): %v", tc.dest, err)
+			}
+			lon, err := decodeMicELon(tc.body, off, ew)
+			if err != nil {
+				t.Fatalf("decodeMicELon: %v (offset longitude must not be rejected)", err)
+			}
+			if abs(lon-tc.wantLon) > 0.01 {
+				t.Errorf("lon = %.4f, want ~%.4f", lon, tc.wantLon)
+			}
+			if lon >= 0 {
+				t.Errorf("lon = %.4f, want a western (negative) longitude", lon)
+			}
+		})
+	}
+}
+
+// TestMicE_EndToEnd_Issue219 parses a full Mic-E packet through the
+// same path the APRS-IS ingress uses (frame -> aprs.Parse) and asserts
+// a plotted position comes out, closing the issue #219 loop above the
+// unit level.
+func TestMicE_EndToEnd_Issue219(t *testing.T) {
+	destAddr, err := ax25.ParseAddress("T2SUTU")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcAddr, err := ax25.ParseAddress("W7PA-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Real on-air bytes: `rDO"\\>/]"F!}  — backtick type byte, then
+	// lon "rDO", speed/course `"\\` (two 0x5C bytes), symbol code '>',
+	// table '/', Kenwood ']' manufacturer prefix, then comment. The Go
+	// string literal below uses \\\\ for the two literal backslashes.
+	info := []byte("`rDO\"\\\\>/]\"F!}")
+	f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := Parse(f)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if pkt.Type != PacketMicE {
+		t.Fatalf("type = %v, want PacketMicE", pkt.Type)
+	}
+	if pkt.Position == nil {
+		t.Fatal("Position is nil — Mic-E position failed to decode")
+	}
+	if abs(pkt.Position.Latitude-42.5908) > 0.01 {
+		t.Errorf("lat = %.4f, want ~42.5908", pkt.Position.Latitude)
+	}
+	if abs(pkt.Position.Longitude-(-106.6752)) > 0.01 {
+		t.Errorf("lon = %.4f, want ~-106.6752", pkt.Position.Longitude)
 	}
 }
