@@ -27,7 +27,7 @@ type MemCache struct {
 	stations map[string]*Station
 	gen      uint64        // monotonic generation counter
 	maxAge   time.Duration // station TTL for pruning
-	done     chan struct{}  // signals pruning goroutine to stop
+	done     chan struct{} // signals pruning goroutine to stop
 }
 
 var _ StationStore = (*MemCache)(nil)
@@ -109,14 +109,24 @@ func (c *MemCache) Update(entries []CacheEntry) {
 				s.Positions = s.Positions[:MaxTrailLen]
 			}
 		} else {
-			// Static re-beacon — update timestamp and metadata.
+			// Static re-beacon — advance the last-heard timestamp and the
+			// free-form comment from the latest packet. Reception-path
+			// metadata (via/path/hops/direction/channel), however, is kept
+			// at the *most direct* copy seen for this fix: a station heard
+			// both directly and via a digipeater (common when two digis
+			// repeat each other's beacons) would otherwise have its direct
+			// copy clobbered by a later-arriving digipeated copy, hiding it
+			// from the Live Map "Direct RX" filter (issue #130). A direct
+			// RF copy therefore never gets masked by a non-direct one.
 			s.Positions[0].Timestamp = e.Timestamp
-			s.Positions[0].Via = e.Via
-			s.Positions[0].Path = e.Path
-			s.Positions[0].Hops = e.Hops
-			s.Positions[0].Direction = e.Direction
-			s.Positions[0].Channel = e.Channel
 			s.Positions[0].Comment = e.Comment
+			if isDirectRF(e.Direction, e.Hops) || !isDirectRF(s.Positions[0].Direction, s.Positions[0].Hops) {
+				s.Positions[0].Via = e.Via
+				s.Positions[0].Path = e.Path
+				s.Positions[0].Hops = e.Hops
+				s.Positions[0].Direction = e.Direction
+				s.Positions[0].Channel = e.Channel
+			}
 		}
 	}
 }
@@ -244,6 +254,14 @@ func updateMetadata(s *Station, e *CacheEntry, now time.Time) {
 	if e.Weather != nil {
 		s.Weather = e.Weather
 	}
+}
+
+// isDirectRF reports whether a packet was heard directly over RF with no
+// digipeater hops. This is the reception the Live Map "Direct RX" filter
+// keys on; a fix that has ever been heard this way must not be downgraded
+// by a subsequent digipeated copy of the same beacon (issue #130).
+func isDirectRF(direction string, hops int) bool {
+	return direction == "RX" && hops == 0
 }
 
 func positionMoved(old, new Position) bool {

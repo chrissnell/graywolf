@@ -375,3 +375,62 @@ func TestMemCache_PositionEpsilon(t *testing.T) {
 		t.Fatalf("above-epsilon movement should create trail point, got %d positions", positions)
 	}
 }
+
+// digiEntry builds a static-position entry for a digipeater whose beacon
+// arrived over a digipeated path (Hops > 0).
+func digiEntry(key, callsign string, lat, lon float64, hops int) CacheEntry {
+	e := stationEntry(key, callsign, lat, lon)
+	e.Hops = hops
+	e.Via = "WIDE2-1"
+	e.Path = []string{"DIGI2*", "WIDE2-1"}
+	return e
+}
+
+// TestMemCache_DirectRFNotMaskedByDigipeat reproduces issue #130: a static
+// station heard directly (hops 0) and then via a digipeater (hops > 0) of
+// the same beacon must keep its direct reception on the collapsed position
+// so the Live Map Direct RX filter still shows it.
+func TestMemCache_DirectRFNotMaskedByDigipeat(t *testing.T) {
+	c := newTestCache(t)
+
+	// Direct copy first (hops 0), then the digipeated copy arrives.
+	c.Update([]CacheEntry{stationEntry("stn:DIGI1", "DIGI1", 40.0, -105.0)}) // RX, hops 0
+	c.Update([]CacheEntry{digiEntry("stn:DIGI1", "DIGI1", 40.0, -105.0, 2)}) // RX, hops 2
+
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
+	if len(results) != 1 || len(results[0].Positions) != 1 {
+		t.Fatalf("expected 1 station with 1 position, got %+v", results)
+	}
+	p := results[0].Positions[0]
+	if !isDirectRF(p.Direction, p.Hops) {
+		t.Fatalf("direct reception masked by digipeated copy: Direction=%q Hops=%d", p.Direction, p.Hops)
+	}
+
+	// A subsequent direct copy must refresh (and still be direct).
+	c.Update([]CacheEntry{stationEntry("stn:DIGI1", "DIGI1", 40.0, -105.0)})
+	results = c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
+	p = results[0].Positions[0]
+	if !isDirectRF(p.Direction, p.Hops) {
+		t.Fatalf("expected direct reception after refresh, got Direction=%q Hops=%d", p.Direction, p.Hops)
+	}
+}
+
+// TestMemCache_DigipeatedThenDirect verifies the latest-wins path still
+// applies for non-direct copies and that a direct copy upgrades the fix.
+func TestMemCache_DigipeatedThenDirect(t *testing.T) {
+	c := newTestCache(t)
+
+	// Only ever heard via a digipeater so far.
+	c.Update([]CacheEntry{digiEntry("stn:DIGI1", "DIGI1", 40.0, -105.0, 2)})
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
+	if isDirectRF(results[0].Positions[0].Direction, results[0].Positions[0].Hops) {
+		t.Fatal("digipeated-only fix must not be classified as direct")
+	}
+
+	// Now a direct copy arrives — it should upgrade the fix to direct.
+	c.Update([]CacheEntry{stationEntry("stn:DIGI1", "DIGI1", 40.0, -105.0)})
+	results = c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
+	if !isDirectRF(results[0].Positions[0].Direction, results[0].Positions[0].Hops) {
+		t.Fatal("direct copy should upgrade a previously-digipeated fix to direct")
+	}
+}
