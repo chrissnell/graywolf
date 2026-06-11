@@ -1,0 +1,41 @@
+# Regression guard for issue #231 (32-bit ARM t64 ALSA crash).
+#
+# On a t64 userland, libasound's `struct timespec` is 16 bytes even on 32-bit
+# ARM. `snd_pcm_status_get_htstamp()` copies that struct into the caller's
+# pointer, so the 8-byte buffer stock alsa-rs used gets overrun -> stack smash
+# -> SIGSEGV crash-loop on capture. graywolf patches alsa-rs to read into a
+# 16-byte buffer (Cargo.toml [patch.crates-io] alsa; see
+# docs/plans/2026-06-11-armhf-t64-alsa-htstamp-fix.md).
+#
+# This job runs a tiny C canary in a real 32-bit ARM t64 userland under QEMU
+# and proves the premise that fix relies on: an 8-byte buffer overflows, a
+# 16-byte buffer does not. It needs no sound hardware. It also fails closed if
+# the base image ever stops being a t64 32-bit userland, so the guard cannot
+# silently become a no-op.
+name: armhf-t64 htstamp ABI canary
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  htstamp-canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up QEMU (binfmt)
+        uses: docker/setup-qemu-action@v3
+      - name: Run htstamp canary in a 32-bit ARM t64 userland
+        run: |
+          docker run --rm --platform linux/arm/v7 \
+            -v "$PWD/.github:/work:ro" -w /work \
+            debian:trixie-slim bash -c '
+              set -eu
+              export DEBIAN_FRONTEND=noninteractive
+              echo "userland LONG_BIT=$(getconf LONG_BIT) (expect 32)"
+              apt-get update -qq
+              apt-get install -y -qq gcc libasound2-dev >/dev/null
+              gcc -O2 armhf-t64-htstamp-canary.c -o /tmp/canary -lasound
+              /tmp/canary
+            '
