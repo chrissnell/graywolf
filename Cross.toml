@@ -29,11 +29,23 @@ pre-build = [
 # Same pkg-config cross-lookup story as the aarch64 target above; see
 # the note there for context. armhf's multi-arch path differs only in
 # triple.
+#
+# RUST_LIBC_UNSTABLE_GNU_TIME_BITS=64 forces the Rust `libc` crate to emit
+# the 64-bit-`time_t` (16-byte `timespec`) layout for this 32-bit target,
+# matching the post-t64 Raspberry Pi OS `libasound2t64:armhf`. Without it,
+# Rust's `timespec` is 8 bytes while the system library writes 16, and
+# cpal/alsa-rs's `get_htstamp` overflows its stack buffer -> SIGSEGV on
+# capture (issue #231). cross runs the build inside a container, so the
+# var only reaches libc's build.rs if it's passed through here. Applied to
+# both 32-bit armhf triples (this one and armv7 below); aarch64 is already
+# 64-bit `time_t`, and the legacy 32-bit-`time_t` (pre-t64) ABI is
+# intentionally not produced.
 [target.arm-unknown-linux-gnueabihf.env]
 passthrough = [
     "PKG_CONFIG_ALLOW_CROSS",
     "PKG_CONFIG_PATH_arm_unknown_linux_gnueabihf",
     "CFLAGS_arm_unknown_linux_gnueabihf",
+    "RUST_LIBC_UNSTABLE_GNU_TIME_BITS",
 ]
 
 # 32-bit ARMv7-A hard-float (NEON). Same hardfloat ABI and the same
@@ -49,9 +61,13 @@ pre-build = [
 
 # Multi-arch path is shared with armv6 (both are arm-linux-gnueabihf); the
 # passthrough env var names are keyed to the Rust triple, so they differ.
+# RUST_LIBC_UNSTABLE_GNU_TIME_BITS is passed through here for the same t64
+# reason as the armv6 target above -- armv7 is also 32-bit armhf linking
+# `libasound2t64:armhf`, so it needs the 16-byte `timespec` too (#231).
 [target.armv7-unknown-linux-gnueabihf.env]
 passthrough = [
     "PKG_CONFIG_ALLOW_CROSS",
     "PKG_CONFIG_PATH_armv7_unknown_linux_gnueabihf",
     "CFLAGS_armv7_unknown_linux_gnueabihf",
+    "RUST_LIBC_UNSTABLE_GNU_TIME_BITS",
 ]
