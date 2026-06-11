@@ -779,3 +779,26 @@ operator intents.
 its own list. The regression test in
 [`pkg/app/wiring_blocklist_isolation_test.go`](../../pkg/app/wiring_blocklist_isolation_test.go)
 locks the invariant in behaviorally.
+
+### 41. Hop count excludes generic path aliases
+
+The displayed "hop" count for a station/packet is the number of *real*
+digipeaters that retransmitted it, not the number of path elements with
+the H-bit set (`*`). Generic routing aliases — `WIDE`, `RELAY`, `TRACE`,
+the APRS-IS `qA*` constructs, and the IS-injection markers `TCPIP` /
+`TCPXX` — are excluded even when flagged used,
+because a used alias rides alongside the digipeater that consumed it
+rather than being a hop of its own. Example: `SHEPRD*,WIDE1*,ELY*,WIDE2*`
+is **2** hops (SHEPRD, ELY), not 4.
+
+*Why:* counting raw `*` elements over-reported hops on the map station
+view (GitHub issue #222) — WIDEn-N aliases left in the path by callsign-
+inserting digipeaters were each tallied as a separate repeat.
+
+*How to apply:* route any hop-counting or last-digipeater logic through
+[`aprs.CountHops`](../../pkg/aprs/path.go) /
+[`aprs.IsGenericPathAlias`](../../pkg/aprs/path.go) — the single source
+of truth for which path entries are real hops. The map's `hops` field is
+computed once in [`pkg/stationcache/extract.go`](../../pkg/stationcache/extract.go)
+and consumed verbatim by the frontend popup; do not recompute it from
+`path.length` client-side.
