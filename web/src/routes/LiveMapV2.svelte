@@ -1038,33 +1038,34 @@
 
   /* Wind barbs -- inline SVG glyph rendered per station by
      wind-barbs.js. The marker is inert so it never steals clicks from
-     the station icon underneath. A soft drop-shadow keeps the thin
-     strokes legible over any basemap. */
+     the station icon underneath. Black strokes with a white halo so the
+     barb stays legible over both light and dark basemaps. */
   :global(.wb-marker) {
     background: none !important;
     border: none !important;
     pointer-events: none;
-    filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.85));
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95))
+      drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.85));
   }
   :global(.wb-svg) {
     overflow: visible;
   }
   :global(.wb-staff),
   :global(.wb-barb) {
-    stroke: var(--wb-color, #7fdfff);
+    stroke: var(--wb-color, #111);
     stroke-width: 2;
     stroke-linecap: round;
     fill: none;
   }
   :global(.wb-pennant) {
-    fill: var(--wb-color, #7fdfff);
-    stroke: var(--wb-color, #7fdfff);
+    fill: var(--wb-color, #111);
+    stroke: var(--wb-color, #111);
     stroke-width: 1;
     stroke-linejoin: round;
   }
   :global(.wb-calm) {
     fill: none;
-    stroke: var(--wb-color, #7fdfff);
+    stroke: var(--wb-color, #111);
     stroke-width: 2;
   }
 
