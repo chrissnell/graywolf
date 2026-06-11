@@ -61,6 +61,28 @@ test('direction sets the group rotation', () => {
   assert.match(buildWindBarb(20, 215), /rotate\(215\)/);
 });
 
+// Pull the y1 of the first <line class="wb-barb"> out of the markup so we
+// can assert WHERE a barb sits, not just how many there are.
+const firstBarbY1 = (svg) => {
+  const m = svg.match(/<line x1="0" y1="(-?\d+(?:\.\d+)?)"[^>]*class="wb-barb"/);
+  return m ? Number(m[1]) : null;
+};
+
+test('a lone half barb is inset one step from the tip', () => {
+  // 6 mph → 5 kt → single half barb, inset; 11.5 mph → 10 kt → full barb
+  // at the tip. The half barb must sit closer to the station (greater y).
+  const halfY = firstBarbY1(buildWindBarb(6, 0));
+  const fullAtTipY = firstBarbY1(buildWindBarb(11.5, 0));
+  assert.ok(halfY != null && fullAtTipY != null);
+  assert.ok(halfY > fullAtTipY, `expected inset half (${halfY}) below tip (${fullAtTipY})`);
+});
+
+test('calm renders identically regardless of direction', () => {
+  // The open ring has no staff to orient, so direction must not matter.
+  assert.equal(buildWindBarb(0, 0), buildWindBarb(0, 270));
+  assert.doesNotMatch(buildWindBarb(0, 90), /rotate/);
+});
+
 test('quantizeKnots rounds mph to the nearest 5 kt', () => {
   assert.equal(quantizeKnots(0), 0);
   assert.equal(quantizeKnots(2), 0); // ~1.7 kt

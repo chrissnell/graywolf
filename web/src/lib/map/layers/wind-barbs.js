@@ -18,7 +18,7 @@ import maplibregl from 'maplibre-gl';
 import { buildWindBarb } from './wind-barb-glyph.js';
 
 export function mountWindBarbsLayer(map, getStations) {
-  // callsign → { marker, mph, dir, lat, lon }
+  // callsign → { marker, svg, mph, dir, lat, lon }
   const markers = new Map();
 
   function makeSvg(inner) {
@@ -35,10 +35,12 @@ export function mountWindBarbsLayer(map, getStations) {
   function createMarker(inner, lat, lon) {
     const root = document.createElement('div');
     root.className = 'wb-marker';
-    root.appendChild(makeSvg(inner));
-    return new maplibregl.Marker({ element: root, anchor: 'center' })
+    const svg = makeSvg(inner);
+    root.appendChild(svg);
+    const marker = new maplibregl.Marker({ element: root, anchor: 'center' })
       .setLngLat([lon, lat])
       .addTo(map);
+    return { marker, svg };
   }
 
   let filter = null;
@@ -62,9 +64,10 @@ export function mountWindBarbsLayer(map, getStations) {
       seen.add(callsign);
       const entry = markers.get(callsign);
       if (!entry) {
-        const marker = createMarker(inner, pos.lat, pos.lon);
+        const { marker, svg } = createMarker(inner, pos.lat, pos.lon);
         markers.set(callsign, {
           marker,
+          svg,
           mph: wx.wind_mph,
           dir: wx.wind_dir,
           lat: pos.lat,
@@ -78,8 +81,7 @@ export function mountWindBarbsLayer(map, getStations) {
         }
         // Only rebuild the SVG when the wind actually changed.
         if (entry.mph !== wx.wind_mph || entry.dir !== wx.wind_dir) {
-          const svg = entry.marker.getElement().querySelector('.wb-svg');
-          if (svg) svg.innerHTML = inner;
+          entry.svg.innerHTML = inner;
           entry.mph = wx.wind_mph;
           entry.dir = wx.wind_dir;
         }
