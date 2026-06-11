@@ -38,3 +38,30 @@ test('radarTileUrl builds an XYZ raster template under the base', () => {
   const url = radarTileUrl('nexrad-n0q', 'png');
   assert.ok(url.endsWith('/nexrad-n0q/{z}/{x}/{y}.png'));
 });
+
+import { buildDbzFillColor } from './radar-source.js';
+
+test('buildDbzFillColor is a step expression over the dbz property', () => {
+  const expr = buildDbzFillColor();
+  assert.equal(expr[0], 'step');
+  assert.deepEqual(expr[1], ['get', 'dbz']);
+  // First element after input is the base output color, then alternating
+  // stop/value pairs -- one stop per band.
+  const stopCount = (expr.length - 3) / 2 + 1;
+  assert.equal(stopCount, DBZ_BANDS.length);
+  // Highest band maps to its palette color.
+  assert.equal(expr[expr.length - 1], DBZ_COLORS[DBZ_BANDS[DBZ_BANDS.length - 1]]);
+});
+
+test('vector provider yields a fill layer driven by fill-opacity', () => {
+  const p = radarProvider(RADAR_BACKEND_VECTOR);
+  assert.equal(p.sourceId, 'radar-tiles');
+  assert.equal(p.source.type, 'vector');
+  assert.match(p.source.tiles[0], /radar\/\{z\}\/\{x\}\/\{y\}\.pbf$/);
+  assert.equal(p.layers.length, 1);
+  assert.equal(p.layers[0].type, 'fill');
+  assert.equal(p.layers[0]['source-layer'], 'radar');
+  assert.deepEqual(p.layers[0].paint['fill-color'], buildDbzFillColor());
+  assert.equal(p.opacity.property, 'fill-opacity');
+  assert.deepEqual(p.opacity.layerIds, ['radar-fill']);
+});

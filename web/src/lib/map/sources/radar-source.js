@@ -39,6 +39,18 @@ export function radarTileUrl(product, ext) {
   return `${RADAR_TILE_BASE}/${product}/{z}/{x}/{y}.${ext}`;
 }
 
+// MapLibre `step` expression mapping a polygon's `dbz` property to the NWS
+// ramp. Output below the first stop is the lowest band's color.
+export function buildDbzFillColor() {
+  // Base output is the lowest band's color (a dbz==first-band polygon falls
+  // below the first stop and takes it); stops begin at the second band.
+  const expr = ['step', ['get', 'dbz'], DBZ_COLORS[DBZ_BANDS[0]]];
+  for (let i = 1; i < DBZ_BANDS.length; i++) {
+    expr.push(DBZ_BANDS[i], DBZ_COLORS[DBZ_BANDS[i]]);
+  }
+  return expr;
+}
+
 // Uniform descriptor consumed by radar.js. `layers` is ordered; `opacity`
 // tells the layer module which paint property and which layer ids the opacity
 // slider drives (raster-opacity for raster, fill-opacity for vector).
@@ -62,6 +74,27 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
         },
       ],
       opacity: { property: 'raster-opacity', layerIds: ['radar-raster'] },
+    };
+  }
+  if (backend === RADAR_BACKEND_VECTOR) {
+    return {
+      sourceId: RADAR_SOURCE_ID,
+      source: {
+        type: 'vector',
+        // Origin Worker resolves the `latest` pointer GRA-48 publishes to R2.
+        tiles: [`${RADAR_TILE_BASE}/radar/{z}/{x}/{y}.pbf`],
+        attribution: RADAR_ATTRIBUTION,
+      },
+      layers: [
+        {
+          id: 'radar-fill',
+          type: 'fill',
+          source: RADAR_SOURCE_ID,
+          'source-layer': 'radar', // MVT layer name produced by GRA-48
+          paint: { 'fill-color': buildDbzFillColor(), 'fill-antialias': true },
+        },
+      ],
+      opacity: { property: 'fill-opacity', layerIds: ['radar-fill'] },
     };
   }
   throw new Error(`unsupported radar backend: ${backend}`);
