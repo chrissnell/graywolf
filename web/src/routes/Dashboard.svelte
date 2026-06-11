@@ -446,6 +446,7 @@
     font-size: 28px;
     font-weight: 700;
     color: var(--color-text);
+    white-space: nowrap;
   }
   .stat-value.gps-value {
     font-size: 18px;
