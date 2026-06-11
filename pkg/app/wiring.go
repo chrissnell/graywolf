@@ -23,6 +23,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/callsign"
+	"github.com/chrissnell/graywolf/pkg/clocksync"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/demoseed"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
@@ -197,6 +198,16 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.logger.Info("starting graywolf (modem connect-only)",
 			"graywolf", a.cfg.FullVersion(),
 			"modem_socket", a.cfg.ModemSocketPath)
+	}
+
+	// --- Clock sync check ----------------------------------------------
+	// An undisciplined system clock skews packet ages and the map's Time
+	// Range filter, which can silently hide stations (graywolf#234). Warn
+	// once at startup; stay quiet when the state can't be measured.
+	if clocksync.Check() == clocksync.Unsynced {
+		a.logger.Warn("system clock is not synchronized to a time source; " +
+			"this skews packet ages and can hide stations from the map -- " +
+			"enable NTP (systemd-timesyncd, chrony, or ntpd)")
 	}
 
 	// --- Packet log ----------------------------------------------------

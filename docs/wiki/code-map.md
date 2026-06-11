@@ -87,6 +87,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 | `gps` | GPSD client + serial NMEA reader + cache + station-position layered cache + enumerate | [`../handbook/gps.html`](../handbook/gps.html) |
 | `callsign` | Callsign parsing, N0CALL detection, APRS-IS passcode | [`../handbook/preferences.html`](../handbook/preferences.html) |
 | `stationcache` | Heard-station cache (memory + persistent) and APRS-extract helpers | (no dedicated page) |
+| `clocksync` | Host clock-discipline check (Linux `adjtimex(2)` read-only query; `Unknown` elsewhere). The startup banner in `pkg/app/wiring.go` warns once when `Check() == Unsynced` because an undisciplined clock skews packet ages and the map Time Range filter (graywolf#234). | (no dedicated page) |
 
 ## Go service: storage & telemetry
 
