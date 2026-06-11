@@ -25,8 +25,14 @@ builds:
       - amd64
       - arm64
       - arm
+    # Two 32-bit ARM builds: GOARM=6 for armv6-only Pi (1/Zero), GOARM=7
+    # for armv7-a boards. Their Rust modem counterparts differ too -- the
+    # GOARM=7 archive/package bundle the NEON modem (see rust-bin paths
+    # below). goarch=arm + goarm 6/7 both map to dpkg "armhf"; the nfpm
+    # file_name_template disambiguates the .deb/.rpm names.
     goarm:
       - "6"
+      - "7"
     ignore:
       - goos: windows
         goarch: arm64
@@ -47,11 +53,15 @@ archives:
       {{- if eq .Os "darwin" }}macOS{{ else }}{{ .Os }}{{ end }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if and (eq .Arch "arm") (eq .Arm "6") }}armv6l
+      {{- else if and (eq .Arch "arm") (eq .Arm "7") }}armv7l
       {{- else }}{{ .Arch }}{{ end }}
     files:
       - LICENSE*
       - README*
-      - src: "rust-bin/{{ .Os }}_{{ .Arch }}/graywolf-modem{{ if eq .Os \"windows\" }}.exe{{ end }}"
+      # goarch=arm covers both GOARM=6 (linux_arm) and GOARM=7
+      # (linux_armv7) Rust modems; pick the matching one by GOARM so the
+      # armv7 archive ships the NEON build, not the scalar armv6 one.
+      - src: "rust-bin/{{ .Os }}_{{ .Arch }}{{ if and (eq .Arch \"arm\") (eq .Arm \"7\") }}v7{{ end }}/graywolf-modem{{ if eq .Os \"windows\" }}.exe{{ end }}"
         dst: .
         strip_parent: true
 
@@ -66,6 +76,17 @@ nfpms:
     formats:
       - deb
       - rpm
+    # goarch=arm + GOARM 6 and 7 both map to dpkg "armhf", so the default
+    # conventional name collides (two graywolf_<ver>_armhf.deb). Keep the
+    # conventional name for every arch except the new armv7 build, which
+    # gets a distinct armv7l name so operators can tell the NEON package
+    # apart from the armv6 one.
+    file_name_template: >-
+      {{- if and (eq .Arch "arm") (eq .Arm "7") -}}
+      {{ .PackageName }}_{{ .Version }}_armv7l{{ .ConventionalExtension }}
+      {{- else -}}
+      {{ .ConventionalFileName }}
+      {{- end -}}
     bindir: /usr/bin
     contents:
       - src: packaging/systemd/graywolf.service
@@ -73,7 +94,9 @@ nfpms:
       - src: packaging/udev/99-graywolf-cm108.rules
         dst: /etc/udev/rules.d/99-graywolf-cm108.rules
         type: config
-      - src: "rust-bin/linux_{{ .Arch }}/graywolf-modem"
+      # armv7 (GOARM=7) ships the NEON modem from linux_armv7; every other
+      # arch (including armv6) uses linux_<arch>.
+      - src: "rust-bin/linux_{{ .Arch }}{{ if and (eq .Arch \"arm\") (eq .Arm \"7\") }}v7{{ end }}/graywolf-modem"
         dst: /usr/bin/graywolf-modem
     scripts:
       postinstall: packaging/scripts/postinstall.sh
