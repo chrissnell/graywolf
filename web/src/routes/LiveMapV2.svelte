@@ -16,6 +16,7 @@
   import { mountWeatherLayer } from '../lib/map/layers/weather.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
+  import { mountRadarLayer } from '../lib/map/layers/radar.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
@@ -52,6 +53,13 @@
   let weatherLayer = null;
   let hoverPathLayer = null;
   let myPositionLayer = null;
+  let radarLayer = null;
+
+  // Radar overlay settings -- persisted per browser (not per account).
+  const radarSettings = $state({
+    visible: localStorage.getItem('gw_radar_visible') === '1',
+    opacity: parseFloat(localStorage.getItem('gw_radar_opacity') ?? '0.6'),
+  });
   let mapRef = null;
   let activePopup = null;
 
@@ -237,6 +245,10 @@
 
   function onMapReady(map) {
     mapRef = map;
+    // Radar first so the raster/fill sits below trails and station markers in
+    // the GL stack. DOM layers (stations, weather) always render above the
+    // canvas regardless, but GL line layers (trails) would otherwise cover it.
+    radarLayer = mountRadarLayer(map, radarSettings);
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
     trailsLayer = mountTrailsLayer(map, () => dataStore.stations, {
@@ -387,6 +399,16 @@
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
   });
+  $effect(() => {
+    const v = radarSettings.visible;
+    localStorage.setItem('gw_radar_visible', v ? '1' : '0');
+    radarLayer?.setVisible(v);
+  });
+  $effect(() => {
+    const v = radarSettings.opacity;
+    localStorage.setItem('gw_radar_opacity', String(v));
+    radarLayer?.setOpacity(v);
+  });
   // Direct RX filter: predicate is shared across stations/trails/weather
   // so the three layers stay in lockstep. my-position is the operator's
   // own beacon and is intentionally exempt.
@@ -489,11 +511,13 @@
   onDestroy(() => {
     dataStore.stop();
     closePopup();
+    radarLayer?.destroy();
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
+    radarLayer = null;
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
