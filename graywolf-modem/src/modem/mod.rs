@@ -986,6 +986,19 @@ impl Modem {
             }
         };
 
+        // VOX-keyed radios have no PTT line — the radio keys on audio
+        // alone, and its VOX relay takes time to close. Without a lead-in
+        // the start of the HDLC preamble is clipped while the relay is
+        // still engaging, which can truncate or corrupt the frame
+        // (graywolf#220). Prepend a steady tone so the radio is fully
+        // keyed before any packet data goes out; the tone is part of the
+        // TX buffer, so the output-gain multiplier below is applied to it
+        // too. See [`vox_lead_in`] for the tone shape and level rationale.
+        if let Some(mut lead) = vox_lead_in(ptt_cfg, acfg.sample_rate, ccfg.mark_freq) {
+            lead.extend_from_slice(&samples);
+            samples = lead;
+        }
+
         // Apply output device gain to TX audio
         let mut clipping = false;
         if let Some(gain_atom) = self.gain_atoms.get(&ccfg.output_device_id) {
@@ -1159,6 +1172,55 @@ impl Modem {
             }
             Err(e) => self.reply_test_signal(req.request_id, false, e),
         }
+    }
+}
+
+/// Duration of the steady lead-in tone prepended to a VOX-keyed channel's
+/// TX audio, in milliseconds. Gives the radio's VOX circuit time to engage
+/// before the HDLC preamble so the start of the packet isn't clipped
+/// (graywolf#220). Fixed at 500 ms, the value requested in the issue and a
+/// comfortable margin over typical VOX attack times.
+const VOX_LEAD_TONE_MS: u32 = 500;
+
+/// True when a channel's PTT config selects VOX keying — either the desktop
+/// `vox` method or the Android USB-PTT VOX transport (`method == "android"`
+/// with `ptt_method == PTT_METHOD_VOX`). Both flavours key the radio on
+/// audio alone, so the TX builder prepends a [`VOX_LEAD_TONE_MS`] lead-in
+/// tone for either one.
+fn ptt_uses_vox(cfg: &ConfigurePtt) -> bool {
+    cfg.method == "vox"
+        || (cfg.method == "android"
+            && cfg.ptt_method as i32 == crate::tx::ptt_android_consts::PTT_METHOD_VOX)
+}
+
+/// Build the VOX lead-in tone for a channel, or `None` when the channel
+/// doesn't use VOX (see [`ptt_uses_vox`]). The tone is a steady sine at the
+/// channel's `mark_freq` — the same passband the AFSK that follows lives in,
+/// so any radio/filter that passes the packet passes the keying tone. Its
+/// length is exactly `sample_rate * VOX_LEAD_TONE_MS / 1000` samples.
+///
+/// The tone is rendered at [`crate::txtest`]'s standard level (~0.6 FS),
+/// deliberately a touch hotter than the AFSK frame (~0.5 FS): the only job
+/// of this tone is to trip the VOX relay reliably, and a stronger keying
+/// burst does that better. The output peak meter will therefore read this
+/// tone rather than the slightly quieter frame — an accepted trade-off.
+///
+/// Factored out of [`Modem::handle_transmit_frame`] so the prepend behaviour
+/// is unit-testable without an audio device: the caller just prepends the
+/// returned buffer to the frame samples.
+fn vox_lead_in(
+    ptt_cfg: Option<&ConfigurePtt>,
+    sample_rate: u32,
+    mark_freq: u32,
+) -> Option<Vec<i16>> {
+    if ptt_cfg.is_some_and(ptt_uses_vox) {
+        Some(crate::txtest::tone_samples(
+            sample_rate,
+            mark_freq as f32,
+            VOX_LEAD_TONE_MS,
+        ))
+    } else {
+        None
     }
 }
 
@@ -2349,6 +2411,117 @@ mod tests {
         assert_eq!(effective_ms(0, Some(500), 100), 500);
         assert_eq!(effective_ms(0, Some(0), 100), 100);
         assert_eq!(effective_ms(0, None, 100), 100);
+    }
+
+    #[test]
+    fn ptt_uses_vox_detects_desktop_and_android_vox_only() {
+        let cfg = |method: &str, ptt_method: u32| ConfigurePtt {
+            channel: 0,
+            method: method.into(),
+            device: String::new(),
+            txdelay_ms: 0,
+            txtail_ms: 0,
+            slottime_ms: 0,
+            persist: 0,
+            dwait_ms: 0,
+            invert: false,
+            gpio_pin: 0,
+            gpio_line: 0,
+            ptt_method,
+        };
+        // Desktop vox method → VOX.
+        assert!(ptt_uses_vox(&cfg("vox", 0)));
+        // Android USB-PTT with the VOX transport (ptt_method 4) → VOX.
+        assert!(ptt_uses_vox(&cfg("android", 4)));
+        // Android with a wired transport (RTS/CM108/DTR) is NOT VOX.
+        assert!(!ptt_uses_vox(&cfg("android", 1)));
+        assert!(!ptt_uses_vox(&cfg("android", 2)));
+        assert!(!ptt_uses_vox(&cfg("android", 3)));
+        // Plain "none" is a VOX rig with no lead tone, so it is NOT
+        // treated as VOX for the lead-in purpose.
+        assert!(!ptt_uses_vox(&cfg("none", 0)));
+        assert!(!ptt_uses_vox(&cfg("serial_rts", 0)));
+    }
+
+    #[test]
+    fn vox_lead_in_prepends_a_500ms_audible_tone_only_for_vox() {
+        let cfg = |method: &str, ptt_method: u32| ConfigurePtt {
+            channel: 0,
+            method: method.into(),
+            device: String::new(),
+            txdelay_ms: 0,
+            txtail_ms: 0,
+            slottime_ms: 0,
+            persist: 0,
+            dwait_ms: 0,
+            invert: false,
+            gpio_pin: 0,
+            gpio_line: 0,
+            ptt_method,
+        };
+        let sample_rate = 48_000u32;
+        let expected_len =
+            (sample_rate as u64 * VOX_LEAD_TONE_MS as u64 / 1000) as usize;
+
+        // Desktop vox and Android VOX both get a lead-in of exactly
+        // VOX_LEAD_TONE_MS worth of samples...
+        for c in [cfg("vox", 0), cfg("android", 4)] {
+            let lead = vox_lead_in(Some(&c), sample_rate, 1200)
+                .expect("vox channel must get a lead-in tone");
+            assert_eq!(
+                lead.len(),
+                expected_len,
+                "lead-in must be {} ms at {} Hz",
+                VOX_LEAD_TONE_MS,
+                sample_rate
+            );
+            // ...and it must be actual audio, not silence — a silent
+            // lead-in would never key the VOX relay.
+            assert!(
+                lead.iter().any(|&s| s != 0),
+                "lead-in tone must be audible"
+            );
+        }
+
+        // Wired / none / no-config channels get no lead-in (None), so
+        // handle_transmit_frame leaves their TX buffer untouched.
+        assert!(vox_lead_in(Some(&cfg("none", 0)), sample_rate, 1200).is_none());
+        assert!(vox_lead_in(Some(&cfg("serial_rts", 0)), sample_rate, 1200).is_none());
+        assert!(vox_lead_in(Some(&cfg("android", 1)), sample_rate, 1200).is_none());
+        assert!(vox_lead_in(None, sample_rate, 1200).is_none());
+    }
+
+    #[test]
+    fn configure_ptt_with_method_vox_registers_a_no_op_driver_on_the_worker() {
+        let (handle, _peer) = IpcHandle::test_pair();
+        let (_ipc_tx, ipc_rx) = std::sync::mpsc::channel::<IpcInbound>();
+        let mut modem = Modem::new(handle, ipc_rx).expect("Modem::new");
+        let msg = IpcMessage {
+            payload: Some(Payload::ConfigurePtt(ConfigurePtt {
+                channel: 5,
+                method: "vox".into(),
+                device: String::new(),
+                txdelay_ms: 300,
+                txtail_ms: 100,
+                slottime_ms: 10,
+                persist: 63,
+                dwait_ms: 0,
+                invert: false,
+                gpio_pin: 0,
+                gpio_line: 0,
+                ptt_method: 0,
+            })),
+        };
+        assert!(!modem.handle_ipc(msg));
+        let stored = modem.ptt_cfgs.get(&5).expect("PttConfig stored");
+        assert_eq!(stored.method, "vox");
+        // vox builds a no-op driver just like none — verify it actually
+        // landed on the worker rather than failing the build.
+        assert_eq!(
+            modem.tx_worker.driver_count(),
+            1,
+            "worker should have one no-op VOX driver registered"
+        );
     }
 
     #[test]

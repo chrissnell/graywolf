@@ -55,7 +55,8 @@ background, the operator handbook is the starting point.
 
 | Term | In this project | Pointer |
 |---|---|---|
-| PTT | Push-to-talk keying. Methods: serial RTS/DTR, CM108 USB HID, GPIO chardev (Linux), rigctld. Driving on Rust; enumeration on Go. | [`../handbook/ptt.html`](../handbook/ptt.html); see [code-map.md](code-map.md) |
+| PTT | Push-to-talk keying. Methods: serial RTS/DTR, CM108 USB HID, GPIO chardev (Linux), rigctld, `vox` (audio-keyed, no wire). Driving on Rust; enumeration on Go. | [`../handbook/ptt.html`](../handbook/ptt.html); see [code-map.md](code-map.md) |
+| VOX PTT | No PTT wire -- the radio keys on transmit audio. graywolf prepends a fixed 500 ms lead-in tone (channel mark freq) ahead of the HDLC preamble so the VOX circuit engages before packet data (graywolf#220). `method=="vox"` on desktop; `method=="android" && ptt_method==4` on Android. Lead tone added in `Modem::handle_transmit_frame` (`ptt_uses_vox` + `VOX_LEAD_TONE_MS`); keying is a no-op (`NonePtt`). | [`../../graywolf-modem/src/modem/mod.rs`](../../graywolf-modem/src/modem/mod.rs), [`../../graywolf-modem/src/tx/ptt.rs`](../../graywolf-modem/src/tx/ptt.rs) |
 | CM108 USB HID GPIO | USB sound-card chip with a HID GPIO pin used for PTT. Three platform-specific drivers. | [`../../graywolf-modem/src/cm108.rs`](../../graywolf-modem/src/cm108.rs), `tx/ptt_cm108_*.rs` |
 | GPIO chardev (Linux) | Modern `/dev/gpiochipN` v2 ioctl interface (gpiocdev crate). | [`../../graywolf-modem/src/tx/ptt_gpio_linux.rs`](../../graywolf-modem/src/tx/ptt_gpio_linux.rs) |
 | rigctld / hamlib | TCP daemon that drives a radio's CAT interface; PTT via `T 1\n` / `T 0\n`. | [`../../graywolf-modem/src/tx/ptt_rigctld.rs`](../../graywolf-modem/src/tx/ptt_rigctld.rs) |
