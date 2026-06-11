@@ -87,6 +87,15 @@ export const kissUsb = {
   availableDevices: () => api.get('/kiss/available-usb-serial-devices'),
 };
 
+// kissSerial groups the desktop KISS-over-serial helpers. The available-ports
+// endpoint enumerates host serial ports (Windows COM*, Linux /dev/tty*, macOS
+// cu.*) for the "Detected ports" dropdown in the serial interface editor.
+export const kissSerial = {
+  // availablePorts fetches host serial ports the OS can see. Shape:
+  // [{path, name, description, is_usb, recommended, warning, ...}].
+  availablePorts: () => api.get('/kiss/available-serial-ports'),
+};
+
 // --- Mock data for development without backend ---
 
 function delay(data) {
@@ -133,6 +142,11 @@ const mockAvailableUsbSerialDevices = {
     { vid_pid: '10c4:ea60', product: 'Digirig CP2102N', manufacturer: 'Silicon Labs', has_permission: false },
   ],
 };
+
+const mockKissSerialPorts = [
+  { path: '/dev/ttyUSB0', name: 'ttyUSB0', description: 'CP2102 USB to UART', is_usb: true, recommended: true },
+  { path: '/dev/ttyACM0', name: 'ttyACM0', description: 'USB serial device', is_usb: true, recommended: true },
+];
 
 const mockAgw = { tcp_port: 8000, monitor_port: 8002, enabled: true };
 
@@ -220,6 +234,7 @@ function getMockData(method, path, body) {
   if (path.match(/^\/kiss\/\d+$/) && method === 'DELETE') return delay(null);
   if (path === '/kiss/bonded-bt-devices' && method === 'GET') return delay(mockBondedBtDevices);
   if (path === '/kiss/available-usb-serial-devices' && method === 'GET') return delay(mockAvailableUsbSerialDevices);
+  if (path === '/kiss/available-serial-ports' && method === 'GET') return delay(mockKissSerialPorts);
 
   // AGW
   if (path === '/agw' && method === 'GET') return delay(mockAgw);
