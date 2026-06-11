@@ -106,7 +106,7 @@
                   {:else if cStatus === 'complete'}
                     <Button variant="danger" onclick={() => downloadsState.remove(country.slug)}>Delete</Button>
                   {:else}
-                    <Button variant="default" disabled>Downloading...</Button>
+                    <Button variant="danger" onclick={() => downloadsState.cancel(country.slug)}>Cancel</Button>
                   {/if}
                 {/if}
               </div>
@@ -133,7 +133,7 @@
                       {:else if status === 'complete'}
                         <Button variant="danger" onclick={() => downloadsState.remove(child.slug)}>Delete</Button>
                       {:else}
-                        <Button variant="default" disabled>Downloading...</Button>
+                        <Button variant="danger" onclick={() => downloadsState.cancel(child.slug)}>Cancel</Button>
                       {/if}
                     </div>
                   </li>

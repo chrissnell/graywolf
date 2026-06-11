@@ -302,6 +302,11 @@
                 Pending...
               {/if}
             </span>
+            {#if row.state === 'error'}
+              <Button variant="default" onclick={() => downloadsState.remove(row.slug)}>Dismiss</Button>
+            {:else}
+              <Button variant="danger" onclick={() => downloadsState.cancel(row.slug)}>Cancel</Button>
+            {/if}
             {#if row.state === 'downloading' && row.bytes_total > 0}
               <progress class="downloaded-progress" value={row.bytes_downloaded} max={row.bytes_total}></progress>
             {/if}

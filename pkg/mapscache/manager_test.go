@@ -131,6 +131,58 @@ func TestManager_DeleteDuringActiveDownload(t *testing.T) {
 	}
 }
 
+// TestManager_CancelLeavesNoErrorRow guards the cancel-button path:
+// deleting an in-flight download must not leave a phantom "error" row
+// behind once the download goroutine unwinds. The upstream streams a
+// little, then blocks, so the cancel lands mid-transfer (after the .tmp
+// file has bytes in it) -- the realistic accidental-download scenario.
+func TestManager_CancelLeavesNoErrorRow(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1048576") // claim 1 MiB
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(strings.Repeat("X", 8192)))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done() // block until the download is cancelled
+	})
+	mgr, _, _ := newTestManager(t, upstream)
+
+	if err := mgr.Start(context.Background(), "state/nebraska", nil); err != nil {
+		t.Fatal(err)
+	}
+	// Let the goroutine grab the semaphore, issue the request, and start
+	// streaming bytes into the .tmp file.
+	time.Sleep(150 * time.Millisecond)
+
+	if err := mgr.Delete(context.Background(), "state/nebraska"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Poll past the point where the download goroutine has fully unwound
+	// (the blocked handler returns once the context is cancelled, then
+	// run() calls fail()). The state must stay "absent" the whole time --
+	// never flicker to "error".
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		s, err := mgr.Status(context.Background(), "state/nebraska")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.State != "absent" {
+			t.Fatalf("expected state to stay absent after cancel, got %+v", s)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	if _, err := os.Stat(mgr.PathFor("state/nebraska")); !os.IsNotExist(err) {
+		t.Fatalf("archive should not exist after cancel: %v", err)
+	}
+	if _, err := os.Stat(mgr.PathFor("state/nebraska") + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf(".tmp file should not exist after cancel: %v", err)
+	}
+}
+
 func TestManager_BadUpstreamStatus(t *testing.T) {
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
