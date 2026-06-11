@@ -31,14 +31,6 @@ export function quantizeKnots(mph) {
   return Math.round((mph * KT_PER_MPH) / 5) * 5;
 }
 
-// hasWindBarb reports whether a station's wind will render an actual barb
-// (staff + ticks) rather than nothing or the small calm ring. Callers use
-// it to lift the temperature chip clear of the barb only when one exists.
-export function hasWindBarb(mph, dirDeg) {
-  if (mph == null || dirDeg == null || !isFinite(mph)) return false;
-  return quantizeKnots(mph) > 0;
-}
-
 // buildWindBarb returns the inner SVG markup (no <svg> wrapper) for a barb
 // at the given sustained wind speed (mph) and direction (degrees true,
 // the bearing the wind blows FROM). Returns '' when there's nothing

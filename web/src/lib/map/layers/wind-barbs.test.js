@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWindBarb, hasWindBarb, quantizeKnots } from './wind-barb-glyph.js';
+import { buildWindBarb, quantizeKnots } from './wind-barb-glyph.js';
 
 const count = (svg, frag) => svg.split(frag).length - 1;
 
@@ -67,12 +67,4 @@ test('quantizeKnots rounds mph to the nearest 5 kt', () => {
   assert.equal(quantizeKnots(11.5), 10); // ~10 kt
   assert.equal(quantizeKnots(null), 0);
   assert.equal(quantizeKnots(NaN), 0);
-});
-
-test('hasWindBarb is true only when a barb (not calm/empty) renders', () => {
-  assert.equal(hasWindBarb(15, 90), true);
-  assert.equal(hasWindBarb(2, 90), false); // rounds to calm
-  assert.equal(hasWindBarb(0, 90), false);
-  assert.equal(hasWindBarb(15, null), false); // no direction
-  assert.equal(hasWindBarb(null, 90), false);
 });

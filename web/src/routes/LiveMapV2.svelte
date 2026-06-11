@@ -256,7 +256,12 @@
         hoverPathLayer?.clear();
       },
     });
-    weatherLayer = mountWeatherLayer(map, () => dataStore.stations);
+    // getTempSlot reaches into the station marker (assigned below) so the
+    // temperature chip renders right under the callsign, not as its own
+    // floating marker.
+    weatherLayer = mountWeatherLayer(map, () => dataStore.stations, {
+      getTempSlot: (callsign) => stationsLayer?.getTempSlot(callsign),
+    });
     // Wind barbs mount before the station markers so the (DOM) station
     // icons stack above the barb staffs that radiate out from them.
     windBarbsLayer = mountWindBarbsLayer(map, () => dataStore.stations);
@@ -909,10 +914,11 @@
      override with position:relative — that pulls the marker into document
      flow and the per-marker transform stacks all of them at the canvas
      origin). The 21x21 icon child is the visual anchor (anchor:'center'
-     in stations.js puts the icon center on the lat/lon). The callsign
-     label is absolutely positioned to the right of the icon, anchored
-     within the maplibregl-applied positioning context, so its width
-     doesn't shift the icon off-target. */
+     in stations.js puts the icon center on the lat/lon). The aside column
+     (callsign + temperature) is absolutely positioned to the right of the
+     icon and vertically centered, so its width doesn't shift the icon
+     off-target. align-items:flex-end right-justifies the temp chip to the
+     callsign's right edge regardless of callsign length. */
   :global(.gw-station-marker) {
     width: 21px;
     height: 21px;
@@ -924,12 +930,18 @@
     width: 21px;
     height: 21px;
   }
-  :global(.gw-station-label) {
+  :global(.gw-station-aside) {
     position: absolute;
     left: 100%;
     top: 50%;
     transform: translateY(-50%);
     margin-left: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  :global(.gw-station-label) {
     padding: 0 4px;
     line-height: 12px;
     font-family: var(--font-mono);
@@ -943,6 +955,22 @@
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+  /* Temperature chip: sits just below the callsign, right-justified to
+     it. Filled by the weather layer; dimmer than the callsign so the
+     callsign stays the primary label. */
+  :global(.gw-station-aside .wx-temp) {
+    padding: 0 4px;
+    line-height: 13px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-dim, #c9d1d9);
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 2px;
+    white-space: nowrap;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   }
 
@@ -1016,25 +1044,6 @@
   :global(.stn-popup .b-rx) { background: rgba(63, 185, 80, 0.15); color: var(--color-success); }
   :global(.stn-popup .b-tx) { background: rgba(210, 153, 34, 0.15); color: var(--color-warning); }
   :global(.stn-popup .b-is) { background: rgba(195, 155, 255, 0.15); color: #c39bff; }
-
-  /* Weather label chip -- ports the legacy Leaflet wx-label/wx-text
-     styling. The marker root is a maplibregl.Marker (DOM-based) so
-     these have to be :global. */
-  :global(.wx-label) {
-    background: none !important;
-    border: none !important;
-    pointer-events: none;
-  }
-  :global(.wx-text) {
-    background: rgba(22, 27, 34, 0.85);
-    color: var(--color-text-dim);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    padding: 1px 4px;
-    border-radius: 3px;
-    white-space: nowrap;
-    text-align: center;
-  }
 
   /* Wind barbs -- inline SVG glyph rendered per station by
      wind-barbs.js. The marker is inert so it never steals clicks from
