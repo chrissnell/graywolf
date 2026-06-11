@@ -83,6 +83,7 @@ const (
 	OpReconnectKiss                = "reconnectKiss"
 	OpGetBondedBtDevices           = "getBondedBtDevices"
 	OpGetAvailableUsbSerialDevices = "getAvailableUsbSerialDevices"
+	OpListAvailableKissSerialPorts = "listAvailableKissSerialPorts"
 )
 
 // Tx-timing resource — /api/tx-timing (Phase 2). Keyed by channel id,

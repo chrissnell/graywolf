@@ -5351,6 +5351,23 @@ paths:
       summary: Reconnect a KISS tcp-client interface now
       tags:
         - kiss
+  /kiss/available-serial-ports:
+    get:
+      operationId: listAvailableKissSerialPorts
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/gps.SerialPortInfo'
+            type: array
+      security:
+        - CookieAuth: []
+      summary: List available host serial ports
+      tags:
+        - kiss
   /kiss/available-usb-serial-devices:
     get:
       operationId: getAvailableUsbSerialDevices

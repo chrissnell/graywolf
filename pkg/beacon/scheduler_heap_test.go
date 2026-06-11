@@ -194,9 +194,11 @@ func TestHeapScheduler_SingleBeaconFixedInterval(t *testing.T) {
 	if n := sink.Len(); n != 4 {
 		t.Fatalf("frame count = %d, want 4", n)
 	}
-	if obs.sent.Load() != 4 {
-		t.Errorf("observer sent = %d, want 4", obs.sent.Load())
-	}
+	// OnBeaconSent fires just after sink.Submit in sendOne, so the
+	// observer count can momentarily lag the frame count that
+	// waitForFrames synchronizes on. Poll it instead of reading it
+	// immediately (mirrors the deadline loop in scheduler_test.go).
+	waitForObserverSent(t, obs, 4, time.Second)
 }
 
 // TestHeapScheduler_MultipleBeaconsOrder (scenario 2) configures two
@@ -519,4 +521,20 @@ func waitForFrames(t *testing.T, r *testtx.Recorder, n int, timeout time.Duratio
 		time.Sleep(200 * time.Microsecond)
 	}
 	t.Fatalf("timed out waiting for %d frames (have %d)", n, r.Len())
+}
+
+// waitForObserverSent blocks until the observer's OnBeaconSent count
+// reaches n or times out. The observer increment trails sink.Submit in
+// sendOne, so tests that synchronize on frame count must poll the
+// observer separately rather than reading it immediately.
+func waitForObserverSent(t *testing.T, o *skipObserver, n int64, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if o.sent.Load() >= n {
+			return
+		}
+		time.Sleep(200 * time.Microsecond)
+	}
+	t.Errorf("observer sent = %d, want %d", o.sent.Load(), n)
 }
