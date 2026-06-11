@@ -25,18 +25,22 @@ export const RADAR_BACKEND_VECTOR = 'vector';
 // v1 ships raster. Flip to RADAR_BACKEND_VECTOR once GRA-48 tiles are live.
 export const ACTIVE_RADAR_BACKEND = RADAR_BACKEND_RASTER;
 
-// Tile base. In production this points at the origin Worker (R2-backed,
-// edge-cached). For local dev you may point RADAR_TILE_BASE straight at IEM:
-//   https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0
-// Production flips it to the Worker with no other code change (per GRA-42).
-export const RADAR_TILE_BASE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
+// Tile host. Points at the graywolf-maps origin Worker, which serves radar
+// under /radar/*: the raster product is an edge-cached pull-through of IEM
+// (so we don't hotlink a university server in production), and /radar/{z}/{x}/{y}.pbf
+// is the GRA-48 contour vector tiles from R2. The Worker rides the same bearer
+// token as the basemap (the client's transformRequest appends ?t=), so no
+// extra auth wiring is needed here. To test against IEM directly in local dev,
+// temporarily set this to the IEM base and drop the `/radar` segment in
+// radarTileUrl: https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0
+export const RADAR_TILE_BASE = 'https://maps.nw5w.com';
 
 const RADAR_ATTRIBUTION = 'NEXRAD via NWS / Iowa State Mesonet';
 const RADAR_SOURCE_ID = 'radar-tiles';
 
-// Build an XYZ tile-URL template under the configured base.
+// Build an XYZ tile-URL template under the Worker's /radar/ namespace.
 export function radarTileUrl(product, ext) {
-  return `${RADAR_TILE_BASE}/${product}/{z}/{x}/{y}.${ext}`;
+  return `${RADAR_TILE_BASE}/radar/${product}/{z}/{x}/{y}.${ext}`;
 }
 
 // MapLibre `step` expression mapping a polygon's `dbz` property to the NWS
