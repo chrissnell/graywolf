@@ -113,8 +113,26 @@
 
   function formatUptime(s) {
     if (!s && s !== 0) return '\u2014';
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
+    const MIN = 60, HOUR = 3600, DAY = 86400, WEEK = 7 * 86400, MONTH = 30 * 86400;
+    // Scale to the largest meaningful unit, showing at most two units so the
+    // value stays on one line in the stat card.
+    if (s >= MONTH) {
+      const months = Math.floor(s / MONTH);
+      const days = Math.floor((s % MONTH) / DAY);
+      return days ? `${months}mo ${days}d` : `${months}mo`;
+    }
+    if (s >= WEEK) {
+      const weeks = Math.floor(s / WEEK);
+      const days = Math.floor((s % WEEK) / DAY);
+      return days ? `${weeks}w ${days}d` : `${weeks}w`;
+    }
+    if (s >= DAY) {
+      const days = Math.floor(s / DAY);
+      const hours = Math.floor((s % DAY) / HOUR);
+      return hours ? `${days}d ${hours}h` : `${days}d`;
+    }
+    const h = Math.floor(s / HOUR);
+    const m = Math.floor((s % HOUR) / MIN);
     return `${h}h ${m}m`;
   }
 
@@ -429,6 +447,7 @@
     font-size: 28px;
     font-weight: 700;
     color: var(--color-text);
+    white-space: nowrap;
   }
   .stat-value.gps-value {
     font-size: 18px;
