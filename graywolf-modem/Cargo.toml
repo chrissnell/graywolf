@@ -50,7 +50,7 @@ ndk-context = "0.1"
 [target.'cfg(unix)'.dependencies]
 # Direct POSIX access for serial PTT: fcntl::open + libc TIOCMSET ioctls.
 # Matches direwolf's approach (no termios calls at all on PTT-only fds).
-nix = { version = "0.29", features = ["fs", "ioctl"] }
+nix = { version = "0.30", features = ["fs", "ioctl"] }
 # Direct libc for poc_a_rxonly's SIGINT/SIGTERM handler. Already present
 # transitively via nix; naming it as a direct dep so the bin can call
 # libc::signal without relying on transitive re-exports.

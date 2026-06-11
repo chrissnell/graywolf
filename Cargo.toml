@@ -26,3 +26,8 @@ resolver = "2"
 [patch.crates-io]
 alsa = { git = "https://github.com/diwic/alsa-rs", rev = "62722db312fe078c4ab7a1f5c832e310af9d51eb" }
 gpiocdev-uapi = { git = "https://github.com/chrissnell/gpiocdev-rs", rev = "35016676c9090834ea1e49edd5e18c9e10212f55" }
+# nix builds timeval with a suseconds_t cast that is the wrong width on armhf
+# t64 (rust-lang/libc#1848); no released or master nix fixes it. Thin fork of
+# the v0.30.1 tag using `as _` casts instead. Our direct dep is unified to
+# 0.30 (below) so this single pin covers both it and the hidapi-pulled copy.
+nix = { git = "https://github.com/chrissnell/nix", rev = "150adaa36b24f443c0ba379d47d20e4a11f3cbbc" }

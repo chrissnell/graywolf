@@ -519,7 +519,7 @@ dependencies = [
  "libc",
  "log",
  "ndk-context",
- "nix 0.29.0",
+ "nix",
  "nusb",
  "prost",
  "prost-build",
@@ -577,7 +577,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "libc",
- "nix 0.30.1",
+ "nix",
  "pkg-config",
  "windows-sys 0.61.2",
 ]
@@ -830,21 +830,8 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
-dependencies = [
- "bitflags",
- "cfg-if",
- "cfg_aliases",
- "libc",
-]
-
-[[package]]
-name = "nix"
 version = "0.30.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
+source = "git+https://github.com/chrissnell/nix?rev=150adaa36b24f443c0ba379d47d20e4a11f3cbbc#150adaa36b24f443c0ba379d47d20e4a11f3cbbc"
 dependencies = [
  "bitflags",
  "cfg-if",
