@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWindBarb } from './wind-barb-glyph.js';
+import { buildWindBarb, hasWindBarb, quantizeKnots } from './wind-barb-glyph.js';
 
 const count = (svg, frag) => svg.split(frag).length - 1;
 
@@ -59,4 +59,20 @@ test('65 kt is one pennant + one full + one half', () => {
 test('direction sets the group rotation', () => {
   assert.match(buildWindBarb(20, 45), /rotate\(45\)/);
   assert.match(buildWindBarb(20, 215), /rotate\(215\)/);
+});
+
+test('quantizeKnots rounds mph to the nearest 5 kt', () => {
+  assert.equal(quantizeKnots(0), 0);
+  assert.equal(quantizeKnots(2), 0); // ~1.7 kt
+  assert.equal(quantizeKnots(11.5), 10); // ~10 kt
+  assert.equal(quantizeKnots(null), 0);
+  assert.equal(quantizeKnots(NaN), 0);
+});
+
+test('hasWindBarb is true only when a barb (not calm/empty) renders', () => {
+  assert.equal(hasWindBarb(15, 90), true);
+  assert.equal(hasWindBarb(2, 90), false); // rounds to calm
+  assert.equal(hasWindBarb(0, 90), false);
+  assert.equal(hasWindBarb(15, null), false); // no direction
+  assert.equal(hasWindBarb(null, 90), false);
 });

@@ -19,6 +19,14 @@
 
 import maplibregl from 'maplibre-gl';
 import { unitsState } from '../../settings/units-store.svelte.js';
+import { hasWindBarb } from './wind-barb-glyph.js';
+
+// Default upward offset: floats the chip just above the 21x21 station
+// icon. When a wind barb is present it radiates up to ~49px from the
+// station in the wind direction, so we lift the chip clear of that reach
+// to avoid overlapping the barb (see wind-barbs.js).
+const OFFSET_NEAR = [0, -14];
+const OFFSET_LIFTED = [0, -54];
 
 // Wind speed/direction used to live in this chip as text; it now renders
 // as a meteorological wind barb in the dedicated wind-barbs layer (see
@@ -37,7 +45,7 @@ export function mountWeatherLayer(map, getStations) {
   // callsign → { marker, label, lat, lon }
   const markers = new Map();
 
-  function createMarker(label, lat, lon) {
+  function createMarker(label, lat, lon, offset) {
     const root = document.createElement('div');
     root.className = 'wx-label';
     const text = document.createElement('div');
@@ -45,13 +53,10 @@ export function mountWeatherLayer(map, getStations) {
     text.textContent = label;
     root.appendChild(text);
 
-    // Anchor 'bottom' + small upward offset so the chip floats above
-    // the 21x21 station icon (which sits centered on the lat/lon, so
-    // its top is ~10.5px above it). 14px offset leaves a hairline gap.
     return new maplibregl.Marker({
       element: root,
       anchor: 'bottom',
-      offset: [0, -14],
+      offset,
     }).setLngLat([lon, lat]).addTo(map);
   }
 
@@ -74,11 +79,15 @@ export function mountWeatherLayer(map, getStations) {
       const label = formatLabel(s.weather, isMetric);
       if (!label) continue;
 
+      // Lift the chip only when a real barb sits beneath it.
+      const lifted = hasWindBarb(s.weather.wind_mph, s.weather.wind_dir);
+      const offset = lifted ? OFFSET_LIFTED : OFFSET_NEAR;
+
       seen.add(callsign);
       const entry = markers.get(callsign);
       if (!entry) {
-        const marker = createMarker(label, pos.lat, pos.lon);
-        markers.set(callsign, { marker, label, lat: pos.lat, lon: pos.lon });
+        const marker = createMarker(label, pos.lat, pos.lon, offset);
+        markers.set(callsign, { marker, label, lat: pos.lat, lon: pos.lon, lifted });
       } else {
         // Cheap change detection: skip the DOM/setLngLat work when
         // nothing meaningful moved. The text node only updates when
@@ -93,6 +102,10 @@ export function mountWeatherLayer(map, getStations) {
           const textEl = entry.marker.getElement().querySelector('.wx-text');
           if (textEl) textEl.textContent = label;
           entry.label = label;
+        }
+        if (entry.lifted !== lifted) {
+          entry.marker.setOffset(offset);
+          entry.lifted = lifted;
         }
       }
     }

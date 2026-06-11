@@ -25,6 +25,20 @@ function n2(v) {
   return Number(v.toFixed(2));
 }
 
+// quantizeKnots rounds an mph reading to the 5-kt resolution a barb draws.
+export function quantizeKnots(mph) {
+  if (mph == null || !isFinite(mph)) return 0;
+  return Math.round((mph * KT_PER_MPH) / 5) * 5;
+}
+
+// hasWindBarb reports whether a station's wind will render an actual barb
+// (staff + ticks) rather than nothing or the small calm ring. Callers use
+// it to lift the temperature chip clear of the barb only when one exists.
+export function hasWindBarb(mph, dirDeg) {
+  if (mph == null || dirDeg == null || !isFinite(mph)) return false;
+  return quantizeKnots(mph) > 0;
+}
+
 // buildWindBarb returns the inner SVG markup (no <svg> wrapper) for a barb
 // at the given sustained wind speed (mph) and direction (degrees true,
 // the bearing the wind blows FROM). Returns '' when there's nothing
@@ -33,7 +47,7 @@ export function buildWindBarb(mph, dirDeg) {
   if (mph == null || dirDeg == null || !isFinite(mph)) return '';
 
   // Quantize to the nearest 5 kt -- the resolution a barb can express.
-  const knots = Math.round((mph * KT_PER_MPH) / 5) * 5;
+  const knots = quantizeKnots(mph);
 
   if (knots <= 0) {
     return `<circle cx="0" cy="0" r="6.5" class="wb-calm"/>`;
