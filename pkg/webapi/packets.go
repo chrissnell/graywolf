@@ -170,16 +170,11 @@ func lastDigipeater(path []string) string {
 	last := ""
 	for _, hop := range path {
 		if strings.HasSuffix(hop, "*") {
-			call := strings.TrimSuffix(hop, "*")
 			// Skip generic aliases like WIDE1-1, RELAY, etc.
-			upper := strings.ToUpper(call)
-			if strings.HasPrefix(upper, "WIDE") ||
-				strings.HasPrefix(upper, "RELAY") ||
-				strings.HasPrefix(upper, "TRACE") ||
-				strings.HasPrefix(upper, "QA") {
+			if aprs.IsGenericPathAlias(hop) {
 				continue
 			}
-			last = call
+			last = strings.TrimSuffix(hop, "*")
 		}
 	}
 	return last

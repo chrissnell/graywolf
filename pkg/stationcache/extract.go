@@ -1,7 +1,6 @@
 package stationcache
 
 import (
-	"strings"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
@@ -49,7 +48,7 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 
 	via := deriveVia(source)
 	path := pkt.Path
-	hops := countHops(path)
+	hops := aprs.CountHops(path)
 	ts := pkt.Timestamp
 	if ts.IsZero() {
 		// Inner packet (third-party) often lacks a timestamp — fall back
@@ -166,16 +165,6 @@ func deriveVia(source string) string {
 	default:
 		return "rf"
 	}
-}
-
-func countHops(path []string) int {
-	n := 0
-	for _, p := range path {
-		if strings.HasSuffix(p, "*") {
-			n++
-		}
-	}
-	return n
 }
 
 // convertWeather converts aprs.Weather to the cache Weather struct.
