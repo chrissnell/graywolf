@@ -74,6 +74,11 @@ fn rgba_to_dbz(rgba: [u8; 4], lut: &[f64; 256]) -> f64 {
 
 /// Decode an N0Q national mosaic PNG into a dBZ FieldGrid (IEM "us" extent).
 pub fn decode_png(bytes: &[u8]) -> Result<FieldGrid> {
+    // The RGB->index table below is a structural placeholder, so this decoder
+    // will not correctly map a real IEM mosaic's pixels until it is replaced.
+    // Warn loudly so a deploy that falls back to N0Q does not silently serve a
+    // blank field. (Level II v1 and MRMS do not call this.)
+    tracing::warn!("N0Q decoder uses a placeholder palette; replace N0Q_RGB with IEM's colortable before trusting its output");
     let img = image::load_from_memory(bytes)?;
     let (w, h) = img.dimensions();
     let lut = n0q_lut();

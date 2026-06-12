@@ -2,6 +2,7 @@
 name = "radar-contour"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.91"
 description = "Level II reflectivity -> smoothed vector isoband PMTiles generator"
 
 [[bin]]

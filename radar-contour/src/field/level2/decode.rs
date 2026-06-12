@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use nexrad_model::data::{DataMoment, MomentValue, Radial as ModelRadial};
+use nexrad_model::data::{DataMoment, MomentValue, Radial as ModelRadial, Sweep as ModelSweep};
 
 /// One radial of a sweep: azimuth (deg CW from true north), elevation,
 /// gate geometry, and dBZ per gate (NaN = below threshold / missing).
@@ -18,35 +18,54 @@ pub struct Sweep {
     pub radials: Vec<Radial>,
 }
 
+/// Convert one model radial's reflectivity moment into our `Radial`, or `None`
+/// if it carries no reflectivity. Gate geometry is reported in km by the
+/// `DataMoment` trait; we convert to metres. Below-threshold / range-folded
+/// sentinels map to NaN.
+fn radial_from_model(r: &ModelRadial) -> Option<Radial> {
+    let refl = r.reflectivity()?;
+    let gates: Vec<f64> = refl.values().into_iter().map(|v| match v {
+        MomentValue::Value(d) => d as f64,
+        _ => f64::NAN,
+    }).collect();
+    Some(Radial {
+        azimuth_deg: r.azimuth_angle_degrees() as f64,
+        elevation_deg: r.elevation_angle_degrees() as f64,
+        first_gate_m: refl.first_gate_range_km() * 1000.0,
+        gate_spacing_m: refl.gate_interval_km() * 1000.0,
+        gates,
+    })
+}
+
+/// Mean elevation of a model sweep (its reported cut angle, else the mean of
+/// its radials) -- the key for picking the lowest tilt.
+fn sweep_elevation(s: &ModelSweep) -> f64 {
+    if let Some(e) = s.elevation_angle_degrees() {
+        return e as f64;
+    }
+    let radials = s.radials();
+    if radials.is_empty() { return f64::MAX; }
+    radials.iter().map(|r| r.elevation_angle_degrees() as f64).sum::<f64>() / radials.len() as f64
+}
+
 /// Build the lowest-tilt reflectivity `Sweep` from decoded model radials.
 /// Shared by the local-file decode and the AWS-assembled `Scan` path.
+///
+/// Radials are grouped into sweeps by the model, then the single lowest
+/// elevation cut that carries reflectivity is selected -- so SAILS / MESO-SAILS
+/// supplemental 0.5deg scans in the same volume are NOT merged into one sweep
+/// (which would duplicate azimuths and let a stale supplemental cut win).
 pub fn sweep_from_radials(radials: &[ModelRadial]) -> Result<Sweep> {
-    let mut out: Vec<Radial> = Vec::new();
-    let mut min_elev = f64::MAX;
+    let sweeps = ModelSweep::from_radials(radials.to_vec());
+    let chosen = sweeps.into_iter()
+        .filter(|s| s.radials().iter().any(|r| r.reflectivity().is_some()))
+        .min_by(|a, b| sweep_elevation(a).total_cmp(&sweep_elevation(b)))
+        .ok_or_else(|| anyhow!("no reflectivity sweep in volume"))?;
 
-    for r in radials {
-        let Some(refl) = r.reflectivity() else { continue };
-        let elev = r.elevation_angle_degrees() as f64;
-        let az = r.azimuth_angle_degrees() as f64;
-        // Gate geometry is reported in km by the DataMoment trait; convert to m.
-        let first_gate_m = refl.first_gate_range_km() * 1000.0;
-        let gate_spacing_m = refl.gate_interval_km() * 1000.0;
-
-        // Map below-threshold / range-folded sentinels to NaN.
-        let gates: Vec<f64> = refl.values().into_iter().map(|v| match v {
-            MomentValue::Value(d) => d as f64,
-            _ => f64::NAN,
-        }).collect();
-
-        min_elev = min_elev.min(elev);
-        out.push(Radial { azimuth_deg: az, elevation_deg: elev, first_gate_m, gate_spacing_m, gates });
-    }
+    let out: Vec<Radial> = chosen.radials().iter().filter_map(radial_from_model).collect();
     if out.is_empty() {
-        return Err(anyhow!("no reflectivity radials in volume"));
+        return Err(anyhow!("no reflectivity radials in chosen sweep"));
     }
-    // Keep only the lowest cut (super-res 0.5deg reflectivity scan).
-    let tol = 0.25;
-    out.retain(|r| (r.elevation_deg - min_elev).abs() <= tol);
     let gate_spacing_m = out[0].gate_spacing_m;
     Ok(Sweep { gate_spacing_m, radials: out })
 }

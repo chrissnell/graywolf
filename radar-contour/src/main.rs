@@ -52,10 +52,12 @@ async fn main() -> Result<()> {
     package::write_mbtiles(&mbtiles, &raw, cfg.min_zoom, cfg.max_zoom)?;
     package::mbtiles_to_pmtiles(&mbtiles, &pmtiles)?;
 
-    let ts = sanitize_ts(&frame);
-    publish::publish_frame(&r2, &cfg.r2_prefix, &ts, &pmtiles,
+    // Publish under the canonical frame id (RFC3339); the object key is
+    // sanitized inside publish_frame, and latest.json stores the canonical id
+    // so the next run's should_skip matches latest_frame_id.
+    publish::publish_frame(&r2, &cfg.r2_prefix, &frame, &pmtiles,
         cfg.min_zoom, cfg.max_zoom).await?;
-    tracing::info!(%ts, "published frame");
+    tracing::info!(%frame, "published frame");
     Ok(())
 }
 
@@ -76,19 +78,4 @@ fn build_r2_client(cfg: &Config) -> Result<R2Client> {
 
 fn tempdir_path() -> PathBuf {
     std::env::temp_dir().join("radar-contour-frame")
-}
-
-/// Frame id (`2026-06-12T01:05:00Z`) -> object-safe `20260612T010500Z`.
-fn sanitize_ts(frame_id: &str) -> String {
-    frame_id.chars().filter(|c| *c != '-' && *c != ':').collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::sanitize_ts;
-
-    #[test]
-    fn sanitize_strips_separators() {
-        assert_eq!(sanitize_ts("2026-06-12T01:05:00Z"), "20260612T010500Z");
-    }
 }

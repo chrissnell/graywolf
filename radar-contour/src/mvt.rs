@@ -5,9 +5,11 @@ use geo_types::{Coord, LineString, MultiPolygon, Polygon};
 const EXTENT: u32 = 4096;
 
 /// Reproject a lon/lat polygon to Web Mercator. geozero's `MvtWriter` maps
-/// world coords in the tile's mercator bbox to the 0..EXTENT tile space (and
-/// flips y), so we hand it mercator coordinates and let it do the scaling and
-/// ring-winding (review #5).
+/// world coords in the tile's mercator bbox to the 0..EXTENT tile space and
+/// flips y -- but it does NOT re-wind rings. The y-flip reverses ring
+/// orientation, so we orient to OGC (exterior CCW / holes CW) *before*
+/// encoding (see `encode_tile`); after the writer's flip that becomes the
+/// MVT-correct exterior-CW / holes-CCW (review #5).
 fn to_merc_multipolygon(mp: &MultiPolygon<f64>) -> MultiPolygon<f64> {
     let ring = |ls: &LineString<f64>| LineString(
         ls.0.iter().map(|c| {
@@ -26,6 +28,8 @@ fn to_merc_multipolygon(mp: &MultiPolygon<f64>) -> MultiPolygon<f64> {
 pub fn encode_tile(t: &PyramidTile) -> Vec<u8> {
     use geozero::mvt::{Message, MvtWriter, Tile};
     use geozero::{ColumnValue, FeatureProcessor, GeozeroGeometry, PropertyProcessor};
+    use geo::Orient;
+    use geo::algorithm::orient::Direction;
     use geo_types::Geometry;
 
     let b = tile_bounds_merc(t.z, t.x, t.y);
@@ -34,7 +38,10 @@ pub fn encode_tile(t: &PyramidTile) -> Vec<u8> {
 
     w.dataset_begin(None).unwrap();
     for (fid, f) in t.features.iter().enumerate() {
-        let merc = Geometry::MultiPolygon(to_merc_multipolygon(&f.geom));
+        // Orient to OGC (exterior CCW / holes CW); the writer's y-flip then
+        // yields MVT-correct winding so renderers keep both fills and holes.
+        let merc = Geometry::MultiPolygon(
+            to_merc_multipolygon(&f.geom).orient(Direction::Default));
         w.feature_begin(fid as u64).unwrap();
         w.properties_begin().unwrap();
         w.property(0, "dbz", &ColumnValue::Long(f.dbz as i64)).unwrap();
@@ -98,5 +105,31 @@ mod tests {
         assert_eq!(layer, "radar");
         assert!(has_dbz);
         assert!(has_polygon, "polygon survived (winding correct -> fill kept)");
+    }
+
+    #[test]
+    fn polygon_with_hole_survives_encoding() {
+        // Exercises the interior-ring path: the orient()+y-flip must keep BOTH
+        // the exterior and the hole with renderer-correct winding (review #5).
+        let b = crate::mercator::tile_bounds_merc(5, 8, 12);
+        let lon = ((b.west + b.east) / 2.0 / 6_378_137.0).to_degrees();
+        let lat = (2.0*(((b.south+b.north)/2.0)/6_378_137.0).exp().atan()
+            - std::f64::consts::FRAC_PI_2).to_degrees();
+        let d = 0.3;
+        let ext = LineString(vec![
+            Coord{x:lon-d,y:lat-d}, Coord{x:lon+d,y:lat-d},
+            Coord{x:lon+d,y:lat+d}, Coord{x:lon-d,y:lat+d}, Coord{x:lon-d,y:lat-d},
+        ]);
+        let h = 0.1;
+        let hole = LineString(vec![
+            Coord{x:lon-h,y:lat-h}, Coord{x:lon+h,y:lat-h},
+            Coord{x:lon+h,y:lat+h}, Coord{x:lon-h,y:lat+h}, Coord{x:lon-h,y:lat-h},
+        ]);
+        let tile = PyramidTile { z:5, x:8, y:12, features: vec![
+            TileFeature { dbz: 40.0, geom: MultiPolygon(vec![Polygon::new(ext, vec![hole])]) }
+        ]};
+        let bytes = encode_tile(&tile);
+        let (_layer, _has_dbz, has_polygon) = decode_summary(&bytes);
+        assert!(has_polygon, "holed polygon survived encoding");
     }
 }
