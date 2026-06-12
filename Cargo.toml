@@ -1,5 +1,5 @@
 [workspace]
-members = ["graywolf-modem"]
+members = ["graywolf-modem", "radar-contour"]
 resolver = "2"
 
 # This workspace manifest declares the repo root as a cargo workspace whose
