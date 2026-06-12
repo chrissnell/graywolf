@@ -30,8 +30,8 @@
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
-    { path: '/system-logs', label: 'System Logs', svgIcon: 'system-logs' },
     { path: '/logs', label: 'APRS Logs', svgIcon: 'logs' },
+    { path: '/system-logs', label: 'System Logs', svgIcon: 'system-logs' },
   ];
 
   const allSettingsItems = [
