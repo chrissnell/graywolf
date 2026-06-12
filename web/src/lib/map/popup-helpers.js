@@ -1,13 +1,20 @@
 // Shared helpers for station and trail popup rendering.
 
+import { clockOffset } from './clock-offset.svelte.js';
+
 export function esc(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export function timeAgo(isoStr) {
-  const ms = Date.now() - new Date(isoStr).getTime();
-  const sec = Math.floor(ms / 1000);
+// timeAgo measures a host-stamped timestamp against the host clock by
+// default (serverNow()), not Date.now(), so packet ages don't go negative or
+// inflate when the host and browser clocks disagree — see GH #234. Callers
+// timing a *browser-local* event (e.g. "last fetch N ago") pass nowMs =
+// Date.now() to opt out of the correction.
+export function timeAgo(isoStr, nowMs = clockOffset.serverNow()) {
+  const ms = nowMs - new Date(isoStr).getTime();
+  const sec = Math.max(0, Math.floor(ms / 1000));
   if (sec < 60) return `${sec}s ago`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min} min ago`;

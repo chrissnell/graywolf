@@ -780,7 +780,35 @@ its own list. The regression test in
 [`pkg/app/wiring_blocklist_isolation_test.go`](../../pkg/app/wiring_blocklist_isolation_test.go)
 locks the invariant in behaviorally.
 
-### 41. Hop count excludes generic path aliases
+### 41. The live map measures packet age against the host clock, not the browser's
+
+Packet receive times (`last_heard`) and every other server timestamp are
+stamped by the **graywolf host** clock. The browser must therefore compute
+packet age relative to that same clock, never its own `Date.now()` —
+otherwise a host whose clock is unsynced (a Pi with no RTC, a browser that
+has drifted off NTP) makes ages go negative or silently hides every station
+from the map (GH #234).
+
+[`web/src/lib/map/clock-offset.svelte.js`](../../web/src/lib/map/clock-offset.svelte.js)
+reads the standard HTTP `Date:` header off each `/api/stations` response
+(`clockOffset.observe`), derives `offsetMs = serverNow - browserNow`, and
+exposes `serverNow() ≈ Date.now() + offsetMs`. The two age-math sites use it:
+the prune cutoff in
+[`data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js)
+(`pruneStale`) and `timeAgo` in
+[`popup-helpers.js`](../../web/src/lib/map/popup-helpers.js).
+
+*Why:* the host stamps the timestamps, so the host clock is the only shared
+reference; correcting the browser to it (rather than the reverse) keeps every
+connected browser consistent even when their clocks disagree with each
+other. No new endpoint or protocol — the `Date` header is already on the wire.
+
+*How to apply:* never reintroduce `Date.now()` for map packet-age math; route
+it through `clockOffset.serverNow()`. The opposite case — timing a
+*browser-local* event, e.g. "last fetch N ago" — must pass `Date.now()`
+explicitly as `timeAgo`'s second arg to opt out of the host correction.
+
+### 42. Hop count excludes generic path aliases
 
 The displayed "hop" count for a station/packet is the number of *real*
 digipeaters that retransmitted it, not the number of path elements with
