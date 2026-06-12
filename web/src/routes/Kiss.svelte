@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { Button, Input, Select, Badge, Checkbox } from '@chrissnell/chonky-ui';
-  import { api, kissBt, kissUsb } from '../lib/api.js';
+  import { api, kissBt, kissUsb, kissSerial } from '../lib/api.js';
   import { Platform } from '../lib/platform.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -31,6 +31,13 @@
   const TNC_INGRESS_RATE_DEFAULT = '50';
   const TNC_INGRESS_BURST_DEFAULT = '100';
   const BAUD_RATE_DEFAULT = '9600';
+  // Standard serial line speeds offered in the Baud Rate dropdown. Covers
+  // the rates real KISS TNCs use (1200 for classic AFSK packet, 9600 for
+  // G3RUH and most USB TNCs, up to 115200 for high-speed links). A free-form
+  // input previously accepted any value with no validation (issue #249); the
+  // dropdown removes that footgun while still preserving a non-standard rate
+  // already saved on an interface (see baudRateOptions).
+  const STANDARD_BAUD_RATES = ['1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400'];
   // Show a "stale" indicator if the 2 s poller has failed this many
   // consecutive times. At 2 s cadence, five consecutive failures ≈
   // 10 s of silence — long enough to be a real problem, short enough
@@ -78,12 +85,16 @@
     { key: 'status', label: 'Status' },
   ];
 
-  // Platform-conditional type menu. On Android, operators see only
-  // the two interface types we actually support there: Bluetooth
-  // (serial-over-RFCOMM to a paired TNC) and TCP-Client (which we
-  // relabel "Network" because that's the term Android operators
-  // expect). Desktop keeps the full set including server-listen TCP
-  // and host-serial. Platform.isAndroid is read reactively so the
+  // Platform-conditional type menu. On Android, operators see the
+  // interface types we support there: Bluetooth (serial-over-RFCOMM to
+  // a paired TNC), USB Serial, TCP-Client (which we relabel "Network"
+  // because that's the term Android operators expect), and TCP server
+  // (graywolf listens; a local KISS app — e.g. a same-device iGate
+  // client — dials in over loopback). The on-device Go binary binds
+  // the listen socket directly, so TCP server needs no platform
+  // adapter (unlike Bluetooth/USB, which relay bytes over the platform
+  // UDS); it's the same fully-supported code path as desktop. Desktop
+  // keeps host-serial too. Platform.isAndroid is read reactively so the
   // menu re-derives if the JS bridge appears/disappears mid-session
   // (rare, but the reactive shape costs us nothing).
   const desktopTypeOptions = [
@@ -94,6 +105,7 @@
   const androidTypeOptions = [
     { value: 'bluetooth',  label: 'Bluetooth Serial' },
     { value: 'usbserial',  label: 'USB Serial' },
+    { value: 'tcp',        label: 'TCP (server)' },
     { value: 'tcp-client', label: 'Network' },
   ];
   let typeOptions = $derived(Platform.isAndroid ? androidTypeOptions : desktopTypeOptions);
@@ -200,6 +212,44 @@
       (selectedUsbDevice ? !selectedUsbDevice.has_permission : usbDevices.length > 0 ? false : true),
   );
 
+  // Host serial ports for the desktop "serial" interface type, loaded
+  // lazily the first time the operator opens the modal with type=serial
+  // (mirrors the bluetooth / usbserial lazy-loaders). Shape per entry:
+  // {path, name, description, is_usb, recommended, warning}. Enumeration
+  // is best-effort — on failure the operator falls back to typing the
+  // port path manually in the Serial Device input below the dropdown.
+  let serialPorts = $state([]);
+  let serialPortsLoading = $state(false);
+  let serialPortsError = $state('');
+
+  let serialPortOptions = $derived(
+    serialPorts.map((p) => ({
+      value: p.path,
+      label: p.description && p.description !== p.name ? `${p.description} (${p.path})` : p.path,
+    })),
+  );
+
+  let serialPortsHint = $derived(
+    serialPortsError
+      ? serialPortsError
+      : !serialPortsLoading && serialPorts.length === 0
+        ? 'No serial ports detected. Plug in the KISS TNC and click Refresh, or type the port path manually below.'
+        : 'Pick a detected port to fill in the device path, or type it manually below.',
+  );
+
+  // Baud-rate dropdown options. Built from STANDARD_BAUD_RATES, with the
+  // current form value prepended when it isn't one of the standards so
+  // editing an interface saved with a non-standard rate doesn't silently
+  // drop or rewrite it.
+  let baudRateOptions = $derived.by(() => {
+    const opts = STANDARD_BAUD_RATES.map((r) => ({ value: r, label: r }));
+    const cur = form.baud_rate;
+    if (cur && !STANDARD_BAUD_RATES.includes(String(cur))) {
+      opts.unshift({ value: String(cur), label: `${cur} (custom)` });
+    }
+    return opts;
+  });
+
   const modeOptions = [
     { value: 'modem', label: 'Modem' },
     { value: 'tnc', label: 'TNC' },
@@ -220,6 +270,10 @@
     return {
       type: 'tcp',
       tcp_port: TCP_PORT_DEFAULT,
+      // tcp (server) bind scope: false => listen on all interfaces
+      // (0.0.0.0), true => loopback only (127.0.0.1). Off by default to
+      // match desktop semantics; the operator opts into local-only.
+      local_only: false,
       // tcp-client fields:
       remote_host: '',
       remote_port: TCP_PORT_DEFAULT,
@@ -288,11 +342,11 @@
   function openCreate() {
     editing = null;
     form = emptyForm();
-    // The Type select only shows {bluetooth, tcp-client} on Android —
-    // the default `tcp` from emptyForm() would render an invisible
-    // selection and silently submit a server-listen interface if the
-    // operator never touched the field. Pick a visible default for
-    // the platform's actual menu.
+    // emptyForm() defaults to `tcp` (the desktop common case). On
+    // Android, Bluetooth-to-a-paired-TNC is the far more common setup,
+    // so default new interfaces there to bluetooth. (tcp is selectable
+    // on Android too — this is a default-value choice, not a menu
+    // restriction.)
     if (Platform.isAndroid) {
       form.type = 'bluetooth';
     }
@@ -310,6 +364,7 @@
     form = {
       ...row,
       tcp_port: String(row.tcp_port ?? ''),
+      local_only: !!row.local_only,
       remote_host: row.remote_host || '',
       remote_port: String(row.remote_port || ''),
       reconnect_init_ms: String(row.reconnect_init_ms || RECONNECT_INIT_DEFAULT_MS),
@@ -456,6 +511,30 @@
     }
   }
 
+  // Lazy-load host serial ports the first time the operator opens the modal
+  // with the "serial" type selected. Unlike bluetooth/usbserial this works
+  // on every desktop platform (the ports are enumerated on the host running
+  // graywolf), so there's no Platform gate. Re-runs only when the gate flips
+  // back to satisfied — the operator can clear an error and click Refresh.
+  $effect(() => {
+    if (form.type !== 'serial' || !modalOpen) return;
+    if (serialPorts.length === 0 && !serialPortsLoading && !serialPortsError) {
+      loadSerialPorts();
+    }
+  });
+
+  async function loadSerialPorts() {
+    serialPortsLoading = true;
+    serialPortsError = '';
+    try {
+      serialPorts = (await kissSerial.availablePorts()) ?? [];
+    } catch (err) {
+      serialPortsError = err?.message ?? 'Failed to load serial ports';
+    } finally {
+      serialPortsLoading = false;
+    }
+  }
+
   // Grant USB permission for the selected device via the Android JS bridge.
   // Uses the shared __usbResult / __usbCallbacks dispatcher pattern (same
   // one the PTT picker uses in androidDeviceSource.js). The dispatcher is
@@ -548,6 +627,7 @@
     switch (form.type) {
       case 'tcp':
         data.tcp_port = parseInt(form.tcp_port) || 0;
+        data.local_only = !!form.local_only;
         break;
       case 'tcp-client':
         data.remote_host = (form.remote_host || '').trim();
@@ -661,7 +741,7 @@
   }
 
   function endpointText(row) {
-    if (row.type === 'tcp') return `:${row.tcp_port}`;
+    if (row.type === 'tcp') return row.local_only ? `127.0.0.1:${row.tcp_port}` : `:${row.tcp_port}`;
     if (row.type === 'tcp-client') return `${row.remote_host}:${row.remote_port}`;
     if (row.type === 'serial') return row.serial_device || '—';
     if (row.type === 'bluetooth') return friendlyDevice(row) || '—';
@@ -813,7 +893,7 @@
             </div>
           {/if}
         {:else if row.type === 'tcp'}
-          <div class="detail-row"><span class="detail-label">Listening:</span> <span>:{row.tcp_port}</span></div>
+          <div class="detail-row"><span class="detail-label">Listening:</span> <span>{row.local_only ? `127.0.0.1:${row.tcp_port} (local only)` : `:${row.tcp_port}`}</span></div>
         {:else if row.type === 'bluetooth'}
           <div class="detail-row"><span class="detail-label">Device:</span> <span>{friendlyDevice(row) || '—'}</span></div>
         {:else if row.type === 'usbserial'}
@@ -841,6 +921,21 @@
       <FormField label="TCP Port" id="kiss-port">
         <Input id="kiss-port" bind:value={form.tcp_port} type="number" placeholder="8001" />
       </FormField>
+      <!-- Bind scope for the KISS listener. Unchecked binds all
+           interfaces (0.0.0.0); checked binds loopback (127.0.0.1) so
+           only apps on this device can connect — the common case for an
+           on-device iGate client. -->
+      <div class="field checkbox-field">
+        <label class="checkbox-row" for="kiss-local-only">
+          <Checkbox id="kiss-local-only" bind:checked={form.local_only} />
+          <span>Local only (this device)</span>
+        </label>
+        <span class="field-hint">
+          Listen on loopback (127.0.0.1) instead of every network interface.
+          Recommended when a KISS app on this same device connects in — it
+          keeps the port off your Wi-Fi/LAN.
+        </span>
+      </div>
     {:else if form.type === 'tcp-client'}
       <FormField
         label="Remote Host"
@@ -928,22 +1023,42 @@
         id="kiss-usb-baud"
         hint="Serial line speed. Must match the TNC's configured baud rate. Default 9600."
       >
-        <Input id="kiss-usb-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
+        <Select id="kiss-usb-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
     {:else if form.type === 'serial'}
       <FormField
+        label="Detected ports"
+        id="kiss-serial-detected"
+        hint={serialPortsHint}
+      >
+        {#snippet children(describedBy)}
+          <div class="bt-picker">
+            <Select
+              id="kiss-serial-detected"
+              bind:value={form.serial_device}
+              options={serialPortOptions}
+              placeholder={serialPortsLoading ? 'Loading…' : 'Select a detected port'}
+              aria-describedby={describedBy}
+            />
+            <Button variant="secondary" onclick={loadSerialPorts} disabled={serialPortsLoading}>
+              Refresh
+            </Button>
+          </div>
+        {/snippet}
+      </FormField>
+      <FormField
         label="Serial Device"
         id="kiss-serial"
-        hint="Serial port the KISS TNC is attached to, e.g. /dev/ttyUSB0 or /dev/ttyACM0."
+        hint="Port the KISS TNC is attached to. Linux: /dev/ttyUSB0 or /dev/ttyACM0. macOS: /dev/cu.usbserial-*. Windows: COM1, COM3. Pick from Detected ports above, or type it here."
       >
-        <Input id="kiss-serial" bind:value={form.serial_device} placeholder="/dev/ttyUSB0" />
+        <Input id="kiss-serial" bind:value={form.serial_device} placeholder="/dev/ttyUSB0 or COM3" />
       </FormField>
       <FormField
         label="Baud Rate"
         id="kiss-baud"
         hint="Serial line speed. Must match the TNC's configured baud rate. Default 9600."
       >
-        <Input id="kiss-baud" bind:value={form.baud_rate} type="number" placeholder="9600" />
+        <Select id="kiss-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
     {/if}
     <FormField label="Channel" id="kiss-channel">

@@ -25,6 +25,7 @@
   import Simulation from './routes/Simulation.svelte';
   import PositionLog from './routes/PositionLog.svelte';
   import Logs from './routes/Logs.svelte';
+  import SystemLogs from './routes/SystemLogs.svelte';
   import LiveMapV2 from './routes/LiveMapV2.svelte';
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
@@ -57,6 +58,7 @@
     '/simulation': Simulation,
     '/position-log': PositionLog,
     '/logs': Logs,
+    '/system-logs': SystemLogs,
     '/preferences': Preferences,
     '/preferences/maps': MapsSettings,
     '/preferences/messages': MessagesSettings,
@@ -74,11 +76,13 @@
     return r;
   })();
 
-  let currentPath = $state('');
-  $effect(() => {
-    const unsub = location.subscribe((v) => { currentPath = v; });
-    return unsub;
-  });
+  // Derive the path straight from the router's own `location` store so it
+  // stays in lockstep with the rendered route. A hand-rolled subscription
+  // into a separate $state copy can lag a tick behind <Router>, and when
+  // leaving a full-bleed route (/map, /messages) that stale value kept
+  // `full-bleed` (padding:0) on the next page, rendering it flush against
+  // the sidebar with no gap.
+  let currentPath = $derived($location);
 
   let isLoginPage = $derived(currentPath === '/login' && Platform.kind !== 'android');
 

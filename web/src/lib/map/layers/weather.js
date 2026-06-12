@@ -1,67 +1,42 @@
-// Weather labels: per-station DOM marker with the legacy Leaflet
-// wx-text chip styling. Floats above the station icon, anchored at the
-// chip's bottom so its position relative to the station stays stable
-// across zoom levels.
+// Weather labels: the temperature chip. Rather than floating as its own
+// map marker, the temp is written into a slot that lives inside the
+// station marker (the `.wx-temp` element, see stations.js), stacked just
+// below the callsign label and right-justified to it. That keeps the temp
+// pinned to the callsign at every zoom/wind direction instead of drifting
+// over the wind barb.
 //
-// Implementation parallels stations.js: keep a Map<callsign, marker>
-// in sync with the data store. The weather layer reads s.weather from
-// the stations Map (the data store also keeps a separate weather
-// SvelteMap, but stations[callsign].weather is the canonical view).
+// This layer owns only the temp's *content*: the formatted value, unit
+// conversion (unitsState.isMetric), visibility (Weather toggle) and the
+// Direct RX filter. Layout/positioning is the station marker's job (CSS).
+// The slot element is fetched per-callsign via the getTempSlot callback
+// the host wires to the stations layer.
 //
-// Why DOM over symbol layer: the legacy wx-text chip has a translucent
-// dark background, muted-dim text, and a thin border. MapLibre's
-// symbol layer can't paint a backing rectangle behind text -- it can
-// only halo. A DOM marker reproduces the chip exactly and toggles via
-// element.style.display, matching the stations and my-position layers.
-//
-// Field names match WeatherDTO in pkg/webapi/stations.go: temp_f,
-// wind_mph, wind_dir. Unit conversion honors unitsState.isMetric.
+// Field name matches WeatherDTO in pkg/webapi/stations.go: temp_f. Wind
+// is rendered separately as a barb (see wind-barbs.js).
 
-import maplibregl from 'maplibre-gl';
 import { unitsState } from '../../settings/units-store.svelte.js';
-import { cardinal, KMH_PER_MPH } from '../popup-helpers.js';
 
-function formatLabel(wx, isMetric) {
-  if (!wx) return '';
-  const parts = [];
-  if (wx.temp_f != null) {
-    const t = isMetric ? ((wx.temp_f - 32) * 5) / 9 : wx.temp_f;
-    parts.push(`${Math.round(t)}°${isMetric ? 'C' : 'F'}`);
-  }
-  if (wx.wind_mph != null) {
-    const s = isMetric ? wx.wind_mph * KMH_PER_MPH : wx.wind_mph;
-    let wind = `${Math.round(s)}${isMetric ? 'km/h' : 'mph'}`;
-    if (wx.wind_dir != null) wind = `${wind} ${cardinal(wx.wind_dir)}`;
-    parts.push(wind);
-  }
-  return parts.join(' ');
+function formatTemp(wx, isMetric) {
+  if (!wx || wx.temp_f == null) return '';
+  const t = isMetric ? ((wx.temp_f - 32) * 5) / 9 : wx.temp_f;
+  return `${Math.round(t)}°${isMetric ? 'C' : 'F'}`;
 }
 
-export function mountWeatherLayer(map, getStations) {
-  // callsign → { marker, label, lat, lon }
-  const markers = new Map();
-
-  function createMarker(label, lat, lon) {
-    const root = document.createElement('div');
-    root.className = 'wx-label';
-    const text = document.createElement('div');
-    text.className = 'wx-text';
-    text.textContent = label;
-    root.appendChild(text);
-
-    // Anchor 'bottom' + small upward offset so the chip floats above
-    // the 21x21 station icon (which sits centered on the lat/lon, so
-    // its top is ~10.5px above it). 14px offset leaves a hairline gap.
-    return new maplibregl.Marker({
-      element: root,
-      anchor: 'bottom',
-      offset: [0, -14],
-    }).setLngLat([lon, lat]).addTo(map);
+function hideSlot(slot) {
+  if (slot && slot.isConnected) {
+    slot.textContent = '';
+    slot.style.display = 'none';
   }
+}
 
-  // Optional per-station predicate. Stations failing it are dropped
-  // from the weather layer. Driven by the Direct RX toggle.
+export function mountWeatherLayer(map, getStations, { getTempSlot } = {}) {
+  // callsign → { slot, label }
+  const slots = new Map();
+
+  // Optional per-station predicate. Stations failing it have no temp.
+  // Driven by the Direct RX toggle.
   let filter = null;
+  let visible = true;
 
   function refresh() {
     const stations = getStations();
@@ -73,72 +48,53 @@ export function mountWeatherLayer(map, getStations) {
     for (const [callsign, s] of stations) {
       if (filter && !filter(s)) continue;
       if (!s.weather) continue;
-      const pos = s.positions && s.positions[0];
-      if (!pos) continue;
-      const label = formatLabel(s.weather, isMetric);
+      const label = formatTemp(s.weather, isMetric);
       if (!label) continue;
+      const slot = getTempSlot && getTempSlot(callsign);
+      if (!slot) continue; // station marker not mounted yet; next pass
 
       seen.add(callsign);
-      const entry = markers.get(callsign);
-      if (!entry) {
-        const marker = createMarker(label, pos.lat, pos.lon);
-        markers.set(callsign, { marker, label, lat: pos.lat, lon: pos.lon });
-      } else {
-        // Cheap change detection: skip the DOM/setLngLat work when
-        // nothing meaningful moved. The text node only updates when
-        // the formatted label actually changes (units toggle, fresh
-        // weather packet).
-        if (entry.lat !== pos.lat || entry.lon !== pos.lon) {
-          entry.marker.setLngLat([pos.lon, pos.lat]);
-          entry.lat = pos.lat;
-          entry.lon = pos.lon;
-        }
-        if (entry.label !== label) {
-          const textEl = entry.marker.getElement().querySelector('.wx-text');
-          if (textEl) textEl.textContent = label;
-          entry.label = label;
-        }
+      let entry = slots.get(callsign);
+      if (!entry || entry.slot !== slot) {
+        // First sight, or the station marker was recreated under us.
+        entry = { slot, label: null };
+        slots.set(callsign, entry);
       }
+      if (entry.label !== label) {
+        slot.textContent = label;
+        entry.label = label;
+      }
+      slot.style.display = visible ? 'block' : 'none';
     }
 
-    // Drop markers whose station no longer reports weather (or fell
-    // out of the timerange / bbox).
-    for (const [callsign, entry] of markers) {
+    // Clear slots whose station no longer reports weather (or fell out of
+    // the timerange / bbox / Direct RX filter). The station marker itself
+    // may still exist, so we blank the slot rather than remove anything.
+    for (const [callsign, entry] of slots) {
       if (!seen.has(callsign)) {
-        entry.marker.remove();
-        markers.delete(callsign);
+        hideSlot(entry.slot);
+        slots.delete(callsign);
       }
     }
   }
 
-  let visible = true;
   function setVisible(next) {
     visible = !!next;
-    const display = visible ? '' : 'none';
-    for (const { marker } of markers.values()) {
-      marker.getElement().style.display = display;
+    const display = visible ? 'block' : 'none';
+    for (const { slot } of slots.values()) {
+      if (slot && slot.isConnected) slot.style.display = display;
     }
   }
-
-  // Wrap refresh so newly-minted markers honor the current visibility.
-  const wrappedRefresh = () => {
-    refresh();
-    if (!visible) {
-      for (const { marker } of markers.values()) {
-        marker.getElement().style.display = 'none';
-      }
-    }
-  };
 
   function setFilter(pred) {
     filter = typeof pred === 'function' ? pred : null;
-    wrappedRefresh();
+    refresh();
   }
 
   function destroy() {
-    for (const { marker } of markers.values()) marker.remove();
-    markers.clear();
+    for (const { slot } of slots.values()) hideSlot(slot);
+    slots.clear();
   }
 
-  return { refresh: wrappedRefresh, destroy, setVisible, setFilter };
+  return { refresh, destroy, setVisible, setFilter };
 }

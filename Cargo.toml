@@ -11,3 +11,14 @@ resolver = "2"
 # As a side effect, cargo places the shared build output at /target/ rather
 # than graywolf-modem/target/ — several path references (Makefile, main.go,
 # bridge.go, integration tests, release workflow) depend on this location.
+
+# Fix for the t64 ALSA crash on 32-bit Raspberry Pi OS (issue #231). On a
+# t64 system libasound writes a 16-byte struct timespec; stock alsa-rs reads
+# it into an 8-byte libc::timespec and smashes the stack. This fork reads the
+# htstamp accessors into a 16-byte buffer so the C call cannot overflow --
+# without compiling for time64, so the armhf binary still links against the
+# (pre-t64) cross toolchain and keeps running on older 32-bit systems too.
+# See docs/plans/2026-06-11-armhf-t64-alsa-htstamp-fix.md. Drop once the fix
+# is released upstream.
+[patch.crates-io]
+alsa = { git = "https://github.com/chrissnell/alsa-rs", rev = "bd0668715753072e3ef74097a1bd65e96845fa7b" }

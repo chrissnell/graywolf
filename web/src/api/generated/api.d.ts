@@ -826,6 +826,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kiss/available-serial-ports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List available host serial ports */
+        get: operations["listAvailableKissSerialPorts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kiss/available-usb-serial-devices": {
         parameters: {
             query?: never;
@@ -1728,6 +1745,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List system logs */
+        get: operations["listSystemLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tacticals": {
         parameters: {
             query?: never;
@@ -2599,6 +2633,15 @@ export interface components {
              *     there by the server.
              */
             gate_tx_to_is?: boolean;
+            /**
+             * @description LocalOnly, when set on a tcp (server-listen) interface, binds the
+             *     KISS listener to loopback (127.0.0.1) instead of all interfaces
+             *     (0.0.0.0). The intended use is an on-device iGate client (a KISS
+             *     app on the same phone/host) dialing in over loopback without
+             *     exposing the port to the LAN. Ignored for non-tcp types. Stored
+             *     in the existing ListenAddr host -- no schema change.
+             */
+            local_only?: boolean;
             mode?: string;
             reconnect_init_ms?: number;
             reconnect_max_ms?: number;
@@ -2625,6 +2668,11 @@ export interface components {
             gate_tx_to_is?: boolean;
             id?: number;
             last_error?: string;
+            /**
+             * @description LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface
+             *     listens on loopback only. Derived from the ListenAddr host.
+             */
+            local_only?: boolean;
             mode?: string;
             needs_reconfig?: boolean;
             peer_addr?: string;
@@ -3439,6 +3487,28 @@ export interface components {
             /** @description SimulationMode is true when RF->IS uploads are suppressed for testing. */
             simulation_mode?: boolean;
         };
+        "webapi.SystemLogEntry": {
+            /** @description Attrs are the structured key/value attributes attached to the record; omitted when none. */
+            attrs?: {
+                [key: string]: unknown;
+            };
+            /** @description Component is the slog "component" group (e.g. "webapi"); omitted when unset. */
+            component?: string;
+            /** @description Level is the slog level: DEBUG, INFO, WARN, or ERROR. */
+            level?: string;
+            /** @description Message is the log message text. */
+            message?: string;
+            /** @description Timestamp is the RFC3339 (UTC) time the record was emitted. */
+            timestamp?: string;
+        };
+        "webapi.SystemLogsResponse": {
+            /** @description Available is false when the log buffer is disabled; Logs is then empty. */
+            available?: boolean;
+            /** @description Cursor is the RFC3339 timestamp of the newest returned record, for incremental `since` polling; omitted when empty. */
+            cursor?: string;
+            /** @description Logs are the matching records in ascending chronological order. */
+            logs?: components["schemas"]["webapi.SystemLogEntry"][];
+        };
         "webapi.VersionResponse": {
             /**
              * @description Platform is runtime.GOOS of the server process — "windows", "linux",
@@ -3473,6 +3543,12 @@ export interface components {
         "webapi.packetDTO": {
             /** @description Channel is the graywolf channel ID that observed or transmitted the packet. */
             channel?: number;
+            /**
+             * @description ChannelName is the display name of the channel that handled the packet,
+             *     resolved from the numeric Channel ID; omitted when the ID maps to no
+             *     configured channel (e.g. channel 0, used for non-RF / APRS-IS arrivals).
+             */
+            channel_name?: string;
             /** @description Decoded is the parsed APRS payload when decoding succeeded; nil otherwise. */
             decoded?: components["schemas"]["aprs.DecodedAPRSPacket"];
             /** @description Device is APRS device identification (manufacturer, model) inferred from the TOCALL field; omitted when unknown. */
@@ -6692,6 +6768,26 @@ export interface operations {
             };
         };
     };
+    listAvailableKissSerialPorts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["gps.SerialPortInfo"][];
+                };
+            };
+        };
+    };
     getAvailableUsbSerialDevices: {
         parameters: {
             query?: never;
@@ -9698,6 +9794,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webapi.StatusDTO"];
+                };
+            };
+        };
+    };
+    listSystemLogs: {
+        parameters: {
+            query?: {
+                /** @description Cap result count (non-negative; default 250) */
+                limit?: number;
+                /** @description Only records at or after this RFC3339 timestamp */
+                since?: string;
+                /** @description Minimum level: 'debug' includes everything; default is info */
+                level?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.SystemLogsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

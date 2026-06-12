@@ -389,6 +389,68 @@ func TestKissFromModel_TcpClient_Roundtrip(t *testing.T) {
 	}
 }
 
+// TestKissRequest_LocalOnly_RoundTrip verifies that the tcp-server
+// local-only flag survives DTO -> model -> DTO. LocalOnly binds the
+// listener to loopback (127.0.0.1); the off case binds 0.0.0.0. The
+// flag is encoded in the ListenAddr host, not a dedicated column, so
+// the round-trip also asserts the resulting bind address.
+func TestKissRequest_LocalOnly_RoundTrip(t *testing.T) {
+	cases := []struct {
+		localOnly bool
+		wantAddr  string
+	}{
+		{false, "0.0.0.0:8001"},
+		{true, "127.0.0.1:8001"},
+	}
+	for _, tc := range cases {
+		req := KissRequest{
+			Type:      configstore.KissTypeTCP,
+			TcpPort:   8001,
+			Channel:   1,
+			Mode:      configstore.KissModeModem,
+			LocalOnly: tc.localOnly,
+		}
+		m := req.ToModel()
+		if m.ListenAddr != tc.wantAddr {
+			t.Fatalf("ToModel: ListenAddr=%q, want %q", m.ListenAddr, tc.wantAddr)
+		}
+		resp := KissFromModel(m)
+		if resp.LocalOnly != tc.localOnly {
+			t.Fatalf("KissFromModel: LocalOnly=%v, want %v", resp.LocalOnly, tc.localOnly)
+		}
+		if resp.TcpPort != 8001 {
+			t.Fatalf("KissFromModel: TcpPort=%d, want 8001", resp.TcpPort)
+		}
+	}
+}
+
+// TestKissFromModel_LocalOnly_HostForms checks loopback detection across
+// the host spellings a ListenAddr can carry: IPv4 loopback, the IPv6
+// loopback literal, "localhost", an empty host (all interfaces), and a
+// routable LAN address.
+func TestKissFromModel_LocalOnly_HostForms(t *testing.T) {
+	cases := []struct {
+		addr string
+		want bool
+	}{
+		{"127.0.0.1:8001", true},
+		{"[::1]:8001", true},
+		{"localhost:8001", true},
+		{"0.0.0.0:8001", false},
+		{":8001", false},
+		{"192.168.1.50:8001", false},
+	}
+	for _, tc := range cases {
+		resp := KissFromModel(configstore.KissInterface{
+			InterfaceType: "tcp",
+			ListenAddr:    tc.addr,
+		})
+		if resp.LocalOnly != tc.want {
+			t.Errorf("ListenAddr %q: LocalOnly=%v, want %v", tc.addr, resp.LocalOnly, tc.want)
+		}
+	}
+}
+
 // TestKissRequest_GateTxToIs_RoundTrip verifies the new field survives
 // the DTO -> model -> DTO cycle unchanged for both true and false.
 func TestKissRequest_GateTxToIs_RoundTrip(t *testing.T) {

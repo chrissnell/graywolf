@@ -1411,6 +1411,15 @@ definitions:
           already feeds the iGate via the RX fanout) and silently ignored
           there by the server.
         type: boolean
+      local_only:
+        description: |-
+          LocalOnly, when set on a tcp (server-listen) interface, binds the
+          KISS listener to loopback (127.0.0.1) instead of all interfaces
+          (0.0.0.0). The intended use is an on-device iGate client (a KISS
+          app on the same phone/host) dialing in over loopback without
+          exposing the port to the LAN. Ignored for non-tcp types. Stored
+          in the existing ListenAddr host -- no schema change.
+        type: boolean
       mode:
         type: string
       reconnect_init_ms:
@@ -1455,6 +1464,11 @@ definitions:
         type: integer
       last_error:
         type: string
+      local_only:
+        description: |-
+          LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface
+          listens on loopback only. Derived from the ListenAddr host.
+        type: boolean
       mode:
         type: string
       needs_reconfig:
@@ -2756,6 +2770,39 @@ definitions:
         description: SimulationMode is true when RF->IS uploads are suppressed for testing.
         type: boolean
     type: object
+  webapi.SystemLogEntry:
+    properties:
+      attrs:
+        additionalProperties: {}
+        description: Attrs are the structured key/value attributes attached to the record; omitted when none.
+        type: object
+      component:
+        description: Component is the slog "component" group (e.g. "webapi"); omitted when unset.
+        type: string
+      level:
+        description: 'Level is the slog level: DEBUG, INFO, WARN, or ERROR.'
+        type: string
+      message:
+        description: Message is the log message text.
+        type: string
+      timestamp:
+        description: Timestamp is the RFC3339 (UTC) time the record was emitted.
+        type: string
+    type: object
+  webapi.SystemLogsResponse:
+    properties:
+      available:
+        description: Available is false when the log buffer is disabled; Logs is then empty.
+        type: boolean
+      cursor:
+        description: Cursor is the RFC3339 timestamp of the newest returned record, for incremental `since` polling; omitted when empty.
+        type: string
+      logs:
+        description: Logs are the matching records in ascending chronological order.
+        items:
+          $ref: '#/definitions/webapi.SystemLogEntry'
+        type: array
+    type: object
   webapi.VersionResponse:
     properties:
       platform:
@@ -2805,6 +2852,12 @@ definitions:
       channel:
         description: Channel is the graywolf channel ID that observed or transmitted the packet.
         type: integer
+      channel_name:
+        description: |-
+          ChannelName is the display name of the channel that handled the packet,
+          resolved from the numeric Channel ID; omitted when the ID maps to no
+          configured channel (e.g. channel 0, used for non-RF / APRS-IS arrivals).
+        type: string
       decoded:
         allOf:
           - $ref: '#/definitions/aprs.DecodedAPRSPacket'
@@ -2924,6 +2977,8 @@ tags:
     description: AGW TCP server configuration.
   - name: packets
     description: Received packet history.
+  - name: system-logs
+    description: 'Daemon log buffer: recent slog records (the lines also printed to the console).'
   - name: stations
     description: Station registry derived from received packets.
   - name: position
@@ -5296,6 +5351,23 @@ paths:
       summary: Reconnect a KISS tcp-client interface now
       tags:
         - kiss
+  /kiss/available-serial-ports:
+    get:
+      operationId: listAvailableKissSerialPorts
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/gps.SerialPortInfo'
+            type: array
+      security:
+        - CookieAuth: []
+      summary: List available host serial ports
+      tags:
+        - kiss
   /kiss/available-usb-serial-devices:
     get:
       operationId: getAvailableUsbSerialDevices
@@ -7256,6 +7328,38 @@ paths:
       summary: System status dashboard
       tags:
         - status
+  /system-logs:
+    get:
+      operationId: listSystemLogs
+      parameters:
+        - description: Cap result count (non-negative; default 250)
+          in: query
+          name: limit
+          type: integer
+        - description: Only records at or after this RFC3339 timestamp
+          in: query
+          name: since
+          type: string
+        - description: 'Minimum level: ''debug'' includes everything; default is info'
+          in: query
+          name: level
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.SystemLogsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List system logs
+      tags:
+        - system-logs
   /tacticals:
     post:
       consumes:

@@ -83,6 +83,7 @@ const (
 	OpReconnectKiss                = "reconnectKiss"
 	OpGetBondedBtDevices           = "getBondedBtDevices"
 	OpGetAvailableUsbSerialDevices = "getAvailableUsbSerialDevices"
+	OpListAvailableKissSerialPorts = "listAvailableKissSerialPorts"
 )
 
 // Tx-timing resource — /api/tx-timing (Phase 2). Keyed by channel id,
@@ -182,6 +183,11 @@ const (
 // Packets — /api/packets.
 const (
 	OpListPackets = "listPackets"
+)
+
+// System logs — /api/system-logs.
+const (
+	OpListSystemLogs = "listSystemLogs"
 )
 
 // Position — /api/position plus the raw GPS-state read at

@@ -7,6 +7,93 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.13.16"
+  date: "2026-06-11"
+  style: info
+  schema_version: 1
+  link: "#/system-logs"
+  title: "System Logs tab, wind barbs, VOX keying, plus map and audio fixes"
+  body: |
+    New System Logs tab: you can now read Graywolf's own daemon log
+    right in the web UI, filter it by level and number of lines, and
+    see the same structured detail it writes to the console or journal.
+    The old Logs tab that shows received traffic is now called APRS
+    Logs.
+
+    VOX radios key properly now. Pick the new VOX method on the PTT
+    settings if your radio keys off transmit audio. Graywolf sends a
+    short half-second lead-in tone ahead of each packet so the VOX
+    relay is fully closed before any data goes out, so no more clipped
+    frames.
+
+    Live map: weather stations now show standard wind barbs instead of
+    a text wind readout, so you can read speed and direction at a
+    glance.
+
+    Maps: in-progress offline map downloads now have a working Cancel
+    button that stops the transfer and cleans up the partial file. And
+    if maps will not activate, the error now tells you in plain
+    language to go to Settings and register (or re-register) your
+    device, instead of a raw server message.
+
+    Map accuracy: hop counts no longer over-count generic path aliases
+    like WIDEn-N or Internet-gated markers; stations heard both
+    directly and through a digipeater no longer disappear from the
+    Direct RX view; and western-hemisphere Mic-E position reports that
+    used to log but never plot now decode and show up on the map.
+
+    iGate: the Simulation toggle now sticks, so the page reflects
+    whether simulation is actually running after you reload or restart.
+
+    Audio: fixed a transmit problem where some USB radio interfaces
+    (Signalink, DigiRig, AIOC) flooded the log with errors and sent no
+    transmit audio. Graywolf now picks a playback format the device
+    actually supports.
+
+    Raspberry Pi and 32-bit ARM: fixed a modem crash loop on the
+    latest Raspberry Pi OS (the t64 change). There is also a new armv7l
+    build with NEON for Cortex-A7 and newer 32-bit boards that decodes
+    faster than the armv6 build. If you are not sure which 32-bit
+    download to use, the README now has a hardware selection table.
+
+    Android: the TCP (server) KISS type can be selected again so an
+    on-device iGate client can connect over loopback, with a Local only
+    option that keeps that KISS port off your LAN.
+
+    Smaller touches: the packet log now shows the channel name instead
+    of a number, and the dashboard Beacon Now button shows an object
+    beacon's object name.
+
+- version: "0.13.15"
+  date: "2026-06-02"
+  style: info
+  schema_version: 1
+  title: "Linux audio detection fixed when radio is plugged in after boot"
+  body: |
+    If your USB radio or sound card was connected after the graywolf
+    service started, Detect Audio came up empty and channels would
+    not bind even when you typed the right ALSA device name. A
+    systemd hardening flag we were shipping was the culprit on
+    several Linux distributions. Upgrade and restart graywolf;
+    nothing else to do on your end.
+
+- version: "0.13.14"
+  date: "2026-06-01"
+  style: info
+  schema_version: 1
+  link: "#/maps"
+  title: "Offline maps work for the whole LAN now"
+  body: |
+    The offline-maps setup was not fully offline-ready in v0.13.12:
+    the map style file was still being pulled from the maps host
+    by the browser, so if your laptop's IP changed (WiFi to
+    hotspot) or if a guest joined your LAN, the map came up blank.
+    Graywolf now caches the style itself, so once you have loaded
+    the map page once with Graywolf online, every browser on your
+    network can render it even with the internet down. If you
+    click Download on a region, the label fonts for that region
+    get pre-warmed in the background so an offline pan finds them.
+
 - version: "0.13.13"
   date: "2026-05-30"
   style: info

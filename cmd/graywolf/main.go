@@ -74,8 +74,10 @@ func main() {
 	}
 	inner := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: innerLevel})
 
-	logger = setupLogger(inner, cfg)
+	var logDB *logbuffer.DB
+	logger, logDB = setupLogger(inner, cfg)
 	slog.SetDefault(logger)
+	cfg.LogBuffer = logDB
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -97,7 +99,7 @@ func main() {
 // best-effort: a missing or unreadable configstore yields the
 // environment default. The override takes effect on the next graywolf
 // start; live reload is intentionally out of scope.
-func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
+func setupLogger(inner slog.Handler, cfg app.Config) (*slog.Logger, *logbuffer.DB) {
 	const (
 		ringSizeRamdisk     = 2000
 		ringSizeDisk        = 5000
@@ -120,13 +122,13 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 	})
 	if err != nil {
 		fallback.Warn("logbuffer: path resolution failed; falling back to console-only", "err", err)
-		return fallback
+		return fallback, nil
 	}
 
 	db, err := logbuffer.Open(target)
 	if err != nil {
 		fallback.Warn("logbuffer: open failed; falling back to console-only", "err", err, "path", target)
-		return fallback
+		return fallback, nil
 	}
 
 	wantedRamdisk := isPi || isSD || cfg.LogBufferRamdisk
@@ -147,7 +149,7 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 			// Operator explicitly disabled persistence.
 			_ = db.Close()
 			fallback.Warn("logbuffer: persistence disabled by configstore (logbuffer.max_rows=0)")
-			return fallback
+			return fallback, nil
 		}
 		ringSize = override
 	}
@@ -158,7 +160,7 @@ func setupLogger(inner slog.Handler, cfg app.Config) *slog.Logger {
 	})
 	logger := slog.New(h)
 	logger.Info("logbuffer: persistence enabled", "path", target, "ring_size", ringSize)
-	return logger
+	return logger, db
 }
 
 // readMaxRowsOverride opens the configstore (read-only intent) and

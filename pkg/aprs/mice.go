@@ -362,23 +362,26 @@ func decodeMicELon(b []byte, offset int, sign float64) (float64, error) {
 			return 0, ErrMicELonAmbiguous
 		}
 	}
-	// Degrees byte (0x1C..0x7F after +28 offset).
-	d := int(b[0]) - 28
+	// Degrees: raw byte minus 28, then add the dest-supplied +100°
+	// offset, and ONLY THEN normalise the 180..189 / 190..199 wrap
+	// ranges per APRS101 ch 10. Order is load-bearing: the spec adds
+	// the offset before the range fixups. Doing the fixups first (as a
+	// prior revision did) leaves every offset longitude — i.e. anything
+	// >= 100°, which is most of the Americas and Asia — stranded in the
+	// 180..199 band after the offset is added, where the final range
+	// check then rejects it as "out of range". That silently dropped
+	// all western-hemisphere Mic-E position reports (issue #219).
+	d := int(b[0]) - 28 + offset
 	if d >= 180 && d <= 189 {
 		d -= 80
 	} else if d >= 190 && d <= 199 {
 		d -= 190
 	}
+	// The spec only allows a final degrees value in 0..179; anything
+	// outside that (e.g. a corrupt byte, or a radio asserting the +100°
+	// offset bit against a degrees byte that doesn't normalise) would
+	// otherwise be plotted on the wrong side of the planet.
 	if d < 0 || d > 179 {
-		return 0, errors.New("mic-e: lon degrees range")
-	}
-	d += offset
-	// Belt and suspenders: even with both bytes individually in range,
-	// the spec only allows a final degrees value in 0..179. A radio
-	// that asserts the +100° offset bit while encoding a degrees byte
-	// in 80..99 (raw) produces 180..199 and would otherwise be plotted
-	// past the antimeridian on the wrong side of the planet.
-	if d > 179 {
 		return 0, ErrMicELonAmbiguous
 	}
 

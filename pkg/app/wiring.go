@@ -23,6 +23,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/callsign"
+	"github.com/chrissnell/graywolf/pkg/clocksync"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/demoseed"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
@@ -197,6 +198,16 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.logger.Info("starting graywolf (modem connect-only)",
 			"graywolf", a.cfg.FullVersion(),
 			"modem_socket", a.cfg.ModemSocketPath)
+	}
+
+	// --- Clock sync check ----------------------------------------------
+	// An undisciplined system clock skews packet ages and the map's Time
+	// Range filter, which can silently hide stations (graywolf#234). Warn
+	// once at startup; stay quiet when the state can't be measured.
+	if clocksync.Check() == clocksync.Unsynced {
+		a.logger.Warn("system clock is not synchronized to a time source; " +
+			"this skews packet ages and can hide stations from the map -- " +
+			"enable NTP (systemd-timesyncd, chrony, or ntpd)")
 	}
 
 	// --- Packet log ----------------------------------------------------
@@ -1476,6 +1487,16 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
 	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
+	// /api/system-logs reads the slog ring buffer. a.cfg.LogBuffer is a
+	// concrete *logbuffer.DB that may be nil; assign through a typed
+	// interface variable so a nil DB arrives as a true nil interface
+	// (avoids the typed-nil-in-interface trap, which would make the
+	// handler think a source exists and panic on Query).
+	var logSrc webapi.SystemLogSource
+	if a.cfg.LogBuffer != nil {
+		logSrc = a.cfg.LogBuffer
+	}
+	webapi.RegisterSystemLogs(apiSrv, apiMux, logSrc)
 	// Always register /api/igate routes; the closures below load a.ig
 	// on each request so the operator's runtime enable toggle lights
 	// the endpoints up without rewiring. While disabled, the status
@@ -1488,6 +1509,18 @@ func (a *App) wireHTTP(ctx context.Context) error {
 			ig := a.ig.Load()
 			if ig == nil {
 				return igate.ErrNotEnabled
+			}
+			// Persist before flipping the runtime atomic so the stored
+			// config stays the single source of truth: the Simulation
+			// page reads simulation_mode from GET /api/igate/config on
+			// load, so without this write the toggle springs back to
+			// its persisted value on refresh (and is lost on reload,
+			// since buildIgateInstance re-seeds the atomic from config).
+			// SetIGateSimulationMode touches only that one column so a
+			// concurrent PUT /api/igate/config can't be clobbered.
+			// See GRA-34 / graywolf#225.
+			if err := a.store.SetIGateSimulationMode(ctx, b); err != nil {
+				return err
 			}
 			return ig.SetSimulationMode(b)
 		},

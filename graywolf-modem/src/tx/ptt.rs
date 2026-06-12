@@ -134,8 +134,16 @@ use crate::ipc::proto::ConfigurePtt;
 /// PTT hardware method, parsed from `ConfigurePtt.method`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PttMethod {
-    /// VOX-keyed radio: audio alone triggers TX, no separate PTT line.
+    /// VOX-keyed radio with no graywolf-side assistance: audio alone
+    /// triggers TX, no separate PTT line and no lead-in tone.
     None,
+    /// VOX-keyed radio that wants a pre-transmit lead-in tone. Keying is
+    /// identical to [`PttMethod::None`] (no hardware line); the difference
+    /// lives in the TX builder, which prepends a short steady tone ahead
+    /// of the HDLC preamble so the radio's VOX circuit has time to engage
+    /// before packet data starts (graywolf#220). See
+    /// `crate::modem` `handle_transmit_frame`.
+    Vox,
     SerialRts,
     SerialDtr,
     Cm108,
@@ -158,6 +166,7 @@ impl PttMethod {
     pub(crate) fn parse(s: &str) -> Option<Self> {
         match s {
             "" | "none" => Some(Self::None),
+            "vox" => Some(Self::Vox),
             "serial_rts" => Some(Self::SerialRts),
             "serial_dtr" => Some(Self::SerialDtr),
             "cm108" => Some(Self::Cm108),
@@ -522,7 +531,11 @@ impl PortRegistry {
         let method = PttMethod::parse(&cfg.method)
             .ok_or_else(|| format!("unknown ptt method '{}'", cfg.method))?;
         match method {
-            PttMethod::None => Ok(Box::new(NonePtt)),
+            // VOX (with or without the lead-in tone) never touches a
+            // hardware line — the radio keys on audio. The tone, when
+            // requested, is prepended to the TX audio buffer upstream in
+            // the modem, not here.
+            PttMethod::None | PttMethod::Vox => Ok(Box::new(NonePtt)),
             PttMethod::SerialRts => Ok(Box::new(self.serial_driver(
                 &cfg.device,
                 SerialLine::Rts,
@@ -816,6 +829,7 @@ pub(crate) mod tests {
     fn parse_recognizes_known_method_strings_and_returns_none_for_unknown() {
         assert_eq!(PttMethod::parse("none"), Some(PttMethod::None));
         assert_eq!(PttMethod::parse(""), Some(PttMethod::None));
+        assert_eq!(PttMethod::parse("vox"), Some(PttMethod::Vox));
         assert_eq!(PttMethod::parse("serial_rts"), Some(PttMethod::SerialRts));
         assert_eq!(PttMethod::parse("serial_dtr"), Some(PttMethod::SerialDtr));
         assert_eq!(PttMethod::parse("cm108"), Some(PttMethod::Cm108));
@@ -838,6 +852,22 @@ pub(crate) mod tests {
             ..base_cfg()
         };
         let mut driver = registry.build_driver(&cfg).expect("none always builds");
+        assert!(driver.key().is_ok());
+        assert!(driver.unkey().is_ok());
+    }
+
+    #[test]
+    fn build_driver_with_vox_method_yields_noop_driver() {
+        // VOX keys the radio via audio alone, so it needs no hardware
+        // line and never opens a device — build_driver must succeed with
+        // a no-op driver regardless of the (ignored) device path. The
+        // lead-in tone lives upstream in the modem's TX builder.
+        let mut registry = PortRegistry::new();
+        let cfg = ConfigurePtt {
+            method: "vox".into(),
+            ..base_cfg()
+        };
+        let mut driver = registry.build_driver(&cfg).expect("vox always builds");
         assert!(driver.key().is_ok());
         assert!(driver.unkey().is_ok());
     }
