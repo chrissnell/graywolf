@@ -3,6 +3,8 @@ package logbuffer
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -79,6 +81,23 @@ func TestHandlerForwardsAttrs(t *testing.T) {
 	}
 	if !strings.Contains(attrs, `"remote":"10.0.0.1"`) {
 		t.Fatalf("attrs missing remote: %s", attrs)
+	}
+}
+
+func TestHandlerStringifiesErrorAttrs(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h)
+
+	// A wrapped error: its fields are unexported, so json.Marshal of the
+	// raw value would yield "{}" and drop the message. The handler must
+	// store Error() instead.
+	err := fmt.Errorf("parse source: %w", errors.New(`bad ssid "D"`))
+	logger.Debug("tnc2 parse failed", "err", err)
+
+	var attrs string
+	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
+	if !strings.Contains(attrs, `"err":"parse source: bad ssid \"D\""`) {
+		t.Fatalf("attrs missing stringified err: %s", attrs)
 	}
 }
 

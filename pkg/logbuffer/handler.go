@@ -172,7 +172,15 @@ func flattenAttr(out map[string]any, prefix string, a slog.Attr) {
 	if prefix != "" {
 		key = prefix + "." + key
 	}
-	out[key] = a.Value.Any()
+	v := a.Value.Any()
+	// Errors marshal to "{}" via encoding/json because their fields are
+	// unexported (e.g. fmt.wrapError), losing the message entirely. Store
+	// the Error() string so logged errors stay readable. slog's own
+	// handlers do the same.
+	if err, ok := v.(error); ok {
+		v = err.Error()
+	}
+	out[key] = v
 }
 
 // afterInsert delegates to maintenance() so the eviction policy can
