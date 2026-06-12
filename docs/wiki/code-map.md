@@ -253,27 +253,23 @@ the last-known region list when offline.
 PMTiles infrastructure (manifest gen, R2 sync, Cloudflare Worker) is in
 `~/dev/graywolf-maps`, not here. See [invariant 7](invariants.md).
 
-## Smoothed radar tiles (`radar-contour/`)
+## Smoothed radar tiles (client)
 
-Server-side Rust generator: live NEXRAD reflectivity -> smoothed vector
-isoband PMTiles, one archive per frame to R2. Runs as a k8s CronJob on
-`big-bulky-1`. See [system topology](system-topology.md#smoothed-radar-tiles).
+The MapLibre client paints smoothed NEXRAD radar as recolorable dBZ isoband
+fills. The tiles are vector PMTiles produced by the **`radar-contour`
+generator, which lives in `~/dev/graywolf-maps`** (Rust CronJob on
+`big-bulky-1` → one PMTiles archive per frame → R2, range-served by the maps
+origin Worker's `/radar/*` route). Only the client lives here.
 
 | Concern | File |
 |---|---|
-| CLI entry / orchestration (decode -> smooth -> contour -> tile -> package -> publish) | [`../../radar-contour/src/main.rs`](../../radar-contour/src/main.rs) |
-| Config (bbox, zooms, grid_deg, sigma, dBZ thresholds) | [`../../radar-contour/src/config.rs`](../../radar-contour/src/config.rs) |
-| `FieldGrid` / `GridSpec` + async `ReflectivityField` trait | [`../../radar-contour/src/field/mod.rs`](../../radar-contour/src/field/mod.rs) |
-| Level II v1 source: site catalog, decode, geolocation, multi-site composite | [`../../radar-contour/src/field/level2/`](../../radar-contour/src/field/level2/) |
-| MRMS GRIB2 fallback / IEM N0Q PNG fallback | `field/mrms.rs`, `field/n0q.rs` |
-| Gaussian smooth / filled isobands / Chaikin / Web Mercator + tiling / MVT | `smooth.rs`, `contour.rs`, `chaikin.rs`, `mercator.rs`, `tile.rs`, `mvt.rs` |
-| MBTiles staging + PMTiles convert / R2 publish + atomic latest.json | `package.rs`, `publish.rs` |
 | Client palette + source/layer specs (NWS dBZ ramp, step expression) | [`../../web/src/lib/map/sources/radar-source.js`](../../web/src/lib/map/sources/radar-source.js) |
 | Client layer module (vector source + fill, latest.json polling) | [`../../web/src/lib/map/layers/radar.js`](../../web/src/lib/map/layers/radar.js) |
 | Mount + toggle + opacity slider | [`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte) |
 
-The origin Worker `radar` route and the CronJob manifest live in
-`~/dev/graywolf-maps`, alongside the rest of the R2/Worker/deploy surface.
+Generator, Helm chart, origin Worker `/radar/*` route, and R2 layout all live
+in `~/dev/graywolf-maps` (`radar-contour/`, `charts/graywolf-radar-contour/`,
+`worker/src/radar.ts`). See [invariant 7](invariants.md).
 
 ## Live updates
 
