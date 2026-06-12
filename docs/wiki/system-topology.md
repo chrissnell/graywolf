@@ -130,12 +130,43 @@ schema types.
 | `auth.nw5w.com` | graywolf-maps registration; per-device bearer token | [`../../pkg/mapsauth/`](../../pkg/mapsauth/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
 | `maps.nw5w.com` | tile fetch + offline PMTiles downloads (states, countries, provinces) | [`../../pkg/mapscache/`](../../pkg/mapscache/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
 | `maps.nw5w.com` (style assets) | proxied via `/api/maps/style/{path}` from a disk cache; pull-through on first browser request | [`../../pkg/mapsstyle/`](../../pkg/mapsstyle/) | [`../handbook/livemap.html`](../handbook/livemap.html) |
+| `maps.nw5w.com/radar/*` | smoothed NEXRAD radar tiles: `radar/<ts>.pmtiles` per frame + `radar/latest.json` pointer, range-served by the origin Worker; browser polls `latest.json` and paints recolorable dBZ isoband fills | [`../../radar-contour/`](../../radar-contour/) (generator), [`../../web/src/lib/map/layers/radar.js`](../../web/src/lib/map/layers/radar.js) (client) | (no dedicated page yet) |
 | GitHub Releases | Daily update poll | [`../../pkg/updatescheck/`](../../pkg/updatescheck/) | (no dedicated page) |
 | `flare.nw5w.com` | graywolf flare submission receiver (graywolf-flare-server, see https://github.com/chrissnell/graywolf-flare-server) | [`../../pkg/diagcollect/submit/`](../../pkg/diagcollect/submit/) | (no dedicated handbook page yet) |
 
 PMTiles infra (manifest gen, R2 sync, origin Worker) lives in `~/dev/graywolf-maps`,
 not here. Integration spec: `~/dev/graywolf-maps/.context/graywolf-client-integration.md`.
 See [invariant 7](invariants.md).
+
+### Smoothed radar tiles
+
+The `radar-contour/` Cargo workspace member is a server-side generator that
+runs as a k8s CronJob on `big-bulky-1`. Each tick it discovers the newest
+Level II super-resolution volume for every NEXRAD site overlapping the
+configured bbox (AWS `unidata-nexrad-level2`, anonymous), decodes the
+lowest-tilt reflectivity sweep per site, max-composites all sites onto one
+lon/lat dBZ grid, Gaussian-blurs it, extracts filled isobands at the NWS dBZ
+breakpoints (5..75), Chaikin-smooths the boundaries, tiles to a Web Mercator
+z3-z10 pyramid, encodes MVT, packs the whole frame into **one** `.pmtiles`
+archive, and publishes it atomically to R2 (`radar/<ts>.pmtiles` written
+first, then the `radar/latest.json` pointer) -- exactly mirroring the basemap
+PMTiles flow, so the origin Worker range-serves individual radar tiles the
+same way it serves basemap tiles. One PUT per frame, not ~5,500.
+
+- **Field source** is behind a swappable `ReflectivityField` trait. v1 ships
+  **Level II** (per-site super-res, ~250 m); **MRMS** (GRIB2 ~1 km mosaic) and
+  **IEM N0Q** (PNG ~1 km mosaic) are fallback implementors behind the same
+  trait. Everything downstream of the composited grid is identical regardless
+  of source.
+- **Perf/resolution levers** (config, no re-architecture): `grid_deg` (composite
+  cell size), `bbox` (CONUS vs regional), `max_zoom`. Full-CONUS 250 m is the
+  heaviest config; narrow the bbox or coarsen `grid_deg` if a frame can't build
+  inside the CronJob cadence on `big-bulky-1`.
+- **R2 access** uses a small pure-Rust signer (`rusty-s3` + `reqwest`), not the
+  AWS SDK, to keep the CronJob image light.
+
+The origin Worker `radar` route and the CronJob manifest live in
+`~/dev/graywolf-maps`, alongside the rest of the R2/Worker/deploy surface.
 
 ### IS-only station
 
