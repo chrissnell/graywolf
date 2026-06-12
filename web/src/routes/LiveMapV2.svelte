@@ -26,6 +26,7 @@
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
   import { toMaidenhead } from '../lib/map/maidenhead.js';
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
+  import { clockOffset, formatOffsetMagnitude } from '../lib/map/clock-offset.svelte.js';
   import { toasts } from '../lib/stores.js';
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
   import MapPinned from 'lucide-svelte/icons/map-pinned';
@@ -579,7 +580,9 @@
     if (!t) return '';
     // Touching tickNow keeps this re-derived once a second.
     const _ = tickNow;
-    return timeAgo(t.toISOString());
+    // lastFetchAt is a browser-local event, so time it against the browser
+    // clock — not the host-corrected serverNow().
+    return timeAgo(t.toISOString(), Date.now());
   });
   let pollDotClass = $derived(
     dataStore.pollingState === 'error'
@@ -595,6 +598,18 @@
         ? 'live'
         : 'idle',
   );
+  // Subtle indicator: only present when the graywolf host clock differs from
+  // this browser's by enough to matter (GH #234). Packet ages are already
+  // corrected to the host clock; this just makes the disagreement visible.
+  let clockSkew = $derived.by(() => {
+    if (!clockOffset.isSignificant) return null;
+    const ms = clockOffset.offsetMs;
+    const mag = formatOffsetMagnitude(ms);
+    return {
+      text: `host clock ${ms > 0 ? '+' : '−'}${mag}`,
+      title: `graywolf host clock is ${mag} ${ms > 0 ? 'ahead of' : 'behind'} this browser; packet ages are shown against the host clock.`,
+    };
+  });
 
   onDestroy(() => {
     dataStore.stop();
@@ -829,6 +844,10 @@
       <span class="status-sep">&middot;</span>
       <span>{lastFetchAgo}</span>
     {/if}
+    {#if clockSkew}
+      <span class="status-sep">&middot;</span>
+      <span class="clock-skew" title={clockSkew.title}>{clockSkew.text}</span>
+    {/if}
   </div>
 </div>
 
@@ -1020,6 +1039,12 @@
   }
   .map-status-bar .status-sep {
     opacity: 0.5;
+  }
+  /* Clock-skew hint: present only when the host clock disagrees, so a faint
+     warning tint draws a glance without shouting. */
+  .map-status-bar .clock-skew {
+    color: var(--color-warning, #d4a72c);
+    opacity: 0.85;
   }
 
   /* Mobile: shrink coord/status text. Don't go below 11px to keep
