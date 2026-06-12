@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -304,7 +305,9 @@ func (c *Cache) fetch(ctx context.Context) (Catalog, error) {
 		return Catalog{}, fmt.Errorf("parse baseURL: %w", err)
 	}
 	u.Path = "/manifest.json"
+	hadToken := false
 	if tok := c.tokenProvider(ctx); tok != "" {
+		hadToken = true
 		q := u.Query()
 		q.Set("t", tok)
 		u.RawQuery = q.Encode()
@@ -320,7 +323,7 @@ func (c *Cache) fetch(ctx context.Context) (Catalog, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return Catalog{}, fmt.Errorf("manifest HTTP %d: %s", resp.StatusCode, string(body))
+		return Catalog{}, fetchError(resp.StatusCode, hadToken, string(body))
 	}
 	var out Catalog
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -332,4 +335,26 @@ func (c *Cache) fetch(ctx context.Context) (Catalog, error) {
 	out.indexSlugs()
 	c.saveToDisk(out)
 	return out, nil
+}
+
+// fetchError turns a non-200 manifest response into an operator-facing
+// error. Auth failures (401/403) are the common real-world case --
+// they mean the maps service rejected our credentials -- so we say so
+// in plain language and point at the fix (register the device under the
+// Settings tab) instead of surfacing the raw upstream body like
+// "unauthorized: missing", which tells an operator nothing actionable.
+func fetchError(status int, hadToken bool, body string) error {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		if !hadToken {
+			return fmt.Errorf("To activate Graywolf Maps, go to the Settings tab and register your device (HTTP %d)", status)
+		}
+		return fmt.Errorf("Graywolf Maps access was rejected (the token may be expired or revoked) -- go to the Settings tab and re-register your device (HTTP %d)", status)
+	default:
+		body = strings.TrimSpace(body)
+		if body == "" {
+			return fmt.Errorf("maps catalog request failed: HTTP %d", status)
+		}
+		return fmt.Errorf("maps catalog request failed: HTTP %d: %s", status, body)
+	}
 }

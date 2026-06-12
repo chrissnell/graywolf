@@ -87,6 +87,15 @@ export const kissUsb = {
   availableDevices: () => api.get('/kiss/available-usb-serial-devices'),
 };
 
+// kissSerial groups the desktop KISS-over-serial helpers. The available-ports
+// endpoint enumerates host serial ports (Windows COM*, Linux /dev/tty*, macOS
+// cu.*) for the "Detected ports" dropdown in the serial interface editor.
+export const kissSerial = {
+  // availablePorts fetches host serial ports the OS can see. Shape:
+  // [{path, name, description, is_usb, recommended, warning, ...}].
+  availablePorts: () => api.get('/kiss/available-serial-ports'),
+};
+
 // --- Mock data for development without backend ---
 
 function delay(data) {
@@ -134,6 +143,11 @@ const mockAvailableUsbSerialDevices = {
   ],
 };
 
+const mockKissSerialPorts = [
+  { path: '/dev/ttyUSB0', name: 'ttyUSB0', description: 'CP2102 USB to UART', is_usb: true, recommended: true },
+  { path: '/dev/ttyACM0', name: 'ttyACM0', description: 'USB serial device', is_usb: true, recommended: true },
+];
+
 const mockAgw = { tcp_port: 8000, monitor_port: 8002, enabled: true };
 
 const mockIgate = {
@@ -161,8 +175,8 @@ const mockBeacons = [
 const mockGps = { source: 'serial', serial_port: '/dev/ttyACM0', baud_rate: 9600, gpsd_host: 'localhost', gpsd_port: 2947 };
 
 const mockPackets = [
-  { id: 1, timestamp: new Date().toISOString(), source: 'N0CALL-9', destination: 'APRS', path: 'WIDE1-1', type: 'position', raw: 'N0CALL-9>APRS,WIDE1-1:!3500.00N/10600.00W-PHG2360', direction: 'rx', channel: 'VHF APRS' },
-  { id: 2, timestamp: new Date(Date.now() - 5000).toISOString(), source: 'W5ABC-7', destination: 'APGRWO', path: 'WIDE2-1', type: 'position', raw: 'W5ABC-7>APGRWO,WIDE2-1:@092345z3501.00N/10601.00W_090/005', direction: 'rx', channel: 'VHF APRS' },
+  { id: 1, timestamp: new Date().toISOString(), source: 'N0CALL-9', destination: 'APRS', path: 'WIDE1-1', type: 'position', raw: 'N0CALL-9>APRS,WIDE1-1:!3500.00N/10600.00W-PHG2360', direction: 'rx', channel: 1, channel_name: 'VHF APRS' },
+  { id: 2, timestamp: new Date(Date.now() - 5000).toISOString(), source: 'W5ABC-7', destination: 'APGRWO', path: 'WIDE2-1', type: 'position', raw: 'W5ABC-7>APGRWO,WIDE2-1:@092345z3501.00N/10601.00W_090/005', direction: 'rx', channel: 1, channel_name: 'VHF APRS' },
 ];
 
 const mockPosition = { valid: true, lat: 35.0, lon: -106.0, alt_m: 1500, has_alt: true, speed_kt: 0, heading_deg: 0, has_course: false };
@@ -220,6 +234,7 @@ function getMockData(method, path, body) {
   if (path.match(/^\/kiss\/\d+$/) && method === 'DELETE') return delay(null);
   if (path === '/kiss/bonded-bt-devices' && method === 'GET') return delay(mockBondedBtDevices);
   if (path === '/kiss/available-usb-serial-devices' && method === 'GET') return delay(mockAvailableUsbSerialDevices);
+  if (path === '/kiss/available-serial-ports' && method === 'GET') return delay(mockKissSerialPorts);
 
   // AGW
   if (path === '/agw' && method === 'GET') return delay(mockAgw);

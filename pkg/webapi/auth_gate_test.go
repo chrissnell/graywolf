@@ -85,6 +85,7 @@ func TestAuthGate_EveryRoute(t *testing.T) {
 		{http.MethodGet, "/api/kiss/1", ""},
 		{http.MethodPut, "/api/kiss/1", `{}`},
 		{http.MethodDelete, "/api/kiss/1", ""},
+		{http.MethodGet, "/api/kiss/available-serial-ports", ""},
 
 		// AGW
 		{http.MethodGet, "/api/agw", ""},

@@ -160,12 +160,38 @@ func insertPositionIfMoved(tx *gorm.DB, e *stationcache.CacheEntry) error {
 	pathJSON, _ := json.Marshal(e.Path)
 
 	if found && math.Abs(lastLat-e.Lat) <= posEpsilon && math.Abs(lastLon-e.Lon) <= posEpsilon {
-		// Static re-beacon — update timestamp and metadata on latest position.
+		// Static re-beacon — advance the timestamp and comment, but keep
+		// the reception-path metadata at the most direct copy seen for this
+		// fix so a later digipeated copy can't mask an earlier direct one
+		// (issue #130). The CASE guard overwrites via/path/hops/direction/
+		// channel only when the incoming copy is itself direct RF, or when
+		// the stored copy is not direct (latest-wins among non-direct).
+		// Mirrors MemCache.Update's static-re-beacon branch.
+		newDirect := 0
+		if e.Direction == "RX" && e.Hops == 0 {
+			newDirect = 1
+		}
+		// keep == 1 means: overwrite the path metadata for this row.
+		const keep = `(? = 1 OR NOT (direction = 'RX' AND hops = 0))`
 		return tx.Exec(
-			`UPDATE positions SET timestamp = ?, via = ?, path = ?, hops = ?, direction = ?, channel = ?, comment = ?
+			`UPDATE positions SET
+				timestamp = ?,
+				comment   = ?,
+				via       = CASE WHEN `+keep+` THEN ? ELSE via END,
+				path      = CASE WHEN `+keep+` THEN ? ELSE path END,
+				hops      = CASE WHEN `+keep+` THEN ? ELSE hops END,
+				direction = CASE WHEN `+keep+` THEN ? ELSE direction END,
+				channel   = CASE WHEN `+keep+` THEN ? ELSE channel END
 			 WHERE station_key = ? AND id = (
 				SELECT id FROM positions WHERE station_key = ? ORDER BY timestamp DESC LIMIT 1
-			)`, e.Timestamp, e.Via, string(pathJSON), e.Hops, e.Direction, e.Channel, e.Comment, e.Key, e.Key,
+			)`,
+			e.Timestamp, e.Comment,
+			newDirect, e.Via,
+			newDirect, string(pathJSON),
+			newDirect, e.Hops,
+			newDirect, e.Direction,
+			newDirect, e.Channel,
+			e.Key, e.Key,
 		).Error
 	}
 

@@ -58,20 +58,29 @@ export const downloadsState = (() => {
     }
   }
 
-  async function remove(slug) {
+  async function remove(slug, action = 'delete') {
     try {
       const res = await fetch(`/api/maps/downloads/${slug}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       });
       if (!res.ok) {
-        toasts.error(`${slug}: delete failed (${res.status})`);
+        toasts.error(`${slug}: ${action} failed (${res.status})`);
         return;
       }
       await refresh();
     } catch (e) {
       toasts.error(`${slug}: network error -- ${e.message}`);
     }
+  }
+
+  // Cancelling an in-progress download is the same backend operation as
+  // deleting a completed one: DELETE halts the transfer (the server
+  // cancels the download context) and discards the partial file. Kept as
+  // a named method so the UI reads clearly and failure toasts say
+  // "cancel" rather than "delete".
+  function cancel(slug) {
+    return remove(slug, 'cancel');
   }
 
   function hasActiveDownload() {
@@ -97,6 +106,7 @@ export const downloadsState = (() => {
     refresh,
     start,
     remove,
+    cancel,
     ensurePolling,
 
     // Set<slug> of completed downloads -- driven by the items Map.

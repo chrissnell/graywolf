@@ -36,7 +36,6 @@ ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
-ProtectClock=yes
 ProtectHostname=yes
 
 # Execution hardening

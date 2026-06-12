@@ -63,6 +63,10 @@
             "description": "Received packet history."
         },
         {
+            "name": "system-logs",
+            "description": "Daemon log buffer: recent slog records (the lines also printed to the console)."
+        },
+        {
             "name": "stations",
             "description": "Station registry derived from received packets."
         },
@@ -3631,6 +3635,34 @@
                 }
             }
         },
+        "/kiss/available-serial-ports": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "List available host serial ports",
+                "operationId": "listAvailableKissSerialPorts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/gps.SerialPortInfo"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/kiss/available-usb-serial-devices": {
             "get": {
                 "security": [
@@ -6904,6 +6936,57 @@
                 }
             }
         },
+        "/system-logs": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system-logs"
+                ],
+                "summary": "List system logs",
+                "operationId": "listSystemLogs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Cap result count (non-negative; default 250)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only records at or after this RFC3339 timestamp",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Minimum level: 'debug' includes everything; default is info",
+                        "name": "level",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.SystemLogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/tacticals": {
             "post": {
                 "security": [
@@ -9331,6 +9414,10 @@
                     "description": "GateTxToIs opts a Mode=modem KISS interface in to gating frames\nsubmitted by connected KISS clients to APRS-IS, after the TX\ngovernor has accepted them. The iGate's own filter chain still\nruns, so this only opens the gate — it does not bypass NOGATE /\nRFONLY / TCPIP markers or the operator's filter rules. Default\nfalse on all migrated rows; meaningless in Mode=tnc (which\nalready feeds the iGate via the RX fanout) and silently ignored\nthere by the server.",
                     "type": "boolean"
                 },
+                "local_only": {
+                    "description": "LocalOnly, when set on a tcp (server-listen) interface, binds the\nKISS listener to loopback (127.0.0.1) instead of all interfaces\n(0.0.0.0). The intended use is an on-device iGate client (a KISS\napp on the same phone/host) dialing in over loopback without\nexposing the port to the LAN. Ignored for non-tcp types. Stored\nin the existing ListenAddr host -- no schema change.",
+                    "type": "boolean"
+                },
                 "mode": {
                     "type": "string"
                 },
@@ -9390,6 +9477,10 @@
                 },
                 "last_error": {
                     "type": "string"
+                },
+                "local_only": {
+                    "description": "LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface\nlistens on loopback only. Derived from the ListenAddr host.",
+                    "type": "boolean"
                 },
                 "mode": {
                     "type": "string"
@@ -11152,6 +11243,52 @@
                 }
             }
         },
+        "webapi.SystemLogEntry": {
+            "type": "object",
+            "properties": {
+                "attrs": {
+                    "description": "Attrs are the structured key/value attributes attached to the record; omitted when none.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "component": {
+                    "description": "Component is the slog \"component\" group (e.g. \"webapi\"); omitted when unset.",
+                    "type": "string"
+                },
+                "level": {
+                    "description": "Level is the slog level: DEBUG, INFO, WARN, or ERROR.",
+                    "type": "string"
+                },
+                "message": {
+                    "description": "Message is the log message text.",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "description": "Timestamp is the RFC3339 (UTC) time the record was emitted.",
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.SystemLogsResponse": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "description": "Available is false when the log buffer is disabled; Logs is then empty.",
+                    "type": "boolean"
+                },
+                "cursor": {
+                    "description": "Cursor is the RFC3339 timestamp of the newest returned record, for incremental `since` polling; omitted when empty.",
+                    "type": "string"
+                },
+                "logs": {
+                    "description": "Logs are the matching records in ascending chronological order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.SystemLogEntry"
+                    }
+                }
+            }
+        },
         "webapi.VersionResponse": {
             "type": "object",
             "properties": {
@@ -11215,6 +11352,10 @@
                 "channel": {
                     "description": "Channel is the graywolf channel ID that observed or transmitted the packet.",
                     "type": "integer"
+                },
+                "channel_name": {
+                    "description": "ChannelName is the display name of the channel that handled the packet,\nresolved from the numeric Channel ID; omitted when the ID maps to no\nconfigured channel (e.g. channel 0, used for non-RF / APRS-IS arrivals).",
+                    "type": "string"
                 },
                 "decoded": {
                     "description": "Decoded is the parsed APRS payload when decoding succeeded; nil otherwise.",

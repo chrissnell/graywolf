@@ -183,7 +183,7 @@ func TestExtractEntry_KilledItem(t *testing.T) {
 func TestExtractEntry_ThirdPartyUnwrap(t *testing.T) {
 	inner := &aprs.DecodedAPRSPacket{
 		Source: "W2INNER",
-		Path:   []string{"WIDE1*", "RELAY*"},
+		Path:   []string{"N0DIGI*", "WIDE1*", "RELAY*"},
 		Position: &aprs.Position{
 			Latitude:  41.0,
 			Longitude: -106.0,
@@ -208,7 +208,7 @@ func TestExtractEntry_ThirdPartyUnwrap(t *testing.T) {
 	assertEqual(t, "Callsign", e.Callsign, "W2INNER")
 	assertFloat(t, "Lat", e.Lat, 41.0)
 	assertEqual(t, "Via", e.Via, "is")
-	assertEqual(t, "Hops", e.Hops, 2) // WIDE1* and RELAY*
+	assertEqual(t, "Hops", e.Hops, 1) // only N0DIGI* is a real digi; WIDE1*/RELAY* are aliases
 	assertEqual(t, "Comment", e.Comment, "inner comment")
 	// Inner packet has zero timestamp → should fall back to outer packet's timestamp
 	outerTS := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -289,7 +289,7 @@ func TestExtractEntry_Weather(t *testing.T) {
 			HasTemp:       true,
 			WindSpeed:     15.0,
 			HasWindSpeed:  true,
-			WindDirection:  180,
+			WindDirection: 180,
 			HasWindDir:    true,
 			WindGust:      25.0,
 			HasWindGust:   true,

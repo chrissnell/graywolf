@@ -38,7 +38,7 @@
     { key: 'timestamp', label: 'Time',    width: '130px', class: 'pkt-c-time',           render: timeCell    },
     { key: 'type',      label: 'Type',    width: '180px', class: 'pkt-c-type',           render: typeCell    },
     { key: 'srcdst',    label: 'Src→Dst', width: '1fr',   class: 'pkt-c-srcdst',         render: srcDstCell  },
-    { key: 'channel',   label: 'Ch',      width: '50px',  class: 'pkt-c-channel', align: 'center', render: channelCell },
+    { key: 'channel',   label: 'Channel', width: '120px', class: 'pkt-c-channel', render: channelCell },
     { key: 'distance',  label: 'Distance',width: '120px', class: 'pkt-c-distance', align: 'right', render: distanceCell },
   ];
 </script>
@@ -73,7 +73,7 @@
 {/snippet}
 
 {#snippet channelCell(_value, entry)}
-  {entry.channel ?? '—'}
+  {entry.channel_name || (entry.channel ?? '—')}
 {/snippet}
 
 {#snippet distanceCell(_value, entry)}

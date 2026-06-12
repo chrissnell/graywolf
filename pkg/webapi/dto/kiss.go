@@ -29,8 +29,15 @@ const (
 // rejects obviously-wrong non-zero values up front so the error lands
 // at the API boundary instead of the SQLite boundary.
 type KissRequest struct {
-	Type             string `json:"type"`
-	TcpPort          int    `json:"tcp_port"`
+	Type    string `json:"type"`
+	TcpPort int    `json:"tcp_port"`
+	// LocalOnly, when set on a tcp (server-listen) interface, binds the
+	// KISS listener to loopback (127.0.0.1) instead of all interfaces
+	// (0.0.0.0). The intended use is an on-device iGate client (a KISS
+	// app on the same phone/host) dialing in over loopback without
+	// exposing the port to the LAN. Ignored for non-tcp types. Stored
+	// in the existing ListenAddr host -- no schema change.
+	LocalOnly        bool   `json:"local_only"`
 	SerialDevice     string `json:"serial_device"`
 	BaudRate         uint32 `json:"baud_rate"`
 	Channel          uint32 `json:"channel"`
@@ -194,7 +201,11 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 	switch r.Type {
 	case configstore.KissTypeTCP:
 		if r.TcpPort > 0 {
-			ki.ListenAddr = fmt.Sprintf("0.0.0.0:%d", r.TcpPort)
+			host := "0.0.0.0"
+			if r.LocalOnly {
+				host = "127.0.0.1"
+			}
+			ki.ListenAddr = fmt.Sprintf("%s:%d", host, r.TcpPort)
 			ki.Name = fmt.Sprintf("kiss-tcp-%d", r.TcpPort)
 		}
 	case configstore.KissTypeTCPClient:
@@ -227,9 +238,12 @@ func (r KissRequest) ToUpdate(id uint32) configstore.KissInterface {
 // can surface a "reconfigure me" banner on rows whose Channel was
 // nulled by a Phase 5 cascade delete.
 type KissResponse struct {
-	ID                  uint32 `json:"id"`
-	Type                string `json:"type"`
-	TcpPort             int    `json:"tcp_port"`
+	ID      uint32 `json:"id"`
+	Type    string `json:"type"`
+	TcpPort int    `json:"tcp_port"`
+	// LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface
+	// listens on loopback only. Derived from the ListenAddr host.
+	LocalOnly           bool   `json:"local_only"`
 	SerialDevice        string `json:"serial_device"`
 	BaudRate            uint32 `json:"baud_rate"`
 	Channel             uint32 `json:"channel"`
@@ -258,6 +272,23 @@ type KissResponse struct {
 	BackoffSeconds uint32 `json:"backoff_seconds,omitempty"`
 }
 
+// isLoopbackHost reports whether a ListenAddr host binds loopback only.
+// Covers the literal "localhost" plus any loopback IP (127.0.0.0/8,
+// ::1). An empty host (":8001") means "all interfaces", so it is not
+// loopback.
+func isLoopbackHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
 func KissFromModel(m configstore.KissInterface) KissResponse {
 	out := KissResponse{
 		ID:                  m.ID,
@@ -277,10 +308,11 @@ func KissFromModel(m configstore.KissInterface) KissResponse {
 		ReconnectMaxMs:      m.ReconnectMaxMs,
 	}
 	if m.ListenAddr != "" {
-		if _, portStr, err := net.SplitHostPort(m.ListenAddr); err == nil {
+		if host, portStr, err := net.SplitHostPort(m.ListenAddr); err == nil {
 			if p, err := strconv.Atoi(portStr); err == nil {
 				out.TcpPort = p
 			}
+			out.LocalOnly = isLoopbackHost(host)
 		}
 	}
 	return out

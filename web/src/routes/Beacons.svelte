@@ -13,6 +13,7 @@
   import { channelsStore, start as startChannelsStore, invalidate as refreshChannels } from '../lib/stores/channels.svelte.js';
   import { getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
   import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
+  import { beaconLabel } from '../lib/beaconLabel.js';
   import {
     channelRefStatus,
     buildChannelsById,
@@ -441,15 +442,10 @@
     }
   }
 
-  function beaconLabel(row) {
-    if (row.type === 'object' && row.object_name) return row.object_name;
-    return row.callsign || stationCallsign || '(unset)';
-  }
-
   async function handleSendNow(row) {
     try {
       await api.post(`/beacons/${row.id}/send`, {});
-      toasts.success(`Beacon sent: ${beaconLabel(row)}`);
+      toasts.success(`Beacon sent: ${beaconLabel(row, stationCallsign)}`);
     } catch (err) {
       toasts.error(err.message);
     }
@@ -858,7 +854,7 @@
   <AlertDialog.Content>
     <AlertDialog.Title>Delete Beacon</AlertDialog.Title>
     <AlertDialog.Description>
-      Are you sure you want to delete the beacon for "{deleteTarget ? beaconLabel(deleteTarget) : '(unset)'}"? This cannot be undone.
+      Are you sure you want to delete the beacon for "{deleteTarget ? beaconLabel(deleteTarget, stationCallsign) : '(unset)'}"? This cannot be undone.
     </AlertDialog.Description>
     <div class="modal-footer">
       <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
