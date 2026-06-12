@@ -14,19 +14,14 @@
 // already on the wire. Round-trip latency is sub-second and the Date header
 // is 1-second resolution; both are negligible against the minutes-to-hours
 // skew this targets.
+//
+// The pure header/offset math lives in clock-offset-core.js so it can be
+// unit-tested without the Svelte compiler; this file is just the reactive
+// $state wrapper around it.
 
-// Below this magnitude the difference is just round-trip / 1-second header
-// resolution noise rather than a real clock disagreement; don't surface it.
-const SIGNIFICANT_MS = 2_000;
+import { isSignificantOffset, offsetFromHeaders } from './clock-offset-core.js';
 
-// Compact, human magnitude for an offset (sign handled by the caller).
-export function formatOffsetMagnitude(ms) {
-  const s = Math.round(Math.abs(ms) / 1000);
-  if (s < 90) return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 90) return `${m}m`;
-  return `${Math.round(m / 60)}h`;
-}
+export { formatOffsetMagnitude } from './clock-offset-core.js';
 
 export const clockOffset = (() => {
   let offsetMs = $state(0);
@@ -35,13 +30,12 @@ export const clockOffset = (() => {
   // observe reads the host clock from a response's Date header and refreshes
   // the offset. Safe to call on every response (200, 304, even errors) — the
   // header is present regardless, so the offset stays fresh between full
-  // reloads.
+  // reloads. Cached responses (those carrying an Age header) are ignored so a
+  // stale stored Date can't poison the offset.
   function observe(headers) {
-    const dateHdr = headers && typeof headers.get === 'function' && headers.get('Date');
-    if (!dateHdr) return;
-    const serverMs = Date.parse(dateHdr);
-    if (Number.isNaN(serverMs)) return;
-    offsetMs = serverMs - Date.now();
+    const next = offsetFromHeaders(headers, Date.now());
+    if (next === null) return;
+    offsetMs = next;
     known = true;
   }
 
@@ -54,6 +48,6 @@ export const clockOffset = (() => {
     get known() { return known; },
     // True only once we've seen a host timestamp and it differs enough to
     // matter to the operator.
-    get isSignificant() { return known && Math.abs(offsetMs) >= SIGNIFICANT_MS; },
+    get isSignificant() { return known && isSignificantOffset(offsetMs); },
   };
 })();
