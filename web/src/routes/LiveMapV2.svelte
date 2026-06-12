@@ -14,6 +14,7 @@
   import { mountStationsLayer } from '../lib/map/layers/stations.js';
   import { mountTrailsLayer } from '../lib/map/layers/trails.js';
   import { mountWeatherLayer } from '../lib/map/layers/weather.js';
+  import { mountRadarLayer } from '../lib/map/layers/radar.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
@@ -50,6 +51,7 @@
   let stationsLayer = null;
   let trailsLayer = null;
   let weatherLayer = null;
+  let radarLayer = null;
   let hoverPathLayer = null;
   let myPositionLayer = null;
   let mapRef = null;
@@ -67,6 +69,8 @@
     weather: true,
     myPosition: true,
     directRxOnly: false,
+    radar: true,
+    radarOpacity: 0.7,
   });
 
   // Direct RX predicate: a station qualifies if at least one of its
@@ -255,6 +259,9 @@
       },
     });
     weatherLayer = mountWeatherLayer(map, () => dataStore.stations);
+    radarLayer = mountRadarLayer(map, { minzoom: 3, maxzoom: 10 });
+    radarLayer.refresh();
+    radarLayer.startPolling(300000); // 5-min, matches the CronJob cadence
     hoverPathLayer = mountHoverPathLayer(map, () => {
       const my = dataStore.myPosition;
       return my ? { lat: my.lat, lon: my.lon } : null;
@@ -387,6 +394,14 @@
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
   });
+  $effect(() => {
+    const v = layerToggles.radar;
+    radarLayer?.setVisible(v);
+  });
+  $effect(() => {
+    const o = layerToggles.radarOpacity;
+    radarLayer?.setOpacity(o);
+  });
   // Direct RX filter: predicate is shared across stations/trails/weather
   // so the three layers stay in lockstep. my-position is the operator's
   // own beacon and is intentionally exempt.
@@ -492,11 +507,13 @@
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
+    radarLayer?.destroy();
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
+    radarLayer = null;
     hoverPathLayer = null;
     myPositionLayer = null;
     mapRef = null;
@@ -542,6 +559,25 @@
           onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
         />
         <span>Weather</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={layerToggles.radar}
+          onchange={(e) => (layerToggles.radar = e.currentTarget.checked)}
+        />
+        <span>Radar</span>
+      </label>
+      <label class="toggle-row">
+        <span>Radar opacity</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={layerToggles.radarOpacity}
+          oninput={(e) => (layerToggles.radarOpacity = Number(e.currentTarget.value))}
+        />
       </label>
       <label class="toggle-row">
         <input
