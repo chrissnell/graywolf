@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -178,9 +179,23 @@ func flattenAttr(out map[string]any, prefix string, a slog.Attr) {
 	// the Error() string so logged errors stay readable. slog's own
 	// handlers do the same.
 	if err, ok := v.(error); ok {
-		v = err.Error()
+		v = errString(err)
 	}
 	out[key] = v
+}
+
+// errString renders an error's message, degrading a typed-nil error (a
+// non-nil error interface wrapping a nil pointer/value -- the classic Go
+// gotcha) to "<nil>" instead of panicking when Error() dereferences its
+// nil receiver. Matches how slog's built-in handlers render such values.
+func errString(err error) string {
+	switch v := reflect.ValueOf(err); v.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		if v.IsNil() {
+			return "<nil>"
+		}
+	}
+	return err.Error()
 }
 
 // afterInsert delegates to maintenance() so the eviction policy can

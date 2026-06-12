@@ -3,6 +3,7 @@ package logbuffer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -98,6 +99,31 @@ func TestHandlerStringifiesErrorAttrs(t *testing.T) {
 	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
 	if !strings.Contains(attrs, `"err":"parse source: bad ssid \"D\""`) {
 		t.Fatalf("attrs missing stringified err: %s", attrs)
+	}
+}
+
+type typedNilErr struct{ msg string }
+
+func (e *typedNilErr) Error() string { return e.msg } // dereferences receiver
+
+func TestHandlerHandlesTypedNilErrorAttr(t *testing.T) {
+	h, db, _ := newTestHandler(t, slog.LevelDebug)
+	logger := slog.New(h)
+
+	// A typed-nil error: the interface is non-nil but wraps a nil pointer,
+	// so Error() would panic. The handler must degrade it to "<nil>"
+	// instead of crashing the logging goroutine.
+	var e *typedNilErr
+	logger.Debug("typed nil", "err", error(e))
+
+	var attrs string
+	db.gorm.Raw("SELECT attrs_json FROM logs ORDER BY id DESC LIMIT 1").Row().Scan(&attrs)
+	var m map[string]any
+	if err := json.Unmarshal([]byte(attrs), &m); err != nil {
+		t.Fatalf("unmarshal attrs %q: %v", attrs, err)
+	}
+	if got := m["err"]; got != "<nil>" {
+		t.Fatalf("err attr = %v, want <nil>", got)
 	}
 }
 
