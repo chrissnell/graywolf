@@ -16,26 +16,6 @@ Graywolf is used all around the world! **[See a map of currently active stations
 
 Written by Chris Snell, [NW5W](https://nw5w.com). 
 
-## Which download do I use?
-
-Grab the build that matches your hardware from the [latest release](https://github.com/chrissnell/graywolf/releases/latest). On Linux, pick the `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL), or `.tar.gz` (anything else) with the matching architecture suffix.
-
-| Your hardware | Build to download |
-|---|---|
-| PC, server, or mini-PC (Intel/AMD 64-bit) | `x86_64` (`amd64`) |
-| Raspberry Pi 3 / 4 / 5, Pi Zero 2 W, or any ARM board running a **64-bit** OS | `arm64` (`aarch64`) |
-| 32-bit OS on a NEON-capable ARMv7 board — Pi 2 / 3 / 4, Rockchip RV1106, BeagleBone, most modern SBCs | `armv7l` |
-| Oldest Pis — Pi 1, Pi Zero / Zero W (ARMv6) | `armv6l` |
-| macOS, Apple Silicon (M1–M4) | macOS `arm64` |
-| macOS, Intel | macOS `x86_64` |
-| Windows | `Windows_x86_64` installer |
-
-**Not sure?** On Linux, run `uname -m` — its output is exactly the suffix to look for: `x86_64`, `aarch64` (use the `arm64` build), `armv7l`, or `armv6l`.
-
-**armv6l vs. armv7l:** both are 32-bit ARM hard-float. The `armv7l` build enables NEON, so the Rust modem's demodulator runs vectorized and noticeably faster — use it whenever your board is Cortex-A7 or newer. The `armv6l` build is the universal fallback that runs on every 32-bit Pi (including the ARMv6-only Pi 1 / Zero) but stays scalar; it will also run on ARMv7 boards, just slower. Don't use `armv7l` on an ARMv6-only Pi — it will fail with an illegal-instruction error.
-
-Running a 64-bit OS on a Pi 3/4/5? Prefer the `arm64` build over either 32-bit one.
-
 The modem is written in Rust and includes a port of the AFSK demodulator from [Dire Wolf](https://github.com/wb2osz/direwolf) by WB2OSZ.  The decision-feedback AGC and hard-limiter correlator techniques are credited to Ion Todirel (W7ION), from his [libmodem](https://github.com/iontodirel/libmodem).
 
 The AX.25 decoding, APRS operatations (beacons, digipeater, and iGate), and the web API is handled by a service written in the Go programming language.
@@ -122,3 +102,23 @@ Reproduce with `./bench.sh`.
   - Windows installer
   - macOS binaries
   - Runs on x86-64 and ARM (Raspberry Pi)
+
+## Which download do I use?
+
+Grab the build that matches your hardware from the [latest release](https://github.com/chrissnell/graywolf/releases/latest). On Linux, pick the `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL), or `.tar.gz` (anything else) with the matching architecture suffix.
+
+| Your hardware | Build to download |
+|---|---|
+| PC, server, or mini-PC (Intel/AMD 64-bit) | `x86_64` (`amd64`) |
+| Raspberry Pi 3 / 4 / 5, Pi Zero 2 W, or any ARM board running a **64-bit** OS | `arm64` (`aarch64`) |
+| 32-bit OS on a NEON-capable ARMv7 board — Pi 2 / 3 / 4, Rockchip RV1106, BeagleBone, most modern SBCs | `armv7l` |
+| Oldest Pis — Pi 1, Pi Zero / Zero W (ARMv6) | `armv6l` |
+| macOS, Apple Silicon (M1–M4) | macOS `arm64` |
+| macOS, Intel | macOS `x86_64` |
+| Windows | `Windows_x86_64` installer |
+
+**Not sure?** On Linux, run `uname -m` — its output is exactly the suffix to look for: `x86_64`, `aarch64` (use the `arm64` build), `armv7l`, or `armv6l`.
+
+**armv6l vs. armv7l:** both are 32-bit ARM hard-float. The `armv7l` build enables NEON, so the Rust modem's demodulator runs vectorized and noticeably faster — use it whenever your board is Cortex-A7 or newer. The `armv6l` build is the universal fallback that runs on every 32-bit Pi (including the ARMv6-only Pi 1 / Zero) but stays scalar; it will also run on ARMv7 boards, just slower. Don't use `armv7l` on an ARMv6-only Pi — it will fail with an illegal-instruction error.
+
+Running a 64-bit OS on a Pi 3/4/5? Prefer the `arm64` build over either 32-bit one.
