@@ -40,6 +40,7 @@ mod android_impl {
     struct AudioTxCallback {
         obj: GlobalRef,
         method: JMethodID,
+        presented_method: JMethodID,
     }
     unsafe impl Send for AudioTxCallback {}
 
@@ -110,7 +111,18 @@ mod android_impl {
                 return;
             }
         };
-        *audio_tx_slot().lock().unwrap() = Some(AudioTxCallback { obj: global, method });
+        let presented_method = match env.get_method_id(&class, "presentedFrames", "()J") {
+            Ok(m) => m,
+            Err(e) => {
+                error!("installAudioTxCallback: get_method_id(presentedFrames) failed: {e}");
+                return;
+            }
+        };
+        *audio_tx_slot().lock().unwrap() = Some(AudioTxCallback {
+            obj: global,
+            method,
+            presented_method,
+        });
         log::info!("installAudioTxCallback: installed");
     }
 
@@ -230,6 +242,43 @@ mod android_impl {
             .i()
             .map_err(|e| format!("tx_push_samples bad return type: {e}"))
     }
+
+    /// Invoke the installed `AudioTxCallback.presentedFrames() -> long`.
+    ///
+    /// Returns the absolute count of frames physically presented at the output
+    /// (see the Kotlin doc), used by the TX drain loop to hold PTT until the
+    /// audio has actually left the dongle. Errors when no callback is installed
+    /// or the JVM attach/call fails.
+    pub(crate) fn jni_audio_tx_presented_frames() -> Result<i64, String> {
+        let vm = get_vm()?;
+
+        let (callback, method_id) = {
+            let slot = audio_tx_slot().lock().unwrap();
+            let cb = slot
+                .as_ref()
+                .ok_or_else(|| "no AudioTx callback installed".to_string())?;
+            (cb.obj.clone(), cb.presented_method)
+        };
+
+        let mut env = vm
+            .attach_current_thread()
+            .map_err(|e| format!("presentedFrames: attach_current_thread: {e}"))?;
+
+        // SAFETY: method ID and GlobalRef are valid for this callback object.
+        let result = unsafe {
+            env.call_method_unchecked(
+                callback.as_obj(),
+                method_id,
+                jni::signature::ReturnType::Primitive(jni::signature::Primitive::Long),
+                &[],
+            )
+        }
+        .map_err(|e| format!("presentedFrames JNI call failed: {e}"))?;
+
+        result
+            .j()
+            .map_err(|e| format!("presentedFrames bad return type: {e}"))
+    }
 }
 
 // ── Host stub (android-test-stub feature) ────────────────────────────────────
@@ -241,6 +290,8 @@ mod stub_impl {
     static PTT_MOCK: Mutex<Option<Box<dyn Fn(i32, bool) -> bool + Send + Sync>>> =
         Mutex::new(None);
     static AUDIO_TX_MOCK: Mutex<Option<Box<dyn Fn(&[i16]) -> i32 + Send + Sync>>> =
+        Mutex::new(None);
+    static AUDIO_TX_PRESENTED_MOCK: Mutex<Option<Box<dyn Fn() -> i64 + Send + Sync>>> =
         Mutex::new(None);
 
     /// Test-only: install a closure that receives `pttSet(method, keyed)` calls.
@@ -261,10 +312,20 @@ mod stub_impl {
         *AUDIO_TX_MOCK.lock().unwrap() = Some(Box::new(f));
     }
 
-    /// Test-only: clear both mocks. Call between test cases to reset state.
+    /// Test-only: install a closure that produces the AudioTrack's current
+    /// absolute presented-frame count (the value `presentedFrames()` returns).
+    pub fn install_audio_tx_presented_mock<F>(f: F)
+    where
+        F: Fn() -> i64 + Send + Sync + 'static,
+    {
+        *AUDIO_TX_PRESENTED_MOCK.lock().unwrap() = Some(Box::new(f));
+    }
+
+    /// Test-only: clear all mocks. Call between test cases to reset state.
     pub fn clear_mocks() {
         *PTT_MOCK.lock().unwrap() = None;
         *AUDIO_TX_MOCK.lock().unwrap() = None;
+        *AUDIO_TX_PRESENTED_MOCK.lock().unwrap() = None;
     }
 
     pub(crate) fn jni_ptt_set(method: i32, keyed: bool) -> Result<(), String> {
@@ -286,17 +347,29 @@ mod stub_impl {
             .ok_or_else(|| "no AudioTx callback installed".to_string())?;
         Ok(f(buf))
     }
+
+    pub(crate) fn jni_audio_tx_presented_frames() -> Result<i64, String> {
+        let guard = AUDIO_TX_PRESENTED_MOCK.lock().unwrap();
+        let f = guard
+            .as_ref()
+            .ok_or_else(|| "no AudioTx callback installed".to_string())?;
+        Ok(f())
+    }
 }
 
 // ── Public surface — re-export whichever impl is active ──────────────────────
 
 #[cfg(all(target_os = "android", not(feature = "android-test-stub")))]
-pub(crate) use android_impl::{install_audio_tx, install_ptt, jni_ptt_set, jni_tx_push_samples};
+pub(crate) use android_impl::{
+    install_audio_tx, install_ptt, jni_audio_tx_presented_frames, jni_ptt_set, jni_tx_push_samples,
+};
 
 #[cfg(feature = "android-test-stub")]
-pub(crate) use stub_impl::{jni_ptt_set, jni_tx_push_samples};
+pub(crate) use stub_impl::{jni_audio_tx_presented_frames, jni_ptt_set, jni_tx_push_samples};
 #[cfg(feature = "android-test-stub")]
-pub use stub_impl::{clear_mocks, install_audio_tx_mock, install_ptt_mock};
+pub use stub_impl::{
+    clear_mocks, install_audio_tx_mock, install_audio_tx_presented_mock, install_ptt_mock,
+};
 
 // (When building on the host without either flag, this module exposes nothing
 //  and the android/ pub mod declaration below is itself cfg-gated, so the
@@ -306,8 +379,10 @@ pub use stub_impl::{clear_mocks, install_audio_tx_mock, install_ptt_mock};
 
 #[cfg(all(test, feature = "android-test-stub"))]
 mod tests {
-    use super::stub_impl::{clear_mocks, install_audio_tx_mock, install_ptt_mock};
-    use super::{jni_ptt_set, jni_tx_push_samples};
+    use super::stub_impl::{
+        clear_mocks, install_audio_tx_mock, install_audio_tx_presented_mock, install_ptt_mock,
+    };
+    use super::{jni_audio_tx_presented_frames, jni_ptt_set, jni_tx_push_samples};
     use serial_test::serial;
 
     // --- PTT tests -----------------------------------------------------------
@@ -400,8 +475,33 @@ mod tests {
     fn clear_mocks_resets_both_callbacks() {
         install_ptt_mock(|_, _| true);
         install_audio_tx_mock(|_| 0);
+        install_audio_tx_presented_mock(|| 0);
         clear_mocks();
         assert!(jni_ptt_set(1, true).is_err());
         assert!(jni_tx_push_samples(&[1]).is_err());
+        assert!(jni_audio_tx_presented_frames().is_err());
+    }
+
+    // --- presentedFrames tests ----------------------------------------------
+
+    #[test]
+    #[serial]
+    fn presented_frames_without_mock_returns_err() {
+        clear_mocks();
+        let err = jni_audio_tx_presented_frames().unwrap_err();
+        assert!(
+            err.contains("no AudioTx callback installed"),
+            "unexpected message: {err}"
+        );
+        clear_mocks();
+    }
+
+    #[test]
+    #[serial]
+    fn presented_frames_with_mock_returns_value() {
+        clear_mocks();
+        install_audio_tx_presented_mock(|| 4242);
+        assert_eq!(jni_audio_tx_presented_frames().unwrap(), 4242);
+        clear_mocks();
     }
 }

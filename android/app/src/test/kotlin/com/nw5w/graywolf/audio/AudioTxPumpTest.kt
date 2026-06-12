@@ -3,6 +3,7 @@ package com.nw5w.graywolf.audio
 import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.AudioTimestamp
 import android.media.AudioTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -111,5 +112,90 @@ class AudioTxPumpTest {
         pump.start() // second call — must short-circuit
 
         assertEquals(1, trackCreateCount)
+    }
+
+    // -----------------------------------------------------------------------
+    // presentedFrames(): physical playout position for the TX drain wait.
+    // -----------------------------------------------------------------------
+
+    // Stub track.write to advance framesWritten by the requested count.
+    private fun AudioTrack.stubWriteEchoesCount() {
+        whenever(this.write(any<ShortArray>(), any(), any(), any()))
+            .thenAnswer { it.getArgument<Int>(2) }
+    }
+
+    @Test fun `presentedFrames returns 0 before start`() {
+        val (ctx, _) = contextWith()
+        val pump = AudioTxPump(ctx) { _ -> mockTrack() }
+        // No start() → no track → nothing presented.
+        assertEquals(0L, pump.presentedFrames())
+    }
+
+    @Test fun `presentedFrames uses getTimestamp position clamped to frames written`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        // 40 frames presented; nanoTime far in the future so the elapsed-time
+        // extrapolation contributes nothing → deterministic 40.
+        whenever(track.getTimestamp(any())).thenAnswer {
+            val ts = it.getArgument<AudioTimestamp>(0)
+            ts.framePosition = 40L
+            ts.nanoTime = System.nanoTime() + 10_000_000_000L
+            true
+        }
+        val pump = AudioTxPump(ctx) { _ -> track }
+        pump.start()
+        pump.pushSamples(ShortArray(100), 100) // framesWritten = 100
+
+        assertEquals(40L, pump.presentedFrames())
+    }
+
+    @Test fun `presentedFrames never exceeds frames written`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        // Stale timestamp far in the past → naive extrapolation explodes past
+        // what we wrote; presentedFrames must clamp to framesWritten so an
+        // underrun between transmissions can't make us unkey early.
+        whenever(track.getTimestamp(any())).thenAnswer {
+            val ts = it.getArgument<AudioTimestamp>(0)
+            ts.framePosition = 50L
+            ts.nanoTime = System.nanoTime() - 10_000_000_000L
+            true
+        }
+        val pump = AudioTxPump(ctx) { _ -> track }
+        pump.start()
+        pump.pushSamples(ShortArray(100), 100)
+
+        assertEquals(100L, pump.presentedFrames())
+    }
+
+    @Test fun `presentedFrames frames-written ceiling resets on track restart`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        // getTimestamp unavailable → falls back to a playback head of 50, but a
+        // freshly (re)started track has presented nothing, so the frames-written
+        // ceiling must clamp to 0. A stale ceiling from before the restart would
+        // leak 50 and risk an early unkey.
+        whenever(track.getTimestamp(any())).thenReturn(false)
+        whenever(track.playbackHeadPosition).thenReturn(50)
+        val pump = AudioTxPump(ctx) { _ -> track }
+
+        pump.start()
+        pump.pushSamples(ShortArray(100), 100) // framesWritten = 100
+        pump.stop()
+        pump.start() // new track → framesWritten must reset to 0
+
+        assertEquals(0L, pump.presentedFrames())
+    }
+
+    @Test fun `presentedFrames falls back to playback head when timestamp unavailable`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        whenever(track.getTimestamp(any())).thenReturn(false)
+        whenever(track.playbackHeadPosition).thenReturn(30)
+        val pump = AudioTxPump(ctx) { _ -> track }
+        pump.start()
+        pump.pushSamples(ShortArray(100), 100)
+
+        assertEquals(30L, pump.presentedFrames())
     }
 }

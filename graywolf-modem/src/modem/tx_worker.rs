@@ -692,4 +692,54 @@ mod tests {
             "manual_key(true) then manual_key(false) should produce Key then Unkey"
         );
     }
+
+    /// Regression guard for Android TX-tail clipping: with the AndroidTxSink,
+    /// `drive_tx_cycle` must keep PTT keyed until the audio has been *physically
+    /// presented* at the output, not unkey as soon as the samples are queued
+    /// into the AudioTrack buffer. We script the output position to lag behind
+    /// (samples still draining through the HAL/USB pipeline) for several drain
+    /// polls, then catch up; the loop must have polled while waiting.
+    #[cfg(feature = "android-test-stub")]
+    #[test]
+    #[serial_test::serial]
+    fn drive_tx_cycle_holds_until_android_output_presents_all_frames() {
+        use crate::android_audio_tx::AndroidTxSink;
+        use std::sync::atomic::Ordering::SeqCst;
+
+        crate::clear_mocks();
+        crate::install_audio_tx_mock(|buf| buf.len() as i32);
+
+        let total: i64 = 100;
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let calls2 = calls.clone();
+        crate::install_audio_tx_presented_mock(move || {
+            // call 0 = baseline capture in submit(); calls 1..=3 = drain polls
+            // while the tail is still in the pipeline; call 4 = fully presented.
+            let n = calls2.fetch_add(1, SeqCst);
+            if n <= 3 {
+                0
+            } else {
+                total
+            }
+        });
+
+        let mock = MockPtt::default();
+        let ptt_log = mock.log.clone();
+        let mut driver: Box<dyn PttDriver> = Box::new(mock);
+        let sink = AndroidTxSink::new();
+
+        match drive_tx_cycle(driver.as_mut(), &sink, vec![0i16; total as usize], 22050) {
+            TxCycleOutcome::Done => {}
+            other => panic!("expected Done, got {:?}", other),
+        }
+
+        assert_eq!(*ptt_log.lock().unwrap(), vec![PttCall::Key, PttCall::Unkey]);
+        assert!(
+            calls.load(SeqCst) > 4,
+            "drain loop must poll presented frames while the tail drains \
+             (only {} calls — it unkeyed too early)",
+            calls.load(SeqCst)
+        );
+        crate::clear_mocks();
+    }
 }
