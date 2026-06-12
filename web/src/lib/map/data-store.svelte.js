@@ -21,6 +21,7 @@
 // until cutover at task 29.
 
 import { SvelteMap } from 'svelte/reactivity';
+import { clockOffset } from './clock-offset.svelte.js';
 
 const POLL_BASE_MS = 5_000;
 const POLL_MAX_MS = 60_000;
@@ -73,7 +74,9 @@ export function createDataStore() {
   }
 
   function pruneStale() {
-    const cutoff = Date.now() - timerangeMs;
+    // serverNow() (host clock) so the cutoff matches the clock that stamped
+    // last_heard — see clock-offset.svelte.js / GH #234.
+    const cutoff = clockOffset.serverNow() - timerangeMs;
     for (const [callsign, s] of stations) {
       const heard = new Date(s.last_heard).getTime();
       if (heard < cutoff) {
@@ -152,6 +155,10 @@ export function createDataStore() {
         credentials: 'same-origin',
         headers,
       });
+
+      // Refresh the server-clock offset from the host-stamped Date header on
+      // every response (200 and 304 both carry it).
+      clockOffset.observe(res.headers);
 
       if (res.status === 304) {
         backoff = POLL_BASE_MS;
