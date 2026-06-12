@@ -17,6 +17,7 @@
   import { mountWindBarbsLayer } from '../lib/map/layers/wind-barbs.js';
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
+  import { mountRadarLayer } from '../lib/map/layers/radar.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
   import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
   import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
@@ -58,7 +59,14 @@
   let windBarbsLayer = null;
   let hoverPathLayer = null;
   let myPositionLayer = null;
+  let radarLayer = null;
   let fixedPointsLayer = null;
+
+  // Radar overlay settings -- persisted per browser (not per account).
+  const radarSettings = $state({
+    visible: localStorage.getItem('gw_radar_visible') === '1',
+    opacity: parseFloat(localStorage.getItem('gw_radar_opacity') ?? '0.6'),
+  });
   let mapRef = null;
   let activePopup = null;
 
@@ -296,6 +304,10 @@
 
   function onMapReady(map) {
     mapRef = map;
+    // Radar first so the raster/fill sits below trails and station markers in
+    // the GL stack. DOM layers (stations, weather) always render above the
+    // canvas regardless, but GL line layers (trails) would otherwise cover it.
+    radarLayer = mountRadarLayer(map, radarSettings);
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
     trailsLayer = mountTrailsLayer(map, () => dataStore.stations, {
@@ -428,6 +440,7 @@
     const _size = dataStore.stations.size;
     const _isMetric = unitsState.isMetric;
     const _myPos = dataStore.myPosition; // track
+    if (radarLayer) radarLayer.refresh();
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
     if (weatherLayer) weatherLayer.refresh();
@@ -468,6 +481,16 @@
   $effect(() => {
     const v = layerToggles.myPosition;
     myPositionLayer?.setVisible(v);
+  });
+  $effect(() => {
+    const v = radarSettings.visible;
+    localStorage.setItem('gw_radar_visible', v ? '1' : '0');
+    radarLayer?.setVisible(v);
+  });
+  $effect(() => {
+    const v = radarSettings.opacity;
+    localStorage.setItem('gw_radar_opacity', String(v));
+    radarLayer?.setOpacity(v);
   });
   $effect(() => {
     const v = layerToggles.fixedPoints;
@@ -576,6 +599,7 @@
   onDestroy(() => {
     dataStore.stop();
     closePopup();
+    radarLayer?.destroy();
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
@@ -583,6 +607,7 @@
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
     fixedPointsLayer?.destroy();
+    radarLayer = null;
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
@@ -658,7 +683,28 @@
         />
         <span>Direct RX</span>
       </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={radarSettings.visible}
+          onchange={(e) => (radarSettings.visible = e.currentTarget.checked)}
+        />
+        <span>Radar</span>
+      </label>
     </div>
+
+    <label class="timerange-label" for="radar-opacity-range">
+      Radar opacity: {Math.round(radarSettings.opacity * 100)}%
+    </label>
+    <input
+      id="radar-opacity-range"
+      type="range"
+      min="0.1"
+      max="1.0"
+      step="0.05"
+      class="radar-opacity-range"
+      bind:value={radarSettings.opacity}
+    />
 
     <label class="timerange-label" for="map-timerange-select">Time range</label>
     <select
@@ -900,6 +946,11 @@
     text-transform: uppercase;
     letter-spacing: 1px;
     color: var(--color-text-muted);
+  }
+  .radar-opacity-range {
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--color-accent, #4a9eff);
   }
   .map-timerange-select {
     width: 100%;
