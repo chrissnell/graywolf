@@ -46,7 +46,7 @@ func (s *Server) getLocalBounds(w http.ResponseWriter, r *http.Request) {
 				"slug", row.Slug, "raw", *row.BBox, "err", err)
 			continue
 		}
-		out[row.Slug] = bbox
+		out[row.Slug] = dto.LocalBoundsEntry{BBox: bbox, MaxZoom: row.MaxZoom}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
