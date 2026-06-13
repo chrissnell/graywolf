@@ -587,6 +587,11 @@ fn run_demod(
                                                 audio_channel: 0,
                                             },
                                     };
+                                    // Ok here means "enqueued on the TX
+                                    // worker", not "played out" -- PTT keying
+                                    // and audio happen async in process_job.
+                                    // Matches the desktop handler's reply
+                                    // semantics (modem::handle_transmit_test_signal).
                                     match tx_worker.transmit(job) {
                                         Ok(()) => {
                                             config_state::increment_tx_frames();
