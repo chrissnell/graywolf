@@ -260,3 +260,21 @@ func TestNew_NoDiskCacheStillFunctions(t *testing.T) {
 		t.Fatalf("Refresh: %v", err)
 	}
 }
+
+func TestHasSlugWorld(t *testing.T) {
+	c := Catalog{World: &WorldMap{Name: "World", SizeBytes: 1, MaxZoom: 7}}
+	c.indexSlugs()
+	if !c.HasSlug("world") {
+		t.Fatal("HasSlug(\"world\") = false, want true")
+	}
+	empty := Catalog{}
+	empty.indexSlugs()
+	if empty.HasSlug("world") {
+		t.Fatal("HasSlug(\"world\") = true on catalog without world, want false")
+	}
+	// Linear-scan fallback (no index built).
+	noIdx := Catalog{World: &WorldMap{MaxZoom: 7}}
+	if !noIdx.HasSlug("world") {
+		t.Fatal("HasSlug fallback for world = false, want true")
+	}
+}

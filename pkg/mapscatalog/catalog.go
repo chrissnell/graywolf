@@ -48,12 +48,25 @@ type State struct {
 	BBox      *[4]float64 `json:"bbox,omitempty"`
 }
 
+// WorldMap is the single global low-zoom basemap archive. Unlike the
+// regional entries it carries a MaxZoom: the archive is capped (e.g.
+// z7), so the offline render path overzooms its top tile rather than
+// requesting zooms the archive does not contain.
+type WorldMap struct {
+	Name      string      `json:"name"`
+	SizeBytes int64       `json:"sizeBytes"`
+	SHA256    string      `json:"sha256"`
+	BBox      *[4]float64 `json:"bbox,omitempty"`
+	MaxZoom   int         `json:"maxZoom"`
+}
+
 type Catalog struct {
 	SchemaVersion int        `json:"schemaVersion"`
 	GeneratedAt   string     `json:"generatedAt"`
 	Countries     []Country  `json:"countries"`
 	Provinces     []Province `json:"provinces"`
 	States        []State    `json:"states"`
+	World         *WorldMap  `json:"world,omitempty"`
 
 	// slugIndex is a lazily-built O(1) membership lookup populated by
 	// indexSlugs. Not serialized; rebuilt on every fresh fetch.
@@ -88,6 +101,9 @@ func (c *Catalog) HasSlug(slug string) bool {
 			return true
 		}
 	}
+	if c.World != nil && slug == "world" {
+		return true
+	}
 	return false
 }
 
@@ -103,6 +119,9 @@ func (c *Catalog) indexSlugs() {
 	}
 	for _, p := range c.Provinces {
 		idx["province/"+p.ISO2+"/"+p.Slug] = struct{}{}
+	}
+	if c.World != nil {
+		idx["world"] = struct{}{}
 	}
 	c.slugIndex = idx
 }
