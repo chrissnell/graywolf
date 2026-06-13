@@ -50,8 +50,22 @@ export const localBoundsStore = (() => {
     get boundsBySlug() {
       const out = new Map();
       if (!raw) return out;
-      for (const [slug, bbox] of Object.entries(raw)) {
+      for (const [slug, entry] of Object.entries(raw)) {
+        const bbox = entry && entry.bbox;
         if (Array.isArray(bbox) && bbox.length === 4) out.set(slug, bbox);
+      }
+      return out;
+    },
+    // maxZoomBySlug returns Map<slug, number>: the archive's top zoom.
+    // 0 (or absent) means "no cap" -- a regional, full-detail archive.
+    // The world archive reports its real cap so the federated protocol
+    // can let MapLibre overzoom its top tile instead of requesting
+    // zooms the archive does not contain.
+    get maxZoomBySlug() {
+      const out = new Map();
+      if (!raw) return out;
+      for (const [slug, entry] of Object.entries(raw)) {
+        if (entry && Number.isFinite(entry.maxZoom)) out.set(slug, entry.maxZoom);
       }
       return out;
     },
