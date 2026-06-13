@@ -42,3 +42,23 @@ test('refresh busts the tile cache only when the time bucket rolls over', () => 
   assert.match(map._sources['radar-tiles'].tiles[0], /\?v=1$/);
   assert.notEqual(map._sources['radar-tiles'].tiles[0], initial);
 });
+
+test('setRegion tears down the US vector layer and rebuilds the world raster overlay', () => {
+  const map = fakeMap();
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, region: 'us', now: () => 0 });
+  assert.equal(map._sources['radar-tiles'].type, 'vector');
+  assert.ok(map._layers['radar-fill']);
+
+  layer.setRegion('world');
+  // Vector fill layer is gone; the RainViewer raster source/layer is mounted.
+  assert.equal(map._layers['radar-fill'], undefined);
+  assert.equal(map._sources['radar-tiles'].type, 'raster');
+  assert.match(map._sources['radar-tiles'].tiles[0], /\/radar\/rainviewer\//);
+  assert.ok(map._layers['radar-raster']);
+
+  // Switching back restores the US vector overlay.
+  layer.setRegion('us');
+  assert.equal(map._sources['radar-tiles'].type, 'vector');
+  assert.ok(map._layers['radar-fill']);
+  assert.equal(map._layers['radar-raster'], undefined);
+});

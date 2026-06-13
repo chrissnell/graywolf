@@ -18,6 +18,7 @@
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { mountRadarLayer } from '../lib/map/layers/radar.js';
+  import { RADAR_REGION_US, RADAR_REGION_WORLD } from '../lib/map/sources/radar-source.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
   import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
   import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
@@ -67,6 +68,8 @@
   const radarSettings = $state({
     visible: localStorage.getItem('gw_radar_visible') === '1',
     opacity: parseFloat(localStorage.getItem('gw_radar_opacity') ?? '0.6'),
+    // Coverage region: 'us' = NEXRAD overlay, 'world' = RainViewer global.
+    region: localStorage.getItem('gw_radar_region') ?? RADAR_REGION_US,
   });
   let mapRef = null;
   let activePopup = null;
@@ -509,6 +512,11 @@
     radarLayer?.setOpacity(v);
   });
   $effect(() => {
+    const v = radarSettings.region;
+    localStorage.setItem('gw_radar_region', v);
+    radarLayer?.setRegion(v);
+  });
+  $effect(() => {
     const v = layerToggles.fixedPoints;
     fixedPointsLayer?.setVisible(v);
   });
@@ -754,6 +762,16 @@
       class="radar-opacity-range"
       bind:value={radarSettings.opacity}
     />
+
+    <label class="timerange-label" for="radar-region-select">Radar region</label>
+    <select
+      id="radar-region-select"
+      class="map-timerange-select"
+      bind:value={radarSettings.region}
+    >
+      <option value={RADAR_REGION_US}>United States (NEXRAD)</option>
+      <option value={RADAR_REGION_WORLD}>Rest of world (RainViewer)</option>
+    </select>
 
     <label class="timerange-label" for="map-timerange-select">Time range</label>
     <select

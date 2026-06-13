@@ -38,7 +38,17 @@ export const ACTIVE_RADAR_BACKEND = RADAR_BACKEND_VECTOR;
 export const RADAR_TILE_BASE = 'https://maps.nw5w.com';
 
 const RADAR_ATTRIBUTION = 'NEXRAD via NWS / Iowa State Mesonet';
+const RAINVIEWER_ATTRIBUTION = 'Radar © RainViewer';
 const RADAR_SOURCE_ID = 'radar-tiles';
+
+// Coverage region -- an axis orthogonal to the US backend (raster|vector). The
+// US overlay is high-fidelity NEXRAD (radarProvider); the rest of the world is
+// the RainViewer global composite, proxied as a raster overlay by the origin
+// Worker under /radar/rainviewer/*. The operator picks the region on the maps
+// tab; default is US.
+export const RADAR_REGION_US = 'us';
+export const RADAR_REGION_WORLD = 'world';
+export const ACTIVE_RADAR_REGION = RADAR_REGION_US;
 
 // Build an XYZ tile-URL template under the Worker's /radar/ namespace.
 export function radarTileUrl(product, ext) {
@@ -125,6 +135,54 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
     };
   }
   throw new Error(`unsupported radar backend: ${backend}`);
+}
+
+// Rest-of-world overlay: the RainViewer global composite, proxied as a raster
+// pull-through by the origin Worker (/radar/rainviewer/*). Same descriptor
+// shape as the US raster backend, so radar.js consumes it unchanged. maxzoom
+// caps at RainViewer's native z7 so MapLibre overzooms the last real tile
+// instead of requesting non-existent z8+ tiles (the Worker would 404 them).
+// cacheBust: the Worker resolves "latest" server-side and RainViewer publishes
+// a new frame ~every 10 min, so -- like the vector backend -- we swap a `?v=`
+// template on a cadence to make MapLibre refetch its in-memory tiles.
+export function worldRadarProvider() {
+  return {
+    sourceId: RADAR_SOURCE_ID,
+    source: {
+      type: 'raster',
+      tiles: [rainviewerTileUrl()],
+      tileSize: 256,
+      maxzoom: 7,
+      attribution: RAINVIEWER_ATTRIBUTION,
+    },
+    layers: [
+      {
+        id: 'radar-raster',
+        type: 'raster',
+        source: RADAR_SOURCE_ID,
+        paint: { 'raster-resampling': 'linear' },
+      },
+    ],
+    opacity: { property: 'raster-opacity', layerIds: ['radar-raster'] },
+    cacheBust: (v) => [rainviewerTileUrl(v)],
+  };
+}
+
+// RainViewer raster tile template under the Worker's /radar/rainviewer/ route.
+// Optional cache-bust token `v` (a time bucket, see frameBucket) is appended so
+// a newly published frame looks like a new source revision to MapLibre; the
+// Worker ignores the param.
+export function rainviewerTileUrl(v) {
+  const bust = v == null ? '' : `?v=${v}`;
+  return `${RADAR_TILE_BASE}/radar/rainviewer/{z}/{x}/{y}.png${bust}`;
+}
+
+// Region-aware provider seam consumed by radar.js. US delegates to the backend
+// logic (vector contours today); world returns the RainViewer raster overlay.
+// Region is orthogonal to the US backend, so flipping ACTIVE_RADAR_BACKEND and
+// switching regions are independent.
+export function radarProviderForRegion(region = ACTIVE_RADAR_REGION) {
+  return region === RADAR_REGION_WORLD ? worldRadarProvider() : radarProvider();
 }
 
 // Vector contour tile template. The Worker route is cycle-less; an optional
