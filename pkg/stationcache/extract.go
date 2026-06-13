@@ -24,6 +24,7 @@ type CacheEntry struct {
 	Path      []string
 	Hops      int
 	Direction string
+	Gated     bool // arrived as the inner packet of an Internet-to-RF third-party gate
 	Channel   uint32
 	Comment   string
 	Weather   *Weather
@@ -41,7 +42,14 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 	}
 
 	// Third-party unwrapping: use the inner packet's Source/Path/Position.
+	// We treat any third-party (`}`) packet as Internet-to-RF gated traffic.
+	// In modern APRS that framing is, in practice, exclusively IGate->RF
+	// gating (the inner path carries TCPIP/qA* markers); the rare, deprecated
+	// RF-to-RF third-party relay would also be flagged here, an accepted
+	// trade-off for keying on the structural wrapper rather than parsing the
+	// path. The "RF Only" map filter uses this to drop gated points.
 	pkt := decoded
+	gated := decoded.ThirdParty != nil
 	if decoded.ThirdParty != nil {
 		pkt = decoded.ThirdParty
 	}
@@ -63,7 +71,7 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 
 	// Object or item → keyed by object/item name in the "obj:" namespace.
 	if pkt.Object != nil {
-		e := buildObjectEntry(pkt.Object.Name, pkt.Object.Live, pkt.Object.Position, pkt.Object.Comment, via, path, hops, dir, ch, ts)
+		e := buildObjectEntry(pkt.Object.Name, pkt.Object.Live, pkt.Object.Position, pkt.Object.Comment, via, path, hops, dir, gated, ch, ts)
 		if pkt.Weather != nil {
 			e.Weather = convertWeather(pkt.Weather)
 		}
@@ -72,13 +80,13 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 		// Also emit a station entry for the originator if we have
 		// a top-level position (rare but possible in some encodings).
 		if pkt.Position != nil {
-			entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, ch, ts, pkt.Weather))
+			entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, gated, ch, ts, pkt.Weather))
 		}
 		return entries
 	}
 
 	if pkt.Item != nil {
-		e := buildObjectEntry(pkt.Item.Name, pkt.Item.Live, pkt.Item.Position, pkt.Item.Comment, via, path, hops, dir, ch, ts)
+		e := buildObjectEntry(pkt.Item.Name, pkt.Item.Live, pkt.Item.Position, pkt.Item.Comment, via, path, hops, dir, gated, ch, ts)
 		if pkt.Weather != nil {
 			e.Weather = convertWeather(pkt.Weather)
 		}
@@ -89,14 +97,14 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 	// Normal station packet — position may come from Position field
 	// (includes Mic-E, which the parser copies to pkt.Position).
 	if pkt.Position != nil || pkt.Weather != nil {
-		entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, ch, ts, pkt.Weather))
+		entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, gated, ch, ts, pkt.Weather))
 		return entries
 	}
 
 	return nil
 }
 
-func buildStationEntry(callsign string, pos *aprs.Position, comment, via string, path []string, hops int, dir string, ch uint32, ts time.Time, wx *aprs.Weather) CacheEntry {
+func buildStationEntry(callsign string, pos *aprs.Position, comment, via string, path []string, hops int, dir string, gated bool, ch uint32, ts time.Time, wx *aprs.Weather) CacheEntry {
 	e := CacheEntry{
 		Key:       "stn:" + callsign,
 		Callsign:  callsign,
@@ -104,6 +112,7 @@ func buildStationEntry(callsign string, pos *aprs.Position, comment, via string,
 		Path:      path,
 		Hops:      hops,
 		Direction: dir,
+		Gated:     gated,
 		Channel:   ch,
 		Comment:   comment,
 		Timestamp: ts,
@@ -125,7 +134,7 @@ func buildStationEntry(callsign string, pos *aprs.Position, comment, via string,
 	return e
 }
 
-func buildObjectEntry(name string, live bool, pos *aprs.Position, comment, via string, path []string, hops int, dir string, ch uint32, ts time.Time) CacheEntry {
+func buildObjectEntry(name string, live bool, pos *aprs.Position, comment, via string, path []string, hops int, dir string, gated bool, ch uint32, ts time.Time) CacheEntry {
 	e := CacheEntry{
 		Key:       "obj:" + name,
 		Callsign:  name,
@@ -135,6 +144,7 @@ func buildObjectEntry(name string, live bool, pos *aprs.Position, comment, via s
 		Path:      path,
 		Hops:      hops,
 		Direction: dir,
+		Gated:     gated,
 		Channel:   ch,
 		Comment:   comment,
 		Timestamp: ts,

@@ -208,13 +208,34 @@ func TestExtractEntry_ThirdPartyUnwrap(t *testing.T) {
 	assertEqual(t, "Callsign", e.Callsign, "W2INNER")
 	assertFloat(t, "Lat", e.Lat, 41.0)
 	assertEqual(t, "Via", e.Via, "is")
-	assertEqual(t, "Hops", e.Hops, 1) // only N0DIGI* is a real digi; WIDE1*/RELAY* are aliases
+	assertEqual(t, "Hops", e.Hops, 1)     // only N0DIGI* is a real digi; WIDE1*/RELAY* are aliases
+	assertBool(t, "Gated", e.Gated, true) // unwrapped third party → Internet-to-RF gated
 	assertEqual(t, "Comment", e.Comment, "inner comment")
 	// Inner packet has zero timestamp → should fall back to outer packet's timestamp
 	outerTS := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
 	if !e.Timestamp.Equal(outerTS) {
 		t.Errorf("Timestamp: got %v, want outer packet timestamp %v", e.Timestamp, outerTS)
 	}
+}
+
+func TestExtractEntry_DirectRFNotGated(t *testing.T) {
+	// A normal RF-heard packet (no third-party wrapper) is not gated.
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1ABC-9",
+		Path:   []string{"WIDE1-1*"},
+		Position: &aprs.Position{
+			Latitude:  41.0,
+			Longitude: -106.0,
+			Symbol:    aprs.Symbol{Table: '/', Code: '>'},
+		},
+		Timestamp: time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	assertBool(t, "Gated", entries[0].Gated, false)
 }
 
 func TestExtractEntry_ThirdPartyTimestampFallback(t *testing.T) {

@@ -84,6 +84,7 @@
     myPosition: true,
     fixedPoints: true,
     directRxOnly: false,
+    rfOnly: false,
   });
 
   // Add-fixed-point dialog state. Opened from the context menu with the
@@ -98,6 +99,20 @@
     if (!Array.isArray(pts) || pts.length === 0) return false;
     for (const p of pts) {
       if (p.direction === 'RX' && (p.hops ?? 0) === 0) return true;
+    }
+    return false;
+  }
+
+  // RF Only predicate: a station qualifies if at least one position was
+  // heard over the air (RX) and did not arrive via Internet-to-RF gating
+  // (the `gated` flag, set on the inner packet of a third-party gate).
+  // Unlike Direct RX this keeps RF-digipeated stations; it only drops
+  // points that are merely Internet traffic some iGate pushed onto RF.
+  function isRfOnly(station) {
+    const pts = station?.positions;
+    if (!Array.isArray(pts) || pts.length === 0) return false;
+    for (const p of pts) {
+      if (p.direction === 'RX' && !p.gated) return true;
     }
     return false;
   }
@@ -497,12 +512,16 @@
     const v = layerToggles.fixedPoints;
     fixedPointsLayer?.setVisible(v);
   });
-  // Direct RX filter: predicate is shared across stations/trails/weather/
-  // wind-barbs so the layers stay in lockstep. my-position is the
-  // operator's own beacon and is intentionally exempt.
+  // RF reachability filter: predicate is shared across stations/trails/
+  // weather/wind-barbs so the layers stay in lockstep. my-position is the
+  // operator's own beacon and is intentionally exempt. Direct RX is the
+  // stricter of the two (a subset of RF Only), so it wins when both are on.
   $effect(() => {
-    const on = layerToggles.directRxOnly;
-    const pred = on ? isDirectRx : null;
+    const pred = layerToggles.directRxOnly
+      ? isDirectRx
+      : layerToggles.rfOnly
+        ? isRfOnly
+        : null;
     stationsLayer?.setFilter(pred);
     trailsLayer?.setFilter(pred);
     weatherLayer?.setFilter(pred);
@@ -569,6 +588,13 @@
     let n = 0;
     for (const s of dataStore.stations.values()) {
       if (isDirectRx(s)) n++;
+    }
+    return n;
+  });
+  let rfOnlyStationCount = $derived.by(() => {
+    let n = 0;
+    for (const s of dataStore.stations.values()) {
+      if (isRfOnly(s)) n++;
     }
     return n;
   });
@@ -697,6 +723,14 @@
           onchange={(e) => (layerToggles.directRxOnly = e.currentTarget.checked)}
         />
         <span>Direct RX</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={layerToggles.rfOnly}
+          onchange={(e) => (layerToggles.rfOnly = e.currentTarget.checked)}
+        />
+        <span>RF Only</span>
       </label>
       <label class="toggle-row">
         <input
@@ -835,6 +869,8 @@
     <span class="status-sep">&middot;</span>
     {#if layerToggles.directRxOnly}
       <span>{rfStationCount} heard direct / {stationCount} total</span>
+    {:else if layerToggles.rfOnly}
+      <span>{rfOnlyStationCount} RF reachable / {stationCount} total</span>
     {:else}
       <span>{stationCount} station{stationCount !== 1 ? 's' : ''}</span>
     {/if}
