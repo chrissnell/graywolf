@@ -22,8 +22,10 @@ export const DBZ_COLORS = {
 export const RADAR_BACKEND_RASTER = 'raster';
 export const RADAR_BACKEND_VECTOR = 'vector';
 
-// v1 ships raster. Flip to RADAR_BACKEND_VECTOR once GRA-48 tiles are live.
-export const ACTIVE_RADAR_BACKEND = RADAR_BACKEND_RASTER;
+// GRA-48 contour tiles are live on the origin Worker, so the overlay now
+// serves the smoothed vector backend. Flip back to RADAR_BACKEND_RASTER to
+// fall back to the IEM raster pull-through.
+export const ACTIVE_RADAR_BACKEND = RADAR_BACKEND_VECTOR;
 
 // Tile host. Points at the graywolf-maps origin Worker, which serves radar
 // under /radar/*: the raster product is an edge-cached pull-through of IEM
@@ -89,7 +91,14 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
       source: {
         type: 'vector',
         // Origin Worker resolves the `latest` pointer GRA-48 publishes to R2.
-        tiles: [`${RADAR_TILE_BASE}/radar/{z}/{x}/{y}.pbf`],
+        tiles: [vectorTileUrl()],
+        // The generated archive only covers z3-z8 (national CONUS ~1 km).
+        // Without bounds MapLibre would request z>maxzoom tiles (Worker 404 ->
+        // blank above the data) and waste requests below minzoom; maxzoom lets
+        // it overzoom (scale) the z8 tile instead. Keep in sync with the
+        // generator's deployed --min-zoom / --max-zoom.
+        minzoom: 3,
+        maxzoom: 8,
         attribution: RADAR_ATTRIBUTION,
       },
       layers: [
@@ -107,7 +116,27 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
         },
       ],
       opacity: { property: 'fill-opacity', layerIds: ['radar-fill'] },
+      // The vector route is cycle-less (the Worker always serves the latest
+      // frame), but MapLibre caches vector tiles in-memory and will not refetch
+      // when a new frame publishes. radar.js calls cacheBust() on a cadence and
+      // swaps in a new `?v=` template so MapLibre treats it as a new source
+      // revision and refetches; the Worker ignores the param.
+      cacheBust: (v) => [vectorTileUrl(v)],
     };
   }
   throw new Error(`unsupported radar backend: ${backend}`);
+}
+
+// Vector contour tile template. The Worker route is cycle-less; an optional
+// cache-bust token `v` (a time bucket, see frameBucket) is appended so a newly
+// published frame looks like a new source revision to MapLibre.
+export function vectorTileUrl(v) {
+  const bust = v == null ? '' : `?v=${v}`;
+  return `${RADAR_TILE_BASE}/radar/{z}/{x}/{y}.pbf${bust}`;
+}
+
+// Cadence-aligned cache-bust token. GRA-48 republishes on a ~5-minute cycle,
+// so a 5-minute bucket changes about once per new frame.
+export function frameBucket(nowMs) {
+  return Math.floor(nowMs / 300000);
 }

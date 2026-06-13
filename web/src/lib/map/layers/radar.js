@@ -12,18 +12,24 @@
 // rebuilds the style and can drop user-added layers) the same way the sibling
 // layers do.
 
-import { radarProvider } from '../sources/radar-source.js';
+import { radarProvider, frameBucket } from '../sources/radar-source.js';
 
-export function mountRadarLayer(map, { visible, opacity }) {
+export function mountRadarLayer(map, { visible, opacity, now = () => Date.now() }) {
   const provider = radarProvider();
   // Last-known UI state, applied when (re-)adding layers after a style swap.
   let curVisible = visible;
   let curOpacity = opacity;
+  // Current frame cache-bust bucket (vector backend only). The source is added
+  // already pointing at this bucket's URL; refresh() bumps it on rollover.
+  let curBucket = provider.cacheBust ? frameBucket(now()) : null;
 
   // Idempotent add: safe to call repeatedly (initial mount + every refresh).
   function ensure() {
     if (!map.getSource(provider.sourceId)) {
-      map.addSource(provider.sourceId, provider.source);
+      const source = provider.cacheBust
+        ? { ...provider.source, tiles: provider.cacheBust(curBucket) }
+        : provider.source;
+      map.addSource(provider.sourceId, source);
     }
     // Recompute beforeId from the current style -- symbol-layer ids differ
     // across basemaps, so a stale id captured at mount could throw here.
@@ -43,6 +49,17 @@ export function mountRadarLayer(map, { visible, opacity }) {
 
   function refresh() {
     ensure();
+    // Vector frames publish in place at a cycle-less URL; bust MapLibre's
+    // in-memory tile cache when the cadence bucket rolls over so the overlay
+    // picks up a freshly published frame.
+    if (provider.cacheBust) {
+      const v = frameBucket(now());
+      if (v !== curBucket) {
+        curBucket = v;
+        const src = map.getSource(provider.sourceId);
+        if (src && src.setTiles) src.setTiles(provider.cacheBust(v));
+      }
+    }
   }
 
   function setVisible(v) {
