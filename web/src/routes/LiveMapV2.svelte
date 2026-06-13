@@ -18,7 +18,6 @@
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { mountRadarLayer } from '../lib/map/layers/radar.js';
-  import { RADAR_REGION_US, RADAR_REGION_WORLD } from '../lib/map/sources/radar-source.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
   import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
   import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
@@ -68,9 +67,10 @@
   const radarSettings = $state({
     visible: localStorage.getItem('gw_radar_visible') === '1',
     opacity: parseFloat(localStorage.getItem('gw_radar_opacity') ?? '0.6'),
-    // Coverage region: 'us' = NEXRAD overlay, 'world' = RainViewer global.
-    region: localStorage.getItem('gw_radar_region') ?? RADAR_REGION_US,
   });
+  // Coverage region ('us' = NEXRAD, 'world' = RainViewer) lives in the shared
+  // map store so the maps settings tab owns the selector; the live map only
+  // reflects the operator's choice here.
   let mapRef = null;
   let activePopup = null;
 
@@ -326,7 +326,11 @@
     // Radar first so the raster/fill sits below trails and station markers in
     // the GL stack. DOM layers (stations, weather) always render above the
     // canvas regardless, but GL line layers (trails) would otherwise cover it.
-    radarLayer = mountRadarLayer(map, radarSettings);
+    radarLayer = mountRadarLayer(map, {
+      visible: radarSettings.visible,
+      opacity: radarSettings.opacity,
+      region: mapState.radarRegion,
+    });
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
     trailsLayer = mountTrailsLayer(map, () => dataStore.stations, {
@@ -512,9 +516,7 @@
     radarLayer?.setOpacity(v);
   });
   $effect(() => {
-    const v = radarSettings.region;
-    localStorage.setItem('gw_radar_region', v);
-    radarLayer?.setRegion(v);
+    radarLayer?.setRegion(mapState.radarRegion);
   });
   $effect(() => {
     const v = layerToggles.fixedPoints;
@@ -762,16 +764,6 @@
       class="radar-opacity-range"
       bind:value={radarSettings.opacity}
     />
-
-    <label class="timerange-label" for="radar-region-select">Radar region</label>
-    <select
-      id="radar-region-select"
-      class="map-timerange-select"
-      bind:value={radarSettings.region}
-    >
-      <option value={RADAR_REGION_US}>United States (NEXRAD)</option>
-      <option value={RADAR_REGION_WORLD}>Rest of world (RainViewer)</option>
-    </select>
 
     <label class="timerange-label" for="map-timerange-select">Time range</label>
     <select

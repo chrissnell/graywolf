@@ -7,6 +7,8 @@
 // (when available from /api/position) is applied by LiveMapV2 as a
 // one-shot recentering after the data store first reports it.
 
+import { RADAR_REGION_US, RADAR_REGION_WORLD } from './sources/radar-source.js';
+
 // Slightly above the equator so the world view shows more land than ocean.
 const WORLD_CENTER = [20, 0];
 const WORLD_ZOOM = 2;
@@ -21,6 +23,13 @@ function loadFloat(key, fallback) {
 function loadInt(key, fallback) {
   const v = localStorage.getItem(key);
   return v != null ? parseInt(v, 10) : fallback;
+}
+
+// Radar coverage region -- a per-browser map preference chosen on the maps
+// settings tab and consumed by the radar layer on the live map. Only two
+// values are valid; anything else falls back to US.
+function normalizeRadarRegion(v) {
+  return v === RADAR_REGION_WORLD ? RADAR_REGION_WORLD : RADAR_REGION_US;
 }
 
 const hasSavedCenter = localStorage.getItem('map-center-lat') != null;
@@ -49,6 +58,7 @@ export const mapState = (() => {
     loadFloat('map-center-lon', WORLD_CENTER[1]),
   ]);
   let mapZoom = $state(loadInt('map-zoom', WORLD_ZOOM));
+  let radarRegion = $state(normalizeRadarRegion(localStorage.getItem('gw_radar_region')));
 
   return {
     get selectedStation() { return selectedStation; },
@@ -80,6 +90,13 @@ export const mapState = (() => {
     set mapZoom(v) {
       mapZoom = v;
       localStorage.setItem('map-zoom', String(v));
+    },
+
+    get radarRegion() { return radarRegion; },
+    set radarRegion(v) {
+      const next = normalizeRadarRegion(v);
+      radarRegion = next;
+      localStorage.setItem('gw_radar_region', next);
     },
 
     hasSavedView,

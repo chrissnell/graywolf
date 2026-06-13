@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { Box, Button, Input, Toggle, Radio, RadioGroup } from '@chrissnell/chonky-ui';
   import { mapsState, ISSUES_URL } from '../lib/settings/maps-store.svelte.js';
+  import { mapState } from '../lib/map/map-store.svelte.js';
+  import { RADAR_REGION_US, RADAR_REGION_WORLD } from '../lib/map/sources/radar-source.js';
   import { validateCallsign } from '../lib/maps/callsign.js';
   import { downloadsState } from '../lib/maps/downloads-store.svelte.js';
   import { catalogStore } from '../lib/maps/catalog-store.svelte.js';
@@ -110,6 +112,25 @@
 
   function onSourceChange(v) {
     mapsState.setSource(v);
+  }
+
+  // Radar coverage region. Per-browser preference (mapState persists it to
+  // localStorage); the live map's radar layer reflects the choice immediately.
+  const radarRegions = [
+    {
+      value: RADAR_REGION_US,
+      label: 'United States (NEXRAD)',
+      sublabel: 'High-resolution NEXRAD reflectivity contours.',
+    },
+    {
+      value: RADAR_REGION_WORLD,
+      label: 'Rest of world (RainViewer)',
+      sublabel: 'Global RainViewer composite for coverage outside the US.',
+    },
+  ];
+
+  function onRadarRegionChange(v) {
+    mapState.radarRegion = v;
   }
 </script>
 
@@ -271,6 +292,27 @@
           Areas without offline coverage fall back to online.
         </p>
       {/if}
+    {/each}
+  </RadioGroup>
+</Box>
+
+<Box title="Radar region">
+  <p class="prose">
+    Choose which radar overlay the live map shows. NEXRAD covers the United
+    States; RainViewer covers the rest of the world.
+  </p>
+  <RadioGroup
+    value={mapState.radarRegion}
+    onValueChange={onRadarRegionChange}
+    name="radar-region"
+    class="source-radio-group"
+    aria-label="Choose a radar region"
+  >
+    {#each radarRegions as region}
+      <div class="source-radio-row">
+        <Radio value={region.value} label={region.label} />
+        <p class="source-sublabel">{region.sublabel}</p>
+      </div>
     {/each}
   </RadioGroup>
 </Box>
