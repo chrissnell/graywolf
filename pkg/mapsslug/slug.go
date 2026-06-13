@@ -8,6 +8,7 @@
 //	state/<state-slug>
 //	country/<iso2>           (iso2 != cn|ru)
 //	province/<iso2>/<slug>   (iso2 != cn|ru)
+//	world                    (single global archive, z0-7)
 //
 // state-slug and province-slug: ^[a-z][a-z0-9-]{0,49}$
 // iso2: ^[a-z]{2}$
@@ -59,6 +60,11 @@ func Parse(s string) (kind, a, b string, ok bool) {
 			return "", "", "", false
 		}
 		return "province", parts[1], parts[2], true
+	case "world":
+		if len(parts) != 1 {
+			return "", "", "", false
+		}
+		return "world", "", "", true
 	}
 	return "", "", "", false
 }
