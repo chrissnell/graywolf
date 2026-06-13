@@ -1,9 +1,13 @@
 // NEXRAD radar overlay layer for the Live Map.
 //
 // Backend-agnostic: it asks radar-source.js for a provider descriptor and
-// performs the MapLibre source/layer calls. Raster today, GRA-48 vector
-// tomorrow -- this file does not change when the backend flips; only
-// ACTIVE_RADAR_BACKEND in radar-source.js does.
+// performs the MapLibre source/layer calls. The active backend is the
+// GRA-48 vector contours, selected by ACTIVE_RADAR_BACKEND in
+// radar-source.js. For the vector backend this layer also drives a
+// cadence-aligned frame cache-bust (the route always serves the latest
+// frame, so refresh() bumps the tile URL on a time-bucket rollover to make
+// MapLibre refetch); the raster backend has no cache-bust and refresh()
+// is purely idempotent re-adds.
 //
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,

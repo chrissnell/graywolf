@@ -454,11 +454,15 @@
   // Drive layer refresh from data-store reactivity. Touching .size
   // ensures Svelte tracks Map mutations even if the proxy short-circuits
   // a reassignment. unitsState.isMetric is read so the weather layer
-  // re-renders when the operator toggles metric/imperial.
+  // re-renders when the operator toggles metric/imperial. tickNow is read
+  // so the 1s clock drives this effect even when the station roster is
+  // stable -- the radar layer's frame cache-bust rolls over on a time
+  // bucket, and refresh() no-ops when the bucket hasn't changed.
   $effect(() => {
     const _size = dataStore.stations.size;
     const _isMetric = unitsState.isMetric;
     const _myPos = dataStore.myPosition; // track
+    const _tick = tickNow; // drive radar frame rollover on the clock
     if (radarLayer) radarLayer.refresh();
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
