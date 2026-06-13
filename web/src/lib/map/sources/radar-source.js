@@ -98,7 +98,12 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
           type: 'fill',
           source: RADAR_SOURCE_ID,
           'source-layer': 'radar', // MVT layer name produced by GRA-48
-          paint: { 'fill-color': buildDbzFillColor(), 'fill-antialias': true },
+          // fill-antialias MUST be false for stacked dBZ bands: with it on,
+          // MapLibre draws an antialiased outline on every band edge, and the
+          // feathered edge between two adjacent bands leaks the basemap through
+          // as a hairline seam (even though the generator's band geometry is
+          // coincident). false => hard edges that tile cleanly, no seams.
+          paint: { 'fill-color': buildDbzFillColor(), 'fill-antialias': false },
         },
       ],
       opacity: { property: 'fill-opacity', layerIds: ['radar-fill'] },
