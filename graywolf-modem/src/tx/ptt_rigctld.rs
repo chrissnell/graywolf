@@ -4,8 +4,12 @@
 //! daemon). The protocol is line-based ASCII over TCP:
 //! - `T 1\n` / `T 0\n` → set PTT on/off. Response: `RPRT <n>\n` where
 //!   `n == 0` means success, non-zero is a hamlib error code.
-//! - `t\n`             → get PTT. Response: `0` or `1` followed by
-//!   `RPRT 0\n`.
+//! - `t\n`             → get PTT. Per the rigctld protocol a successful
+//!   GET returns ONLY the value — a single line `0` or `1`, with NO
+//!   trailing `RPRT 0`. An error returns `RPRT <n>\n` instead. (Reading
+//!   `t` as two lines was the GRA-73 bug: against a healthy daemon the
+//!   second read blocked until timeout, the connect handshake failed,
+//!   and PTT silently never keyed.)
 //!
 //! ## Why a dedicated driver
 //!
@@ -122,8 +126,8 @@ impl RigctldPtt {
         driver.open_stream(driver.probe_timeout)?;
 
         // Validate the full path: `t` is non-disruptive (no keying).
-        // Expect two lines: state (`0`/`1`) then `RPRT 0`. A non-zero
-        // RPRT means rigctld is up but the CAT link or rig is broken —
+        // A healthy daemon answers with a single line `0`/`1`. A non-zero
+        // `RPRT` means rigctld is up but the CAT link or rig is broken —
         // surface that to the caller rather than silently papering over.
         driver.probe_get_ptt()?;
 
@@ -220,27 +224,31 @@ impl RigctldPtt {
         self.open_stream(self.io_timeout)
     }
 
-    /// Send `t\n` and expect `0`/`1` + `RPRT 0`. Used only during the
-    /// initial handshake in `connect()`. A non-zero RPRT surfaces the
-    /// hamlib error code so the caller can tell rigctld-up-radio-down
-    /// apart from rigctld-unreachable.
+    /// Send `t\n` and read the single-line reply. Used only during the
+    /// initial handshake in `connect()`. A successful get_ptt returns
+    /// just the state value (`0`/`1`) with no trailing `RPRT` — so one
+    /// line of `0`/`1` is success. An error reply is `RPRT <code>`; a
+    /// non-zero code surfaces the hamlib error so the caller can tell
+    /// rigctld-up-radio-down apart from rigctld-unreachable.
     fn probe_get_ptt(&mut self) -> Result<(), String> {
         self.write_line("t\n")?;
-        let state = self.read_line()?;
-        let state = state.trim();
-        if state != "0" && state != "1" {
-            return Err(format!(
-                "rigctld ptt: probe: expected '0' or '1', got '{}'",
-                state
-            ));
+        let line = self.read_line()?;
+        let trimmed = line.trim();
+        if trimmed == "0" || trimmed == "1" {
+            return Ok(());
         }
-        let rprt = self.read_line()?;
-        parse_rprt(&rprt).map_err(|code| {
-            format!(
+        // Not a state line: the only other valid shape is an error
+        // `RPRT <code>`. parse_rprt maps malformed input to -9999.
+        match parse_rprt(trimmed) {
+            Err(code) if code != -9999 => Err(format!(
                 "rigctld ptt: probe: hamlib error code {} (see `rigctl --list`)",
                 code
-            )
-        })
+            )),
+            _ => Err(format!(
+                "rigctld ptt: probe: expected '0' or '1', got '{}'",
+                trimmed
+            )),
+        }
     }
 
     /// Set PTT state. On I/O error: drop stream, reconnect once, retry.
@@ -484,8 +492,11 @@ fn keepalive_loop(
     }
 }
 
-/// One keepalive probe: open if needed, send `t\n`, read two lines,
-/// return Ok on `RPRT 0`. Any I/O or RPRT failure propagates as Err.
+/// One keepalive probe: open if needed, send `t\n`, read the single
+/// state line, return Ok on `0`/`1`. A successful get_ptt has no
+/// trailing `RPRT` (see `probe_get_ptt`); reading a second line here
+/// would block until timeout against a healthy daemon and falsely mark
+/// it down. Any I/O failure or error reply propagates as Err.
 fn keepalive_probe_once(
     conn: &mut Option<(TcpStream, BufReader<TcpStream>)>,
     addr: &str,
@@ -507,25 +518,21 @@ fn keepalive_probe_once(
         .map_err(|e| format!("write: {}", e))?;
     stream.flush().map_err(|e| format!("flush: {}", e))?;
 
-    let mut state = String::new();
+    let mut line = String::new();
     let n = reader
-        .read_line(&mut state)
+        .read_line(&mut line)
         .map_err(|e| format!("read state: {}", e))?;
     if n == 0 {
         return Err("peer closed connection".into());
     }
-    let state_trim = state.trim();
-    if state_trim != "0" && state_trim != "1" {
-        return Err(format!("unexpected state line '{}'", state_trim));
+    let trimmed = line.trim();
+    if trimmed == "0" || trimmed == "1" {
+        return Ok(());
     }
-    let mut rprt = String::new();
-    let n = reader
-        .read_line(&mut rprt)
-        .map_err(|e| format!("read rprt: {}", e))?;
-    if n == 0 {
-        return Err("peer closed connection before RPRT".into());
+    match parse_rprt(trimmed) {
+        Err(code) if code != -9999 => Err(format!("hamlib error code {}", code)),
+        _ => Err(format!("unexpected state line '{}'", trimmed)),
     }
-    parse_rprt(&rprt).map_err(|code| format!("hamlib error code {}", code))
 }
 
 /// Shared helper: resolve + connect with timeout + apply read/write
@@ -641,6 +648,66 @@ mod tests {
         assert_eq!(parse_rprt("not-rprt\n"), Err(-9999));
         assert_eq!(parse_rprt("RPRT abc\n"), Err(-9999));
         assert_eq!(parse_rprt("0\n"), Err(-9999));
+    }
+
+    /// Spawn a fake rigctld on an ephemeral loopback port that speaks
+    /// the REAL protocol: a get (`t`) replies with a single value line
+    /// (`0`/`1`, no trailing `RPRT`), and a set (`T 1`/`T 0`) replies
+    /// with `RPRT 0`. Accepts repeatedly so both the primary and the
+    /// keepalive connections are served. Returns the bound address.
+    fn spawn_fake_rigctld() -> String {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake rigctld");
+        let addr = listener.local_addr().expect("local_addr").to_string();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let stream = match stream {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                thread::spawn(move || {
+                    let mut writer = stream.try_clone().expect("clone");
+                    let mut reader = BufReader::new(stream);
+                    let mut line = String::new();
+                    loop {
+                        line.clear();
+                        match reader.read_line(&mut line) {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => {}
+                        }
+                        let cmd = line.trim();
+                        let reply: &[u8] = if cmd == "t" {
+                            b"0\n"
+                        } else if cmd.starts_with("T ") {
+                            b"RPRT 0\n"
+                        } else {
+                            b"RPRT -1\n"
+                        };
+                        if writer.write_all(reply).is_err() {
+                            break;
+                        }
+                        let _ = writer.flush();
+                    }
+                });
+            }
+        });
+        addr
+    }
+
+    /// GRA-73 regression: a healthy rigctld answers `t` with only the
+    /// state value (no trailing `RPRT 0`). The connect handshake must
+    /// succeed against that, and key/unkey must round-trip — previously
+    /// the probe blocked waiting for a second line, the connect failed,
+    /// and PTT silently never keyed.
+    #[test]
+    fn connect_and_key_against_single_line_get_ptt() {
+        let addr = spawn_fake_rigctld();
+        let mut driver = match RigctldPtt::connect(&addr) {
+            Ok(d) => d,
+            Err(e) => panic!("connect should succeed against real protocol: {}", e),
+        };
+        driver.key().expect("key should send 'T 1' and accept RPRT 0");
+        driver.unkey().expect("unkey should send 'T 0' and accept RPRT 0");
     }
 
     #[test]

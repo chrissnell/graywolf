@@ -26,7 +26,7 @@ const (
 // handleTestRigctld probes a rigctld endpoint on behalf of the UI's
 // "Test Connection" button. It opens a short-lived TCP connection,
 // sends `t\n` (get_ptt — non-disruptive, does not key the radio),
-// reads the two-line response, and reports success or a diagnostic
+// reads the single-line response, and reports success or a diagnostic
 // message in the response body.
 //
 // HTTP conventions (matching sibling handlers in this package):
@@ -96,9 +96,13 @@ func (s *Server) handleTestRigctld(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// rigctld's reply to `t` is two lines:
-	//   line 1: "0" or "1"       (current PTT state)
-	//   line 2: "RPRT <n>"       (0 == success, non-zero == hamlib err code)
+	// rigctld's reply to a GET like `t` is a single line carrying the
+	// value(s) — for get_ptt that's "0" or "1" with NO trailing "RPRT 0"
+	// (the RPRT line is only emitted for SET commands or on error). An
+	// error reply is "RPRT <n>" with a non-zero hamlib code. Reading a
+	// second line here was the GRA-73 bug: against a healthy daemon the
+	// scan blocked until the I/O deadline and the test reported a
+	// spurious failure.
 	scanner := bufio.NewScanner(conn)
 	// Cap the scanner's buffer so a misbehaving server can't balloon us.
 	scanner.Buffer(make([]byte, 0, 1024), 4096)
@@ -110,47 +114,24 @@ func (s *Server) handleTestRigctld(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	stateLine := strings.TrimSpace(scanner.Text())
-	if stateLine != "0" && stateLine != "1" {
+	line := strings.TrimSpace(scanner.Text())
+	if line != "0" && line != "1" {
+		// Not a state value — the only other valid shape is an error
+		// "RPRT <n>". Surface a non-zero hamlib code verbatim; anything
+		// else is a protocol mismatch.
+		if strings.HasPrefix(line, "RPRT ") {
+			codeStr := strings.TrimSpace(strings.TrimPrefix(line, "RPRT "))
+			if code, cerr := strconv.Atoi(codeStr); cerr == nil && code != 0 {
+				writeJSON(w, http.StatusOK, dto.TestRigctldResponse{
+					OK:      false,
+					Message: fmt.Sprintf("rigctld error: RPRT %d (hamlib code)", code),
+				})
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, dto.TestRigctldResponse{
 			OK:      false,
-			Message: "unexpected response: " + sanitizeSnippet(stateLine),
-		})
-		return
-	}
-
-	if !scanner.Scan() {
-		writeJSON(w, http.StatusOK, dto.TestRigctldResponse{
-			OK:      false,
-			Message: rigctldReadErrMessage("read RPRT line", scanner.Err()),
-		})
-		return
-	}
-	rprtLine := strings.TrimSpace(scanner.Text())
-	if !strings.HasPrefix(rprtLine, "RPRT ") {
-		writeJSON(w, http.StatusOK, dto.TestRigctldResponse{
-			OK:      false,
-			Message: "unexpected response: " + sanitizeSnippet(rprtLine),
-		})
-		return
-	}
-	codeStr := strings.TrimSpace(strings.TrimPrefix(rprtLine, "RPRT "))
-	code, err := strconv.Atoi(codeStr)
-	if err != nil {
-		writeJSON(w, http.StatusOK, dto.TestRigctldResponse{
-			OK:      false,
-			Message: "unexpected response: " + sanitizeSnippet(rprtLine),
-		})
-		return
-	}
-	if code != 0 {
-		// Hamlib error codes are reported as negative integers (e.g.
-		// RPRT -6 == "IO error, including open failed"). Surface the
-		// raw code so the UI can display it verbatim and users with
-		// hamlib experience can look it up.
-		writeJSON(w, http.StatusOK, dto.TestRigctldResponse{
-			OK:      false,
-			Message: fmt.Sprintf("rigctld error: RPRT %d (hamlib code)", code),
+			Message: "unexpected response: " + sanitizeSnippet(line),
 		})
 		return
 	}
