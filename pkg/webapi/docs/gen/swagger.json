@@ -11006,6 +11006,10 @@
                     "description": "Direction indicates the source of the most recent packet: \"RX\" (heard on air), \"TX\" (sent by us), or \"IS\" (APRS-IS).",
                     "type": "string"
                 },
+                "gated": {
+                    "description": "Gated is true when the most recent packet reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF.",
+                    "type": "boolean"
+                },
                 "hops": {
                     "description": "Hops is the APRS digipeater hop count (number of H-bit entries in Path).",
                     "type": "integer"
@@ -11086,6 +11090,10 @@
                 "direction": {
                     "description": "Direction indicates the source of this position packet: \"RX\", \"TX\", or \"IS\".",
                     "type": "string"
+                },
+                "gated": {
+                    "description": "Gated is true when this position fix reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF.",
+                    "type": "boolean"
                 },
                 "has_alt": {
                     "description": "HasAlt is true when the originating packet reported an altitude.",

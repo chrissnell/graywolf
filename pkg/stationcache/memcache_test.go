@@ -434,3 +434,51 @@ func TestMemCache_DigipeatedThenDirect(t *testing.T) {
 		t.Fatal("direct copy should upgrade a previously-digipeated fix to direct")
 	}
 }
+
+// gatedEntry is a position fix that reached us as Internet-to-RF gated
+// traffic (the inner packet of a third-party gate): heard on RF (RX) but
+// flagged gated, so the "RF Only" filter should exclude it.
+func gatedEntry(key, callsign string, lat, lon float64) CacheEntry {
+	e := stationEntry(key, callsign, lat, lon)
+	e.Gated = true
+	e.Path = []string{"TCPIP*", "qAR", "IGATE"}
+	return e
+}
+
+// TestMemCache_RFCopyNotMaskedByGated verifies the merge keeps an RF-heard
+// (non-gated) copy of a static fix even when a later Internet-to-RF gated
+// copy of the same beacon arrives, so the "RF Only" filter still shows it.
+func TestMemCache_RFCopyNotMaskedByGated(t *testing.T) {
+	c := newTestCache(t)
+
+	// Heard over RF via a digipeater first, then a gated copy at the same
+	// position. The digipeated (non-gated) reception must be retained.
+	c.Update([]CacheEntry{digiEntry("stn:GW1", "GW1", 40.0, -105.0, 2)}) // RX, hops 2, not gated
+	c.Update([]CacheEntry{gatedEntry("stn:GW1", "GW1", 40.0, -105.0)})   // RX, gated
+
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
+	if len(results) != 1 || len(results[0].Positions) != 1 {
+		t.Fatalf("expected 1 station with 1 position, got %+v", results)
+	}
+	if results[0].Positions[0].Gated {
+		t.Fatal("RF-heard copy masked by later gated copy: Gated=true")
+	}
+
+	// The reverse order must upgrade: a gated-only fix that is later heard
+	// over RF should drop the gated flag.
+	c.Update([]CacheEntry{gatedEntry("stn:GW2", "GW2", 41.0, -105.0)})
+	c.Update([]CacheEntry{digiEntry("stn:GW2", "GW2", 41.0, -105.0, 2)})
+	results = c.QueryBBox(BBox{SwLat: 40, SwLon: -106, NeLat: 42, NeLon: -104}, 1*time.Hour)
+	var gw2 *Station
+	for i := range results {
+		if results[i].Callsign == "GW2" {
+			gw2 = &results[i]
+		}
+	}
+	if gw2 == nil {
+		t.Fatal("GW2 not found")
+	}
+	if gw2.Positions[0].Gated {
+		t.Fatal("gated-only fix not upgraded by later RF-heard copy: Gated=true")
+	}
+}
