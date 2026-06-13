@@ -116,6 +116,8 @@ func (m *Manager) urlForSlug(slug, token string) (string, error) {
 		raw = fmt.Sprintf("%s/download/country/%s.pmtiles", base, a)
 	case "province":
 		raw = fmt.Sprintf("%s/download/province/%s/%s.pmtiles", base, a, b)
+	case "world":
+		raw = fmt.Sprintf("%s/download/world.pmtiles", base)
 	}
 	if token == "" {
 		return raw, nil

@@ -274,6 +274,7 @@ func TestURLForSlug(t *testing.T) {
 		{"state/colorado", "https://maps.example/download/state/colorado.pmtiles"},
 		{"country/de", "https://maps.example/download/country/de.pmtiles"},
 		{"province/ca/british-columbia", "https://maps.example/download/province/ca/british-columbia.pmtiles"},
+		{"world", "https://maps.example/download/world.pmtiles"},
 	}
 	for _, tc := range cases {
 		got, err := m.urlForSlug(tc.slug, "")
@@ -283,6 +284,9 @@ func TestURLForSlug(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("urlForSlug(%q) = %q, want %q", tc.slug, got, tc.want)
 		}
+	}
+	if p := m.PathFor("world"); !strings.HasSuffix(p, "world.pmtiles") {
+		t.Fatalf("PathFor(world) = %q, want suffix world.pmtiles", p)
 	}
 }
 
