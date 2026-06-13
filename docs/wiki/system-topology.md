@@ -165,8 +165,11 @@ gate on outbound IS messages.
 
 The Worker exposes `GET /manifest.json` (auth-gated) returning the
 public download catalog: `{ schemaVersion: 1, generatedAt, countries[],
-provinces[], states[] }`. Internal R2 paths and build provenance are
-stripped before the response leaves the Worker.
+provinces[], states[], world? }`. Internal R2 paths and build
+provenance are stripped before the response leaves the Worker. The
+optional top-level `world` object (`{ name, sizeBytes, sha256, bbox,
+maxZoom }`) is the single global low-detail basemap (z0-7, ~300 MB);
+unlike the regional entries it carries a `maxZoom` cap.
 
 Graywolf proxies that catalog at `GET /api/maps/catalog`. The
 in-process [`pkg/mapscatalog/`](../../pkg/mapscatalog/) cache holds the
@@ -182,11 +185,14 @@ lockstep to dodge an import cycle):
 - `country/<iso2>` -- e.g. `country/de` (cn and ru are forbidden at
   parse time, not just catalog membership)
 - `province/<iso2>/<slug>` -- e.g. `province/ca/british-columbia`
+- `world` -- the single global archive (no sub-segments), served from
+  `/download/world.pmtiles`
 
 On disk the slashes become subdirectory separators:
 `<TileCacheDir>/state/colorado.pmtiles`,
 `<TileCacheDir>/country/de.pmtiles`,
-`<TileCacheDir>/province/ca/british-columbia.pmtiles`. Pre-namespaced
+`<TileCacheDir>/province/ca/british-columbia.pmtiles`,
+`<TileCacheDir>/world.pmtiles`. Pre-namespaced
 installs (where every archive sat directly in `<TileCacheDir>/`) are
 migrated on startup by `mapsCache.MigrateLegacyArchives` (file move)
 and `store.MigrateMapsDownloadSlugs` (DB row update); both idempotent.
@@ -196,6 +202,19 @@ prefix and `.pmtiles` suffix, sets the rest as the slug, and delegates
 to `webapi.Server.ServeTilesPMTiles`. Catalog membership is rechecked
 on every tile request; the cache is in-process so the cost is a map
 lookup.
+
+The offline-safe render-bounds source `GET /api/maps/local-bounds`
+returns, per completed slug, `{ bbox, maxZoom }` snapshotted into
+`maps_downloads` at download time (`maxZoom` is 0 for regional
+archives, >0 for the capped world archive). The browser-side federated
+tile dispatcher (`web/.../gw-federated-protocol.js`) ranks every
+archive whose bbox covers a tile by ascending bbox area, so a regional
+download is always tried before the globe-spanning `world` archive and
+never shadowed by it. The world archive's `maxZoom` lets the dispatcher
+skip zooms it cannot hold; when `world` is the *only* download, the
+MapLibre vector source is registered with that `maxzoom` so the client
+overzooms the top tile instead of requesting (and missing) higher zooms
+offline.
 
 ### Offline maps style assets
 
