@@ -275,7 +275,7 @@ func TestDeleteMapsDownload_Idempotent(t *testing.T) {
 
 	// Drive a download to completion so DELETE has both a row and a
 	// file to remove.
-	if err := mgr.Start(context.Background(), "state/ohio", nil); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio", nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !waitFor(t, 3*time.Second, func() bool {
@@ -602,5 +602,25 @@ func TestStartDownload_PersistsBBoxFromCatalog(t *testing.T) {
 			got = *row.BBox
 		}
 		t.Fatalf("bbox never reached %q (last seen: %q)", want, got)
+	}
+}
+
+func TestLookupCatalogEntryWorld(t *testing.T) {
+	c := mapscatalog.Catalog{World: &mapscatalog.WorldMap{
+		BBox: &[4]float64{-180, -85.05, 180, 85.05}, MaxZoom: 7,
+	}}
+	bbox, maxZoom, found := lookupCatalogEntry(c, "world")
+	if !found || maxZoom != 7 || bbox == nil {
+		t.Fatalf("lookupCatalogEntry(world) = (%v,%d,%v), want (non-nil,7,true)", bbox, maxZoom, found)
+	}
+	// Regional entries report no cap.
+	c2 := mapscatalog.Catalog{States: []mapscatalog.State{{Slug: "colorado", BBox: &[4]float64{-109, 37, -102, 41}}}}
+	_, mz, ok := lookupCatalogEntry(c2, "state/colorado")
+	if !ok || mz != 0 {
+		t.Fatalf("lookupCatalogEntry(state/colorado) maxZoom = %d, ok=%v, want 0,true", mz, ok)
+	}
+	// Absent world.
+	if _, _, ok := lookupCatalogEntry(mapscatalog.Catalog{}, "world"); ok {
+		t.Fatal("lookupCatalogEntry(world) on empty catalog = ok, want false")
 	}
 }

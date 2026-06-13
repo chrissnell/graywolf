@@ -54,7 +54,7 @@ func TestManager_HappyPath(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/georgia", nil); err != nil {
+	if err := mgr.Start(context.Background(), "state/georgia", nil, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,10 +97,10 @@ func TestManager_AlreadyInflight(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/texas", nil); err != nil {
+	if err := mgr.Start(context.Background(), "state/texas", nil, 0); err != nil {
 		t.Fatal(err)
 	}
-	err := mgr.Start(context.Background(), "state/texas", nil)
+	err := mgr.Start(context.Background(), "state/texas", nil, 0)
 	if !errors.Is(err, ErrAlreadyInflight) {
 		t.Fatalf("expected ErrAlreadyInflight, got %v", err)
 	}
@@ -113,7 +113,7 @@ func TestManager_DeleteDuringActiveDownload(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/ohio", nil); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio", nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	// Give the goroutine a moment to start the request
@@ -148,7 +148,7 @@ func TestManager_CancelLeavesNoErrorRow(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/nebraska", nil); err != nil {
+	if err := mgr.Start(context.Background(), "state/nebraska", nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	// Let the goroutine grab the semaphore, issue the request, and start
@@ -190,7 +190,7 @@ func TestManager_BadUpstreamStatus(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	if err := mgr.Start(context.Background(), "state/florida", nil); err != nil {
+	if err := mgr.Start(context.Background(), "state/florida", nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -232,7 +232,7 @@ func TestManager_RetryAfterError(t *testing.T) {
 	})
 	mgr, _, _ := newTestManager(t, upstream)
 
-	_ = mgr.Start(context.Background(), "state/ohio", nil)
+	_ = mgr.Start(context.Background(), "state/ohio", nil, 0)
 	// Wait for first attempt to fail
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -244,7 +244,7 @@ func TestManager_RetryAfterError(t *testing.T) {
 	}
 
 	// Second attempt
-	if err := mgr.Start(context.Background(), "state/ohio", nil); err != nil {
+	if err := mgr.Start(context.Background(), "state/ohio", nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	deadline = time.Now().Add(2 * time.Second)
@@ -405,7 +405,7 @@ func TestStart_SnapshotsBBoxIntoFirstRow(t *testing.T) {
 	mgr, store, _ := newTestManager(t, silentUpstream())
 
 	bbox := [4]float64{-109.05, 36.99, -102.04, 41.0}
-	if err := mgr.Start(ctx, "state/colorado", &bbox); err != nil {
+	if err := mgr.Start(ctx, "state/colorado", &bbox, 0); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -426,7 +426,7 @@ func TestStart_NilBBoxLeavesColumnNull(t *testing.T) {
 	ctx := context.Background()
 	mgr, store, _ := newTestManager(t, silentUpstream())
 
-	if err := mgr.Start(ctx, "state/wyoming", nil); err != nil {
+	if err := mgr.Start(ctx, "state/wyoming", nil, 0); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	row, err := store.GetMapsDownload(ctx, "state/wyoming")

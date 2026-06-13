@@ -183,12 +183,12 @@ func (s *Server) startDownload(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "catalog lookup", err)
 		return
 	}
-	bbox, found := lookupCatalogBBox(cat, slug)
+	bbox, maxZoom, found := lookupCatalogEntry(cat, slug)
 	if !found {
 		badRequest(w, "unknown slug")
 		return
 	}
-	if err := s.mapsCache.Start(r.Context(), slug, bbox); err != nil {
+	if err := s.mapsCache.Start(r.Context(), slug, bbox, maxZoom); err != nil {
 		if errors.Is(err, mapscache.ErrAlreadyInflight) {
 			writeJSON(w, http.StatusConflict, map[string]string{
 				"error":   "already_inflight",
@@ -226,37 +226,44 @@ func (s *Server) startDownload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, toDTO(st))
 }
 
-// lookupCatalogBBox returns the bbox for a namespaced slug in the
-// catalog, or (nil, false) if the slug names no published archive.
-// The boolean covers both "slug not in catalog" (caller returns 400)
-// and "slug in catalog but bbox missing" (caller still starts the
-// download; render-path bounds come from the backfill).
-func lookupCatalogBBox(c mapscatalog.Catalog, slug string) (*[4]float64, bool) {
+// lookupCatalogEntry returns the bbox and maxZoom for a namespaced
+// slug in the catalog, or (nil, 0, false) if the slug names no
+// published archive. The boolean covers both "slug not in catalog"
+// (caller returns 400) and "slug in catalog but bbox missing" (caller
+// still starts the download; render-path bounds come from the
+// backfill). Regional entries have no zoom cap and report maxZoom 0;
+// the world archive reports its real cap (e.g. 7).
+func lookupCatalogEntry(c mapscatalog.Catalog, slug string) (*[4]float64, int, bool) {
 	kind, a, b, ok := parseSlug(slug)
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
 	switch kind {
+	case "world":
+		if c.World == nil {
+			return nil, 0, false
+		}
+		return c.World.BBox, c.World.MaxZoom, true
 	case "state":
 		for _, st := range c.States {
 			if st.Slug == a {
-				return st.BBox, true
+				return st.BBox, 0, true
 			}
 		}
 	case "country":
 		for _, x := range c.Countries {
 			if x.ISO2 == a {
-				return x.BBox, true
+				return x.BBox, 0, true
 			}
 		}
 	case "province":
 		for _, p := range c.Provinces {
 			if p.ISO2 == a && p.Slug == b {
-				return p.BBox, true
+				return p.BBox, 0, true
 			}
 		}
 	}
-	return nil, false
+	return nil, 0, false
 }
 
 // @Summary  Delete an offline download
