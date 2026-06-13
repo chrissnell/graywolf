@@ -10,13 +10,19 @@
 // Nothing else in the client changes -- radar.js and LiveMapV2 consume the
 // descriptor returned by radarProvider() and are backend-agnostic.
 
-// NWS reflectivity color ramp, keyed by the dBZ lower bound of each band.
-// Used by the vector backend's fill-color expression and by any legend UI.
+// RainViewer "Universal Blue" reflectivity color ramp, keyed by the dBZ lower
+// bound of each band. Used by the vector backend's fill-color expression and by
+// any legend UI. Values are RainViewer's published rain palette taken at each
+// band's lower bound; per-band alpha is dropped (opacity is the global
+// fill-opacity slider's job, and the test contract requires 6-digit hex). The
+// two lightest bands (5/10) sit below RainViewer's visible threshold -- where
+// the source palette is a near-transparent haze -- so we continue the cyan ramp
+// downward to keep light returns reading as faint blue, matching the reference.
 export const DBZ_BANDS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75];
 export const DBZ_COLORS = {
-  5: '#04e9e7', 10: '#019ff4', 15: '#0300f4', 20: '#02fd02', 25: '#01c501',
-  30: '#008e00', 35: '#fdf802', 40: '#e5bc00', 45: '#fd9500', 50: '#fd0000',
-  55: '#d40000', 60: '#bc0000', 65: '#f800fd', 70: '#9854c6', 75: '#fdfdfd',
+  5: '#c5f0f7', 10: '#a8e6f0', 15: '#88ddee', 20: '#00a3e0', 25: '#0077aa',
+  30: '#005588', 35: '#ffee00', 40: '#ffaa00', 45: '#ff4400', 50: '#c10000',
+  55: '#ffaaff', 60: '#ff77ff', 65: '#ffffff', 70: '#ffffff', 75: '#00ff00',
 };
 
 export const RADAR_BACKEND_RASTER = 'raster';
