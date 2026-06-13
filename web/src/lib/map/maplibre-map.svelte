@@ -49,6 +49,7 @@
     const federated = createFederatedProtocol({
       completedSlugsProvider: () => downloadsState.completed,
       boundsBySlugProvider: () => localBoundsStore.boundsBySlug,
+      maxZoomBySlugProvider: () => localBoundsStore.maxZoomBySlug,
       fetchOnline: async (z, x, y, signal) => {
         const base = `https://maps.nw5w.com/${z}/${x}/${y}.mvt`;
         const url = bearerToken
@@ -95,10 +96,20 @@
     // Deep clone so we don't mutate the cached upstream payload.
     const style = JSON.parse(JSON.stringify(cachedUpstreamStyle));
     if (federated) {
+      // When the user's ONLY offline coverage is the world archive, cap
+      // the source so MapLibre overzooms the z7 tile instead of
+      // requesting z8+ (which would miss offline -> blank). With any
+      // full-detail regional download present, keep the upstream max so
+      // that region renders at z14; world-only areas at high zoom then
+      // rely on MapLibre's parent-tile retention.
+      const completed = downloadsState.completed;
+      const worldCap = localBoundsStore.maxZoomBySlug.get('world');
+      const worldOnly = completed.size === 1 && completed.has('world') && worldCap > 0;
       for (const src of Object.values(style.sources)) {
         if (src.type === 'vector') {
           delete src.url; // drop the tilejson pointer
           src.tiles = ['gw-tile://{z}/{x}/{y}'];
+          if (worldOnly) src.maxzoom = worldCap;
         }
       }
     }
