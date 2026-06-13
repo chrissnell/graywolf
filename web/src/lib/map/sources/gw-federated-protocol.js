@@ -55,16 +55,28 @@ function bboxIntersects(tileBBox, bboxWSEN) {
   return true;
 }
 
-// findCoveringSlug: returns the first slug from `completedSlugs`
-// whose bbox intersects the tile bbox, or null if none. The bounds
-// come from the live catalog via boundsBySlug.
-function findCoveringSlug(tileBBox, completedSlugs, boundsBySlug) {
+// bboxArea: lon-span * lat-span of a [w, s, e, n] tuple. Used only to
+// rank overlapping archives by specificity, so a plain rectangular
+// area (no spherical correction) is sufficient and monotonic.
+function bboxArea([w, s, e, n]) {
+  return Math.max(0, e - w) * Math.max(0, n - s);
+}
+
+// rankCoveringSlugs: returns every slug from `completedSlugs` whose
+// bbox intersects the tile, ordered smallest-bbox-first. A more
+// specific regional archive is therefore tried before the
+// globe-spanning world archive, so a user who has both renders the
+// region at full detail. Bounds come from the live catalog via
+// boundsBySlug.
+export function rankCoveringSlugs(tileBBox, completedSlugs, boundsBySlug) {
+  const hits = [];
   for (const slug of completedSlugs) {
     const bbox = boundsBySlug.get(slug);
     if (!bbox) continue;
-    if (bboxIntersects(tileBBox, bbox)) return slug;
+    if (bboxIntersects(tileBBox, bbox)) hits.push({ slug, area: bboxArea(bbox) });
   }
-  return null;
+  hits.sort((a, b) => a.area - b.area);
+  return hits.map((h) => h.slug);
 }
 
 // createFederatedProtocol returns a MapLibre protocol handler.
@@ -72,6 +84,10 @@ function findCoveringSlug(tileBBox, completedSlugs, boundsBySlug) {
 //   completedSlugsProvider: () => Set<string>  -- live; checked per request
 //   boundsBySlugProvider:   () => Map<string, [west, south, east, north]>
 //                              -- catalog-derived bounds, live per request
+//   maxZoomBySlugProvider: () => Map<string, number>  -- optional;
+//                          per-archive top zoom (0/absent = no cap).
+//                          Lets the world archive be skipped for zooms
+//                          it cannot hold instead of reading and missing.
 //   fetchOnline:           (z, x, y, signal) => Promise<Uint8Array>
 //                          fetches the corresponding online tile;
 //                          throws if not retrievable.
@@ -80,7 +96,12 @@ function findCoveringSlug(tileBBox, completedSlugs, boundsBySlug) {
 //   request: (params, abortController) => Promise<{data: Uint8Array}>
 // The abortController is provided by MapLibre and aborted when the
 // tile is no longer needed (panned out of view).
-export function createFederatedProtocol({ completedSlugsProvider, boundsBySlugProvider, fetchOnline }) {
+export function createFederatedProtocol({
+  completedSlugsProvider,
+  boundsBySlugProvider,
+  maxZoomBySlugProvider,
+  fetchOnline,
+}) {
   return {
     request(params, abortController) {
       const m = /^gw-tile:\/\/(\d+)\/(\d+)\/(\d+)$/.exec(params.url);
@@ -93,29 +114,39 @@ export function createFederatedProtocol({ completedSlugsProvider, boundsBySlugPr
       const tileBBox = tileToBBox(z, x, y);
       const completed = completedSlugsProvider();
       const bounds = boundsBySlugProvider();
+      const maxZoomBySlug =
+        typeof maxZoomBySlugProvider === 'function' ? maxZoomBySlugProvider() : new Map();
 
-      const slug = findCoveringSlug(tileBBox, completed, bounds);
+      const ranked = rankCoveringSlugs(tileBBox, completed, bounds);
       const fallback = () =>
         fetchOnline(z, x, y, abortController.signal).then((data) => ({ data }));
 
-      if (!slug) {
+      if (ranked.length === 0) {
         // No offline coverage for this tile.
         return fallback();
       }
 
-      // Try the local archive; on miss (or any error reading it),
-      // fall through to network. A missing tile in the archive isn't
-      // an error per se -- the source style may request zooms outside
-      // the archive's stored range.
-      return getArchive(slug)
-        .getZxy(z, x, y, abortController.signal)
-        .then((tile) => {
-          if (tile && tile.data) {
-            return { data: new Uint8Array(tile.data) };
-          }
-          return fallback();
-        })
-        .catch(() => fallback());
+      // Walk the ranked list (most-specific archive first); the first
+      // archive that actually holds the tile wins. Network is the final
+      // fallback. A missing tile in an archive isn't an error per se --
+      // the source style may request zooms outside the archive's range.
+      const tryNext = (i) => {
+        if (i >= ranked.length) return fallback();
+        const slug = ranked[i];
+        const cap = maxZoomBySlug.get(slug);
+        // Skip archives that provably cannot hold this zoom (e.g. the
+        // world archive at z>cap). Avoids a guaranteed-miss range read;
+        // the source maxzoom makes MapLibre overzoom instead.
+        if (typeof cap === 'number' && cap > 0 && z > cap) return tryNext(i + 1);
+        return getArchive(slug)
+          .getZxy(z, x, y, abortController.signal)
+          .then((tile) => {
+            if (tile && tile.data) return { data: new Uint8Array(tile.data) };
+            return tryNext(i + 1);
+          })
+          .catch(() => tryNext(i + 1));
+      };
+      return tryNext(0);
     },
   };
 }
