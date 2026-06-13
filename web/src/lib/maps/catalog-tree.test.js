@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCountryTree } from './catalog-tree.js';
+import { buildCountryTree, buildWorldNode } from './catalog-tree.js';
 
 const fix = {
   countries: [
@@ -63,5 +63,22 @@ describe('buildCountryTree', () => {
     assert.equal(ca.children[0].slug, 'province/ca/british-columbia');
     const us = tree.find(n => n.iso2 === 'us');
     assert.equal(us.children[0].slug, 'state/colorado');
+  });
+});
+
+describe('buildWorldNode', () => {
+  it('returns a node for a catalog with world', () => {
+    const node = buildWorldNode({
+      world: { name: 'World (low detail)', sizeBytes: 314572800, bbox: [-180, -85, 180, 85], maxZoom: 7 },
+    });
+    assert.deepEqual(node, { slug: 'world', name: 'World (low detail)', sizeBytes: 314572800 });
+  });
+  it('returns null when the catalog has no world', () => {
+    assert.equal(buildWorldNode({}), null);
+    assert.equal(buildWorldNode(null), null);
+  });
+  it('defaults the name when world.name is missing', () => {
+    const node = buildWorldNode({ world: { sizeBytes: 1 } });
+    assert.equal(node.name, 'World (low detail)');
   });
 });

@@ -78,3 +78,13 @@ export function buildCountryTree(catalog) {
   // Sort countries alphabetically by display name.
   return [...byIso.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// buildWorldNode projects the optional top-level world archive into a
+// flat picker node, or null when the catalog has no world entry. Kept
+// separate from buildCountryTree because the world archive is not a
+// country and has no children.
+export function buildWorldNode(catalog) {
+  const w = catalog && catalog.world;
+  if (!w) return null;
+  return { slug: 'world', name: w.name || 'World (low detail)', sizeBytes: w.sizeBytes || 0 };
+}

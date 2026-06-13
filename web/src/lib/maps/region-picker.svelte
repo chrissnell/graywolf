@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { Drawer, Button, Input } from '@chrissnell/chonky-ui';
   import { catalogStore } from './catalog-store.svelte.js';
-  import { buildCountryTree } from './catalog-tree.js';
+  import { buildCountryTree, buildWorldNode } from './catalog-tree.js';
   import { downloadsState } from './downloads-store.svelte.js';
   import { formatBytes } from './format-bytes.js';
 
@@ -15,6 +15,18 @@
   let tree = $derived.by(() => {
     if (!catalogStore.catalog) return [];
     return buildCountryTree(catalogStore.catalog);
+  });
+
+  // The global low-detail world archive, shown as a single row above
+  // the country tree. Null when the catalog advertises no world entry.
+  let worldNode = $derived(catalogStore.catalog ? buildWorldNode(catalogStore.catalog) : null);
+
+  // Hide the world row when a search query is active and doesn't match
+  // its name, so search results stay focused.
+  let showWorld = $derived.by(() => {
+    if (!worldNode) return false;
+    const q = query.trim().toLowerCase();
+    return !q || worldNode.name.toLowerCase().includes(q);
   });
 
   // Filter: when there is a query, expand any country with a matching
@@ -74,6 +86,32 @@
       </div>
     {:else}
       <ul class="region-list" role="list">
+        {#if showWorld}
+          {@const wItem = statusOf(worldNode.slug)}
+          {@const wStatus = wItem?.state ?? 'absent'}
+          <li class="region-row region-row-world" data-level="world">
+            <span class="region-name">{worldNode.name}</span>
+            <div class="region-meta">
+              {#if worldNode.sizeBytes > 0}
+                <span class="region-size">{formatBytes(worldNode.sizeBytes)}</span>
+              {/if}
+              {#if wStatus === 'downloading'}
+                <span class="region-status">{Math.round((wItem.bytes_downloaded / Math.max(1, wItem.bytes_total)) * 100)}%</span>
+              {:else if wStatus === 'complete'}
+                <span class="region-status complete">Downloaded</span>
+              {/if}
+            </div>
+            <div class="region-actions">
+              {#if wStatus === 'absent' || wStatus === 'error'}
+                <Button onclick={() => downloadsState.start(worldNode.slug)}>Download</Button>
+              {:else if wStatus === 'complete'}
+                <Button variant="danger" onclick={() => downloadsState.remove(worldNode.slug)}>Delete</Button>
+              {:else}
+                <Button variant="danger" onclick={() => downloadsState.cancel(worldNode.slug)}>Cancel</Button>
+              {/if}
+            </div>
+          </li>
+        {/if}
         {#each filteredTree as country (country.iso2)}
           {@const cItem = statusOf(country.slug)}
           {@const cStatus = cItem?.state ?? 'absent'}
@@ -142,7 +180,9 @@
             {/if}
           </li>
         {:else}
-          <li class="region-empty">No regions match "{query}"</li>
+          {#if !showWorld}
+            <li class="region-empty">No regions match "{query}"</li>
+          {/if}
         {/each}
       </ul>
     {/if}
