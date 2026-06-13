@@ -854,3 +854,33 @@ process roughly every 90 seconds so the UI never observed a healthy session.
 `atomic.Uint64`/`atomic.Int64` and use the method API (`.Add(1)`, `.Load()`,
 `.Store()`). Do not reintroduce bare `uint64` + `atomic.AddUint64`, and do not
 rely on field ordering for alignment.
+
+### 44. Every Go→Rust IPC payload must be dispatched in BOTH modem loops
+
+The desktop/server modem and the Android modem read the same
+`graywolf.proto` IPC stream through **two independent dispatch matches**,
+and a Go→Rust payload only works on a platform whose match has an arm for
+it:
+
+1. `graywolf-modem/src/modem/mod.rs` — `handle_message` (desktop, server, the cdylib's non-Android path)
+2. `graywolf-modem/src/android/mod.rs` — the inbound `while let` in `run_demod` (Android)
+
+Both end in a catch-all (`_ => {}` / the grouped Rust→Go ignore arm), so a
+new payload added to one loop but not the other is **silently dropped** on
+the platform that missed it — no error, no log, just a Go-side request that
+never gets its reply and times out.
+
+*Why:* this has bitten twice. 5d6b75ad wired `ConfigurePtt` / `ManualPtt` /
+`TransmitFrame` into `run_demod` after they were found dropped on Android
+(PTT stayed silent); then `TransmitTestSignal` (the Channel TX test-signal
+feature, #193) shipped to the desktop loop only and fell into the Android
+catch-all, so **Test TX** returned `modembridge: test signal timeout` on
+Android (#267). Same failure mode as invariant #34 (KISS dispatch in two
+places), but across the Go↔Rust boundary.
+
+*How to apply:* when you add a Go→Rust `Payload` variant, add a matching
+arm to **both** loops in the same change — and on Android remember to send
+the corresponding Rust→Go reply (e.g. `TestSignalResult`) so the Go side's
+bounded wait resolves. Android TX jobs submit samples unscaled (gain is
+applied by `AndroidTxSink`), unlike the desktop arm which pre-scales by the
+output device gain.
