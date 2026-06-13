@@ -42,6 +42,8 @@ type StationDTO struct {
 	PathPositions [][2]float64 `json:"path_positions,omitempty"`
 	// Hops is the APRS digipeater hop count (number of H-bit entries in Path).
 	Hops int `json:"hops,omitempty"`
+	// Gated is true when the most recent packet reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF.
+	Gated bool `json:"gated,omitempty"`
 	// Channel is the graywolf channel ID that received the most recent packet.
 	Channel uint32 `json:"channel"`
 	// Comment is the free-form comment field from the most recent packet.
@@ -74,6 +76,8 @@ type StationPosDTO struct {
 	PathPositions [][2]float64 `json:"path_positions,omitempty"`
 	// Hops is the APRS digipeater hop count (number of H-bit entries in Path) for this fix.
 	Hops int `json:"hops,omitempty"`
+	// Gated is true when this position fix reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF.
+	Gated bool `json:"gated,omitempty"`
 	// Direction indicates the source of this position packet: "RX", "TX", or "IS".
 	Direction string `json:"direction,omitempty"`
 	// Channel is the graywolf channel ID that received this position packet.
@@ -305,6 +309,7 @@ func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos 
 		Path:          s.Path,
 		PathPositions: resolvePathPositions(s.Path, digiPos),
 		Hops:          s.Hops,
+		Gated:         s.Gated,
 		Channel:       s.Channel,
 		Comment:       s.Comment,
 	}
@@ -346,6 +351,7 @@ func positionToDTO(p stationcache.Position, digiPos map[string]stationcache.LatL
 		Path:          p.Path,
 		PathPositions: resolvePathPositions(p.Path, digiPos),
 		Hops:          p.Hops,
+		Gated:         p.Gated,
 		Direction:     p.Direction,
 		Channel:       p.Channel,
 		Comment:       p.Comment,

@@ -47,6 +47,7 @@ type Station struct {
 	Path      []string   // digi path from AX.25 header
 	Hops      int        // count of H-bit digi addresses
 	Direction string     // "RX", "TX", "IS"
+	Gated     bool       // Internet-to-RF gated (inner of a third-party packet)
 	Channel   uint32
 	Comment   string
 	Weather   *Weather // nil if not a weather station
@@ -69,6 +70,7 @@ type Position struct {
 	Path      []string
 	Hops      int
 	Direction string
+	Gated     bool
 	Channel   uint32
 	Comment   string
 	Timestamp time.Time

@@ -93,6 +93,7 @@ func (c *MemCache) Update(entries []CacheEntry) {
 			Path:      e.Path,
 			Hops:      e.Hops,
 			Direction: e.Direction,
+			Gated:     e.Gated,
 			Channel:   e.Channel,
 			Comment:   e.Comment,
 			Timestamp: e.Timestamp,
@@ -125,6 +126,7 @@ func (c *MemCache) Update(entries []CacheEntry) {
 				s.Positions[0].Path = e.Path
 				s.Positions[0].Hops = e.Hops
 				s.Positions[0].Direction = e.Direction
+				s.Positions[0].Gated = e.Gated
 				s.Positions[0].Channel = e.Channel
 			}
 		}
@@ -248,6 +250,7 @@ func updateMetadata(s *Station, e *CacheEntry, now time.Time) {
 	s.Path = e.Path
 	s.Hops = e.Hops
 	s.Direction = e.Direction
+	s.Gated = e.Gated
 	s.Channel = e.Channel
 	s.Comment = e.Comment
 	s.LastHeard = now

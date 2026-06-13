@@ -3393,6 +3393,8 @@ export interface components {
             comment?: string;
             /** @description Direction indicates the source of the most recent packet: "RX" (heard on air), "TX" (sent by us), or "IS" (APRS-IS). */
             direction?: string;
+            /** @description Gated is true when the most recent packet reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF. */
+            gated?: boolean;
             /** @description Hops is the APRS digipeater hop count (number of H-bit entries in Path). */
             hops?: number;
             /** @description IsObject is true for APRS objects and items; false for regular stations. */
@@ -3425,6 +3427,8 @@ export interface components {
             course?: number;
             /** @description Direction indicates the source of this position packet: "RX", "TX", or "IS". */
             direction?: string;
+            /** @description Gated is true when this position fix reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF. */
+            gated?: boolean;
             /** @description HasAlt is true when the originating packet reported an altitude. */
             has_alt?: boolean;
             /** @description Hops is the APRS digipeater hop count (number of H-bit entries in Path) for this fix. */
