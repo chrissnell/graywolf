@@ -146,3 +146,34 @@ func TestUpsertMapsDownload_NilBBoxOnFreshInsertStaysNull(t *testing.T) {
 		t.Fatalf("expected NULL bbox throughout, got %q", *got.BBox)
 	}
 }
+
+func TestUpsertMapsDownloadMaxZoom(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.UpsertMapsDownload(ctx, MapsDownload{
+		Slug: "world", Status: "complete", MaxZoom: 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMapsDownload(ctx, "world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MaxZoom != 7 {
+		t.Fatalf("MaxZoom = %d, want 7", got.MaxZoom)
+	}
+	// A later status-transition upsert (fresh row, MaxZoom==0) must NOT
+	// wipe the snapshotted cap.
+	if err := s.UpsertMapsDownload(ctx, MapsDownload{
+		Slug: "world", Status: "downloading",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetMapsDownload(ctx, "world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MaxZoom != 7 {
+		t.Fatalf("MaxZoom after status transition = %d, want 7 (must not be wiped)", got.MaxZoom)
+	}
+}

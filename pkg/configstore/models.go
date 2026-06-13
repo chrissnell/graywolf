@@ -562,7 +562,12 @@ type MapsDownload struct {
 	// startup backfill reads the value from the pmtiles archive header.
 	// Render-path correctness depends on this column being populated
 	// for every completed download.
-	BBox      *string   `gorm:"column:bbox;type:text" json:"bbox,omitempty"`
+	BBox *string `gorm:"column:bbox;type:text" json:"bbox,omitempty"`
+	// MaxZoom is the archive's top zoom level, snapshotted from the
+	// catalog at download-start time. 0 means "no cap" (regional,
+	// full-detail archives); the world archive carries its real cap
+	// (e.g. 7) so the offline render path overzooms its top tile.
+	MaxZoom   int       `gorm:"not null;default:0" json:"max_zoom"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 }

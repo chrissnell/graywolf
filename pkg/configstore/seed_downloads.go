@@ -83,6 +83,16 @@ func (s *Store) UpsertMapsDownload(ctx context.Context, d MapsDownload) error {
 	if d.BBox != nil {
 		cols["bbox"] = d.BBox
 	}
+	// max_zoom follows the same "set if meaningful, leave untouched
+	// otherwise" rule as bbox. Start snapshots the world archive's cap
+	// (>0); the later downloading/complete status-transition upserts
+	// construct a fresh row with MaxZoom==0, and writing that
+	// unconditionally would wipe the cap. Regional archives are always
+	// 0 (no cap) and rely on the column default, so skipping the write
+	// for 0 is correct for them too.
+	if d.MaxZoom != 0 {
+		cols["max_zoom"] = d.MaxZoom
+	}
 	if d.ID == 0 {
 		return db.Model(&MapsDownload{}).Create(cols).Error
 	}
