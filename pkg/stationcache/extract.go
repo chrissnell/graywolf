@@ -42,9 +42,12 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 	}
 
 	// Third-party unwrapping: use the inner packet's Source/Path/Position.
-	// A non-nil ThirdParty means this position reached us as Internet-to-RF
-	// gated traffic (the path carries TCPIP/qA* markers) rather than a
-	// packet heard over the air on its own.
+	// We treat any third-party (`}`) packet as Internet-to-RF gated traffic.
+	// In modern APRS that framing is, in practice, exclusively IGate->RF
+	// gating (the inner path carries TCPIP/qA* markers); the rare, deprecated
+	// RF-to-RF third-party relay would also be flagged here, an accepted
+	// trade-off for keying on the structural wrapper rather than parsing the
+	// path. The "RF Only" map filter uses this to drop gated points.
 	pkt := decoded
 	gated := decoded.ThirdParty != nil
 	if decoded.ThirdParty != nil {
