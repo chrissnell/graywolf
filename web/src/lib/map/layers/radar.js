@@ -12,15 +12,21 @@
 // rebuilds the style and can drop user-added layers) the same way the sibling
 // layers do.
 
-import { radarProvider, frameBucket } from '../sources/radar-source.js';
+import { radarProviderForRegion, frameBucket, RADAR_REGION_US } from '../sources/radar-source.js';
 
-export function mountRadarLayer(map, { visible, opacity, now = () => Date.now() }) {
-  const provider = radarProvider();
-  // Last-known UI state, applied when (re-)adding layers after a style swap.
+export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_US, now = () => Date.now() }) {
+  // Region (US vs rest-of-world) is operator-selectable, so the provider is
+  // mutable: setRegion() tears down and rebuilds it. Everything below reads the
+  // current `provider`, so the same add/remove logic serves either region.
+  let curRegion = region;
+  let provider = radarProviderForRegion(curRegion);
+  // Last-known UI state, applied when (re-)adding layers after a style swap or
+  // a region switch.
   let curVisible = visible;
   let curOpacity = opacity;
-  // Current frame cache-bust bucket (vector backend only). The source is added
-  // already pointing at this bucket's URL; refresh() bumps it on rollover.
+  // Current frame cache-bust bucket (providers with cacheBust only). The source
+  // is added already pointing at this bucket's URL; refresh() bumps it on
+  // rollover.
   let curBucket = provider.cacheBust ? frameBucket(now()) : null;
 
   // Idempotent add: safe to call repeatedly (initial mount + every refresh).
@@ -81,6 +87,19 @@ export function mountRadarLayer(map, { visible, opacity, now = () => Date.now() 
     }
   }
 
+  // Switch coverage region. The US and world providers can differ in layer
+  // type/ids (vector fill vs raster), so we fully tear down the current
+  // provider's layers + source and rebuild from the new one. curVisible /
+  // curOpacity carry over, so ensure() re-applies the operator's UI state.
+  function setRegion(region) {
+    if (region === curRegion) return;
+    curRegion = region;
+    destroy();
+    provider = radarProviderForRegion(region);
+    curBucket = provider.cacheBust ? frameBucket(now()) : null;
+    ensure();
+  }
+
   function destroy() {
     for (const layer of provider.layers) {
       if (map.getLayer(layer.id)) map.removeLayer(layer.id);
@@ -88,5 +107,5 @@ export function mountRadarLayer(map, { visible, opacity, now = () => Date.now() 
     if (map.getSource(provider.sourceId)) map.removeSource(provider.sourceId);
   }
 
-  return { refresh, setVisible, setOpacity, destroy };
+  return { refresh, setVisible, setOpacity, setRegion, destroy };
 }

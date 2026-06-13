@@ -6,8 +6,13 @@ import {
   RADAR_BACKEND_RASTER,
   RADAR_BACKEND_VECTOR,
   ACTIVE_RADAR_BACKEND,
+  RADAR_REGION_US,
+  RADAR_REGION_WORLD,
   radarTileUrl,
   radarProvider,
+  radarProviderForRegion,
+  worldRadarProvider,
+  rainviewerTileUrl,
   vectorTileUrl,
   frameBucket,
 } from './radar-source.js';
@@ -113,4 +118,43 @@ test('raster source caps maxzoom so tiles overzoom instead of 404ing', () => {
   const p = radarProvider(RADAR_BACKEND_RASTER);
   assert.equal(typeof p.source.maxzoom, 'number');
   assert.ok(p.source.maxzoom >= 7 && p.source.maxzoom <= 12);
+});
+
+test('world provider is a RainViewer raster overlay driven by raster-opacity', () => {
+  const p = worldRadarProvider();
+  assert.equal(p.sourceId, 'radar-tiles');
+  assert.equal(p.source.type, 'raster');
+  assert.equal(p.source.tileSize, 256);
+  assert.match(p.source.tiles[0], /\/radar\/rainviewer\/\{z\}\/\{x\}\/\{y\}\.png$/);
+  // RainViewer tops out at native z7; cap so MapLibre overzooms instead of
+  // requesting non-existent z8+ tiles.
+  assert.equal(p.source.maxzoom, 7);
+  assert.equal(p.layers.length, 1);
+  assert.equal(p.layers[0].type, 'raster');
+  assert.equal(p.opacity.property, 'raster-opacity');
+  assert.deepEqual(p.opacity.layerIds, ['radar-raster']);
+});
+
+test('rainviewerTileUrl is the /radar/rainviewer/ route and appends ?v= when busting', () => {
+  assert.equal(rainviewerTileUrl(), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
+  assert.equal(rainviewerTileUrl(9), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png?v=9');
+});
+
+test('world provider exposes a cacheBust that swaps in a ?v= template', () => {
+  const p = worldRadarProvider();
+  assert.equal(typeof p.cacheBust, 'function');
+  assert.deepEqual(p.cacheBust(7), ['https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png?v=7']);
+});
+
+test('radarProviderForRegion: US delegates to the backend, world is RainViewer', () => {
+  // US region uses the active US backend (vector contours today).
+  const us = radarProviderForRegion(RADAR_REGION_US);
+  assert.deepEqual(us.source.tiles, radarProvider().source.tiles);
+  assert.equal(us.source.type, radarProvider().source.type);
+  // Default region is US.
+  assert.deepEqual(radarProviderForRegion().source.tiles, radarProvider().source.tiles);
+  // World region is the RainViewer raster overlay.
+  const world = radarProviderForRegion(RADAR_REGION_WORLD);
+  assert.equal(world.source.type, 'raster');
+  assert.match(world.source.tiles[0], /\/radar\/rainviewer\//);
 });
