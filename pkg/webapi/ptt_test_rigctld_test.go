@@ -114,6 +114,43 @@ func TestHandleTestRigctld_HamlibErrorReported(t *testing.T) {
 	}
 }
 
+// A reply that is neither a state value nor a parseable RPRT must be
+// reported as a protocol mismatch (the sanitized snippet), not silently
+// accepted. Guards the single-line parse's fall-through branch.
+func TestHandleTestRigctld_UnexpectedResponse(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				r := bufio.NewReader(c)
+				if _, err := r.ReadString('\n'); err != nil {
+					return
+				}
+				_, _ = c.Write([]byte("BOGUS\n"))
+			}(conn)
+		}
+	}()
+	h, p, _ := net.SplitHostPort(ln.Addr().String())
+	pn, _ := strconv.Atoi(p)
+
+	resp := postTestRigctld(t, h, uint16(pn))
+	if resp.OK {
+		t.Fatalf("expected failure on garbage reply, got OK=true")
+	}
+	if !strings.Contains(resp.Message, "unexpected response") || !strings.Contains(resp.Message, "BOGUS") {
+		t.Fatalf("expected protocol-mismatch message, got %q", resp.Message)
+	}
+}
+
 func TestHandleTestRigctld_ConnectionRefused(t *testing.T) {
 	// Bind then immediately close to obtain a port nothing is listening on.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

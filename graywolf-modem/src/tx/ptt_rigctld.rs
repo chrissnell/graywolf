@@ -237,8 +237,11 @@ impl RigctldPtt {
         if trimmed == "0" || trimmed == "1" {
             return Ok(());
         }
-        // Not a state line: the only other valid shape is an error
-        // `RPRT <code>`. parse_rprt maps malformed input to -9999.
+        // Not a state line: the only meaningful alternative is an error
+        // `RPRT <code>`, whose non-zero code we surface. parse_rprt maps
+        // malformed input to the -9999 sentinel; a bare `RPRT 0` (which a
+        // get should never emit) parses as Ok. Both fall through to the
+        // mismatch arm — a get that yields no value is not a valid probe.
         match parse_rprt(trimmed) {
             Err(code) if code != -9999 => Err(format!(
                 "rigctld ptt: probe: hamlib error code {} (see `rigctl --list`)",
@@ -651,11 +654,12 @@ mod tests {
     }
 
     /// Spawn a fake rigctld on an ephemeral loopback port that speaks
-    /// the REAL protocol: a get (`t`) replies with a single value line
-    /// (`0`/`1`, no trailing `RPRT`), and a set (`T 1`/`T 0`) replies
-    /// with `RPRT 0`. Accepts repeatedly so both the primary and the
-    /// keepalive connections are served. Returns the bound address.
-    fn spawn_fake_rigctld() -> String {
+    /// the REAL protocol: a set (`T 1`/`T 0`) replies with `RPRT 0`, and
+    /// a get (`t`) replies with `get_reply` — a single line, defaulting
+    /// to a healthy `0\n` value with no trailing `RPRT`. Accepts
+    /// repeatedly so both the primary and keepalive connections are
+    /// served. Returns the bound address.
+    fn spawn_fake_rigctld_with(get_reply: &'static [u8]) -> String {
         use std::net::TcpListener;
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake rigctld");
         let addr = listener.local_addr().expect("local_addr").to_string();
@@ -677,7 +681,7 @@ mod tests {
                         }
                         let cmd = line.trim();
                         let reply: &[u8] = if cmd == "t" {
-                            b"0\n"
+                            get_reply
                         } else if cmd.starts_with("T ") {
                             b"RPRT 0\n"
                         } else {
@@ -694,6 +698,11 @@ mod tests {
         addr
     }
 
+    /// Healthy daemon: `t` returns a bare `0` value line.
+    fn spawn_fake_rigctld() -> String {
+        spawn_fake_rigctld_with(b"0\n")
+    }
+
     /// GRA-73 regression: a healthy rigctld answers `t` with only the
     /// state value (no trailing `RPRT 0`). The connect handshake must
     /// succeed against that, and key/unkey must round-trip — previously
@@ -708,6 +717,35 @@ mod tests {
         };
         driver.key().expect("key should send 'T 1' and accept RPRT 0");
         driver.unkey().expect("unkey should send 'T 0' and accept RPRT 0");
+    }
+
+    #[test]
+    fn connect_surfaces_hamlib_error_from_get_ptt() {
+        // rigctld-up-radio-down: the get returns a non-zero RPRT instead
+        // of a value. The probe must surface the hamlib code, not key.
+        let addr = spawn_fake_rigctld_with(b"RPRT -6\n");
+        let err = match RigctldPtt::connect(&addr) {
+            Err(e) => e,
+            Ok(_) => panic!("expected connect to fail on RPRT -6"),
+        };
+        assert!(err.contains("hamlib error code -6"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn connect_rejects_unexpected_get_ptt_line() {
+        // A line that is neither a state value nor a parseable RPRT is a
+        // protocol mismatch (parse_rprt maps it to the -9999 sentinel,
+        // which must NOT be reported as a hamlib code).
+        let addr = spawn_fake_rigctld_with(b"BOGUS\n");
+        let err = match RigctldPtt::connect(&addr) {
+            Err(e) => e,
+            Ok(_) => panic!("expected connect to fail on garbage reply"),
+        };
+        assert!(
+            err.contains("expected '0' or '1'") && err.contains("BOGUS"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]
