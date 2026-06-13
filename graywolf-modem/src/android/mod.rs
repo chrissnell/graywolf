@@ -19,7 +19,9 @@ use jni::{JNIEnv, JavaVM};
 use log::{error, info, warn};
 
 use crate::demod_afsk_multi::{MultiAfskDemodulator, RECOMMENDED_3DEMOD};
-use crate::ipc::proto::{ipc_message, DeviceLevelUpdate, IpcMessage, ReceivedFrame, StatusUpdate};
+use crate::ipc::proto::{
+    ipc_message, DeviceLevelUpdate, IpcMessage, ReceivedFrame, StatusUpdate, TestSignalResult,
+};
 use crate::ipc::server::{IpcInbound, IpcServer};
 use crate::modem::tx_worker::{TxJob, TxWorker};
 use crate::rxonly::feed_chunk;
@@ -430,6 +432,9 @@ fn run_demod(
 
             // Drain inbound IPC messages from the Go side. Previously only
             // ConfigureChannel was handled; now the full TX dispatch is wired.
+            // Set when a reply send fails so we break to await reconnect after
+            // the drain loop (a `while let` can't `break` with a value).
+            let mut reply_send_failed = false;
             while let Ok(inbound) = ipc_rx.try_recv() {
                 if let IpcInbound::Message(msg) = inbound {
                     match msg.payload {
@@ -527,6 +532,88 @@ fn run_demod(
                                 }
                             }
                         }
+                        Some(ipc_message::Payload::TransmitTestSignal(req)) => {
+                            // Build test-signal PCM the same way the desktop
+                            // modem does (modem::handle_transmit_test_signal),
+                            // then submit it through the shared TxWorker and
+                            // reply with TestSignalResult. Without this arm the
+                            // payload hit the catch-all below and was dropped,
+                            // so the Go side's 5s wait expired -- the "test
+                            // signal timeout" operators saw on Android
+                            // (graywolf#267). Gain is applied by AndroidTxSink,
+                            // so samples are submitted unscaled like TransmitFrame.
+                            let built = match req.kind {
+                                0 => {
+                                    let s = crate::txtest::cw_samples(
+                                        &req.callsign,
+                                        TARGET_SAMPLE_RATE,
+                                        req.cw_wpm.max(1),
+                                        req.freq_a_hz as f32,
+                                    );
+                                    if s.is_empty() {
+                                        Err("callsign produced no CW symbols".to_string())
+                                    } else {
+                                        Ok(s)
+                                    }
+                                }
+                                1 => Ok(crate::txtest::tone_samples(
+                                    TARGET_SAMPLE_RATE,
+                                    req.freq_a_hz as f32,
+                                    req.duration_ms,
+                                )),
+                                2 => Ok(crate::txtest::alternating_samples(
+                                    TARGET_SAMPLE_RATE,
+                                    req.freq_a_hz as f32,
+                                    req.freq_b_hz as f32,
+                                    req.duration_ms,
+                                    req.alt_period_ms,
+                                )),
+                                other => Err(format!("unknown test signal kind {}", other)),
+                            };
+
+                            let (success, error) = match built {
+                                Ok(samples) => {
+                                    let job = TxJob {
+                                        channel: req.channel,
+                                        samples,
+                                        sample_rate: TARGET_SAMPLE_RATE,
+                                        // unused by the Android arm of process_job
+                                        output_device_id: 0,
+                                        sink_config:
+                                            crate::audio::soundcard::SoundcardOutputConfig {
+                                                device_name: String::new(),
+                                                sample_rate: TARGET_SAMPLE_RATE,
+                                                channels: 1,
+                                                audio_channel: 0,
+                                            },
+                                    };
+                                    // Ok here means "enqueued on the TX
+                                    // worker", not "played out" -- PTT keying
+                                    // and audio happen async in process_job.
+                                    // Matches the desktop handler's reply
+                                    // semantics (modem::handle_transmit_test_signal).
+                                    match tx_worker.transmit(job) {
+                                        Ok(()) => {
+                                            config_state::increment_tx_frames();
+                                            (true, String::new())
+                                        }
+                                        Err(e) => (false, e),
+                                    }
+                                }
+                                Err(e) => (false, e),
+                            };
+
+                            if let Err(e) = handle.send(&IpcMessage::test_signal_result(
+                                TestSignalResult { request_id: req.request_id, success, error },
+                            )) {
+                                warn!(
+                                    "ipc send (test signal result): {}; awaiting reconnect",
+                                    e
+                                );
+                                reply_send_failed = true;
+                                break;
+                            }
+                        }
                         Some(ipc_message::Payload::SetDeviceGain(sg)) => {
                             // Live gain from the operator slider. Without this
                             // arm it was a silent no-op on Android (gain frozen
@@ -542,6 +629,9 @@ fn run_demod(
                         _ => {}
                     }
                 }
+            }
+            if reply_send_failed {
+                break true;
             }
         };
 
