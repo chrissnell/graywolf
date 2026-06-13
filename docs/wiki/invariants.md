@@ -830,3 +830,27 @@ of truth for which path entries are real hops. The map's `hops` field is
 computed once in [`pkg/stationcache/extract.go`](../../pkg/stationcache/extract.go)
 and consumed verbatim by the frontend popup; do not recompute it from
 `path.length` client-side.
+
+### 43. 64-bit atomic counters must be `atomic.Uint64`, not bare `uint64`
+
+Any struct field touched by a 64-bit atomic operation must use the
+`atomic.Uint64` / `atomic.Int64` types, never a plain `uint64` accessed via
+`atomic.AddUint64`/`atomic.LoadUint64`. On 32-bit platforms (notably ARMv6 --
+the Raspberry Pi Zero), a 64-bit atomic op requires the address to be 8-byte
+aligned; a bare `uint64` sitting mid-struct on a 4-byte boundary is not
+guaranteed to be, and the op panics with `unaligned 64-bit atomic operation`.
+The `atomic.Uint64` wrapper carries an alignment guarantee, so the compiler
+places it correctly regardless of field order. The iGate's four packet
+counters (`statGated`, `statDownlinked`, `statFiltered`, `statDropped` in
+[`pkg/igate/igate.go`](../../pkg/igate/igate.go)) are the canonical example.
+
+*Why:* graywolf issue #262 -- on a Pi Zero the iGate connected to APRS-IS fine
+but the web UI showed "Disabled" because `handleISLine`'s first
+`atomic.AddUint64` panicked on the misaligned `statFiltered`, crash-looping the
+process roughly every 90 seconds so the UI never observed a healthy session.
+64-bit hosts are unaffected, which is why it slipped through.
+
+*How to apply:* declare any atomically-accessed 64-bit counter as
+`atomic.Uint64`/`atomic.Int64` and use the method API (`.Add(1)`, `.Load()`,
+`.Store()`). Do not reintroduce bare `uint64` + `atomic.AddUint64`, and do not
+rely on field ordering for alignment.
