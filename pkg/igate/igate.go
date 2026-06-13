@@ -212,11 +212,14 @@ type Igate struct {
 	mSubmitDropped  prometheus.Counter
 	mFanoutDropped  prometheus.Counter
 
-	// Stats snapshot for Status().
-	statGated      uint64
-	statDownlinked uint64
-	statFiltered   uint64
-	statDropped    uint64
+	// Stats snapshot for Status(). atomic.Uint64 guarantees 8-byte
+	// alignment, which bare uint64 fields do not on 32-bit platforms
+	// (e.g. ARMv6 Raspberry Pi Zero); a misaligned 64-bit atomic op
+	// there panics with "unaligned 64-bit atomic operation".
+	statGated      atomic.Uint64
+	statDownlinked atomic.Uint64
+	statFiltered   atomic.Uint64
+	statDropped    atomic.Uint64
 
 	// session plumbing
 	//
@@ -478,12 +481,12 @@ func (ig *Igate) handleISLine(line string) {
 	// echoed onto RF (e.g. their own internet-connected weather
 	// station). See shouldForwardISToRF for the full rules.
 	if !ig.shouldForwardISToRF(pkt) {
-		atomic.AddUint64(&ig.statFiltered, 1)
+		ig.statFiltered.Add(1)
 		ig.mFilteredTotal.Inc()
 		return
 	}
 	if !ig.filter.Load().Allow(pkt) {
-		atomic.AddUint64(&ig.statFiltered, 1)
+		ig.statFiltered.Add(1)
 		ig.mFilteredTotal.Inc()
 		return
 	}
@@ -527,7 +530,7 @@ func (ig *Igate) handleISLine(line string) {
 		ig.logSubmitDrop(wrapped, err)
 		return
 	}
-	atomic.AddUint64(&ig.statDownlinked, 1)
+	ig.statDownlinked.Add(1)
 	ig.mGatedTotal.WithLabelValues("is_to_rf").Inc()
 
 	// Also publish into the PacketInput fan-out for any listeners.
@@ -731,7 +734,7 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) GateReason {
 	connected := ig.connected
 	ig.mu.Unlock()
 	if !connected {
-		atomic.AddUint64(&ig.statDropped, 1)
+		ig.statDropped.Add(1)
 		ig.mDroppedOffline.Inc()
 		return GateReasonOffline
 	}
@@ -742,7 +745,7 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) GateReason {
 	}
 	if ig.simulation.Load() {
 		ig.logger.Info("igate simulation send", "line", line)
-		atomic.AddUint64(&ig.statGated, 1)
+		ig.statGated.Add(1)
 		ig.mGatedTotal.WithLabelValues("rf_to_is").Inc()
 		if ig.cfg.RfToIsHook != nil {
 			ig.cfg.RfToIsHook(pkt, line)
@@ -753,7 +756,7 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) GateReason {
 		ig.logger.Warn("igate: aprs-is write failed", "err", err)
 		return GateReasonWriteFail
 	}
-	atomic.AddUint64(&ig.statGated, 1)
+	ig.statGated.Add(1)
 	ig.mGatedTotal.WithLabelValues("rf_to_is").Inc()
 	if ig.cfg.RfToIsHook != nil {
 		ig.cfg.RfToIsHook(pkt, line)
@@ -852,9 +855,9 @@ func (ig *Igate) Status() Status {
 		Callsign:       ig.stationCallsign,
 		SimulationMode: ig.simulation.Load(),
 		LastConnected:  ig.lastConnected,
-		Gated:          atomic.LoadUint64(&ig.statGated),
-		Downlinked:     atomic.LoadUint64(&ig.statDownlinked),
-		Filtered:       atomic.LoadUint64(&ig.statFiltered),
-		DroppedOffline: atomic.LoadUint64(&ig.statDropped),
+		Gated:          ig.statGated.Load(),
+		Downlinked:     ig.statDownlinked.Load(),
+		Filtered:       ig.statFiltered.Load(),
+		DroppedOffline: ig.statDropped.Load(),
 	}
 }

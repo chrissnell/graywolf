@@ -310,7 +310,7 @@ func TestIsRxHookFiresEvenWhenFilterRejects(t *testing.T) {
 	if got := atomic.LoadInt32(&hookCalls); got != 1 {
 		t.Fatalf("IsRxHook calls = %d, want 1 (must fire regardless of filter)", got)
 	}
-	if got := atomic.LoadUint64(&ig.statFiltered); got != 1 {
+	if got := ig.statFiltered.Load(); got != 1 {
 		t.Fatalf("statFiltered = %d, want 1 (filter still counts the reject)", got)
 	}
 }
