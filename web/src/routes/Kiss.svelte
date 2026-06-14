@@ -1320,10 +1320,6 @@
   .detail-err {
     color: var(--color-error, #d32f2f);
   }
-  .detail-muted {
-    color: var(--text-secondary);
-    font-style: italic;
-  }
   .detail-actions {
     margin-top: 8px;
   }
