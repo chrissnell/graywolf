@@ -143,11 +143,13 @@
   }
   const radarFrames = createRadarFrames({ load: loadRadarFrames });
   // Slider label: the current frame's local time + position (e.g. "6:05 PM · 34/37").
+  // No "Radar frame:" prefix -- it pushed the line to wrap, and the slider it
+  // sits above already makes the context clear.
   const radarFrameLabel = $derived.by(() => {
     const f = radarFrames.current;
-    if (!f) return 'Radar loop: waiting for frames…';
+    if (!f) return 'Waiting for frames…';
     const t = new Date(f.ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    return `Radar frame: ${t} · ${radarFrames.index + 1}/${radarFrames.count}`;
+    return `${t} · ${radarFrames.index + 1}/${radarFrames.count}`;
   });
 
   let mapRef = null;
