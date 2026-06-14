@@ -33,6 +33,44 @@ func TestPlainText_FlattensAndJoins(t *testing.T) {
 	}
 }
 
+// TestPlainText_MarkdownSubset exercises the flattening of the full
+// markdown subset, including the nested and literal cases a naive regex
+// flattener gets wrong. PlainText delegates to the in-app renderer, so
+// these assert parity with what the popup shows minus styling.
+func TestPlainText_MarkdownSubset(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string // body portion only (after the title + blank line)
+	}{
+		{"italic inside bold", "**really *very* important** today", "really very important today"},
+		{"bold inside link text", "see [**Settings**](#/settings) now", "see Settings now"},
+		{"literal wildcard star kept", "use a CALL-* wildcard to match all SSIDs", "use a CALL-* wildcard to match all SSIDs"},
+		{"entities round-trip", "filter & sort; speeds < 5 and it's fine", "filter & sort; speeds < 5 and it's fine"},
+		{"unclosed bold literal", "this ** is not bold", "this ** is not bold"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := []byte(`
+- version: "0.12.0"
+  date: "2026-05-01"
+  style: info
+  title: "T"
+  body: ` + "\"" + tc.body + "\"\n")
+			restore := forceParse(src)
+			defer restore()
+			got, err := PlainText("0.12.0")
+			if err != nil {
+				t.Fatalf("PlainText: %v", err)
+			}
+			want := "T\n\n" + tc.want
+			if got != want {
+				t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+			}
+		})
+	}
+}
+
 func TestPlainText_MissingVersion(t *testing.T) {
 	src := []byte(`
 - version: "0.12.0"

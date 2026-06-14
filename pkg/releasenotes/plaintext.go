@@ -2,6 +2,7 @@ package releasenotes
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 
@@ -14,25 +15,22 @@ import (
 // note.
 const PlayWhatsNewMax = 500
 
-var (
-	// [text](href) -> text. The hrefs in notes.yaml are internal #/...
-	// app routes that mean nothing in a store listing, so only the
-	// visible text survives.
-	mdLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
-	// **bold** then *italic* markers -- store "What's new" text is
-	// unstyled plain text. Bold runs first so a leftover single star
-	// from the bold pass can't confuse the italic pass.
-	mdBold   = regexp.MustCompile(`\*\*([^*]+)\*\*`)
-	mdItalic = regexp.MustCompile(`\*([^*]+)\*`)
-)
+// htmlTag matches a single tag emitted by the release-note renderer
+// (<p>, <strong>, <em>, <a ...>). Their attribute values are
+// HTML-escaped, so a literal '>' never appears inside a tag.
+var htmlTag = regexp.MustCompile(`<[^>]+>`)
 
 // PlainText renders the release note for version as plain UTF-8 text
 // suitable for an app-store "What's new" field. The title is the first
-// line, separated from the body by a blank line. Markdown links collapse
-// to their visible text and bold/italic markers are stripped. Soft-
-// wrapped lines within a paragraph join into one line; paragraphs are
-// separated by a blank line (mirroring the in-app renderer's paragraph
-// model). Returns an error if no note matches version.
+// line, separated from the body by a blank line.
+//
+// The body is produced by the in-app renderer (renderMarkdown) and then
+// stripped to text, so the result is exactly what the in-app "What's
+// new" popup shows minus styling and link targets: bold/italic markers
+// and links collapse to their visible text (nested markers included),
+// paragraphs are separated by a blank line, and a deliberate literal
+// such as the CALL-* wildcard is preserved. Reusing the renderer means
+// there is no second markdown implementation to drift from the popup.
 //
 // The result is NOT length-capped; pass it through Truncate for stores
 // with a character limit (see PlayWhatsNewMax).
@@ -45,12 +43,12 @@ func PlainText(version string) (string, error) {
 		if r.Version != version {
 			continue
 		}
-		title := strings.TrimSpace(r.Title)
-		paras := splitParagraphs(r.Body)
-		for i, p := range paras {
-			paras[i] = flattenInline(p)
+		htmlBody, err := renderMarkdown(r.Body)
+		if err != nil {
+			return "", fmt.Errorf("releasenotes: render %q: %w", version, err)
 		}
-		body := strings.Join(paras, "\n\n")
+		body := htmlToText(htmlBody)
+		title := strings.TrimSpace(r.Title)
 		switch {
 		case title == "":
 			return body, nil
@@ -63,14 +61,15 @@ func PlainText(version string) (string, error) {
 	return "", fmt.Errorf("releasenotes: no note for version %q", version)
 }
 
-// flattenInline strips the restricted markdown subset (links, bold,
-// italic) down to plain text. Links resolve first so any bold/italic
-// inside link text is then handled by the marker passes.
-func flattenInline(s string) string {
-	s = mdLink.ReplaceAllString(s, "$1")
-	s = mdBold.ReplaceAllString(s, "$1")
-	s = mdItalic.ReplaceAllString(s, "$1")
-	return strings.TrimSpace(s)
+// htmlToText converts the renderer's sanitized HTML to plain text:
+// paragraph breaks become blank lines, all tags are removed, and HTML
+// entities are decoded. Tags are stripped BEFORE unescaping so escaped
+// text like "&lt;script&gt;" is never resurrected into a real tag.
+func htmlToText(h string) string {
+	h = strings.ReplaceAll(h, "</p>", "\n\n")
+	h = htmlTag.ReplaceAllString(h, "")
+	h = html.UnescapeString(h)
+	return strings.TrimSpace(h)
 }
 
 // Truncate shortens s to at most max characters, backing off to the
@@ -89,6 +88,10 @@ func Truncate(s string, max int) string {
 	if budget <= 0 {
 		return string(r[:max])
 	}
+	// head is rune-correct. The boundary searches below return BYTE
+	// offsets, but every boundary char ('.', ' ', '\n') is single-byte
+	// ASCII, so slicing head at those offsets is safe. notes.yaml is
+	// ASCII-only by convention; this is the one spot that relies on it.
 	head := string(r[:budget])
 	// A complete sentence reads cleanly; prefer it when it keeps at
 	// least half the budget (avoids cutting back to a tiny fragment).
