@@ -64,12 +64,6 @@
     {/if}
   </section>
 
-  <p class="about-license">
-    Released under the
-    <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" target="_blank" rel="noopener">
-      GNU General Public License v2.0</a>.
-    You are free to redistribute and modify this software under the terms of the GPL 2.0.
-  </p>
   <blockquote class="about-quote">
     <p>
       "And behold, I tell you these things that ye may learn wisdom; that ye may learn
@@ -82,6 +76,12 @@
       </a>
     </cite>
   </blockquote>
+  <p class="about-license">
+    Released under the
+    <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" target="_blank" rel="noopener">
+      GNU General Public License v2.0</a>.
+    You are free to redistribute and modify this software under the terms of the GPL 2.0.
+  </p>
 </div>
 
 <style>
@@ -185,7 +185,7 @@
     font-size: 14px;
     line-height: 1.6;
     color: var(--text-secondary);
-    margin: 0 0 32px;
+    margin: 0;
   }
 
   .about-license a {
@@ -193,7 +193,7 @@
   }
 
   .about-quote {
-    margin: 0;
+    margin: 0 0 32px;
     padding: 16px 20px;
     border-left: 3px solid var(--accent);
     background: var(--bg-secondary);
