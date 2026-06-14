@@ -105,10 +105,12 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
   }
 
   function destroy() {
-    for (const layer of provider.layers) {
-      if (map.getLayer(layer.id)) map.removeLayer(layer.id);
-    }
-    if (map.getSource(provider.sourceId)) map.removeSource(provider.sourceId);
+    try {
+      for (const layer of provider.layers) {
+        if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+      }
+      if (map.getSource(provider.sourceId)) map.removeSource(provider.sourceId);
+    } catch { /* map already removed */ }
   }
 
   return { refresh, setVisible, setOpacity, setRegion, destroy };
