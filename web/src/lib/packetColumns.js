@@ -46,6 +46,32 @@ export function deviceLabel(pkt) {
   return dev.model || dev.vendor || '';
 }
 
+/**
+ * Per-packet received audio level for the signal meter, mirroring Direwolf's
+ * "audio level = rec(mark/space)" report. Returns null when the packet carries
+ * no modem audio level (TX, APRS-IS, hardware KISS-TNC, or a frame that failed
+ * to decode before levels were attached), so the cell renders a dash.
+ *
+ * `level` is the overall 0-100 reading (mean of the two tone amplitudes);
+ * `mark`/`space` expose the split (a large spread is audio "twist"); `lit` is
+ * how many of the 10 meter segments to fill; `zone` colours the meter:
+ *   low  (<25)  weak signal — amber
+ *   good        healthy — green
+ *   hot  (>100) clipping risk — red
+ */
+export function audioLevel(pkt) {
+  const a = pkt.audio_level;
+  if (!a) return null;
+  const mark = a.mark ?? 0;
+  const space = a.space ?? 0;
+  const level = Math.round((mark + space) / 2);
+  const lit = Math.max(0, Math.min(10, Math.round(level / 10)));
+  let zone = 'good';
+  if (level > 100) zone = 'hot';
+  else if (level < 25) zone = 'low';
+  return { level, mark, space, lit, zone };
+}
+
 /** Format a timestamp as "M/D HH:MM:SS" in local time. */
 export function formatTime(ts) {
   const d = new Date(ts);

@@ -42,6 +42,24 @@ type Entry struct {
 	Decoded *aprs.DecodedAPRSPacket `json:"decoded,omitempty"`
 	// Notes is a short annotation describing how this entry was handled (e.g. "deduped", "rate-limited", "digi consumed WIDE1-1").
 	Notes string `json:"notes,omitempty"`
+	// AudioLevel is the demodulator's per-packet received audio level
+	// (Direwolf-style mark/space tone amplitudes). Present only for frames
+	// heard off-air via the modem; nil for TX, APRS-IS, and hardware KISS-TNC
+	// entries, which carry no soundcard-domain level.
+	AudioLevel *AudioLevel `json:"audio_level,omitempty"`
+}
+
+// AudioLevel is the received audio level a demodulator measured while
+// decoding a frame, modeled after Direwolf's "audio level = rec(mark/space)"
+// report. Mark and Space are the two AFSK tone amplitudes scaled to a 0-100
+// range (~50 is a healthy signal, matching Direwolf's convention); values
+// above 100 indicate a hot/clipping input. The mark vs. space spread reveals
+// audio "twist". Mirrors graywolf.ReceivedFrame.audio_level_{mark,space}.
+type AudioLevel struct {
+	// Mark is the mark-tone amplitude, scaled to ~0-100.
+	Mark int `json:"mark"`
+	// Space is the space-tone amplitude, scaled to ~0-100.
+	Space int `json:"space"`
 }
 
 // Hook lets other packages record packets into the log without taking

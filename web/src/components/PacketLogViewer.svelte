@@ -19,6 +19,7 @@
     deviceLabel,
     formatTime,
     packetToEntry,
+    audioLevel,
   } from '../lib/packetColumns.js';
 
   let {
@@ -38,6 +39,7 @@
     { key: 'timestamp', label: 'Time',    width: '130px', class: 'pkt-c-time',           render: timeCell    },
     { key: 'type',      label: 'Type',    width: '180px', class: 'pkt-c-type',           render: typeCell    },
     { key: 'srcdst',    label: 'Src→Dst', width: '1fr',   class: 'pkt-c-srcdst',         render: srcDstCell  },
+    { key: 'level',     label: 'Level',   width: '110px', class: 'pkt-c-level',          render: levelCell   },
     { key: 'channel',   label: 'Channel', width: '120px', class: 'pkt-c-channel', render: channelCell },
     { key: 'distance',  label: 'Distance',width: '120px', class: 'pkt-c-distance', align: 'right', render: distanceCell },
   ];
@@ -70,6 +72,26 @@
     <span class="pkt-arrow" aria-hidden="true">→</span>
     <span class="pkt-dst">{calls.dst || '—'}</span>
   </span>
+{/snippet}
+
+{#snippet levelCell(_value, entry)}
+  {@const al = audioLevel(entry)}
+  {#if al}
+    <span
+      class="pkt-alevel"
+      data-zone={al.zone}
+      title={`audio level ${al.level} (mark ${al.mark} / space ${al.space})`}
+    >
+      <span class="pkt-alevel-bars" aria-hidden="true">
+        {#each Array(10) as _, i}
+          <span class="pkt-alevel-seg" class:on={i < al.lit}></span>
+        {/each}
+      </span>
+      <span class="pkt-alevel-num">{al.level}</span>
+    </span>
+  {:else}
+    <span class="pkt-dim">—</span>
+  {/if}
 {/snippet}
 
 {#snippet channelCell(_value, entry)}
@@ -133,6 +155,45 @@
 
   .pkt-dim {
     color: var(--color-text-dim);
+  }
+
+  /* Direwolf-style per-packet audio level meter: a row of 10 segments that
+     fill in proportion to the received level, plus the numeric value. Zone
+     colours the lit segments — amber when weak, green when healthy, red when
+     hot/clipping. Unlit segments sit on the surface tint so the full scale is
+     always visible. */
+  .pkt-alevel {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pkt-alevel-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 12px;
+  }
+  .pkt-alevel-seg {
+    width: 3px;
+    height: 100%;
+    background: var(--color-surface-raised);
+    border-radius: 1px;
+  }
+  .pkt-alevel-seg.on {
+    background: var(--color-success);
+  }
+  .pkt-alevel[data-zone='low'] .pkt-alevel-seg.on {
+    background: var(--color-warning);
+  }
+  .pkt-alevel[data-zone='hot'] .pkt-alevel-seg.on {
+    background: var(--color-danger);
+  }
+  .pkt-alevel-num {
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-dim);
+    min-width: 2ch;
+    text-align: right;
   }
 
   .pkt-badge {

@@ -37,6 +37,26 @@ func (a *App) kissTncProduce(rf *pb.ReceivedFrame, src ingress.Source) {
 	}
 }
 
+// audioLevelFromFrame projects a modem ReceivedFrame's mark/space tone
+// amplitudes into a packetlog.AudioLevel. The Rust demodulator reports linear
+// peak amplitudes where a full-scale tone is ~1.0; multiplying by 100 matches
+// Direwolf's "audio level" scale (~50 healthy, >100 hot). Returns nil when the
+// frame carries no level (both zero), e.g. a modem build that didn't populate
+// the fields, so the UI renders a dash rather than an empty meter.
+func audioLevelFromFrame(rf *pb.ReceivedFrame) *packetlog.AudioLevel {
+	mark, space := rf.AudioLevelMark, rf.AudioLevelSpace
+	if mark <= 0 && space <= 0 {
+		return nil
+	}
+	scale := func(v float32) int {
+		if v <= 0 {
+			return 0
+		}
+		return int(v*100 + 0.5)
+	}
+	return &packetlog.AudioLevel{Mark: scale(mark), Space: scale(space)}
+}
+
 // dispatchRxFrame runs the fanout consumer's per-frame work: KISS
 // broadcast (with self-echo suppression for KISS-TNC sources), digi
 // handling, AGW monitoring, APRS decode + submit, station cache
@@ -69,23 +89,33 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 
 	a.kissMgr.BroadcastFromChannel(rf.Channel, rf.Data, skipID, skip)
 
+	// Per-packet audio level comes from the soundcard demodulator only.
+	// Hardware KISS-TNC frames arrive already demodulated, so they carry no
+	// meaningful mark/space level — leave it nil for those.
+	var alevel *packetlog.AudioLevel
+	if src.Kind == ingress.KindModem {
+		alevel = audioLevelFromFrame(rf)
+	}
+
 	f, err := ax25.Decode(rf.Data)
 	if err != nil {
 		a.plog.Record(packetlog.Entry{
-			Channel:   rf.Channel,
-			Direction: packetlog.DirRX,
-			Source:    logSource,
-			Raw:       rf.Data,
+			Channel:    rf.Channel,
+			Direction:  packetlog.DirRX,
+			Source:     logSource,
+			Raw:        rf.Data,
+			AudioLevel: alevel,
 		})
 		return
 	}
 
 	e := packetlog.Entry{
-		Channel:   rf.Channel,
-		Direction: packetlog.DirRX,
-		Source:    logSource,
-		Raw:       rf.Data,
-		Display:   f.String(),
+		Channel:    rf.Channel,
+		Direction:  packetlog.DirRX,
+		Source:     logSource,
+		Raw:        rf.Data,
+		Display:    f.String(),
+		AudioLevel: alevel,
 	}
 
 	// Per-frame debug log for KISS-TNC ingest — Phase 5 of the KISS

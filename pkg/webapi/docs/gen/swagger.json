@@ -10804,6 +10804,19 @@
                 }
             }
         },
+        "packetlog.AudioLevel": {
+            "type": "object",
+            "properties": {
+                "mark": {
+                    "description": "Mark is the mark-tone amplitude, scaled to ~0-100.",
+                    "type": "integer"
+                },
+                "space": {
+                    "description": "Space is the space-tone amplitude, scaled to ~0-100.",
+                    "type": "integer"
+                }
+            }
+        },
         "packetlog.Direction": {
             "type": "string",
             "enum": [
@@ -11448,6 +11461,14 @@
         "webapi.packetDTO": {
             "type": "object",
             "properties": {
+                "audio_level": {
+                    "description": "AudioLevel is the demodulator's per-packet received audio level\n(Direwolf-style mark/space tone amplitudes). Present only for frames\nheard off-air via the modem; nil for TX, APRS-IS, and hardware KISS-TNC\nentries, which carry no soundcard-domain level.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/packetlog.AudioLevel"
+                        }
+                    ]
+                },
                 "channel": {
                     "description": "Channel is the graywolf channel ID that observed or transmitted the packet.",
                     "type": "integer"

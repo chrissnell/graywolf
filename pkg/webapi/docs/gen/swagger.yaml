@@ -2432,6 +2432,15 @@ definitions:
       peak_dbfs:
         type: number
     type: object
+  packetlog.AudioLevel:
+    properties:
+      mark:
+        description: Mark is the mark-tone amplitude, scaled to ~0-100.
+        type: integer
+      space:
+        description: Space is the space-tone amplitude, scaled to ~0-100.
+        type: integer
+    type: object
   packetlog.Direction:
     enum:
       - RX
@@ -2885,6 +2894,14 @@ definitions:
     type: object
   webapi.packetDTO:
     properties:
+      audio_level:
+        allOf:
+          - $ref: '#/definitions/packetlog.AudioLevel'
+        description: |-
+          AudioLevel is the demodulator's per-packet received audio level
+          (Direwolf-style mark/space tone amplitudes). Present only for frames
+          heard off-air via the modem; nil for TX, APRS-IS, and hardware KISS-TNC
+          entries, which carry no soundcard-domain level.
       channel:
         description: Channel is the graywolf channel ID that observed or transmitted the packet.
         type: integer

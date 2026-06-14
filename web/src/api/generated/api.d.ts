@@ -3323,6 +3323,12 @@ export interface components {
             name?: string;
             peak_dbfs?: number;
         };
+        "packetlog.AudioLevel": {
+            /** @description Mark is the mark-tone amplitude, scaled to ~0-100. */
+            mark?: number;
+            /** @description Space is the space-tone amplitude, scaled to ~0-100. */
+            space?: number;
+        };
         /** @enum {string} */
         "packetlog.Direction": "RX" | "TX" | "IS";
         "pttdevice.AvailableDevice": {
@@ -3587,6 +3593,13 @@ export interface components {
             wind_mph?: number;
         };
         "webapi.packetDTO": {
+            /**
+             * @description AudioLevel is the demodulator's per-packet received audio level
+             *     (Direwolf-style mark/space tone amplitudes). Present only for frames
+             *     heard off-air via the modem; nil for TX, APRS-IS, and hardware KISS-TNC
+             *     entries, which carry no soundcard-domain level.
+             */
+            audio_level?: components["schemas"]["packetlog.AudioLevel"];
             /** @description Channel is the graywolf channel ID that observed or transmitted the packet. */
             channel?: number;
             /**
