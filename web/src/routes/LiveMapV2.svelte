@@ -34,9 +34,6 @@
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
   import MapPinned from 'lucide-svelte/icons/map-pinned';
   import Copy from 'lucide-svelte/icons/copy';
-  import Play from 'lucide-svelte/icons/play';
-  import Pause from 'lucide-svelte/icons/pause';
-  import Square from 'lucide-svelte/icons/square';
 
   // Values are seconds (data store wants ms; multiplied at dispatch).
   const TIMERANGES_S = [
@@ -87,20 +84,47 @@
     if (!mapsState.registered) return [];
     if (!radarToken) radarToken = await mapsState.revealToken();
     if (!radarToken) return [];
+    const url = `${radarManifestUrl()}?t=${encodeURIComponent(radarToken)}`;
     let resp;
     try {
-      resp = await fetch(`${radarManifestUrl()}?t=${encodeURIComponent(radarToken)}`);
-    } catch {
+      resp = await fetch(url);
+    } catch (e) {
+      console.warn('[radar] manifest fetch failed (network/CORS)', e);
       return [];
     }
     if (resp.status === 401) {
       radarToken = null; // stale token -- re-reveal next poll
+      console.warn('[radar] manifest 401 -- token rejected; will re-reveal');
       return [];
     }
-    if (!resp.ok) return []; // 503 pre-cutover, etc. -> no frames yet
+    if (resp.status === 404) {
+      // The origin Worker has no /radar/manifest.json route -- it predates the
+      // animated-loop deploy. Update the worker (wrangler deploy) so the overlay
+      // can load frames. Logged loudly because the overlay otherwise sits on
+      // "waiting for frames…" with no other signal.
+      console.warn(
+        '[radar] manifest 404 -- origin Worker is missing the /radar/manifest.json route. ' +
+          'Deploy the animated-loop Worker (cd worker && npx wrangler deploy).',
+      );
+      return [];
+    }
+    if (resp.status === 503) {
+      console.warn(
+        '[radar] manifest 503 -- Worker is up but radar/manifest.json is not in R2 yet. ' +
+          'Deploy/run the radar-contour generator so it publishes the manifest.',
+      );
+      return [];
+    }
+    if (!resp.ok) {
+      console.warn(`[radar] manifest fetch HTTP ${resp.status}`);
+      return [];
+    }
     try {
-      return parseManifestFrames(await resp.json());
-    } catch {
+      const frames = parseManifestFrames(await resp.json());
+      if (frames.length === 0) console.warn('[radar] manifest parsed but has 0 frames');
+      return frames;
+    } catch (e) {
+      console.warn('[radar] manifest JSON parse failed', e);
       return [];
     }
   }
@@ -827,7 +851,7 @@
     />
 
     {#if radarSettings.visible}
-      <!-- Radar loop animation: two square buttons [Play/Pause][Stop] and a
+      <!-- Radar loop animation: two text buttons [Play/Pause][Stop] and a
            frame-position slider. Disabled until the manifest yields >1 frame. -->
       <div class="radar-anim-buttons">
         <button
@@ -836,13 +860,8 @@
           onclick={() => radarFrames.toggle()}
           disabled={radarFrames.count <= 1}
           aria-label={radarFrames.playing ? 'Pause radar loop' : 'Play radar loop'}
-          title={radarFrames.playing ? 'Pause' : 'Play'}
         >
-          {#if radarFrames.playing}
-            <Pause size={18} aria-hidden="true" />
-          {:else}
-            <Play size={18} aria-hidden="true" />
-          {/if}
+          {radarFrames.playing ? 'Pause' : 'Play'}
         </button>
         <button
           type="button"
@@ -850,9 +869,8 @@
           onclick={() => radarFrames.stop()}
           disabled={radarFrames.count <= 1}
           aria-label="Stop radar loop and jump to the latest frame"
-          title="Stop (jump to latest)"
         >
-          <Square size={18} aria-hidden="true" />
+          Stop
         </button>
       </div>
       <label class="timerange-label" for="radar-frame-range">{radarFrameLabel}</label>
@@ -1121,22 +1139,24 @@
     cursor: pointer;
     accent-color: var(--color-accent, #4a9eff);
   }
-  /* Radar loop: two square buttons [Play][Stop] side by side. */
+  /* Radar loop: two text buttons [Play/Pause][Stop] side by side. */
   .radar-anim-buttons {
     display: flex;
     gap: 6px;
     margin-top: 14px;
   }
   .radar-anim-btn {
-    width: 34px;
-    height: 34px;
+    flex: 1;
+    min-height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    padding: 6px 12px;
     background: var(--color-surface);
     color: var(--color-text);
     border: 1px solid var(--color-border);
     border-radius: 4px;
+    font-size: 13px;
     cursor: pointer;
   }
   .radar-anim-btn:hover:not(:disabled) {
