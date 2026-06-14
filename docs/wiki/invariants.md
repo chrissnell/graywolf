@@ -939,3 +939,26 @@ Source: [`../../pkg/webapi/dto/kiss.go`](../../pkg/webapi/dto/kiss.go)
 [`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`setKissEnabled`, `notifyKissManager`),
 [`../../pkg/configstore/store.go`](../../pkg/configstore/store.go) (`CreateKissInterface`),
 [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`, `buildTxBackendSnapshot`, webapi `Config.KissSerialOpenFunc`).
+
+### 46. Per-frame metadata must be populated by every demod profile, not just Profile A
+
+The default AFSK RX path is the `RECOMMENDED_3DEMOD` ensemble (Profile A,
+Profile A + hard-limiter, Profile B / FM-discriminator). The ensemble dedups
+identical frames across sub-demods and keeps the *first* emitter within a
+~110-sample window; in practice **Profile B usually wins** because its
+pipeline detects the closing flag a few samples earlier. So any per-frame
+field stamped onto `DecodedFrame` (e.g. `audio_level_mark`/`space`) must be
+produced by *all three* profiles -- a field tracked only in
+`process_profile_a` will be the `-1.0`/zero init on the frames that actually
+reach the application, even though Profile A "also" decoded the packet.
+
+This bit the per-packet audio level (GRA-84): Profile B never called
+`track_level`, so nearly every logged packet showed no level (a dash) until
+Profile B was taught to track its center-frequency envelope. When adding a
+new per-frame measurement, populate it in `process_profile_a` **and**
+`process_profile_b`, or compute it profile-independently.
+
+Source: [`../../graywolf-modem/src/demod_afsk.rs`](../../graywolf-modem/src/demod_afsk.rs)
+(`process_profile_a`, `process_profile_b`, `track_level`),
+[`../../graywolf-modem/src/demod_afsk_multi.rs`](../../graywolf-modem/src/demod_afsk_multi.rs)
+(dedup in `process_sample`).
