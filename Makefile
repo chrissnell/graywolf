@@ -249,11 +249,11 @@ android-play-check:
 # (no re-upload -- Play rejects a duplicate versionCode). CI does this
 # from the Android workflow's promote-to-closed job; this is the local
 # equivalent.
-#   make android-promote VC=130800 TO=alpha JSON=path/to/service-account.json
+#   make android-promote VC=130800 TO=beta JSON=path/to/service-account.json
 android-promote:
 	@test -n "$(VC)" || { echo "usage: make android-promote VC=<versionCode> TO=<track> JSON=<sa.json>" >&2; exit 2; }
 	@test -n "$(JSON)" || { echo "error: JSON=<service-account.json> required" >&2; exit 2; }
-	SUPPLY_JSON_KEY="$(JSON)" fastlane promote version_code:$(VC) to:$(or $(TO),alpha) from:$(or $(FROM),internal)
+	SUPPLY_JSON_KEY="$(JSON)" fastlane promote version_code:$(VC) to:$(or $(TO),beta) from:$(or $(FROM),alpha)
 
 # Upload the Play store-listing images (icon, feature graphic, phone +
 # tablet screenshots). Run `make android-screenshots` first to generate

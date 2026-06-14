@@ -14,11 +14,11 @@ PACKAGE = "com.nw5w.graywolf".freeze
 
 platform :android do
   desc "Promote an existing versionCode from one track to another (no re-upload)"
-  desc "Params: version_code (required), from (default internal), to (default alpha)"
+  desc "Params: version_code (required), from (default alpha), to (default beta)"
   lane :promote do |options|
     version_code = (options[:version_code] || ENV["VERSION_CODE"]).to_i
-    from_track   = options[:from] || ENV["FROM_TRACK"] || "internal"
-    to_track     = options[:to]   || ENV["TO_TRACK"]   || "alpha"
+    from_track   = options[:from] || ENV["FROM_TRACK"] || "alpha"
+    to_track     = options[:to]   || ENV["TO_TRACK"]   || "beta"
     UI.user_error!("version_code is required (e.g. version_code:130800)") if version_code.zero?
 
     UI.message("Promoting versionCode #{version_code}: #{from_track} -> #{to_track}")

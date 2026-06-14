@@ -2,9 +2,9 @@ name: Android
 
 # PR / push:main: build an unsigned debug APK and upload as an artifact.
 # Tag pushes (v*): also build a release-signed AAB + APK and attach them
-# to the GitHub Release (which goreleaser/release.yml creates in parallel).
-# Phase 5 of the plan will add a step that auto-uploads the AAB to the
-# Play Internal Testing track.
+# to the GitHub Release (which goreleaser/release.yml creates in parallel),
+# then auto-publish the AAB to the Play Closed Testing track (the `alpha`
+# track) so every tagged release reaches the private beta testers.
 
 on:
   push:
@@ -16,22 +16,24 @@ on:
     branches:
       - main
   # Manual trigger. Two uses: (a) re-run the build on transient network
-  # failures, and (b) promote an already-released version to the closed
-  # beta track via the promote-to-closed job (provide `version`).
+  # failures, and (b) promote an already-released version to a different
+  # track via the promote job (provide `version`). Closed testing (alpha)
+  # is auto-published on tag push, so the manual promote is mainly for
+  # graduating a build to open testing (beta).
   workflow_dispatch:
     inputs:
       version:
-        description: 'Released version to promote to a testing track (X.Y.Z, no v). Leave blank for a plain build re-run.'
+        description: 'Released version to promote to another track (X.Y.Z, no v). Leave blank for a plain build re-run.'
         required: false
         type: string
       track:
         description: 'Play track to promote into. alpha = closed testing (private beta); beta = open testing.'
         required: false
-        default: alpha
+        default: beta
         type: choice
         options:
-          - alpha
           - beta
+          - alpha
           - internal
 
 permissions:
@@ -299,20 +301,21 @@ jobs:
           echo "::error::Release ${GITHUB_REF_NAME} never appeared; check goreleaser job."
           exit 1
 
-      # Auto-upload the signed AAB to Play Internal Testing. Gated on the
-      # service-account secret so it safely skips (not fails) until the
-      # Google Cloud service account is created and stored as
-      # GRAYWOLF_PLAY_SERVICE_ACCOUNT_JSON. Lands in the Internal track
-      # only; humans promote to the closed beta track separately, so a
-      # CI tag never reaches external testers automatically.
-      - name: Upload AAB to Play Internal Testing
+      # Auto-publish the signed AAB to Play Closed Testing -- the `alpha`
+      # track (Play's track IDs are fixed: internal, alpha=closed,
+      # beta=open, production). Every v* tag now reaches the private beta
+      # testers. Gated on the service-account secret so it safely skips
+      # (not fails) when GRAYWOLF_PLAY_SERVICE_ACCOUNT_JSON is absent. The
+      # service account still lacks production permission, so a CI tag can
+      # never reach production.
+      - name: Upload AAB to Play Closed Testing (alpha)
         if: env.HAVE_PLAY_SA == 'true'
         uses: r0adkll/upload-google-play@v1.1.3
         with:
           serviceAccountJsonPlainText: ${{ secrets.GRAYWOLF_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.nw5w.graywolf
           releaseFiles: staging/graywolf-*.aab
-          track: internal
+          track: alpha
           status: completed
 
       - name: Upload signed AAB as workflow artifact (manual fallback)
@@ -323,15 +326,15 @@ jobs:
           retention-days: 30
 
   # ------------------------------------------------------------------
-  # promote-to-closed — manual (workflow_dispatch) promotion of an
-  # already-released version to a Play testing track (default: alpha =
-  # closed testing, the private beta). Keeping this a deliberate human
-  # action means a CI tag never auto-ships to external beta testers; you
-  # choose which build they get. Run from the Actions tab (or:
-  #   gh workflow run android.yml --field version=X.Y.Z --field track=alpha).
+  # promote — manual (workflow_dispatch) promotion of an already-released
+  # version from closed testing (alpha) to another Play track (default:
+  # beta = open testing). Closed testing is auto-published on tag push, so
+  # this is the deliberate human step for graduating a vetted build to
+  # open testing. Run from the Actions tab (or:
+  #   gh workflow run android.yml --field version=X.Y.Z --field track=beta).
   # ------------------------------------------------------------------
   promote-to-closed:
-    name: Promote to testing track
+    name: Promote to another track
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
     env:
@@ -360,11 +363,11 @@ jobs:
           bundler-cache: true
 
       # Promote (not re-upload): the version is already in Play (from the
-      # Phase 5 auto-upload to internal). fastlane supply moves that
-      # versionCode to the chosen track. Re-uploading the AAB would fail
-      # with "version code already used", which is why this isn't an
-      # upload action. versionCode is derived from X.Y.Z the same way
-      # android/app/build.gradle.kts derives it (M*1e6 + m*1e4 + p*100).
+      # tag-push auto-publish to closed testing / alpha). fastlane supply
+      # moves that versionCode to the chosen track. Re-uploading the AAB
+      # would fail with "version code already used", which is why this
+      # isn't an upload action. versionCode is derived from X.Y.Z the same
+      # way android/app/build.gradle.kts derives it (M*1e6 + m*1e4 + p*100).
       - name: Promote to the chosen track via fastlane
         if: env.HAVE_PLAY_SA == 'true'
         env:
@@ -376,5 +379,5 @@ jobs:
           echo "Promoting versionCode $VC -> track '${{ github.event.inputs.track }}'"
           bundle exec fastlane promote \
             version_code:"$VC" \
-            from:internal \
+            from:alpha \
             to:"${{ github.event.inputs.track }}"

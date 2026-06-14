@@ -14,10 +14,12 @@ push fires two workflows in parallel: `release.yml` (goreleaser:
 Linux/macOS/Windows binaries, Docker, `.deb`/`.rpm`, NSIS) and
 `android.yml`. The Android workflow builds a release-signed `.aab` +
 `.apk`, attaches both to the GitHub Release goreleaser created, and
-auto-uploads the `.aab` to the Play **Internal Testing** track. Promotion
-from Internal to the **closed beta** track is a separate, deliberate
-manual step (`gh workflow run android.yml --field version=X.Y.Z`) so a CI
-tag never auto-ships to external testers.
+auto-publishes the `.aab` to the Play **Closed Testing** track (Play's
+`alpha` track), so every tagged release reaches the ~15-person private
+beta. Promotion onward to **Open Testing** (the `beta` track) is a
+separate, deliberate manual step (`gh workflow run android.yml --field
+version=X.Y.Z --field track=beta`). Production is never targeted -- the
+service account lacks the permission.
 
 ## Workflow triggers and jobs (`android.yml`)
 
@@ -25,9 +27,9 @@ tag never auto-ships to external testers.
 |---|---|---|
 | `pull_request` -> main | `build` | Unsigned debug APK artifact (sanity check) |
 | `push` -> main | `build` | Same; catches breakage before a tag |
-| `push` tag `v*` | `build` + `release-sign` | Signed `.aab`+`.apk` on the GH Release; `.aab` auto-uploaded to Play Internal |
+| `push` tag `v*` | `build` + `release-sign` | Signed `.aab`+`.apk` on the GH Release; `.aab` auto-published to Play Closed Testing (`alpha`) |
 | `workflow_dispatch` (no `version`) | `build` | Manual build re-run |
-| `workflow_dispatch` (`version=X.Y.Z`) | `promote-to-closed` | Promotes that release's `.aab` from Internal to the closed beta track |
+| `workflow_dispatch` (`version=X.Y.Z`) | `promote-to-closed` | Promotes that release's `.aab` from Closed Testing (`alpha`) to the chosen track (default `beta` = open testing) |
 
 `build` is skipped on `workflow_dispatch` (a promote run doesn't need a
 fresh APK). `release-sign` only runs on tags. `promote-to-closed` only
@@ -88,11 +90,20 @@ configure time, so `make bump-*` cascades into Android automatically:
 
 ## Tracks
 
-- **Internal** -- auto-uploaded on every `v*` tag. Dev/team loop.
-- **Closed (`graywolf-beta`)** -- the ~15-person private beta. Builds
-  reach it only via the manual `promote-to-closed` workflow. Add testers
-  in Play Console -> Closed testing -> graywolf-beta -> Testers (email
-  list); they install via the track's opt-in URL.
+Play's track IDs are fixed: `internal`, `alpha` (closed testing), `beta`
+(open testing), `production`. A custom Console display name (e.g.
+"graywolf-beta") does not change the API id -- the closed track is still
+addressed as `alpha` by `supply` / `upload-google-play`.
+
+- **Closed testing (`alpha`)** -- auto-published on every `v*` tag; this
+  is where the ~15-person private beta lives. Add testers in Play Console
+  -> Closed testing -> Testers (email list); they install via the track's
+  opt-in URL.
+- **Open testing (`beta`)** -- public opt-in. A vetted closed build is
+  promoted here with the manual `promote-to-closed` workflow
+  (`--field track=beta`).
+- **Internal** -- no longer auto-populated. Still reachable manually for a
+  quick dev/team smoke check (`--field track=internal`).
 - **Production** -- not enabled. The service account lacks the permission
   and the workflow never targets it.
 
@@ -103,9 +114,9 @@ in [`../../CLAUDE.md`](../../CLAUDE.md): fix the cause, delete and re-tag
 the same version (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`,
 commit fix, re-tag, push), and **do not rewrite the release note**. A
 re-tag re-runs both workflows. Note Play rejects a duplicate
-`versionCode`, so if the `.aab` already uploaded to Internal before the
-failure, a plain re-tag's upload step will conflict -- in that case bump
-to a new patch instead.
+`versionCode`, so if the `.aab` already uploaded to Closed Testing
+(`alpha`) before the failure, a plain re-tag's upload step will conflict
+-- in that case bump to a new patch instead.
 
 ## armv6 (Pi 1 / Pi Zero) -- temporarily dropped
 
