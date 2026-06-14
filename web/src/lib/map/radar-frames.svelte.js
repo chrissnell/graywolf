@@ -6,7 +6,7 @@
 // fetches/parses /radar/manifest.json) so the store has no network/token
 // knowledge of its own.
 
-import { applyManifest, nextIndex, newestIndex, clampIndex } from './radar-frames-core.js';
+import { applyManifest, shouldApply, nextIndex, newestIndex, clampIndex } from './radar-frames-core.js';
 
 export function createRadarFrames({
   load,
@@ -62,8 +62,11 @@ export function createRadarFrames({
     try {
       list = await load();
     } catch {
-      return; // keep last-known frames on a transient failure
+      return; // keep last-known frames on a thrown failure
     }
+    // The injected loader swallows transient failures (401/503/parse) into an
+    // empty list rather than throwing; don't let that wipe an established loop.
+    if (!shouldApply(frames.length, list)) return;
     const res = applyManifest({ frames, index }, list);
     frames = res.frames;
     index = res.index;

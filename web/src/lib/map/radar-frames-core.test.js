@@ -5,6 +5,7 @@ import {
   newestIndex,
   nextIndex,
   applyManifest,
+  shouldApply,
 } from './radar-frames-core.js';
 
 const F = (ts) => ({ ts, iso: `iso-${ts}` });
@@ -54,6 +55,18 @@ test('applyManifest clamps when the parked ts has rolled off', () => {
   const r = applyManifest({ frames: [F(1), F(2), F(3)], index: 0 }, [F(2), F(3), F(4)]);
   assert.equal(r.index, 0); // clamped into range
   assert.equal(r.frames[r.index].ts, 2);
+});
+
+test('shouldApply keeps an established loop when a load comes back empty', () => {
+  // Transient failure (load swallowed an error into []) -- keep last-known.
+  assert.equal(shouldApply(3, []), false);
+  assert.equal(shouldApply(3, null), false);
+  assert.equal(shouldApply(3, undefined), false);
+  // Bootstrap: accept an empty result only while we have nothing yet.
+  assert.equal(shouldApply(0, []), true);
+  // A real list always applies.
+  assert.equal(shouldApply(3, [F(1)]), true);
+  assert.equal(shouldApply(0, [F(1)]), true);
 });
 
 test('applyManifest handles an empty/absent new list', () => {

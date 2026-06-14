@@ -26,6 +26,16 @@ export function nextIndex(i, count) {
   return i >= count - 1 ? 0 : i + 1;
 }
 
+// Whether a freshly-loaded list should replace the current frames. A transient
+// load failure surfaces as an empty/absent list (the injected loader swallows
+// 401/503/parse errors into []), so an established loop must NOT be wiped over a
+// blip -- keep the last-known frames and retry next poll. An empty list is only
+// accepted while we have nothing yet (bootstrap).
+export function shouldApply(prevCount, list) {
+  if (Array.isArray(list) && list.length > 0) return true;
+  return prevCount === 0;
+}
+
 // Merge a freshly-fetched frame list (oldest->newest) while preserving playback
 // continuity. Returns { frames, index }:
 //   - bootstrapping (no prior frames) or parked on the newest frame -> stay
