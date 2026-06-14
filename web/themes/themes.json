@@ -20,6 +20,16 @@
       "id": "grayscale-night",
       "name": "Grayscale Night",
       "description": "Dark, monochrome. No chromatic accents."
+    },
+    {
+      "id": "high-contrast",
+      "name": "High Contrast",
+      "description": "Light, maximum-legibility. Pure-black text on white for bright sunlight and low vision."
+    },
+    {
+      "id": "high-contrast-night",
+      "name": "High Contrast Night",
+      "description": "Dark, maximum-legibility. Pure-white text on black; no faded dark-mode copy."
     }
   ]
 }
