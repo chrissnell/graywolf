@@ -121,6 +121,7 @@
       live
       showHeader
       mobileBreakpoint="768px"
+      inspectable
     />
     <div class="log-foot">Showing {filtered.length} of {packets.length} packets</div>
   {/if}
