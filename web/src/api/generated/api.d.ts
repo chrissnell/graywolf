@@ -2389,6 +2389,7 @@ export interface components {
             provinces?: components["schemas"]["dto.CatalogProvince"][];
             schemaVersion?: number;
             states?: components["schemas"]["dto.CatalogState"][];
+            world?: components["schemas"]["dto.CatalogWorld"];
         };
         "dto.CatalogCountry": {
             bbox?: number[];
@@ -2413,6 +2414,13 @@ export interface components {
             sha256?: string;
             sizeBytes?: number;
             slug?: string;
+        };
+        "dto.CatalogWorld": {
+            bbox?: number[];
+            maxZoom?: number;
+            name?: string;
+            sha256?: string;
+            sizeBytes?: number;
         };
         "dto.ChannelBacking": {
             health?: string;
