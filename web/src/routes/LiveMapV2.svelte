@@ -76,7 +76,7 @@
   // reflects the operator's choice here.
 
   // Radar loop animation. The frame store polls the worker's loop manifest and
-  // drives Play/Stop + the frame slider; loadRadarFrames() fetches it with the
+  // drives Play/Reset + the frame slider; loadRadarFrames() fetches it with the
   // same bearer token as the basemap (a plain fetch, so transformRequest does
   // not see it -- we append ?t= here). The token is revealed once and cached.
   let radarToken = null;
@@ -872,7 +872,7 @@
     />
 
     {#if radarSettings.visible}
-      <!-- Radar loop animation: two text buttons [Play/Pause][Stop] and a
+      <!-- Radar loop animation: two text buttons [Play/Pause][Reset] and a
            frame-position slider. Disabled until the manifest yields >1 frame. -->
       <div class="radar-anim-buttons">
         <button
@@ -889,9 +889,9 @@
           class="radar-anim-btn"
           onclick={() => radarFrames.stop()}
           disabled={radarFrames.count <= 1}
-          aria-label="Stop radar loop and jump to the latest frame"
+          aria-label="Reset radar loop and jump to the latest frame"
         >
-          Stop
+          Reset
         </button>
       </div>
       <label class="timerange-label" for="radar-frame-range">{radarFrameLabel}</label>
@@ -1160,7 +1160,7 @@
     cursor: pointer;
     accent-color: var(--color-accent, #4a9eff);
   }
-  /* Radar loop: two text buttons [Play/Pause][Stop] side by side. */
+  /* Radar loop: two text buttons [Play/Pause][Reset] side by side. */
   .radar-anim-buttons {
     display: flex;
     gap: 6px;
