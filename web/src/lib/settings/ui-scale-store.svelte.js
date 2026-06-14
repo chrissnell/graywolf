@@ -12,13 +12,14 @@
 
 const LS_KEY = 'ui-scale';
 
-const MIN = 0.5;
-const MAX = 3;
 const DEFAULT = 1;
 
-// Discrete steps offered in Preferences. The inline boot script in
-// index.html applies whatever is stored (clamped to [MIN, MAX]); keep the
-// bounds here in sync with it.
+// Discrete steps offered in Preferences, in ascending order. These are the
+// ONLY values the store will ever hold: reads and writes snap to the nearest
+// step (see snap()), so the Select always has an exact match to display and
+// the applied zoom is always a known-good size. MIN/MAX below are derived
+// from this list and must stay in sync with the inline boot script in
+// index.html, which clamps to the same [0.9, 2] range.
 export const UI_SCALE_OPTIONS = [
   { value: '0.9', label: 'Small (90%)' },
   { value: '1', label: 'Default (100%)' },
@@ -29,15 +30,24 @@ export const UI_SCALE_OPTIONS = [
   { value: '2', label: 'Maximum (200%)' },
 ];
 
-function clamp(n) {
+const STEPS = UI_SCALE_OPTIONS.map((o) => parseFloat(o.value));
+const MIN = STEPS[0];
+const MAX = STEPS[STEPS.length - 1];
+
+// Clamp into range, then snap to the nearest offered step. A hand-edited or
+// legacy localStorage value (e.g. 1.2) thus resolves to a real option (1.25)
+// instead of leaving the Select rendering its empty placeholder.
+function snap(n) {
   if (!Number.isFinite(n)) return DEFAULT;
-  return Math.min(MAX, Math.max(MIN, n));
+  const c = Math.min(MAX, Math.max(MIN, n));
+  return STEPS.reduce((best, s) =>
+    Math.abs(s - c) < Math.abs(best - c) ? s : best, STEPS[0]);
 }
 
 function readStored() {
   try {
     const n = parseFloat(localStorage.getItem(LS_KEY));
-    return Number.isFinite(n) ? clamp(n) : DEFAULT;
+    return Number.isFinite(n) ? snap(n) : DEFAULT;
   } catch {
     return DEFAULT;
   }
@@ -63,7 +73,7 @@ export const uiScaleState = (() => {
   applyDOM(initial);
 
   function setScale(next) {
-    const n = clamp(parseFloat(next));
+    const n = snap(parseFloat(next));
     scale = n;
     writeStored(n);
     applyDOM(n);

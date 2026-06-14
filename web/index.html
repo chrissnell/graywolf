@@ -31,12 +31,14 @@
     <script>
       // Apply the stored UI scale before the first frame paints so the
       // interface doesn't visibly jump from 100% to the operator's chosen
-      // size on load. Mirrors ui-scale-store.svelte.js; clamps to the same
-      // [0.5, 3] range. Default (1) is a no-op so we leave `zoom` unset.
+      // size on load. Mirrors ui-scale-store.svelte.js; accepts the same
+      // [0.9, 2] range. The store snaps to discrete steps after mount, so a
+      // raw in-range value here is fine. Default (1) is a no-op, so we leave
+      // `zoom` unset.
       (function () {
         try {
           var n = parseFloat(localStorage.getItem('ui-scale'));
-          if (isFinite(n) && n >= 0.5 && n <= 3 && n !== 1) {
+          if (isFinite(n) && n >= 0.9 && n <= 2 && n !== 1) {
             document.documentElement.style.zoom = String(n);
           }
         } catch (e) {}
