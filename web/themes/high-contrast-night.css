@@ -1,0 +1,78 @@
+/*
+ * High Contrast Night -- dark, maximum-legibility palette (graywolf
+ * #274). Pure-white body copy on pure-black surfaces fixes the "faded,
+ * barely visible" dark-mode text the reporter saw: secondary/tertiary
+ * text stay bright, borders are clearly visible, and packet badges use
+ * SOLID bright fills with black text instead of the low-alpha tints the
+ * default night theme uses.
+ *
+ * Top-level rule is doubled (`:root:root[data-theme="..."]`) so the
+ * theme's vars win against chonky-ui's
+ * `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+ * fallback regardless of bundle source order. See graywolf.css for the
+ * full explanation.
+ */
+:root:root[data-theme="high-contrast-night"] {
+  --color-bg: #000000;
+  --color-surface: #0d0d0d;
+  --color-surface-raised: #1a1a1a;
+  --color-border: #8a8a8a;
+  --color-border-subtle: #444444;
+  --color-text: #ffffff;
+  --color-text-muted: #d0d0d0;
+  --color-text-dim: #a8a8a8;
+  --color-text-inverse: #000000;
+  --color-accent: #5fd75f;
+  --color-primary: #ffb000;
+  --color-primary-hover: #ffc640;
+  --color-primary-muted: rgba(255, 176, 0, 0.22);
+  --color-primary-fg: #000000;
+  --color-danger: #ff5c5c;
+  --color-danger-hover: #ff7a7a;
+  --color-danger-muted: rgba(255, 92, 92, 0.22);
+  --color-danger-fg: #000000;
+  --color-success: #5fd75f;
+  --color-success-fill: #5fd75f;
+  --color-success-muted: rgba(95, 215, 95, 0.22);
+  --color-success-fg: #000000;
+  --color-warning: #ffd24a;
+  --color-warning-muted: rgba(255, 210, 74, 0.22);
+  --color-warning-fg: #000000;
+  --color-info: #5cc8ff;
+  --color-info-muted: rgba(92, 200, 255, 0.22);
+  --color-info-fg: #000000;
+  --color-btn-bg: #1a1a1a;
+  --color-btn-bg-hover: #2a2a2a;
+  --color-btn-border: #8a8a8a;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 2px;
+  /* Map overlay tokens (used by MapLibre Live Map rebuild) */
+  --map-overlay-bg: var(--color-surface);
+  --map-overlay-fg: var(--color-text);
+  --map-overlay-muted: var(--color-text-muted);
+  --map-overlay-border: var(--color-border);
+  --map-overlay-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+  --map-attribution-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
+}
+
+/* Packet-log type badges: solid bright fills + black text for crisp,
+   high-contrast scanning against the black surface. */
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='position']     { background: #58a6ff; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='weather']      { background: #56d364; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='telemetry']    { background: #e3b341; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='message']      { background: #39d0db; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='object']       { background: #bc8cff; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='item']         { background: #7ee787; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='mic-e']        { background: #f778ba; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='status']       { background: #c9d1d9; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='capabilities'] { background: #d2a8ff; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='df-report'],
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='query']        { background: #ffa657; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='third-party'],
+:root[data-theme="high-contrast-night"] .pkt-b-type[data-type='unknown']      { background: #b0b0b0; color: #000000; }
+
+:root[data-theme="high-contrast-night"] .pkt-b-origin[data-origin='bcn']          { background: #ffa657; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-origin[data-origin='digi']         { background: #a5d6ff; color: #000000; }
+:root[data-theme="high-contrast-night"] .pkt-b-origin[data-origin='igate'],
+:root[data-theme="high-contrast-night"] .pkt-b-origin[data-origin='igate-is2rf'],
+:root[data-theme="high-contrast-night"] .pkt-b-origin[data-origin='igate-rf2is'] { background: #d2a8ff; color: #000000; }

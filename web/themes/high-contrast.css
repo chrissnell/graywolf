@@ -1,0 +1,88 @@
+/*
+ * High Contrast -- light, maximum-legibility palette built for bright
+ * sunlight and low-vision operators (graywolf #274). Pure-black body
+ * copy on pure-white surfaces, darkened secondary/tertiary text that
+ * still clears WCAG AA, and visibly bordered controls. Primary is a
+ * deep blue so links and buttons read at high contrast rather than the
+ * default orange, which is hard to see as text on white.
+ *
+ * Top-level rule is doubled (`:root:root[data-theme="..."]`) so the
+ * theme's vars win against chonky-ui's
+ * `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+ * fallback regardless of bundle source order. See graywolf.css for the
+ * full explanation.
+ */
+:root:root[data-theme="high-contrast"] {
+  --color-bg: #ffffff;
+  --color-surface: #f4f4f4;
+  --color-surface-raised: #eaeaea;
+  --color-border: #595959;
+  --color-border-subtle: #c0c0c0;
+  --color-text: #000000;
+  --color-text-muted: #404040;
+  --color-text-dim: #595959;
+  --color-text-inverse: #ffffff;
+  --color-accent: #0b5d0b;
+  --color-primary: #0b4fb3;
+  --color-primary-hover: #06347a;
+  --color-primary-muted: rgba(11, 79, 179, 0.14);
+  --color-primary-fg: #ffffff;
+  --color-danger: #b00000;
+  --color-danger-hover: #8a0000;
+  --color-danger-muted: rgba(176, 0, 0, 0.14);
+  --color-danger-fg: #ffffff;
+  --color-success: #0b6b0b;
+  --color-success-fill: #0b6b0b;
+  --color-success-muted: rgba(11, 107, 11, 0.15);
+  --color-success-fg: #ffffff;
+  --color-warning: #8a4b00;
+  --color-warning-muted: rgba(138, 75, 0, 0.15);
+  --color-warning-fg: #ffffff;
+  --color-info: #00557a;
+  --color-info-muted: rgba(0, 85, 122, 0.15);
+  --color-info-fg: #ffffff;
+  --color-btn-bg: #eaeaea;
+  --color-btn-bg-hover: #dcdcdc;
+  --color-btn-border: #595959;
+  --font-mono: 'Inconsolata', 'Courier New', monospace;
+  --radius: 2px;
+  /* Map overlay tokens (used by MapLibre Live Map rebuild) */
+  --map-overlay-bg: var(--color-surface);
+  --map-overlay-fg: var(--color-text);
+  --map-overlay-muted: var(--color-text-muted);
+  --map-overlay-border: var(--color-border);
+  --map-overlay-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --map-attribution-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
+}
+
+/* chonky-ui <Badge variant="..."> overrides: solid fills + white text. */
+:root[data-theme="high-contrast"] .badge {
+  border-color: transparent;
+}
+:root[data-theme="high-contrast"] .badge-success { background: var(--color-success); color: #ffffff; border-color: var(--color-success); }
+:root[data-theme="high-contrast"] .badge-warning { background: var(--color-warning); color: #ffffff; border-color: var(--color-warning); }
+:root[data-theme="high-contrast"] .badge-danger  { background: var(--color-danger);  color: #ffffff; border-color: var(--color-danger); }
+:root[data-theme="high-contrast"] .badge-info    { background: var(--color-info);    color: #ffffff; border-color: var(--color-info); }
+
+/* Packet-log type badges: darkened saturated fills + white text so each
+   label clears AA against the white surface in direct sunlight. */
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='position']     { background: #15639c; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='weather']      { background: #1f6b1f; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='telemetry']    { background: #8a5d00; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='message']      { background: #00697a; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='object']       { background: #5a2d96; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='item']         { background: #2f7d2f; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='mic-e']        { background: #a31e6e; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='status']       { background: #44505c; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='capabilities'] { background: #6a35a0; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='df-report'],
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='query']        { background: #9a5000; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='third-party'],
+:root[data-theme="high-contrast"] .pkt-b-type[data-type='unknown']      { background: #5a5a5a; color: #ffffff; }
+
+/* Origin badges (bcn / digi / igate): solid + white. */
+:root[data-theme="high-contrast"] .pkt-b-origin[data-origin='bcn']          { background: #9a5000; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-origin[data-origin='digi']         { background: #15639c; color: #ffffff; }
+:root[data-theme="high-contrast"] .pkt-b-origin[data-origin='igate'],
+:root[data-theme="high-contrast"] .pkt-b-origin[data-origin='igate-is2rf'],
+:root[data-theme="high-contrast"] .pkt-b-origin[data-origin='igate-rf2is'] { background: #6a35a0; color: #ffffff; }
