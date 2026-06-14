@@ -79,6 +79,7 @@ const (
 	OpCreateKiss                   = "createKiss"
 	OpGetKiss                      = "getKiss"
 	OpUpdateKiss                   = "updateKiss"
+	OpSetKissEnabled               = "setKissEnabled"
 	OpDeleteKiss                   = "deleteKiss"
 	OpReconnectKiss                = "reconnectKiss"
 	OpGetBondedBtDevices           = "getBondedBtDevices"

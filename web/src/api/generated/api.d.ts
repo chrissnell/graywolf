@@ -896,6 +896,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kiss/{id}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Enable or disable a KISS interface */
+        put: operations["setKissEnabled"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kiss/{id}/reconnect": {
         parameters: {
             query?: never;
@@ -1987,33 +2004,50 @@ export interface components {
         /** @enum {string} */
         "aprs.PacketType": "unknown" | "position" | "message" | "telemetry" | "weather" | "object" | "item" | "mic-e" | "status" | "capabilities" | "df-report" | "query" | "third-party";
         "aprs.Position": {
-            /** @description meters (0 if none reported) */
+            /**
+             * Format: float64
+             * @description meters (0 if none reported)
+             */
             altitude?: number;
             /** @description 0..4, digits of ambiguity introduced by spaces */
             ambiguity?: number;
             compressed?: boolean;
             /** @description degrees true (0..359) */
             course?: number;
-            /** @description DAO datum byte (APRS101 DAO extension), 0 if not present */
+            /**
+             * Format: int32
+             * @description DAO datum byte (APRS101 DAO extension), 0 if not present
+             */
             daodatum?: number;
             hasAlt?: boolean;
             hasCourse?: boolean;
-            /** @description decimal degrees, positive north */
+            /**
+             * Format: float64
+             * @description decimal degrees, positive north
+             */
             latitude?: number;
             /** @description true if the timestamp was the '/' local-time form (APRS101 ch 6) */
             localTime?: boolean;
-            /** @description decimal degrees, positive east */
+            /**
+             * Format: float64
+             * @description decimal degrees, positive east
+             */
             longitude?: number;
             /** @description decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present */
             phg?: components["schemas"]["aprs.PHG"];
-            /** @description knots */
+            /**
+             * Format: float64
+             * @description knots
+             */
             speed?: number;
             symbol?: components["schemas"]["aprs.Symbol"];
             /** @description nil if positionless or no embedded time */
             timestamp?: string;
         };
         "aprs.Symbol": {
+            /** Format: int32 */
             code?: number;
+            /** Format: int32 */
             table?: number;
         };
         "aprs.Telemetry": {
@@ -2022,14 +2056,20 @@ export interface components {
             analogHas?: boolean[];
             /** @description trailing free-form */
             comment?: string;
-            /** @description bits 0..7 (only lower 8) */
+            /**
+             * Format: int32
+             * @description bits 0..7 (only lower 8)
+             */
             digital?: number;
             hasDigital?: boolean;
             /** @description 0..999, -1 if absent */
             seq?: number;
         };
         "aprs.TelemetryMeta": {
-            /** @description BITS. sense-bits bitmap (active-high per bit) */
+            /**
+             * Format: int32
+             * @description BITS. sense-bits bitmap (active-high per bit)
+             */
             bits?: number;
             /** @description a, b, c coefficients per analog channel */
             eqns?: number[][];
@@ -2057,27 +2097,47 @@ export interface components {
             humidity?: number;
             /** @description watts/m^2 */
             luminosity?: number;
-            /** @description tenths of millibar (e.g. 10132 = 1013.2) */
+            /**
+             * Format: float64
+             * @description tenths of millibar (e.g. 10132 = 1013.2)
+             */
             pressure?: number;
-            /** @description hundredths of an inch */
+            /**
+             * Format: float64
+             * @description hundredths of an inch
+             */
             rain1Hour?: number;
+            /** Format: float64 */
             rain24Hour?: number;
+            /** Format: float64 */
             rainSinceMid?: number;
             /** @description raw rain counter ('#' field) */
             rawRainCounter?: number;
-            /** @description inches (via 's' after 'g') */
+            /**
+             * Format: float64
+             * @description inches (via 's' after 'g')
+             */
             snowfall24h?: number;
             /** @description one-letter software code (e.g. 'w', 'x', 'd') */
             softwareType?: string;
-            /** @description degrees F */
+            /**
+             * Format: float64
+             * @description degrees F
+             */
             temperature?: number;
             /** @description 2..4 ASCII letters identifying the unit/model */
             weatherUnitTag?: string;
             /** @description degrees true */
             windDirection?: number;
-            /** @description mph (5-minute peak) */
+            /**
+             * Format: float64
+             * @description mph (5-minute peak)
+             */
             windGust?: number;
-            /** @description mph (1-minute sustained) */
+            /**
+             * Format: float64
+             * @description mph (1-minute sustained)
+             */
             windSpeed?: number;
         };
         "configstore.Referrer": {
@@ -2609,6 +2669,9 @@ export interface components {
             priority?: number;
             type?: string;
         };
+        "dto.KissEnabledRequest": {
+            enabled?: boolean;
+        };
         "dto.KissRequest": {
             /**
              * @description AllowTxFromGovernor opts this TNC-mode interface in to receive
@@ -2622,6 +2685,17 @@ export interface components {
             allow_tx_from_governor?: boolean;
             baud_rate?: number;
             channel?: number;
+            /**
+             * @description Enabled gates whether graywolf runs this interface. When false the
+             *     manager stops the supervisor and releases the underlying device
+             *     (closing the fd / socket) instead of looping reconnect attempts,
+             *     while the row's configuration is preserved for a later re-enable.
+             *     A pointer so an omitted field means "leave at the default" (true)
+             *     rather than "disable": older clients and partial callers that never
+             *     send the key keep their interfaces running. ToModel substitutes
+             *     true when nil.
+             */
+            enabled?: boolean;
             /**
              * @description GateTxToIs opts a Mode=modem KISS interface in to gating frames
              *     submitted by connected KISS clients to APRS-IS, after the TX
@@ -2665,6 +2739,13 @@ export interface components {
             baud_rate?: number;
             channel?: number;
             connected_since?: number;
+            /**
+             * @description Enabled mirrors KissInterface.Enabled so the Kiss page can show a
+             *     "Disabled" state and offer a re-enable action. A disabled interface
+             *     is not running, so the live status fields below stay zero-valued
+             *     for it.
+             */
+            enabled?: boolean;
             gate_tx_to_is?: boolean;
             id?: number;
             last_error?: string;
@@ -6989,6 +7070,61 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    setKissEnabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description KISS interface id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Enabled flag */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.KissEnabledRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.KissResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

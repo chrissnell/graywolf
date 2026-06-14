@@ -174,6 +174,117 @@ func itoa(n uint32) string {
 	return string(buf[i:])
 }
 
+// TestSetKissEnabled exercises the focused enable/disable toggle. A
+// freshly-created interface is enabled; PUT /enabled flips the flag,
+// persists it, and reflects it in the response. A missing id is 404.
+func TestSetKissEnabled(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	createBody, _ := json.Marshal(map[string]any{"type": "tcp", "tcp_port": 20001, "channel": 1})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/kiss", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	mux.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d: %s", createRec.Code, createRec.Body.String())
+	}
+	var created dto.KissResponse
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if !created.Enabled {
+		t.Fatalf("newly created interface should be enabled, got %+v", created)
+	}
+
+	toggle := func(enabled bool) dto.KissResponse {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"enabled": enabled})
+		req := httptest.NewRequest(http.MethodPut, "/api/kiss/"+itoa(created.ID)+"/enabled", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("toggle(%v) status = %d: %s", enabled, rec.Code, rec.Body.String())
+		}
+		var resp dto.KissResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	resp := toggle(false)
+	if resp.Enabled {
+		t.Errorf("after disable, response Enabled=true: %+v", resp)
+	}
+	if row, err := srv.store.GetKissInterface(context.Background(), created.ID); err != nil {
+		t.Fatal(err)
+	} else if row.Enabled {
+		t.Errorf("after disable, stored Enabled=true")
+	}
+
+	resp = toggle(true)
+	if !resp.Enabled {
+		t.Errorf("after enable, response Enabled=false: %+v", resp)
+	}
+	if row, err := srv.store.GetKissInterface(context.Background(), created.ID); err != nil {
+		t.Fatal(err)
+	} else if !row.Enabled {
+		t.Errorf("after enable, stored Enabled=false")
+	}
+
+	// Unknown id -> 404.
+	body, _ := json.Marshal(map[string]any{"enabled": false})
+	missReq := httptest.NewRequest(http.MethodPut, "/api/kiss/999999/enabled", bytes.NewReader(body))
+	missReq.Header.Set("Content-Type", "application/json")
+	missRec := httptest.NewRecorder()
+	mux.ServeHTTP(missRec, missReq)
+	if missRec.Code != http.StatusNotFound {
+		t.Errorf("missing id status = %d, want 404", missRec.Code)
+	}
+}
+
+// TestUpdateKissEnabledPreserved checks the full-resource PUT contract:
+// an explicit enabled=false disables the row, while a PUT that omits the
+// field defaults back to enabled (older-client backward compat).
+func TestUpdateKissEnabledPreserved(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	createBody, _ := json.Marshal(map[string]any{"type": "tcp", "tcp_port": 20011, "channel": 1})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/kiss", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	mux.ServeHTTP(createRec, createReq)
+	var created dto.KissResponse
+	_ = json.NewDecoder(createRec.Body).Decode(&created)
+
+	put := func(body map[string]any) dto.KissResponse {
+		t.Helper()
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPut, "/api/kiss/"+itoa(created.ID), bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("put status = %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp dto.KissResponse
+		_ = json.NewDecoder(rec.Body).Decode(&resp)
+		return resp
+	}
+
+	if got := put(map[string]any{"type": "tcp", "tcp_port": 20011, "channel": 1, "enabled": false}); got.Enabled {
+		t.Errorf("explicit enabled=false should disable, got %+v", got)
+	}
+	if got := put(map[string]any{"type": "tcp", "tcp_port": 20011, "channel": 1}); !got.Enabled {
+		t.Errorf("omitted enabled should default to true, got %+v", got)
+	}
+}
+
 // TestCreateKissTcpClient verifies the create path accepts a well-formed
 // tcp-client payload and rejects missing remote_host / remote_port.
 func TestCreateKissTcpClient(t *testing.T) {

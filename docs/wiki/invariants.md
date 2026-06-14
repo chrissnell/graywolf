@@ -884,3 +884,35 @@ the corresponding Rust→Go reply (e.g. `TestSignalResult`) so the Go side's
 bounded wait resolves. Android TX jobs submit samples unscaled (gain is
 applied by `AndroidTxSink`), unlike the desktop arm which pre-scales by the
 output device gain.
+
+### 45. Disabling a KISS interface releases its device; the DTO flag is a pointer
+
+A KISS interface row carries `Enabled` (`KissInterface.Enabled`,
+gorm `default:true`). When `Enabled=false` the manager does **not** keep
+the device open looping reconnect attempts — it stops the supervisor,
+which cancels the serve context and closes the underlying
+`io.ReadWriteCloser` (the serial fd / TCP socket). This is what lets an
+operator release e.g. a Bluetooth `/dev/rfcomm0` tty before a battery
+swap without deleting the interface (graywolf #152). Three call sites
+already honor the flag and must stay in sync — they are the same
+two-switch dispatch as invariant #34 plus the TX snapshot:
+
+1. `pkg/app/wiring.go` — `kissComponent().start` skips `!Enabled` rows at boot.
+2. `pkg/webapi/kiss.go` — `notifyKissManager` calls `kissManager.Stop(id)` (release) on `!Enabled`, and (re)starts on `Enabled`. The focused `PUT /api/kiss/{id}/enabled` toggle (`setKissEnabled`) routes through here.
+3. `pkg/app/wiring.go` — `buildTxBackendSnapshot` excludes `!Enabled` rows so a disabled TNC registers no governor TX backend.
+
+*Why a pointer:* `dto.KissRequest.Enabled` is `*bool`, not `bool`. KISS
+`POST`/`PUT` is full-resource replace (invariant at line ~185), so a
+plain `bool` would conflate "field omitted" with "disable" and an older
+client editing any field would silently stop the interface. `nil` means
+"omitted → default true"; `ToModel` substitutes the explicit value so the
+gorm `default:true` never has to disambiguate a wire `false` (the same
+hazard documented for the `actions` table, solved there by dropping the
+gorm default — KISS solves it at the DTO boundary instead). The frontend
+always sends `enabled` on save so a `PUT` never re-enables a row the
+operator disabled.
+
+Source: [`../../pkg/webapi/dto/kiss.go`](../../pkg/webapi/dto/kiss.go)
+(`KissRequest.ToModel`, `KissEnabledRequest`),
+[`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`setKissEnabled`, `notifyKissManager`),
+[`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`, `buildTxBackendSnapshot`).

@@ -472,3 +472,53 @@ func TestKissRequest_GateTxToIs_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestKissRequest_Enabled_Default pins the backward-compat contract: a
+// request that omits the enabled field (Enabled == nil) must default the
+// model to enabled, so older clients and partial callers never silently
+// disable a running interface. An explicit false disables; explicit true
+// stays enabled.
+func TestKissRequest_Enabled_Default(t *testing.T) {
+	f := false
+	tr := true
+	cases := []struct {
+		name string
+		ptr  *bool
+		want bool
+	}{
+		{"omitted defaults to enabled", nil, true},
+		{"explicit true", &tr, true},
+		{"explicit false disables", &f, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := KissRequest{
+				Type:    configstore.KissTypeTCP,
+				TcpPort: 8001,
+				Channel: 1,
+				Mode:    configstore.KissModeModem,
+				Enabled: c.ptr,
+			}
+			if got := req.ToModel().Enabled; got != c.want {
+				t.Fatalf("ToModel: Enabled=%v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestKissResponse_Enabled_RoundTrip ensures KissFromModel surfaces the
+// stored Enabled flag so the UI can render a "Disabled" state.
+func TestKissResponse_Enabled_RoundTrip(t *testing.T) {
+	for _, want := range []bool{false, true} {
+		resp := KissFromModel(configstore.KissInterface{
+			InterfaceType: configstore.KissTypeTCP,
+			ListenAddr:    "0.0.0.0:8001",
+			Channel:       1,
+			Mode:          configstore.KissModeModem,
+			Enabled:       want,
+		})
+		if resp.Enabled != want {
+			t.Fatalf("KissFromModel: Enabled=%v, want %v", resp.Enabled, want)
+		}
+	}
+}

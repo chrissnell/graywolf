@@ -69,6 +69,15 @@ type KissRequest struct {
 	RemotePort      uint16 `json:"remote_port"`
 	ReconnectInitMs uint32 `json:"reconnect_init_ms"`
 	ReconnectMaxMs  uint32 `json:"reconnect_max_ms"`
+	// Enabled gates whether graywolf runs this interface. When false the
+	// manager stops the supervisor and releases the underlying device
+	// (closing the fd / socket) instead of looping reconnect attempts,
+	// while the row's configuration is preserved for a later re-enable.
+	// A pointer so an omitted field means "leave at the default" (true)
+	// rather than "disable": older clients and partial callers that never
+	// send the key keep their interfaces running. ToModel substitutes
+	// true when nil.
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // tcp-client reconnect bounds. init ≥ 250ms so a flapping peer can't
@@ -181,12 +190,22 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 	if maxMs == 0 {
 		maxMs = 300000
 	}
+	// Absent enabled flag defaults to true so existing clients that never
+	// send the key keep creating/updating running interfaces; an explicit
+	// false disables (manager stops the supervisor and releases the
+	// device). KISS PUT is a full-resource replace, so an editor that
+	// echoes the row's current enabled value preserves a disabled state
+	// across unrelated field edits.
+	enabled := true
+	if r.Enabled != nil {
+		enabled = *r.Enabled
+	}
 	ki := configstore.KissInterface{
 		InterfaceType:       r.Type,
 		Device:              r.SerialDevice,
 		BaudRate:            r.BaudRate,
 		Channel:             ch,
-		Enabled:             true,
+		Enabled:             enabled,
 		Broadcast:           true,
 		Mode:                mode,
 		TncIngressRateHz:    r.TncIngressRateHz,
@@ -221,6 +240,16 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 	return ki
 }
 
+// KissEnabledRequest is the body for PUT /api/kiss/{id}/enabled — a
+// focused toggle that flips only the Enabled flag without re-sending the
+// whole interface definition. The Kiss page's per-row enable/disable
+// action uses it so the operator can release a device (e.g. a Bluetooth
+// rfcomm tty before a battery swap) in one click while keeping the saved
+// channel/config intact.
+type KissEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 func (r KissRequest) ToUpdate(id uint32) configstore.KissInterface {
 	m := r.ToModel()
 	m.ID = id
@@ -253,6 +282,11 @@ type KissResponse struct {
 	AllowTxFromGovernor bool   `json:"allow_tx_from_governor"`
 	GateTxToIs          bool   `json:"gate_tx_to_is"`
 	NeedsReconfig       bool   `json:"needs_reconfig"`
+	// Enabled mirrors KissInterface.Enabled so the Kiss page can show a
+	// "Disabled" state and offer a re-enable action. A disabled interface
+	// is not running, so the live status fields below stay zero-valued
+	// for it.
+	Enabled bool `json:"enabled"`
 	// Tcp-client fields (Phase 4). Zero-valued for non-tcp-client rows.
 	RemoteHost      string `json:"remote_host"`
 	RemotePort      uint16 `json:"remote_port"`
@@ -302,6 +336,7 @@ func KissFromModel(m configstore.KissInterface) KissResponse {
 		AllowTxFromGovernor: m.AllowTxFromGovernor,
 		GateTxToIs:          m.GateTxToIs,
 		NeedsReconfig:       m.NeedsReconfig,
+		Enabled:             m.Enabled,
 		RemoteHost:          m.RemoteHost,
 		RemotePort:          m.RemotePort,
 		ReconnectInitMs:     m.ReconnectInitMs,

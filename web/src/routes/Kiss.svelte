@@ -295,6 +295,10 @@
       // offered to the iGate's RF->IS gate after the TX governor
       // accepts them. Default off — operator opts in.
       gate_tx_to_is: false,
+      // Whether graywolf runs this interface. New rows start enabled;
+      // the operator can disable an existing one to release its device
+      // (e.g. a Bluetooth rfcomm tty) without losing the config.
+      enabled: true,
     };
   }
 
@@ -376,6 +380,11 @@
       tnc_ingress_burst: String(row.tnc_ingress_burst || 100),
       allow_tx_from_governor: !!row.allow_tx_from_governor,
       gate_tx_to_is: !!row.gate_tx_to_is,
+      // Carry the persisted enabled state forward. KISS PUT is a
+      // full-resource replace, so echoing it keeps a disabled interface
+      // disabled across edits to unrelated fields. Default true for
+      // legacy rows whose response predates the field.
+      enabled: row.enabled !== false,
     };
     modalOpen = true;
   }
@@ -623,6 +632,10 @@
       // iGate via the RX fanout). Force false outside that mode so
       // the persisted value matches the UI's visibility rule.
       gate_tx_to_is: form.mode === 'modem' ? !!form.gate_tx_to_is : false,
+      // Full-resource replace: always send enabled so a PUT never
+      // silently re-enables a disabled interface (the backend defaults a
+      // missing flag to true). Default true for new rows.
+      enabled: form.enabled !== false,
     };
     switch (form.type) {
       case 'tcp':
@@ -787,6 +800,22 @@
     }
   }
 
+  // Enable/disable an interface in one click. Disabling stops the
+  // supervisor and releases the device (closing the serial fd / socket)
+  // instead of looping reconnect attempts; enabling restarts it. The
+  // saved channel and config are preserved either way. Uses the focused
+  // /enabled endpoint so we don't have to round-trip the whole form.
+  async function handleToggleEnabled(row) {
+    const next = row.enabled === false; // disabled -> enable, else disable
+    try {
+      await api.put(`/kiss/${row.id}/enabled`, { enabled: next });
+      toasts.success(next ? 'Interface enabled' : 'Interface disabled — device released');
+      await refreshItems();
+    } catch (err) {
+      toasts.error(err.message);
+    }
+  }
+
   // Healthglyph: live / down based on state. Client-only rows (never
   // server-listen) are what really benefit from this; server-listen
   // reports StateListening which is always "live" (the listener bound
@@ -860,6 +889,7 @@
 {/snippet}
 
 {#snippet statusCell(_value, row)}
+  {@const disabled = row.enabled === false}
   <div class="status-cell" data-tick={clockTick}>
     <!-- clockTick is in data-tick so any change triggers snippet
          re-render; that propagates to the countdownText call below. -->
@@ -868,29 +898,35 @@
       class="status-btn"
       aria-expanded={expandedId === row.id}
       aria-controls={`status-detail-${row.id}`}
-      aria-label={`Status for KISS interface ${row.id}: ${stateLabel(row.state)}`}
+      aria-label={`Status for KISS interface ${row.id}: ${disabled ? 'Disabled' : stateLabel(row.state)}`}
       onclick={(e) => { e.stopPropagation(); toggleExpanded(row.id); }}
     >
-      <span class={healthClass(row.state)} aria-hidden="true">{healthGlyph(row.state)}</span>
-      <Badge variant={stateBadgeVariant(row.state)}>{stateLabel(row.state)}</Badge>
-      {#if row.state === 'backoff'}
-        <span class="countdown">{countdownText(row.retry_at_unix_ms)}</span>
+      {#if disabled}
+        <!-- A disabled interface is not running, so live supervisor
+             state is meaningless. Show a neutral "Disabled" pill instead
+             of the stale/empty state. -->
+        <span class="health-disabled" aria-hidden="true">○</span>
+        <Badge>Disabled</Badge>
+      {:else}
+        <span class={healthClass(row.state)} aria-hidden="true">{healthGlyph(row.state)}</span>
+        <Badge variant={stateBadgeVariant(row.state)}>{stateLabel(row.state)}</Badge>
+        {#if row.state === 'backoff'}
+          <span class="countdown">{countdownText(row.retry_at_unix_ms)}</span>
+        {/if}
       {/if}
     </button>
     {#if expandedId === row.id}
       <div id={`status-detail-${row.id}`} class="status-detail" role="region" aria-label="Status detail">
-        {#if row.type === 'tcp-client'}
+        {#if disabled}
+          <div class="detail-row"><span class="detail-label">Endpoint:</span> <span>{endpointText(row)}</span></div>
+          <div class="detail-row detail-muted">Disabled — the device is released and reconnection is paused. The configuration is preserved.</div>
+        {:else if row.type === 'tcp-client'}
           <div class="detail-row"><span class="detail-label">Peer:</span> <span>{row.peer_addr || `${row.remote_host}:${row.remote_port}`}</span></div>
           <div class="detail-row"><span class="detail-label">Connected since:</span> <span>{formatLocalTime(row.connected_since) || '—'}</span></div>
           <div class="detail-row"><span class="detail-label">Reconnect count:</span> <span>{row.reconnect_count || 0}</span></div>
           <div class="detail-row"><span class="detail-label">Backoff:</span> <span>{row.backoff_seconds || 0}s</span></div>
           {#if row.last_error}
             <div class="detail-row detail-err"><span class="detail-label">Last error:</span> <span>{row.last_error}</span></div>
-          {/if}
-          {#if canRetryNow(row.state)}
-            <div class="detail-actions">
-              <Button variant="primary" onclick={(e) => { e.stopPropagation?.(); handleRetryNow(row); }}>Retry now</Button>
-            </div>
           {/if}
         {:else if row.type === 'tcp'}
           <div class="detail-row"><span class="detail-label">Listening:</span> <span>{row.local_only ? `127.0.0.1:${row.tcp_port} (local only)` : `:${row.tcp_port}`}</span></div>
@@ -901,6 +937,16 @@
         {:else}
           <div class="detail-row"><span class="detail-label">Device:</span> <span>{row.serial_device || '—'}</span></div>
         {/if}
+        <div class="detail-actions">
+          {#if !disabled && row.type === 'tcp-client' && canRetryNow(row.state)}
+            <Button variant="primary" onclick={(e) => { e.stopPropagation?.(); handleRetryNow(row); }}>Retry now</Button>
+          {/if}
+          {#if disabled}
+            <Button variant="primary" onclick={(e) => { e.stopPropagation?.(); handleToggleEnabled(row); }}>Enable</Button>
+          {:else}
+            <Button variant="ghost" onclick={(e) => { e.stopPropagation?.(); handleToggleEnabled(row); }}>Disable</Button>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
@@ -1232,6 +1278,7 @@
   }
   .health-live { color: var(--color-success, #4caf50); font-size: 14px; }
   .health-down { color: var(--color-warning, #ffa000); font-size: 14px; }
+  .health-disabled { color: var(--text-secondary, #9e9e9e); font-size: 14px; }
   .countdown {
     font-size: 12px;
     color: var(--text-secondary);
@@ -1256,6 +1303,10 @@
   }
   .detail-err {
     color: var(--color-error, #d32f2f);
+  }
+  .detail-muted {
+    color: var(--text-secondary);
+    font-style: italic;
   }
   .detail-actions {
     margin-top: 8px;

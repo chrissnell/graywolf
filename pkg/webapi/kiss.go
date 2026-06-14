@@ -23,6 +23,7 @@ func (s *Server) registerKiss(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/kiss/available-serial-ports", s.listAvailableKissSerialPorts)
 	mux.HandleFunc("GET /api/kiss/{id}", s.getKiss)
 	mux.HandleFunc("PUT /api/kiss/{id}", s.updateKiss)
+	mux.HandleFunc("PUT /api/kiss/{id}/enabled", s.setKissEnabled)
 	mux.HandleFunc("DELETE /api/kiss/{id}", s.deleteKiss)
 	mux.HandleFunc("POST /api/kiss/{id}/reconnect", s.reconnectKiss)
 }
@@ -174,6 +175,55 @@ func (s *Server) updateKiss(w http.ResponseWriter, r *http.Request) {
 			return m, nil
 		},
 		dto.KissFromModel)
+}
+
+// setKissEnabled flips only the Enabled flag on an interface and applies
+// the change live: disabling stops the supervisor and releases the
+// underlying device (closing the serial fd / socket) instead of looping
+// reconnect attempts; enabling (re)starts it. The saved channel and
+// configuration are preserved either way. This is the one-click toggle
+// behind the Kiss page's per-row enable/disable action — it avoids
+// re-sending the full interface definition just to release a device.
+//
+// @Summary  Enable or disable a KISS interface
+// @Tags     kiss
+// @ID       setKissEnabled
+// @Accept   json
+// @Produce  json
+// @Param    id   path     int                     true "KISS interface id"
+// @Param    body body     dto.KissEnabledRequest  true "Enabled flag"
+// @Success  200  {object} dto.KissResponse
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  404  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /kiss/{id}/enabled [put]
+func (s *Server) setKissEnabled(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid id")
+		return
+	}
+	req, err := decodeJSON[dto.KissEnabledRequest](r)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	ki, err := s.store.GetKissInterface(r.Context(), id)
+	if err != nil || ki == nil {
+		notFound(w)
+		return
+	}
+	if ki.Enabled != req.Enabled {
+		ki.Enabled = req.Enabled
+		if err := s.store.UpdateKissInterface(r.Context(), ki); err != nil {
+			s.internalError(w, r, "set kiss enabled", err)
+			return
+		}
+		s.notifyKissManager(*ki)
+	}
+	out := dto.KissFromModel(*ki)
+	writeJSON(w, http.StatusOK, s.attachKissStatus([]dto.KissResponse{out})[0])
 }
 
 // deleteKiss removes the KISS interface with the given id.
