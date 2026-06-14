@@ -104,10 +104,11 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
   if (backend === RADAR_BACKEND_VECTOR) {
     return {
       sourceId: RADAR_SOURCE_ID,
+      // `tiles` is intentionally omitted: this is a per-frame provider, so the
+      // tile template depends on the current frame ts. radar.js injects
+      // `tiles: frameTiles(ts)` once the manifest yields a frame.
       source: {
         type: 'vector',
-        // Origin Worker resolves the `latest` pointer GRA-48 publishes to R2.
-        tiles: [vectorTileUrl()],
         // The generated archive only covers z3-z8 (national CONUS ~1 km).
         // Without bounds MapLibre would request z>maxzoom tiles (Worker 404 ->
         // blank above the data) and waste requests below minzoom; maxzoom lets
@@ -122,7 +123,7 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
           id: 'radar-fill',
           type: 'fill',
           source: RADAR_SOURCE_ID,
-          'source-layer': 'radar', // MVT layer name produced by GRA-48
+          'source-layer': 'radar', // MVT layer name produced by the generator
           // fill-antialias MUST be false for stacked dBZ bands: with it on,
           // MapLibre draws an antialiased outline on every band edge, and the
           // feathered edge between two adjacent bands leaks the basemap through
@@ -132,12 +133,11 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
         },
       ],
       opacity: { property: 'fill-opacity', layerIds: ['radar-fill'] },
-      // The vector route is cycle-less (the Worker always serves the latest
-      // frame), but MapLibre caches vector tiles in-memory and will not refetch
-      // when a new frame publishes. radar.js calls cacheBust() on a cadence and
-      // swaps in a new `?v=` template so MapLibre treats it as a new source
-      // revision and refetches; the Worker ignores the param.
-      cacheBust: (v) => [vectorTileUrl(v)],
+      // Per-frame loop: each frame is an immutable URL keyed by its epoch ts
+      // (radar/<ts>/{z}/{x}/{y}.pbf). radar.js calls setFrameTs(ts) to swap the
+      // tile template; the ts IS the cache key, so no `?v=` cache-bust is needed.
+      perFrame: true,
+      frameTiles: (ts) => [vectorTileUrl(ts)],
     };
   }
   throw new Error(`unsupported radar backend: ${backend}`);
@@ -191,16 +191,41 @@ export function radarProviderForRegion(region = ACTIVE_RADAR_REGION) {
   return region === RADAR_REGION_WORLD ? worldRadarProvider() : radarProvider();
 }
 
-// Vector contour tile template. The Worker route is cycle-less; an optional
-// cache-bust token `v` (a time bucket, see frameBucket) is appended so a newly
-// published frame looks like a new source revision to MapLibre.
-export function vectorTileUrl(v) {
-  const bust = v == null ? '' : `?v=${v}`;
-  return `${RADAR_TILE_BASE}/radar/{z}/{x}/{y}.pbf${bust}`;
+// Per-frame vector contour tile template. `ts` is a 10-digit Unix epoch naming
+// an immutable archive (radar/<ts>.pmtiles) on the origin Worker; the URL is
+// byte-stable forever, so it carries no cache-bust param.
+export function vectorTileUrl(ts) {
+  return `${RADAR_TILE_BASE}/radar/${ts}/{z}/{x}/{y}.pbf`;
 }
 
-// Cadence-aligned cache-bust token. GRA-48 republishes on a ~5-minute cycle,
-// so a 5-minute bucket changes about once per new frame.
+// The loop manifest URL (single source of truth for which frames exist). The
+// bearer token (?t=) is appended by the caller's fetch, since this is a plain
+// fetch and not a MapLibre tile request (transformRequest doesn't see it).
+export function radarManifestUrl() {
+  return `${RADAR_TILE_BASE}/radar/manifest.json`;
+}
+
+// Parse a radar manifest into an oldest-first list of { ts, iso } frames. The
+// manifest's `frames` is newest-first; the loop animates oldest -> newest, so
+// reverse here. Returns [] for anything that isn't a schema_version 1 manifest
+// with a frames array (so a transient bad/empty body is treated as "no frames"
+// rather than throwing into the poll loop).
+export function parseManifestFrames(json) {
+  if (!json || typeof json !== 'object') return [];
+  if (json.schema_version !== 1 || !Array.isArray(json.frames)) return [];
+  const frames = [];
+  for (const f of json.frames) {
+    if (!f || typeof f.ts !== 'number' || typeof f.iso !== 'string') continue;
+    frames.push({ ts: f.ts, iso: f.iso });
+  }
+  // newest-first -> oldest-first
+  frames.reverse();
+  return frames;
+}
+
+// Cadence-aligned cache-bust token for the RainViewer raster overlay (which is
+// still a latest-frame pull-through). The US vector overlay no longer uses this
+// -- it keys on the per-frame ts instead.
 export function frameBucket(nowMs) {
   return Math.floor(nowMs / 300000);
 }

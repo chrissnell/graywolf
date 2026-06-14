@@ -2,12 +2,12 @@
 //
 // Backend-agnostic: it asks radar-source.js for a provider descriptor and
 // performs the MapLibre source/layer calls. The active backend is the
-// GRA-48 vector contours, selected by ACTIVE_RADAR_BACKEND in
-// radar-source.js. For the vector backend this layer also drives a
-// cadence-aligned frame cache-bust (the route always serves the latest
-// frame, so refresh() bumps the tile URL on a time-bucket rollover to make
-// MapLibre refetch); the raster backend has no cache-bust and refresh()
-// is purely idempotent re-adds.
+// vector contour loop, selected by ACTIVE_RADAR_BACKEND in radar-source.js.
+// The vector backend is a per-frame loop: each frame is an immutable URL keyed
+// by its epoch ts, and the LiveMap animation calls setFrameTs(ts) to swap the
+// tile template. The RainViewer world raster backend instead carries a
+// cadence-aligned `?v=` cache-bust that refresh() bumps on a time-bucket
+// rollover; that path is unchanged.
 //
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,
@@ -28,17 +28,28 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
   // a region switch.
   let curVisible = visible;
   let curOpacity = opacity;
-  // Current frame cache-bust bucket (providers with cacheBust only). The source
-  // is added already pointing at this bucket's URL; refresh() bumps it on
-  // rollover.
+  // Current frame cache-bust bucket (RainViewer raster only). The source is
+  // added already pointing at this bucket's URL; refresh() bumps it on rollover.
   let curBucket = provider.cacheBust ? frameBucket(now()) : null;
+  // Current frame ts (per-frame vector loop only). Null until the manifest
+  // yields a frame; setFrameTs() advances it.
+  let curFrameTs = null;
 
   // Idempotent add: safe to call repeatedly (initial mount + every refresh).
   function ensure() {
+    // A per-frame provider has no tile template until a frame ts is known.
+    // Add nothing until then -- the overlay is simply absent (mirrors the
+    // Worker's pre-manifest 503), and setFrameTs() adds it once a frame loads.
+    if (provider.perFrame && curFrameTs == null) return;
     if (!map.getSource(provider.sourceId)) {
-      const source = provider.cacheBust
-        ? { ...provider.source, tiles: provider.cacheBust(curBucket) }
-        : provider.source;
+      let source;
+      if (provider.perFrame) {
+        source = { ...provider.source, tiles: provider.frameTiles(curFrameTs) };
+      } else if (provider.cacheBust) {
+        source = { ...provider.source, tiles: provider.cacheBust(curBucket) };
+      } else {
+        source = provider.source;
+      }
       map.addSource(provider.sourceId, source);
     }
     // Recompute beforeId from the current style -- symbol-layer ids differ
@@ -59,9 +70,10 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
 
   function refresh() {
     ensure();
-    // Vector frames publish in place at a cycle-less URL; bust MapLibre's
-    // in-memory tile cache when the cadence bucket rolls over so the overlay
-    // picks up a freshly published frame.
+    // RainViewer raster publishes in place at a latest-frame URL; bust
+    // MapLibre's in-memory tile cache when the cadence bucket rolls over so the
+    // overlay picks up a freshly published frame. The per-frame vector loop
+    // doesn't use this -- its frames advance via setFrameTs().
     if (provider.cacheBust) {
       const v = frameBucket(now());
       if (v !== curBucket) {
@@ -70,6 +82,21 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
         if (src && src.setTiles) src.setTiles(provider.cacheBust(v));
       }
     }
+  }
+
+  // Per-frame loop: point the source at frame `ts`. Adds the source on the
+  // first ts (when ensure() had nothing to add yet), then swaps the tile
+  // template on subsequent frames. No-op for non-perFrame providers (world
+  // raster) or a repeated ts.
+  function setFrameTs(ts) {
+    if (!provider.perFrame || ts == null || ts === curFrameTs) return;
+    curFrameTs = ts;
+    if (!map.getSource(provider.sourceId)) {
+      ensure();
+      return;
+    }
+    const src = map.getSource(provider.sourceId);
+    if (src && src.setTiles) src.setTiles(provider.frameTiles(ts));
   }
 
   function setVisible(v) {
@@ -111,5 +138,5 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
     if (map.getSource(provider.sourceId)) map.removeSource(provider.sourceId);
   }
 
-  return { refresh, setVisible, setOpacity, setRegion, destroy };
+  return { refresh, setVisible, setOpacity, setRegion, setFrameTs, destroy };
 }

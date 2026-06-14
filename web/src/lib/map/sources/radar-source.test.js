@@ -14,6 +14,8 @@ import {
   worldRadarProvider,
   rainviewerTileUrl,
   vectorTileUrl,
+  radarManifestUrl,
+  parseManifestFrames,
   frameBucket,
 } from './radar-source.js';
 
@@ -64,7 +66,8 @@ test('vector provider yields a fill layer driven by fill-opacity', () => {
   const p = radarProvider(RADAR_BACKEND_VECTOR);
   assert.equal(p.sourceId, 'radar-tiles');
   assert.equal(p.source.type, 'vector');
-  assert.match(p.source.tiles[0], /radar\/\{z\}\/\{x\}\/\{y\}\.pbf$/);
+  // Per-frame provider: no static tile template -- radar.js injects it per ts.
+  assert.equal(p.source.tiles, undefined);
   assert.equal(p.layers.length, 1);
   assert.equal(p.layers[0].type, 'fill');
   assert.equal(p.layers[0]['source-layer'], 'radar');
@@ -79,15 +82,49 @@ test('vector source is bounded to the generated z3-z8 archive', () => {
   assert.equal(p.source.maxzoom, 8);
 });
 
-test('vectorTileUrl is the cycle-less .pbf route and appends ?v= when busting', () => {
-  assert.equal(vectorTileUrl(), 'https://maps.nw5w.com/radar/{z}/{x}/{y}.pbf');
-  assert.equal(vectorTileUrl(42), 'https://maps.nw5w.com/radar/{z}/{x}/{y}.pbf?v=42');
+test('vectorTileUrl is the per-frame .pbf route keyed by ts (no cache-bust)', () => {
+  assert.equal(vectorTileUrl(1750020000), 'https://maps.nw5w.com/radar/1750020000/{z}/{x}/{y}.pbf');
 });
 
-test('vector provider exposes a cacheBust that swaps in a ?v= template', () => {
+test('vector provider is per-frame with a frameTiles template (no cacheBust)', () => {
   const p = radarProvider(RADAR_BACKEND_VECTOR);
-  assert.equal(typeof p.cacheBust, 'function');
-  assert.deepEqual(p.cacheBust(7), ['https://maps.nw5w.com/radar/{z}/{x}/{y}.pbf?v=7']);
+  assert.equal(p.perFrame, true);
+  assert.equal(p.cacheBust, undefined);
+  assert.equal(typeof p.frameTiles, 'function');
+  assert.deepEqual(p.frameTiles(1750020000), [
+    'https://maps.nw5w.com/radar/1750020000/{z}/{x}/{y}.pbf',
+  ]);
+});
+
+test('radarManifestUrl points at the loop manifest', () => {
+  assert.equal(radarManifestUrl(), 'https://maps.nw5w.com/radar/manifest.json');
+});
+
+test('parseManifestFrames reverses to oldest-first and keeps ts/iso', () => {
+  const manifest = {
+    schema_version: 1,
+    frames: [
+      { ts: 1750020000, iso: '2026-06-13T18:00:00Z', size: 5 }, // newest
+      { ts: 1750019700, iso: '2026-06-13T17:55:00Z' },          // older
+    ],
+  };
+  const frames = parseManifestFrames(manifest);
+  assert.deepEqual(frames, [
+    { ts: 1750019700, iso: '2026-06-13T17:55:00Z' },
+    { ts: 1750020000, iso: '2026-06-13T18:00:00Z' },
+  ]);
+});
+
+test('parseManifestFrames returns [] for bad/empty/unknown-schema input', () => {
+  assert.deepEqual(parseManifestFrames(null), []);
+  assert.deepEqual(parseManifestFrames({}), []);
+  assert.deepEqual(parseManifestFrames({ schema_version: 2, frames: [] }), []);
+  assert.deepEqual(parseManifestFrames({ schema_version: 1, frames: 'nope' }), []);
+  // Drops malformed entries but keeps valid ones.
+  assert.deepEqual(
+    parseManifestFrames({ schema_version: 1, frames: [{ ts: 'x', iso: 'y' }, { ts: 1, iso: 'a' }] }),
+    [{ ts: 1, iso: 'a' }],
+  );
 });
 
 test('raster provider has no cacheBust (latest-frame IEM URL is already live)', () => {

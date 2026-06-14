@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mountRadarLayer } from './radar.js';
 
-// Minimal MapLibre stand-in: records sources/layers and the last setTiles call.
+// Minimal MapLibre stand-in: records sources/layers and counts setTiles calls.
 function fakeMap() {
   const sources = {}, layers = {};
+  let setTilesCalls = 0;
   return {
     addSource: (id, s) => { sources[id] = { ...s }; },
-    getSource: (id) => (sources[id] ? { setTiles: (t) => { sources[id].tiles = t; } } : undefined),
+    getSource: (id) => (sources[id] ? { setTiles: (t) => { sources[id].tiles = t; setTilesCalls++; } } : undefined),
     addLayer: (l) => { layers[l.id] = l; },
     getLayer: (id) => layers[id],
     setLayoutProperty: () => {},
@@ -16,49 +17,71 @@ function fakeMap() {
     removeSource: (id) => { delete sources[id]; },
     getStyle: () => ({ layers: [] }),
     _sources: sources, _layers: layers,
+    get _setTilesCalls() { return setTilesCalls; },
   };
 }
 
-test('mounts the vector source already cache-busted to the current bucket', () => {
+const frameUrl = (ts) => `https://maps.nw5w.com/radar/${ts}/{z}/{x}/{y}.pbf`;
+
+test('per-frame vector overlay adds no source until a frame ts is set', () => {
   const map = fakeMap();
-  mountRadarLayer(map, { visible: true, opacity: 0.6, now: () => 300000 });
+  mountRadarLayer(map, { visible: true, opacity: 0.6 });
+  // No manifest frame yet -> overlay is absent (mirrors the worker's pre-manifest 503).
+  assert.equal(map._sources['radar-tiles'], undefined);
+  assert.equal(map._layers['radar-fill'], undefined);
+});
+
+test('setFrameTs adds the per-frame source then swaps the template on advance', () => {
+  const map = fakeMap();
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6 });
+
+  layer.setFrameTs(1750020000);
   assert.equal(map._sources['radar-tiles'].type, 'vector');
-  assert.match(map._sources['radar-tiles'].tiles[0], /\/radar\/\{z\}\/\{x\}\/\{y\}\.pbf\?v=1$/);
+  assert.deepEqual(map._sources['radar-tiles'].tiles, [frameUrl(1750020000)]);
   assert.equal(map._layers['radar-fill'].type, 'fill');
+
+  layer.setFrameTs(1750019700); // advance one frame
+  assert.deepEqual(map._sources['radar-tiles'].tiles, [frameUrl(1750019700)]);
 });
 
-test('refresh busts the tile cache only when the time bucket rolls over', () => {
-  let nowMs = 0;
+test('setFrameTs ignores a repeated ts', () => {
   const map = fakeMap();
-  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, now: () => nowMs });
-  const initial = map._sources['radar-tiles'].tiles[0];
-  assert.match(initial, /\?v=0$/);
-
-  layer.refresh();                       // same bucket -> no new template
-  assert.equal(map._sources['radar-tiles'].tiles[0], initial);
-
-  nowMs = 300000;                        // next 5-minute bucket
-  layer.refresh();
-  assert.match(map._sources['radar-tiles'].tiles[0], /\?v=1$/);
-  assert.notEqual(map._sources['radar-tiles'].tiles[0], initial);
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6 });
+  layer.setFrameTs(1750020000); // first ts: added via addSource (no setTiles)
+  const before = map._setTilesCalls;
+  layer.setFrameTs(1750020000); // same ts: no-op
+  assert.equal(map._setTilesCalls, before);
 });
 
-test('setRegion tears down the US vector layer and rebuilds the world raster overlay', () => {
+test('setRegion to world builds RainViewer raster; back to US restores the frame', () => {
   const map = fakeMap();
   const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, region: 'us', now: () => 0 });
+  layer.setFrameTs(1750020000);
   assert.equal(map._sources['radar-tiles'].type, 'vector');
-  assert.ok(map._layers['radar-fill']);
 
   layer.setRegion('world');
-  // Vector fill layer is gone; the RainViewer raster source/layer is mounted.
   assert.equal(map._layers['radar-fill'], undefined);
   assert.equal(map._sources['radar-tiles'].type, 'raster');
   assert.match(map._sources['radar-tiles'].tiles[0], /\/radar\/rainviewer\//);
-  assert.ok(map._layers['radar-raster']);
 
-  // Switching back restores the US vector overlay.
+  // Switching back restores the US vector overlay at the last-known frame.
   layer.setRegion('us');
   assert.equal(map._sources['radar-tiles'].type, 'vector');
+  assert.deepEqual(map._sources['radar-tiles'].tiles, [frameUrl(1750020000)]);
   assert.ok(map._layers['radar-fill']);
-  assert.equal(map._layers['radar-raster'], undefined);
+});
+
+test('world raster still cache-busts on a time-bucket rollover', () => {
+  let nowMs = 0;
+  const map = fakeMap();
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, region: 'world', now: () => nowMs });
+  const initial = map._sources['radar-tiles'].tiles[0];
+  assert.match(initial, /\?v=0$/);
+
+  layer.refresh(); // same bucket -> unchanged
+  assert.equal(map._sources['radar-tiles'].tiles[0], initial);
+
+  nowMs = 300000; // next 5-minute bucket
+  layer.refresh();
+  assert.match(map._sources['radar-tiles'].tiles[0], /\?v=1$/);
 });

@@ -18,6 +18,9 @@
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { mountRadarLayer } from '../lib/map/layers/radar.js';
+  import { radarManifestUrl, parseManifestFrames } from '../lib/map/sources/radar-source.js';
+  import { createRadarFrames } from '../lib/map/radar-frames.svelte.js';
+  import { mapsState } from '../lib/settings/maps-store.svelte.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
   import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
   import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
@@ -31,6 +34,9 @@
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
   import MapPinned from 'lucide-svelte/icons/map-pinned';
   import Copy from 'lucide-svelte/icons/copy';
+  import Play from 'lucide-svelte/icons/play';
+  import Pause from 'lucide-svelte/icons/pause';
+  import Square from 'lucide-svelte/icons/square';
 
   // Values are seconds (data store wants ms; multiplied at dispatch).
   const TIMERANGES_S = [
@@ -71,6 +77,42 @@
   // Coverage region ('us' = NEXRAD, 'world' = RainViewer) lives in the shared
   // map store so the maps settings tab owns the selector; the live map only
   // reflects the operator's choice here.
+
+  // Radar loop animation. The frame store polls the worker's loop manifest and
+  // drives Play/Stop + the frame slider; loadRadarFrames() fetches it with the
+  // same bearer token as the basemap (a plain fetch, so transformRequest does
+  // not see it -- we append ?t= here). The token is revealed once and cached.
+  let radarToken = null;
+  async function loadRadarFrames() {
+    if (!mapsState.registered) return [];
+    if (!radarToken) radarToken = await mapsState.revealToken();
+    if (!radarToken) return [];
+    let resp;
+    try {
+      resp = await fetch(`${radarManifestUrl()}?t=${encodeURIComponent(radarToken)}`);
+    } catch {
+      return [];
+    }
+    if (resp.status === 401) {
+      radarToken = null; // stale token -- re-reveal next poll
+      return [];
+    }
+    if (!resp.ok) return []; // 503 pre-cutover, etc. -> no frames yet
+    try {
+      return parseManifestFrames(await resp.json());
+    } catch {
+      return [];
+    }
+  }
+  const radarFrames = createRadarFrames({ load: loadRadarFrames });
+  // Slider label: the current frame's local time + position (e.g. "6:05 PM · 34/37").
+  const radarFrameLabel = $derived.by(() => {
+    const f = radarFrames.current;
+    if (!f) return 'Radar loop: waiting for frames…';
+    const t = new Date(f.ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return `Radar frame: ${t} · ${radarFrames.index + 1}/${radarFrames.count}`;
+  });
+
   let mapRef = null;
   let activePopup = null;
 
@@ -513,6 +555,20 @@
     const v = radarSettings.visible;
     localStorage.setItem('gw_radar_visible', v ? '1' : '0');
     radarLayer?.setVisible(v);
+    // Only poll the loop manifest while the overlay is on; pause playback when
+    // it is hidden so the timer isn't running unseen.
+    if (v) {
+      radarFrames.startPolling();
+    } else {
+      radarFrames.pause();
+      radarFrames.stopPolling();
+    }
+  });
+  // Drive the current animation frame into the layer. setFrameTs adds the
+  // vector source on the first ts and swaps the tile template thereafter.
+  $effect(() => {
+    const ts = radarFrames.currentTs;
+    if (ts != null) radarLayer?.setFrameTs(ts);
   });
   $effect(() => {
     const v = radarSettings.opacity;
@@ -654,6 +710,7 @@
   onDestroy(() => {
     dataStore.stop();
     closePopup();
+    radarFrames.destroy();
     radarLayer?.destroy();
     stationsLayer?.destroy();
     trailsLayer?.destroy();
@@ -768,6 +825,49 @@
       class="radar-opacity-range"
       bind:value={radarSettings.opacity}
     />
+
+    {#if radarSettings.visible}
+      <!-- Radar loop animation: two square buttons [Play/Pause][Stop] and a
+           frame-position slider. Disabled until the manifest yields >1 frame. -->
+      <div class="radar-anim-buttons">
+        <button
+          type="button"
+          class="radar-anim-btn"
+          onclick={() => radarFrames.toggle()}
+          disabled={radarFrames.count <= 1}
+          aria-label={radarFrames.playing ? 'Pause radar loop' : 'Play radar loop'}
+          title={radarFrames.playing ? 'Pause' : 'Play'}
+        >
+          {#if radarFrames.playing}
+            <Pause size={18} aria-hidden="true" />
+          {:else}
+            <Play size={18} aria-hidden="true" />
+          {/if}
+        </button>
+        <button
+          type="button"
+          class="radar-anim-btn"
+          onclick={() => radarFrames.stop()}
+          disabled={radarFrames.count <= 1}
+          aria-label="Stop radar loop and jump to the latest frame"
+          title="Stop (jump to latest)"
+        >
+          <Square size={18} aria-hidden="true" />
+        </button>
+      </div>
+      <label class="timerange-label" for="radar-frame-range">{radarFrameLabel}</label>
+      <input
+        id="radar-frame-range"
+        type="range"
+        class="radar-frame-range"
+        min="0"
+        max={Math.max(0, radarFrames.count - 1)}
+        step="1"
+        value={radarFrames.index}
+        oninput={(e) => radarFrames.seek(Number(e.currentTarget.value))}
+        disabled={radarFrames.count <= 1}
+      />
+    {/if}
 
     <label class="timerange-label" for="map-timerange-select">Time range</label>
     <select
@@ -1020,6 +1120,41 @@
     width: 100%;
     cursor: pointer;
     accent-color: var(--color-accent, #4a9eff);
+  }
+  /* Radar loop: two square buttons [Play][Stop] side by side. */
+  .radar-anim-buttons {
+    display: flex;
+    gap: 6px;
+    margin-top: 14px;
+  }
+  .radar-anim-btn {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .radar-anim-btn:hover:not(:disabled) {
+    border-color: var(--color-accent, #4a9eff);
+    color: var(--color-accent, #4a9eff);
+  }
+  .radar-anim-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .radar-frame-range {
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--color-accent, #4a9eff);
+  }
+  .radar-frame-range:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
   .map-timerange-select {
     width: 100%;
