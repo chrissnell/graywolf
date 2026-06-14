@@ -20,6 +20,10 @@
     if (!a) return '—';
     return a.ssid ? `${a.callsign}-${a.ssid}` : a.callsign;
   }
+
+  // Render a byte as 0xNN, or 0x?? when absent (e.g. a frame that ended
+  // before its PID). Avoids a literal "0xundefined" in the summary.
+  const fmtByte = (b) => '0x' + (b == null ? '??' : b.toString(16).padStart(2, '0').toUpperCase());
 </script>
 
 <Modal bind:open title="Packet Inspector">
@@ -57,7 +61,7 @@
             <dt>Path</dt>
             <dd>{frame.digis.length ? frame.digis.map((d) => addrLabel(d) + (d.hbit ? '*' : '')).join(', ') : 'direct'}</dd>
             <dt>Control / PID</dt>
-            <dd>0x{frame.control?.toString(16).padStart(2, '0').toUpperCase()} / 0x{frame.pid?.toString(16).padStart(2, '0').toUpperCase()}{frame.isMicE ? ' · Mic-E' : ''}</dd>
+            <dd>{fmtByte(frame.control)} / {fmtByte(frame.pid)}{frame.isMicE ? ' · Mic-E' : ''}</dd>
             <dt>Length</dt><dd>{bytes.length} bytes</dd>
           </dl>
         {/if}

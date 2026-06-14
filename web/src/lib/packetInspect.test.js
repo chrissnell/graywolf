@@ -130,6 +130,24 @@ test('analyzeFrame flags a truncated Mic-E info field', () => {
   assert.ok(r.issues.some((i) => /Mic-E info field is/.test(i.text)));
 });
 
+test('analyzeFrame handles a frame that ends before its PID', () => {
+  // dest + source (terminated) + a lone control byte, no PID.
+  const f = new Uint8Array([...addr('APRS'), ...addr('NW5W', 0, { last: true }), 0x03]);
+  const r = analyzeFrame(f);
+  assert.equal(r.ok, true);
+  assert.equal(r.control, 0x03);
+  assert.equal(r.pid, null); // must stay null (drives the 0x?? render, not 0xundefined)
+  assert.equal(r.isMicE, false);
+  assert.ok(r.issues.some((i) => i.severity === 'warn' && /PID/.test(i.text)));
+});
+
+test('analyzeFrame does not treat legacy 0x1c/0x1d info bytes as Mic-E', () => {
+  // Matches the Go decoder, which only dispatches '`' and '\'' to Mic-E.
+  const f = frame('T7SUTV', 'NW5W', [0x1c, 0x21, 0x22]);
+  const r = analyzeFrame(f);
+  assert.equal(r.isMicE, false);
+});
+
 test('analyzeFrame warns on unexpected control/PID bytes', () => {
   const f = frame('APRS', 'NW5W', '!data', { control: 0x00, pid: 0x00 });
   const r = analyzeFrame(f);

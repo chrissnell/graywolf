@@ -9,10 +9,11 @@
 // The FCS is stripped upstream (see packetlog.Entry.Raw), so checksum
 // validation is intentionally not attempted here.
 
-// Data type identifiers that mark a Mic-E payload (current and legacy forms).
-// APRS101 ch.10: '`' and '\'' are current; 0x1c/0x1d are the older "current"
-// and "old" Mic-E telemetry bytes still seen from some firmware.
-const MICE_TYPE_BYTES = new Set([0x60, 0x27, 0x1c, 0x1d]);
+// Data type identifiers that mark a Mic-E payload. Kept in sync with the
+// Go decoder's dispatch (pkg/aprs/parse.go), which treats only '`' (current)
+// and '\'' (old) as Mic-E so the inspector's "Mic-E" label matches what the
+// rest of graywolf actually decodes.
+const MICE_TYPE_BYTES = new Set([0x60, 0x27]);
 
 // AX.25 control/PID expected for an APRS UI frame.
 const AX25_UI_CONTROL = 0x03;
