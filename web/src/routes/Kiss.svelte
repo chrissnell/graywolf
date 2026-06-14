@@ -77,13 +77,19 @@
   let pollTimer = null;
   let clockTimer = null;
 
+  // Type and Mode cells render a <Badge>, whose 1px border + 0.4rem padding
+  // insets its text from the cell's left edge. Indent those headers by the
+  // same amount so the column label lines up with the badge below it. The
+  // toggle cell gets vertical-align:middle so the switch centers in the row
+  // instead of sitting on the baseline.
+  const BADGE_HEAD_INDENT = 'padding-left: calc(0.4rem + 1px);';
   const columns = [
-    { key: 'type', label: 'Type' },
+    { key: 'type', label: 'Type', headStyle: BADGE_HEAD_INDENT },
     { key: 'endpoint', label: 'Endpoint' },
     { key: 'channel', label: 'Channel' },
-    { key: 'mode', label: 'Mode' },
+    { key: 'mode', label: 'Mode', headStyle: BADGE_HEAD_INDENT },
     { key: 'status', label: 'Status' },
-    { key: 'enabled', label: 'Enabled' },
+    { key: 'enabled', label: 'Enabled', tdStyle: 'vertical-align: middle;' },
   ];
 
   // Platform-conditional type menu. On Android, operators see the

@@ -9,6 +9,12 @@
   // caller override rendering for a specific cell (e.g., wildcard badges)
   // without teaching DataTable about feature-specific formats. Any key not
   // listed falls back to the default text/boolean rendering.
+  //
+  // A column may also carry optional `headStyle` / `tdStyle` strings, applied
+  // inline to that column's <th> / <td>. Use sparingly for per-column
+  // alignment tweaks (e.g. indenting a header to line up with a badge, or
+  // vertically centering a toggle) without leaking a global rule onto every
+  // table in the app.
   let {
     columns = [],
     rows = [],
@@ -26,7 +32,7 @@
     <thead>
       <tr>
         {#each columns as col}
-          <th>{col.label}</th>
+          <th style={col.headStyle}>{col.label}</th>
         {/each}
         {#if hasActions}
           <th class="actions-col">Actions</th>
@@ -44,7 +50,7 @@
         {#each rows as row}
           <tr>
             {#each columns as col}
-              <td>
+              <td style={col.tdStyle}>
                 {#if cells && cells[col.key]}
                   {@render cells[col.key](row[col.key], row)}
                 {:else if typeof row[col.key] === 'boolean'}
