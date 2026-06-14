@@ -80,6 +80,16 @@
   // same bearer token as the basemap (a plain fetch, so transformRequest does
   // not see it -- we append ?t= here). The token is revealed once and cached.
   let radarToken = null;
+  // De-dupe diagnostics: the manifest poll runs every ~15s while radar is on, so
+  // a persistent failure (e.g. the Worker/generator not yet deployed) would warn
+  // forever. Only log when the failure stage changes; clear on success so a
+  // later regression logs again.
+  let lastRadarLoadStatus = null;
+  function warnRadar(status, ...args) {
+    if (lastRadarLoadStatus === status) return;
+    lastRadarLoadStatus = status;
+    console.warn(...args);
+  }
   async function loadRadarFrames() {
     if (!mapsState.registered) return [];
     if (!radarToken) radarToken = await mapsState.revealToken();
@@ -89,42 +99,45 @@
     try {
       resp = await fetch(url);
     } catch (e) {
-      console.warn('[radar] manifest fetch failed (network/CORS)', e);
+      warnRadar('network', '[radar] manifest fetch failed (network/CORS)', e);
       return [];
     }
     if (resp.status === 401) {
       radarToken = null; // stale token -- re-reveal next poll
-      console.warn('[radar] manifest 401 -- token rejected; will re-reveal');
+      warnRadar(401, '[radar] manifest 401 -- token rejected; will re-reveal');
       return [];
     }
     if (resp.status === 404) {
       // The origin Worker has no /radar/manifest.json route -- it predates the
       // animated-loop deploy. Update the worker (wrangler deploy) so the overlay
-      // can load frames. Logged loudly because the overlay otherwise sits on
+      // can load frames. Logged because the overlay otherwise sits on
       // "waiting for frames…" with no other signal.
-      console.warn(
+      warnRadar(
+        404,
         '[radar] manifest 404 -- origin Worker is missing the /radar/manifest.json route. ' +
           'Deploy the animated-loop Worker (cd worker && npx wrangler deploy).',
       );
       return [];
     }
     if (resp.status === 503) {
-      console.warn(
+      warnRadar(
+        503,
         '[radar] manifest 503 -- Worker is up but radar/manifest.json is not in R2 yet. ' +
           'Deploy/run the radar-contour generator so it publishes the manifest.',
       );
       return [];
     }
     if (!resp.ok) {
-      console.warn(`[radar] manifest fetch HTTP ${resp.status}`);
+      warnRadar(resp.status, `[radar] manifest fetch HTTP ${resp.status}`);
       return [];
     }
     try {
       const frames = parseManifestFrames(await resp.json());
-      if (frames.length === 0) console.warn('[radar] manifest parsed but has 0 frames');
+      if (frames.length === 0) warnRadar('empty', '[radar] manifest parsed but has 0 frames');
+      else lastRadarLoadStatus = null; // recovered -- a later failure logs again
       return frames;
     } catch (e) {
-      console.warn('[radar] manifest JSON parse failed', e);
+      warnRadar('parse', '[radar] manifest JSON parse failed', e);
       return [];
     }
   }
