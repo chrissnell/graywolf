@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -282,6 +283,147 @@ func TestUpdateKissEnabledPreserved(t *testing.T) {
 	}
 	if got := put(map[string]any{"type": "tcp", "tcp_port": 20011, "channel": 1}); !got.Enabled {
 		t.Errorf("omitted enabled should default to true, got %+v", got)
+	}
+}
+
+// TestCreateKissDisabled pins the create-path contract for the gorm
+// `default:true` footgun: POST with enabled=false must persist a disabled
+// row, not silently flip it to enabled. (db.Create applies the column
+// default for a Go zero-value bool, so the store re-asserts the false.)
+func TestCreateKissDisabled(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]any{"type": "tcp", "tcp_port": 20021, "channel": 1, "enabled": false})
+	req := httptest.NewRequest(http.MethodPost, "/api/kiss", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp dto.KissResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Enabled {
+		t.Errorf("POST enabled=false returned Enabled=true: %+v", resp)
+	}
+	row, err := srv.store.GetKissInterface(context.Background(), resp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Enabled {
+		t.Errorf("POST enabled=false persisted Enabled=true (gorm default trap)")
+	}
+}
+
+// blockingRWC is an in-memory io.ReadWriteCloser whose Read blocks until
+// Close so a SerialSupervisor started over it stays in StateConnected
+// until ctx cancel / explicit close — mirrors pkg/kiss's fakeRWC.
+type blockingRWC struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newBlockingRWC() *blockingRWC { return &blockingRWC{closed: make(chan struct{})} }
+
+func (b *blockingRWC) Read([]byte) (int, error)    { <-b.closed; return 0, io.EOF }
+func (b *blockingRWC) Write(p []byte) (int, error) { return len(p), nil }
+func (b *blockingRWC) Close() error {
+	b.once.Do(func() { close(b.closed) })
+	return nil
+}
+
+// TestSetKissEnabledStartsSerialFamily is the regression guard for the
+// notifyKissManager dispatch fix: enabling a disabled serial / bluetooth
+// / usbserial interface must actually (re)start its supervisor — not fall
+// into the default branch that only calls Stop — and disabling must
+// release it. The bug it guards against silently left Bluetooth/USB
+// interfaces down after a re-enable (the manager's switch lacked those
+// cases, so they hit `default: Stop`). A fake OpenFunc stands in for the
+// platform serial opener so no real device is touched.
+func TestSetKissEnabledStartsSerialFamily(t *testing.T) {
+	store, err := configstore.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	mgr := kiss.NewManager(kiss.ManagerConfig{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(mgr.StopAll)
+
+	openFn := func(string, uint32) (io.ReadWriteCloser, error) { return newBlockingRWC(), nil }
+
+	srv, err := NewServer(Config{
+		Store:              store,
+		KissManager:        mgr,
+		KissSerialOpenFunc: openFn,
+		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	cases := []configstore.KissInterface{
+		{Name: "k-serial", InterfaceType: configstore.KissTypeSerial, Device: "/dev/ttyUSB0", BaudRate: 9600, Channel: 1, Mode: configstore.KissModeModem, Enabled: false},
+		{Name: "k-bt", InterfaceType: configstore.KissTypeBluetooth, Device: "AA:BB:CC:DD:EE:FF", Channel: 1, Mode: configstore.KissModeTnc, Enabled: false},
+		{Name: "k-usb", InterfaceType: configstore.KissTypeUsbSerial, Device: "2341:0043", BaudRate: 9600, Channel: 1, Mode: configstore.KissModeModem, Enabled: false},
+	}
+	setEnabled := func(t *testing.T, id uint32, enabled bool) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"enabled": enabled})
+		req := httptest.NewRequest(http.MethodPut, "/api/kiss/"+itoa(id)+"/enabled", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("set enabled=%v status = %d: %s", enabled, rec.Code, rec.Body.String())
+		}
+	}
+	for _, ki := range cases {
+		ki := ki
+		t.Run(ki.InterfaceType, func(t *testing.T) {
+			if err := store.CreateKissInterface(context.Background(), &ki); err != nil {
+				t.Fatal(err)
+			}
+
+			// Enable: the supervisor must come up (StateConnected via the
+			// fake opener). Before the fix, bluetooth/usbserial hit
+			// `default: Stop` and never appeared in Status().
+			setEnabled(t, ki.ID, true)
+			deadline := time.Now().Add(2 * time.Second)
+			var got string
+			for time.Now().Before(deadline) {
+				if st, ok := mgr.Status()[ki.ID]; ok {
+					got = st.State
+					if got == kiss.StateConnected {
+						break
+					}
+				}
+				time.Sleep(2 * time.Millisecond)
+			}
+			if got != kiss.StateConnected {
+				t.Fatalf("after enable, manager state = %q, want %q", got, kiss.StateConnected)
+			}
+
+			// Disable: the interface must be torn down and removed from the
+			// manager (device released).
+			setEnabled(t, ki.ID, false)
+			deadline = time.Now().Add(2 * time.Second)
+			for time.Now().Before(deadline) {
+				if _, ok := mgr.Status()[ki.ID]; !ok {
+					return
+				}
+				time.Sleep(2 * time.Millisecond)
+			}
+			t.Fatalf("after disable, interface %d still present in manager", ki.ID)
+		})
 	}
 }
 

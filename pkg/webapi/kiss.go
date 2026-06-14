@@ -284,7 +284,6 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			s.kissManager.Stop(ki.ID)
 			return
 		}
-		reload := s.notifyTxBackendReload
 		s.kissManager.StartClient(s.kissCtx, ki.ID, kiss.ClientConfig{
 			Name:                ki.Name,
 			RemoteHost:          ki.RemoteHost,
@@ -297,7 +296,8 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			TncIngressRateHz:    ki.TncIngressRateHz,
 			TncIngressBurst:     ki.TncIngressBurst,
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
-			OnReload:            reload,
+			GateTxToIs:          ki.GateTxToIs,
+			OnReload:            s.notifyTxBackendReload,
 		})
 	case configstore.KissTypeTCP:
 		if ki.ListenAddr == "" {
@@ -320,7 +320,6 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			s.kissManager.Stop(ki.ID)
 			return
 		}
-		reload := s.notifyTxBackendReload
 		s.kissManager.StartSerial(s.kissCtx, ki.ID, kiss.SerialConfig{
 			Name:                ki.Name,
 			Device:              ki.Device,
@@ -333,11 +332,61 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			TncIngressRateHz:    ki.TncIngressRateHz,
 			TncIngressBurst:     ki.TncIngressBurst,
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
-			OnReload:            reload,
+			GateTxToIs:          ki.GateTxToIs,
+			OnReload:            s.notifyTxBackendReload,
+			OpenFunc:            s.kissSerialOpenFunc,
+		})
+	case configstore.KissTypeBluetooth:
+		// Bluetooth RFCOMM has no baud and the SPP TNC always owns the
+		// modem, so force BaudRate=0 and Mode=ModeTnc — mirrors the boot
+		// path in wiring.go's kissComponent. The MAC lives in ki.Device,
+		// opened via kissSerialOpenFunc (platformsvc on Android).
+		if ki.Device == "" {
+			s.kissManager.Stop(ki.ID)
+			return
+		}
+		s.kissManager.StartSerial(s.kissCtx, ki.ID, kiss.SerialConfig{
+			Name:                ki.Name,
+			Device:              ki.Device,
+			BaudRate:            0,
+			Mode:                kiss.ModeTnc,
+			ChannelMap:          map[uint8]uint32{0: ch},
+			ReconnectInitMs:     ki.ReconnectInitMs,
+			ReconnectMaxMs:      ki.ReconnectMaxMs,
+			Logger:              s.logger,
+			TncIngressRateHz:    ki.TncIngressRateHz,
+			TncIngressBurst:     ki.TncIngressBurst,
+			AllowTxFromGovernor: ki.AllowTxFromGovernor,
+			GateTxToIs:          ki.GateTxToIs,
+			OnReload:            s.notifyTxBackendReload,
+			OpenFunc:            s.kissSerialOpenFunc,
+		})
+	case configstore.KissTypeUsbSerial:
+		// USB serial mirrors host serial: vid:pid lives in ki.Device,
+		// baud is required, mode is operator-chosen. kissSerialOpenFunc
+		// routes vid:pid strings to platformsvc.UsbSerialOpen on Android.
+		if ki.Device == "" || ki.BaudRate == 0 {
+			s.kissManager.Stop(ki.ID)
+			return
+		}
+		s.kissManager.StartSerial(s.kissCtx, ki.ID, kiss.SerialConfig{
+			Name:                ki.Name,
+			Device:              ki.Device,
+			BaudRate:            ki.BaudRate,
+			Mode:                mode,
+			ChannelMap:          map[uint8]uint32{0: ch},
+			ReconnectInitMs:     ki.ReconnectInitMs,
+			ReconnectMaxMs:      ki.ReconnectMaxMs,
+			Logger:              s.logger,
+			TncIngressRateHz:    ki.TncIngressRateHz,
+			TncIngressBurst:     ki.TncIngressBurst,
+			AllowTxFromGovernor: ki.AllowTxFromGovernor,
+			GateTxToIs:          ki.GateTxToIs,
+			OnReload:            s.notifyTxBackendReload,
+			OpenFunc:            s.kissSerialOpenFunc,
 		})
 	default:
-		// Bluetooth is not wired through the manager yet; stop any
-		// lingering session.
+		// Unknown interface type — stop any lingering session.
 		s.kissManager.Stop(ki.ID)
 	}
 }

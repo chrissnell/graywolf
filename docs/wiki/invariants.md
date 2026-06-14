@@ -901,18 +901,41 @@ two-switch dispatch as invariant #34 plus the TX snapshot:
 2. `pkg/webapi/kiss.go` — `notifyKissManager` calls `kissManager.Stop(id)` (release) on `!Enabled`, and (re)starts on `Enabled`. The focused `PUT /api/kiss/{id}/enabled` toggle (`setKissEnabled`) routes through here.
 3. `pkg/app/wiring.go` — `buildTxBackendSnapshot` excludes `!Enabled` rows so a disabled TNC registers no governor TX backend.
 
+*notifyKissManager must enumerate the same interface types as the boot
+switch* (this is invariant #34's two-switch hazard in practice). The
+re-enable path goes through `notifyKissManager`, so its `switch` needs a
+case for **every** type `kissComponent` can start — `tcp`, `tcp-client`,
+`serial`, `bluetooth`, `usbserial`. A type that falls into `default:`
+hits `Stop(id)` and silently never restarts on re-enable (this bit
+Bluetooth/USB: they were missing and re-enable was a no-op). The
+serial-family cases (`serial`/`bluetooth`/`usbserial`) must also pass
+`OpenFunc: s.kissSerialOpenFunc` — on Android that opener routes MAC /
+vid:pid device strings through `platformsvc`; without it the supervisor
+cannot open the device. The webapi `Server` receives it via
+`Config.KissSerialOpenFunc` (wired from `App.kissSerialOpenFunc()`; nil
+on desktop).
+
 *Why a pointer:* `dto.KissRequest.Enabled` is `*bool`, not `bool`. KISS
 `POST`/`PUT` is full-resource replace (invariant at line ~185), so a
 plain `bool` would conflate "field omitted" with "disable" and an older
 client editing any field would silently stop the interface. `nil` means
-"omitted → default true"; `ToModel` substitutes the explicit value so the
-gorm `default:true` never has to disambiguate a wire `false` (the same
-hazard documented for the `actions` table, solved there by dropping the
-gorm default — KISS solves it at the DTO boundary instead). The frontend
-always sends `enabled` on save so a `PUT` never re-enables a row the
-operator disabled.
+"omitted → default true"; `ToModel` substitutes the explicit value. The
+frontend always sends `enabled` on save so a `PUT` never re-enables a row
+the operator disabled.
+
+*Create vs. the gorm default:* the `default:true` tag is kept (so the SQL
+DDL default survives for raw inserts / downgrade-safety — `migrate_kiss_*`
+tests rely on it). But gorm treats a Go zero-value `bool` as "unset" and
+sends the column default on `INSERT`, so a `POST` with `enabled=false`
+would otherwise persist `true` (the footgun the `actions` table dodged by
+dropping its tag default). `Store.CreateKissInterface` therefore captures
+the requested value *before* `db.Create` (gorm writes the applied default
+back into the struct) and re-asserts `false` with an explicit `Update`.
+`UpdateKissInterface` (`db.Save`) writes `false` correctly on its own, so
+only the create path needs the fix-up.
 
 Source: [`../../pkg/webapi/dto/kiss.go`](../../pkg/webapi/dto/kiss.go)
 (`KissRequest.ToModel`, `KissEnabledRequest`),
 [`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`setKissEnabled`, `notifyKissManager`),
-[`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`, `buildTxBackendSnapshot`).
+[`../../pkg/configstore/store.go`](../../pkg/configstore/store.go) (`CreateKissInterface`),
+[`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`, `buildTxBackendSnapshot`, webapi `Config.KissSerialOpenFunc`).

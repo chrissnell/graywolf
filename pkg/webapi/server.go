@@ -53,29 +53,30 @@ import (
 // Server routes /api/* requests. It does not own the underlying
 // listener; cmd/graywolf composes it into its main mux.
 type Server struct {
-	store             *configstore.Store
-	bridge            *modembridge.Bridge
-	kissManager       *kiss.Manager
-	kissCtx           context.Context // long-lived context for KISS server goroutines
-	logger            *slog.Logger
-	startedAt         time.Time
-	historyDBPath     string // read-only; set by -history-db flag
-	version           string // build-time version string returned by GET /api/version
-	igateStatusFn     func() *igate.Status
-	gpsReload         chan struct{} // signalled when GPS config changes
-	beaconReload      chan struct{} // signalled when beacon config changes
-	digipeaterReload  chan struct{} // signalled when digipeater config/rules change
-	igateReload       chan struct{} // signalled when igate config/filters change
-	positionLogReload chan struct{} // signalled when position log config changes
-	agwReload         chan struct{} // signalled when AGW config changes
-	smartBeaconReload chan struct{} // signalled when smart-beacon singleton config changes
-	messagesReload    chan struct{} // signalled when messages preferences or tactical callsigns change
-	updatesReloadCh   chan struct{} // signalled when the updates-check toggle flips so the checker re-evaluates immediately
-	updatesChecker    *updatescheck.Checker
-	mapsAuth          *mapsauth.Client    // client for auth.nw5w.com /register; defaulted in NewServer
-	mapsCache         *mapscache.Manager  // PMTiles cache; nil until P2-T5 wires it up — handlers return 503 when nil
-	catalog           *mapscatalog.Cache  // download catalog cache; nil until wired — handlers return 503 when nil
-	style             *mapsstyle.Cache    // style-asset cache; nil until wired — handler returns 503 when nil
+	store              *configstore.Store
+	bridge             *modembridge.Bridge
+	kissManager        *kiss.Manager
+	kissCtx            context.Context // long-lived context for KISS server goroutines
+	kissSerialOpenFunc kiss.OpenFunc   // platform-aware opener for serial-family hot reloads; nil on desktop
+	logger             *slog.Logger
+	startedAt          time.Time
+	historyDBPath      string // read-only; set by -history-db flag
+	version            string // build-time version string returned by GET /api/version
+	igateStatusFn      func() *igate.Status
+	gpsReload          chan struct{} // signalled when GPS config changes
+	beaconReload       chan struct{} // signalled when beacon config changes
+	digipeaterReload   chan struct{} // signalled when digipeater config/rules change
+	igateReload        chan struct{} // signalled when igate config/filters change
+	positionLogReload  chan struct{} // signalled when position log config changes
+	agwReload          chan struct{} // signalled when AGW config changes
+	smartBeaconReload  chan struct{} // signalled when smart-beacon singleton config changes
+	messagesReload     chan struct{} // signalled when messages preferences or tactical callsigns change
+	updatesReloadCh    chan struct{} // signalled when the updates-check toggle flips so the checker re-evaluates immediately
+	updatesChecker     *updatescheck.Checker
+	mapsAuth           *mapsauth.Client   // client for auth.nw5w.com /register; defaulted in NewServer
+	mapsCache          *mapscache.Manager // PMTiles cache; nil until P2-T5 wires it up — handlers return 503 when nil
+	catalog            *mapscatalog.Cache // download catalog cache; nil until wired — handlers return 503 when nil
+	style              *mapsstyle.Cache   // style-asset cache; nil until wired — handler returns 503 when nil
 	// txBackendReload is the Phase 3 dispatcher's rebuild signal.
 	// Nudged after any change that could alter the channel-backing
 	// map (kiss interface add/remove/mode/allow_tx flip, channel
@@ -176,13 +177,22 @@ type MessagesStore interface {
 
 // Config bundles the dependencies for NewServer.
 type Config struct {
-	Store         *configstore.Store
-	Bridge        *modembridge.Bridge
-	KissManager   *kiss.Manager
-	KissCtx       context.Context // parent context for dynamically started KISS servers
-	Logger        *slog.Logger
-	HistoryDBPath string // path to history database, from -history-db flag
-	Version       string // build-time version string reported by GET /api/version
+	Store       *configstore.Store
+	Bridge      *modembridge.Bridge
+	KissManager *kiss.Manager
+	KissCtx     context.Context // parent context for dynamically started KISS servers
+	// KissSerialOpenFunc is the platform-aware transport opener for
+	// serial-family KISS interfaces (host serial / Bluetooth RFCOMM /
+	// USB serial). nil on desktop (SerialSupervisor falls back to
+	// go.bug.st/serial); on Android it routes MAC / vid:pid device
+	// strings through platformsvc. notifyKissManager passes it into
+	// StartSerial so a hot-reload of a serial-family interface opens the
+	// device the same way the boot path (kissComponent) does — without
+	// it, Android Bluetooth/USB interfaces cannot be (re)started live.
+	KissSerialOpenFunc kiss.OpenFunc
+	Logger             *slog.Logger
+	HistoryDBPath      string // path to history database, from -history-db flag
+	Version            string // build-time version string reported by GET /api/version
 	// MapsAuth is the registration client used by
 	// POST /api/preferences/maps/register. Optional; NewServer
 	// defaults to a client pointed at mapsauth.DefaultBaseURL when
@@ -227,20 +237,21 @@ func NewServer(cfg Config) (*Server, error) {
 		mapsClient = mapsauth.NewClient(mapsauth.DefaultBaseURL)
 	}
 	return &Server{
-		store:           cfg.Store,
-		bridge:          cfg.Bridge,
-		kissManager:     cfg.KissManager,
-		kissCtx:         kissCtx,
-		logger:          logger.With("component", "webapi"),
-		startedAt:       time.Now(),
-		historyDBPath:   cfg.HistoryDBPath,
-		version:         cfg.Version,
-		updatesReloadCh: make(chan struct{}, 1),
-		mapsAuth:        mapsClient,
-		mapsCache:       cfg.MapsCache,
-		catalog:         cfg.Catalog,
-		style:           cfg.Style,
-		demo:            cfg.Demo,
+		store:              cfg.Store,
+		bridge:             cfg.Bridge,
+		kissManager:        cfg.KissManager,
+		kissCtx:            kissCtx,
+		kissSerialOpenFunc: cfg.KissSerialOpenFunc,
+		logger:             logger.With("component", "webapi"),
+		startedAt:          time.Now(),
+		historyDBPath:      cfg.HistoryDBPath,
+		version:            cfg.Version,
+		updatesReloadCh:    make(chan struct{}, 1),
+		mapsAuth:           mapsClient,
+		mapsCache:          cfg.MapsCache,
+		catalog:            cfg.Catalog,
+		style:              cfg.Style,
+		demo:               cfg.Demo,
 	}, nil
 }
 

@@ -1327,17 +1327,18 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	})
 
 	apiSrv, err := webapi.NewServer(webapi.Config{
-		Store:         a.store,
-		Bridge:        a.bridge,
-		KissManager:   a.kissMgr,
-		KissCtx:       ctx,
-		Logger:        a.logger,
-		HistoryDBPath: a.cfg.HistoryDBPath,
-		Version:       a.cfg.Version,
-		MapsCache:     mapsCache,
-		Catalog:       catalog,
-		Style:         styleCache,
-		Demo:          a.cfg.Demo,
+		Store:              a.store,
+		Bridge:             a.bridge,
+		KissManager:        a.kissMgr,
+		KissCtx:            ctx,
+		KissSerialOpenFunc: a.kissSerialOpenFunc(),
+		Logger:             a.logger,
+		HistoryDBPath:      a.cfg.HistoryDBPath,
+		Version:            a.cfg.Version,
+		MapsCache:          mapsCache,
+		Catalog:            catalog,
+		Style:              styleCache,
+		Demo:               a.cfg.Demo,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)

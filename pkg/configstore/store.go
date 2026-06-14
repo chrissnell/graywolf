@@ -964,7 +964,26 @@ func (s *Store) CreateKissInterface(ctx context.Context, k *KissInterface) error
 	if err := s.validateKissInterface(ctx, k); err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Create(k).Error
+	// The Enabled column carries gorm `default:true` (kept so the SQL DDL
+	// default survives for raw inserts / downgrade-safety). The flip side
+	// of that footgun: gorm treats a Go zero-value bool as "unset" and
+	// sends the DB default, so a caller creating a *disabled* interface
+	// (Enabled=false) would silently get an enabled one. Capture the
+	// requested value before Create — gorm writes the applied default
+	// back into the struct, so k.Enabled would read true afterward — and
+	// re-assert it explicitly when it was false. UpdateKissInterface
+	// (db.Save) writes false correctly, so only the create path needs this.
+	wantEnabled := k.Enabled
+	if err := s.db.WithContext(ctx).Create(k).Error; err != nil {
+		return err
+	}
+	if !wantEnabled {
+		k.Enabled = false
+		if err := s.db.WithContext(ctx).Model(k).Update("enabled", false).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (s *Store) UpdateKissInterface(ctx context.Context, k *KissInterface) error {
 	if err := normalizeKissInterface(k); err != nil {
