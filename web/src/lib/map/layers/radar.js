@@ -35,7 +35,7 @@ export function mountRadarLayer(map, {
   region = RADAR_REGION_US,
   frameTs = null,
   now = () => Date.now(),
-  fadeMs = 250, // cross-fade duration; sits just under the ~4fps frame cadence
+  fadeMs = 250, // cross-fade duration; matches the ~4fps (250ms) frame cadence
   loadTimeoutMs = 600, // fall back to fading even if the tile load never settles
 }) {
   // Region (US vs rest-of-world) is operator-selectable, so the provider is
@@ -170,7 +170,9 @@ export function mountRadarLayer(map, {
   }
 
   // (Re)build the active buffer in place at full opacity -- a restore after a
-  // style swap dropped our layers, not a frame advance, so no fade.
+  // style swap dropped our layers, not a frame advance, so no fade. Only the
+  // active buffer is restored; the idle buffer rebuilds lazily on the next
+  // crossfadeTo() (so the first frame after a basemap change re-adds it fresh).
   function restoreActive() {
     ensureBuffer(activeBuf, currentTiles());
     setBufferOpacity(activeBuf, curOpacity);

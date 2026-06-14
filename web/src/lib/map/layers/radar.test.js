@@ -24,6 +24,27 @@ function fakeMap() {
   };
 }
 
+// Variant with the MapLibre event interface (on/off/isSourceLoaded) so the
+// cross-fade waits for tiles to render before fading, plus a recording
+// setPaintProperty so we can assert which buffer ramped to opacity. fakeMap()
+// above deliberately omits map.on to exercise the synchronous fallback; this
+// one exercises the real async listener / fallback-timer path.
+function fakeMapWithEvents() {
+  const map = fakeMap();
+  const handlers = {};
+  const loaded = {};
+  const paint = {};
+  map.on = (ev, fn) => { (handlers[ev] ??= []).push(fn); };
+  map.off = (ev, fn) => { handlers[ev] = (handlers[ev] ?? []).filter((h) => h !== fn); };
+  map.isSourceLoaded = (id) => !!loaded[id];
+  map.setPaintProperty = (id, prop, val) => { (paint[id] ??= {})[prop] = val; };
+  map._emit = (ev, e) => { for (const fn of [...(handlers[ev] ?? [])]) fn(e); };
+  map._setLoaded = (id, v) => { loaded[id] = v; };
+  map._handlerCount = (ev) => (handlers[ev] ?? []).length;
+  map._paint = paint;
+  return map;
+}
+
 const frameUrl = (ts) => `https://maps.nw5w.com/radar/${ts}/{z}/{x}/{y}.pbf`;
 
 test('per-frame vector overlay adds no source until a frame ts is set', () => {
@@ -110,6 +131,78 @@ test('world raster cross-fades to the new frame on a time-bucket rollover', () =
   nowMs = 300000; // next 5-minute bucket -> fade into buffer 'b'
   layer.refresh();
   assert.match(map._sources['radar-tiles-b'].tiles[0], /\?v=1$/);
+});
+
+test('the fade waits for the idle source to load before ramping opacity', () => {
+  const map = fakeMapWithEvents();
+  mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020000 });
+  // Source/layer are added, but the buffer is still parked at 0 -- no fade until
+  // its tiles render, so we never fade up into a blank frame.
+  assert.equal(map._sources['radar-tiles-a'].type, 'vector');
+  assert.equal(map._paint['radar-fill-a']?.['fill-opacity'], undefined);
+
+  // An unrelated source's load must not trigger the fade.
+  map._emit('sourcedata', { sourceId: 'some-basemap', isSourceLoaded: true });
+  assert.equal(map._paint['radar-fill-a']?.['fill-opacity'], undefined);
+
+  // The idle source loading ramps it to the operator opacity.
+  map._emit('sourcedata', { sourceId: 'radar-tiles-a', isSourceLoaded: true });
+  assert.equal(map._paint['radar-fill-a']['fill-opacity'], 0.6);
+  // Listener is detached once the fade starts.
+  assert.equal(map._handlerCount('sourcedata'), 0);
+});
+
+test('an already-loaded (cached) idle source fades in immediately at mount', () => {
+  const map = fakeMapWithEvents();
+  map._setLoaded('radar-tiles-a', true); // frame already cached
+  mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020000 });
+  assert.equal(map._paint['radar-fill-a']['fill-opacity'], 0.6);
+  assert.equal(map._handlerCount('sourcedata'), 0);
+});
+
+test('superseding a pending fade coalesces onto the latest frame without leaking a listener', () => {
+  const map = fakeMapWithEvents();
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020000 });
+  assert.equal(map._handlerCount('sourcedata'), 1);
+  // A faster frame arrives before the first loads. The first fade never
+  // committed (activeBuf still null), so the new frame reuses the same idle
+  // buffer 'a' -- coalescing onto the latest -- and the stale listener is
+  // replaced, not accumulated.
+  layer.setFrameTs(1750019700);
+  assert.equal(map._handlerCount('sourcedata'), 1);
+  assert.deepEqual(map._sources['radar-tiles-a'].tiles, [frameUrl(1750019700)]);
+  assert.equal(map._sources['radar-tiles-b'], undefined);
+  // When the latest frame loads, buffer 'a' fades in.
+  map._emit('sourcedata', { sourceId: 'radar-tiles-a', isSourceLoaded: true });
+  assert.equal(map._paint['radar-fill-a']['fill-opacity'], 0.6);
+  // Destroy clears any remaining listener.
+  layer.destroy();
+  assert.equal(map._handlerCount('sourcedata'), 0);
+});
+
+test('after a fade commits, the next advance cross-fades the other buffer and detaches the prior listener', () => {
+  const map = fakeMapWithEvents();
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020000 });
+  map._emit('sourcedata', { sourceId: 'radar-tiles-a', isSourceLoaded: true }); // commit buffer 'a'
+  assert.equal(map._paint['radar-fill-a']['fill-opacity'], 0.6);
+  assert.equal(map._handlerCount('sourcedata'), 0);
+
+  layer.setFrameTs(1750019700); // committed buffer is 'a' -> advance into 'b'
+  assert.equal(map._handlerCount('sourcedata'), 1);
+  map._emit('sourcedata', { sourceId: 'radar-tiles-b', isSourceLoaded: true });
+  assert.equal(map._paint['radar-fill-b']['fill-opacity'], 0.6); // incoming ramps up
+  assert.equal(map._paint['radar-fill-a']['fill-opacity'], 0); // outgoing ramps down
+  assert.equal(map._handlerCount('sourcedata'), 0);
+});
+
+test('a stalled tile load falls back to fading on the timeout', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const map = fakeMapWithEvents();
+  mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020000, loadTimeoutMs: 600 });
+  assert.equal(map._paint['radar-fill-a']?.['fill-opacity'], undefined);
+  t.mock.timers.tick(600); // load never settled -> fall back to the fade
+  assert.equal(map._paint['radar-fill-a']['fill-opacity'], 0.6);
+  assert.equal(map._handlerCount('sourcedata'), 0);
 });
 
 test('destroy swallows errors when the map is already torn down', () => {
