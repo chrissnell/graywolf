@@ -565,6 +565,27 @@ impl AfskDemodulator {
         let c_i = convolve(&self.state.afsk.c_i_buf.as_slice()[..taps], lp);
         let c_q = convolve(&self.state.afsk.c_q_buf.as_slice()[..taps], lp);
 
+        // Track the center-frequency envelope as the received signal level.
+        // Profile B is an FM discriminator with no separate mark/space tones,
+        // so both level peaks follow the same envelope. Without this the peaks
+        // stay at their -1.0 init, and because Profile B usually wins the
+        // cross-demod dedup, the emitted frame would report no audio level —
+        // every packet rendered as a dash in the log (issue GRA-84). Uses the
+        // same attack/decay envelope tracker as Profile A so the scale matches.
+        let c_amp = (c_i * c_i + c_q * c_q).sqrt();
+        Self::track_level(
+            c_amp,
+            &mut self.state.alevel_mark_peak,
+            self.state.quick_attack,
+            self.state.sluggish_decay,
+        );
+        Self::track_level(
+            c_amp,
+            &mut self.state.alevel_space_peak,
+            self.state.quick_attack,
+            self.state.sluggish_decay,
+        );
+
         // FM discriminator: instantaneous frequency ≈ d(phase)/dt
         let phase = c_q.atan2(c_i);
         let mut rate = phase - self.state.afsk.prev_phase;
