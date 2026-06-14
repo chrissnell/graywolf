@@ -948,15 +948,21 @@ identical frames across sub-demods and keeps the *first* emitter within a
 ~110-sample window; in practice **Profile B usually wins** because its
 pipeline detects the closing flag a few samples earlier. So any per-frame
 field stamped onto `DecodedFrame` (e.g. `audio_level_mark`/`space`) must be
-produced by *all three* profiles -- a field tracked only in
-`process_profile_a` will be the `-1.0`/zero init on the frames that actually
-reach the application, even though Profile A "also" decoded the packet.
+produced by *all* profiles -- a field tracked only in `process_profile_a`
+will be the zero/uninitialized value on the frames that actually reach the
+application, even though Profile A "also" decoded the packet.
 
 This bit the per-packet audio level (GRA-84): Profile B never called
-`track_level`, so nearly every logged packet showed no level (a dash) until
-Profile B was taught to track its center-frequency envelope. When adding a
-new per-frame measurement, populate it in `process_profile_a` **and**
-`process_profile_b`, or compute it profile-independently.
+`track_level`, so its `alevel` peaks sat at their init and nearly every logged
+packet showed no level (a dash) until Profile B was taught to track its
+center-frequency envelope `sqrt(c_i^2 + c_q^2)`. When adding a new per-frame
+measurement, populate it in `process_profile_a` **and** `process_profile_b`,
+or compute it profile-independently.
+
+The Profile B envelope is only meaningful when that sub-demod is *not*
+hard-limited (a hard limiter clamps the signal to +/-1.0 before mixing). Both
+shipped presets keep the Profile B entry `hard_limit: false`, so this holds in
+production.
 
 Source: [`../../graywolf-modem/src/demod_afsk.rs`](../../graywolf-modem/src/demod_afsk.rs)
 (`process_profile_a`, `process_profile_b`, `track_level`),

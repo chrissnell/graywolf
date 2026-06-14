@@ -349,8 +349,12 @@ impl AfskDemodulator {
                 state.pll_locked_inertia = 0.74;
                 state.pll_searching_inertia = 0.50;
 
-                state.alevel_mark_peak = -1.0;
-                state.alevel_space_peak = -1.0;
+                // Match Profile A (which keeps the 0.0 struct default): start
+                // the level tracker at 0.0 so the envelope climbs from zero
+                // rather than out of a negative transient. Profile B now tracks
+                // its envelope, so the old -1.0 "never tracked" sentinel is gone.
+                state.alevel_mark_peak = 0.0;
+                state.alevel_space_peak = 0.0;
             }
         }
     }
@@ -571,7 +575,9 @@ impl AfskDemodulator {
         // stay at their -1.0 init, and because Profile B usually wins the
         // cross-demod dedup, the emitted frame would report no audio level —
         // every packet rendered as a dash in the log (issue GRA-84). Uses the
-        // same attack/decay envelope tracker as Profile A so the scale matches.
+        // same attack/decay envelope tracker as Profile A so the scale is
+        // comparable: A's m_amp is a single tone's I/Q magnitude, B's c_amp is
+        // the center-frequency envelope -- close enough for a display meter.
         let c_amp = (c_i * c_i + c_q * c_q).sqrt();
         Self::track_level(
             c_amp,

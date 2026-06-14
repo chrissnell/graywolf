@@ -23,6 +23,12 @@ fn read_wav_mono16(path: &str) -> (Vec<i16>, u32) {
         let size = u32::from_le_bytes([all[i + 4], all[i + 5], all[i + 6], all[i + 7]]) as usize;
         let body = i + 8;
         if id == b"fmt " {
+            let channels = u16::from_le_bytes([all[body + 2], all[body + 3]]);
+            let bits = u16::from_le_bytes([all[body + 14], all[body + 15]]);
+            assert!(
+                channels == 1 && bits == 16,
+                "this helper assumes mono 16-bit PCM; fixture is {channels}ch/{bits}-bit"
+            );
             sr = u32::from_le_bytes([all[body + 4], all[body + 5], all[body + 6], all[body + 7]]);
         } else if id == b"data" {
             for c in all[body..(body + size).min(all.len())].chunks_exact(2) {
