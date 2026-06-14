@@ -301,6 +301,22 @@ jobs:
           echo "::error::Release ${GITHUB_REF_NAME} never appeared; check goreleaser job."
           exit 1
 
+      # Render the Play "What's new" text from the same notes.yaml
+      # changelog that drives the in-app popup, so testers get an
+      # operator-facing release note. Output goes to a whatsNewDirectory
+      # the upload step reads (file naming: whatsnew-<locale>). The tool
+      # exits non-zero if notes.yaml has no entry for this version, so a
+      # missing changelog fails the release loudly rather than shipping a
+      # blank note.
+      - name: Generate Play "What's new" from release notes
+        if: env.HAVE_PLAY_SA == 'true'
+        run: |
+          set -euo pipefail
+          v="${{ steps.stage.outputs.version }}"
+          go run ./cmd/play-whatsnew -version "$v" -out staging/whatsnew/whatsnew-en-US
+          echo "---- whatsnew-en-US ----"
+          cat staging/whatsnew/whatsnew-en-US
+
       # Auto-publish the signed AAB to Play Closed Testing -- the `alpha`
       # track (Play's track IDs are fixed: internal, alpha=closed,
       # beta=open, production). Every v* tag now reaches the private beta
@@ -317,6 +333,8 @@ jobs:
           releaseFiles: staging/graywolf-*.aab
           track: alpha
           status: completed
+          # Per-locale release notes (whatsnew-en-US) generated above.
+          whatsNewDirectory: staging/whatsnew
 
       - name: Upload signed AAB as workflow artifact (manual fallback)
         uses: actions/upload-artifact@v5

@@ -88,6 +88,27 @@ configure time, so `make bump-*` cascades into Android automatically:
   `130800`), leaving 100 slots per patch for hotfix re-uploads. Play
   requires `versionCode` to increase monotonically across uploads.
 
+## Release notes ("What's new")
+
+The closed-testing upload ships a per-locale "What's new" note so testers
+see what changed. It is derived from the same
+[`pkg/releasenotes/notes.yaml`](../../pkg/releasenotes/notes.yaml)
+changelog that drives the in-app popup -- no second place to edit.
+
+- `cmd/play-whatsnew` renders the note for the release version to plain
+  text: title first, then the body with markdown links flattened to their
+  text and bold/italic markers stripped, truncated to Play's 500-char
+  per-locale limit at a sentence (else word) boundary.
+- The `release-sign` job runs it into `staging/whatsnew/whatsnew-en-US`
+  and points the upload's `whatsNewDirectory` there.
+- It exits non-zero if `notes.yaml` has no entry for the tagged version,
+  so a missing changelog fails the release loudly rather than shipping a
+  blank note. (The `make bump-*` flow already refuses to tag without an
+  entry, so this is a backstop.)
+- Promotions (`promote-to-closed`) carry the existing release's notes
+  forward; `fastlane supply` runs with `skip_upload_changelogs`, so the
+  note is set once at the closed-testing upload.
+
 ## Tracks
 
 Play's track IDs are fixed: `internal`, `alpha` (closed testing), `beta`
