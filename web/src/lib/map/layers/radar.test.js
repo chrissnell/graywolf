@@ -31,6 +31,18 @@ test('per-frame vector overlay adds no source until a frame ts is set', () => {
   assert.equal(map._layers['radar-fill'], undefined);
 });
 
+test('an initial frameTs seeds the per-frame source at mount (no setFrameTs needed)', () => {
+  // The manifest poll can resolve before the basemap style loads, so a frame ts
+  // is often known by the time the layer mounts. Passing it as a mount option
+  // (like visible/opacity) must render the overlay immediately -- otherwise it
+  // stays blank until the next index change (e.g. pressing Play).
+  const map = fakeMap();
+  mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020000 });
+  assert.equal(map._sources['radar-tiles'].type, 'vector');
+  assert.deepEqual(map._sources['radar-tiles'].tiles, [frameUrl(1750020000)]);
+  assert.equal(map._layers['radar-fill'].type, 'fill');
+});
+
 test('setFrameTs adds the per-frame source then swaps the template on advance', () => {
   const map = fakeMap();
   const layer = mountRadarLayer(map, { visible: true, opacity: 0.6 });

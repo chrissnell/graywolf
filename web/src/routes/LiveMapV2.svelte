@@ -409,6 +409,12 @@
       visible: radarSettings.visible,
       opacity: radarSettings.opacity,
       region: mapState.radarRegion,
+      // The manifest poll often resolves before the basemap style loads (tiny
+      // edge-cached JSON vs a heavy basemap), so a frame ts may already be
+      // known. The currentTs effect won't re-fire for an unchanged ts once the
+      // layer exists, so seed the current frame here or the overlay stays blank
+      // until the index changes (e.g. pressing Play).
+      frameTs: radarFrames.currentTs,
     });
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.

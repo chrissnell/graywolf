@@ -18,7 +18,7 @@
 
 import { radarProviderForRegion, frameBucket, RADAR_REGION_US } from '../sources/radar-source.js';
 
-export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_US, now = () => Date.now() }) {
+export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_US, frameTs = null, now = () => Date.now() }) {
   // Region (US vs rest-of-world) is operator-selectable, so the provider is
   // mutable: setRegion() tears down and rebuilds it. Everything below reads the
   // current `provider`, so the same add/remove logic serves either region.
@@ -31,9 +31,11 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
   // Current frame cache-bust bucket (RainViewer raster only). The source is
   // added already pointing at this bucket's URL; refresh() bumps it on rollover.
   let curBucket = provider.cacheBust ? frameBucket(now()) : null;
-  // Current frame ts (per-frame vector loop only). Null until the manifest
-  // yields a frame; setFrameTs() advances it.
-  let curFrameTs = null;
+  // Current frame ts (per-frame vector loop only). Seeded from the mount option
+  // when the manifest poll already resolved before the layer mounted (so the
+  // overlay paints immediately rather than waiting for the next index change);
+  // null otherwise. setFrameTs() advances it.
+  let curFrameTs = frameTs;
 
   // Idempotent add: safe to call repeatedly (initial mount + every refresh).
   function ensure() {
