@@ -4,6 +4,7 @@
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
   import { themeState } from '../lib/settings/theme-store.svelte.js';
+  import { uiScaleState, UI_SCALE_OPTIONS } from '../lib/settings/ui-scale-store.svelte.js';
   import { THEMES } from '../lib/themes/registry.js';
   import PageHeader from '../components/PageHeader.svelte';
 
@@ -36,6 +37,18 @@
   </p>
 </Box>
 
+<Box title="Display size">
+  <Select
+    value={String(uiScaleState.scale)}
+    onValueChange={(v) => uiScaleState.setScale(v)}
+    options={UI_SCALE_OPTIONS}
+  />
+  <p class="scale-hint">
+    Scales the whole interface — text, buttons, and switches. Saved on this
+    device only, so it won't change the size on your other screens.
+  </p>
+</Box>
+
 <Box title="Units">
   <Toggle
     checked={unitsState.isMetric}
@@ -65,6 +78,7 @@
 
 <style>
   .theme-hint,
+  .scale-hint,
   .unit-hint,
   .update-hint {
     margin-top: 12px;

@@ -66,7 +66,7 @@
 
   <main class="content">
     <h1>Preferences</h1>
-    <p class="subtitle">Theme, units, update checks, and message length</p>
+    <p class="subtitle">Theme, display size, units, update checks, and message length</p>
 
     <p>
       The Preferences page collects the small per-station knobs that
@@ -83,6 +83,24 @@
       strong solid badges). Want your own colour scheme? See
       <code>graywolf/web/themes/README.md</code> in the source tree for
       how to drop one in via pull request.
+    </p>
+
+    <h2>Display size</h2>
+
+    <p>
+      The <strong>Display size</strong> selector scales the entire
+      interface &mdash; text, buttons, switches, and spacing &mdash; from
+      90% up to 200%. It&rsquo;s most useful on Android, where the app
+      runs in a full-screen WebView that has no pinch-zoom or
+      browser-style zoom of its own. On the desktop you can also use your
+      browser&rsquo;s built-in zoom.
+    </p>
+
+    <p>
+      Unlike the other preferences, display size is saved on the
+      <em>current device only</em> &mdash; bumping it up on your phone
+      won&rsquo;t enlarge the UI on your desktop. It takes effect
+      immediately and persists across restarts.
     </p>
 
     <h2>Updates</h2>
