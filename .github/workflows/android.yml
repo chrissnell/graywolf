@@ -332,6 +332,8 @@ jobs:
   # this is the deliberate human step for graduating a vetted build to
   # open testing. Run from the Actions tab (or:
   #   gh workflow run android.yml --field version=X.Y.Z --field track=beta).
+  # Job id stays `promote-to-closed` for stability (external `gh`/Actions
+  # references); the job now promotes *from* closed onward, not into it.
   # ------------------------------------------------------------------
   promote-to-closed:
     name: Promote to another track

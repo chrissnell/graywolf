@@ -247,8 +247,8 @@ android-play-check:
 
 # Promote an already-uploaded build between Play tracks via fastlane
 # (no re-upload -- Play rejects a duplicate versionCode). CI does this
-# from the Android workflow's promote-to-closed job; this is the local
-# equivalent.
+# from the Android workflow's promote job (graduating closed/alpha onward
+# to open/beta); this is the local equivalent.
 #   make android-promote VC=130800 TO=beta JSON=path/to/service-account.json
 android-promote:
 	@test -n "$(VC)" || { echo "usage: make android-promote VC=<versionCode> TO=<track> JSON=<sa.json>" >&2; exit 2; }
