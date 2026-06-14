@@ -9,6 +9,15 @@
 // cadence-aligned `?v=` cache-bust that refresh() bumps on a time-bucket
 // rollover; that path is unchanged.
 //
+// Cross-fade (double buffer): rather than swapping tiles on one source -- which
+// hard-cuts to the new frame the instant its tiles land -- the overlay keeps two
+// parallel source+layer sets ('a' / 'b'). One buffer holds the on-screen frame
+// at the operator's opacity; the other is idle at 0. Advancing a frame loads it
+// into the idle buffer, waits for its tiles to render, then cross-fades: the
+// incoming buffer ramps up to opacity while the outgoing buffer ramps down to 0,
+// using MapLibre's native paint-property transitions. The result is a smooth
+// dissolve between frames instead of a flicker.
+//
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,
 // and calls refresh() on every data tick. refresh() re-adds the source/layers
@@ -18,7 +27,17 @@
 
 import { radarProviderForRegion, frameBucket, RADAR_REGION_US } from '../sources/radar-source.js';
 
-export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_US, frameTs = null, now = () => Date.now() }) {
+const BUFFERS = ['a', 'b'];
+
+export function mountRadarLayer(map, {
+  visible,
+  opacity,
+  region = RADAR_REGION_US,
+  frameTs = null,
+  now = () => Date.now(),
+  fadeMs = 250, // cross-fade duration; sits just under the ~4fps frame cadence
+  loadTimeoutMs = 600, // fall back to fading even if the tile load never settles
+}) {
   // Region (US vs rest-of-world) is operator-selectable, so the provider is
   // mutable: setRegion() tears down and rebuilds it. Everything below reads the
   // current `provider`, so the same add/remove logic serves either region.
@@ -37,34 +56,135 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
   // null otherwise. setFrameTs() advances it.
   let curFrameTs = frameTs;
 
-  // Idempotent add: safe to call repeatedly (initial mount + every refresh).
-  function ensure() {
-    // A per-frame provider has no tile template until a frame ts is known.
-    // Add nothing until then -- the overlay is simply absent (mirrors the
-    // Worker's pre-manifest 503), and setFrameTs() adds it once a frame loads.
-    if (provider.perFrame && curFrameTs == null) return;
-    if (!map.getSource(provider.sourceId)) {
-      let source;
-      if (provider.perFrame) {
-        source = { ...provider.source, tiles: provider.frameTiles(curFrameTs) };
-      } else if (provider.cacheBust) {
-        source = { ...provider.source, tiles: provider.cacheBust(curBucket) };
-      } else {
-        source = provider.source;
+  // Cross-fade bookkeeping. activeBuf names the buffer currently showing the
+  // frame at curOpacity; it flips only once a fade actually STARTS, so frames
+  // that arrive faster than tiles can load coalesce onto the latest one instead
+  // of fading through stale intermediates. `pending` holds the sourcedata
+  // listener + fallback timer while we wait for the idle buffer to render.
+  let activeBuf = null; // 'a' | 'b' | null (nothing shown yet)
+  let pending = null;
+
+  const srcId = (buf) => `${provider.sourceId}-${buf}`;
+  const layerIdFor = (layer, buf) => `${layer.id}-${buf}`;
+
+  // Tile template for the frame currently selected (per-frame ts, raster cache
+  // bucket, or the provider's static tiles).
+  function currentTiles() {
+    if (provider.perFrame) return provider.frameTiles(curFrameTs);
+    if (provider.cacheBust) return provider.cacheBust(curBucket);
+    return provider.source.tiles;
+  }
+
+  // Insert position for a buffer's layers. An existing radar layer (either
+  // buffer) anchors new layers to the same stack slot, so both buffers stay
+  // adjacent and beneath trails/markers; the very first buffer goes just below
+  // the first symbol layer (matching the sibling layer modules).
+  function anchorBeforeId() {
+    for (const buf of BUFFERS) {
+      for (const layer of provider.layers) {
+        const id = layerIdFor(layer, buf);
+        if (map.getLayer(id)) return id;
       }
-      map.addSource(provider.sourceId, source);
     }
-    // Recompute beforeId from the current style -- symbol-layer ids differ
-    // across basemaps, so a stale id captured at mount could throw here.
-    const firstSymbolId = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+    return map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+  }
+
+  // Idempotent add for one buffer's source + layers. Layers start at opacity 0
+  // with a transition on the opacity property so subsequent setPaintProperty
+  // changes animate -- that transition IS the cross-fade.
+  function ensureBuffer(buf, tiles) {
+    if (!map.getSource(srcId(buf))) {
+      map.addSource(srcId(buf), { ...provider.source, tiles });
+    }
+    const beforeId = anchorBeforeId();
+    const prop = provider.opacity.property;
     for (const layer of provider.layers) {
-      if (map.getLayer(layer.id)) continue;
+      const id = layerIdFor(layer, buf);
+      if (map.getLayer(id)) continue;
       const spec = {
         ...layer,
+        id,
+        source: srcId(buf),
         layout: { ...(layer.layout ?? {}), visibility: curVisible ? 'visible' : 'none' },
-        paint: { ...(layer.paint ?? {}), [provider.opacity.property]: curOpacity },
+        paint: {
+          ...(layer.paint ?? {}),
+          [prop]: 0,
+          [`${prop}-transition`]: { duration: fadeMs, delay: 0 },
+        },
       };
-      map.addLayer(spec, firstSymbolId);
+      map.addLayer(spec, beforeId);
+    }
+  }
+
+  function setBufferOpacity(buf, value) {
+    const prop = provider.opacity.property;
+    for (const layer of provider.layers) {
+      const id = layerIdFor(layer, buf);
+      if (map.getLayer(id)) map.setPaintProperty(id, prop, value);
+    }
+  }
+
+  function cancelPending() {
+    if (!pending) return;
+    if (pending.handler && map.off) map.off('sourcedata', pending.handler);
+    if (pending.timer != null) clearTimeout(pending.timer);
+    pending = null;
+  }
+
+  // Load `tiles` into the idle buffer and cross-fade to it once its tiles are on
+  // screen. Shared by the per-frame loop (setFrameTs) and the world raster
+  // cache-bust rollover (refresh).
+  function crossfadeTo(tiles) {
+    const idle = activeBuf === 'a' ? 'b' : 'a';
+    const existed = !!map.getSource(srcId(idle));
+    ensureBuffer(idle, tiles);
+    if (existed) {
+      const src = map.getSource(srcId(idle));
+      if (src && src.setTiles) src.setTiles(tiles);
+    }
+
+    cancelPending();
+
+    const start = () => {
+      cancelPending();
+      setBufferOpacity(idle, curOpacity);
+      if (activeBuf && activeBuf !== idle) setBufferOpacity(activeBuf, 0);
+      activeBuf = idle;
+    };
+
+    // Wait for the idle source's tiles to render before fading, so we never fade
+    // up into a blank frame; fall back on a timer so a slow load can't stall the
+    // loop. A map without an event interface (unit tests) fades immediately.
+    if (typeof map.on === 'function') {
+      const handler = (e) => {
+        if (e && e.sourceId === srcId(idle) && e.isSourceLoaded) start();
+      };
+      const timer = setTimeout(start, loadTimeoutMs);
+      pending = { handler, timer };
+      map.on('sourcedata', handler);
+      // Already-cached frames may report loaded before any further event fires.
+      if (typeof map.isSourceLoaded === 'function' && map.isSourceLoaded(srcId(idle))) start();
+    } else {
+      start();
+    }
+  }
+
+  // (Re)build the active buffer in place at full opacity -- a restore after a
+  // style swap dropped our layers, not a frame advance, so no fade.
+  function restoreActive() {
+    ensureBuffer(activeBuf, currentTiles());
+    setBufferOpacity(activeBuf, curOpacity);
+  }
+
+  function ensure() {
+    // A per-frame provider has no tile template until a frame ts is known. Add
+    // nothing until then -- the overlay is simply absent (mirrors the Worker's
+    // pre-manifest 503); setFrameTs() fades it in once a frame loads.
+    if (provider.perFrame && curFrameTs == null) return;
+    if (activeBuf == null) {
+      crossfadeTo(currentTiles());
+    } else {
+      restoreActive();
     }
   }
 
@@ -72,73 +192,68 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
 
   function refresh() {
     ensure();
-    // RainViewer raster publishes in place at a latest-frame URL; bust
-    // MapLibre's in-memory tile cache when the cadence bucket rolls over so the
-    // overlay picks up a freshly published frame. The per-frame vector loop
-    // doesn't use this -- its frames advance via setFrameTs().
+    // RainViewer raster publishes in place at a latest-frame URL; on a cadence
+    // rollover, cross-fade to the freshly published frame. The per-frame vector
+    // loop doesn't use this -- its frames advance via setFrameTs().
     if (provider.cacheBust) {
       const v = frameBucket(now());
       if (v !== curBucket) {
         curBucket = v;
-        const src = map.getSource(provider.sourceId);
-        if (src && src.setTiles) src.setTiles(provider.cacheBust(v));
+        crossfadeTo(provider.cacheBust(v));
       }
     }
   }
 
-  // Per-frame loop: point the source at frame `ts`. Adds the source on the
-  // first ts (when ensure() had nothing to add yet), then swaps the tile
-  // template on subsequent frames. No-op for non-perFrame providers (world
-  // raster) or a repeated ts.
+  // Per-frame loop: cross-fade to frame `ts`. No-op for non-perFrame providers
+  // (world raster) or a repeated ts.
   function setFrameTs(ts) {
     if (!provider.perFrame || ts == null || ts === curFrameTs) return;
     curFrameTs = ts;
-    if (!map.getSource(provider.sourceId)) {
-      ensure();
-      return;
-    }
-    const src = map.getSource(provider.sourceId);
-    if (src && src.setTiles) src.setTiles(provider.frameTiles(ts));
+    crossfadeTo(provider.frameTiles(ts));
   }
 
   function setVisible(v) {
     curVisible = v;
     const value = v ? 'visible' : 'none';
-    for (const layer of provider.layers) {
-      if (map.getLayer(layer.id)) {
-        map.setLayoutProperty(layer.id, 'visibility', value);
+    for (const buf of BUFFERS) {
+      for (const layer of provider.layers) {
+        const id = layerIdFor(layer, buf);
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', value);
       }
     }
   }
 
   function setOpacity(v) {
     curOpacity = v;
-    for (const id of provider.opacity.layerIds) {
-      if (map.getLayer(id)) {
-        map.setPaintProperty(id, provider.opacity.property, v);
-      }
-    }
+    // The visible buffer follows the slider; the idle buffer stays parked at 0.
+    if (activeBuf) setBufferOpacity(activeBuf, v);
+    setBufferOpacity(activeBuf === 'a' ? 'b' : 'a', 0);
   }
 
   // Switch coverage region. The US and world providers can differ in layer
-  // type/ids (vector fill vs raster), so we fully tear down the current
-  // provider's layers + source and rebuild from the new one. curVisible /
-  // curOpacity carry over, so ensure() re-applies the operator's UI state.
+  // type/ids (vector fill vs raster), so we fully tear down both buffers and
+  // rebuild from the new provider. curVisible / curOpacity carry over, so
+  // ensure() re-applies the operator's UI state.
   function setRegion(region) {
     if (region === curRegion) return;
     curRegion = region;
     destroy();
     provider = radarProviderForRegion(region);
     curBucket = provider.cacheBust ? frameBucket(now()) : null;
+    activeBuf = null;
     ensure();
   }
 
   function destroy() {
+    cancelPending();
     try {
-      for (const layer of provider.layers) {
-        if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+      for (const buf of BUFFERS) {
+        for (const layer of provider.layers) {
+          const id = layerIdFor(layer, buf);
+          if (map.getLayer(id)) map.removeLayer(id);
+        }
+        if (map.getSource(srcId(buf))) map.removeSource(srcId(buf));
       }
-      if (map.getSource(provider.sourceId)) map.removeSource(provider.sourceId);
     } catch { /* map already removed */ }
   }
 
