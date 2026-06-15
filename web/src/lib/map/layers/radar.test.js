@@ -172,19 +172,24 @@ test('setRegion to world builds RainViewer raster; back to US restores the frame
   assert.ok(map._layers[layerId(1750020000)]);
 });
 
-test('world raster still cache-busts on a time-bucket rollover', () => {
+test('world raster reloads via setTiles on a time-bucket rollover (query-free URL)', () => {
   let nowMs = 0;
   const map = fakeMap();
   const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, region: 'world', now: () => nowMs });
+  // The tile URL carries no query string (the Worker 400s a ?v= bust on
+  // /radar/*); refresh drives the frame swap via setTiles, not a changing URL.
   const initial = map._sources['radar-tiles'].tiles[0];
-  assert.match(initial, /\?v=0$/);
+  assert.equal(initial, 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
+  assert.ok(!initial.includes('?'));
 
-  layer.refresh(); // same bucket -> unchanged
-  assert.equal(map._sources['radar-tiles'].tiles[0], initial);
+  const before = map._setTilesCalls;
+  layer.refresh(); // same bucket -> no reload
+  assert.equal(map._setTilesCalls, before);
 
-  nowMs = 300000; // next 5-minute bucket
+  nowMs = 300000; // next 5-minute bucket -> setTiles reload (URL unchanged)
   layer.refresh();
-  assert.match(map._sources['radar-tiles'].tiles[0], /\?v=1$/);
+  assert.equal(map._setTilesCalls, before + 1);
+  assert.equal(map._sources['radar-tiles'].tiles[0], initial);
 });
 
 test('destroy swallows errors when the map is already torn down', () => {

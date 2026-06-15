@@ -15,9 +15,12 @@
 // animation choppy).
 //
 // The RainViewer world raster backend is a single latest-frame overlay (not a
-// per-frame loop): it carries a cadence-aligned `?v=` cache-bust that refresh()
-// bumps on a time-bucket rollover. That path keeps the original single-source
-// behaviour.
+// per-frame loop). Its tile URL is query-free (the origin Worker 400s any param
+// on /radar/* except the `?t=` bearer), so refresh() can't ride a changing URL:
+// on each time-bucket rollover it calls setTiles with the same URL, which
+// reloads the source, and the Worker's `cache-control: no-store` makes that
+// reload refetch the freshly published frame. That path keeps the original
+// single-source behaviour.
 //
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,

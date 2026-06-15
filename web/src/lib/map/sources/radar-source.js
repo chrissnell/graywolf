@@ -149,8 +149,11 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
 // caps at RainViewer's native z7 so MapLibre overzooms the last real tile
 // instead of requesting non-existent z8+ tiles (the Worker would 404 them).
 // cacheBust: the Worker resolves "latest" server-side and RainViewer publishes
-// a new frame ~every 10 min, so -- like the vector backend -- we swap a `?v=`
-// template on a cadence to make MapLibre refetch its in-memory tiles.
+// a new frame ~every 10 min. The Worker forbids any query string on /radar/*
+// paths except the auth token (a stray `?v=` 400s every tile), so the cadence
+// refresh can't ride a changing URL. Instead radar.js calls setTiles on each
+// bucket rollover, which reloads the source; the Worker's `cache-control:
+// no-store` guarantees that reload refetches the freshly published frame.
 export function worldRadarProvider() {
   return {
     sourceId: RADAR_SOURCE_ID,
@@ -170,17 +173,21 @@ export function worldRadarProvider() {
       },
     ],
     opacity: { property: 'raster-opacity', layerIds: ['radar-raster'] },
-    cacheBust: (v) => [rainviewerTileUrl(v)],
+    // The URL is constant across rollovers (the Worker rejects a `?v=` bust on
+    // /radar/* paths); refresh() still calls setTiles on each bucket change,
+    // which reloads the source and -- with the Worker's no-store -- refetches
+    // the latest frame.
+    cacheBust: () => [rainviewerTileUrl()],
   };
 }
 
 // RainViewer raster tile template under the Worker's /radar/rainviewer/ route.
-// Optional cache-bust token `v` (a time bucket, see frameBucket) is appended so
-// a newly published frame looks like a new source revision to MapLibre; the
-// Worker ignores the param.
-export function rainviewerTileUrl(v) {
-  const bust = v == null ? '' : `?v=${v}`;
-  return `${RADAR_TILE_BASE}/radar/rainviewer/{z}/{x}/{y}.png${bust}`;
+// Carries NO query string: the Worker forbids any param on /radar/* paths
+// except the auth token transformRequest appends (?t=), and 400s every tile
+// when it sees a stray `?v=` ("query string not allowed on radar paths"). Frame
+// refresh is driven by radar.js's setTiles reload, not a changing URL.
+export function rainviewerTileUrl() {
+  return `${RADAR_TILE_BASE}/radar/rainviewer/{z}/{x}/{y}.png`;
 }
 
 // Region-aware provider seam consumed by radar.js. US delegates to the backend
