@@ -87,7 +87,7 @@ Reproduce with `./bench.sh`.
 
 - **TNC Interfaces** - Speak the protocols other packet software expects
 
-  - KISS TNC (TCP built in; serial via [tnc-server](https://github.com/chrissnell/tnc-server))
+  - KISS TNC with native serial and network (TCP) support
   - AGWPE TCP interface
 
 - **Beacons and GPS** - Position reporting made easy
