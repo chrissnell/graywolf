@@ -21,7 +21,6 @@ import {
   parseManifestFrames,
   parseRainviewerManifestFrames,
   parseManifestFramesForRegion,
-  frameBucket,
 } from './radar-source.js';
 
 test('every dBZ band has a color', () => {
@@ -135,12 +134,6 @@ test('parseManifestFrames returns [] for bad/empty/unknown-schema input', () => 
 test('raster provider has no cacheBust (latest-frame IEM URL is already live)', () => {
   const p = radarProvider(RADAR_BACKEND_RASTER);
   assert.equal(p.cacheBust, undefined);
-});
-
-test('frameBucket is a 5-minute floor', () => {
-  assert.equal(frameBucket(0), 0);
-  assert.equal(frameBucket(299999), 0);
-  assert.equal(frameBucket(300000), 1);
 });
 
 test('fill-color step has strictly-ascending stops and lowest-band base color', () => {

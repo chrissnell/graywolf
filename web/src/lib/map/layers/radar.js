@@ -18,8 +18,9 @@
 // Worker exposes /radar/rainviewer/manifest.json + immutable per-frame tiles
 // (/radar/rainviewer/{ts}/{z}/{x}/{y}.png), so the world overlay rides the exact
 // same per-frame source/opacity machinery as the US vector loop -- only the
-// source type (raster) and tile template differ. The legacy single-source +
-// setTiles/cacheBust path remains below for the US IEM raster fallback backend.
+// source type (raster) and tile template differ. The single-source ensure()
+// path below now serves only the inactive US IEM raster fallback backend
+// (ACTIVE_RADAR_BACKEND), a plain static-tiles raster.
 //
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,
@@ -28,11 +29,11 @@
 // rebuilds the style and can drop user-added layers) the same way the sibling
 // layers do.
 
-import { radarProviderForRegion, frameBucket, RADAR_REGION_US } from '../sources/radar-source.js';
+import { radarProviderForRegion, RADAR_REGION_US } from '../sources/radar-source.js';
 
 export function mountRadarLayer(
   map,
-  { visible, opacity, region = RADAR_REGION_US, frameTs = null, frames = null, now = () => Date.now() },
+  { visible, opacity, region = RADAR_REGION_US, frameTs = null, frames = null },
 ) {
   // Region (US vs rest-of-world) is operator-selectable, so the provider is
   // mutable: setRegion() tears down and rebuilds it. Everything below reads the
@@ -43,10 +44,7 @@ export function mountRadarLayer(
   // a region switch.
   let curVisible = visible;
   let curOpacity = opacity;
-  // Current frame cache-bust bucket (RainViewer raster only). The source is
-  // added already pointing at this bucket's URL; refresh() bumps it on rollover.
-  let curBucket = provider.cacheBust ? frameBucket(now()) : null;
-  // Current frame ts (per-frame vector loop only): the frame currently painted
+  // Current frame ts (per-frame loop only): the frame currently painted
   // at full opacity. Seeded from the mount option when the manifest poll already
   // resolved before the layer mounted; null otherwise.
   let curFrameTs = frameTs;
@@ -100,12 +98,10 @@ export function mountRadarLayer(
       for (const ts of mounted) ensureFrame(ts);
       return;
     }
-    // Single-source backends (US raster fallback / world raster).
+    // Single-source backend (the inactive US IEM raster fallback): one static
+    // raster source + layer.
     if (!map.getSource(provider.sourceId)) {
-      const source = provider.cacheBust
-        ? { ...provider.source, tiles: provider.cacheBust(curBucket) }
-        : provider.source;
-      map.addSource(provider.sourceId, source);
+      map.addSource(provider.sourceId, provider.source);
     }
     // Recompute beforeId from the current style -- symbol-layer ids differ
     // across basemaps, so a stale id captured at mount could throw here.
@@ -123,20 +119,11 @@ export function mountRadarLayer(
 
   ensure();
 
+  // Re-add the source/layers behind existence guards so the overlay survives a
+  // basemap setStyle() (which rebuilds the style and can drop user-added
+  // layers). Frames advance via setFrameTs(), not here.
   function refresh() {
     ensure();
-    // RainViewer raster publishes in place at a latest-frame URL; bust
-    // MapLibre's in-memory tile cache when the cadence bucket rolls over so the
-    // overlay picks up a freshly published frame. The per-frame vector loop
-    // doesn't use this -- its frames advance via setFrameTs().
-    if (provider.cacheBust) {
-      const v = frameBucket(now());
-      if (v !== curBucket) {
-        curBucket = v;
-        const src = map.getSource(provider.sourceId);
-        if (src && src.setTiles) src.setTiles(provider.cacheBust(v));
-      }
-    }
   }
 
   // Per-frame loop: reconcile the mounted frames against the manifest's frame
@@ -226,7 +213,6 @@ export function mountRadarLayer(
     curRegion = region;
     destroy();
     provider = radarProviderForRegion(region);
-    curBucket = provider.cacheBust ? frameBucket(now()) : null;
     mounted.clear();
     curFrameTs = null;
     ensure();

@@ -562,13 +562,14 @@
   // a reassignment. unitsState.isMetric is read so the weather layer
   // re-renders when the operator toggles metric/imperial. tickNow is read
   // so the 1s clock drives this effect even when the station roster is
-  // stable -- the radar layer's frame cache-bust rolls over on a time
-  // bucket, and refresh() no-ops when the bucket hasn't changed.
+  // stable, keeping time-based layers (trail fade, staleness) current.
+  // radarLayer.refresh() is idempotent here -- it only re-adds the overlay's
+  // sources/layers if a basemap style swap dropped them.
   $effect(() => {
     const _size = dataStore.stations.size;
     const _isMetric = unitsState.isMetric;
     const _myPos = dataStore.myPosition; // track
-    const _tick = tickNow; // drive radar frame rollover on the clock
+    const _tick = tickNow; // 1s clock drives time-based layer refresh
     if (radarLayer) radarLayer.refresh();
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();

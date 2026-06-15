@@ -270,10 +270,3 @@ export function parseManifestFramesForRegion(region, json) {
     ? parseRainviewerManifestFrames(json)
     : parseManifestFrames(json);
 }
-
-// Cadence-aligned cache-bust token for the RainViewer raster overlay (which is
-// still a latest-frame pull-through). The US vector overlay no longer uses this
-// -- it keys on the per-frame ts instead.
-export function frameBucket(nowMs) {
-  return Math.floor(nowMs / 300000);
-}
