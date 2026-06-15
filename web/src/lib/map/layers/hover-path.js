@@ -136,10 +136,13 @@ export function mountHoverPathLayer(map, getOwnPosition = () => null) {
   }
 
   function clear() {
-    const pathSrc = map.getSource(PATH_SRC);
-    const nodesSrc = map.getSource(NODES_SRC);
-    if (pathSrc) pathSrc.setData(EMPTY_FC);
-    if (nodesSrc) nodesSrc.setData(EMPTY_FC);
+    // Guard: map.remove() deletes map.style; getSource() would throw.
+    try {
+      const pathSrc = map.getSource(PATH_SRC);
+      const nodesSrc = map.getSource(NODES_SRC);
+      if (pathSrc) pathSrc.setData(EMPTY_FC);
+      if (nodesSrc) nodesSrc.setData(EMPTY_FC);
+    } catch { /* map already removed */ }
   }
 
   function destroy() {
