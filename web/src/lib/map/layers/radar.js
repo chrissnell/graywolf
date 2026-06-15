@@ -13,10 +13,14 @@
 // hard-cuts to the new frame the instant its tiles land -- the overlay keeps two
 // parallel source+layer sets ('a' / 'b'). One buffer holds the on-screen frame
 // at the operator's opacity; the other is idle at 0. Advancing a frame loads it
-// into the idle buffer, waits for its tiles to render, then cross-fades: the
-// incoming buffer ramps up to opacity while the outgoing buffer ramps down to 0,
-// using MapLibre's native paint-property transitions. The result is a smooth
-// dissolve between frames instead of a flicker.
+// into the idle buffer and cross-fades immediately: the incoming buffer ramps up
+// to opacity while the outgoing buffer ramps down to 0, using MapLibre's native
+// paint-property transitions. The transition interpolates the dissolve and the
+// new tiles render into it as they arrive (instantly once cached after the first
+// loop). The fade is NOT gated on tile load: the playback timer re-points the
+// idle source faster than a per-frame vector archive can fetch, so gating the
+// advance on a settled load deadlocks the loop (frames stop advancing). Letting
+// each advance commit synchronously keeps playback robust -- it can never wedge.
 //
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,
@@ -36,7 +40,6 @@ export function mountRadarLayer(map, {
   frameTs = null,
   now = () => Date.now(),
   fadeMs = 250, // cross-fade duration; matches the ~4fps (250ms) frame cadence
-  loadTimeoutMs = 600, // fall back to fading even if the tile load never settles
 }) {
   // Region (US vs rest-of-world) is operator-selectable, so the provider is
   // mutable: setRegion() tears down and rebuilds it. Everything below reads the
@@ -56,13 +59,9 @@ export function mountRadarLayer(map, {
   // null otherwise. setFrameTs() advances it.
   let curFrameTs = frameTs;
 
-  // Cross-fade bookkeeping. activeBuf names the buffer currently showing the
-  // frame at curOpacity; it flips only once a fade actually STARTS, so frames
-  // that arrive faster than tiles can load coalesce onto the latest one instead
-  // of fading through stale intermediates. `pending` holds the sourcedata
-  // listener + fallback timer while we wait for the idle buffer to render.
+  // activeBuf names the buffer currently showing the frame at curOpacity; each
+  // advance flips it and parks the other buffer at 0.
   let activeBuf = null; // 'a' | 'b' | null (nothing shown yet)
-  let pending = null;
 
   const srcId = (buf) => `${provider.sourceId}-${buf}`;
   const layerIdFor = (layer, buf) => `${layer.id}-${buf}`;
@@ -124,16 +123,12 @@ export function mountRadarLayer(map, {
     }
   }
 
-  function cancelPending() {
-    if (!pending) return;
-    if (pending.handler && map.off) map.off('sourcedata', pending.handler);
-    if (pending.timer != null) clearTimeout(pending.timer);
-    pending = null;
-  }
-
-  // Load `tiles` into the idle buffer and cross-fade to it once its tiles are on
-  // screen. Shared by the per-frame loop (setFrameTs) and the world raster
-  // cache-bust rollover (refresh).
+  // Load `tiles` into the idle buffer and cross-fade to it. Shared by the
+  // per-frame loop (setFrameTs) and the world raster cache-bust rollover
+  // (refresh). The fade commits synchronously -- ramp the incoming buffer up and
+  // the outgoing buffer down -- and MapLibre's opacity transition animates it
+  // while the new tiles render in. See the header note on why this is not gated
+  // on tile load.
   function crossfadeTo(tiles) {
     const idle = activeBuf === 'a' ? 'b' : 'a';
     const existed = !!map.getSource(srcId(idle));
@@ -142,31 +137,9 @@ export function mountRadarLayer(map, {
       const src = map.getSource(srcId(idle));
       if (src && src.setTiles) src.setTiles(tiles);
     }
-
-    cancelPending();
-
-    const start = () => {
-      cancelPending();
-      setBufferOpacity(idle, curOpacity);
-      if (activeBuf && activeBuf !== idle) setBufferOpacity(activeBuf, 0);
-      activeBuf = idle;
-    };
-
-    // Wait for the idle source's tiles to render before fading, so we never fade
-    // up into a blank frame; fall back on a timer so a slow load can't stall the
-    // loop. A map without an event interface (unit tests) fades immediately.
-    if (typeof map.on === 'function') {
-      const handler = (e) => {
-        if (e && e.sourceId === srcId(idle) && e.isSourceLoaded) start();
-      };
-      const timer = setTimeout(start, loadTimeoutMs);
-      pending = { handler, timer };
-      map.on('sourcedata', handler);
-      // Already-cached frames may report loaded before any further event fires.
-      if (typeof map.isSourceLoaded === 'function' && map.isSourceLoaded(srcId(idle))) start();
-    } else {
-      start();
-    }
+    setBufferOpacity(idle, curOpacity);
+    if (activeBuf && activeBuf !== idle) setBufferOpacity(activeBuf, 0);
+    activeBuf = idle;
   }
 
   // (Re)build the active buffer in place at full opacity -- a restore after a
@@ -247,7 +220,6 @@ export function mountRadarLayer(map, {
   }
 
   function destroy() {
-    cancelPending();
     try {
       for (const buf of BUFFERS) {
         for (const layer of provider.layers) {
