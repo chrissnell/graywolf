@@ -26,30 +26,42 @@ import (
 )
 
 func main() {
-	version := flag.String("version", "", "release version (x.y.z, no leading v) to render notes for")
-	out := flag.String("out", "", "output file path (e.g. release-notes.md)")
-	flag.Parse()
+	os.Exit(run(os.Args[1:]))
+}
+
+// run parses args, renders the note, and writes it, returning the process
+// exit code. A non-zero return is what the Release workflow relies on to
+// fail loudly when notes.yaml has no entry for the tag version, rather than
+// publishing a blank release body.
+func run(args []string) int {
+	fs := flag.NewFlagSet("release-notes", flag.ContinueOnError)
+	version := fs.String("version", "", "release version (x.y.z, no leading v) to render notes for")
+	out := fs.String("out", "", "output file path (e.g. release-notes.md)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 
 	if *version == "" || *out == "" {
 		fmt.Fprintln(os.Stderr, "usage: release-notes -version <x.y.z> -out <file>")
-		os.Exit(2)
+		return 2
 	}
 
 	text, err := releasenotes.PlainText(*version)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "release-notes: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	if dir := filepath.Dir(*out); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "release-notes: create %s: %v\n", dir, err)
-			os.Exit(1)
+			return 1
 		}
 	}
 	if err := os.WriteFile(*out, []byte(text+"\n"), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "release-notes: write %s: %v\n", *out, err)
-		os.Exit(1)
+		return 1
 	}
 	fmt.Fprintf(os.Stderr, "release-notes: wrote %d chars to %s\n", len([]rune(text)), *out)
+	return 0
 }
