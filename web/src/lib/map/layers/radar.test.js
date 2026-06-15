@@ -105,6 +105,24 @@ test('setFrameTs mounts an unknown frame on demand (manifest race)', () => {
   assert.equal(map._layers[layerId(1750020000)].paint['fill-opacity'], 0.6);
 });
 
+test('refresh re-adds every frame after a basemap style swap (visible frame at opacity)', () => {
+  const map = fakeMap();
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020300 });
+  layer.setFrames([1750020000, 1750020300, 1750020600]);
+  // A setStyle() rebuilds the style and drops user-added sources/layers.
+  for (const k of Object.keys(map._sources)) delete map._sources[k];
+  for (const k of Object.keys(map._layers)) delete map._layers[k];
+
+  layer.refresh(); // mirrors the per-tick refresh() LiveMapV2 drives
+  for (const ts of [1750020000, 1750020300, 1750020600]) {
+    assert.ok(map._sources[srcId(ts)], `frame ${ts} source re-added`);
+    assert.ok(map._layers[layerId(ts)], `frame ${ts} layer re-added`);
+  }
+  // The visible frame comes back at full opacity; the rest at 0.
+  assert.equal(map._layers[layerId(1750020300)].paint['fill-opacity'], 0.6);
+  assert.equal(map._layers[layerId(1750020000)].paint['fill-opacity'], 0);
+});
+
 test('setFrames tears down frames that rolled off the manifest, never the visible one', () => {
   const map = fakeMap();
   const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, frameTs: 1750020300 });

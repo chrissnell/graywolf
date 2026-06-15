@@ -141,6 +141,12 @@ export function mountRadarLayer(
   // list (oldest->newest). New frames are preloaded at opacity 0; frames that
   // have rolled off the manifest are torn down (never the visible one). No-op
   // for single-source backends (world raster).
+  //
+  // The mounted set is bounded by the manifest window -- it is exactly the
+  // frames the loop plays (the slider and Play/Pause iterate the same list), so
+  // capping it here would desync the overlay from the loop store. The manifest's
+  // length (the deployed generator's loop span, ~3h) is therefore the bound on
+  // both the source count and the one-time preload fetch burst.
   function setFrames(list) {
     if (!provider.perFrame) return;
     const next = new Set(Array.isArray(list) ? list : []);
@@ -168,6 +174,11 @@ export function mountRadarLayer(
     }
   }
 
+  // Toggle the overlay. For the per-frame loop this hides every frame layer via
+  // layout visibility (not opacity): an all-`none` source is unused, so MapLibre
+  // is free to evict its tiles while radar is off -- the first loop after a
+  // re-enable refetches, which is intended (better than keeping dozens of hidden
+  // sources warming the network) and not a regression of the no-refetch loop.
   function setVisible(v) {
     curVisible = v;
     const value = v ? 'visible' : 'none';
