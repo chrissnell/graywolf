@@ -205,6 +205,20 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      # Render the GitHub release body from the curated notes.yaml entry so
+      # it matches the in-app "What's new" -- and so GoReleaser does not fall
+      # back to listing every commit when the previous release tag is not an
+      # ancestor of the tagged commit. Written to RUNNER_TEMP (outside the
+      # work tree) so it neither dirties git nor gets wiped by --clean.
+      - name: Render release notes from notes.yaml
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          go run ./cmd/release-notes -version "$v" -out "$RUNNER_TEMP/release-notes.md"
+          echo "---- release notes ----"
+          cat "$RUNNER_TEMP/release-notes.md"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -248,7 +262,7 @@ jobs:
           # On a tag push we cut a real release; on workflow_dispatch we
           # run in snapshot mode so the build pipeline executes end-to-end
           # without needing a tag context (no upload, no draft release).
-          args: ${{ github.event_name == 'workflow_dispatch' && 'release --snapshot --clean' || 'release --clean' }}
+          args: ${{ github.event_name == 'workflow_dispatch' && 'release --snapshot --clean' || format('release --clean --release-notes={0}/release-notes.md', runner.temp) }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
