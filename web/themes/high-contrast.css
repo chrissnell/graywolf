@@ -53,6 +53,11 @@
   --map-overlay-border: var(--color-border);
   --map-overlay-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   --map-attribution-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  /* Station marker temperature chip. Maximum contrast for this theme:
+     pure white on solid black with a bright border. */
+  --map-temp-fg: #ffffff;
+  --map-temp-bg: rgba(0, 0, 0, 0.92);
+  --map-temp-border: rgba(255, 255, 255, 0.85);
 }
 
 /* chonky-ui <Badge variant="..."> overrides: solid fills + white text. */

@@ -1392,20 +1392,20 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   }
   /* Temperature chip: sits just below the callsign, right-justified to
-     it. Filled by the weather layer. Uses fixed light-on-dark colors
-     (not a theme variable) so it stays legible over any basemap and in
-     night mode — the callsign chip above it follows the same approach.
-     A touch dimmer than the callsign's pure white so the callsign stays
-     the primary label. */
+     it. Filled by the weather layer. Themeable via the --map-temp-*
+     tokens (defined per theme in web/themes/*.css); the fallbacks here
+     are light-on-dark so it stays legible over any basemap and in night
+     mode even if a theme omits them. Kept a touch dimmer than the
+     callsign's pure white so the callsign stays the primary label. */
   :global(.gw-station-aside .wx-temp) {
     padding: 0 4px;
     line-height: 13px;
     font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 600;
-    color: #e6edf3;
-    background: rgba(14, 14, 14, 0.82);
-    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: var(--map-temp-fg, #e6edf3);
+    background: var(--map-temp-bg, rgba(14, 14, 14, 0.82));
+    border: 1px solid var(--map-temp-border, rgba(255, 255, 255, 0.45));
     border-radius: 2px;
     white-space: nowrap;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);

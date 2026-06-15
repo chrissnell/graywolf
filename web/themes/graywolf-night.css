@@ -51,6 +51,11 @@
   --map-overlay-border: var(--color-border);
   --map-overlay-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
   --map-attribution-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  /* Station marker temperature chip. Light-on-dark so it stays legible
+     over any basemap; override per theme to retune contrast. */
+  --map-temp-fg: #e6edf3;
+  --map-temp-bg: rgba(14, 14, 14, 0.82);
+  --map-temp-border: rgba(255, 255, 255, 0.45);
 }
 
 /* Packet-log badges: muted tint backgrounds + bright text. */

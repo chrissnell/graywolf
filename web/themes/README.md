@@ -84,6 +84,15 @@ Each of `danger`, `success`, `warning`, `info` has a trio:
 - `--radius` — corner radius in px. Most shipped themes use 2px;
   Graywolf Night bumps it to 6px for a softer feel at low contrast.
 
+### Map overlay (optional)
+Tokens consumed by the MapLibre Live Map. These render *over the
+basemap*, not over a theme surface, so default to light-on-dark in
+every theme regardless of light/dark mode.
+- `--map-temp-fg` / `--map-temp-bg` / `--map-temp-border` — the
+  temperature chip beside each station marker. Keep the text legible
+  on the chip's own background, not on the page surface; the chip can
+  sit over any basemap tile.
+
 ## Contrast and legibility
 
 Please eyeball these before submitting:
