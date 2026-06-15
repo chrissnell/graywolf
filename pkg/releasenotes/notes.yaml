@@ -7,6 +7,60 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.14.0"
+  date: "2026-06-15"
+  style: info
+  schema_version: 1
+  link: "#/map"
+  title: "Live weather radar on the map, plus map filters, log tools, and theme options"
+  body: |
+    Weather radar comes to the Live Map. Turn on the new Radar layer
+    in the Map Layers panel to see current precipitation drawn right
+    over your stations, with an opacity slider so you can dial it back
+    as far as you like. The United States gets high-detail NEXRAD
+    coverage; switch the Radar region on Maps settings to Rest of
+    world for radar anywhere else on the globe.
+
+    The radar animates. Press Play in the Map Layers panel to loop
+    through the last hour or so of frames and watch a storm move. The
+    frame slider and its timestamp let you scrub to any moment, and
+    Reset snaps you back to the latest frame. Graywolf reuses the
+    frames it has already pulled, so the loop stays smooth.
+
+    There is also a new downloadable low-detail world map, so the area
+    around your stations still has a basemap when you are off-grid and
+    far from any region you have downloaded.
+
+    Live Map: a new RF Only filter hides stations that only reached
+    you gated in from the internet, leaving just what your radios
+    actually heard. You can now drop your own labeled fixed points on
+    the map -- a repeater site, a meeting spot, a landmark -- and they
+    stay put across reloads. Station ages on the map are now measured
+    against your host's clock, so "heard 2m ago" stays correct even
+    when a packet carries a skewed timestamp.
+
+    APRS Logs: open a packet to see a full hex and ASCII dump of the
+    raw frame for deep inspection, and each received packet now shows
+    the audio level it decoded at, so you can spot a too-hot or
+    too-quiet signal at a glance.
+
+    KISS interfaces: each KISS TNC interface now has its own
+    enable/disable toggle, so you can take one offline and bring it
+    back without deleting and recreating it. Serial KISS setup is
+    easier too, with dropdowns for detected serial ports and standard
+    baud rates.
+
+    Appearance: two new High Contrast themes, day and night, for
+    better readability, plus a new interface display-size setting
+    under Preferences that scales the whole UI up or down to taste.
+
+    Smaller touches: the dashboard uptime now reads in days, weeks, or
+    months instead of a giant hour count; Graywolf warns you at
+    startup if the system clock is not synced, since bad time breaks
+    logs and APRS timestamps; and fixes land for CAT/rigctld PTT
+    status reads and a rare crash on 32-bit ARM iGates under heavy
+    traffic.
+
 - version: "0.13.16"
   date: "2026-06-11"
   style: info
