@@ -11,8 +11,8 @@ import { applyManifest, shouldApply, nextIndex, newestIndex, clampIndex } from '
 export function createRadarFrames({
   load,
   pollMs = 15000, // manifest refresh cadence (matches the worker's manifest TTL)
-  frameMs = 250, // ~4 fps playback
-  holdMs = 750, // dwell on the newest frame before looping
+  frameMs = 160, // ~6 fps playback
+  holdMs = 600, // dwell on the newest frame before looping
 }) {
   let frames = $state([]); // oldest -> newest
   let index = $state(0);
