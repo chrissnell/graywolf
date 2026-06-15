@@ -45,7 +45,7 @@ Reproduce with `./bench.sh`.
 
 - **Software Modem** - High performance DSP written in Rust that's slightly more effective than Direwolf and much better than most hardware TNCs.  Efficeint: uses about 19% of a single CPU core on a Raspberry Pi 5.
 
-- **Live Map** - Like having a private aprs.fi for your station.  Real-time APRS map with trails, digipeater paths, weather overlays, etc., rendered on our private vector basemap.  You can download maps for your state/province/country for offline use!
+- **Live Map** - Like having a private aprs.fi for your station.  Real-time APRS map with trails, digipeater paths, weather overlays, and beautiful animated NEXRAD weather radar, all rendered on our private vector basemap.  You can download maps for your state/province/country for offline use!
 
 - **Messages** - SMS-style APRS messaging with delivery status and unread badges
 
@@ -58,12 +58,19 @@ Reproduce with `./bench.sh`.
   - Can trigger via shell script, Powershell script, or webhook
   - Can be secured with one-time passwords a la Google Authenticator or 1Password
 
+- **AX.25 Terminal** - Built-in connected-mode terminal client in the web UI
+
+  - Connect to BBSes, nodes, and other stations over AX.25
+  - Macros and configurable presets for quick connects
+  - Live channel monitor
+
 - **Push-to-Talk** - Multiple PTT methods for any setup
 
   - Serial RTS/DTR (Digirig, USB-serial adapters)
   - CM108 USB HID GPIO (AIOC, homebrew sound card adapters)
   - Linux GPIO (Raspberry Pi, BeagleBone)
   - Hamlib rigctld (CAT control)
+  - VOX (voice-operated keying, no PTT wiring required)
 
 - **Digipeater** - Full-featured APRS digipeater
 
