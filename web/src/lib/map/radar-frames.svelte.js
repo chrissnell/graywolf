@@ -56,6 +56,14 @@ export function createRadarFrames({
     pause();
     index = clampIndex(i, frames.length);
   }
+  // Reset: drop all frames and stop. Used on a region switch, where the frame
+  // ts namespace changes entirely (US contour vs RainViewer), so the old frames
+  // must not linger and feed the new provider before the next poll resolves.
+  function reset() {
+    pause();
+    frames = [];
+    index = 0;
+  }
 
   async function poll() {
     let list;
@@ -111,6 +119,7 @@ export function createRadarFrames({
     toggle,
     stop,
     seek,
+    reset,
     startPolling,
     stopPolling,
     destroy,

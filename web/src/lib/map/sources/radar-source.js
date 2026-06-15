@@ -143,23 +143,21 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
   throw new Error(`unsupported radar backend: ${backend}`);
 }
 
-// Rest-of-world overlay: the RainViewer global composite, proxied as a raster
-// pull-through by the origin Worker (/radar/rainviewer/*). Same descriptor
-// shape as the US raster backend, so radar.js consumes it unchanged. maxzoom
-// caps at RainViewer's native z7 so MapLibre overzooms the last real tile
-// instead of requesting non-existent z8+ tiles (the Worker would 404 them).
-// cacheBust: the Worker resolves "latest" server-side and RainViewer publishes
-// a new frame ~every 10 min. The Worker forbids any query string on /radar/*
-// paths except the auth token (a stray `?v=` 400s every tile), so the cadence
-// refresh can't ride a changing URL. Instead radar.js calls setTiles on each
-// bucket rollover, which reloads the source; the Worker's `cache-control:
-// no-store` guarantees that reload refetches the freshly published frame.
+// Rest-of-world overlay: the RainViewer global composite, animated as a
+// per-frame raster loop by the origin Worker (/radar/rainviewer/*). The Worker
+// now exposes the full frame list (/radar/rainviewer/manifest.json) and an
+// immutable per-frame tile route (/radar/rainviewer/{ts}/{z}/{x}/{y}.png), so
+// the world overlay uses the SAME smooth per-frame machinery as the US vector
+// loop: radar.js preloads one raster source per frame at opacity 0 and animates
+// by handing opacity between already-cached frames -- no setTiles, no refetch.
+// `tiles` is omitted (the template depends on the frame ts); radar.js injects
+// `tiles: frameTiles(ts)`. maxzoom caps at RainViewer's native z7 so MapLibre
+// overzooms the last real tile instead of requesting non-existent z8+ tiles.
 export function worldRadarProvider() {
   return {
     sourceId: RADAR_SOURCE_ID,
     source: {
       type: 'raster',
-      tiles: [rainviewerTileUrl()],
       tileSize: 256,
       maxzoom: 7,
       attribution: RAINVIEWER_ATTRIBUTION,
@@ -173,21 +171,36 @@ export function worldRadarProvider() {
       },
     ],
     opacity: { property: 'raster-opacity', layerIds: ['radar-raster'] },
-    // The URL is constant across rollovers (the Worker rejects a `?v=` bust on
-    // /radar/* paths); refresh() still calls setTiles on each bucket change,
-    // which reloads the source and -- with the Worker's no-store -- refetches
-    // the latest frame.
-    cacheBust: () => [rainviewerTileUrl()],
+    // Per-frame loop: each frame is an immutable URL keyed by its epoch ts
+    // (radar/rainviewer/<ts>/{z}/{x}/{y}.png). The ts IS the cache key, so no
+    // `?v=` cache-bust is needed (and the Worker 400s any stray query param).
+    perFrame: true,
+    frameTiles: (ts) => [rainviewerFrameTileUrl(ts)],
   };
 }
 
-// RainViewer raster tile template under the Worker's /radar/rainviewer/ route.
-// Carries NO query string: the Worker forbids any param on /radar/* paths
-// except the auth token transformRequest appends (?t=), and 400s every tile
-// when it sees a stray `?v=` ("query string not allowed on radar paths"). Frame
-// refresh is driven by radar.js's setTiles reload, not a changing URL.
+// Legacy latest-frame RainViewer raster template under /radar/rainviewer/.
+// Retained for reference/back-compat: the Worker still serves it, but the world
+// overlay now animates via the per-frame route below rather than this single
+// always-latest URL. Carries NO query string (the Worker 400s any param on
+// /radar/* except the auth token transformRequest appends).
 export function rainviewerTileUrl() {
   return `${RADAR_TILE_BASE}/radar/rainviewer/{z}/{x}/{y}.png`;
+}
+
+// Per-frame RainViewer raster template. `ts` is a 10-digit Unix epoch naming an
+// immutable frame on the origin Worker, which resolves it to that frame's
+// RainViewer path and proxies the tile (long-immutable). Byte-stable per ts, so
+// no cache-bust param -- the ts is the cache key.
+export function rainviewerFrameTileUrl(ts) {
+  return `${RADAR_TILE_BASE}/radar/rainviewer/${ts}/{z}/{x}/{y}.png`;
+}
+
+// The RainViewer loop manifest URL (single source of truth for which world
+// frames exist). Distinct from the US contour manifest. The bearer token (?t=)
+// is appended by the caller's fetch, as with radarManifestUrl().
+export function rainviewerManifestUrl() {
+  return `${RADAR_TILE_BASE}/radar/rainviewer/manifest.json`;
 }
 
 // Region-aware provider seam consumed by radar.js. US delegates to the backend
@@ -228,6 +241,34 @@ export function parseManifestFrames(json) {
   // newest-first -> oldest-first
   frames.reverse();
   return frames;
+}
+
+// Parse a RainViewer loop manifest into an oldest-first list of { ts, iso }.
+// The RainViewer manifest's frames are `{ ts }` only (no iso, unlike the US
+// contour manifest), so synthesize iso from ts to keep the frame shape uniform
+// for the loop store and slider label. Same newest-first -> oldest-first
+// reversal and same "[] on a bad/empty body" contract as parseManifestFrames.
+export function parseRainviewerManifestFrames(json) {
+  if (!json || typeof json !== 'object') return [];
+  if (json.schema_version !== 1 || !Array.isArray(json.frames)) return [];
+  const frames = [];
+  for (const f of json.frames) {
+    if (!f || typeof f.ts !== 'number') continue;
+    frames.push({ ts: f.ts, iso: new Date(f.ts * 1000).toISOString() });
+  }
+  frames.reverse();
+  return frames;
+}
+
+// Region-aware manifest URL + parser, so the loop store can poll the correct
+// loop (US contour vs RainViewer world) without branching on region itself.
+export function radarManifestUrlForRegion(region) {
+  return region === RADAR_REGION_WORLD ? rainviewerManifestUrl() : radarManifestUrl();
+}
+export function parseManifestFramesForRegion(region, json) {
+  return region === RADAR_REGION_WORLD
+    ? parseRainviewerManifestFrames(json)
+    : parseManifestFrames(json);
 }
 
 // Cadence-aligned cache-bust token for the RainViewer raster overlay (which is

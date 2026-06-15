@@ -14,13 +14,12 @@
 // design refetched and re-parsed every frame each loop, which made the
 // animation choppy).
 //
-// The RainViewer world raster backend is a single latest-frame overlay (not a
-// per-frame loop). Its tile URL is query-free (the origin Worker 400s any param
-// on /radar/* except the `?t=` bearer), so refresh() can't ride a changing URL:
-// on each time-bucket rollover it calls setTiles with the same URL, which
-// reloads the source, and the Worker's `cache-control: no-store` makes that
-// reload refetch the freshly published frame. That path keeps the original
-// single-source behaviour.
+// The RainViewer world raster backend is ALSO a per-frame loop now: the origin
+// Worker exposes /radar/rainviewer/manifest.json + immutable per-frame tiles
+// (/radar/rainviewer/{ts}/{z}/{x}/{y}.png), so the world overlay rides the exact
+// same per-frame source/opacity machinery as the US vector loop -- only the
+// source type (raster) and tile template differ. The legacy single-source +
+// setTiles/cacheBust path remains below for the US IEM raster fallback backend.
 //
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,
@@ -217,16 +216,19 @@ export function mountRadarLayer(
   // Switch coverage region. The US and world providers can differ in layer
   // type/ids (vector fill vs raster), so we fully tear down the current
   // provider's layers + source and rebuild from the new one. curVisible /
-  // curOpacity carry over, so ensure() re-applies the operator's UI state; the
-  // current frame is re-seeded so switching back to US restores it immediately
-  // (the manifest poll re-populates the rest of the loop via setFrames()).
+  // curOpacity carry over, so ensure() re-applies the operator's UI state.
+  // Frame ts are region-specific -- US contour ts and RainViewer ts are
+  // different namespaces, and a frame's tiles belong to one provider -- so the
+  // loop is cleared on a switch; the store re-polls the new region's manifest
+  // and re-drives setFrames()/setFrameTs() (LiveMapV2 resets the loop in step).
   function setRegion(region) {
     if (region === curRegion) return;
     curRegion = region;
     destroy();
     provider = radarProviderForRegion(region);
     curBucket = provider.cacheBust ? frameBucket(now()) : null;
-    if (provider.perFrame && curFrameTs != null) mounted.add(curFrameTs);
+    mounted.clear();
+    curFrameTs = null;
     ensure();
   }
 

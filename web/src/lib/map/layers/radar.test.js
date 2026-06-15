@@ -153,43 +153,51 @@ test('setOpacity drives only the visible frame; setVisible toggles all frames', 
   assert.equal(map._layers[layerId(1750020300)].layout.visibility, 'visible');
 });
 
-test('setRegion to world builds RainViewer raster; back to US restores the frame', () => {
+// World per-frame raster ids: provider.layers[0].id is 'radar-raster'.
+const worldLayerId = (ts) => `radar-raster-${ts}`;
+const worldFrameUrl = (ts) => `https://maps.nw5w.com/radar/rainviewer/${ts}/{z}/{x}/{y}.png`;
+
+test('setRegion to world clears US frames and switches to the per-frame RainViewer loop', () => {
   const map = fakeMap();
   const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, region: 'us', now: () => 0 });
   layer.setFrameTs(1750020000);
   assert.equal(map._sources[srcId(1750020000)].type, 'vector');
 
   layer.setRegion('world');
+  // US frame is torn down and NOT carried across (ts namespaces differ); world
+  // is per-frame, so there is no static base source yet.
   assert.equal(map._layers[layerId(1750020000)], undefined);
   assert.equal(map._sources[srcId(1750020000)], undefined);
-  assert.equal(map._sources['radar-tiles'].type, 'raster');
-  assert.match(map._sources['radar-tiles'].tiles[0], /\/radar\/rainviewer\//);
+  assert.equal(map._sources['radar-tiles'], undefined);
 
-  // Switching back restores the US vector overlay at the last-known frame.
-  layer.setRegion('us');
-  assert.equal(map._sources[srcId(1750020000)].type, 'vector');
-  assert.deepEqual(map._sources[srcId(1750020000)].tiles, [frameUrl(1750020000)]);
-  assert.ok(map._layers[layerId(1750020000)]);
+  // The world loop is driven by the RainViewer manifest poll: a per-frame
+  // raster source per ts, keyed by the immutable per-frame URL.
+  layer.setFrames([1700000000, 1700000600]);
+  layer.setFrameTs(1700000600);
+  assert.equal(map._sources[srcId(1700000600)].type, 'raster');
+  assert.deepEqual(map._sources[srcId(1700000600)].tiles, [worldFrameUrl(1700000600)]);
+  assert.equal(map._layers[worldLayerId(1700000600)].paint['raster-opacity'], 0.6);
+  assert.equal(map._layers[worldLayerId(1700000000)].paint['raster-opacity'], 0);
 });
 
-test('world raster reloads via setTiles on a time-bucket rollover (query-free URL)', () => {
-  let nowMs = 0;
+test('world loop advances by toggling raster-opacity, never refetching (no setTiles)', () => {
   const map = fakeMap();
-  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, region: 'world', now: () => nowMs });
-  // The tile URL carries no query string (the Worker 400s a ?v= bust on
-  // /radar/*); refresh drives the frame swap via setTiles, not a changing URL.
-  const initial = map._sources['radar-tiles'].tiles[0];
-  assert.equal(initial, 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
-  assert.ok(!initial.includes('?'));
-
+  const layer = mountRadarLayer(map, { visible: true, opacity: 0.6, region: 'world', now: () => 0 });
+  layer.setFrames([1700000000, 1700000600, 1700001200]);
+  // Every frame preloaded as its own cached raster source at opacity 0.
+  for (const ts of [1700000000, 1700000600, 1700001200]) {
+    assert.equal(map._sources[srcId(ts)].type, 'raster');
+    assert.deepEqual(map._sources[srcId(ts)].tiles, [worldFrameUrl(ts)]);
+    assert.equal(map._layers[worldLayerId(ts)].paint['raster-opacity'], 0);
+  }
   const before = map._setTilesCalls;
-  layer.refresh(); // same bucket -> no reload
+  layer.setFrameTs(1700000600);
+  assert.equal(map._layers[worldLayerId(1700000600)].paint['raster-opacity'], 0.6);
+  layer.setFrameTs(1700001200);
+  assert.equal(map._layers[worldLayerId(1700000600)].paint['raster-opacity'], 0);
+  assert.equal(map._layers[worldLayerId(1700001200)].paint['raster-opacity'], 0.6);
+  // Pure paint toggles -- the loop reuses already-loaded frames.
   assert.equal(map._setTilesCalls, before);
-
-  nowMs = 300000; // next 5-minute bucket -> setTiles reload (URL unchanged)
-  layer.refresh();
-  assert.equal(map._setTilesCalls, before + 1);
-  assert.equal(map._sources['radar-tiles'].tiles[0], initial);
 });
 
 test('destroy swallows errors when the map is already torn down', () => {

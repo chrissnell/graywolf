@@ -18,7 +18,11 @@
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { mountRadarLayer } from '../lib/map/layers/radar.js';
-  import { radarManifestUrl, parseManifestFrames } from '../lib/map/sources/radar-source.js';
+  import {
+    radarManifestUrlForRegion,
+    parseManifestFramesForRegion,
+    RADAR_REGION_WORLD,
+  } from '../lib/map/sources/radar-source.js';
   import { createRadarFrames } from '../lib/map/radar-frames.svelte.js';
   import { mapsState } from '../lib/settings/maps-store.svelte.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
@@ -94,7 +98,12 @@
     if (!mapsState.registered) return [];
     if (!radarToken) radarToken = await mapsState.revealToken();
     if (!radarToken) return [];
-    const url = `${radarManifestUrl()}?t=${encodeURIComponent(radarToken)}`;
+    // Region-aware: US polls the NEXRAD contour manifest, world polls the
+    // RainViewer loop manifest. Read at call time so the next poll after a
+    // region switch fetches the right loop.
+    const region = mapState.radarRegion;
+    const isWorld = region === RADAR_REGION_WORLD;
+    const url = `${radarManifestUrlForRegion(region)}?t=${encodeURIComponent(radarToken)}`;
     let resp;
     try {
       resp = await fetch(url);
@@ -108,22 +117,25 @@
       return [];
     }
     if (resp.status === 404) {
-      // The origin Worker has no /radar/manifest.json route -- it predates the
-      // animated-loop deploy. Update the worker (wrangler deploy) so the overlay
-      // can load frames. Logged because the overlay otherwise sits on
+      // The origin Worker has no manifest route for this region -- it predates
+      // the animated-loop deploy. Update the worker (wrangler deploy) so the
+      // overlay can load frames. Logged because the overlay otherwise sits on
       // "waiting for frames…" with no other signal.
       warnRadar(
         404,
-        '[radar] manifest 404 -- origin Worker is missing the /radar/manifest.json route. ' +
-          'Deploy the animated-loop Worker (cd worker && npx wrangler deploy).',
+        `[radar] manifest 404 -- origin Worker is missing the ${
+          isWorld ? '/radar/rainviewer/manifest.json' : '/radar/manifest.json'
+        } route. Deploy the animated-loop Worker (cd worker && npx wrangler deploy).`,
       );
       return [];
     }
     if (resp.status === 503) {
       warnRadar(
         503,
-        '[radar] manifest 503 -- Worker is up but radar/manifest.json is not in R2 yet. ' +
-          'Deploy/run the radar-contour generator so it publishes the manifest.',
+        isWorld
+          ? '[radar] RainViewer manifest 503 -- Worker is up but RainViewer upstream returned no usable frames; will retry.'
+          : '[radar] manifest 503 -- Worker is up but radar/manifest.json is not in R2 yet. ' +
+              'Deploy/run the radar-contour generator so it publishes the manifest.',
       );
       return [];
     }
@@ -132,7 +144,7 @@
       return [];
     }
     try {
-      const frames = parseManifestFrames(await resp.json());
+      const frames = parseManifestFramesForRegion(region, await resp.json());
       if (frames.length === 0) warnRadar('empty', '[radar] manifest parsed but has 0 frames');
       else lastRadarLoadStatus = null; // recovered -- a later failure logs again
       return frames;
@@ -629,8 +641,20 @@
     localStorage.setItem('gw_radar_opacity', String(v));
     radarLayer?.setOpacity(v);
   });
+  // Plain (non-reactive) guard so writing it doesn't retrigger the effect; the
+  // effect re-runs only when mapState.radarRegion changes.
+  let radarRegionApplied = mapState.radarRegion;
   $effect(() => {
-    radarLayer?.setRegion(mapState.radarRegion);
+    const region = mapState.radarRegion;
+    radarLayer?.setRegion(region);
+    if (region !== radarRegionApplied) {
+      radarRegionApplied = region;
+      // The frame ts namespace changed (US contour vs RainViewer): drop the old
+      // loop and immediately re-poll the new region's manifest so the slider and
+      // overlay don't briefly animate the wrong region's frames.
+      radarFrames.reset();
+      if (radarSettings.visible) radarFrames.startPolling();
+    }
   });
   $effect(() => {
     const v = layerToggles.fixedPoints;

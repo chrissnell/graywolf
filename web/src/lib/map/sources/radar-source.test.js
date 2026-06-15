@@ -13,9 +13,14 @@ import {
   radarProviderForRegion,
   worldRadarProvider,
   rainviewerTileUrl,
+  rainviewerFrameTileUrl,
+  rainviewerManifestUrl,
   vectorTileUrl,
   radarManifestUrl,
+  radarManifestUrlForRegion,
   parseManifestFrames,
+  parseRainviewerManifestFrames,
+  parseManifestFramesForRegion,
   frameBucket,
 } from './radar-source.js';
 
@@ -157,12 +162,13 @@ test('raster source caps maxzoom so tiles overzoom instead of 404ing', () => {
   assert.ok(p.source.maxzoom >= 7 && p.source.maxzoom <= 12);
 });
 
-test('world provider is a RainViewer raster overlay driven by raster-opacity', () => {
+test('world provider is a per-frame RainViewer raster loop driven by raster-opacity', () => {
   const p = worldRadarProvider();
   assert.equal(p.sourceId, 'radar-tiles');
   assert.equal(p.source.type, 'raster');
   assert.equal(p.source.tileSize, 256);
-  assert.match(p.source.tiles[0], /\/radar\/rainviewer\/\{z\}\/\{x\}\/\{y\}\.png$/);
+  // Per-frame: no static `tiles` on the source (radar.js injects frameTiles(ts)).
+  assert.equal(p.source.tiles, undefined);
   // RainViewer tops out at native z7; cap so MapLibre overzooms instead of
   // requesting non-existent z8+ tiles.
   assert.equal(p.source.maxzoom, 7);
@@ -172,29 +178,87 @@ test('world provider is a RainViewer raster overlay driven by raster-opacity', (
   assert.deepEqual(p.opacity.layerIds, ['radar-raster']);
 });
 
-test('rainviewerTileUrl is the /radar/rainviewer/ route and carries no query string', () => {
-  // The Worker 400s any param on /radar/* except the auth token, so the URL
-  // must stay query-free even when a bust arg is (legacy-)passed.
-  assert.equal(rainviewerTileUrl(), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
-  assert.equal(rainviewerTileUrl(9), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
-  assert.ok(!rainviewerTileUrl(9).includes('?'));
-});
-
-test('world provider cacheBust returns the query-free template (no ?v=)', () => {
+test('world provider is per-frame with a rainviewer frameTiles template (no cacheBust)', () => {
   const p = worldRadarProvider();
-  assert.equal(typeof p.cacheBust, 'function');
-  assert.deepEqual(p.cacheBust(7), ['https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png']);
+  assert.equal(p.perFrame, true);
+  assert.equal(p.cacheBust, undefined);
+  assert.deepEqual(p.frameTiles(1700000000), [
+    'https://maps.nw5w.com/radar/rainviewer/1700000000/{z}/{x}/{y}.png',
+  ]);
 });
 
-test('radarProviderForRegion: US delegates to the backend, world is RainViewer', () => {
+test('rainviewerFrameTileUrl is the per-frame /radar/rainviewer/{ts}/ route (no query)', () => {
+  const u = rainviewerFrameTileUrl(1700000000);
+  assert.equal(u, 'https://maps.nw5w.com/radar/rainviewer/1700000000/{z}/{x}/{y}.png');
+  assert.ok(!u.includes('?'));
+});
+
+test('rainviewerTileUrl (legacy latest) is the query-free /radar/rainviewer/ route', () => {
+  assert.equal(rainviewerTileUrl(), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
+  assert.ok(!rainviewerTileUrl().includes('?'));
+});
+
+test('rainviewerManifestUrl points at the RainViewer loop manifest', () => {
+  assert.equal(rainviewerManifestUrl(), 'https://maps.nw5w.com/radar/rainviewer/manifest.json');
+});
+
+test('radarManifestUrlForRegion picks contour vs RainViewer manifest by region', () => {
+  assert.equal(radarManifestUrlForRegion(RADAR_REGION_US), radarManifestUrl());
+  assert.equal(radarManifestUrlForRegion(), radarManifestUrl());
+  assert.equal(radarManifestUrlForRegion(RADAR_REGION_WORLD), rainviewerManifestUrl());
+});
+
+test('parseRainviewerManifestFrames reverses to oldest-first and synthesizes iso', () => {
+  const manifest = {
+    schema_version: 1,
+    frames: [{ ts: 1700001200 }, { ts: 1700000600 }, { ts: 1700000000 }], // newest-first
+    latest: { ts: 1700001200 },
+    cadence_seconds: 600,
+  };
+  const frames = parseRainviewerManifestFrames(manifest);
+  assert.deepEqual(
+    frames.map((f) => f.ts),
+    [1700000000, 1700000600, 1700001200],
+  );
+  // iso is synthesized from ts (the RainViewer manifest carries no iso).
+  assert.equal(frames[0].iso, new Date(1700000000 * 1000).toISOString());
+});
+
+test('parseRainviewerManifestFrames returns [] for bad/empty/unknown-schema input', () => {
+  assert.deepEqual(parseRainviewerManifestFrames(null), []);
+  assert.deepEqual(parseRainviewerManifestFrames({}), []);
+  assert.deepEqual(parseRainviewerManifestFrames({ schema_version: 2, frames: [] }), []);
+  assert.deepEqual(parseRainviewerManifestFrames({ schema_version: 1, frames: 'nope' }), []);
+  // Drops a frame with a non-numeric ts, keeps the good one.
+  assert.deepEqual(
+    parseRainviewerManifestFrames({ schema_version: 1, frames: [{ ts: 'x' }, { ts: 1 }] }).map((f) => f.ts),
+    [1],
+  );
+});
+
+test('parseManifestFramesForRegion dispatches to the right parser', () => {
+  const us = { schema_version: 1, frames: [{ ts: 2, iso: 'b' }, { ts: 1, iso: 'a' }] };
+  const world = { schema_version: 1, frames: [{ ts: 2 }, { ts: 1 }] };
+  assert.deepEqual(
+    parseManifestFramesForRegion(RADAR_REGION_US, us).map((f) => f.ts),
+    [1, 2],
+  );
+  assert.deepEqual(
+    parseManifestFramesForRegion(RADAR_REGION_WORLD, world).map((f) => f.ts),
+    [1, 2],
+  );
+});
+
+test('radarProviderForRegion: US delegates to the backend, world is per-frame RainViewer', () => {
   // US region uses the active US backend (vector contours today).
   const us = radarProviderForRegion(RADAR_REGION_US);
-  assert.deepEqual(us.source.tiles, radarProvider().source.tiles);
   assert.equal(us.source.type, radarProvider().source.type);
+  assert.equal(us.perFrame, true);
   // Default region is US.
-  assert.deepEqual(radarProviderForRegion().source.tiles, radarProvider().source.tiles);
-  // World region is the RainViewer raster overlay.
+  assert.equal(radarProviderForRegion().source.type, radarProvider().source.type);
+  // World region is the per-frame RainViewer raster overlay.
   const world = radarProviderForRegion(RADAR_REGION_WORLD);
   assert.equal(world.source.type, 'raster');
-  assert.match(world.source.tiles[0], /\/radar\/rainviewer\//);
+  assert.equal(world.perFrame, true);
+  assert.match(world.frameTiles(1700000000)[0], /\/radar\/rainviewer\/1700000000\//);
 });
