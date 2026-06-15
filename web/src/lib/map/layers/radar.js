@@ -3,11 +3,21 @@
 // Backend-agnostic: it asks radar-source.js for a provider descriptor and
 // performs the MapLibre source/layer calls. The active backend is the
 // vector contour loop, selected by ACTIVE_RADAR_BACKEND in radar-source.js.
-// The vector backend is a per-frame loop: each frame is an immutable URL keyed
-// by its epoch ts, and the LiveMap animation calls setFrameTs(ts) to swap the
-// tile template. The RainViewer world raster backend instead carries a
-// cadence-aligned `?v=` cache-bust that refresh() bumps on a time-bucket
-// rollover; that path is unchanged.
+//
+// Per-frame vector loop (the smooth-loop design): each manifest frame is its
+// OWN source + fill layer, keyed by its immutable epoch ts. setFrames() mounts
+// every known frame up front at fill-opacity 0 so its tiles load once and stay
+// cached; setFrameTs() then animates the loop by handing the visible opacity
+// from the old frame to the new one. That is a pure paint-property toggle --
+// no setTiles, no source reload -- so looping reuses the already-loaded frames
+// instead of re-fetching tiles on every cycle (the old single-source + setTiles
+// design refetched and re-parsed every frame each loop, which made the
+// animation choppy).
+//
+// The RainViewer world raster backend is a single latest-frame overlay (not a
+// per-frame loop): it carries a cadence-aligned `?v=` cache-bust that refresh()
+// bumps on a time-bucket rollover. That path keeps the original single-source
+// behaviour.
 //
 // Mirrors the other layer modules (stations.js, trails.js): mount returns
 // control methods; LiveMapV2 persists settings and drives them via effects,
@@ -18,7 +28,10 @@
 
 import { radarProviderForRegion, frameBucket, RADAR_REGION_US } from '../sources/radar-source.js';
 
-export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_US, frameTs = null, now = () => Date.now() }) {
+export function mountRadarLayer(
+  map,
+  { visible, opacity, region = RADAR_REGION_US, frameTs = null, frames = null, now = () => Date.now() },
+) {
   // Region (US vs rest-of-world) is operator-selectable, so the provider is
   // mutable: setRegion() tears down and rebuilds it. Everything below reads the
   // current `provider`, so the same add/remove logic serves either region.
@@ -31,32 +44,70 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
   // Current frame cache-bust bucket (RainViewer raster only). The source is
   // added already pointing at this bucket's URL; refresh() bumps it on rollover.
   let curBucket = provider.cacheBust ? frameBucket(now()) : null;
-  // Current frame ts (per-frame vector loop only). Seeded from the mount option
-  // when the manifest poll already resolved before the layer mounted (so the
-  // overlay paints immediately rather than waiting for the next index change);
-  // null otherwise. setFrameTs() advances it.
+  // Current frame ts (per-frame vector loop only): the frame currently painted
+  // at full opacity. Seeded from the mount option when the manifest poll already
+  // resolved before the layer mounted; null otherwise.
   let curFrameTs = frameTs;
+  // The set of frame ts that should be mounted (one source+layer each). Seeded
+  // from the mount options; setFrames() reconciles it against the manifest as
+  // frames roll in and out, and ensure() re-adds anything MapLibre dropped on a
+  // style swap.
+  const mounted = new Set(Array.isArray(frames) ? frames : []);
+  if (curFrameTs != null) mounted.add(curFrameTs);
+
+  // Per-frame source/layer ids derive from the provider's base ids so the world
+  // raster path (single source) and the vector loop (one per frame) never collide.
+  const frameSourceId = (ts) => `${provider.sourceId}-${ts}`;
+  const frameLayerId = (ts) => `${provider.layers[0].id}-${ts}`;
+  const opacityProp = () => provider.opacity.property;
+  const firstSymbolId = () => map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+
+  // Per-frame: add the source + fill layer for one frame ts if absent. The
+  // current frame paints at curOpacity; every other frame is mounted at opacity
+  // 0 so its tiles preload and cache without being seen -- advancing the loop is
+  // then a pure paint-property toggle.
+  function ensureFrame(ts) {
+    mounted.add(ts);
+    if (!map.getSource(frameSourceId(ts))) {
+      map.addSource(frameSourceId(ts), { ...provider.source, tiles: provider.frameTiles(ts) });
+    }
+    if (map.getLayer(frameLayerId(ts))) return;
+    const layer = provider.layers[0];
+    const spec = {
+      ...layer,
+      id: frameLayerId(ts),
+      source: frameSourceId(ts),
+      layout: { ...(layer.layout ?? {}), visibility: curVisible ? 'visible' : 'none' },
+      paint: { ...(layer.paint ?? {}), [opacityProp()]: ts === curFrameTs ? curOpacity : 0 },
+    };
+    map.addLayer(spec, firstSymbolId());
+  }
+
+  function removeFrame(ts) {
+    if (map.getLayer(frameLayerId(ts))) map.removeLayer(frameLayerId(ts));
+    if (map.getSource(frameSourceId(ts))) map.removeSource(frameSourceId(ts));
+    mounted.delete(ts);
+  }
 
   // Idempotent add: safe to call repeatedly (initial mount + every refresh).
   function ensure() {
-    // A per-frame provider has no tile template until a frame ts is known.
-    // Add nothing until then -- the overlay is simply absent (mirrors the
-    // Worker's pre-manifest 503), and setFrameTs() adds it once a frame loads.
-    if (provider.perFrame && curFrameTs == null) return;
+    if (provider.perFrame) {
+      // Per-frame loop has nothing to add until a frame ts is known; the overlay
+      // is simply absent (mirrors the Worker's pre-manifest 503). Re-add every
+      // frame that should be mounted (recovers from a style swap).
+      for (const ts of mounted) ensureFrame(ts);
+      return;
+    }
+    // Single-source backends (US raster fallback / world raster).
     if (!map.getSource(provider.sourceId)) {
-      let source;
-      if (provider.perFrame) {
-        source = { ...provider.source, tiles: provider.frameTiles(curFrameTs) };
-      } else if (provider.cacheBust) {
-        source = { ...provider.source, tiles: provider.cacheBust(curBucket) };
-      } else {
-        source = provider.source;
-      }
+      const source = provider.cacheBust
+        ? { ...provider.source, tiles: provider.cacheBust(curBucket) }
+        : provider.source;
       map.addSource(provider.sourceId, source);
     }
     // Recompute beforeId from the current style -- symbol-layer ids differ
     // across basemaps, so a stale id captured at mount could throw here.
-    const firstSymbolId = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+    const beforeId = firstSymbolId();
     for (const layer of provider.layers) {
       if (map.getLayer(layer.id)) continue;
       const spec = {
@@ -64,7 +115,7 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
         layout: { ...(layer.layout ?? {}), visibility: curVisible ? 'visible' : 'none' },
         paint: { ...(layer.paint ?? {}), [provider.opacity.property]: curOpacity },
       };
-      map.addLayer(spec, firstSymbolId);
+      map.addLayer(spec, beforeId);
     }
   }
 
@@ -86,24 +137,46 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
     }
   }
 
-  // Per-frame loop: point the source at frame `ts`. Adds the source on the
-  // first ts (when ensure() had nothing to add yet), then swaps the tile
-  // template on subsequent frames. No-op for non-perFrame providers (world
-  // raster) or a repeated ts.
+  // Per-frame loop: reconcile the mounted frames against the manifest's frame
+  // list (oldest->newest). New frames are preloaded at opacity 0; frames that
+  // have rolled off the manifest are torn down (never the visible one). No-op
+  // for single-source backends (world raster).
+  function setFrames(list) {
+    if (!provider.perFrame) return;
+    const next = new Set(Array.isArray(list) ? list : []);
+    for (const ts of [...mounted]) {
+      if (!next.has(ts) && ts !== curFrameTs) removeFrame(ts);
+    }
+    for (const ts of next) ensureFrame(ts);
+  }
+
+  // Per-frame loop: make frame `ts` the visible one. Hands the visible opacity
+  // from the previous frame to this one -- no setTiles, no source reload, since
+  // every frame's tiles are already cached. Mounts the frame on demand if the
+  // manifest race beat setFrames(). No-op for single-source backends or a
+  // repeated ts.
   function setFrameTs(ts) {
     if (!provider.perFrame || ts == null || ts === curFrameTs) return;
+    const prev = curFrameTs;
     curFrameTs = ts;
-    if (!map.getSource(provider.sourceId)) {
-      ensure();
-      return;
+    ensureFrame(ts);
+    if (prev != null && map.getLayer(frameLayerId(prev))) {
+      map.setPaintProperty(frameLayerId(prev), opacityProp(), 0);
     }
-    const src = map.getSource(provider.sourceId);
-    if (src && src.setTiles) src.setTiles(provider.frameTiles(ts));
+    if (map.getLayer(frameLayerId(ts))) {
+      map.setPaintProperty(frameLayerId(ts), opacityProp(), curOpacity);
+    }
   }
 
   function setVisible(v) {
     curVisible = v;
     const value = v ? 'visible' : 'none';
+    if (provider.perFrame) {
+      for (const ts of mounted) {
+        if (map.getLayer(frameLayerId(ts))) map.setLayoutProperty(frameLayerId(ts), 'visibility', value);
+      }
+      return;
+    }
     for (const layer of provider.layers) {
       if (map.getLayer(layer.id)) {
         map.setLayoutProperty(layer.id, 'visibility', value);
@@ -113,6 +186,13 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
 
   function setOpacity(v) {
     curOpacity = v;
+    if (provider.perFrame) {
+      // Only the visible frame carries opacity; every other frame stays at 0.
+      if (curFrameTs != null && map.getLayer(frameLayerId(curFrameTs))) {
+        map.setPaintProperty(frameLayerId(curFrameTs), opacityProp(), v);
+      }
+      return;
+    }
     for (const id of provider.opacity.layerIds) {
       if (map.getLayer(id)) {
         map.setPaintProperty(id, provider.opacity.property, v);
@@ -123,18 +203,25 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
   // Switch coverage region. The US and world providers can differ in layer
   // type/ids (vector fill vs raster), so we fully tear down the current
   // provider's layers + source and rebuild from the new one. curVisible /
-  // curOpacity carry over, so ensure() re-applies the operator's UI state.
+  // curOpacity carry over, so ensure() re-applies the operator's UI state; the
+  // current frame is re-seeded so switching back to US restores it immediately
+  // (the manifest poll re-populates the rest of the loop via setFrames()).
   function setRegion(region) {
     if (region === curRegion) return;
     curRegion = region;
     destroy();
     provider = radarProviderForRegion(region);
     curBucket = provider.cacheBust ? frameBucket(now()) : null;
+    if (provider.perFrame && curFrameTs != null) mounted.add(curFrameTs);
     ensure();
   }
 
   function destroy() {
     try {
+      if (provider.perFrame) {
+        for (const ts of [...mounted]) removeFrame(ts);
+        return;
+      }
       for (const layer of provider.layers) {
         if (map.getLayer(layer.id)) map.removeLayer(layer.id);
       }
@@ -142,5 +229,5 @@ export function mountRadarLayer(map, { visible, opacity, region = RADAR_REGION_U
     } catch { /* map already removed */ }
   }
 
-  return { refresh, setVisible, setOpacity, setRegion, setFrameTs, destroy };
+  return { refresh, setFrames, setVisible, setOpacity, setRegion, setFrameTs, destroy };
 }

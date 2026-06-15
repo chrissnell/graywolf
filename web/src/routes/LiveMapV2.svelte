@@ -417,6 +417,9 @@
       // layer exists, so seed the current frame here or the overlay stays blank
       // until the index changes (e.g. pressing Play).
       frameTs: radarFrames.currentTs,
+      // Preload every known frame up front (one cached source each) so looping
+      // toggles opacity instead of refetching tiles every cycle.
+      frames: radarFrames.frames.map((f) => f.ts),
     });
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
@@ -609,8 +612,14 @@
       radarFrames.stopPolling();
     }
   });
-  // Drive the current animation frame into the layer. setFrameTs adds the
-  // vector source on the first ts and swaps the tile template thereafter.
+  // Preload the full frame set into the layer (one cached source per frame) and
+  // reconcile it as the manifest poll rolls frames in and out. Looping then
+  // toggles opacity between already-loaded frames rather than refetching tiles.
+  $effect(() => {
+    radarLayer?.setFrames(radarFrames.frames.map((f) => f.ts));
+  });
+  // Drive the current animation frame into the layer. setFrameTs hands the
+  // visible opacity from the previous frame to the current one (no refetch).
   $effect(() => {
     const ts = radarFrames.currentTs;
     if (ts != null) radarLayer?.setFrameTs(ts);
