@@ -172,15 +172,18 @@ test('world provider is a RainViewer raster overlay driven by raster-opacity', (
   assert.deepEqual(p.opacity.layerIds, ['radar-raster']);
 });
 
-test('rainviewerTileUrl is the /radar/rainviewer/ route and appends ?v= when busting', () => {
+test('rainviewerTileUrl is the /radar/rainviewer/ route and carries no query string', () => {
+  // The Worker 400s any param on /radar/* except the auth token, so the URL
+  // must stay query-free even when a bust arg is (legacy-)passed.
   assert.equal(rainviewerTileUrl(), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
-  assert.equal(rainviewerTileUrl(9), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png?v=9');
+  assert.equal(rainviewerTileUrl(9), 'https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png');
+  assert.ok(!rainviewerTileUrl(9).includes('?'));
 });
 
-test('world provider exposes a cacheBust that swaps in a ?v= template', () => {
+test('world provider cacheBust returns the query-free template (no ?v=)', () => {
   const p = worldRadarProvider();
   assert.equal(typeof p.cacheBust, 'function');
-  assert.deepEqual(p.cacheBust(7), ['https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png?v=7']);
+  assert.deepEqual(p.cacheBust(7), ['https://maps.nw5w.com/radar/rainviewer/{z}/{x}/{y}.png']);
 });
 
 test('radarProviderForRegion: US delegates to the backend, world is RainViewer', () => {
