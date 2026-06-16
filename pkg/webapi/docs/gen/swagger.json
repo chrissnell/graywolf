@@ -8833,6 +8833,9 @@
                     "items": {
                         "$ref": "#/definitions/dto.CatalogState"
                     }
+                },
+                "world": {
+                    "$ref": "#/definitions/dto.CatalogWorld"
                 }
             }
         },
@@ -8911,6 +8914,29 @@
                 },
                 "slug": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.CatalogWorld": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "maxZoom": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
                 }
             }
         },

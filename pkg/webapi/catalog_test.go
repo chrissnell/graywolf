@@ -86,3 +86,41 @@ func TestGetCatalog_Demo(t *testing.T) {
 		t.Fatalf("expected empty states, got %d", len(out.States))
 	}
 }
+
+// TestGetCatalog_World guards the world archive surviving the DTO
+// projection: the Worker advertises it as a top-level `world` object and
+// the region picker renders it as a standalone node, so toCatalogDTO must
+// carry it through (it previously dropped it, hiding the World Map).
+func TestGetCatalog_World(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(mapscatalog.Catalog{
+			SchemaVersion: 1,
+			GeneratedAt:   "2026-04-30T00:00:00Z",
+			World:         &mapscatalog.WorldMap{Name: "World (low detail)", SizeBytes: 206424864, SHA256: "w", MaxZoom: 7},
+		})
+	}))
+	defer upstream.Close()
+
+	srv, _ := newTestServer(t)
+	srv.catalog = mapscatalog.New(upstream.URL, func(_ context.Context) string { return "tok" }, time.Hour)
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/maps/catalog", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var out dto.Catalog
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.World == nil {
+		t.Fatal("world dropped from catalog DTO")
+	}
+	if out.World.Name != "World (low detail)" || out.World.MaxZoom != 7 || out.World.SizeBytes != 206424864 {
+		t.Fatalf("unexpected world entry: %+v", out.World)
+	}
+}

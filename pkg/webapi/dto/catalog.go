@@ -10,6 +10,19 @@ type Catalog struct {
 	Countries     []CatalogCountry  `json:"countries"`
 	Provinces     []CatalogProvince `json:"provinces"`
 	States        []CatalogState    `json:"states"`
+	World         *CatalogWorld     `json:"world,omitempty"`
+}
+
+// CatalogWorld is the optional single global low-zoom basemap archive.
+// Unlike the regional entries it carries a MaxZoom (the archive is
+// capped, e.g. z7) and is surfaced as a standalone picker node, not a
+// member of any region array. Omitted until the Worker advertises one.
+type CatalogWorld struct {
+	Name      string      `json:"name"`
+	SizeBytes int64       `json:"sizeBytes"`
+	SHA256    string      `json:"sha256"`
+	BBox      *[4]float64 `json:"bbox,omitempty"`
+	MaxZoom   int         `json:"maxZoom"`
 }
 
 type CatalogCountry struct {

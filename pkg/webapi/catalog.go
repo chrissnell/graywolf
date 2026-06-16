@@ -55,5 +55,14 @@ func toCatalogDTO(c mapscatalog.Catalog) dto.Catalog {
 	for i, x := range c.States {
 		out.States[i] = dto.CatalogState{Slug: x.Slug, Name: x.Name, Code: x.Code, SizeBytes: x.SizeBytes, SHA256: x.SHA256, BBox: x.BBox}
 	}
+	if c.World != nil {
+		out.World = &dto.CatalogWorld{
+			Name:      c.World.Name,
+			SizeBytes: c.World.SizeBytes,
+			SHA256:    c.World.SHA256,
+			BBox:      c.World.BBox,
+			MaxZoom:   c.World.MaxZoom,
+		}
+	}
 	return out
 }

@@ -969,6 +969,8 @@ definitions:
         items:
           $ref: '#/definitions/dto.CatalogState'
         type: array
+      world:
+        $ref: '#/definitions/dto.CatalogWorld'
     type: object
   dto.CatalogCountry:
     properties:
@@ -1020,6 +1022,21 @@ definitions:
         type: integer
       slug:
         type: string
+    type: object
+  dto.CatalogWorld:
+    properties:
+      bbox:
+        items:
+          type: number
+        type: array
+      maxZoom:
+        type: integer
+      name:
+        type: string
+      sha256:
+        type: string
+      sizeBytes:
+        type: integer
     type: object
   dto.ChannelBacking:
     properties:
