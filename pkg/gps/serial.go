@@ -45,7 +45,15 @@ func RunSerial(ctx context.Context, cfg SerialConfig, cache PositionCache, logge
 			"device", cfg.Device, "suggested", alt)
 	}
 
-	mode := &serial.Mode{BaudRate: baud}
+	// Deassert RTS and DTR on open. Opening a tty otherwise raises both lines
+	// (the library leaves them untouched unless InitialStatusBits is set, and
+	// the kernel asserts them by default), which keys PTT on shared serial
+	// rigs like the Digirig where RTS drives PTT. GPS only needs RX, so hold
+	// the control lines low and let the PTT driver assert RTS when it keys.
+	mode := &serial.Mode{
+		BaudRate:          baud,
+		InitialStatusBits: &serial.ModemOutputBits{RTS: false, DTR: false},
+	}
 	port, err := serial.Open(cfg.Device, mode)
 	if err != nil {
 		return fmt.Errorf("gps: open %s: %w", cfg.Device, err)
