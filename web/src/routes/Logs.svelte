@@ -34,7 +34,21 @@
 
   let pollTimer;
 
+  // Seed the search box from ?callsign=… on the hash route. The map's
+  // station popup deep-links here ("APRS logs") so the operator lands on
+  // a log already scoped to that station. svelte-spa-router doesn't hand
+  // us the query string directly; read it off the hash like Beacons.svelte.
+  function callsignFromHash() {
+    if (typeof window === 'undefined') return '';
+    const h = window.location.hash || '';
+    const qIdx = h.indexOf('?');
+    if (qIdx < 0) return '';
+    return new URLSearchParams(h.slice(qIdx + 1)).get('callsign') || '';
+  }
+
   onMount(() => {
+    const seed = callsignFromHash();
+    if (seed) filter = seed;
     // Idempotent — keeps the shared channel list fresh so the CSV
     // export can map channel ids to names.
     startChannelsStore();

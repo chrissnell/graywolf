@@ -4,7 +4,13 @@ import { clockOffset } from './clock-offset.svelte.js';
 
 export function esc(str) {
   if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Escape " as well so values interpolated into HTML attributes (e.g.
+  // data-callsign="…") can't break out and inject markup.
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // timeAgo measures a host-stamped timestamp against the host clock by

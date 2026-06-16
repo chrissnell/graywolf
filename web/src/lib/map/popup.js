@@ -66,6 +66,37 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
     html += `<div class="stn-sep"></div>`;
     html += `<div class="stn-comment">${esc(s.comment)}</div>`;
   }
+
+  const actions = renderStationActionsHTML(s);
+  if (actions) {
+    html += `<div class="stn-sep"></div>`;
+    html += actions;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+// renderStationActionsHTML(station) -> HTML string (or '' to suppress)
+//
+// Action links shown for a real heard station: QRZ database lookup,
+// open a direct message thread, and view the APRS packet log filtered
+// to this callsign. APRS objects/items aren't operators you can work,
+// so they get no actions. Messages and Logs are internal hash routes;
+// QRZ is the one external link (opens in a new tab).
+export function renderStationActionsHTML(s) {
+  const call = s.callsign;
+  if (!call || s.is_object) return '';
+
+  const upper = call.toUpperCase();
+  const qrzHref = `https://www.qrz.com/db/${encodeURIComponent(upper)}`;
+  const msgHref = `#/messages?thread=${encodeURIComponent('dm:' + upper)}`;
+  const logHref = `#/logs?callsign=${encodeURIComponent(upper)}`;
+
+  let html = `<div class="stn-actions">`;
+  html += `<a class="stn-link stn-msg-link" href="${msgHref}">Message</a>`;
+  html += `<a class="stn-link stn-log-link" href="${logHref}">APRS logs</a>`;
+  html += `<a class="stn-link stn-qrz-link" href="${qrzHref}" target="_blank" rel="noopener noreferrer">QRZ</a>`;
   html += `</div>`;
   return html;
 }

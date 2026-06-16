@@ -1544,6 +1544,9 @@
   :global(.stn-path .path-link) { color: #6eb5ff; text-decoration: none; cursor: pointer; }
   :global(.stn-path .path-link:hover) { text-decoration: underline; }
   :global(.stn-comment) { color: var(--color-text-dim); font-style: italic; font-size: 12px; }
+  :global(.stn-actions) { font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+  :global(.stn-link) { color: #6eb5ff; text-decoration: none; cursor: pointer; }
+  :global(.stn-link:hover) { text-decoration: underline; }
   :global(.stn-weather) { font-size: 12px; }
   :global(.stn-weather-row) {
     display: flex;
