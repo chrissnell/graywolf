@@ -149,6 +149,14 @@ func (p *linuxNMEAPort) Read(b []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+		if n == 0 {
+			// poll() reported the device readable but read drained zero
+			// bytes: end-of-stream (e.g. the adapter was unplugged and the
+			// disconnect surfaced as readable-EOF rather than POLLHUP).
+			// Surface it as EOF so the reader's retry-with-backoff layer
+			// re-opens the port instead of looping on (0, nil) forever.
+			return 0, io.EOF
+		}
 		return n, nil
 	}
 }

@@ -5,6 +5,7 @@ package gps
 import (
 	"errors"
 	"io"
+	"strconv"
 	"testing"
 	"time"
 
@@ -27,21 +28,7 @@ func openPTY(t *testing.T) (master int, slavePath string) {
 	if err != nil {
 		t.Fatalf("ptsname: %v", err)
 	}
-	return m, "/dev/pts/" + itoa(n)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
+	return m, "/dev/pts/" + strconv.Itoa(n)
 }
 
 // TestOpenNMEASerialNotExclusive is the GRA-118 regression: the GPS
@@ -83,6 +70,10 @@ func TestOpenNMEASerialDeassertsRTS(t *testing.T) {
 	defer unix.Close(fd)
 	bits, err := unix.IoctlGetInt(fd, unix.TIOCMGET)
 	if err == unix.ENOTTY {
+		// A pty fundamentally has no modem-control lines, so the #305
+		// RTS/DTR deassert can only be verified on real hardware (and is
+		// pinned by invariant #47). The opener's ENOTTY tolerance is what
+		// lets the rest of these tests run on a pty at all.
 		t.Skip("pty has no modem-control lines; RTS deassert not observable here")
 	}
 	if err != nil {
