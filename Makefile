@@ -5,7 +5,7 @@ RUSTFLAGS_NATIVE := -C target-cpu=native
 # flag come from git. The two are joined into v<VERSION>-<COMMIT>[-dirty]
 # at display time by both the Go and Rust sides, so keep them separate here.
 VERSION     ?= $(shell cat VERSION 2>/dev/null || echo dev)
-GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_COMMIT  ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY   := $(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
 FULL_COMMIT := $(GIT_COMMIT)$(GIT_DIRTY)
 

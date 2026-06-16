@@ -45,8 +45,10 @@ fn main() {
 }
 
 fn derive_commit(repo_root: &Path) -> String {
+    // --short=8 pins the abbreviation length so it matches the Go side's
+    // stamping; git's default length varies with clone depth (graywolf#310).
     let short = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short=8", "HEAD"])
         .current_dir(repo_root)
         .output()
         .ok()
