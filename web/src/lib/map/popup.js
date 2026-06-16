@@ -66,15 +66,12 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
     html += `<div class="stn-sep"></div>`;
     html += `<div class="stn-comment">${esc(s.comment)}</div>`;
   }
-  const baseCall = s.callsign.split('-')[0];
-  html += `<div class="stn-sep"></div>`;
-  html += `<div class="stn-actions">`;
   if (!s.is_object) {
+    html += `<div class="stn-sep"></div>`;
+    html += `<div class="stn-actions">`;
     html += `<a class="stn-link stn-msg-link" href="#/messages?thread=${encodeURIComponent('dm:' + s.callsign.toUpperCase())}">Message ${esc(s.callsign)}</a>`;
+    html += `</div>`;
   }
-  html += `<a class="stn-link stn-ext-link" href="https://aprs.fi/#!z=11&call=a%2F${encodeURIComponent(s.callsign)}" target="_blank" rel="noopener noreferrer">aprs.fi</a>`;
-  html += `<a class="stn-link stn-ext-link" href="https://www.qrz.com/db/${encodeURIComponent(baseCall)}" target="_blank" rel="noopener noreferrer">QRZ</a>`;
-  html += `</div>`;
   html += `</div>`;
   return html;
 }
