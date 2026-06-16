@@ -978,3 +978,31 @@ when it keys. macOS does not exhibit this because its tty open does not raise
 the lines the same way, which is why the bug was Linux-only.
 
 Source: [`../../pkg/gps/serial.go`](../../pkg/gps/serial.go) (`RunSerial`).
+
+### 47a. The GPS serial reader must NOT hold the tty exclusively (Linux)
+
+On Linux `gps.RunSerial` opens the NMEA port through `openNMEASerial`
+(`serial_open_linux.go`), a raw `unix.Open` + termios path that deliberately
+does **not** issue `TIOCEXCL`. `go.bug.st/serial` acquires exclusive access on
+every Unix open (`acquireExclusiveAccess` -> `TIOCEXCL`), which blocks any
+later `open()` of the same tty with `EBUSY` for non-`CAP_SYS_ADMIN` callers.
+On a shared serial rig (Digirig Mobile: radio NMEA in on RX, PTT on RTS over
+the same DB9), the GPS reader (Go parent) and the PTT driver (graywolf-modem
+child, `ptt_unix.rs` -> `open(O_RDWR|O_NOCTTY|O_NONBLOCK|O_CLOEXEC)`) both open
+the same device. Whichever opens first wins; if GPS won and held `TIOCEXCL`,
+the modem's PTT `open()` failed with `EBUSY` and PTT silently never worked.
+This was order-dependent, so it surfaced as "PTT works when I configure it but
+breaks after a reboot" -- on reboot both routines start concurrently and GPS
+frequently wins the race (issue GRA-118 / #305 follow-up). The Linux opener
+keeps the #47 RTS/DTR deassert but drops the exclusive lock so the PTT driver
+can always open the device. Non-Linux platforms keep the `go.bug.st/serial`
+path (`serial_open_other.go`); the shared-line scenario is Linux-only.
+
+The Linux reader uses `VMIN=0` with a `poll()`-driven timeout so `Read`
+returns `(0, nil)` on timeout (what the `timeoutReader` scanner expects) and a
+self-pipe so `Close` wakes a blocked read without closing the device fd out
+from under it (avoiding an fd-reuse race).
+
+Source: [`../../pkg/gps/serial_open_linux.go`](../../pkg/gps/serial_open_linux.go) (`openNMEASerial`, `linuxNMEAPort`);
+[`../../pkg/gps/serial_open_other.go`](../../pkg/gps/serial_open_other.go) (non-Linux opener);
+[`../../graywolf-modem/src/tx/ptt_unix.rs`](../../graywolf-modem/src/tx/ptt_unix.rs) (`UnixSerialLines::open`).

@@ -7,9 +7,17 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"go.bug.st/serial"
 )
+
+// nmeaPort is the subset of a serial port the NMEA reader needs. It is
+// satisfied by both the go.bug.st/serial-backed opener (non-Linux) and
+// the raw Linux opener, which deliberately skips exclusive access so the
+// shared-line PTT driver can open the same tty (see openNMEASerial).
+type nmeaPort interface {
+	io.Reader
+	SetReadTimeout(time.Duration) error
+	Close() error
+}
 
 // SerialConfig configures a NMEA-over-serial reader.
 type SerialConfig struct {
@@ -45,16 +53,15 @@ func RunSerial(ctx context.Context, cfg SerialConfig, cache PositionCache, logge
 			"device", cfg.Device, "suggested", alt)
 	}
 
-	// Deassert RTS and DTR on open. Opening a tty otherwise raises both lines
-	// (the library leaves them untouched unless InitialStatusBits is set, and
-	// the kernel asserts them by default), which keys PTT on shared serial
-	// rigs like the Digirig where RTS drives PTT. GPS only needs RX, so hold
-	// the control lines low and let the PTT driver assert RTS when it keys.
-	mode := &serial.Mode{
-		BaudRate:          baud,
-		InitialStatusBits: &serial.ModemOutputBits{RTS: false, DTR: false},
-	}
-	port, err := serial.Open(cfg.Device, mode)
+	// Open with RTS/DTR held low and, on Linux, without exclusive access
+	// (TIOCEXCL). Both matter on shared serial rigs like the Digirig where
+	// the radio's NMEA arrives on RX and PTT is driven by RTS on the same
+	// tty: raised RTS keys the transmitter the instant GPS connects (#305),
+	// and holding the port exclusively locks graywolf-modem's PTT driver
+	// out of the device entirely, so PTT silently failed whenever the GPS
+	// reader won the startup race (GRA-118). GPS only needs RX, so it holds
+	// the control lines low and leaves the tty open for the PTT driver.
+	port, err := openNMEASerial(cfg.Device, baud)
 	if err != nil {
 		return fmt.Errorf("gps: open %s: %w", cfg.Device, err)
 	}
