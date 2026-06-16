@@ -92,7 +92,14 @@ jobs:
         run: |
           ref="${{ github.ref_name }}"
           echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # Use a fixed 8-char prefix of the full SHA. `git rev-parse --short`
+          # (and --short=N, which is only a *minimum*) lengthens the hash for
+          # uniqueness based on object count and clone depth, so this
+          # shallow-checkout job and the full-clone GoReleaser job could stamp
+          # the same commit at different lengths (e.g. 7c309d4 vs 7c309d4e),
+          # tripping the startup "versions disagree" check. A fixed prefix is a
+          # pure function of the commit, independent of depth (graywolf#310).
+          echo "commit=$(git rev-parse HEAD | cut -c1-8)" >> "$GITHUB_OUTPUT"
 
       # Run cargo/cross from the workspace root so cross-rs mounts the
       # whole repo (it needs access to ../proto/graywolf.proto, which is
@@ -193,6 +200,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Stamp the Go binary with the same fixed 8-char SHA prefix the Rust
+      # modem build uses. GoReleaser's {{.ShortCommit}} is git's variable
+      # abbreviation, whose length tracks clone depth -- a fixed prefix here
+      # keeps both binaries' version strings byte-identical (graywolf#310).
+      - name: Compute version metadata
+        id: ver
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD | cut -c1-8)" >> "$GITHUB_OUTPUT"
+
       - name: Download frontend dist
         uses: actions/download-artifact@v5
         with:
@@ -265,6 +281,7 @@ jobs:
           args: ${{ github.event_name == 'workflow_dispatch' && 'release --snapshot --clean' || format('release --clean --release-notes={0}/release-notes.md', runner.temp) }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GRAYWOLF_GIT_COMMIT: ${{ steps.ver.outputs.commit }}
 
       - name: Upload Windows binary for installer
         uses: actions/upload-artifact@v5

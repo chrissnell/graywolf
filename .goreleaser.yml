@@ -16,7 +16,10 @@ builds:
       - -w
       - -s
       - -X main.Version={{.Version}}
-      - -X main.GitCommit={{.ShortCommit}}
+      # Prefer the fixed-length short SHA computed by the release workflow so
+      # this binary and the Rust modem agree; fall back to GoReleaser's own
+      # (variable-length) ShortCommit for local/snapshot builds (graywolf#310).
+      - -X main.GitCommit={{ envOrDefault "GRAYWOLF_GIT_COMMIT" .ShortCommit }}
     goos:
       - linux
       - darwin

@@ -5,7 +5,11 @@ RUSTFLAGS_NATIVE := -C target-cpu=native
 # flag come from git. The two are joined into v<VERSION>-<COMMIT>[-dirty]
 # at display time by both the Go and Rust sides, so keep them separate here.
 VERSION     ?= $(shell cat VERSION 2>/dev/null || echo dev)
-GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# Fixed 8-char prefix of the full SHA, not `git rev-parse --short`: the latter
+# lengthens for uniqueness based on clone depth and would desync the Go and
+# Rust version stamps (graywolf#310). A prefix is a pure function of the commit.
+GIT_SHA     := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+GIT_COMMIT  ?= $(shell printf '%.8s' '$(GIT_SHA)')
 GIT_DIRTY   := $(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
 FULL_COMMIT := $(GIT_COMMIT)$(GIT_DIRTY)
 

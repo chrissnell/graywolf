@@ -45,8 +45,11 @@ fn main() {
 }
 
 fn derive_commit(repo_root: &Path) -> String {
-    let short = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
+    // Fixed 8-char prefix of the full SHA, not `git rev-parse --short`, whose
+    // length varies with clone depth and would desync the Go side's stamping
+    // (graywolf#310). A prefix is a pure function of the commit.
+    let full = Command::new("git")
+        .args(["rev-parse", "HEAD"])
         .current_dir(repo_root)
         .output()
         .ok()
@@ -54,6 +57,7 @@ fn derive_commit(repo_root: &Path) -> String {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
+    let short: String = full.chars().take(8).collect();
 
     let dirty = Command::new("git")
         .args(["diff-index", "--quiet", "HEAD", "--"])
