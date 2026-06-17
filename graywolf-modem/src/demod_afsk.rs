@@ -327,6 +327,19 @@ impl AfskDemodulator {
                     / samples_per_sec as f64)
                     .round() as u32;
 
+                // Independent mark/space oscillators used for level metering
+                // only. Profile B decodes via the FM discriminator (center
+                // oscillator above); these drive a parallel per-tone amplitude
+                // measurement so the packet log can show the real mark/space
+                // twist instead of one center envelope copied into both peaks.
+                // The decode path never reads these.
+                state.afsk.m_osc_phase = 0;
+                state.afsk.m_osc_delta =
+                    (2.0f64.powi(32) * mark_freq as f64 / samples_per_sec as f64).round() as u32;
+                state.afsk.s_osc_phase = 0;
+                state.afsk.s_osc_delta =
+                    (2.0f64.powi(32) * space_freq as f64 / samples_per_sec as f64).round() as u32;
+
                 state.afsk.use_rrc = true;
                 if state.afsk.use_rrc {
                     state.afsk.rrc_width_sym = 2.00;
@@ -560,27 +573,50 @@ impl AfskDemodulator {
         self.state.afsk.c_q_buf.push(fsam * fsin256(&self.fcos256_table, c_phase));
         self.state.afsk.c_osc_phase = self.state.afsk.c_osc_phase.wrapping_add(self.state.afsk.c_osc_delta);
 
-        // Low-pass filter
+        // Low-pass filter the center I/Q for the FM discriminator below.
         let lp = &self.state.lp_filter[..taps];
         let c_i = convolve(&self.state.afsk.c_i_buf.as_slice()[..taps], lp);
         let c_q = convolve(&self.state.afsk.c_q_buf.as_slice()[..taps], lp);
 
-        // Track the center-frequency envelope as the received signal level.
-        // Profile B is an FM discriminator with no separate mark/space tones,
-        // so both level peaks follow the same envelope. Without this the peaks
-        // stay at their -1.0 init, and because Profile B usually wins the
-        // cross-demod dedup, the emitted frame would report no audio level —
-        // every packet rendered as a dash in the log (issue GRA-84). Uses the
-        // same attack/decay envelope tracker as Profile A so the scale matches.
-        let c_amp = (c_i * c_i + c_q * c_q).sqrt();
+        // Per-tone level metering (display only; not used for decoding).
+        // Profile B's discriminator has no separate mark/space tones, so we
+        // run a parallel mark/space oscillator pair through the same
+        // mix → low-pass → envelope path Profile A uses and track each tone's
+        // amplitude independently. This restores the mark/space twist in the
+        // packet log (Direwolf shows roughly 2:1); previously the single
+        // center envelope was copied into both peaks, so they always read
+        // equal. Tracking real tone amplitudes also keeps the GRA-84
+        // guarantee that a decoded frame always carries a positive level:
+        // the dominant tone pulls its peak off the -1.0 init, and the level
+        // gate is OR-shaped (a frame is level-less only when *both* peaks are
+        // still <= 0). A persistently weak tone may leave its own peak
+        // negative; the display clamps that to 0 rather than showing a dash.
+        let m_phase = self.state.afsk.m_osc_phase;
+        self.state.afsk.m_i_buf.push(fsam * fcos256(&self.fcos256_table, m_phase));
+        self.state.afsk.m_q_buf.push(fsam * fsin256(&self.fcos256_table, m_phase));
+        self.state.afsk.m_osc_phase = self.state.afsk.m_osc_phase.wrapping_add(self.state.afsk.m_osc_delta);
+
+        let s_phase = self.state.afsk.s_osc_phase;
+        self.state.afsk.s_i_buf.push(fsam * fcos256(&self.fcos256_table, s_phase));
+        self.state.afsk.s_q_buf.push(fsam * fsin256(&self.fcos256_table, s_phase));
+        self.state.afsk.s_osc_phase = self.state.afsk.s_osc_phase.wrapping_add(self.state.afsk.s_osc_delta);
+
+        let m_i = convolve(&self.state.afsk.m_i_buf.as_slice()[..taps], lp);
+        let m_q = convolve(&self.state.afsk.m_q_buf.as_slice()[..taps], lp);
+        let m_amp = (m_i * m_i + m_q * m_q).sqrt();
+
+        let s_i = convolve(&self.state.afsk.s_i_buf.as_slice()[..taps], lp);
+        let s_q = convolve(&self.state.afsk.s_q_buf.as_slice()[..taps], lp);
+        let s_amp = (s_i * s_i + s_q * s_q).sqrt();
+
         Self::track_level(
-            c_amp,
+            m_amp,
             &mut self.state.alevel_mark_peak,
             self.state.quick_attack,
             self.state.sluggish_decay,
         );
         Self::track_level(
-            c_amp,
+            s_amp,
             &mut self.state.alevel_space_peak,
             self.state.quick_attack,
             self.state.sluggish_decay,
