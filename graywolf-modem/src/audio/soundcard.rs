@@ -930,7 +930,9 @@ pub fn find_device_by_id_or_alias(
 /// a numeric index string or a kernel card name — for the caller to resolve
 /// via [`build_card_resolver`]. `dev` defaults to `0` when absent. Returns
 /// `None` for non hw/plughw ids (`default`, custom PCMs, Windows endpoint
-/// ids) and for malformed numeric fields.
+/// ids) and for malformed device fields — a present-but-unparseable device
+/// index is rejected in both the `CARD=…,DEV=` and the numeric shorthand
+/// branch, never silently defaulted to 0.
 pub fn parse_alsa_hw_id(id: &str) -> Option<(String, String, u32)> {
     let (prefix, rest) = id.split_once(':')?;
     if prefix != "hw" && prefix != "plughw" {
@@ -942,10 +944,7 @@ pub fn parse_alsa_hw_id(id: &str) -> Option<(String, String, u32)> {
     let (card_tok, dev) = if let Some(after) = rest.strip_prefix("CARD=") {
         match after.split_once(',') {
             Some((tok, devpart)) => {
-                let dev = devpart
-                    .strip_prefix("DEV=")
-                    .and_then(|x| x.parse().ok())
-                    .unwrap_or(0);
+                let dev = devpart.strip_prefix("DEV=")?.parse().ok()?;
                 (tok.to_string(), dev)
             }
             None => (after.to_string(), 0),
@@ -962,17 +961,36 @@ pub fn parse_alsa_hw_id(id: &str) -> Option<(String, String, u32)> {
     Some((prefix.to_string(), card_tok, dev))
 }
 
+/// Resolve an ALSA pcm_id — in any form, shorthand (`plughw:0,0`) or
+/// canonical (`plughw:CARD=Device,DEV=0`) — to the identity tuple
+/// `(prefix, dev, physical_card_index)`. Returns `None` when the id is not an
+/// ALSA `hw`/`plughw` name or names no resolvable card.
+///
+/// This is the single home for "which physical device does this pcm_id name"
+/// on the configured-name resolution path, and the counterpart to
+/// [`alsa_canonical_key`] on the picker path. The two are deliberately
+/// separate: `alsa_canonical_key` keys solely on card index (it groups all
+/// pcm_ids of one card together) and, via [`alsa_card_token`], only parses
+/// the long `CARD=` form. Device resolution needs the opposite — it must keep
+/// `prefix` and `dev` distinct (so `plughw:` is never matched to a raw `hw:`,
+/// nor DEV 0 to DEV 1) and must understand shorthand, which is exactly what
+/// the enumerated names never spell but a human config often does.
+fn alsa_pcm_identity(pcm_id: &str, resolver: &HashMap<String, u32>) -> Option<(String, u32, u32)> {
+    let (prefix, card_tok, dev) = parse_alsa_hw_id(pcm_id)?;
+    Some((prefix, dev, *resolver.get(&card_tok)?))
+}
+
 /// Pure core of the alias match: true when `want` and the enumerated
 /// `candidate` pcm_id name the same ALSA PCM — same `hw`/`plughw` prefix,
-/// same device index, and a `CARD=` token that resolves to the same physical
-/// card index. The resolver lookup must succeed for `want`'s token, so an
-/// unresolvable shorthand (no matching card) never produces a false match.
+/// same device index, and a card token that resolves to the same physical
+/// card index. Both ids must resolve to a known card via
+/// [`alsa_pcm_identity`], so an unresolvable shorthand never false-matches.
 pub fn alsa_alias_matches(want: &str, candidate: &str, resolver: &HashMap<String, u32>) -> bool {
-    match (parse_alsa_hw_id(want), parse_alsa_hw_id(candidate)) {
-        (Some((p1, t1, d1)), Some((p2, t2, d2))) => {
-            let idx = resolver.get(&t1);
-            p1 == p2 && d1 == d2 && idx.is_some() && idx == resolver.get(&t2)
-        }
+    match (
+        alsa_pcm_identity(want, resolver),
+        alsa_pcm_identity(candidate, resolver),
+    ) {
+        (Some(a), Some(b)) => a == b,
         _ => false,
     }
 }
@@ -1720,6 +1738,15 @@ mod tests {
         assert_eq!(parse_alsa_hw_id("sysdefault:CARD=Device"), None);
         assert_eq!(parse_alsa_hw_id("hw:"), None);
         assert_eq!(parse_alsa_hw_id("plughw:0,bogus"), None);
+        // A present-but-unparseable device index is rejected in the canonical
+        // CARD= branch too, symmetric with the numeric shorthand above — never
+        // silently treated as DEV 0.
+        assert_eq!(parse_alsa_hw_id("plughw:CARD=Device,DEV=bogus"), None);
+        assert_eq!(parse_alsa_hw_id("hw:CARD=0,0"), None);
+        assert_eq!(
+            parse_alsa_hw_id("hw:CARD=Device,DEV=2"),
+            Some(("hw".to_string(), "Device".to_string(), 2))
+        );
     }
 
     #[test]
