@@ -54,9 +54,19 @@ class GoLauncher(
         }, "go-stdout").apply { isDaemon = true; start() }
 
         synchronized(gate) {
-            if (!ready.get()) gate.wait(readinessTimeoutMs)
+            if (!ready.get()) {
+                try {
+                    gate.wait(readinessTimeoutMs)
+                } catch (ie: InterruptedException) {
+                    Thread.currentThread().interrupt() // preserve interrupt status for the caller
+                }
+            }
         }
-        return ready.get()
+        if (!ready.get()) {
+            stop()            // destroy the child we forked; never leak it on timeout/interrupt
+            return false
+        }
+        return true
     }
 
     fun stop() {
