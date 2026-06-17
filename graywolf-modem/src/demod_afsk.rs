@@ -586,8 +586,11 @@ impl AfskDemodulator {
         // packet log (Direwolf shows roughly 2:1); previously the single
         // center envelope was copied into both peaks, so they always read
         // equal. Tracking real tone amplitudes also keeps the GRA-84
-        // guarantee that a decoded frame always carries a positive level,
-        // since a present signal pulls both peaks off their -1.0 init.
+        // guarantee that a decoded frame always carries a positive level:
+        // the dominant tone pulls its peak off the -1.0 init, and the level
+        // gate is OR-shaped (a frame is level-less only when *both* peaks are
+        // still <= 0). A persistently weak tone may leave its own peak
+        // negative; the display clamps that to 0 rather than showing a dash.
         let m_phase = self.state.afsk.m_osc_phase;
         self.state.afsk.m_i_buf.push(fsam * fcos256(&self.fcos256_table, m_phase));
         self.state.afsk.m_q_buf.push(fsam * fsin256(&self.fcos256_table, m_phase));

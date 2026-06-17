@@ -65,16 +65,24 @@ fn profile_b_meters_mark_and_space_independently() {
         frames.len()
     );
 
-    // The twist: at least one frame must report mark != space. With the old
-    // single-center-envelope metering every frame had mark == space exactly.
-    let twisted = frames
+    // The twist: at least one frame must report a meaningful gap between the
+    // mark and space levels. With the old single-center-envelope metering
+    // every frame had mark == space bit-for-bit, so the gap was always 0; a
+    // bare `!=` would also pass on incidental float rounding, so require a
+    // real separation (5% of the larger peak) to document the intent.
+    let max_twist = frames
         .iter()
-        .filter(|f| f.audio_level_mark != f.audio_level_space)
-        .count();
+        .map(|f| {
+            let gap = (f.audio_level_mark - f.audio_level_space).abs();
+            let scale = f.audio_level_mark.max(f.audio_level_space).max(1e-6);
+            gap / scale
+        })
+        .fold(0.0f32, f32::max);
     assert!(
-        twisted > 0,
-        "all {} Profile B frames have identical mark/space levels (no twist) — \
+        max_twist > 0.05,
+        "all {} Profile B frames have ~identical mark/space levels (max twist {:.4}) — \
          metering still copies one envelope into both peaks",
-        frames.len()
+        frames.len(),
+        max_twist
     );
 }
