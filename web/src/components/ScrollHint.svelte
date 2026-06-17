@@ -101,8 +101,13 @@
     opacity: 1;
     transform: translateY(0);
   }
-  .scroll-hint__pill {
+  .scroll-hint.visible .scroll-hint__pill {
     pointer-events: auto;
+  }
+  .scroll-hint__pill {
+    /* Stay un-clickable while the band is hidden; the parent's
+       pointer-events:none does not cascade to a child set to auto. */
+    pointer-events: none;
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -124,7 +129,10 @@
     transform: translateY(-1px);
   }
   .scroll-hint__pill:focus-visible {
-    outline: 2px solid var(--color-primary-fg, #fff);
+    /* --color-primary-fg is the on-pill text color (dark), which would be
+       invisible against the surface where the offset ring sits. Use the
+       surface text color so the ring reads in both themes. */
+    outline: 2px solid var(--color-text, #fff);
     outline-offset: 2px;
   }
   .scroll-hint__arrow {
