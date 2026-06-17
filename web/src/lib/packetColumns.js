@@ -47,28 +47,33 @@ export function deviceLabel(pkt) {
 }
 
 /**
- * Per-packet received audio level for the signal meter, mirroring Direwolf's
- * "audio level = rec(mark/space)" report. Returns null when the packet carries
- * no modem audio level (TX, APRS-IS, hardware KISS-TNC, or a frame that failed
- * to decode before levels were attached), so the cell renders a dash.
+ * Per-packet received audio level for the signal meter, expressed in dBFS so it
+ * shares the real-time device meter's unit (Dashboard / Audio Devices) — a
+ * −25 dBFS signal reads ≈ −25 in both places. Returns null when the packet
+ * carries no modem audio level (TX, APRS-IS, hardware KISS-TNC, or a frame that
+ * failed to decode before levels were attached), so the cell renders a dash.
  *
- * `level` is the overall 0-100 reading (mean of the two tone amplitudes);
- * `mark`/`space` expose the split (a large spread is audio "twist"); `lit` is
- * how many of the 10 meter segments to fill; `zone` colours the meter:
- *   low  (<25)  weak signal — amber
- *   good        healthy — green
- *   hot  (>100) clipping risk — red
+ * `level` is the overall reading in integer dBFS; `mark`/`space` expose the
+ * per-tone split in dBFS (a large spread is audio "twist"); `lit` is how many of
+ * the 10 meter segments to fill (−60…0 dBFS mapped to 0…10); `zone` colours the
+ * meter using the exact same thresholds as the device meter's `levelColor`
+ * (web/src/routes/Dashboard.svelte), so identical audio reads the same colour
+ * in both places:
+ *   good (≤ −20 dBFS)  nominal received level — green
+ *   warm (−20…−6)      hotter than nominal — amber
+ *   hot  (> −6)        clipping risk — red
  */
 export function audioLevel(pkt) {
   const a = pkt.audio_level;
-  if (!a) return null;
-  const mark = a.mark ?? 0;
-  const space = a.space ?? 0;
-  const level = Math.round((mark + space) / 2);
-  const lit = Math.max(0, Math.min(10, Math.round(level / 10)));
+  if (!a || a.level_dbfs == null) return null;
+  const level = Math.round(a.level_dbfs);
+  const mark = Math.round(a.mark_dbfs ?? a.level_dbfs);
+  const space = Math.round(a.space_dbfs ?? a.level_dbfs);
+  const clamped = Math.max(-60, Math.min(0, a.level_dbfs));
+  const lit = Math.max(0, Math.min(10, Math.round(((clamped + 60) / 60) * 10)));
   let zone = 'good';
-  if (level > 100) zone = 'hot';
-  else if (level < 25) zone = 'low';
+  if (a.level_dbfs > -6) zone = 'hot';
+  else if (a.level_dbfs > -20) zone = 'warm';
   return { level, mark, space, lit, zone };
 }
 

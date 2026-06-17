@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"math"
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/aprs"
@@ -39,10 +40,13 @@ func (a *App) kissTncProduce(rf *pb.ReceivedFrame, src ingress.Source) {
 
 // audioLevelFromFrame projects a modem ReceivedFrame's mark/space tone
 // amplitudes into a packetlog.AudioLevel. The Rust demodulator reports linear
-// peak amplitudes where a full-scale tone is ~1.0; multiplying by 100 matches
-// Direwolf's "audio level" scale (~50 healthy, >100 hot). Returns nil when the
-// frame carries no level (both zero), e.g. a modem build that didn't populate
-// the fields, so the UI renders a dash rather than an empty meter.
+// peak amplitudes where a full-scale tone is ~1.0. The level is expressed in
+// dBFS (20·log10 of the linear amplitude, floored at -60) so it shares the
+// real-time device meter's unit — a healthy −25 dBFS signal reads ≈ −25 in
+// both places. The legacy linear ×100 Mark/Space ints are kept for backward
+// compatibility. Returns nil when the frame carries no level (both zero), e.g.
+// a modem build that didn't populate the fields, so the UI renders a dash
+// rather than an empty meter.
 func audioLevelFromFrame(rf *pb.ReceivedFrame) *packetlog.AudioLevel {
 	mark, space := rf.AudioLevelMark, rf.AudioLevelSpace
 	if mark <= 0 && space <= 0 {
@@ -54,7 +58,41 @@ func audioLevelFromFrame(rf *pb.ReceivedFrame) *packetlog.AudioLevel {
 		}
 		return int(v*100 + 0.5)
 	}
-	return &packetlog.AudioLevel{Mark: scale(mark), Space: scale(space)}
+	clamp := func(v float32) float64 {
+		if v <= 0 {
+			return 0
+		}
+		return float64(v)
+	}
+	level := (clamp(mark) + clamp(space)) / 2
+	return &packetlog.AudioLevel{
+		Mark:      scale(mark),
+		Space:     scale(space),
+		MarkDBFS:  toDBFS(clamp(mark)),
+		SpaceDBFS: toDBFS(clamp(space)),
+		LevelDBFS: toDBFS(level),
+	}
+}
+
+// toDBFS converts a linear amplitude (1.0 = full scale) to dBFS, floored at
+// -60 to match the device meter's clamp. A non-positive amplitude (silence or
+// the demod's -1.0 "unset" placeholder) maps to the -60 floor. The result is
+// rounded to one decimal place.
+func toDBFS(amp float64) float64 {
+	const floor = -60.0
+	if amp <= 0 {
+		return floor
+	}
+	db := 20 * math.Log10(amp)
+	if db < floor {
+		db = floor
+	}
+	db = math.Round(db*10) / 10
+	if db == 0 {
+		// Normalize -0.0 (e.g. amp just under 1.0) so JSON emits "0", not "-0".
+		db = 0
+	}
+	return db
 }
 
 // dispatchRxFrame runs the fanout consumer's per-frame work: KISS
