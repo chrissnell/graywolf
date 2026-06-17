@@ -173,12 +173,21 @@ Why this is correct:
   keeps it from triggering a restart while we tear down.
 - Bounded join -- `gate.wait` honors interrupt; native `modemAwaitReady` may
   not, so the join is bounded (`BOOT_JOIN_MS`). On timeout, teardown proceeds
-  and the daemon worker dies with the process -- same philosophy as the
-  existing `startupThread` join.
+  -- same philosophy as the existing `startupThread` join.
+- Worker self-cleans, does not rely on process death. The daemon worker is NOT
+  guaranteed to die promptly when `onDestroy` returns (under `START_STICKY`
+  Android keeps the process until the low-memory killer reclaims it), so the
+  worker must not leak resources it built after a timed-out join. Every
+  `stopping` checkpoint therefore tears down what the thread has built so far:
+  the check after `bootModem` calls `modemStop()`; the check after `bootGoChild`
+  succeeds (but before `supervisor.start`) calls `goLauncher?.stop()` +
+  `audioPump.stop()` + `modemStop()`. This closes the window where a join that
+  timed out earlier (e.g. on a non-interruptible native call) lets the worker
+  fork the Go child / start audio after `onDestroy`'s own teardown already ran
+  against a still-null `goLauncher`. All of these are idempotent with
+  `onDestroy`'s teardown, so the happy path double-stop is harmless.
 - No self-join -- `onDestroy` always runs on the main thread; the worker only
   schedules the stop via `stopSelf()` and returns.
-- `stopping` checks let the worker bail early and undo partial state
-  (`modemStop`).
 
 ## Explicitly NOT doing
 

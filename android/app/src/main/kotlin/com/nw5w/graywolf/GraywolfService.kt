@@ -439,7 +439,18 @@ class GraywolfService : Service() {
                 stopSelf()
                 return@thread
             }
-            if (stopping) return@thread
+            if (stopping) {
+                // onDestroy may have already run its bounded teardown and seen a
+                // null goLauncher (a join that timed out on a non-interruptible
+                // native call earlier in the boot) while we were still forking the
+                // Go child. The daemon thread is not guaranteed to die promptly
+                // under START_STICKY, so tear down what this thread just built --
+                // all idempotent with onDestroy's own teardown.
+                goLauncher?.stop()
+                audioPump.stop()
+                ModemBridge.modemStop()
+                return@thread
+            }
             supervisor.start { goLauncher?.process }
         }
     }
