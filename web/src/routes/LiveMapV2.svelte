@@ -1539,6 +1539,7 @@
   :global(.stn-src) {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 5px;
     margin-top: 3px;
     font-size: 12px;

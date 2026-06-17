@@ -247,6 +247,11 @@ func updateMetadata(s *Station, e *CacheEntry, now time.Time) {
 	if e.Symbol != [2]byte{} {
 		s.Symbol = e.Symbol
 	}
+	// Source is the object/item originator. Only overwrite from a packet
+	// that actually carries one, so a malformed/source-less update can't
+	// blank a previously-recorded author (mirrors the Symbol guard above).
+	// A genuine re-originator arrives with a non-empty Source, so the
+	// latest author still wins.
 	if e.Source != "" {
 		s.Source = e.Source
 	}
