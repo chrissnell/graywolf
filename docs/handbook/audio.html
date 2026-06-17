@@ -211,6 +211,47 @@
       </div>
     </div>
 
+    <h2>Custom ALSA Devices and Lower CPU Use</h2>
+
+    <p>
+      Graywolf matches the device name you enter against the names ALSA
+      advertises to applications. ALSA's shorthand forms like
+      <code>plughw:0,0</code> or <code>hw:1</code> work, and Graywolf maps
+      them to the canonical <code>plughw:CARD=&lt;name&gt;,DEV=0</code> form
+      automatically.
+    </p>
+
+    <p>
+      A custom PCM you define in <code>~/.asoundrc</code> &mdash; for example
+      to share a sound card between programs or to resample &mdash; is only
+      visible to Graywolf if you give it a <code>hint</code> block so ALSA
+      lists it. Add <code>hint { show on }</code> and the device appears in
+      the picker like any other:
+    </p>
+
+    <pre><code>pcm.snoopaioc {
+    type plug
+    slave.pcm "dsnoop:CARD=0,DEV=0"
+    hint { show on; description "Shared / resampled capture" }
+}</code></pre>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Running lighter on a Raspberry Pi.</strong> On a
+          resource-constrained board you can cut CPU use by capturing at a
+          lower sample rate. Wrap your card in a <code>plug</code> PCM as
+          above and set the device's <code>sample_rate</code> to
+          <code>8000</code>. 8&nbsp;kHz is more than enough for 1200-baud
+          AFSK and 300-baud HF tones, and the <code>plug</code> plugin
+          resamples to whatever rate the codec runs natively. Pairing this
+          with <code>dsnoop</code> also lets other programs share the same
+          input device.
+        </p>
+      </div>
+    </div>
+
     <h2>Channel Selection</h2>
 
     <p>

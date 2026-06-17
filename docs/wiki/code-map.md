@@ -29,6 +29,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | Audio source enum | `audio/mod.rs` |
 | CPAL live audio I/O | `audio/soundcard.rs` |
 | ALSA card canonicalize + capture probe | `audio/soundcard.rs` (`parse_proc_asound_cards`, `group_alsa_cards`, `probe_capture`), `modem/mod.rs` (`collect_input_devices_linux`) |
+| Configured device name resolution (exact + ALSA shorthand alias) | `audio/soundcard.rs` (`find_device_by_id_or_alias`, `parse_alsa_hw_id`, `alsa_alias_matches`) |
 | FLAC test vector playback | `audio/flac.rs` |
 | Stdin raw i16 PCM | `audio/stdin_raw.rs` |
 | SDR UDP audio bridge | `sdr/mod.rs` |
