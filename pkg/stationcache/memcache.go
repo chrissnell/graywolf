@@ -247,6 +247,9 @@ func updateMetadata(s *Station, e *CacheEntry, now time.Time) {
 	if e.Symbol != [2]byte{} {
 		s.Symbol = e.Symbol
 	}
+	if e.Source != "" {
+		s.Source = e.Source
+	}
 	s.Via = e.Via
 	s.Path = e.Path
 	s.Hops = e.Hops

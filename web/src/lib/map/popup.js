@@ -1,5 +1,6 @@
 // Station popup HTML factory. The CSS classes (.stn-popup, .stn-hdr,
-// .stn-call, .stn-sub, .stn-coords, .stn-meta, .stn-via, .stn-path,
+// .stn-call, .stn-sub, .stn-src, .stn-src-icon, .stn-src-from,
+// .stn-src-call, .stn-coords, .stn-meta, .stn-via, .stn-path,
 // .stn-comment, .badge, .b-rx, .b-tx, .b-is, .via-is, .via-rf,
 // .via-rf-hops, .path-link) are defined :global() in LiveMapV2.svelte.
 
@@ -26,6 +27,17 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
     html += `<span class="badge ${dirCls}">${esc(s.direction)}</span>`;
   }
   html += `</div>`;
+
+  // For an object/item, the header is the object NAME, not a station — so
+  // surface the originating station (the AX.25 source that created and
+  // transmitted it) right beneath the title. Without this the popup only
+  // shows the relay path below, making an object look like it came from
+  // whoever digipeated it rather than its true author (GH #323). Rendered
+  // as a clickable path-link when that station is itself on the map.
+  if (s.is_object && s.source) {
+    html += renderObjectSourceHTML(s.source, hasStation);
+  }
+
   html += `<div class="stn-sub">${ago} &middot; Ch ${s.channel}</div>`;
   html += `<div class="stn-sep"></div>`;
   html += `<div class="stn-coords">${fmtLat(pos.lat)} ${fmtLon(pos.lon)}</div>`;
@@ -80,13 +92,37 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
 // Inline lucide-style icon. Mirrors the markup lucide-svelte emits so the
 // action rows visually match the map right-click menu (which uses the same
 // icons via lucide-svelte). 14px / strokeWidth 2 to match .menu-icon.
-function icon(body) {
+function icon(body, cls = 'stn-action-icon') {
   return (
-    `<svg class="stn-action-icon" xmlns="http://www.w3.org/2000/svg" ` +
+    `<svg class="${cls}" xmlns="http://www.w3.org/2000/svg" ` +
     `width="14" height="14" viewBox="0 0 24 24" fill="none" ` +
     `stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
     `stroke-linejoin="round" aria-hidden="true">${body}</svg>`
   );
+}
+
+// lucide "radio" (broadcast) — marks the station that transmitted the object.
+const ICON_SOURCE = icon(
+  '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>' +
+    '<path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>' +
+    '<circle cx="12" cy="12" r="2"/>' +
+    '<path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>' +
+    '<path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
+  'stn-src-icon'
+);
+
+// renderObjectSourceHTML(source, hasStation) -> HTML string
+//
+// The "from CALLSIGN" line shown under an object/item title. When the
+// originating station is itself on the map, the callsign is a path-link
+// (the popup's click handler pans to it and reopens its popup); otherwise
+// it's plain emphasized text.
+function renderObjectSourceHTML(source, hasStation) {
+  const call =
+    hasStation && hasStation(source)
+      ? `<a class="path-link stn-src-call" href="#" data-callsign="${esc(source)}">${esc(source)}</a>`
+      : `<span class="stn-src-call">${esc(source)}</span>`;
+  return `<div class="stn-src">${ICON_SOURCE}<span class="stn-src-from">from</span>${call}</div>`;
 }
 
 const ICON_MESSAGE = icon(

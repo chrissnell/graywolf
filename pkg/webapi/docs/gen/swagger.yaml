@@ -2690,6 +2690,9 @@ definitions:
         items:
           $ref: '#/definitions/webapi.StationPosDTO'
         type: array
+      source:
+        description: Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source.
+        type: string
       symbol_code:
         description: SymbolCode is the APRS symbol code character within the selected table.
         type: string

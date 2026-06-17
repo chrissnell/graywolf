@@ -3463,6 +3463,8 @@ export interface components {
             path_positions?: number[][];
             /** @description Positions is the station's position history, newest first; static stations have exactly one entry. */
             positions?: components["schemas"]["webapi.StationPosDTO"][];
+            /** @description Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source. */
+            source?: string;
             /** @description SymbolCode is the APRS symbol code character within the selected table. */
             symbol_code?: string;
             /** @description SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char). */

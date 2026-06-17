@@ -74,6 +74,24 @@ func TestMemCache_UpdateKilledObject(t *testing.T) {
 	}
 }
 
+func TestMemCache_UpdateObjectSource(t *testing.T) {
+	c := newTestCache(t)
+
+	c.Update([]CacheEntry{
+		{Key: "obj:MTRC FD", Callsign: "MTRC FD", Source: "KB3OMS", IsObject: true,
+			HasPos: true, Lat: 38, Lon: -84, Symbol: [2]byte{'/', ';'},
+			Via: "rf", Direction: "RX", Timestamp: time.Now()},
+	})
+
+	results := c.QueryBBox(BBox{SwLat: 37, SwLon: -85, NeLat: 39, NeLon: -83}, 1*time.Hour)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 station, got %d", len(results))
+	}
+	if results[0].Source != "KB3OMS" {
+		t.Fatalf("Source = %q, want KB3OMS", results[0].Source)
+	}
+}
+
 func TestMemCache_StaticDedup(t *testing.T) {
 	c := newTestCache(t)
 

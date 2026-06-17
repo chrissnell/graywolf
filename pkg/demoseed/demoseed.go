@@ -27,6 +27,14 @@ type station struct {
 	comment  string
 }
 
+// objectSources maps a demo object's name to the station that originated
+// it, so the Live Map popup can show the true author rather than implying
+// the object came from the home station (GH #323). Regular stations are
+// their own source and are absent here.
+var objectSources = map[string]string{
+	"446.25HRM": "N7MVC",
+}
+
 // slcStations is the curated set captured from a real tablet RF session,
 // filtered to lat 40.4-41.0 / lon -112.3 to -111.6. NW5W-8 is the home
 // station running graywolf.
@@ -67,6 +75,7 @@ func Stations() []stationcache.CacheEntry {
 			Key:       key,
 			IsObject:  s.isObject,
 			Callsign:  s.callsign,
+			Source:    objectSources[s.callsign],
 			Lat:       s.lat,
 			Lon:       s.lon,
 			HasPos:    true,

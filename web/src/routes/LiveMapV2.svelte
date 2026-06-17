@@ -1533,6 +1533,22 @@
   :global(.stn-hdr) { display: flex; align-items: center; gap: 8px; }
   :global(.stn-call) { color: #d4a040; font-size: 13px; font-weight: 700; }
   :global(.stn-sub) { color: var(--color-text-dim); font-size: 11px; margin-top: 2px; }
+  /* Object/item "from CALLSIGN" line: the originating station beneath the
+     object name. Sits directly under the title so source reads first,
+     distinct from the relay path (.stn-via / .stn-path) shown lower down. */
+  :global(.stn-src) {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  :global(.stn-src-icon) { flex: 0 0 auto; color: var(--color-text-muted); }
+  :global(.stn-src-from) { color: var(--color-text-dim); }
+  :global(.stn-src-call) { color: var(--color-text); font-weight: 600; }
+  :global(.stn-src a.stn-src-call) { color: #6eb5ff; font-weight: 600; text-decoration: none; cursor: pointer; }
+  :global(.stn-src a.stn-src-call:hover) { text-decoration: underline; }
   :global(.stn-sep) { border-top: 1px solid var(--color-border-subtle); margin: 6px 0; }
   :global(.stn-coords) { font-size: 12px; }
   :global(.stn-meta) { color: var(--color-text-muted); font-size: 12px; }

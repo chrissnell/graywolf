@@ -113,13 +113,13 @@ func (d *DB) WriteEntries(entries []stationcache.CacheEntry) error {
 
 			pathJSON, _ := json.Marshal(e.Path)
 			if err := tx.Exec(`
-				INSERT INTO stations (key, callsign, is_object, symbol, via, path, hops, direction, channel, comment, last_heard)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO stations (key, callsign, is_object, source, symbol, via, path, hops, direction, channel, comment, last_heard)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(key) DO UPDATE SET
-					callsign=excluded.callsign, symbol=excluded.symbol, via=excluded.via,
+					callsign=excluded.callsign, source=excluded.source, symbol=excluded.symbol, via=excluded.via,
 					path=excluded.path, hops=excluded.hops, direction=excluded.direction,
 					channel=excluded.channel, comment=excluded.comment, last_heard=excluded.last_heard`,
-				e.Key, e.Callsign, e.IsObject, e.Symbol[:], e.Via, string(pathJSON),
+				e.Key, e.Callsign, e.IsObject, e.Source, e.Symbol[:], e.Via, string(pathJSON),
 				e.Hops, e.Direction, e.Channel, e.Comment, time.Now(),
 			).Error; err != nil {
 				return fmt.Errorf("upsert station %s: %w", e.Key, err)
@@ -240,6 +240,7 @@ func (d *DB) LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*stati
 		Key       string
 		Callsign  string
 		IsObject  bool
+		Source    string
 		Symbol    []byte
 		Via       string
 		Path      string
@@ -251,7 +252,7 @@ func (d *DB) LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*stati
 	}
 	var rows []stationRow
 	if err := d.db.Raw(
-		"SELECT key, callsign, is_object, symbol, via, path, hops, direction, channel, comment, last_heard FROM stations WHERE last_heard >= ?",
+		"SELECT key, callsign, is_object, source, symbol, via, path, hops, direction, channel, comment, last_heard FROM stations WHERE last_heard >= ?",
 		cutoff,
 	).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load stations: %w", err)
@@ -263,6 +264,7 @@ func (d *DB) LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*stati
 			Key:       r.Key,
 			Callsign:  r.Callsign,
 			IsObject:  r.IsObject,
+			Source:    r.Source,
 			Via:       r.Via,
 			Hops:      r.Hops,
 			Direction: r.Direction,
@@ -380,6 +382,7 @@ func bootstrap(db *gorm.DB) error {
 			key        TEXT PRIMARY KEY,
 			callsign   TEXT NOT NULL,
 			is_object  INTEGER NOT NULL DEFAULT 0,
+			source     TEXT NOT NULL DEFAULT '',
 			symbol     BLOB NOT NULL,
 			via        TEXT NOT NULL DEFAULT 'rf',
 			path       TEXT NOT NULL DEFAULT '[]',
@@ -425,6 +428,7 @@ func bootstrap(db *gorm.DB) error {
 	// Migrate: add per-position metadata columns to existing databases.
 	// Errors are ignored (column already exists).
 	for _, m := range []string{
+		`ALTER TABLE stations ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE positions ADD COLUMN via TEXT NOT NULL DEFAULT 'rf'`,
 		`ALTER TABLE positions ADD COLUMN path TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE positions ADD COLUMN hops INTEGER NOT NULL DEFAULT 0`,

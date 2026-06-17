@@ -41,6 +41,7 @@ type Station struct {
 	Key       string     // "stn:W1ABC-9" or "obj:SHELTER1"
 	Callsign  string     // display name (callsign or object/item name)
 	IsObject  bool       // true for APRS objects/items
+	Source    string     // originating station callsign for objects/items; empty for regular stations
 	Positions []Position // newest first; cap at MaxTrailLen. Static stations have len 1.
 	Symbol    [2]byte    // [table, code]
 	Via       string     // "rf" or "is"

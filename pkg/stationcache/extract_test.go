@@ -114,6 +114,7 @@ func TestExtractEntry_Object(t *testing.T) {
 	e := entries[0]
 	assertEqual(t, "Key", e.Key, "obj:SHELTER1")
 	assertEqual(t, "Callsign", e.Callsign, "SHELTER1")
+	assertEqual(t, "Source", e.Source, "W1ABC")
 	assertBool(t, "IsObject", e.IsObject, true)
 	assertBool(t, "Killed", e.Killed, false)
 	assertFloat(t, "Lat", e.Lat, 40.0)

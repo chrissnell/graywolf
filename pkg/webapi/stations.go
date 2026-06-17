@@ -24,6 +24,8 @@ type StationDTO struct {
 	Callsign string `json:"callsign"`
 	// IsObject is true for APRS objects and items; false for regular stations.
 	IsObject bool `json:"is_object,omitempty"`
+	// Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source.
+	Source string `json:"source,omitempty"`
 	// SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char).
 	SymbolTable string `json:"symbol_table"`
 	// SymbolCode is the APRS symbol code character within the selected table.
@@ -301,6 +303,7 @@ func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos 
 	dto := StationDTO{
 		Callsign:      s.Callsign,
 		IsObject:      s.IsObject,
+		Source:        s.Source,
 		SymbolTable:   string(rune(s.Symbol[0])),
 		SymbolCode:    string(rune(s.Symbol[1])),
 		LastHeard:     s.LastHeard,

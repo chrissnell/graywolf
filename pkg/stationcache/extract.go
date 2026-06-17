@@ -12,6 +12,10 @@ type CacheEntry struct {
 	IsObject  bool
 	Killed    bool // object/item with Live==false → delete from cache
 	Callsign  string
+	// Source is the AX.25 source callsign that transmitted the packet —
+	// the originating station of an object/item. Empty for ordinary
+	// station packets, where Callsign already is the source.
+	Source    string
 	Lat, Lon  float64
 	HasPos    bool
 	Alt       float64
@@ -71,7 +75,7 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 
 	// Object or item → keyed by object/item name in the "obj:" namespace.
 	if pkt.Object != nil {
-		e := buildObjectEntry(pkt.Object.Name, pkt.Object.Live, pkt.Object.Position, pkt.Object.Comment, via, path, hops, dir, gated, ch, ts)
+		e := buildObjectEntry(pkt.Object.Name, pkt.Source, pkt.Object.Live, pkt.Object.Position, pkt.Object.Comment, via, path, hops, dir, gated, ch, ts)
 		if pkt.Weather != nil {
 			e.Weather = convertWeather(pkt.Weather)
 		}
@@ -86,7 +90,7 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 	}
 
 	if pkt.Item != nil {
-		e := buildObjectEntry(pkt.Item.Name, pkt.Item.Live, pkt.Item.Position, pkt.Item.Comment, via, path, hops, dir, gated, ch, ts)
+		e := buildObjectEntry(pkt.Item.Name, pkt.Source, pkt.Item.Live, pkt.Item.Position, pkt.Item.Comment, via, path, hops, dir, gated, ch, ts)
 		if pkt.Weather != nil {
 			e.Weather = convertWeather(pkt.Weather)
 		}
@@ -134,10 +138,11 @@ func buildStationEntry(callsign string, pos *aprs.Position, comment, via string,
 	return e
 }
 
-func buildObjectEntry(name string, live bool, pos *aprs.Position, comment, via string, path []string, hops int, dir string, gated bool, ch uint32, ts time.Time) CacheEntry {
+func buildObjectEntry(name, source string, live bool, pos *aprs.Position, comment, via string, path []string, hops int, dir string, gated bool, ch uint32, ts time.Time) CacheEntry {
 	e := CacheEntry{
 		Key:       "obj:" + name,
 		Callsign:  name,
+		Source:    source,
 		IsObject:  true,
 		Killed:    !live,
 		Via:       via,
