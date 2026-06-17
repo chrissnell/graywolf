@@ -1577,7 +1577,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 10px;
+    padding: 4px 10px;
     border-radius: 5px;
     color: var(--map-overlay-fg);
     text-decoration: none;

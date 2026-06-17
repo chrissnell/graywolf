@@ -152,7 +152,10 @@ export function renderStationActionsHTML(s) {
   if (!call || s.is_object) return '';
 
   const upper = call.toUpperCase();
-  const qrzHref = `https://www.qrz.com/db/${encodeURIComponent(upper)}`;
+  // QRZ indexes operators by base callsign, not by APRS SSID, so strip any
+  // "-N" suffix (e.g. W1ABC-9 -> W1ABC) before building the lookup URL.
+  const qrzCall = upper.split('-')[0];
+  const qrzHref = `https://www.qrz.com/db/${encodeURIComponent(qrzCall)}`;
   const msgHref = `#/messages?thread=${encodeURIComponent('dm:' + upper)}`;
   const logHref = `#/logs?callsign=${encodeURIComponent(upper)}`;
 
