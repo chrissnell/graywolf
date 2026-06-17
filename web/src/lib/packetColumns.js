@@ -56,9 +56,11 @@ export function deviceLabel(pkt) {
  * `level` is the overall reading in integer dBFS; `mark`/`space` expose the
  * per-tone split in dBFS (a large spread is audio "twist"); `lit` is how many of
  * the 10 meter segments to fill (−60…0 dBFS mapped to 0…10); `zone` colours the
- * meter using the device meter's thresholds:
- *   low  (≤ −20 dBFS)  weak signal — amber
- *   good (−20…−6)      healthy — green
+ * meter using the exact same thresholds as the device meter's `levelColor`
+ * (web/src/routes/Dashboard.svelte), so identical audio reads the same colour
+ * in both places:
+ *   good (≤ −20 dBFS)  nominal received level — green
+ *   warm (−20…−6)      hotter than nominal — amber
  *   hot  (> −6)        clipping risk — red
  */
 export function audioLevel(pkt) {
@@ -71,7 +73,7 @@ export function audioLevel(pkt) {
   const lit = Math.max(0, Math.min(10, Math.round(((clamped + 60) / 60) * 10)));
   let zone = 'good';
   if (a.level_dbfs > -6) zone = 'hot';
-  else if (a.level_dbfs <= -20) zone = 'low';
+  else if (a.level_dbfs > -20) zone = 'warm';
   return { level, mark, space, lit, zone };
 }
 

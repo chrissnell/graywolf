@@ -87,7 +87,12 @@ func toDBFS(amp float64) float64 {
 	if db < floor {
 		db = floor
 	}
-	return math.Round(db*10) / 10
+	db = math.Round(db*10) / 10
+	if db == 0 {
+		// Normalize -0.0 (e.g. amp just under 1.0) so JSON emits "0", not "-0".
+		db = 0
+	}
+	return db
 }
 
 // dispatchRxFrame runs the fanout consumer's per-frame work: KISS

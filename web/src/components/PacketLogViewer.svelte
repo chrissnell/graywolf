@@ -193,9 +193,11 @@
 
   /* Per-packet audio level meter, in dBFS to match the real-time device meter:
      a row of 10 segments that fill in proportion to the received level (−60…0
-     dBFS), plus the numeric value. Zone colours the lit segments — amber when
-     weak, green when healthy, red when hot/clipping. Unlit segments sit on the
-     surface tint so the full scale is always visible. */
+     dBFS), plus the numeric value. Zone colours the lit segments using the same
+     thresholds as the device meter — green at the nominal received level
+     (≤ −20), amber when hotter than nominal (−20…−6), red when near clipping
+     (> −6). Unlit segments sit on the surface tint so the full scale is always
+     visible. */
   .pkt-alevel {
     display: inline-flex;
     align-items: center;
@@ -216,7 +218,7 @@
   .pkt-alevel-seg.on {
     background: var(--color-success);
   }
-  .pkt-alevel[data-zone='low'] .pkt-alevel-seg.on {
+  .pkt-alevel[data-zone='warm'] .pkt-alevel-seg.on {
     background: var(--color-warning);
   }
   .pkt-alevel[data-zone='hot'] .pkt-alevel-seg.on {

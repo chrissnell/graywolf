@@ -11,12 +11,15 @@ test('audioLevel: null when audio_level has no level_dbfs', () => {
   assert.equal(audioLevel({ audio_level: { mark: 5, space: 5 } }), null);
 });
 
-test('audioLevel: zone boundaries follow the device meter (red >-6, green -20..-6, amber <=-20)', () => {
+// Zone thresholds must match levelColor() in Dashboard.svelte exactly so the
+// packet meter and the device meter never disagree on colour for the same
+// level: red > -6, amber -20..-6, green <= -20.
+test('audioLevel: zone boundaries match the device meter (red >-6, amber -20..-6, green <=-20)', () => {
   assert.equal(audioLevel({ audio_level: { level_dbfs: -3 } }).zone, 'hot');
-  assert.equal(audioLevel({ audio_level: { level_dbfs: -6 } }).zone, 'good');
-  assert.equal(audioLevel({ audio_level: { level_dbfs: -10 } }).zone, 'good');
-  assert.equal(audioLevel({ audio_level: { level_dbfs: -20 } }).zone, 'low');
-  assert.equal(audioLevel({ audio_level: { level_dbfs: -25 } }).zone, 'low');
+  assert.equal(audioLevel({ audio_level: { level_dbfs: -6 } }).zone, 'warm');
+  assert.equal(audioLevel({ audio_level: { level_dbfs: -10 } }).zone, 'warm');
+  assert.equal(audioLevel({ audio_level: { level_dbfs: -20 } }).zone, 'good');
+  assert.equal(audioLevel({ audio_level: { level_dbfs: -25 } }).zone, 'good');
 });
 
 test('audioLevel: lit maps -60..0 dBFS to 0..10 segments', () => {

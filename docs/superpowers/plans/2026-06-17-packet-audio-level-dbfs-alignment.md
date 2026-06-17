@@ -82,15 +82,16 @@ the dBFS of the mean of the two linear amplitudes (so it tracks the old `level`
   - `level` = `Math.round(a.level_dbfs)` (integer dBFS for display).
   - `mark`/`space` = `a.mark_dbfs`/`a.space_dbfs` (rounded) for the tooltip.
   - `lit` = device-meter mapping: clamp dBFS to −60…0, `round((dbfs+60)/60*10)`.
-  - `zone`: `level_dbfs > -6` → `hot`; `> -20` → `good`; else `low`
-    (mirrors the device meter: red `>−6`, green `−20…−6`, amber `≤−20`).
+  - `zone`: `level_dbfs > -6` → `hot`; `> -20` → `warm`; else `good`
+    (mirrors the device meter's `levelColor`: red `>−6`, amber `−20…−6`,
+    green `≤−20` — green is the nominal received level).
 - Rewrite the docstring to the dBFS model.
 - Return `null` when `a` or `a.level_dbfs == null`.
 
 **File (new):** `web/src/lib/packetColumns.test.js`
 
 - `node:test` covering: null when no `audio_level`; zone boundaries
-  (−3→hot, −10→good, −25→low); `lit` mapping (0→0, −30→5, −6→9/10);
+  (−3→hot, −10→warm, −25→good); `lit` mapping (0→0, −30→5, −6→9/10);
   `level`/`mark`/`space` rounding.
 
 **Verify:** `cd web && node --test 'src/**/*.test.js'`
