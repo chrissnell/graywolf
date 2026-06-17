@@ -163,10 +163,12 @@ pub fn spawn(
         host.default_input_device()
             .ok_or_else(|| "no default input device".to_string())?
     } else {
-        find_device_by_id(
-            host.input_devices().map_err(|e| format!("enumerate input devices: {}", e))?,
-            &cfg.device_name,
-        ).ok_or_else(|| format!("input device not found: {}", cfg.device_name))?
+        let devices: Vec<Device> = host
+            .input_devices()
+            .map_err(|e| format!("enumerate input devices: {}", e))?
+            .collect();
+        find_device_by_id_or_alias(&devices, &cfg.device_name, &read_proc_asound_cards())
+            .ok_or_else(|| format!("input device not found: {}", cfg.device_name))?
     };
 
     let supported = device
@@ -858,10 +860,12 @@ pub fn resolve_output_device(pcm_id: &str) -> Result<Device, String> {
         host.default_output_device()
             .ok_or_else(|| "no default output device".to_string())
     } else {
-        find_device_by_id(
-            host.output_devices().map_err(|e| format!("enumerate output devices: {}", e))?,
-            pcm_id,
-        ).ok_or_else(|| format!("output device not found: {}", pcm_id))
+        let devices: Vec<Device> = host
+            .output_devices()
+            .map_err(|e| format!("enumerate output devices: {}", e))?
+            .collect();
+        find_device_by_id_or_alias(&devices, pcm_id, &read_proc_asound_cards())
+            .ok_or_else(|| format!("output device not found: {}", pcm_id))
     }
 }
 
@@ -885,6 +889,102 @@ pub fn find_device_by_id(devices: impl Iterator<Item = Device>, id: &str) -> Opt
         }
     }
     None
+}
+
+/// Resolve a configured ALSA device name against the enumerated `devices`,
+/// first by exact pcm_id match, then — when that misses — by canonicalizing
+/// ALSA shorthand to the form cpal actually advertises. cpal only ever lists
+/// the long `CARD=<name>,DEV=<n>` spelling, so a perfectly valid shorthand
+/// like `plughw:0,0` or `hw:1` (or a numeric `CARD=0` token) never matches by
+/// exact string even though ALSA opens it fine. `cards` is the parsed
+/// `/proc/asound/cards` table used to map card index <-> name. The alias pass
+/// only fires after the exact pass fails, so working configs are unaffected;
+/// non hw/plughw ids (`default`, custom `~/.asoundrc` PCMs, Windows endpoint
+/// ids) never alias-match and fall through to the caller's "not found" error.
+#[allow(deprecated)] // DeviceTrait::name() gives the raw pcm_id we canonicalize against
+pub fn find_device_by_id_or_alias(
+    devices: &[Device],
+    id: &str,
+    cards: &[(u32, String)],
+) -> Option<Device> {
+    if let Some(d) = find_device_by_id(devices.iter().cloned(), id) {
+        return Some(d);
+    }
+    parse_alsa_hw_id(id)?;
+    let resolver = build_card_resolver(cards);
+    for d in devices {
+        let name = match d.name() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        if alsa_alias_matches(id, &name, &resolver) {
+            return Some(d.clone());
+        }
+    }
+    None
+}
+
+/// Parse an ALSA `hw:`/`plughw:` pcm_id into `(prefix, card_token, dev)`.
+/// Accepts both shorthand (`plughw:0,0`, `hw:1`) and canonical
+/// (`plughw:CARD=Device,DEV=0`) forms. `card_token` is returned verbatim —
+/// a numeric index string or a kernel card name — for the caller to resolve
+/// via [`build_card_resolver`]. `dev` defaults to `0` when absent. Returns
+/// `None` for non hw/plughw ids (`default`, custom PCMs, Windows endpoint
+/// ids) and for malformed numeric fields.
+pub fn parse_alsa_hw_id(id: &str) -> Option<(String, String, u32)> {
+    let (prefix, rest) = id.split_once(':')?;
+    if prefix != "hw" && prefix != "plughw" {
+        return None;
+    }
+    if rest.is_empty() {
+        return None;
+    }
+    let (card_tok, dev) = if let Some(after) = rest.strip_prefix("CARD=") {
+        match after.split_once(',') {
+            Some((tok, devpart)) => {
+                let dev = devpart
+                    .strip_prefix("DEV=")
+                    .and_then(|x| x.parse().ok())
+                    .unwrap_or(0);
+                (tok.to_string(), dev)
+            }
+            None => (after.to_string(), 0),
+        }
+    } else {
+        match rest.split_once(',') {
+            Some((c, d)) => (c.to_string(), d.parse().ok()?),
+            None => (rest.to_string(), 0),
+        }
+    };
+    if card_tok.is_empty() {
+        return None;
+    }
+    Some((prefix.to_string(), card_tok, dev))
+}
+
+/// Pure core of the alias match: true when `want` and the enumerated
+/// `candidate` pcm_id name the same ALSA PCM — same `hw`/`plughw` prefix,
+/// same device index, and a `CARD=` token that resolves to the same physical
+/// card index. The resolver lookup must succeed for `want`'s token, so an
+/// unresolvable shorthand (no matching card) never produces a false match.
+pub fn alsa_alias_matches(want: &str, candidate: &str, resolver: &HashMap<String, u32>) -> bool {
+    match (parse_alsa_hw_id(want), parse_alsa_hw_id(candidate)) {
+        (Some((p1, t1, d1)), Some((p2, t2, d2))) => {
+            let idx = resolver.get(&t1);
+            p1 == p2 && d1 == d2 && idx.is_some() && idx == resolver.get(&t2)
+        }
+        _ => false,
+    }
+}
+
+/// Read and parse `/proc/asound/cards`, returning an empty table on any
+/// platform or environment where it is unavailable (non-Linux, sandbox).
+/// Used only to canonicalize shorthand ALSA names; an empty table simply
+/// disables the alias fallback, leaving exact matching unchanged.
+pub fn read_proc_asound_cards() -> Vec<(u32, String)> {
+    std::fs::read_to_string("/proc/asound/cards")
+        .map(|s| parse_proc_asound_cards(&s))
+        .unwrap_or_default()
 }
 
 /// Owns a live cpal output stream and a queue of pending i16 sample
@@ -1585,6 +1685,66 @@ mod tests {
         assert_eq!(alsa_card_token("default"), None);
         assert_eq!(alsa_card_token("hw:CARD="), None);
         assert_eq!(alsa_card_token("sysdefault:CARD=Device,DEV=0"), Some("Device"));
+    }
+
+    #[test]
+    fn parse_alsa_hw_id_accepts_shorthand_and_canonical_forms() {
+        assert_eq!(
+            parse_alsa_hw_id("plughw:0,0"),
+            Some(("plughw".to_string(), "0".to_string(), 0))
+        );
+        assert_eq!(
+            parse_alsa_hw_id("hw:1"),
+            Some(("hw".to_string(), "1".to_string(), 0))
+        );
+        assert_eq!(
+            parse_alsa_hw_id("plughw:1,2"),
+            Some(("plughw".to_string(), "1".to_string(), 2))
+        );
+        assert_eq!(
+            parse_alsa_hw_id("plughw:CARD=Device,DEV=0"),
+            Some(("plughw".to_string(), "Device".to_string(), 0))
+        );
+        assert_eq!(
+            parse_alsa_hw_id("hw:CARD=0,DEV=1"),
+            Some(("hw".to_string(), "0".to_string(), 1))
+        );
+        assert_eq!(
+            parse_alsa_hw_id("plughw:CARD=AIOC"),
+            Some(("plughw".to_string(), "AIOC".to_string(), 0))
+        );
+        // Non hw/plughw ids and custom PCMs never parse — they must fall
+        // through to the caller's "not found" error, never alias-match.
+        assert_eq!(parse_alsa_hw_id("default"), None);
+        assert_eq!(parse_alsa_hw_id("snoopaioc"), None);
+        assert_eq!(parse_alsa_hw_id("sysdefault:CARD=Device"), None);
+        assert_eq!(parse_alsa_hw_id("hw:"), None);
+        assert_eq!(parse_alsa_hw_id("plughw:0,bogus"), None);
+    }
+
+    #[test]
+    fn alsa_alias_matches_canonicalizes_shorthand() {
+        let cards = parse_proc_asound_cards(ISSUE_129_PROC_CARDS);
+        let r = build_card_resolver(&cards);
+        // Shorthand index resolves to the long form cpal actually emits.
+        assert!(alsa_alias_matches("plughw:1,0", "plughw:CARD=Device,DEV=0", &r));
+        assert!(alsa_alias_matches("plughw:1", "plughw:CARD=Device,DEV=0", &r));
+        // Numeric CARD= token resolves to the symbolic card name too.
+        assert!(alsa_alias_matches(
+            "plughw:CARD=1,DEV=0",
+            "plughw:CARD=Device,DEV=0",
+            &r
+        ));
+        // Prefix must agree: plughw shorthand must not match a raw hw: entry.
+        assert!(!alsa_alias_matches("plughw:1,0", "hw:CARD=Device,DEV=0", &r));
+        // Device index must agree.
+        assert!(!alsa_alias_matches("plughw:1,0", "plughw:CARD=Device,DEV=1", &r));
+        // Different physical card must not match.
+        assert!(!alsa_alias_matches("plughw:0,0", "plughw:CARD=Device,DEV=0", &r));
+        // Unresolvable card index (no such card) never matches.
+        assert!(!alsa_alias_matches("plughw:9,0", "plughw:CARD=Device,DEV=0", &r));
+        // Custom PCM names never alias-match.
+        assert!(!alsa_alias_matches("snoopaioc", "plughw:CARD=Device,DEV=0", &r));
     }
 
     #[test]
