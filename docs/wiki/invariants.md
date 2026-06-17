@@ -954,7 +954,13 @@ reach the application, even though Profile A "also" decoded the packet.
 
 This bit the per-packet audio level (GRA-84): Profile B never called
 `track_level`, so nearly every logged packet showed no level (a dash) until
-Profile B was taught to track its center-frequency envelope. When adding a
+Profile B was taught to track a level. Profile B decodes through a single
+center-frequency oscillator, so it first copied that one envelope into both
+the mark and space peaks -- which left them always equal and hid the
+mark/space twist Direwolf reports (graywolf #324 / GRA-130). It now runs a
+parallel mark/space oscillator pair (matching Profile A's mix -> low-pass ->
+envelope path) purely for metering, so the two tones are measured
+independently; the FM-discriminator decode path is unchanged. When adding a
 new per-frame measurement, populate it in `process_profile_a` **and**
 `process_profile_b`, or compute it profile-independently.
 
