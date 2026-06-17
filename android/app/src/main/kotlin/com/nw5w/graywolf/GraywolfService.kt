@@ -416,19 +416,32 @@ class GraywolfService : Service() {
             )
         }
 
-        if (!bootModem()) {
-            stopSelf()
-            return
+        // Backend boot is the only blocking work left in onCreate (bootModem +
+        // bootGoChild can each wait up to 10s). Run it off the main thread so
+        // startup duration can never ANR the UI. MainActivity polls the @Volatile
+        // goListenerReady flag asynchronously, so the WebView paints the moment
+        // the worker flips it -- with the UI thread never blocked. onDestroy
+        // interrupts + joins this worker (bounded) before tearing its resources.
+        bootThread = thread(start = true, isDaemon = true, name = "graywolf-boot") {
+            if (stopping) return@thread
+            if (!bootModem()) {
+                stopSelf()
+                return@thread
+            }
+            if (stopping) {
+                ModemBridge.modemStop()
+                return@thread
+            }
+            audioPump.start()
+            if (!bootGoChild()) {              // Correction 1: never orphans the Go child now
+                audioPump.stop()
+                ModemBridge.modemStop()
+                stopSelf()
+                return@thread
+            }
+            if (stopping) return@thread
+            supervisor.start { goLauncher?.process }
         }
-        audioPump.start()
-        if (!bootGoChild()) {
-            audioPump.stop()
-            ModemBridge.modemStop()
-            stopSelf()
-            return
-        }
-
-        supervisor.start { goLauncher?.process }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -454,8 +467,27 @@ class GraywolfService : Service() {
     }
 
     override fun onDestroy() {
-        supervisor.stop()
+        // Signal the boot worker first so any inter-step `stopping` check bails
+        // before bringing more backend up.
+        stopping = true
         goListenerReady = false
+        // (a) Stop the supervisor BEFORE joining the boot worker so it can't fire
+        // a restart that fights teardown while we wait.
+        supervisor.stop()
+        // Interrupt + bounded-join the boot worker before tearing its resources
+        // down. gate.wait honors interrupt promptly; native modemAwaitReady may
+        // not, so the join is bounded -- on timeout teardown proceeds and the
+        // daemon worker dies with the process. GoLauncher destroys its own forked
+        // child on interrupt (Correction 1), so an interrupted boot leaks nothing.
+        bootThread?.let {
+            it.interrupt()
+            it.join(BOOT_JOIN_MS)
+        }
+        bootThread = null
+        // (b) Stop the supervisor AGAIN, after the join: idempotent in the normal
+        // case, but tears down a supervisor the worker may have re-armed in the
+        // TOCTOU window between its `stopping` check and supervisor.start (Correction 2).
+        supervisor.stop()
         // The off-main-thread audio/USB init (onCreate) may still be in flight --
         // wait for it (bounded) before stopping txPump / closing USB handles, so we
         // don't tear down a half-built AudioTrack or open USB handle. If it's wedged
