@@ -43,12 +43,22 @@ import kotlin.concurrent.thread
 class GraywolfService : Service() {
     private val audioPump = AudioPump()
     private var audioTxPump: AudioTxPump? = null
-    private var goLauncher: GoLauncher? = null
+    // Written by the graywolf-boot worker (onCreate), read by onDestroy /
+    // supervisor on other threads -- @Volatile so a timed-out join still
+    // sees the worker's write.
+    @Volatile private var goLauncher: GoLauncher? = null
     private var platformServer: PlatformServer? = null
     private var gpsAdapter: GpsAdapter? = null
     // Worker that runs the blocking audio/USB HAL init off the main thread
     // (see onCreate). onDestroy joins it before tearing those resources down.
     @Volatile private var startupThread: Thread? = null
+    // Worker that runs the blocking backend boot (bootModem/bootGoChild) off
+    // the main thread; mirrors the graywolf-io-init pattern. onDestroy joins
+    // it (bounded) before tearing those resources down.
+    @Volatile private var bootThread: Thread? = null
+    // Set true in onDestroy so the boot worker can bail between steps and undo
+    // partial state instead of finishing a boot that's about to be torn down.
+    @Volatile private var stopping = false
     private var btSerialAdapter: BtSerialAdapter? = null
     private var usbSerialAdapter: UsbSerialAdapter? = null
     private val supervisor = Supervisor(
@@ -406,19 +416,43 @@ class GraywolfService : Service() {
             )
         }
 
-        if (!bootModem()) {
-            stopSelf()
-            return
+        // Backend boot is the only blocking work left in onCreate (bootModem +
+        // bootGoChild can each wait up to 10s). Run it off the main thread so
+        // startup duration can never ANR the UI. MainActivity polls the @Volatile
+        // goListenerReady flag asynchronously, so the WebView paints the moment
+        // the worker flips it -- with the UI thread never blocked. onDestroy
+        // interrupts + joins this worker (bounded) before tearing its resources.
+        bootThread = thread(start = true, isDaemon = true, name = "graywolf-boot") {
+            if (stopping) return@thread
+            if (!bootModem()) {
+                stopSelf()
+                return@thread
+            }
+            if (stopping) {
+                ModemBridge.modemStop()
+                return@thread
+            }
+            audioPump.start()
+            if (!bootGoChild()) {              // Correction 1: never orphans the Go child now
+                audioPump.stop()
+                ModemBridge.modemStop()
+                stopSelf()
+                return@thread
+            }
+            if (stopping) {
+                // onDestroy may have already run its bounded teardown and seen a
+                // null goLauncher (a join that timed out on a non-interruptible
+                // native call earlier in the boot) while we were still forking the
+                // Go child. The daemon thread is not guaranteed to die promptly
+                // under START_STICKY, so tear down what this thread just built --
+                // all idempotent with onDestroy's own teardown.
+                goLauncher?.stop()
+                audioPump.stop()
+                ModemBridge.modemStop()
+                return@thread
+            }
+            supervisor.start { goLauncher?.process }
         }
-        audioPump.start()
-        if (!bootGoChild()) {
-            audioPump.stop()
-            ModemBridge.modemStop()
-            stopSelf()
-            return
-        }
-
-        supervisor.start { goLauncher?.process }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -444,8 +478,27 @@ class GraywolfService : Service() {
     }
 
     override fun onDestroy() {
-        supervisor.stop()
+        // Signal the boot worker first so any inter-step `stopping` check bails
+        // before bringing more backend up.
+        stopping = true
         goListenerReady = false
+        // (a) Stop the supervisor BEFORE joining the boot worker so it can't fire
+        // a restart that fights teardown while we wait.
+        supervisor.stop()
+        // Interrupt + bounded-join the boot worker before tearing its resources
+        // down. gate.wait honors interrupt promptly; native modemAwaitReady may
+        // not, so the join is bounded -- on timeout teardown proceeds and the
+        // daemon worker dies with the process. GoLauncher destroys its own forked
+        // child on interrupt (Correction 1), so an interrupted boot leaks nothing.
+        bootThread?.let {
+            it.interrupt()
+            it.join(BOOT_JOIN_MS)
+        }
+        bootThread = null
+        // (b) Stop the supervisor AGAIN, after the join: idempotent in the normal
+        // case, but tears down a supervisor the worker may have re-armed in the
+        // TOCTOU window between its `stopping` check and supervisor.start (Correction 2).
+        supervisor.stop()
         // The off-main-thread audio/USB init (onCreate) may still be in flight --
         // wait for it (bounded) before stopping txPump / closing USB handles, so we
         // don't tear down a half-built AudioTrack or open USB handle. If it's wedged
@@ -493,6 +546,11 @@ class GraywolfService : Service() {
         fun platformSocketName(ctx: android.content.Context): String =
             java.io.File(ctx.cacheDir, "platform.sock").absolutePath
         private const val NOTIF_ID = 0x6757
+        // Bounded join for the graywolf-boot worker in onDestroy. gate.wait
+        // honors interrupt promptly; the native modemAwaitReady may not, so the
+        // join is bounded and teardown proceeds on timeout (the daemon worker
+        // then dies with the process) -- same philosophy as the startupThread join.
+        private const val BOOT_JOIN_MS = 2_500L
         const val ACTION_STOP = "com.nw5w.graywolf.STOP"
 
         @Volatile
