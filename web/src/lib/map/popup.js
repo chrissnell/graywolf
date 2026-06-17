@@ -77,13 +77,40 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
   return html;
 }
 
+// Inline lucide-style icon. Mirrors the markup lucide-svelte emits so the
+// action rows visually match the map right-click menu (which uses the same
+// icons via lucide-svelte). 14px / strokeWidth 2 to match .menu-icon.
+function icon(body) {
+  return (
+    `<svg class="stn-action-icon" xmlns="http://www.w3.org/2000/svg" ` +
+    `width="14" height="14" viewBox="0 0 24 24" fill="none" ` +
+    `stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
+    `stroke-linejoin="round" aria-hidden="true">${body}</svg>`
+  );
+}
+
+const ICON_MESSAGE = icon(
+  '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'
+);
+const ICON_LOGS = icon(
+  '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>' +
+    '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/>' +
+    '<path d="M16 13H8"/><path d="M16 17H8"/>'
+);
+const ICON_QRZ = icon(
+  '<path d="M15 3h6v6"/><path d="M10 14 21 3"/>' +
+    '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
+);
+
 // renderStationActionsHTML(station) -> HTML string (or '' to suppress)
 //
-// Action links shown for a real heard station: QRZ database lookup,
-// open a direct message thread, and view the APRS packet log filtered
-// to this callsign. APRS objects/items aren't operators you can work,
-// so they get no actions. Messages and Logs are internal hash routes;
-// QRZ is the one external link (opens in a new tab).
+// Action rows shown for a real heard station: open a direct message thread,
+// view the APRS packet log filtered to this callsign, and a QRZ database
+// lookup. APRS objects/items aren't operators you can work, so they get no
+// actions. Messages and Logs are internal hash routes; QRZ is the one
+// external link (opens in a new tab). Styled to match the map right-click
+// context menu -- icon + label rows with a hover tint (see .stn-action in
+// LiveMapV2.svelte).
 export function renderStationActionsHTML(s) {
   const call = s.callsign;
   if (!call || s.is_object) return '';
@@ -93,10 +120,10 @@ export function renderStationActionsHTML(s) {
   const msgHref = `#/messages?thread=${encodeURIComponent('dm:' + upper)}`;
   const logHref = `#/logs?callsign=${encodeURIComponent(upper)}`;
 
-  let html = `<div class="stn-actions">`;
-  html += `<a class="stn-link stn-msg-link" href="${msgHref}">Message</a>`;
-  html += `<a class="stn-link stn-log-link" href="${logHref}">APRS logs</a>`;
-  html += `<a class="stn-link stn-qrz-link" href="${qrzHref}" target="_blank" rel="noopener noreferrer">QRZ</a>`;
+  let html = `<div class="stn-actions" role="menu">`;
+  html += `<a class="stn-action stn-msg-link" role="menuitem" href="${msgHref}">${ICON_MESSAGE}<span class="stn-action-label">Message</span></a>`;
+  html += `<a class="stn-action stn-log-link" role="menuitem" href="${logHref}">${ICON_LOGS}<span class="stn-action-label">APRS logs</span></a>`;
+  html += `<a class="stn-action stn-qrz-link" role="menuitem" href="${qrzHref}" target="_blank" rel="noopener noreferrer">${ICON_QRZ}<span class="stn-action-label">QRZ</span></a>`;
   html += `</div>`;
   return html;
 }

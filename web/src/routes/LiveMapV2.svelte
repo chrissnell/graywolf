@@ -1544,9 +1544,44 @@
   :global(.stn-path .path-link) { color: #6eb5ff; text-decoration: none; cursor: pointer; }
   :global(.stn-path .path-link:hover) { text-decoration: underline; }
   :global(.stn-comment) { color: var(--color-text-dim); font-style: italic; font-size: 12px; }
-  :global(.stn-actions) { font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
-  :global(.stn-link) { color: #6eb5ff; text-decoration: none; cursor: pointer; }
-  :global(.stn-link:hover) { text-decoration: underline; }
+  /* Station actions: styled to match the map right-click context menu
+     (.menu-item in map-context-menu.svelte) -- vertical icon+label rows
+     with a hover tint rather than inline text links. Negative side margin
+     lets each row's hover background extend toward the popup edges the way
+     menu items do. */
+  :global(.stn-actions) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px -8px -4px;
+    font-size: 13px;
+  }
+  :global(.stn-action) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 5px;
+    color: var(--map-overlay-fg);
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  :global(.stn-action .stn-action-icon) {
+    flex: 0 0 auto;
+    color: var(--map-overlay-muted);
+  }
+  :global(.stn-action-label) { flex: 1 1 auto; }
+  :global(.stn-action:hover),
+  :global(.stn-action:focus-visible) {
+    background: var(
+      --color-surface-hover,
+      color-mix(in srgb, var(--color-text) 9%, transparent)
+    );
+    color: var(--color-text);
+    text-decoration: none;
+    outline: none;
+  }
   :global(.stn-weather) { font-size: 12px; }
   :global(.stn-weather-row) {
     display: flex;
