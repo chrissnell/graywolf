@@ -910,9 +910,7 @@ pub fn find_device_by_id_or_alias(
     if let Some(d) = find_device_by_id(devices.iter().cloned(), id) {
         return Some(d);
     }
-    if parse_alsa_hw_id(id).is_none() {
-        return None;
-    }
+    parse_alsa_hw_id(id)?;
     let resolver = build_card_resolver(cards);
     for d in devices {
         let name = match d.name() {
