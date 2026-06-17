@@ -94,7 +94,7 @@
     <span
       class="pkt-alevel"
       data-zone={al.zone}
-      title={`audio level ${al.level} (mark ${al.mark} / space ${al.space})`}
+      title={`audio level ${al.level} dBFS (mark ${al.mark} / space ${al.space})`}
     >
       <span class="pkt-alevel-bars" aria-hidden="true">
         {#each Array(10) as _, i}
@@ -191,11 +191,11 @@
     color: var(--color-text-dim);
   }
 
-  /* Direwolf-style per-packet audio level meter: a row of 10 segments that
-     fill in proportion to the received level, plus the numeric value. Zone
-     colours the lit segments — amber when weak, green when healthy, red when
-     hot/clipping. Unlit segments sit on the surface tint so the full scale is
-     always visible. */
+  /* Per-packet audio level meter, in dBFS to match the real-time device meter:
+     a row of 10 segments that fill in proportion to the received level (−60…0
+     dBFS), plus the numeric value. Zone colours the lit segments — amber when
+     weak, green when healthy, red when hot/clipping. Unlit segments sit on the
+     surface tint so the full scale is always visible. */
   .pkt-alevel {
     display: inline-flex;
     align-items: center;

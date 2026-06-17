@@ -15,13 +15,18 @@ func TestAudioLevelFromFrame(t *testing.T) {
 		mark, space      float32
 		wantNil          bool
 		wantMark, wantSp int
+		wantMarkDB       float64
+		wantSpaceDB      float64
+		wantLevelDB      float64
 	}{
-		{name: "healthy signal scales to ~0-100", mark: 0.65, space: 0.60, wantMark: 65, wantSp: 60},
-		{name: "full-scale tone maps near 100", mark: 1.0, space: 0.98, wantMark: 100, wantSp: 98},
-		{name: "hot input exceeds 100", mark: 1.07, space: 1.02, wantMark: 107, wantSp: 102},
-		{name: "rounds to nearest", mark: 0.504, space: 0.506, wantMark: 50, wantSp: 51},
+		{name: "healthy signal scales to ~0-100", mark: 0.65, space: 0.60, wantMark: 65, wantSp: 60, wantMarkDB: -3.7, wantSpaceDB: -4.4, wantLevelDB: -4.1},
+		{name: "full-scale tone maps to 0 dBFS", mark: 1.0, space: 0.98, wantMark: 100, wantSp: 98, wantMarkDB: 0.0, wantSpaceDB: -0.2, wantLevelDB: -0.1},
+		{name: "half-scale tone is -6 dBFS", mark: 0.5, space: 0.5, wantMark: 50, wantSp: 50, wantMarkDB: -6.0, wantSpaceDB: -6.0, wantLevelDB: -6.0},
+		{name: "tenth-scale tone is -20 dBFS", mark: 0.1, space: 0.1, wantMark: 10, wantSp: 10, wantMarkDB: -20.0, wantSpaceDB: -20.0, wantLevelDB: -20.0},
+		{name: "quiet healthy signal is ~-26 dBFS", mark: 0.05, space: 0.05, wantMark: 5, wantSp: 5, wantMarkDB: -26.0, wantSpaceDB: -26.0, wantLevelDB: -26.0},
+		{name: "very weak tone floors at -60 dBFS", mark: 0.0005, space: 0.0005, wantMark: 0, wantSp: 0, wantMarkDB: -60.0, wantSpaceDB: -60.0, wantLevelDB: -60.0},
 		{name: "both zero yields nil", mark: 0, space: 0, wantNil: true},
-		{name: "negative placeholder clamps, keeps non-nil if other is set", mark: -1.0, space: 0.40, wantMark: 0, wantSp: 40},
+		{name: "negative placeholder clamps to -60 dBFS, keeps non-nil if other is set", mark: -1.0, space: 0.40, wantMark: 0, wantSp: 40, wantMarkDB: -60.0, wantSpaceDB: -8.0, wantLevelDB: -14.0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -40,6 +45,10 @@ func TestAudioLevelFromFrame(t *testing.T) {
 			}
 			if got.Mark != tt.wantMark || got.Space != tt.wantSp {
 				t.Errorf("mark/space = %d/%d, want %d/%d", got.Mark, got.Space, tt.wantMark, tt.wantSp)
+			}
+			if got.MarkDBFS != tt.wantMarkDB || got.SpaceDBFS != tt.wantSpaceDB || got.LevelDBFS != tt.wantLevelDB {
+				t.Errorf("mark/space/level dBFS = %.1f/%.1f/%.1f, want %.1f/%.1f/%.1f",
+					got.MarkDBFS, got.SpaceDBFS, got.LevelDBFS, tt.wantMarkDB, tt.wantSpaceDB, tt.wantLevelDB)
 			}
 		})
 	}
@@ -84,6 +93,9 @@ func TestDispatchRxFrameAudioLevelGating(t *testing.T) {
 	}
 	if modem.AudioLevel.Mark != 65 || modem.AudioLevel.Space != 60 {
 		t.Errorf("modem AudioLevel = %d/%d, want 65/60", modem.AudioLevel.Mark, modem.AudioLevel.Space)
+	}
+	if modem.AudioLevel.LevelDBFS != -4.1 {
+		t.Errorf("modem AudioLevel.LevelDBFS = %.1f, want -4.1", modem.AudioLevel.LevelDBFS)
 	}
 
 	tnc, ok := bySource["kiss-tnc"]
