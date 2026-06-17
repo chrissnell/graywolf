@@ -43,12 +43,22 @@ import kotlin.concurrent.thread
 class GraywolfService : Service() {
     private val audioPump = AudioPump()
     private var audioTxPump: AudioTxPump? = null
-    private var goLauncher: GoLauncher? = null
+    // Written by the graywolf-boot worker (onCreate), read by onDestroy /
+    // supervisor on other threads -- @Volatile so a timed-out join still
+    // sees the worker's write.
+    @Volatile private var goLauncher: GoLauncher? = null
     private var platformServer: PlatformServer? = null
     private var gpsAdapter: GpsAdapter? = null
     // Worker that runs the blocking audio/USB HAL init off the main thread
     // (see onCreate). onDestroy joins it before tearing those resources down.
     @Volatile private var startupThread: Thread? = null
+    // Worker that runs the blocking backend boot (bootModem/bootGoChild) off
+    // the main thread; mirrors the graywolf-io-init pattern. onDestroy joins
+    // it (bounded) before tearing those resources down.
+    @Volatile private var bootThread: Thread? = null
+    // Set true in onDestroy so the boot worker can bail between steps and undo
+    // partial state instead of finishing a boot that's about to be torn down.
+    @Volatile private var stopping = false
     private var btSerialAdapter: BtSerialAdapter? = null
     private var usbSerialAdapter: UsbSerialAdapter? = null
     private val supervisor = Supervisor(
@@ -493,6 +503,11 @@ class GraywolfService : Service() {
         fun platformSocketName(ctx: android.content.Context): String =
             java.io.File(ctx.cacheDir, "platform.sock").absolutePath
         private const val NOTIF_ID = 0x6757
+        // Bounded join for the graywolf-boot worker in onDestroy. gate.wait
+        // honors interrupt promptly; the native modemAwaitReady may not, so the
+        // join is bounded and teardown proceeds on timeout (the daemon worker
+        // then dies with the process) -- same philosophy as the startupThread join.
+        private const val BOOT_JOIN_MS = 2_500L
         const val ACTION_STOP = "com.nw5w.graywolf.STOP"
 
         @Volatile
