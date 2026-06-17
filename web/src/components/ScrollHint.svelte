@@ -1,11 +1,13 @@
 <script>
-  // Sticky banner that appears at the bottom of a scrollable parent when
-  // there is hidden content below the viewport. Drop as the last child
-  // inside the scroll container (e.g. Modal.Body). It walks up the DOM
-  // until it finds an element with overflow scroll/auto and observes it.
+  // Sticky cue that appears at the bottom of a scrollable parent when there
+  // is hidden content below the viewport. Drop as the last child inside the
+  // scroll container (e.g. Modal.Body). It walks up the DOM until it finds
+  // an element with overflow scroll/auto and observes it. Clicking the pill
+  // scrolls that container to the bottom.
   let { label = 'Scroll down for more' } = $props();
 
   let sentinel = $state(null);
+  let scrollEl = $state(null);
   let visible = $state(false);
 
   function findScrollParent(el) {
@@ -18,10 +20,16 @@
     return null;
   }
 
+  function scrollDown() {
+    if (!scrollEl) return;
+    scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+  }
+
   $effect(() => {
     if (!sentinel) return;
     const el = findScrollParent(sentinel);
     if (!el) return;
+    scrollEl = el;
 
     const update = () => {
       const overflow = el.scrollHeight > el.clientHeight + 1;
@@ -40,18 +48,30 @@
       el.removeEventListener('scroll', update);
       ro.disconnect();
       mo.disconnect();
+      scrollEl = null;
     };
   });
 </script>
 
+<!-- The outer band is sticky with NO negative bottom margin: a negative
+     bottom margin extends the sticky constraint box below the viewport and
+     clips the element, which is why it used to drift out of sight. Horizontal
+     bleed keeps the fade spanning the full width of the padded container. -->
 <div
   bind:this={sentinel}
   class="scroll-hint"
   class:visible
-  aria-hidden="true"
 >
-  <span class="scroll-hint__label">{label}</span>
-  <span class="scroll-hint__arrow">&#8595;</span>
+  <button
+    type="button"
+    class="scroll-hint__pill"
+    onclick={scrollDown}
+    tabindex={visible ? 0 : -1}
+    aria-hidden={!visible}
+  >
+    <span class="scroll-hint__label">{label}</span>
+    <span class="scroll-hint__arrow">&#8595;</span>
+  </button>
 </div>
 
 <style>
@@ -60,36 +80,57 @@
     bottom: 0;
     left: 0;
     right: 0;
-    margin: 0 calc(-1 * var(--scroll-hint-pad-x, 1.5rem)) calc(-1 * var(--scroll-hint-pad-y, 1.5rem));
-    padding: 10px 1.5rem 12px;
+    margin: 0 calc(-1 * var(--scroll-hint-pad-x, 1.5rem));
+    padding: 28px 1.5rem 12px;
     display: flex;
     justify-content: center;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: var(--color-text, #111827);
+    align-items: flex-end;
     background: linear-gradient(
       to bottom,
       transparent 0%,
-      var(--color-surface, #fff) 50%,
+      color-mix(in srgb, var(--color-surface, #fff) 85%, transparent) 45%,
       var(--color-surface, #fff) 100%
     );
     pointer-events: none;
     opacity: 0;
-    transform: translateY(4px);
-    transition: opacity 120ms ease, transform 120ms ease;
+    transform: translateY(6px);
+    transition: opacity 140ms ease, transform 140ms ease;
     z-index: 5;
   }
   .scroll-hint.visible {
     opacity: 1;
     transform: translateY(0);
   }
+  .scroll-hint__pill {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border: none;
+    border-radius: 999px;
+    background: var(--color-primary, #2563eb);
+    color: var(--color-primary-fg, #fff);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    transition: background 120ms ease, transform 120ms ease;
+  }
+  .scroll-hint__pill:hover {
+    background: var(--color-primary-hover, #1d4ed8);
+    transform: translateY(-1px);
+  }
+  .scroll-hint__pill:focus-visible {
+    outline: 2px solid var(--color-primary-fg, #fff);
+    outline-offset: 2px;
+  }
   .scroll-hint__arrow {
     display: inline-block;
-    font-size: 14px;
+    font-size: 15px;
+    line-height: 1;
     animation: scroll-hint-bounce 1.4s ease-in-out infinite;
   }
   @keyframes scroll-hint-bounce {
@@ -98,6 +139,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .scroll-hint__arrow { animation: none; }
-    .scroll-hint { transition: none; }
+    .scroll-hint,
+    .scroll-hint__pill { transition: none; }
   }
 </style>
