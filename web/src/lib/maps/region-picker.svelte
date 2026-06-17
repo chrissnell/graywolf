@@ -209,7 +209,22 @@
     border-radius: 6px;
     background: var(--bg-secondary);
   }
-  .region-row[data-level="country"] { background: var(--bg-tertiary, var(--bg-secondary)); font-weight: 600; }
+  .region-row[data-level="country"],
+  .region-row[data-level="world"] { background: var(--bg-tertiary, var(--bg-secondary)); font-weight: 600; }
+
+  /* The single global archive sits above the alphabetical country list.
+     It shares the country rows' card styling and weight so the typography
+     is consistent; the extra bottom margin plus a hairline divider set it
+     apart as a distinct, standalone entry rather than the first country. */
+  .region-row-world { position: relative; margin-bottom: 16px; }
+  .region-row-world::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -8px;
+    border-bottom: 1px solid var(--border-color);
+  }
 
   .region-toggle {
     display: flex; align-items: center; gap: 8px;
