@@ -75,3 +75,33 @@ func TestBeaconRequest_Validate_PositionFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestBeaconRequest_SendPathDefaultsRF(t *testing.T) {
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1} // SendPath empty
+	m := r.ToModel()
+	if m.SendPath != "rf" {
+		t.Fatalf("empty send_path should normalize to rf, got %q", m.SendPath)
+	}
+}
+
+func TestBeaconRequest_SendPathISOnly(t *testing.T) {
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1, SendPath: "is_only"}
+	m := r.ToModel()
+	if m.SendPath != "is_only" {
+		t.Fatalf("send_path = %q, want is_only", m.SendPath)
+	}
+}
+
+func TestBeaconRequest_Validate_BadSendPath(t *testing.T) {
+	r := BeaconRequest{Type: "custom", SendPath: "carrier-pigeon"}
+	if err := r.Validate(); err == nil {
+		t.Fatal("expected error for unknown send_path")
+	}
+}
+
+func TestBeaconRequest_Validate_ISOnlyOK(t *testing.T) {
+	r := BeaconRequest{Type: "custom", SendPath: "is_only"}
+	if err := r.Validate(); err != nil {
+		t.Fatalf("is_only should validate, got %v", err)
+	}
+}

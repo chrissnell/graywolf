@@ -58,7 +58,7 @@ type BeaconRequest struct {
 	SbTurnAngle    uint32  `json:"sb_turn_angle"`
 	SbTurnSlope    uint32  `json:"sb_turn_slope"`
 	SbMinTurnTime  uint32  `json:"sb_min_turn_time"`
-	SendToAPRSIS   bool    `json:"send_to_aprs_is"`
+	SendPath       string  `json:"send_path" enums:"rf,both,is_only" example:"rf"`
 	Enabled        bool    `json:"enabled"`
 }
 
@@ -73,6 +73,12 @@ type BeaconRequest struct {
 // constraints: ambiguity must be 0..4; only uncompressed and mic_e
 // carry ambiguity bytes, so compressed must keep ambiguity at zero.
 func (r BeaconRequest) Validate() error {
+	switch r.SendPath {
+	case "", "rf", "both", "is_only":
+		// "" normalizes to rf in normalizedSendPath
+	default:
+		return fmt.Errorf("send_path must be one of rf, both, is_only (got %q)", r.SendPath)
+	}
 	switch r.Type {
 	case "position", "igate":
 		if !r.UseGps && r.Latitude == 0 && r.Longitude == 0 {
@@ -95,6 +101,18 @@ func (r BeaconRequest) Validate() error {
 		}
 	}
 	return nil
+}
+
+// normalizedSendPath returns the send_path value to persist. Empty
+// (older client / unset form) becomes "rf" so the column never holds a
+// surprise value. Validate() rejects unknown non-empty values up front.
+func (r BeaconRequest) normalizedSendPath() string {
+	switch r.SendPath {
+	case "rf", "both", "is_only":
+		return r.SendPath
+	default:
+		return "rf"
+	}
 }
 
 // normalizedFormat returns the position_format value to persist:
@@ -161,7 +179,7 @@ func (r BeaconRequest) ToModel() configstore.Beacon {
 		SbTurnAngle:   r.SbTurnAngle,
 		SbTurnSlope:   r.SbTurnSlope,
 		SbMinTurnTime: r.SbMinTurnTime,
-		SendToAPRSIS:  r.SendToAPRSIS,
+		SendPath:      r.normalizedSendPath(),
 		Enabled:       r.Enabled,
 	}
 }
@@ -220,7 +238,7 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 		SbTurnAngle:   r.SbTurnAngle,
 		SbTurnSlope:   r.SbTurnSlope,
 		SbMinTurnTime: r.SbMinTurnTime,
-		SendToAPRSIS:  r.SendToAPRSIS,
+		SendPath:      r.normalizedSendPath(),
 		Enabled:       r.Enabled,
 	}
 }
@@ -267,7 +285,7 @@ type BeaconResponse struct {
 	SbTurnAngle   uint32  `json:"sb_turn_angle"`
 	SbTurnSlope   uint32  `json:"sb_turn_slope"`
 	SbMinTurnTime uint32  `json:"sb_min_turn_time"`
-	SendToAPRSIS  bool    `json:"send_to_aprs_is"`
+	SendPath      string  `json:"send_path" enums:"rf,both,is_only" example:"rf"`
 	Enabled       bool    `json:"enabled"`
 }
 
@@ -311,7 +329,7 @@ func BeaconFromModel(m configstore.Beacon) BeaconResponse {
 		SbTurnAngle:   m.SbTurnAngle,
 		SbTurnSlope:   m.SbTurnSlope,
 		SbMinTurnTime: m.SbMinTurnTime,
-		SendToAPRSIS:  m.SendToAPRSIS,
+		SendPath:      m.SendPath,
 		Enabled:       m.Enabled,
 	}
 }
