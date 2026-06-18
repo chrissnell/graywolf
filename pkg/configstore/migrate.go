@@ -220,6 +220,7 @@ var schemaMigrations = []migration{
 	{version: 22, name: "ptt_android_method_field", phase: postAutoMigrate, run: migratePttAndroidMethodField},
 	{version: 23, name: "beacon_position_format", phase: postAutoMigrate, run: migrateBeaconPositionFormat},
 	{version: 24, name: "kiss_gate_tx_to_is", phase: postAutoMigrate, run: migrateKissGateTxToIs},
+	{version: 25, name: "beacon_send_path", phase: postAutoMigrate, run: migrateBeaconSendPath},
 }
 
 // runMigrations applies every pending migration in the given phase,

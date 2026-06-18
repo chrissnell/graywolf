@@ -667,7 +667,7 @@ type Beacon struct {
 	// moved to the global config. See
 	// .context/2026-04-18-smart-beacon-implementation.md.
 	SbMinTurnTime uint32    `gorm:"default:5" json:"sb_min_turn_time"`
-	SendToAPRSIS  bool      `gorm:"column:send_to_aprs_is;not null;default:false" json:"send_to_aprs_is"`
+	SendPath      string    `gorm:"column:send_path;not null;default:'rf'" json:"send_path"` // rf | both | is_only
 	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt     time.Time `json:"-"`
 	UpdatedAt     time.Time `json:"-"`

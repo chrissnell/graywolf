@@ -839,3 +839,70 @@ func tableCountsFromGorm(t *testing.T, s *Store, tables []string) map[string]int
 	}
 	return out
 }
+
+// TestMigrateBeaconSendPathUpgrade stamps a database at user_version=24
+// with legacy send_to_aprs_is values and confirms migration 25 backfills
+// send_path ('both' where send_to_aprs_is=1, else 'rf') and drops the
+// send_to_aprs_is column.
+func TestMigrateBeaconSendPathUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v24.db")
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	// v24 beacons schema = current Beacon struct minus send_path, plus
+	// the legacy send_to_aprs_is column. Single-line on purpose (see the
+	// position_format test for the multi-line parsing gotcha). position_format
+	// already exists at v24 (added by migration 23).
+	stmts := []string{
+		`CREATE TABLE beacons (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL DEFAULT 'position', channel INTEGER NOT NULL DEFAULT 1, callsign TEXT NOT NULL, destination TEXT NOT NULL DEFAULT 'APGRWO', path TEXT NOT NULL DEFAULT 'WIDE1-1', use_gps NUMERIC DEFAULT 0, latitude REAL, longitude REAL, alt_ft REAL, ambiguity INTEGER NOT NULL DEFAULT 0, symbol_table TEXT NOT NULL DEFAULT '/', symbol TEXT NOT NULL DEFAULT '-', overlay TEXT, position_format TEXT NOT NULL DEFAULT 'compressed', messaging NUMERIC NOT NULL DEFAULT 0, comment TEXT, comment_cmd TEXT, custom_info TEXT, object_name TEXT, power INTEGER NOT NULL DEFAULT 0, height INTEGER NOT NULL DEFAULT 0, gain INTEGER NOT NULL DEFAULT 0, dir INTEGER NOT NULL DEFAULT 0, freq TEXT, tone TEXT, freq_offset TEXT, delay_seconds INTEGER NOT NULL DEFAULT 30, every_seconds INTEGER NOT NULL DEFAULT 1800, slot_seconds INTEGER NOT NULL DEFAULT -1, smart_beacon NUMERIC NOT NULL DEFAULT 0, sb_fast_speed INTEGER DEFAULT 60, sb_slow_speed INTEGER DEFAULT 5, sb_fast_rate INTEGER DEFAULT 60, sb_slow_rate INTEGER DEFAULT 1800, sb_turn_angle INTEGER DEFAULT 30, sb_turn_slope INTEGER DEFAULT 255, sb_min_turn_time INTEGER DEFAULT 5, send_to_aprs_is NUMERIC NOT NULL DEFAULT 0, enabled NUMERIC NOT NULL DEFAULT 1, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE i_gate_configs (id INTEGER PRIMARY KEY AUTOINCREMENT, enabled NUMERIC NOT NULL DEFAULT 0, server TEXT NOT NULL DEFAULT 'rotate.aprs2.net', port INTEGER NOT NULL DEFAULT 14580, callsign TEXT NOT NULL DEFAULT '', created_at DATETIME, updated_at DATETIME)`,
+		`INSERT INTO beacons (callsign, send_to_aprs_is) VALUES ('RFON', 0)`,
+		`INSERT INTO beacons (callsign, send_to_aprs_is) VALUES ('GATED', 1)`,
+		`PRAGMA user_version = 24`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("exec %q: %v", s, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	var version int
+	s.DB().Raw("PRAGMA user_version").Scan(&version)
+	if version < 25 {
+		t.Errorf("user_version = %d, want >= 25 after migration", version)
+	}
+
+	var spRF, spGated string
+	if err := s.DB().Raw(`SELECT send_path FROM beacons WHERE id=1`).Scan(&spRF).Error; err != nil {
+		t.Fatalf("read row 1 (RFON): %v", err)
+	}
+	if err := s.DB().Raw(`SELECT send_path FROM beacons WHERE id=2`).Scan(&spGated).Error; err != nil {
+		t.Fatalf("read row 2 (GATED): %v", err)
+	}
+	if spRF != "rf" {
+		t.Errorf("RFON send_path = %q, want %q", spRF, "rf")
+	}
+	if spGated != "both" {
+		t.Errorf("GATED send_path = %q, want %q", spGated, "both")
+	}
+
+	has, err := columnExists(s.DB(), "beacons", "send_to_aprs_is")
+	if err != nil {
+		t.Fatalf("columnExists: %v", err)
+	}
+	if has {
+		t.Error("send_to_aprs_is column should have been dropped")
+	}
+}
