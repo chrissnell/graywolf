@@ -172,13 +172,16 @@ func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM 
 
 // ObjectInfo builds an APRS object report info-field.
 //
-//	;NAME     *DDHHMMzDDMM.hhN/DDDMM.hhW>[PHGphgd]comment
+//	;NAME     *DDHHMMzDDMM.hhN/DDDMM.hhW>[PHGphgd][/A=NNNNNN]comment
 //
 // objectName is padded/truncated to 9 characters. live=true sets '*'
 // (live) rather than '_' (killed). timestampDHM is a 6-char "DDHHMMz"
 // string; if empty, "111111z" is used (APRS wildcard). phg is the
 // already-encoded "PHGphgd" 7-byte string (or "" for no extension).
-func ObjectInfo(objectName string, live bool, timestampDHM string, lat, lon float64, symbolTable, symbolCode byte, phg string, comment string) string {
+// altM is metres; when non-zero it is appended as "/A=NNNNNN" feet per
+// APRS101 ch 6 (the /A= extension is valid anywhere in an object's
+// comment text), matching the position-report encoders.
+func ObjectInfo(objectName string, live bool, timestampDHM string, lat, lon, altM float64, symbolTable, symbolCode byte, phg string, comment string) string {
 	if symbolTable == 0 {
 		symbolTable = '/'
 	}
@@ -211,6 +214,10 @@ func ObjectInfo(objectName string, live bool, timestampDHM string, lat, lon floa
 	sb.WriteByte(symbolCode)
 	if phg != "" {
 		sb.WriteString(phg)
+	}
+	if altM != 0 {
+		ft := altM * 3.28084
+		fmt.Fprintf(&sb, "/A=%06d", int(math.Round(ft)))
 	}
 	sb.WriteString(comment)
 	return sb.String()

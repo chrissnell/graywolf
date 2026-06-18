@@ -117,7 +117,7 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		if b.ObjectName == "" {
 			return "", fmt.Errorf("object beacon missing object_name")
 		}
-		lat, lon := b.Lat, b.Lon
+		lat, lon, altM := b.Lat, b.Lon, b.AltFt/3.28084
 		if b.UseGps {
 			if s.cache == nil {
 				return "", fmt.Errorf("object beacon: use_gps set but no GPS cache configured")
@@ -127,10 +127,16 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 				return "", fmt.Errorf("object beacon: use_gps set but no GPS fix available")
 			}
 			lat, lon = fix.Latitude, fix.Longitude
+			if fix.HasAlt {
+				altM = fix.Altitude
+			} else {
+				// Never mix GPS lat/lon with a stale fixed AltFt.
+				altM = 0
+			}
 		} else if lat == 0 && lon == 0 {
 			return "", fmt.Errorf("object beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)")
 		}
-		return ObjectInfo(b.ObjectName, true, "", lat, lon, b.SymbolTable, b.SymbolCode, phg, comment), nil
+		return ObjectInfo(b.ObjectName, true, "", lat, lon, altM, b.SymbolTable, b.SymbolCode, phg, comment), nil
 
 	case TypeCustom:
 		if b.CustomInfo == "" {

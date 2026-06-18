@@ -132,7 +132,7 @@ func TestCompressedPositionInfoWithPHG(t *testing.T) {
 // TestObjectInfoWithPHG verifies object reports carry PHG between the
 // symbol code and the comment.
 func TestObjectInfoWithPHG(t *testing.T) {
-	info := ObjectInfo("W6REPEATR", true, "", 37.5, -122.5, '/', '#', "PHG7700", "146.520")
+	info := ObjectInfo("W6REPEATR", true, "", 37.5, -122.5, 0, '/', '#', "PHG7700", "146.520")
 	pkt, err := aprs.ParseInfo([]byte(info))
 	if err != nil {
 		t.Fatalf("parse: %v (%q)", err, info)
@@ -145,6 +145,34 @@ func TestObjectInfoWithPHG(t *testing.T) {
 	}
 	if pkt.Object.Comment != "146.520" {
 		t.Errorf("object comment %q", pkt.Object.Comment)
+	}
+}
+
+// TestObjectInfoWithAltitude verifies object reports carry a /A=
+// altitude extension (feet) that round-trips through the parser, and
+// that zero altitude omits it entirely.
+func TestObjectInfoWithAltitude(t *testing.T) {
+	// 152.4 m == 500 ft.
+	info := ObjectInfo("HILLTOP", true, "", 37.5, -122.5, 152.4, '/', '#', "", "repeater")
+	if !strings.Contains(info, "/A=000500") {
+		t.Fatalf("expected /A=000500 in %q", info)
+	}
+	pkt, err := aprs.ParseInfo([]byte(info))
+	if err != nil {
+		t.Fatalf("parse: %v (%q)", err, info)
+	}
+	if pkt.Object == nil || pkt.Object.Position == nil {
+		t.Fatalf("object not decoded: %+v", pkt.Object)
+	}
+	if got := pkt.Object.Position.Altitude; got < 152 || got > 153 {
+		t.Errorf("object altitude: got %v want ~152.4 m", got)
+	}
+	if pkt.Object.Comment != "repeater" {
+		t.Errorf("object comment %q", pkt.Object.Comment)
+	}
+
+	if strings.Contains(ObjectInfo("HILLTOP", true, "", 37.5, -122.5, 0, '/', '#', "", ""), "/A=") {
+		t.Error("expected no /A= extension when altitude is zero")
 	}
 }
 

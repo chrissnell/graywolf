@@ -97,7 +97,7 @@
     symbol_table: '/', symbol: '-', overlay: '',
     position_format: 'compressed', ambiguity: 0,
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
-    comment: '', interval: '600', send_to_aprs_is: false, enabled: true,
+    comment: '', interval: '600', slot: '', send_to_aprs_is: false, enabled: true,
   });
 
   let callsignError = $state('');
@@ -293,6 +293,7 @@
     altError = '';
     form.comment = defaultComment;
     form.interval = '600';
+    form.slot = '';
     form.send_to_aprs_is = false;
     form.enabled = true;
     modalOpen = true;
@@ -324,6 +325,7 @@
       longitude: row.longitude != null ? String(row.longitude) : '',
       alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
       interval: String(row.interval),
+      slot: row.slot_seconds != null && row.slot_seconds >= 0 ? String(row.slot_seconds) : '',
     });
     altInput = altInputFromFeet(form.alt_ft);
     altError = '';
@@ -373,11 +375,11 @@
     const lonStr = form.longitude.trim();
     const lat = latStr === '' ? 0 : parseFloat(latStr);
     const lon = lonStr === '' ? 0 : parseFloat(lonStr);
-    // Convert altitude input to feet for the API. Object reports don't
-    // carry altitude (the ObjectInfo encoder has no /A= field), so skip it.
+    // Convert altitude input to feet for the API. Objects carry it via
+    // the /A= comment extension, same as position reports.
     const altNorm = altInput.replace(',', '.').trim();
     let altFt = null;
-    if (form.type !== 'object' && altNorm !== '') {
+    if (altNorm !== '') {
       const altVal = parseFloat(altNorm);
       if (Number.isNaN(altVal)) {
         altError = 'Altitude must be a number';
@@ -394,18 +396,31 @@
       toasts.error('Latitude/longitude required when not using GPS');
       return;
     }
+    // Slot: seconds past the hour (0..3599); blank means unset (-1).
+    const slotNorm = String(form.slot).trim();
+    let slotSeconds = -1;
+    if (slotNorm !== '') {
+      const slotVal = parseInt(slotNorm, 10);
+      if (Number.isNaN(slotVal) || slotVal < 0 || slotVal > 3599) {
+        toasts.error('Slot must be 0–3599 seconds past the hour (or blank)');
+        return;
+      }
+      slotSeconds = slotVal;
+    }
     const data = {
       ...form,
       callsign: callsignToSend,
       channel: channelId,
       use_gps: useGps,
       interval: parseInt(form.interval),
+      slot_seconds: slotSeconds,
       latitude: lat,
       longitude: lon,
       alt_ft: altFt,
     };
     delete data.pos_source;
     delete data.callsign_override;
+    delete data.slot;
     delete data.id;
     try {
       if (editing) {
@@ -567,6 +582,12 @@
             <span class="detail-label">Interval</span>
             <span class="detail-value">{formatInterval(b.interval)}</span>
           </div>
+          {#if b.slot_seconds != null && b.slot_seconds >= 0}
+            <div class="detail-row">
+              <span class="detail-label">Slot</span>
+              <span class="detail-value">{b.slot_seconds}s past the hour</span>
+            </div>
+          {/if}
           {#if b.comment}
             <div class="detail-row">
               <span class="detail-label">Comment</span>
@@ -793,24 +814,28 @@
           hint="Decimal degrees, east positive (e.g. -122.4 for San Francisco; 151.2 for Sydney).">
           <Input id="bcn-lon" bind:value={form.longitude} placeholder="-122.4" />
         </FormField>
-        {#if form.type !== 'object'}
-          <FormField label="Altitude" id="bcn-alt"
-            hint="Antenna height above sea level in {altUnit}. Optional; leave blank or 0 to omit.">
-            <div class="alt-row">
-              <Input id="bcn-alt" bind:value={altInput} placeholder={altUnit === 'feet' ? '0 ft' : '0 m'}
-                type="text" inputmode="decimal" error={altError} oninput={() => altError = ''} />
-              <div class="unit-toggle" role="group" aria-label="Altitude unit">
-                <button type="button" class="unit-btn" class:unit-active={altUnit === 'feet'}
-                  onclick={() => toggleAltUnit('feet')}>ft</button>
-                <button type="button" class="unit-btn" class:unit-active={altUnit === 'meters'}
-                  onclick={() => toggleAltUnit('meters')}>m</button>
-              </div>
+        <FormField label="Altitude" id="bcn-alt"
+          hint={form.type === 'object'
+            ? `Object altitude above sea level in ${altUnit}. Optional; leave blank or 0 to omit.`
+            : `Antenna height above sea level in ${altUnit}. Optional; leave blank or 0 to omit.`}>
+          <div class="alt-row">
+            <Input id="bcn-alt" bind:value={altInput} placeholder={altUnit === 'feet' ? '0 ft' : '0 m'}
+              type="text" inputmode="decimal" error={altError} oninput={() => altError = ''} />
+            <div class="unit-toggle" role="group" aria-label="Altitude unit">
+              <button type="button" class="unit-btn" class:unit-active={altUnit === 'feet'}
+                onclick={() => toggleAltUnit('feet')}>ft</button>
+              <button type="button" class="unit-btn" class:unit-active={altUnit === 'meters'}
+                onclick={() => toggleAltUnit('meters')}>m</button>
             </div>
-          </FormField>
-        {/if}
+          </div>
+        </FormField>
       {/if}
       <FormField label="Interval (seconds)" id="bcn-interval">
         <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
+      </FormField>
+      <FormField label="Slot (seconds past the hour)" id="bcn-slot"
+        hint="Optional. Aligns each transmission to a fixed second past the top of the hour so multiple beacons stagger instead of flooding. E.g. 0 fires at :00/:30 with a 1800 s interval; 900 fires at :15/:45. Leave blank to fire on a plain interval.">
+        <Input id="bcn-slot" bind:value={form.slot} type="number" min="0" max="3599" placeholder="e.g. 0" />
       </FormField>
       <Toggle bind:checked={form.send_to_aprs_is} label="Also send to APRS-IS" />
     </div>
