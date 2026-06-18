@@ -43,6 +43,10 @@
             "description": "Igate configuration, filters, status, and simulation."
         },
         {
+            "name": "station",
+            "description": "Station-wide callsign (APRS-IS login, messaging identity, default for beacons and digipeater)."
+        },
+        {
             "name": "gps",
             "description": "GPS source configuration."
         },
@@ -59,6 +63,10 @@
             "description": "Received packet history."
         },
         {
+            "name": "system-logs",
+            "description": "Daemon log buffer: recent slog records (the lines also printed to the console)."
+        },
+        {
             "name": "stations",
             "description": "Station registry derived from received packets."
         },
@@ -69,6 +77,34 @@
         {
             "name": "messages",
             "description": "APRS text messaging: DMs, tactical threads, preferences, and SSE events."
+        },
+        {
+            "name": "ax25",
+            "description": "AX.25 connected-mode terminal: per-link sessions, terminal-route configuration, saved profiles, and transcripts."
+        },
+        {
+            "name": "release-notes",
+            "description": "Per-release user-facing news; drives the login-time popup and About-page 'What's new' section."
+        },
+        {
+            "name": "updates",
+            "description": "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."
+        },
+        {
+            "name": "preferences",
+            "description": "Operator display preferences stored server-side (units, etc.)."
+        },
+        {
+            "name": "maps",
+            "description": "Offline PMTiles map downloads: per-state download lifecycle and status."
+        },
+        {
+            "name": "actions",
+            "description": "On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire."
+        },
+        {
+            "name": "remote-actions",
+            "description": "Outbound Actions: operator-curated macros plus remote-station TOTP credentials used to fire @@\u003cotp\u003e#\u003caction\u003e invocations from inside Messages."
         },
         {
             "name": "auth",
@@ -89,6 +125,559 @@
     ],
     "basePath": "/api",
     "paths": {
+        "/actions": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "List actions",
+                "operationId": "listActions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.Action"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Create action",
+                "operationId": "createAction",
+                "parameters": [
+                    {
+                        "description": "Action definition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.Action"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Action"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/actions/invocations": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "List action invocations",
+                "operationId": "listActionInvocations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Filter by action id",
+                        "name": "action_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact-match callsign",
+                        "name": "sender_call",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Status code (e.g. ok, denied)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transport: rf or is",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Free-text substring search",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max rows (default 100, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.ActionInvocation"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Clear action invocations",
+                "operationId": "clearActionInvocations",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/actions/listeners": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "List action listener addressees",
+                "operationId": "listActionListeners",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.ActionListenerAddressee"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Create action listener addressee",
+                "operationId": "createActionListener",
+                "parameters": [
+                    {
+                        "description": "Addressee",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ActionListenerAddressee"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ActionListenerAddressee"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/actions/listeners/{name}": {
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Delete action listener addressee",
+                "operationId": "deleteActionListener",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Addressee",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/actions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Get action",
+                "operationId": "getAction",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Action id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Action"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Update action",
+                "operationId": "updateAction",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Action id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Action definition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.Action"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Action"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Delete action",
+                "operationId": "deleteAction",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Action id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/actions/{id}/test-fire": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Test-fire an action",
+                "operationId": "testFireAction",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Action id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Args",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.TestFireRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TestFireResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agw": {
             "get": {
                 "security": [
@@ -567,64 +1156,6 @@
                 }
             }
         },
-        "/audio-devices/{id}/test-tone": {
-            "post": {
-                "security": [
-                    {
-                        "CookieAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "audio-devices"
-                ],
-                "summary": "Play test tone on audio device",
-                "operationId": "playTestTone",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Audio device id",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.TestToneResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/webtypes.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/webtypes.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/webtypes.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/webtypes.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/auth/login": {
             "post": {
                 "consumes": [
@@ -775,6 +1306,508 @@
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/profiles": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "List AX.25 session profiles",
+                "operationId": "listAX25Profiles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.AX25SessionProfile"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Create AX.25 session profile",
+                "operationId": "createAX25Profile",
+                "parameters": [
+                    {
+                        "description": "Profile",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/profiles/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Get AX.25 session profile",
+                "operationId": "getAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Update AX.25 session profile",
+                "operationId": "updateAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Profile",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Delete AX.25 session profile",
+                "operationId": "deleteAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/profiles/{id}/pin": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Pin or unpin an AX.25 session profile",
+                "operationId": "pinAX25Profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Profile ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pin payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfilePin"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25SessionProfile"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/terminal-config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Get AX.25 terminal config",
+                "operationId": "getAX25TerminalConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TerminalConfig"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Update AX.25 terminal config",
+                "operationId": "putAX25TerminalConfig",
+                "parameters": [
+                    {
+                        "description": "Terminal config patch",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TerminalConfigPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TerminalConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/transcripts": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "List AX.25 transcript sessions",
+                "operationId": "listAX25Transcripts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.AX25TranscriptSession"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Delete every AX.25 transcript session",
+                "operationId": "deleteAllAX25Transcripts",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ax25/transcripts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Get AX.25 transcript session detail",
+                "operationId": "getAX25Transcript",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Transcript session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AX25TranscriptDetail"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "ax25"
+                ],
+                "summary": "Delete AX.25 transcript session",
+                "operationId": "deleteAX25Transcript",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Transcript session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "500": {
                         "description": "Internal Server Error",
@@ -1051,6 +2084,18 @@
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1220,6 +2265,12 @@
                         "required": true
                     },
                     {
+                        "type": "boolean",
+                        "description": "Force the update even if it would break existing TX referrers",
+                        "name": "force",
+                        "in": "query"
+                    },
+                    {
                         "description": "Channel definition",
                         "name": "body",
                         "in": "body",
@@ -1240,6 +2291,12 @@
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.ChannelReferrersResponse"
                         }
                     },
                     "500": {
@@ -1300,6 +2357,63 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/channels/{id}/ptt": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "summary": "Manual PTT key/unkey",
+                "operationId": "manualPtt",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Channel id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "PTT state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "keyed": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -1411,6 +2525,82 @@
                 }
             }
         },
+        "/channels/{id}/test-tx": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "summary": "Send a TX test signal (CW callsign or tone) on a channel",
+                "operationId": "sendTestSignal",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Channel ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Signal to send",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.TestSignalRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TestSignalResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/digipeater": {
             "get": {
                 "security": [
@@ -1475,6 +2665,203 @@
                         "schema": {
                             "$ref": "#/definitions/dto.DigipeaterConfigResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/digipeater/blocklist": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "digipeater"
+                ],
+                "summary": "List digipeater blocklist entries",
+                "operationId": "listDigipeaterBlocklist",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.BlocklistEntryResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "digipeater"
+                ],
+                "summary": "Create digipeater blocklist entry",
+                "operationId": "createDigipeaterBlocklist",
+                "parameters": [
+                    {
+                        "description": "Blocklist entry",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlocklistEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlocklistEntryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/digipeater/blocklist/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "digipeater"
+                ],
+                "summary": "Update digipeater blocklist entry",
+                "operationId": "updateDigipeaterBlocklist",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Blocklist entry",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlocklistEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlocklistEntryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "digipeater"
+                ],
+                "summary": "Delete digipeater blocklist entry",
+                "operationId": "deleteDigipeaterBlocklist",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -1773,6 +3160,31 @@
                             "items": {
                                 "$ref": "#/definitions/gps.SerialPortInfo"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/gps/state": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "position"
+                ],
+                "summary": "Get raw GPS state (fix + per-sat status)",
+                "operationId": "getGpsState",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.GpsStateDTO"
                         }
                     }
                 }
@@ -2229,6 +3641,108 @@
                 }
             }
         },
+        "/kiss/available-serial-ports": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "List available host serial ports",
+                "operationId": "listAvailableKissSerialPorts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/gps.SerialPortInfo"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/kiss/available-usb-serial-devices": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "List attached USB serial devices (Android only)",
+                "operationId": "getAvailableUsbSerialDevices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.AvailableUsbSerialDevicesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/kiss/bonded-bt-devices": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "List bonded Bluetooth devices (Android only)",
+                "operationId": "getBondedBtDevices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.BondedBtDevicesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/kiss/{id}": {
             "get": {
                 "security": [
@@ -2369,6 +3883,70 @@
                 }
             }
         },
+        "/kiss/{id}/enabled": {
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "Enable or disable a KISS interface",
+                "operationId": "setKissEnabled",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "KISS interface id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Enabled flag",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.KissEnabledRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.KissResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/kiss/{id}/reconnect": {
             "post": {
                 "security": [
@@ -2408,6 +3986,319 @@
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/maps/catalog": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Get the offline-maps download catalog",
+                "operationId": "getMapsCatalog",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Catalog"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/maps/downloads": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "List offline map downloads",
+                "operationId": "listMapsDownloads",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.DownloadStatus"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/maps/downloads/{slug}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Get one download's status",
+                "operationId": "getMapsDownloadStatus",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.DownloadStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Start an offline download",
+                "operationId": "startMapsDownload",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/dto.DownloadStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Delete an offline download",
+                "operationId": "deleteMapsDownload",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespaced slug (state/\u003cslug\u003e, country/\u003ciso2\u003e, province/\u003ciso2\u003e/\u003cslug\u003e)",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/maps/local-bounds": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Get the bbox of every completed offline map",
+                "operationId": "getMapsLocalBounds",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.LocalBounds"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/maps/style/{path}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json",
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Serve a cached MapLibre style asset",
+                "operationId": "getMapsStyleAsset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Relative asset path under the upstream worker (e.g. americana-roboto/style.json, americana/sprites/sprite.png, roboto-glyphs/Roboto%20Regular/0-255.pbf, tiles.json)",
+                        "name": "path",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Asset body; content-type matches the asset",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -2550,6 +4441,86 @@
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Get messages config",
+                "operationId": "getMessagesConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessagesConfig"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Update messages config",
+                "operationId": "putMessagesConfig",
+                "parameters": [
+                    {
+                        "description": "Messages config",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessagesConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessagesConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -2983,6 +4954,59 @@
                 }
             }
         },
+        "/messages/threads/{kind}/{key}": {
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Delete message thread",
+                "operationId": "deleteMessageThread",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Thread kind (dm | tactical)",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Thread key (peer callsign for DM, tactical label for tactical)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/messages/{id}": {
             "get": {
                 "security": [
@@ -3241,6 +5265,185 @@
                 }
             }
         },
+        "/otp-credentials": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "List OTP credentials",
+                "operationId": "listOTPCredentials",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.OTPCredential"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Create OTP credential",
+                "operationId": "createOTPCredential",
+                "parameters": [
+                    {
+                        "description": "Credential definition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.OTPCredential"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.OTPCredentialCreated"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/otp-credentials/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Get OTP credential",
+                "operationId": "getOTPCredential",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Credential id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.OTPCredential"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "actions"
+                ],
+                "summary": "Delete OTP credential",
+                "operationId": "deleteOTPCredential",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Credential id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/packets": {
             "get": {
                 "security": [
@@ -3401,6 +5604,317 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.PositionLogResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/preferences/maps": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Get maps preference",
+                "operationId": "getMapsConfig",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Set to 1 to include the device token in the response",
+                        "name": "include_token",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MapsConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Update maps preference",
+                "operationId": "updateMapsConfig",
+                "parameters": [
+                    {
+                        "description": "Maps preference",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.MapsConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MapsConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/preferences/maps/register": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Register this device with auth.nw5w.com",
+                "operationId": "registerMapsToken",
+                "parameters": [
+                    {
+                        "description": "Registration request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RegisterResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/preferences/theme": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Get theme preference",
+                "operationId": "getThemeConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ThemeConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Update theme preference",
+                "operationId": "updateThemeConfig",
+                "parameters": [
+                    {
+                        "description": "Theme preference",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ThemeConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ThemeConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/preferences/units": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Get units preference",
+                "operationId": "getUnitsConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UnitsConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preferences"
+                ],
+                "summary": "Update units preference",
+                "operationId": "updateUnitsConfig",
+                "parameters": [
+                    {
+                        "description": "Units preference",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UnitsConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UnitsConfigResponse"
                         }
                     },
                     "400": {
@@ -3806,6 +6320,381 @@
                 }
             }
         },
+        "/release-notes": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "release-notes"
+                ],
+                "summary": "List all release notes",
+                "operationId": "listReleaseNotes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ReleaseNotesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/release-notes/ack": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "release-notes"
+                ],
+                "summary": "Acknowledge every release note through the current build",
+                "operationId": "ackReleaseNotes",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/release-notes/unseen": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "release-notes"
+                ],
+                "summary": "List unseen release notes for the caller",
+                "operationId": "listUnseenReleaseNotes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ReleaseNotesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/remote-actions/credentials": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "List remote OTP credentials",
+                "operationId": "listRemoteOTPCredentials",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.RemoteOTPCredential"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Create remote OTP credential",
+                "operationId": "createRemoteOTPCredential",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteOTPCredential"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/remote-actions/credentials/{id}": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Update remote OTP credential",
+                "operationId": "updateRemoteOTPCredential",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteOTPCredential"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Delete remote OTP credential",
+                "operationId": "deleteRemoteOTPCredential",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/remote-actions/macros": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "List remote action macros for one target",
+                "operationId": "listRemoteActionMacros",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target callsign (uppercased server-side)",
+                        "name": "target",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.RemoteActionMacro"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Create remote action macro",
+                "operationId": "createRemoteActionMacro",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteActionMacro"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/remote-actions/macros/reorder": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Reorder remote action macros for one target",
+                "operationId": "reorderRemoteActionMacros",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/remote-actions/macros/{id}": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Update remote action macro",
+                "operationId": "updateRemoteActionMacro",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteActionMacro"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Delete remote action macro",
+                "operationId": "deleteRemoteActionMacro",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/remote-actions/otp/{id}": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "remote-actions"
+                ],
+                "summary": "Generate one-shot TOTP code for a remote credential",
+                "operationId": "generateRemoteOTPCode",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Credential id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoteOTPCode"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/smart-beacon": {
             "get": {
                 "security": [
@@ -3871,6 +6760,86 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.SmartBeaconConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/station/config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "station"
+                ],
+                "summary": "Get station config",
+                "operationId": "getStationConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StationConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "station"
+                ],
+                "summary": "Update station config",
+                "operationId": "updateStationConfig",
+                "parameters": [
+                    {
+                        "description": "Station config",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.StationConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StationConfigResponse"
                         }
                     },
                     "400": {
@@ -4032,6 +7001,57 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/webapi.StatusDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/system-logs": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system-logs"
+                ],
+                "summary": "List system logs",
+                "operationId": "listSystemLogs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Cap result count (non-negative; default 250)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only records at or after this RFC3339 timestamp",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Minimum level: 'debug' includes everything; default is info",
+                        "name": "level",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.SystemLogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
                     }
                 }
@@ -4279,6 +7299,111 @@
                 }
             }
         },
+        "/updates/config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Get updates check configuration",
+                "operationId": "getUpdatesConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Update updates check configuration",
+                "operationId": "updateUpdatesConfig",
+                "parameters": [
+                    {
+                        "description": "Updates configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/updates/status": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Get latest-release status",
+                "operationId": "getUpdatesStatus",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatesStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/version": {
             "get": {
                 "produces": [
@@ -4369,7 +7494,8 @@
                     "description": "original AX.25 frame bytes",
                     "type": "array",
                     "items": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int32"
                     }
                 },
                 "source": {
@@ -4619,7 +7745,8 @@
             "properties": {
                 "altitude": {
                     "description": "meters (0 if none reported)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "ambiguity": {
                     "description": "0..4, digits of ambiguity introduced by spaces",
@@ -4634,7 +7761,8 @@
                 },
                 "daodatum": {
                     "description": "DAO datum byte (APRS101 DAO extension), 0 if not present",
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "hasAlt": {
                     "type": "boolean"
@@ -4644,7 +7772,8 @@
                 },
                 "latitude": {
                     "description": "decimal degrees, positive north",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "localTime": {
                     "description": "true if the timestamp was the '/' local-time form (APRS101 ch 6)",
@@ -4652,7 +7781,8 @@
                 },
                 "longitude": {
                     "description": "decimal degrees, positive east",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "phg": {
                     "description": "decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present",
@@ -4664,7 +7794,8 @@
                 },
                 "speed": {
                     "description": "knots",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "symbol": {
                     "$ref": "#/definitions/aprs.Symbol"
@@ -4679,10 +7810,12 @@
             "type": "object",
             "properties": {
                 "code": {
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "table": {
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 }
             }
         },
@@ -4692,7 +7825,8 @@
                 "analog": {
                     "type": "array",
                     "items": {
-                        "type": "number"
+                        "type": "number",
+                        "format": "float64"
                     }
                 },
                 "analogHas": {
@@ -4708,7 +7842,8 @@
                 },
                 "digital": {
                     "description": "bits 0..7 (only lower 8)",
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "hasDigital": {
                     "type": "boolean"
@@ -4724,7 +7859,8 @@
             "properties": {
                 "bits": {
                     "description": "BITS. sense-bits bitmap (active-high per bit)",
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "eqns": {
                     "description": "a, b, c coefficients per analog channel",
@@ -4732,7 +7868,8 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number"
+                            "type": "number",
+                            "format": "float64"
                         }
                     }
                 },
@@ -4807,17 +7944,21 @@
                 },
                 "pressure": {
                     "description": "tenths of millibar (e.g. 10132 = 1013.2)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rain1Hour": {
                     "description": "hundredths of an inch",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rain24Hour": {
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rainSinceMid": {
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rawRainCounter": {
                     "description": "raw rain counter ('#' field)",
@@ -4825,7 +7966,8 @@
                 },
                 "snowfall24h": {
                     "description": "inches (via 's' after 'g')",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "softwareType": {
                     "description": "one-letter software code (e.g. 'w', 'x', 'd')",
@@ -4833,7 +7975,8 @@
                 },
                 "temperature": {
                     "description": "degrees F",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "weatherUnitTag": {
                     "description": "2..4 ASCII letters identifying the unit/model",
@@ -4845,11 +7988,13 @@
                 },
                 "windGust": {
                     "description": "mph (5-minute peak)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "windSpeed": {
                     "description": "mph (1-minute sustained)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 }
             }
         },
@@ -4863,6 +8008,207 @@
                     "type": "string"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25SessionProfile": {
+            "type": "object",
+            "properties": {
+                "channel_id": {
+                    "type": "integer"
+                },
+                "dest_call": {
+                    "type": "string"
+                },
+                "dest_ssid": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_used": {
+                    "type": "string"
+                },
+                "local_call": {
+                    "type": "string"
+                },
+                "local_ssid": {
+                    "type": "integer"
+                },
+                "maxframe": {
+                    "type": "integer"
+                },
+                "mod128": {
+                    "type": "boolean"
+                },
+                "n2": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "paclen": {
+                    "type": "integer"
+                },
+                "pinned": {
+                    "type": "boolean"
+                },
+                "t1_ms": {
+                    "type": "integer"
+                },
+                "t2_ms": {
+                    "type": "integer"
+                },
+                "t3_ms": {
+                    "type": "integer"
+                },
+                "via_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25SessionProfilePin": {
+            "type": "object",
+            "properties": {
+                "pinned": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.AX25TerminalConfig": {
+            "type": "object",
+            "properties": {
+                "cursor_blink": {
+                    "type": "boolean"
+                },
+                "default_modulo": {
+                    "type": "integer"
+                },
+                "default_paclen": {
+                    "type": "integer"
+                },
+                "macros": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AX25TerminalMacro"
+                    }
+                },
+                "raw_tail_filter": {
+                    "type": "string"
+                },
+                "scrollback_rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.AX25TerminalConfigPatch": {
+            "type": "object",
+            "properties": {
+                "cursor_blink": {
+                    "type": "boolean"
+                },
+                "default_modulo": {
+                    "type": "integer"
+                },
+                "default_paclen": {
+                    "type": "integer"
+                },
+                "macros": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AX25TerminalMacro"
+                    }
+                },
+                "raw_tail_filter": {
+                    "type": "string"
+                },
+                "scrollback_rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.AX25TerminalMacro": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25TranscriptDetail": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AX25TranscriptEntry"
+                    }
+                },
+                "session": {
+                    "$ref": "#/definitions/dto.AX25TranscriptSession"
+                }
+            }
+        },
+        "dto.AX25TranscriptEntry": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "rx|tx",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "description": "data|event",
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "ts": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AX25TranscriptSession": {
+            "type": "object",
+            "properties": {
+                "byte_count": {
+                    "type": "integer"
+                },
+                "channel_id": {
+                    "type": "integer"
+                },
+                "end_reason": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "frame_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "peer_call": {
+                    "type": "string"
+                },
+                "peer_ssid": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "via_path": {
                     "type": "string"
                 }
             }
@@ -4900,6 +8246,158 @@
                 }
             }
         },
+        "dto.Action": {
+            "type": "object",
+            "properties": {
+                "arg_mode": {
+                    "description": "\"kv\" (default) | \"freeform\"",
+                    "type": "string"
+                },
+                "arg_schema": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ArgSpec"
+                    }
+                },
+                "command_path": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_invoked_at": {
+                    "type": "string"
+                },
+                "last_invoked_by": {
+                    "type": "string"
+                },
+                "max_reply_lines": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "otp_credential_id": {
+                    "type": "integer"
+                },
+                "otp_required": {
+                    "type": "boolean"
+                },
+                "queue_depth": {
+                    "type": "integer"
+                },
+                "rate_limit_sec": {
+                    "type": "integer"
+                },
+                "sender_allowlist": {
+                    "type": "string"
+                },
+                "timeout_sec": {
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "\"command\" | \"webhook\"",
+                    "type": "string"
+                },
+                "webhook_body_template": {
+                    "type": "string"
+                },
+                "webhook_headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "webhook_method": {
+                    "type": "string"
+                },
+                "webhook_url": {
+                    "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ActionInvocation": {
+            "type": "object",
+            "properties": {
+                "action_id": {
+                    "type": "integer"
+                },
+                "action_name": {
+                    "type": "string"
+                },
+                "args": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "http_status": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "otp_credential_id": {
+                    "type": "integer"
+                },
+                "otp_verified": {
+                    "type": "boolean"
+                },
+                "output_capture": {
+                    "type": "string"
+                },
+                "reply_line_count": {
+                    "type": "integer"
+                },
+                "reply_text": {
+                    "type": "string"
+                },
+                "sender_call": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_detail": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.ActionListenerAddressee": {
+            "type": "object",
+            "properties": {
+                "addressee": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.AgwRequest": {
             "type": "object",
             "properties": {
@@ -4928,6 +8426,23 @@
                 },
                 "listen_addr": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.ArgSpec": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "max_len": {
+                    "type": "integer"
+                },
+                "regex": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
                 }
             }
         },
@@ -5052,9 +8567,6 @@
                 "comment_cmd": {
                     "type": "string"
                 },
-                "compress": {
-                    "type": "boolean"
-                },
                 "custom_info": {
                     "type": "string"
                 },
@@ -5103,6 +8615,9 @@
                 "path": {
                     "type": "string"
                 },
+                "position_format": {
+                    "type": "string"
+                },
                 "power": {
                     "type": "integer"
                 },
@@ -5127,8 +8642,14 @@
                 "sb_turn_slope": {
                     "type": "integer"
                 },
-                "send_to_aprs_is": {
-                    "type": "boolean"
+                "send_path": {
+                    "type": "string",
+                    "enum": [
+                        "rf",
+                        "both",
+                        "is_only"
+                    ],
+                    "example": "rf"
                 },
                 "slot_seconds": {
                     "type": "integer"
@@ -5173,9 +8694,6 @@
                 },
                 "comment_cmd": {
                     "type": "string"
-                },
-                "compress": {
-                    "type": "boolean"
                 },
                 "custom_info": {
                     "type": "string"
@@ -5228,6 +8746,9 @@
                 "path": {
                     "type": "string"
                 },
+                "position_format": {
+                    "type": "string"
+                },
                 "power": {
                     "type": "integer"
                 },
@@ -5252,8 +8773,14 @@
                 "sb_turn_slope": {
                     "type": "integer"
                 },
-                "send_to_aprs_is": {
-                    "type": "boolean"
+                "send_path": {
+                    "type": "string",
+                    "enum": [
+                        "rf",
+                        "both",
+                        "is_only"
+                    ],
+                    "example": "rf"
                 },
                 "slot_seconds": {
                     "type": "integer"
@@ -5287,6 +8814,170 @@
                 }
             }
         },
+        "dto.BlocklistEntryRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.BlocklistEntryResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.Catalog": {
+            "type": "object",
+            "properties": {
+                "countries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CatalogCountry"
+                    }
+                },
+                "generatedAt": {
+                    "type": "string"
+                },
+                "provinces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CatalogProvince"
+                    }
+                },
+                "schemaVersion": {
+                    "type": "integer"
+                },
+                "states": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CatalogState"
+                    }
+                },
+                "world": {
+                    "$ref": "#/definitions/dto.CatalogWorld"
+                }
+            }
+        },
+        "dto.CatalogCountry": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "iso2": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.CatalogProvince": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "iso2": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                },
+                "slug": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CatalogState": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                },
+                "slug": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CatalogWorld": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "maxZoom": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.ChannelBacking": {
             "type": "object",
             "properties": {
@@ -5304,6 +8995,9 @@
                 },
                 "summary": {
                     "type": "string"
+                },
+                "tx": {
+                    "$ref": "#/definitions/dto.TxCapability"
                 }
             }
         },
@@ -5341,6 +9035,28 @@
                 }
             }
         },
+        "dto.ChannelPtt": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "gpio_pin": {
+                    "description": "GpioPin is the CM108 HID pin (cm108 method only). 0 = unset.",
+                    "type": "integer"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "ptt_method": {
+                    "description": "PttMethod is the Android USB-PTT transport (PttMethod enum 1..4)\nwhen Method==\"android\"; 0 otherwise. The channel-edit modal\nrestores the selected Android method from this.",
+                    "type": "integer"
+                }
+            }
+        },
         "dto.ChannelRequest": {
             "type": "object",
             "properties": {
@@ -5367,6 +9083,9 @@
                 },
                 "mark_freq": {
                     "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
                 },
                 "modem_type": {
                     "type": "string"
@@ -5427,6 +9146,9 @@
                 "mark_freq": {
                     "type": "integer"
                 },
+                "mode": {
+                    "type": "string"
+                },
                 "modem_type": {
                     "type": "string"
                 },
@@ -5447,6 +9169,9 @@
                 },
                 "profile": {
                     "type": "string"
+                },
+                "ptt": {
+                    "$ref": "#/definitions/dto.ChannelPtt"
                 },
                 "space_freq": {
                     "type": "integer"
@@ -5580,6 +9305,29 @@
                 }
             }
         },
+        "dto.DownloadStatus": {
+            "type": "object",
+            "properties": {
+                "bytes_downloaded": {
+                    "type": "integer"
+                },
+                "bytes_total": {
+                    "type": "integer"
+                },
+                "downloaded_at": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.GPSRequest": {
             "type": "object",
             "properties": {
@@ -5646,9 +9394,6 @@
         "dto.IGateConfigRequest": {
             "type": "object",
             "properties": {
-                "callsign": {
-                    "type": "string"
-                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -5660,9 +9405,6 @@
                 },
                 "max_msg_hops": {
                     "type": "integer"
-                },
-                "passcode": {
-                    "type": "string"
                 },
                 "port": {
                     "type": "integer"
@@ -5693,9 +9435,6 @@
         "dto.IGateConfigResponse": {
             "type": "object",
             "properties": {
-                "callsign": {
-                    "type": "string"
-                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -5710,9 +9449,6 @@
                 },
                 "max_msg_hops": {
                     "type": "integer"
-                },
-                "passcode": {
-                    "type": "string"
                 },
                 "port": {
                     "type": "integer"
@@ -5789,6 +9525,14 @@
                 }
             }
         },
+        "dto.KissEnabledRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "dto.KissRequest": {
             "type": "object",
             "properties": {
@@ -5801,6 +9545,18 @@
                 },
                 "channel": {
                     "type": "integer"
+                },
+                "enabled": {
+                    "description": "Enabled gates whether graywolf runs this interface. When false the\nmanager stops the supervisor and releases the underlying device\n(closing the fd / socket) instead of looping reconnect attempts,\nwhile the row's configuration is preserved for a later re-enable.\nA pointer so an omitted field means \"leave at the default\" (true)\nrather than \"disable\": older clients and partial callers that never\nsend the key keep their interfaces running. ToModel substitutes\ntrue when nil.",
+                    "type": "boolean"
+                },
+                "gate_tx_to_is": {
+                    "description": "GateTxToIs opts a Mode=modem KISS interface in to gating frames\nsubmitted by connected KISS clients to APRS-IS, after the TX\ngovernor has accepted them. The iGate's own filter chain still\nruns, so this only opens the gate — it does not bypass NOGATE /\nRFONLY / TCPIP markers or the operator's filter rules. Default\nfalse on all migrated rows; meaningless in Mode=tnc (which\nalready feeds the iGate via the RX fanout) and silently ignored\nthere by the server.",
+                    "type": "boolean"
+                },
+                "local_only": {
+                    "description": "LocalOnly, when set on a tcp (server-listen) interface, binds the\nKISS listener to loopback (127.0.0.1) instead of all interfaces\n(0.0.0.0). The intended use is an on-device iGate client (a KISS\napp on the same phone/host) dialing in over loopback without\nexposing the port to the LAN. Ignored for non-tcp types. Stored\nin the existing ListenAddr host -- no schema change.",
+                    "type": "boolean"
                 },
                 "mode": {
                     "type": "string"
@@ -5853,11 +9609,22 @@
                 "connected_since": {
                     "type": "integer"
                 },
+                "enabled": {
+                    "description": "Enabled mirrors KissInterface.Enabled so the Kiss page can show a\n\"Disabled\" state and offer a re-enable action. A disabled interface\nis not running, so the live status fields below stay zero-valued\nfor it.",
+                    "type": "boolean"
+                },
+                "gate_tx_to_is": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
                 },
                 "last_error": {
                     "type": "string"
+                },
+                "local_only": {
+                    "description": "LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface\nlistens on loopback only. Derived from the ListenAddr host.",
+                    "type": "boolean"
                 },
                 "mode": {
                     "type": "string"
@@ -5908,6 +9675,54 @@
                 }
             }
         },
+        "dto.LocalBounds": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/dto.LocalBoundsEntry"
+            }
+        },
+        "dto.LocalBoundsEntry": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "maxZoom": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.MapsConfigRequest": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.MapsConfigResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "registered": {
+                    "type": "boolean"
+                },
+                "registered_at": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.MessageChange": {
             "type": "object",
             "properties": {
@@ -5945,6 +9760,10 @@
                 "fallback_policy": {
                     "type": "string"
                 },
+                "max_message_text_override": {
+                    "description": "MaxMessageTextOverride raises the default 67-char addressee-line\ndirect-message cap. 0 (or field absent) means \"use the default\";\nany positive value must fall in [MaxMessageText+1, MaxMessageTextUnsafe]\n(68..200). Applies to addressee-line DMs only — bulletins, status\nbeacons, and position/weather frames are unaffected. The server\nrejects out-of-range values with 400 rather than silently clamping\nso operators see a clear error.",
+                    "type": "integer"
+                },
                 "retention_days": {
                     "type": "integer"
                 },
@@ -5961,6 +9780,10 @@
                 },
                 "fallback_policy": {
                     "type": "string"
+                },
+                "max_message_text_override": {
+                    "description": "MaxMessageTextOverride mirrors the request field on read. 0\nmeans \"default enforce 67\" — older servers that have never been\nupgraded return 0 here, which is also what a fresh singleton with\nno override set returns. Positive values fall in\n(MaxMessageText, MaxMessageTextUnsafe].",
+                    "type": "integer"
                 },
                 "retention_days": {
                     "type": "integer"
@@ -5988,6 +9811,10 @@
                 "direction": {
                     "description": "\"in\" | \"out\"",
                     "type": "string"
+                },
+                "extended": {
+                    "description": "Extended is true when the transmitted body exceeded the default\nMaxMessageText (67). The UI renders an \"extended\" badge on these\nrows so operators can correlate if recipients report missing or\ntruncated messages. Derived from len(Text) \u003e MaxMessageText; no\ndedicated column.",
+                    "type": "boolean"
                 },
                 "failure_reason": {
                     "type": "string"
@@ -6068,6 +9895,99 @@
                 }
             }
         },
+        "dto.MessagesConfig": {
+            "type": "object",
+            "properties": {
+                "tx_channel": {
+                    "description": "0 = auto-resolve",
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.OTPCredential": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "type": "string"
+                },
+                "algorithm": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "digits": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "period": {
+                    "type": "integer"
+                },
+                "used_by": {
+                    "description": "Action names that reference this cred",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dto.OTPCredentialCreated": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "type": "string"
+                },
+                "algorithm": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "digits": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "otpauth_uri": {
+                    "type": "string"
+                },
+                "period": {
+                    "type": "integer"
+                },
+                "secret_b32": {
+                    "type": "string"
+                },
+                "used_by": {
+                    "description": "Action names that reference this cred",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "dto.ParticipantResponse": {
             "type": "object",
             "properties": {
@@ -6132,7 +10052,7 @@
                     "type": "integer"
                 },
                 "gpio_pin": {
-                    "description": "GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used\nby the `gpio` method, which references `gpio_line` instead to avoid\nindexing ambiguity between CM108 pin numbers and gpiochip line offsets.",
+                    "description": "GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3).\ncm108 method only. The `gpio` method uses `gpio_line` instead.",
                     "type": "integer"
                 },
                 "invert": {
@@ -6142,6 +10062,10 @@
                     "type": "string"
                 },
                 "persist": {
+                    "type": "integer"
+                },
+                "ptt_method": {
+                    "description": "PttMethod is the Android USB-PTT transport (PttMethod enum 1..4)\nwhen Method==\"android\". Not used by desktop methods.",
                     "type": "integer"
                 },
                 "slot_time_ms": {
@@ -6166,7 +10090,7 @@
                     "type": "integer"
                 },
                 "gpio_pin": {
-                    "description": "GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3). Not used\nby the `gpio` method, which references `gpio_line` instead to avoid\nindexing ambiguity between CM108 pin numbers and gpiochip line offsets.",
+                    "description": "GpioPin is the CM108 HID GPIO pin number (1-indexed, default 3).\ncm108 method only. The `gpio` method uses `gpio_line` instead.",
                     "type": "integer"
                 },
                 "id": {
@@ -6181,8 +10105,162 @@
                 "persist": {
                     "type": "integer"
                 },
+                "ptt_method": {
+                    "description": "PttMethod is the Android USB-PTT transport (PttMethod enum 1..4)\nwhen Method==\"android\". Not used by desktop methods.",
+                    "type": "integer"
+                },
                 "slot_time_ms": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.RegisterRequest": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RegisterResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "registered": {
+                    "type": "boolean"
+                },
+                "registered_at": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ReleaseNoteDTO": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "description": "pre-sanitized HTML",
+                    "type": "string"
+                },
+                "date": {
+                    "description": "ISO YYYY-MM-DD",
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "style": {
+                    "description": "\"info\" | \"cta\"",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ReleaseNotesResponse": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "description": "LastSeen is the authenticated caller's last acknowledged release\nversion at the moment the request was served. Empty on the\n/api/release-notes endpoint (caller-agnostic) and on /unseen for\na user who has never acked. The frontend uses this to render a\n\"Since your last visit · vA → vB\" subtitle in the news popup.",
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ReleaseNoteDTO"
+                    }
+                },
+                "schema_version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.RemoteActionMacro": {
+            "type": "object",
+            "properties": {
+                "action_name": {
+                    "type": "string"
+                },
+                "args_string": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "remote_otp_credential_id": {
+                    "type": "integer"
+                },
+                "target_call": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RemoteOTPCode": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RemoteOTPCredential": {
+            "type": "object",
+            "properties": {
+                "algorithm": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "digits": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "period": {
+                    "type": "integer"
+                },
+                "used_by": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -6316,6 +10394,28 @@
                 }
             }
         },
+        "dto.StationConfigRequest": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.StationConfigResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "disabled": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "dto.TacticalCallsignRequest": {
             "type": "object",
             "properties": {
@@ -6353,6 +10453,58 @@
                 }
             }
         },
+        "dto.TestFireRequest": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TestFireResponse": {
+            "type": "object",
+            "properties": {
+                "exit_code": {
+                    "type": "integer"
+                },
+                "http_status": {
+                    "type": "integer"
+                },
+                "invocation_id": {
+                    "type": "integer"
+                },
+                "output_capture": {
+                    "type": "string"
+                },
+                "reply_line_count": {
+                    "type": "integer"
+                },
+                "reply_lines": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reply_text": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_detail": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
         "dto.TestRigctldRequest": {
             "type": "object",
             "properties": {
@@ -6378,10 +10530,47 @@
                 }
             }
         },
-        "dto.TestToneResponse": {
+        "dto.TestSignalRequest": {
+            "type": "object",
+            "properties": {
+                "signal": {
+                    "type": "string",
+                    "example": "cw"
+                }
+            }
+        },
+        "dto.TestSignalResponse": {
             "type": "object",
             "properties": {
                 "status": {
+                    "type": "string",
+                    "example": "sent"
+                }
+            }
+        },
+        "dto.ThemeConfigRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ThemeConfigResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TxCapability": {
+            "type": "object",
+            "properties": {
+                "capable": {
+                    "type": "boolean"
+                },
+                "reason": {
                     "type": "string"
                 }
             }
@@ -6444,6 +10633,59 @@
                 },
                 "tx_tail_ms": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.UnitsConfigRequest": {
+            "type": "object",
+            "properties": {
+                "system": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UnitsConfigResponse": {
+            "type": "object",
+            "properties": {
+                "system": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdatesConfigRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.UpdatesConfigResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.UpdatesStatusResponse": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "description": "RFC3339, omitted if zero",
+                    "type": "string"
+                },
+                "current": {
+                    "type": "string"
+                },
+                "latest": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },
@@ -6626,6 +10868,31 @@
                 }
             }
         },
+        "packetlog.AudioLevel": {
+            "type": "object",
+            "properties": {
+                "level_dbfs": {
+                    "description": "LevelDBFS is the overall level in dBFS (mean tone amplitude), floored at -60.",
+                    "type": "number"
+                },
+                "mark": {
+                    "description": "Mark is the legacy mark-tone amplitude, scaled linearly to ~0-100.",
+                    "type": "integer"
+                },
+                "mark_dbfs": {
+                    "description": "MarkDBFS is the mark-tone level in dBFS, floored at -60.",
+                    "type": "number"
+                },
+                "space": {
+                    "description": "Space is the legacy space-tone amplitude, scaled linearly to ~0-100.",
+                    "type": "integer"
+                },
+                "space_dbfs": {
+                    "description": "SpaceDBFS is the space-tone level in dBFS, floored at -60.",
+                    "type": "number"
+                }
+            }
+        },
         "packetlog.Direction": {
             "type": "string",
             "enum": [
@@ -6638,6 +10905,11 @@
                 "DirRX": "heard on the air",
                 "DirTX": "transmitted by us"
             },
+            "x-enum-descriptions": [
+                "heard on the air",
+                "transmitted by us",
+                "APRS-IS upload/download (iGate)"
+            ],
             "x-enum-varnames": [
                 "DirRX",
                 "DirTX",
@@ -6698,6 +10970,56 @@
                 }
             }
         },
+        "webapi.AvailableUsbSerialDevice": {
+            "type": "object",
+            "properties": {
+                "has_permission": {
+                    "type": "boolean"
+                },
+                "manufacturer": {
+                    "type": "string"
+                },
+                "product": {
+                    "type": "string"
+                },
+                "vid_pid": {
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.AvailableUsbSerialDevicesResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.AvailableUsbSerialDevice"
+                    }
+                }
+            }
+        },
+        "webapi.BondedBtDevice": {
+            "type": "object",
+            "properties": {
+                "mac": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.BondedBtDevicesResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.BondedBtDevice"
+                    }
+                }
+            }
+        },
         "webapi.ChannelReferrersResponse": {
             "type": "object",
             "properties": {
@@ -6709,6 +11031,69 @@
                     "items": {
                         "$ref": "#/definitions/configstore.Referrer"
                     }
+                }
+            }
+        },
+        "webapi.GnssStatusDTO": {
+            "type": "object",
+            "properties": {
+                "sats": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.SatInfoDTO"
+                    }
+                },
+                "sats_in_view": {
+                    "type": "integer"
+                },
+                "sats_used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "webapi.GpsFixDTO": {
+            "type": "object",
+            "properties": {
+                "accuracy_m": {
+                    "type": "number"
+                },
+                "alt_m": {
+                    "type": "number"
+                },
+                "course_deg": {
+                    "type": "number"
+                },
+                "has_alt": {
+                    "type": "boolean"
+                },
+                "has_course": {
+                    "type": "boolean"
+                },
+                "has_speed": {
+                    "type": "boolean"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "speed_mps": {
+                    "type": "number"
+                },
+                "time_unix_ms": {
+                    "type": "integer"
+                }
+            }
+        },
+        "webapi.GpsStateDTO": {
+            "type": "object",
+            "properties": {
+                "fix": {
+                    "$ref": "#/definitions/webapi.GpsFixDTO"
+                },
+                "gnss_status": {
+                    "$ref": "#/definitions/webapi.GnssStatusDTO"
                 }
             }
         },
@@ -6764,6 +11149,29 @@
                 }
             }
         },
+        "webapi.SatInfoDTO": {
+            "type": "object",
+            "properties": {
+                "azimuth_deg": {
+                    "type": "number"
+                },
+                "cn0_dbhz": {
+                    "type": "number"
+                },
+                "constellation": {
+                    "type": "string"
+                },
+                "elevation_deg": {
+                    "type": "number"
+                },
+                "svid": {
+                    "type": "integer"
+                },
+                "used_in_fix": {
+                    "type": "boolean"
+                }
+            }
+        },
         "webapi.StationDTO": {
             "type": "object",
             "properties": {
@@ -6782,6 +11190,10 @@
                 "direction": {
                     "description": "Direction indicates the source of the most recent packet: \"RX\" (heard on air), \"TX\" (sent by us), or \"IS\" (APRS-IS).",
                     "type": "string"
+                },
+                "gated": {
+                    "description": "Gated is true when the most recent packet reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF.",
+                    "type": "boolean"
                 },
                 "hops": {
                     "description": "Hops is the APRS digipeater hop count (number of H-bit entries in Path).",
@@ -6808,7 +11220,8 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number"
+                            "type": "number",
+                            "format": "float64"
                         }
                     }
                 },
@@ -6818,6 +11231,10 @@
                     "items": {
                         "$ref": "#/definitions/webapi.StationPosDTO"
                     }
+                },
+                "source": {
+                    "description": "Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source.",
+                    "type": "string"
                 },
                 "symbol_code": {
                     "description": "SymbolCode is the APRS symbol code character within the selected table.",
@@ -6864,6 +11281,10 @@
                     "description": "Direction indicates the source of this position packet: \"RX\", \"TX\", or \"IS\".",
                     "type": "string"
                 },
+                "gated": {
+                    "description": "Gated is true when this position fix reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF.",
+                    "type": "boolean"
+                },
                 "has_alt": {
                     "description": "HasAlt is true when the originating packet reported an altitude.",
                     "type": "boolean"
@@ -6893,7 +11314,8 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number"
+                            "type": "number",
+                            "format": "float64"
                         }
                     }
                 },
@@ -6943,6 +11365,9 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "rx_bad_fcs": {
+                    "type": "integer"
                 },
                 "rx_frames": {
                     "type": "integer"
@@ -7017,9 +11442,59 @@
                 }
             }
         },
+        "webapi.SystemLogEntry": {
+            "type": "object",
+            "properties": {
+                "attrs": {
+                    "description": "Attrs are the structured key/value attributes attached to the record; omitted when none.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "component": {
+                    "description": "Component is the slog \"component\" group (e.g. \"webapi\"); omitted when unset.",
+                    "type": "string"
+                },
+                "level": {
+                    "description": "Level is the slog level: DEBUG, INFO, WARN, or ERROR.",
+                    "type": "string"
+                },
+                "message": {
+                    "description": "Message is the log message text.",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "description": "Timestamp is the RFC3339 (UTC) time the record was emitted.",
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.SystemLogsResponse": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "description": "Available is false when the log buffer is disabled; Logs is then empty.",
+                    "type": "boolean"
+                },
+                "cursor": {
+                    "description": "Cursor is the RFC3339 timestamp of the newest returned record, for incremental `since` polling; omitted when empty.",
+                    "type": "string"
+                },
+                "logs": {
+                    "description": "Logs are the matching records in ascending chronological order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webapi.SystemLogEntry"
+                    }
+                }
+            }
+        },
         "webapi.VersionResponse": {
             "type": "object",
             "properties": {
+                "platform": {
+                    "description": "Platform is runtime.GOOS of the server process — \"windows\", \"linux\",\n\"darwin\", etc. The UI uses it to surface platform-specific guidance\n(e.g. the Windows app-volume warning on the Audio Devices page).",
+                    "type": "string"
+                },
                 "version": {
                     "type": "string"
                 }
@@ -7073,9 +11548,21 @@
         "webapi.packetDTO": {
             "type": "object",
             "properties": {
+                "audio_level": {
+                    "description": "AudioLevel is the demodulator's per-packet received audio level (dBFS,\nplus legacy linear mark/space). Present only for frames heard off-air via\nthe modem; nil for TX, APRS-IS, and hardware KISS-TNC entries, which carry\nno soundcard-domain level.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/packetlog.AudioLevel"
+                        }
+                    ]
+                },
                 "channel": {
                     "description": "Channel is the graywolf channel ID that observed or transmitted the packet.",
                     "type": "integer"
+                },
+                "channel_name": {
+                    "description": "ChannelName is the display name of the channel that handled the packet,\nresolved from the numeric Channel ID; omitted when the ID maps to no\nconfigured channel (e.g. channel 0, used for non-RF / APRS-IS arrivals).",
+                    "type": "string"
                 },
                 "decoded": {
                     "description": "Decoded is the parsed APRS payload when decoding succeeded; nil otherwise.",
