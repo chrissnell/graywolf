@@ -574,3 +574,106 @@ func TestSchedulerChannelModeGate(t *testing.T) {
 type logSink struct{}
 
 func (logSink) Write(p []byte) (int, error) { return len(p), nil }
+
+// fakeISSink records the TNC-2 lines a beacon would send to APRS-IS and
+// can be made to fail, so tests can assert the IS leg and its errors.
+type fakeISSink struct {
+	mu    sync.Mutex
+	lines []string
+	err   error
+}
+
+func (f *fakeISSink) SendLine(line string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	f.lines = append(f.lines, line)
+	return nil
+}
+
+func (f *fakeISSink) Lines() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.lines...)
+}
+
+func mustParse(s string) ax25.Address {
+	a, err := ax25.ParseAddress(s)
+	if err != nil {
+		panic(err)
+	}
+	return a
+}
+
+func mkPathBeacon(sendPath string) Config {
+	return Config{
+		ID:       7,
+		Type:     TypePosition,
+		Channel:  0,
+		Source:   mustParse("N0CALL-9"),
+		Dest:     mustParse("APGRWO"),
+		Path:     []ax25.Address{mustParse("WIDE1-1")},
+		Slot:     -1,
+		Lat:      37.7749,
+		Lon:      -122.4194,
+		Format:   "compressed",
+		SendPath: sendPath,
+	}
+}
+
+func TestSendBeacon_PathRF(t *testing.T) {
+	sink := newMockSink(1)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, err := New(Options{Sink: sink, ISSink: is, Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathRF))
+	if got := len(sink.Frames()); got != 1 {
+		t.Fatalf("RF frames = %d, want 1", got)
+	}
+	if got := len(is.Lines()); got != 0 {
+		t.Fatalf("IS lines = %d, want 0", got)
+	}
+}
+
+func TestSendBeacon_PathBoth(t *testing.T) {
+	sink := newMockSink(1)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, _ := New(Options{Sink: sink, ISSink: is, Logger: logger})
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathBoth))
+	if got := len(sink.Frames()); got != 1 {
+		t.Fatalf("RF frames = %d, want 1", got)
+	}
+	if got := len(is.Lines()); got != 1 {
+		t.Fatalf("IS lines = %d, want 1", got)
+	}
+}
+
+func TestSendBeacon_PathISOnly(t *testing.T) {
+	sink := newMockSink(0)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, _ := New(Options{Sink: sink, ISSink: is, Logger: logger})
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathISOnly))
+	if got := len(sink.Frames()); got != 0 {
+		t.Fatalf("RF frames = %d, want 0 (RF disabled)", got)
+	}
+	if got := len(is.Lines()); got != 1 {
+		t.Fatalf("IS lines = %d, want 1", got)
+	}
+}
+
+func TestSendBeaconImmediate_ISOnly_NoSink(t *testing.T) {
+	sink := newMockSink(0)
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, _ := New(Options{Sink: sink, Logger: logger}) // no ISSink
+	err := s.sendBeaconImmediate(context.Background(), mkPathBeacon(SendPathISOnly))
+	if err == nil {
+		t.Fatal("expected error when is_only beacon has no APRS-IS sink")
+	}
+}

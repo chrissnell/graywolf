@@ -67,7 +67,7 @@ type Options struct {
 	Observer Observer
 	Clock    Clock  // defaults to wall clock
 	Version  string // running graywolf version, used to expand {{version}} in comments
-	ISSink   ISSink // optional APRS-IS line sender for beacons with SendToAPRSIS
+	ISSink   ISSink // optional APRS-IS line sender for beacons whose SendPath includes APRS-IS
 	// MaxConcurrentFires bounds how many beacon fires can be in flight
 	// at once. Zero selects DefaultMaxConcurrentFires. The scheduler
 	// never blocks on submit — if all workers are busy when a beacon is
@@ -429,29 +429,52 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 		Priority:  ax25.PriorityBeacon,
 		SkipDedup: skipDedup,
 	}
-	if err := s.sink.Submit(ctx, b.Channel, frame, src); err != nil {
-		reason := classifySubmitError(err)
-		s.logger.Warn("beacon submit", "id", b.ID, "name", name, "reason", reason, "err", err)
-		if eo, ok := s.observer.(ErrorObserver); ok && eo != nil {
-			eo.OnSubmitError(name, reason)
+	// rf and is are derived from SendPath. Empty SendPath behaves as
+	// SendPathRF (safe default for any unmigrated/zero value).
+	sendRF := b.SendPath != SendPathISOnly
+	sendIS := b.SendPath == SendPathBoth || b.SendPath == SendPathISOnly
+
+	// RF/TNC leg. Skipped for is_only beacons so a radioless station can
+	// still beacon.
+	sent := false
+	if sendRF {
+		if err := s.sink.Submit(ctx, b.Channel, frame, src); err != nil {
+			reason := classifySubmitError(err)
+			s.logger.Warn("beacon submit", "id", b.ID, "name", name, "reason", reason, "err", err)
+			if eo, ok := s.observer.(ErrorObserver); ok && eo != nil {
+				eo.OnSubmitError(name, reason)
+			}
+			return &SendNowError{Kind: SendNowErrorSubmit, Err: err}
 		}
-		return &SendNowError{Kind: SendNowErrorSubmit, Err: err}
-	}
-	s.logger.Info("beacon sent", "id", b.ID, "type", b.Type, "channel", b.Channel, "info", info)
-	if s.observer != nil {
-		s.observer.OnBeaconSent(b.Type)
+		s.logger.Info("beacon sent", "id", b.ID, "type", b.Type, "channel", b.Channel, "info", info)
+		sent = true
 	}
 
-	// Optionally duplicate the beacon to APRS-IS. APRS-IS leg failures
-	// do not cause SendNow to report failure: the RF leg already
-	// succeeded, and an offline IS path is normal.
-	if b.SendToAPRSIS && s.isSink != nil {
-		line := formatTNC2(b.Source, dest, b.Path, info)
-		if err := s.isSink.SendLine(line); err != nil {
-			s.logger.Warn("beacon aprs-is send", "id", b.ID, "name", name, "err", err)
+	// APRS-IS leg. When RF also ran, an IS failure is non-fatal (the RF
+	// copy already went out and an offline IS path is normal). For an
+	// is_only beacon the IS leg IS the transmission, so a missing sink or
+	// a send error is surfaced as a SendNowError.
+	if sendIS {
+		if s.isSink == nil {
+			if !sendRF {
+				return &SendNowError{Kind: SendNowErrorSubmit, Err: errors.New("aprs-is sink not configured for is_only beacon")}
+			}
 		} else {
-			s.logger.Info("beacon sent to aprs-is", "id", b.ID, "line", line)
+			line := formatTNC2(b.Source, dest, b.Path, info)
+			if err := s.isSink.SendLine(line); err != nil {
+				s.logger.Warn("beacon aprs-is send", "id", b.ID, "name", name, "err", err)
+				if !sendRF {
+					return &SendNowError{Kind: SendNowErrorSubmit, Err: err}
+				}
+			} else {
+				s.logger.Info("beacon sent to aprs-is", "id", b.ID, "line", line)
+				sent = true
+			}
 		}
+	}
+
+	if sent && s.observer != nil {
+		s.observer.OnBeaconSent(b.Type)
 	}
 	return nil
 }

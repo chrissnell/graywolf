@@ -49,13 +49,23 @@ type Config struct {
 	PHGHeightFt    int // feet above average terrain
 	PHGGainDB      int // dBi
 	PHGDirectivity int // 0 = omni, 1..8 = 45° × d compass direction
-	Enabled      bool
-	SendToAPRSIS bool // also send this beacon to APRS-IS (default off)
+	Enabled  bool
+	// SendPath selects the transmission destination. Empty is treated as
+	// SendPathRF for safety. SendPathISOnly skips RF entirely so a station
+	// with no radio can beacon to APRS-IS.
+	SendPath string
 }
 
+// Beacon send_path enum values (mirrors the send_path DB column).
+const (
+	SendPathRF     = "rf"      // RF/TNC only
+	SendPathBoth   = "both"    // RF/TNC and APRS-IS
+	SendPathISOnly = "is_only" // APRS-IS only, no RF
+)
+
 // ISSink is an optional destination for sending beacons to APRS-IS.
-// When non-nil and Config.SendToAPRSIS is true, the scheduler sends
-// a TNC-2 formatted copy of the beacon to APRS-IS after RF submission.
+// When non-nil and a beacon's SendPath includes APRS-IS (both or
+// is_only), the scheduler sends a TNC-2 formatted copy to APRS-IS.
 type ISSink interface {
 	SendLine(line string) error
 }
