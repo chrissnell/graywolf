@@ -158,7 +158,7 @@ func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconC
 		PHGHeightFt:    int(b.Height),
 		PHGGainDB:      int(b.Gain),
 		PHGDirectivity: int(b.Dir),
-		SendToAPRSIS:   b.SendToAPRSIS,
+		SendPath:       b.SendPath,
 		Enabled:        b.Enabled,
 	}
 
