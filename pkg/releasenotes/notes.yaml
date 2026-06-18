@@ -7,6 +7,21 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.14.3"
+  date: "2026-06-18"
+  style: info
+  schema_version: 1
+  title: "Android-focused beta: launch crash fix"
+  body: |
+    This is an Android-focused beta that fixes a crash some Android
+    users hit right after opening the app. The app would show a white
+    screen for a few seconds, then close and drop off the notification
+    shade. It now starts up normally.
+
+    The beta is aimed at confirming the fix on affected devices,
+    notably Android 11. Desktop and server installs are unchanged, and
+    no action is needed on your part.
+
 - version: "0.14.2"
   date: "2026-06-17"
   style: info
