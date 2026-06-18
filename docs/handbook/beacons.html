@@ -166,8 +166,25 @@
               <td><code>-1</code></td>
               <td>Fixed slot (seconds past the hour, &minus;1 = unset)</td>
             </tr>
+            <tr>
+              <td><code>send_path</code></td>
+              <td><code>rf</code></td>
+              <td>Where the beacon is sent: <code>rf</code> (radio only), <code>both</code> (radio and APRS-IS), or <code>is_only</code> (APRS-IS only, no radio)</td>
+            </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>APRS-IS only (no radio)?</strong> Set this beacon's
+          <em>Destination</em> to <em>APRS-IS only</em>. The beacon is gated
+          straight to APRS-IS and no radio channel is required. Enable the
+          iGate first so an APRS-IS connection exists.
+        </p>
       </div>
     </div>
 

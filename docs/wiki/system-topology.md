@@ -161,6 +161,10 @@ gets passcode `-1` and the sender's `readOnlyIS` gate at
 transmits, which is what makes "set a real callsign" the meaningful
 gate on outbound IS messages.
 
+Beacons can also run on an IS-only station: set a beacon's destination to
+`is_only` and it is gated directly to APRS-IS with no RF channel. See
+[`pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go) (`sendBeaconWith`).
+
 ### Offline maps catalog
 
 The Worker exposes `GET /manifest.json` (auth-gated) returning the
