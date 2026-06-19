@@ -2,7 +2,9 @@ package dto
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 )
 
@@ -78,6 +80,31 @@ func (r BeaconRequest) Validate() error {
 		// "" normalizes to rf in normalizedSendPath
 	default:
 		return fmt.Errorf("send_path must be one of rf, both, is_only (got %q)", r.SendPath)
+	}
+	// Reject addresses the beacon loader cannot parse, so an invalid
+	// callsign/destination/path is surfaced here at save time instead of
+	// silently dropping the beacon from the scheduler at load. APRS SSIDs
+	// must be 0-15; this also catches bad characters and over-length calls.
+	// An empty/nil callsign override means "inherit the station callsign",
+	// which is validated by the station config, so skip it here.
+	if r.Callsign != nil {
+		if c := strings.TrimSpace(*r.Callsign); c != "" {
+			if _, err := ax25.ParseAddress(c); err != nil {
+				return fmt.Errorf("callsign %q is not a valid APRS address (SSID must be 0-15): %w", c, err)
+			}
+		}
+	}
+	if d := strings.TrimSpace(r.Destination); d != "" {
+		if _, err := ax25.ParseAddress(d); err != nil {
+			return fmt.Errorf("destination %q is not a valid APRS address: %w", d, err)
+		}
+	}
+	for _, p := range strings.Split(r.Path, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			if _, err := ax25.ParseAddress(p); err != nil {
+				return fmt.Errorf("path element %q is not a valid APRS address: %w", p, err)
+			}
+		}
 	}
 	switch r.Type {
 	case "position", "igate":

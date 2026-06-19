@@ -105,3 +105,34 @@ func TestBeaconRequest_Validate_ISOnlyOK(t *testing.T) {
 		t.Fatalf("is_only should validate, got %v", err)
 	}
 }
+
+func strPtr(s string) *string { return &s }
+
+func TestBeaconRequest_Validate_BadCallsignSSID(t *testing.T) {
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1, SendPath: "is_only", Callsign: strPtr("NW5W-17")}
+	if err := r.Validate(); err == nil {
+		t.Fatal("expected error for callsign with SSID 17 (out of APRS range 0-15)")
+	}
+}
+
+func TestBeaconRequest_Validate_GoodCallsign(t *testing.T) {
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1, SendPath: "is_only", Callsign: strPtr("NW5W-7")}
+	if err := r.Validate(); err != nil {
+		t.Fatalf("NW5W-7 should validate, got %v", err)
+	}
+}
+
+func TestBeaconRequest_Validate_InheritCallsignSkipsParse(t *testing.T) {
+	// nil/empty override = inherit station callsign; must not be parsed here.
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1, SendPath: "rf"}
+	if err := r.Validate(); err != nil {
+		t.Fatalf("inherited callsign should validate, got %v", err)
+	}
+}
+
+func TestBeaconRequest_Validate_BadPath(t *testing.T) {
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1, SendPath: "rf", Path: "WIDE1-1,BADCALLSIGN-99"}
+	if err := r.Validate(); err == nil {
+		t.Fatal("expected error for invalid path element")
+	}
+}
