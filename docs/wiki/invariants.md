@@ -1028,7 +1028,12 @@ sync:
   not masked by a later digipeated one) **but advances the fix's `Timestamp` to
   the latest beacon** -- so the fix's own timestamp is *not* a reliable "when
   heard directly". `LastDirectHeard` is the authoritative answer and is exposed
-  as `last_direct_heard` in `StationDTO`.
+  as `last_direct_heard` in `StationDTO`. It stores the packet's `Timestamp`
+  (`e.Timestamp` -- embedded APRS timestamp if present, otherwise decode/receive
+  time), consistent with per-position trail timestamps, **not** the server
+  receive clock that stamps `LastHeard`. For the common position packet (no
+  embedded timestamp) the two coincide; only packets carrying an explicit APRS
+  timestamp can diverge, by the sender's TNC clock skew.
 
 - The frontend predicate `directHeardWithin(station, cutoffMs)`
   (`web/src/lib/map/direct-rx-core.js`) qualifies a station only when
