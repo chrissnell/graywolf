@@ -673,6 +673,23 @@ type Beacon struct {
 	UpdatedAt     time.Time `json:"-"`
 }
 
+// FixedPoint is an operator-placed landmark on the live map: a named
+// location with an APRS symbol, stored server-side so it is shared by
+// every browser/device pointed at this server and survives a client
+// browser-data wipe (graywolf#347). Unlike a Beacon it is never
+// transmitted -- it is purely a map annotation.
+type FixedPoint struct {
+	ID          uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name        string    `gorm:"not null" json:"name"`
+	SymbolTable string    `gorm:"not null;default:'/'" json:"symbol_table"`
+	Symbol      string    `gorm:"not null;default:'/'" json:"symbol"`
+	Overlay     string    `json:"overlay"`
+	Latitude    float64   `gorm:"not null" json:"latitude"`
+	Longitude   float64   `gorm:"not null" json:"longitude"`
+	CreatedAt   time.Time `json:"-"`
+	UpdatedAt   time.Time `json:"-"`
+}
+
 // SmartBeaconConfig is a singleton (id=1) row holding the global
 // SmartBeacon curve parameters applied to every beacon with
 // SmartBeacon=true. Mirrors direwolf's single SMARTBEACON directive:

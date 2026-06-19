@@ -154,6 +154,7 @@ func (s *Store) Migrate() error {
 		&IGateConfig{},
 		&IGateRfFilter{},
 		&Beacon{},
+		&FixedPoint{},
 		&PacketFilter{},
 		&GPSConfig{},
 		&SmartBeaconConfig{},
