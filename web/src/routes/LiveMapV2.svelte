@@ -1086,14 +1086,15 @@
     overflow: hidden;
   }
 
-  /* FAB (mobile only). Sits to the LEFT of MapLibre's NavigationControl
-     (which is already top-right at the default 10px inset). NavigationControl
-     itself is hidden on touch widths via maplibre-map.svelte's media query,
-     so the FAB has the corner to itself. */
+  /* FAB (mobile only). Anchored top-LEFT so it clears MapLibre's
+     NavigationControl (compass) at top-right; in a narrow portrait window
+     the two used to overlap and the FAB hid the north-up reset (GH #348).
+     The desktop layer-card never renders on mobile, so the left corner is
+     free. */
   .map-fab {
     position: absolute;
     top: 12px;
-    right: 12px;
+    left: 12px;
     width: 44px;
     height: 44px;
     border-radius: 22px;
@@ -1328,11 +1329,17 @@
       text-overflow: ellipsis;
     }
   }
-  /* Pull the status bar up on mobile so it clears the bottom safe area
-     and the MapLibre attribution. */
+  /* Pull the status bar and coord/zoom readout up on mobile so they clear
+     the bottom safe area (home indicator / gesture bar) and the MapLibre
+     attribution. The dynamic-viewport height on .main-content.full-bleed
+     keeps the map's bottom edge inside the visible area as the address bar
+     collapses; these offsets keep the chrome off the safe-area inset. */
   @media (max-width: 768px) {
     .map-status-bar {
-      bottom: 14px;
+      bottom: calc(14px + env(safe-area-inset-bottom));
+    }
+    .map-coord-display {
+      bottom: calc(28px + env(safe-area-inset-bottom));
     }
   }
 

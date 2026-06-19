@@ -186,6 +186,12 @@
       attributionControl: { compact: true },
       transformRequest,
     });
+    // Drop the rotate component of the two-finger touch gesture. On phones
+    // a pinch-to-zoom too easily nudges the bearing, leaving the map askew
+    // with no obvious way back (GH #348). Pinch-zoom is preserved; only the
+    // twist is ignored. Desktop right-drag rotate (dragRotate) and the
+    // compass reset are untouched, so this needs no settings switch.
+    map.touchZoomRotate.disableRotation();
     map.addControl(
       new maplibregl.NavigationControl({
         showCompass: true,
