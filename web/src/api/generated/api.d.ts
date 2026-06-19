@@ -3642,6 +3642,16 @@ export interface components {
             display?: string;
             /** @description DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable. */
             distance_mi?: number;
+            /**
+             * @description Lat/Lon are the packet's reported coordinates in decimal degrees (WGS84),
+             *     surfaced for any transmission type that carries a fix -- position, Mic-E,
+             *     weather-with-position, object, and item alike. Omitted for positionless
+             *     packets (messages, telemetry, status). The web UI uses these to render the
+             *     click-to-zoom map reticle on a log entry; unlike DistanceMi they do not
+             *     depend on the local station having its own GPS fix.
+             */
+            lat?: number;
+            lon?: number;
             /** @description Notes is a short annotation describing how this entry was handled (e.g. "deduped", "rate-limited", "digi consumed WIDE1-1"). */
             notes?: string;
             /** @description Raw is the on-air AX.25 frame bytes with FCS stripped; omitted for entries without raw framing. */

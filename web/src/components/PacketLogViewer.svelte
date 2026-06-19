@@ -47,6 +47,20 @@
     inspectOpen = true;
   }
 
+  // Deep-link a positioned packet to the live map, framed on its coordinates.
+  // Mirrors the reverse "APRS logs" link the map's station popup renders
+  // (#/logs?callsign=…). lat/lon come from the packet DTO (see
+  // pkg/webapi/packets.go) and are present for every transmission type that
+  // carries a fix — position, Mic-E, weather, object, item — so the reticle
+  // shows up consistently rather than only on plain position reports.
+  function mapHref(callsign, lat, lon) {
+    const p = new URLSearchParams();
+    if (callsign) p.set('focus', callsign);
+    p.set('lat', String(lat));
+    p.set('lon', String(lon));
+    return `#/map?${p.toString()}`;
+  }
+
   // Column definitions. ORDER IS LOAD-BEARING — first 3 are primary on mobile.
   // No `priority` field in Chonky 0.2.1; ordering is the only knob.
   const columns = [
@@ -83,6 +97,23 @@
   {@const calls = parseDisplay(entry)}
   <span class="pkt-srcdst">
     <span class="pkt-src">{calls.src || '—'}</span>
+    {#if entry.lat != null && entry.lon != null}
+      <a
+        class="pkt-locate"
+        href={mapHref(calls.src, entry.lat, entry.lon)}
+        title={`Show ${calls.src || 'this station'} on the map`}
+        aria-label={`Show ${calls.src || 'this station'} on the map`}
+      >
+        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+          <circle cx="8" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.3" />
+          <circle cx="8" cy="8" r="1" fill="currentColor" />
+          <line x1="8" y1="0.5" x2="8" y2="3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          <line x1="8" y1="13" x2="8" y2="15.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          <line x1="0.5" y1="8" x2="3" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          <line x1="13" y1="8" x2="15.5" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+        </svg>
+      </a>
+    {/if}
     <span class="pkt-arrow" aria-hidden="true">→</span>
     <span class="pkt-dst">{calls.dst || '—'}</span>
   </span>
@@ -177,6 +208,26 @@
   .pkt-arrow {
     color: var(--color-text-dim);
     flex-shrink: 0;
+  }
+
+  /* Scope-reticle locate button: sits right after the source callsign on any
+     packet that carries coordinates. Dim by default like the inspect loupe,
+     brightening on hover/focus so it stays quiet until the operator wants it. */
+  .pkt-locate {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-dim);
+    opacity: 0.55;
+    cursor: pointer;
+    transition: opacity 0.12s ease, color 0.12s ease;
+  }
+  .pkt-locate:hover,
+  .pkt-locate:focus-visible {
+    opacity: 1;
+    color: var(--color-info);
+    outline: none;
   }
   .pkt-dst {
     color: var(--color-info);

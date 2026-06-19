@@ -11563,6 +11563,13 @@
                     "description": "DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable.",
                     "type": "number"
                 },
+                "lat": {
+                    "description": "Lat/Lon are the packet's reported coordinates in decimal degrees (WGS84),\nsurfaced for any transmission type that carries a fix -- position, Mic-E,\nweather-with-position, object, and item alike. Omitted for positionless\npackets (messages, telemetry, status). The web UI uses these to render the\nclick-to-zoom map reticle on a log entry; unlike DistanceMi they do not\ndepend on the local station having its own GPS fix.",
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
                 "notes": {
                     "description": "Notes is a short annotation describing how this entry was handled (e.g. \"deduped\", \"rate-limited\", \"digi consumed WIDE1-1\").",
                     "type": "string"

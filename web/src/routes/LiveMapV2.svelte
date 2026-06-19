@@ -65,6 +65,29 @@
   // view from a prior session — restoring that view is what they want, not
   // having it yanked to the station bounds on first poll.
   let didAutoFit = mapState.hasSavedView;
+
+  // Deep-link focus: the packet log's reticle navigates here with
+  // #/map?focus=CALL&lat=…&lon=… (the reverse of the popup's "APRS logs"
+  // link). When present we frame the map on those coordinates on load and,
+  // once the station shows up in the first poll, open its popup. lat/lon are
+  // authoritative for the camera so we can fly even to a station that is older
+  // than the active time-range and thus never enters the data store.
+  const FOCUS_ZOOM = 12;
+  const pendingFocus = parseFocusFromHash();
+  let focusPopupDone = false;
+
+  function parseFocusFromHash() {
+    if (typeof window === 'undefined') return null;
+    const h = window.location.hash || '';
+    const qIdx = h.indexOf('?');
+    if (qIdx < 0) return null;
+    const params = new URLSearchParams(h.slice(qIdx + 1));
+    const lat = parseFloat(params.get('lat'));
+    const lon = parseFloat(params.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { callsign: params.get('focus') || '', lat, lon };
+  }
+
   let stationsLayer = null;
   let trailsLayer = null;
   let weatherLayer = null;
@@ -555,6 +578,20 @@
     map.on('zoomstart', closeCtxMenu);
 
     dataStore.start();
+
+    // Honor a #/map?focus=…&lat=…&lon= deep-link from the packet log. Claim the
+    // camera before the auto-fit / my-position effects can fire (they bail when
+    // didAutoFit is set) so an explicit "show this station" intent wins over the
+    // default framing. The popup is opened later, once a poll has populated the
+    // store (see the focus-popup effect).
+    if (pendingFocus) {
+      didAutoFit = true;
+      map.easeTo({
+        center: [pendingFocus.lon, pendingFocus.lat],
+        zoom: FOCUS_ZOOM,
+        duration: 600,
+      });
+    }
   }
 
   // Drive layer refresh from data-store reactivity. Touching .size
@@ -714,6 +751,19 @@
     const t = dataStore.lastFetchAt;
     if (!t || !mapRef || didAutoFit) return;
     if (fitToStations()) didAutoFit = true;
+  });
+
+  // Focus deep-link popup: after the first poll completes, make one attempt to
+  // open the focused station's popup. One-shot (focusPopupDone) so a station
+  // heard minutes later doesn't surprise the operator with a popup; if the
+  // station isn't in the store (older than the time-range), the camera fly in
+  // onMapReady already framed its coordinates, which is enough.
+  $effect(() => {
+    const t = dataStore.lastFetchAt;
+    if (!pendingFocus?.callsign || !mapRef || !t || focusPopupDone) return;
+    focusPopupDone = true;
+    const target = dataStore.stations.get(pendingFocus.callsign);
+    if (target) openStationPopup(mapRef, target);
   });
 
   function fitToStations() {
