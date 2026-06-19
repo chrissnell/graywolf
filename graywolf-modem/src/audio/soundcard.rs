@@ -447,6 +447,13 @@ pub struct SoundcardOutputConfig {
 /// used elsewhere (`txtest::AMP`, ~0.6 FS). A touch hotter than the AFSK
 /// frame so the Digirig Lite's tone detector trips reliably; the tone
 /// lives on its own channel and never mixes with the packet audio.
+///
+/// The tone is synthesised here in the output callback and is therefore
+/// **not** subject to the per-device output gain that
+/// `Modem::handle_transmit_frame` applies to the AFSK buffer. That is
+/// deliberate: the keying tone drives the Digirig's PTT detector, not the
+/// air, so it must stay at a reliable trip level regardless of how far the
+/// operator pads down the transmit-audio drive.
 const PTT_TONE_AMP: f32 = 0.6 * 32767.0;
 
 /// Steady sine generator for the PTT keying tone on the companion channel.
@@ -495,8 +502,14 @@ impl PttTone {
 /// Resolve the companion channel that carries the PTT tone, given the
 /// negotiated `channels` count and the AFSK `want` channel. `None` when
 /// the device has fewer than two channels (no room for a separate tone
-/// channel). For the standard stereo case this is simply the other of
-/// the two channels.
+/// channel).
+///
+/// For the standard stereo Digirig Lite case (`channels == 2`, AFSK on the
+/// left at `want == 0`) this returns channel 1 — the right channel its PTT
+/// detector listens on. On a >2-channel device it returns a channel that is
+/// always distinct from `want` (channel 1 when `want == 0`, else channel 0);
+/// every channel other than `want` and the returned tone channel is filled
+/// with silence, so the choice is harmless even if `want >= 2`.
 pub(crate) fn ptt_tone_channel(channels: usize, want: usize) -> Option<usize> {
     if channels < 2 {
         return None;
@@ -1818,6 +1831,11 @@ mod tests {
         // No companion on a mono device.
         assert_eq!(ptt_tone_channel(1, 0), None);
         assert_eq!(ptt_tone_channel(0, 0), None);
+        // >2 channels: always a channel distinct from `want` (the other
+        // channels are silenced anyway, so the exact pick is harmless).
+        assert_eq!(ptt_tone_channel(4, 0), Some(1));
+        assert_ne!(ptt_tone_channel(4, 2), Some(2));
+        assert_eq!(ptt_tone_channel(4, 2), Some(0));
     }
 
     #[test]
