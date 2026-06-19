@@ -52,6 +52,9 @@
   }
 
   function confirm() {
+    // Name is required server-side; guard here so Enter / the button can't
+    // fire an empty-name request that would only come back as a 400 toast.
+    if (!name.trim()) return;
     onConfirm?.({ name: name.trim(), table, symbol, overlay });
     open = false;
   }
@@ -89,7 +92,7 @@
 
     <div class="fp-actions">
       <Button onclick={cancel}>Cancel</Button>
-      <Button variant="primary" onclick={confirm}>Add point</Button>
+      <Button variant="primary" onclick={confirm} disabled={!name.trim()}>Add point</Button>
     </div>
   </div>
 </Modal>

@@ -483,8 +483,8 @@
       onMarkerClick: (point) => openFixedPointPopup(map, point),
     });
     // Pull the server-side set so points placed on another device (or
-    // before a browser-data wipe) show up here. The points.length $effect
-    // re-runs refresh() once this resolves and the list grows. (graywolf#347)
+    // before a browser-data wipe) show up here. load() reassigns the store
+    // array, so the refresh $effect re-runs once this resolves. (graywolf#347)
     fixedPointsStore.load().catch((err) => {
       toasts.error(`Could not load fixed points: ${err.message}`);
     });
@@ -590,8 +590,11 @@
 
   // Fixed points change independently of the station poll (operator adds /
   // deletes them), so they get their own refresh effect tracking the store.
+  // The store reassigns `points` to a new array on every load/add/remove, so
+  // reading the array here makes the effect re-run on each mutation
+  // (including a same-length replacement from load()).
   $effect(() => {
-    const _len = fixedPointsStore.points.length;
+    const _points = fixedPointsStore.points;
     fixedPointsLayer?.refresh();
   });
 

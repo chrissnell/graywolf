@@ -21,6 +21,11 @@ export const fixedPointsStore = (() => {
   // so upgrading operators don't lose them. Guarded by a flag so it runs
   // at most once per browser. Best-effort: on any failure we leave the
   // legacy data in place and do NOT set the flag, so a later load retries.
+  //
+  // The flag is per-browser, so an operator who had legacy points in two
+  // browsers will upload both sets -- a few duplicate server rows they can
+  // delete. Accepted trade-off (no per-point dedup); far better than losing
+  // points to silent data loss.
   async function migrateLegacyLocalStorage() {
     let legacy;
     try {
