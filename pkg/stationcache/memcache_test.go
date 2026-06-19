@@ -500,3 +500,55 @@ func TestMemCache_RFCopyNotMaskedByGated(t *testing.T) {
 		t.Fatal("gated-only fix not upgraded by later RF-heard copy: Gated=true")
 	}
 }
+
+// TestMemCache_LastDirectHeardSetOnDirect verifies a direct RF reception
+// (RX, hops 0) records LastDirectHeard, and a digipeated-only station never
+// does (issue #349 — the Direct RX filter keys on this timestamp).
+func TestMemCache_LastDirectHeardSetOnDirect(t *testing.T) {
+	c := newTestCache(t)
+
+	c.Update([]CacheEntry{stationEntry("stn:DIRECT", "DIRECT", 40.0, -105.0)})    // RX, hops 0
+	c.Update([]CacheEntry{digiEntry("stn:DIGIONLY", "DIGIONLY", 41.0, -105.0, 2)}) // RX, hops 2
+
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 42, NeLon: -104}, 1*time.Hour)
+	byKey := map[string]Station{}
+	for _, s := range results {
+		byKey[s.Key] = s
+	}
+	if byKey["stn:DIRECT"].LastDirectHeard.IsZero() {
+		t.Fatal("direct reception did not set LastDirectHeard")
+	}
+	if !byKey["stn:DIGIONLY"].LastDirectHeard.IsZero() {
+		t.Fatal("digipeated-only station must not set LastDirectHeard")
+	}
+}
+
+// TestMemCache_LastDirectHeardNotAdvancedByDigi verifies a later digipeated
+// copy of a station heard directly earlier does NOT advance LastDirectHeard —
+// the direct hearing must age out of the Direct RX window on its own schedule
+// (issue #349), even though issue #130 keeps the fix classified as direct.
+func TestMemCache_LastDirectHeardNotAdvancedByDigi(t *testing.T) {
+	c := newTestCache(t)
+
+	direct := stationEntry("stn:MOBILE", "MOBILE", 40.0, -105.0)
+	direct.Timestamp = time.Now().Add(-30 * time.Minute)
+	c.Update([]CacheEntry{direct})
+
+	digi := digiEntry("stn:MOBILE", "MOBILE", 40.0, -105.0, 2)
+	digi.Timestamp = time.Now()
+	c.Update([]CacheEntry{digi})
+
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 station, got %d", len(results))
+	}
+	if !results[0].LastDirectHeard.Equal(direct.Timestamp) {
+		t.Fatalf("LastDirectHeard advanced by digipeated copy: got %v want %v",
+			results[0].LastDirectHeard, direct.Timestamp)
+	}
+	// #130 still holds: the displayed fix is still classified direct.
+	p := results[0].Positions[0]
+	if !isDirectRF(p.Direction, p.Hops) {
+		t.Fatalf("issue #130 regressed: fix no longer direct (Direction=%q Hops=%d)", p.Direction, p.Hops)
+	}
+}

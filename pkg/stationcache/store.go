@@ -53,6 +53,13 @@ type Station struct {
 	Comment   string
 	Weather   *Weather // nil if not a weather station
 	LastHeard time.Time
+	// LastDirectHeard is the timestamp of the most recent reception heard
+	// directly on RF (RX, zero digi hops). Set only by direct receptions and
+	// never advanced by digipeated/gated/IS copies, so the Live Map "Direct
+	// RX" filter can age a station out of the selected time window even when
+	// the fix stays classified as direct for display (issues #130 + #349).
+	// Zero value means the station has never been heard directly.
+	LastDirectHeard time.Time
 }
 
 // Position is a single position fix with metadata.
