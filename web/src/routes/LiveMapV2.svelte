@@ -960,7 +960,7 @@
   {/snippet}
 
   {#if isMobile}
-    <!-- Mobile: FAB at top-right opens a bottom-sheet drawer. -->
+    <!-- Mobile: FAB at top-left opens a bottom-sheet drawer. -->
     <button
       type="button"
       class="map-fab"
