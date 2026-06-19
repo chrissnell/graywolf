@@ -17,10 +17,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/gps"
@@ -460,7 +460,12 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 				return &SendNowError{Kind: SendNowErrorSubmit, Err: errors.New("aprs-is sink not configured for is_only beacon")}
 			}
 		} else {
-			line := formatTNC2(b.Source, dest, b.Path, info)
+			// Inject to APRS-IS with a TCPIP* path, the convention for
+			// self-originated traffic. Sending the RF digipeater path
+			// (WIDE1-1 etc.) gets the packet silently dropped by APRS-IS
+			// servers, so it never reaches aprs.fi. Matches the messages
+			// sender's buildMessageTNC2.
+			line := aprs.FormatTNC2(b.Source.String(), dest.String(), []string{"TCPIP*"}, []byte(info))
 			if err := s.isSink.SendLine(line); err != nil {
 				s.logger.Warn("beacon aprs-is send", "id", b.ID, "name", name, "err", err)
 				if !sendRF {
@@ -477,34 +482,6 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 		s.observer.OnBeaconSent(b.Type)
 	}
 	return nil
-}
-
-// formatTNC2 renders a beacon as a TNC-2 monitor line for APRS-IS.
-// The APRS-IS server adds the q-construct; we send the bare packet.
-func formatTNC2(src, dest ax25.Address, path []ax25.Address, info string) string {
-	var b strings.Builder
-	b.WriteString(src.Call)
-	if src.SSID != 0 {
-		fmt.Fprintf(&b, "-%d", src.SSID)
-	}
-	b.WriteByte('>')
-	b.WriteString(dest.Call)
-	if dest.SSID != 0 {
-		fmt.Fprintf(&b, "-%d", dest.SSID)
-	}
-	for _, p := range path {
-		b.WriteByte(',')
-		b.WriteString(p.Call)
-		if p.SSID != 0 {
-			fmt.Fprintf(&b, "-%d", p.SSID)
-		}
-		if p.Repeated {
-			b.WriteByte('*')
-		}
-	}
-	b.WriteByte(':')
-	b.WriteString(info)
-	return b.String()
 }
 
 // beaconName returns a stable, human-readable label for a beacon,

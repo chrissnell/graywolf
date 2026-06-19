@@ -706,3 +706,28 @@ func TestSendNow_ISOnly_NoRF(t *testing.T) {
 		t.Fatalf("IS lines = %d, want 1", got)
 	}
 }
+
+// TestBeaconISLine_UsesTCPIP verifies the APRS-IS leg injects the beacon
+// with a TCPIP* path (the APRS-IS convention for self-originated traffic)
+// rather than the RF digipeater path. Sending the raw RF path (e.g.
+// WIDE1-1) gets the packet silently dropped by APRS-IS servers, so it
+// never reaches aprs.fi. Mirrors the messages sender's buildMessageTNC2.
+func TestBeaconISLine_UsesTCPIP(t *testing.T) {
+	sink := newMockSink(0)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, _ := New(Options{Sink: sink, ISSink: is, Logger: logger})
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathISOnly))
+
+	lines := is.Lines()
+	if len(lines) != 1 {
+		t.Fatalf("IS lines = %d, want 1", len(lines))
+	}
+	line := lines[0]
+	if !strings.HasPrefix(line, "N0CALL-9>APGRWO,TCPIP*:") {
+		t.Errorf("IS line = %q, want prefix %q", line, "N0CALL-9>APGRWO,TCPIP*:")
+	}
+	if strings.Contains(line, "WIDE") {
+		t.Errorf("IS line must not carry the RF digipeater path; got %q", line)
+	}
+}
