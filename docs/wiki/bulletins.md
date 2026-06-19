@@ -8,10 +8,14 @@ cycle rather than via retry-until-ACK.
 
 ## Slot taxonomy
 
-| Format | Type | Send interval | Max sends | Expiry (inbound) |
-|---|---|---|---|---|
-| `BLN0`–`BLN9` | Bulletin | 20 min | 12 (~4 h) | 4 h |
-| `BLNA`–`BLNZ` | Announcement | 1 h | 96 (~4 days) | 4 days |
+| Format | Type | Initial burst | Stable interval | Max sends | Expiry (inbound) |
+|---|---|---|---|---|---|
+| `BLN0`–`BLN9` | Bulletin | 3 × 30 s | 20 min | 12 (~4 h) | 4 h |
+| `BLNA`–`BLNZ` | Announcement | — | 1 h | 96 (~4 days) | 4 days |
+
+Bulletins fire 3 times at 30-second intervals immediately after creation
+(per Bruninga/APRS protocol: new information should be sent rapidly to
+survive packet collisions), then settle into the 20-minute Net Cycle Time.
 
 Slot `BLNA` through `BLNZ` are called *announcements*; they carry
 longer-lived content (club events, net schedules). All other bulletin
@@ -61,19 +65,23 @@ The `BulletinSink` interface lives in `pkg/messages/router.go` (not
    rather than waiting for the next tick.
 
 The `Scheduler` runs a goroutine that:
-- Calls `Store.ListPendingSends` every `BulletinInterval` (20 min)
-  to find rows where `next_send_at <= now AND send_count < max_sends`.
+- Polls every 15 seconds (`schedulerPollInterval`) and calls
+  `Store.ListPendingSends` to find rows where
+  `next_send_at <= now AND send_count < max_sends`.
 - For each due row, calls `Sender.Send` which:
   - Encodes the bulletin as an APRS UI frame and submits to `txgovernor`
     at `PriorityBeacon` priority using the digipeater path from
-    `MessagePreferences.DefaultPath` (default `WIDE1-1,WIDE2-1`).
+    `MessagePreferences.DefaultPath` (operator-configurable in the
+    Messaging settings page; defaults to `WIDE1-1,WIDE2-1`).
   - If an iGate sender is wired, also forwards directly to APRS-IS using
     TNC2 format with path `TCPIP*`, so the bulletin appears on aprs.fi
-    regardless of whether a nearby iGate hears the RF.  When IS is not
+    regardless of whether a nearby iGate hears the RF. When IS is not
     configured, `ErrNotEnabled` is silently swallowed; the RF send always
     completes first and is unaffected.
-- Increments `send_count` and advances `next_send_at` by the appropriate
-  interval, then saves with `Store.Update`.
+- Increments `send_count` and advances `next_send_at`:
+  - `send_count < BulletinBurstCount` (3): next in `BulletinBurstInterval` (30 s)
+  - `send_count >= BulletinBurstCount`: next in `BulletinInterval` (20 min)
+  - Announcements always use `AnnouncementInterval` (1 h), no burst phase.
 - Responds to `Kick()` for immediate processing without waiting for the
   next tick.
 
@@ -152,7 +160,15 @@ length check live in `SendBulletinRequest.Validate()`.
   delete button.
 - 30-second poll for new inbound data.
 
-Sidebar badge in `web/src/components/Sidebar.svelte` polls `GET /api/bulletins?direction=in&unread_only=true` every 30 s and shows a count badge on the Bulletins nav item (icon: `rss`).
+Sidebar in `web/src/components/Sidebar.svelte` shows a Bulletins nav item
+with an inline SVG clipboard icon (the chonky-ui `rss` icon is not in the
+component's allowlist, so `svgIcon: 'bulletins'` is used instead). An unread
+badge count is polled every 30 s via `GET /api/bulletins?direction=in&unread_only=true`.
+
+Digipeater path for outbound bulletins (and messages) is configurable in the
+Messaging settings page (`MessagePreferences.DefaultPath`). The default is
+`WIDE1-1,WIDE2-1`, suitable for most fixed stations. The settings page explains
+standard hop counts so operators know what to set.
 
 Route registered in `web/src/App.svelte` as `'/bulletins': Bulletins`.
 API client in `web/src/api/bulletins.js`.
