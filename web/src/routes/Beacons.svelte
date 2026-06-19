@@ -448,8 +448,27 @@
       modalOpen = false;
       beacons = await api.get('/beacons') || [];
       refreshChannels();
+      if (data.send_path === 'is_only') {
+        await ensureIgateEnabled();
+      }
     } catch (err) {
       toasts.error(err.message);
+    }
+  }
+
+  // An APRS-IS-only beacon only reaches the network when the iGate is
+  // connected to APRS-IS. Auto-enable the iGate on save so a radioless
+  // operator isn't left wondering why nothing shows up on aprs.fi.
+  // Best-effort: the beacon is already saved, so any failure here is
+  // surfaced as a toast rather than failing the whole operation.
+  async function ensureIgateEnabled() {
+    try {
+      const cfg = await api.get('/igate/config');
+      if (!cfg || cfg.enabled) return;
+      await api.put('/igate/config', { ...cfg, enabled: true });
+      toasts.success('iGate enabled so your APRS-IS-only beacon can reach the network');
+    } catch {
+      toasts.error('Beacon saved, but the iGate could not be enabled automatically. Enable it on the iGate page so APRS-IS-only beacons transmit.');
     }
   }
 
@@ -507,6 +526,17 @@
 <PageHeader title="Beacons" subtitle="APRS beacon configuration">
   <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
 </PageHeader>
+
+{#if channelsStore.lastUpdated && channels.length === 0}
+  <div class="no-rf-banner" role="note">
+    <span class="no-rf-banner-icon" aria-hidden="true">&#9432;</span>
+    <div class="no-rf-banner-body">
+      <strong>No radio channels configured.</strong>
+      You can still beacon to APRS-IS only (no radio needed). To transmit
+      over RF, <a href="#/channels">create a channel</a> first.
+    </div>
+  </div>
+{/if}
 
 {#if beacons.length === 0}
   <div class="empty-state">No beacons configured. Add a beacon to start transmitting position reports.</div>
@@ -1176,6 +1206,28 @@
     background: var(--bg-secondary);
     border: 1px dashed var(--border-color);
     border-radius: var(--radius);
+  }
+  .no-rf-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--color-info, #3b82f6);
+    border-radius: var(--radius);
+  }
+  .no-rf-banner-icon {
+    flex: 0 0 auto;
+    font-size: 16px;
+    color: var(--color-info, #3b82f6);
+    line-height: 1.4;
+  }
+  .no-rf-banner-body {
+    color: var(--text-secondary, var(--color-text-muted, #888));
   }
   .symbol-swatch {
     flex: 0 0 auto;
