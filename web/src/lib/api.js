@@ -263,6 +263,11 @@ function getMockData(method, path, body) {
   if (path.match(/^\/beacons\/\d+$/) && method === 'DELETE') return delay(null);
   if (path.match(/^\/beacons\/\d+\/send$/) && method === 'POST') return delay({ status: 'sent' });
 
+  // Fixed points (map landmarks)
+  if (path === '/fixed-points' && method === 'GET') return delay([]);
+  if (path === '/fixed-points' && method === 'POST') return delay({ id: Math.floor(Math.random() * 1e6) + 1, ...body });
+  if (path.match(/^\/fixed-points\/\d+$/) && method === 'DELETE') return delay(null);
+
   // GPS
   if (path === '/gps' && method === 'GET') return delay(mockGps);
   if (path === '/gps' && method === 'PUT') return delay(body);
