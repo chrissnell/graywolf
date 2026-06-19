@@ -645,6 +645,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fixed-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List fixed points */
+        get: operations["listFixedPoints"];
+        put?: never;
+        /** Create fixed point */
+        post: operations["createFixedPoint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fixed-points/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get fixed point */
+        get: operations["getFixedPoint"];
+        /** Update fixed point */
+        put: operations["updateFixedPoint"];
+        post?: never;
+        /** Delete fixed point */
+        delete: operations["deleteFixedPoint"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/gps": {
         parameters: {
             query?: never;
@@ -2572,6 +2609,23 @@ export interface components {
             slug?: string;
             state?: string;
         };
+        "dto.FixedPointRequest": {
+            latitude?: number;
+            longitude?: number;
+            name?: string;
+            overlay?: string;
+            symbol?: string;
+            symbol_table?: string;
+        };
+        "dto.FixedPointResponse": {
+            id?: number;
+            latitude?: number;
+            longitude?: number;
+            name?: string;
+            overlay?: string;
+            symbol?: string;
+            symbol_table?: string;
+        };
         "dto.GPSRequest": {
             baud_rate?: number;
             gpsd_host?: string;
@@ -3701,6 +3755,12 @@ export interface components {
         "dto.IGateRfFilterRequest": {
             content: {
                 "application/json": components["schemas"]["dto.IGateRfFilterRequest"];
+            };
+        };
+        /** @description Fixed point definition */
+        "dto.FixedPointRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.FixedPointRequest"];
             };
         };
         /** @description Blocklist entry */
@@ -6319,6 +6379,194 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Digipeater rule id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listFixedPoints: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.FixedPointResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createFixedPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.FixedPointRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.FixedPointResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getFixedPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Fixed point id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.FixedPointResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateFixedPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Fixed point id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.FixedPointRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.FixedPointResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteFixedPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Fixed point id */
                 id: number;
             };
             cookie?: never;

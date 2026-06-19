@@ -1281,6 +1281,38 @@ definitions:
       state:
         type: string
     type: object
+  dto.FixedPointRequest:
+    properties:
+      latitude:
+        type: number
+      longitude:
+        type: number
+      name:
+        type: string
+      overlay:
+        type: string
+      symbol:
+        type: string
+      symbol_table:
+        type: string
+    type: object
+  dto.FixedPointResponse:
+    properties:
+      id:
+        type: integer
+      latitude:
+        type: number
+      longitude:
+        type: number
+      name:
+        type: string
+      overlay:
+        type: string
+      symbol:
+        type: string
+      symbol_table:
+        type: string
+    type: object
   dto.GPSRequest:
     properties:
       baud_rate:
@@ -3047,6 +3079,8 @@ tags:
     description: Radio channel configuration.
   - name: beacons
     description: Beacon configuration and send-now.
+  - name: fixed-points
+    description: Operator-placed map landmarks, shared across devices.
   - name: audio-devices
     description: Audio input/output device binding.
   - name: kiss
@@ -4955,6 +4989,147 @@ paths:
       summary: Update digipeater rule
       tags:
         - digipeater
+  /fixed-points:
+    get:
+      operationId: listFixedPoints
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.FixedPointResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List fixed points
+      tags:
+        - fixed-points
+    post:
+      consumes:
+        - application/json
+      operationId: createFixedPoint
+      parameters:
+        - description: Fixed point definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.FixedPointRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.FixedPointResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create fixed point
+      tags:
+        - fixed-points
+  /fixed-points/{id}:
+    delete:
+      operationId: deleteFixedPoint
+      parameters:
+        - description: Fixed point id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete fixed point
+      tags:
+        - fixed-points
+    get:
+      operationId: getFixedPoint
+      parameters:
+        - description: Fixed point id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.FixedPointResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get fixed point
+      tags:
+        - fixed-points
+    put:
+      consumes:
+        - application/json
+      operationId: updateFixedPoint
+      parameters:
+        - description: Fixed point id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Fixed point definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.FixedPointRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.FixedPointResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update fixed point
+      tags:
+        - fixed-points
   /gps:
     get:
       operationId: getGps
