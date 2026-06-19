@@ -12,7 +12,7 @@
   style: info
   schema_version: 1
   link: "#/map"
-  title: "Map toggles that stick, beacon slot timing and object altitude, and Android fixes"
+  title: "Map toggles that stick, beacon slot timing and object altitude, Android fixes"
   body: |
     Your Live Map layer toggles now stick between sessions. Stations,
     Trails, Weather, My Position, Fixed Points, and the RF filters all
