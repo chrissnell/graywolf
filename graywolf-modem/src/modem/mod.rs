@@ -999,6 +999,19 @@ impl Modem {
             samples = lead;
         }
 
+        // Digirig Lite tone PTT keys the radio via a tone on the companion
+        // (right) channel, emitted by the audio sink for the whole buffer.
+        // Prepend a short window of *silence* on this (AFSK / left) channel
+        // so the companion tone leads the packet — giving the Digirig's
+        // tone detector and the radio's TX switch time to engage before any
+        // HDLC data goes out. Unlike VOX (whose lead-in is itself the tone
+        // on the same mono channel), here the lead-in is silent because the
+        // keying tone rides the other channel. See [`digirig_tone_lead_in`].
+        if let Some(mut lead) = digirig_tone_lead_in(ptt_cfg, acfg.sample_rate) {
+            lead.extend_from_slice(&samples);
+            samples = lead;
+        }
+
         // Apply output device gain to TX audio
         let mut clipping = false;
         if let Some(gain_atom) = self.gain_atoms.get(&ccfg.output_device_id) {
@@ -1063,6 +1076,7 @@ impl Modem {
                 sample_rate: acfg.sample_rate,
                 channels: acfg.channels,
                 audio_channel: ccfg.output_channel,
+                ptt_tone_hz: digirig_tone_hz(ptt_cfg, ccfg.mark_freq),
             },
         };
 
@@ -1162,6 +1176,10 @@ impl Modem {
                 sample_rate,
                 channels,
                 audio_channel: output_channel,
+                // Test signals never carry a PTT keying tone — the operator
+                // is exercising the audio path or a hardware PTT line, not
+                // Digirig tone keying.
+                ptt_tone_hz: 0,
             },
         };
 
@@ -1219,6 +1237,50 @@ fn vox_lead_in(
             mark_freq as f32,
             VOX_LEAD_TONE_MS,
         ))
+    } else {
+        None
+    }
+}
+
+/// Duration of the silent lead-in prepended to a Digirig-Lite-tone-PTT
+/// channel's TX audio, in milliseconds. During this window the AFSK
+/// (left) channel is silent while the audio sink emits the keying tone on
+/// the companion (right) channel, so the Digirig's tone detector and the
+/// radio's TX switch are fully engaged before the HDLC preamble starts.
+/// Matches [`VOX_LEAD_TONE_MS`]: a comfortable margin over typical relay
+/// and detector engage times.
+const DIGIRIG_TONE_LEAD_MS: u32 = 500;
+
+/// True when a channel's PTT config selects Digirig Lite tone keying.
+/// Unlike VOX there is no Android flavour — the Digirig Lite is a desktop
+/// USB sound device, so only the `digirig_tone` method string matches.
+fn ptt_uses_digirig_tone(cfg: &ConfigurePtt) -> bool {
+    cfg.method == "digirig_tone"
+}
+
+/// Frequency (Hz) of the PTT keying tone the audio sink should emit on the
+/// companion channel, or `0` when the channel does not use Digirig tone
+/// keying. The tone reuses the channel's `mark_freq` (same passband as the
+/// AFSK, as VOX does) so any radio/adapter filtering that passes the packet
+/// passes the keying tone too.
+fn digirig_tone_hz(ptt_cfg: Option<&ConfigurePtt>, mark_freq: u32) -> u32 {
+    if ptt_cfg.is_some_and(ptt_uses_digirig_tone) {
+        mark_freq
+    } else {
+        0
+    }
+}
+
+/// Build the silent lead-in buffer for a Digirig-Lite-tone-PTT channel, or
+/// `None` when the channel doesn't use it. The buffer is exactly
+/// `sample_rate * DIGIRIG_TONE_LEAD_MS / 1000` samples of silence; the
+/// companion-channel tone (emitted by the sink) plays over it so the radio
+/// keys before the packet. Factored out so the prepend behaviour is
+/// unit-testable without an audio device, mirroring [`vox_lead_in`].
+fn digirig_tone_lead_in(ptt_cfg: Option<&ConfigurePtt>, sample_rate: u32) -> Option<Vec<i16>> {
+    if ptt_cfg.is_some_and(ptt_uses_digirig_tone) {
+        let n = (sample_rate as u64 * DIGIRIG_TONE_LEAD_MS as u64 / 1000) as usize;
+        Some(vec![0i16; n])
     } else {
         None
     }
@@ -2489,6 +2551,50 @@ mod tests {
         assert!(vox_lead_in(Some(&cfg("serial_rts", 0)), sample_rate, 1200).is_none());
         assert!(vox_lead_in(Some(&cfg("android", 1)), sample_rate, 1200).is_none());
         assert!(vox_lead_in(None, sample_rate, 1200).is_none());
+    }
+
+    #[test]
+    fn digirig_tone_helpers_only_fire_for_the_digirig_tone_method() {
+        let cfg = |method: &str| ConfigurePtt {
+            channel: 0,
+            method: method.into(),
+            device: String::new(),
+            txdelay_ms: 0,
+            txtail_ms: 0,
+            slottime_ms: 0,
+            persist: 0,
+            dwait_ms: 0,
+            invert: false,
+            gpio_pin: 0,
+            gpio_line: 0,
+            ptt_method: 0,
+        };
+        let sample_rate = 48_000u32;
+        let expected_len = (sample_rate as u64 * DIGIRIG_TONE_LEAD_MS as u64 / 1000) as usize;
+
+        // digirig_tone → companion-channel tone at mark_freq + a silent
+        // lead-in of exactly DIGIRIG_TONE_LEAD_MS.
+        assert!(ptt_uses_digirig_tone(&cfg("digirig_tone")));
+        assert_eq!(digirig_tone_hz(Some(&cfg("digirig_tone")), 1200), 1200);
+        let lead = digirig_tone_lead_in(Some(&cfg("digirig_tone")), sample_rate)
+            .expect("digirig_tone channel must get a lead-in");
+        assert_eq!(lead.len(), expected_len);
+        // The AFSK-channel lead-in is SILENT (the keying tone rides the
+        // companion channel, emitted by the sink) — unlike VOX, whose
+        // lead-in is the tone itself.
+        assert!(
+            lead.iter().all(|&s| s == 0),
+            "digirig lead-in must be silent on the AFSK channel"
+        );
+
+        // Every other method: no tone, no lead-in.
+        for m in ["none", "vox", "serial_rts", "cm108", "android"] {
+            assert!(!ptt_uses_digirig_tone(&cfg(m)), "{} is not digirig_tone", m);
+            assert_eq!(digirig_tone_hz(Some(&cfg(m)), 1200), 0, "{} tone hz", m);
+            assert!(digirig_tone_lead_in(Some(&cfg(m)), sample_rate).is_none(), "{} lead", m);
+        }
+        assert_eq!(digirig_tone_hz(None, 1200), 0);
+        assert!(digirig_tone_lead_in(None, sample_rate).is_none());
     }
 
     #[test]

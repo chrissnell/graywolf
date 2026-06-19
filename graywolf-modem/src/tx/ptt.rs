@@ -144,6 +144,16 @@ pub(crate) enum PttMethod {
     /// before packet data starts (graywolf#220). See
     /// `crate::modem` `handle_transmit_frame`.
     Vox,
+    /// Digirig Lite "tone PTT": no hardware PTT line. The Digirig Lite has
+    /// no serial/HID PTT control; instead its onboard circuit keys the
+    /// radio whenever it detects an audio tone on the *right* channel,
+    /// while the AFSK packet audio travels on the *left* channel. Like
+    /// [`PttMethod::Vox`] this builds a [`NonePtt`] driver — the keying is
+    /// done by the tone, not a hardware line. The companion-channel tone
+    /// (and the short lead-in ahead of the packet) is generated in the
+    /// audio output path, not here. See `crate::modem` `handle_transmit_frame`
+    /// and `crate::audio::soundcard`'s `PttTone`.
+    DigirigTone,
     SerialRts,
     SerialDtr,
     Cm108,
@@ -167,6 +177,7 @@ impl PttMethod {
         match s {
             "" | "none" => Some(Self::None),
             "vox" => Some(Self::Vox),
+            "digirig_tone" => Some(Self::DigirigTone),
             "serial_rts" => Some(Self::SerialRts),
             "serial_dtr" => Some(Self::SerialDtr),
             "cm108" => Some(Self::Cm108),
@@ -534,8 +545,10 @@ impl PortRegistry {
             // VOX (with or without the lead-in tone) never touches a
             // hardware line — the radio keys on audio. The tone, when
             // requested, is prepended to the TX audio buffer upstream in
-            // the modem, not here.
-            PttMethod::None | PttMethod::Vox => Ok(Box::new(NonePtt)),
+            // the modem, not here. Digirig Lite tone PTT is the same shape:
+            // the radio keys on a tone the audio path puts on the companion
+            // channel, so it too needs only a no-op hardware driver.
+            PttMethod::None | PttMethod::Vox | PttMethod::DigirigTone => Ok(Box::new(NonePtt)),
             PttMethod::SerialRts => Ok(Box::new(self.serial_driver(
                 &cfg.device,
                 SerialLine::Rts,
@@ -830,6 +843,7 @@ pub(crate) mod tests {
         assert_eq!(PttMethod::parse("none"), Some(PttMethod::None));
         assert_eq!(PttMethod::parse(""), Some(PttMethod::None));
         assert_eq!(PttMethod::parse("vox"), Some(PttMethod::Vox));
+        assert_eq!(PttMethod::parse("digirig_tone"), Some(PttMethod::DigirigTone));
         assert_eq!(PttMethod::parse("serial_rts"), Some(PttMethod::SerialRts));
         assert_eq!(PttMethod::parse("serial_dtr"), Some(PttMethod::SerialDtr));
         assert_eq!(PttMethod::parse("cm108"), Some(PttMethod::Cm108));
@@ -868,6 +882,24 @@ pub(crate) mod tests {
             ..base_cfg()
         };
         let mut driver = registry.build_driver(&cfg).expect("vox always builds");
+        assert!(driver.key().is_ok());
+        assert!(driver.unkey().is_ok());
+    }
+
+    #[test]
+    fn build_driver_with_digirig_tone_method_yields_noop_driver() {
+        // Digirig Lite tone PTT keys the radio via a companion-channel
+        // tone the audio path emits, so it needs no hardware line and
+        // never opens a device — build_driver must succeed with a no-op
+        // driver regardless of the (ignored) device path, exactly like vox.
+        let mut registry = PortRegistry::new();
+        let cfg = ConfigurePtt {
+            method: "digirig_tone".into(),
+            ..base_cfg()
+        };
+        let mut driver = registry
+            .build_driver(&cfg)
+            .expect("digirig_tone always builds");
         assert!(driver.key().is_ok());
         assert!(driver.unkey().is_ok());
     }

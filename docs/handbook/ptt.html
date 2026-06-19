@@ -128,6 +128,11 @@
               <td>Any radio with a VOX setting</td>
             </tr>
             <tr>
+              <td><code>digirig_tone</code></td>
+              <td>No PTT wire &mdash; the Digirig Lite keys the radio from a tone on the right audio channel while the packet plays on the left (see <a href="#digirig-tone-ptt">Digirig Lite Tone PTT</a> below)</td>
+              <td>Digirig Lite</td>
+            </tr>
+            <tr>
               <td><code>serial_rts</code></td>
               <td>Assert RTS pin on a serial port</td>
               <td>USB-to-serial adapter, Digirig</td>
@@ -226,6 +231,42 @@
           untouched; the difference is that only <code>vox</code> sends the
           lead-in tone. Use <code>vox</code> whenever a VOX-keyed radio is
           clipping the start of your packets.
+        </p>
+      </div>
+    </div>
+
+    <h2 id="digirig-tone-ptt">Digirig Lite Tone PTT</h2>
+
+    <p>
+      The <a href="https://digirig.net/">Digirig Lite</a> has no serial or
+      HID control line for PTT. Instead, its onboard detector keys the radio
+      whenever it hears an audio tone on the <strong>right</strong> channel,
+      while the AFSK packet audio travels on the <strong>left</strong> channel.
+      Select the <code>digirig_tone</code> method to use it. No device path is
+      required, but the channel's audio output must be routed to the
+      <strong>Left</strong> channel of the stereo Digirig Lite device.
+    </p>
+
+    <p>
+      For every packet, graywolf emits a steady keying tone at the channel's
+      mark frequency on the right channel for the full transmission, and
+      prepends a <strong>500&nbsp;ms silent lead-in</strong> on the left
+      (AFSK) channel so the tone starts slightly before the packet. That head
+      start lets the Digirig's detector and the radio's transmit switch
+      engage before any data goes out, so the start of the frame is not
+      clipped. The keying tone rides its own channel and never mixes with the
+      packet audio.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Digirig Lite Tone PTT requires a stereo (2-channel) output device;
+          on a mono device the keying tone is suppressed (it would otherwise
+          corrupt the packet). Like <code>vox</code> and <code>none</code>, it
+          leaves the radio's PTT wire untouched &mdash; the tone does the
+          keying.
         </p>
       </div>
     </div>

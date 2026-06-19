@@ -433,6 +433,88 @@ pub struct SoundcardOutputConfig {
     /// 0-indexed output channel to write samples into on a multi-channel
     /// device. The other channels are filled with silence.
     pub audio_channel: u32,
+    /// Frequency, in Hz, of the PTT keying tone to emit on the *companion*
+    /// channel (the stereo partner of [`Self::audio_channel`]) for the
+    /// duration of each submitted buffer. `0` disables it. Used by the
+    /// Digirig Lite tone-PTT method: the AFSK packet plays on
+    /// `audio_channel` while a steady tone on the companion channel keys
+    /// the radio. Requires a 2+ channel device; on mono it is ignored
+    /// (a tone there would corrupt the packet) with a logged warning.
+    pub ptt_tone_hz: u32,
+}
+
+/// Peak amplitude of the PTT keying tone, matching the lead-in tone level
+/// used elsewhere (`txtest::AMP`, ~0.6 FS). A touch hotter than the AFSK
+/// frame so the Digirig Lite's tone detector trips reliably; the tone
+/// lives on its own channel and never mixes with the packet audio.
+///
+/// The tone is synthesised here in the output callback and is therefore
+/// **not** subject to the per-device output gain that
+/// `Modem::handle_transmit_frame` applies to the AFSK buffer. That is
+/// deliberate: the keying tone drives the Digirig's PTT detector, not the
+/// air, so it must stay at a reliable trip level regardless of how far the
+/// operator pads down the transmit-audio drive.
+const PTT_TONE_AMP: f32 = 0.6 * 32767.0;
+
+/// Steady sine generator for the PTT keying tone on the companion channel.
+/// Holds a phase accumulator so the tone is continuous across cpal
+/// callback buffers; [`Self::reset`] restarts the phase between
+/// transmissions so each keying burst begins cleanly at zero crossing.
+pub(crate) struct PttTone {
+    /// Current phase in radians.
+    phase: f32,
+    /// Phase advance per output frame (2π·freq / sample_rate).
+    phase_inc: f32,
+    /// 0-indexed channel the tone is written into (the companion of the
+    /// AFSK channel).
+    channel: usize,
+}
+
+impl PttTone {
+    fn new(freq_hz: f32, sample_rate: u32, channel: usize) -> Self {
+        let phase_inc = if sample_rate == 0 {
+            0.0
+        } else {
+            2.0 * std::f32::consts::PI * freq_hz / sample_rate as f32
+        };
+        Self { phase: 0.0, phase_inc, channel }
+    }
+
+    /// Next tone sample, advancing the phase by one frame.
+    fn tick(&mut self) -> i16 {
+        let s = (self.phase.sin() * PTT_TONE_AMP) as i16;
+        self.phase += self.phase_inc;
+        if self.phase >= 2.0 * std::f32::consts::PI {
+            self.phase -= 2.0 * std::f32::consts::PI;
+        }
+        s
+    }
+
+    /// Restart the phase so the next active frame begins at a zero
+    /// crossing. Called on every idle (silence) frame so back-to-back
+    /// transmissions don't accumulate a phase offset and so the tone
+    /// never bleeds into the inter-packet silence.
+    fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+}
+
+/// Resolve the companion channel that carries the PTT tone, given the
+/// negotiated `channels` count and the AFSK `want` channel. `None` when
+/// the device has fewer than two channels (no room for a separate tone
+/// channel).
+///
+/// For the standard stereo Digirig Lite case (`channels == 2`, AFSK on the
+/// left at `want == 0`) this returns channel 1 — the right channel its PTT
+/// detector listens on. On a >2-channel device it returns a channel that is
+/// always distinct from `want` (channel 1 when `want == 0`, else channel 0);
+/// every channel other than `want` and the returned tone channel is filled
+/// with silence, so the choice is harmless even if `want >= 2`.
+pub(crate) fn ptt_tone_channel(channels: usize, want: usize) -> Option<usize> {
+    if channels < 2 {
+        return None;
+    }
+    Some(if want == 0 { 1 } else { 0 })
 }
 
 /// String-only heuristic for the "Recommended" badge.
@@ -1124,6 +1206,29 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     let sample_format = pick_output_sample_format(&output_cfgs, cfg.sample_rate)
         .unwrap_or_else(|| supported.sample_format());
 
+    // PTT keying tone (Digirig Lite tone PTT): resolve the companion
+    // channel up front. `(freq_hz, channel)` is rebuilt into a fresh
+    // `PttTone` on every stream (re)build inside the holding thread so the
+    // phase accumulator starts clean. A mono device has no companion
+    // channel; emitting the tone on the AFSK channel would corrupt the
+    // packet, so we disable it and warn rather than transmit garbage.
+    let ptt_tone_spec: Option<(f32, usize)> = if cfg.ptt_tone_hz != 0 {
+        match ptt_tone_channel(channels as usize, want_ch) {
+            Some(ch) => Some((cfg.ptt_tone_hz as f32, ch)),
+            None => {
+                eprintln!(
+                    "graywolf-modem: ptt tone requested ({} Hz) but output device is mono; \
+                     ignoring — Digirig Lite tone PTT needs a stereo device",
+                    cfg.ptt_tone_hz
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let tone_sample_rate = cfg.sample_rate;
+
     let drained_for_thread = drained.clone();
     let submitted_for_thread = submitted.clone();
     let shared_rx_for_thread = shared_rx.clone();
@@ -1151,13 +1256,17 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
                     drained_for_thread.clone(),
                     submitted_for_thread.clone(),
                 );
+                // Fresh tone generator per stream build so the phase
+                // accumulator starts at zero on every rebuild.
+                let mut ptt_tone =
+                    ptt_tone_spec.map(|(hz, ch)| PttTone::new(hz, tone_sample_rate, ch));
 
                 let build_result: Result<cpal::Stream, cpal::BuildStreamError> = match sample_format {
                     SampleFormat::F32 => device.build_output_stream(
                         &stream_config,
                         move |data: &mut [f32], _| {
                             let mut next = || state.next_sample();
-                            fill_output_f32(data, ch_usize, want_ch, &mut next);
+                            fill_output_f32(data, ch_usize, want_ch, &mut next, ptt_tone.as_mut());
                         },
                         err_fn,
                         None,
@@ -1166,7 +1275,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
                         &stream_config,
                         move |data: &mut [i16], _| {
                             let mut next = || state.next_sample();
-                            fill_output_i16(data, ch_usize, want_ch, &mut next);
+                            fill_output_i16(data, ch_usize, want_ch, &mut next, ptt_tone.as_mut());
                         },
                         err_fn,
                         None,
@@ -1175,7 +1284,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
                         &stream_config,
                         move |data: &mut [u16], _| {
                             let mut next = || state.next_sample();
-                            fill_output_u16(data, ch_usize, want_ch, &mut next);
+                            fill_output_u16(data, ch_usize, want_ch, &mut next, ptt_tone.as_mut());
                         },
                         err_fn,
                         None,
@@ -1348,27 +1457,64 @@ impl OutputState {
     }
 }
 
+/// Per-frame routing decision shared by all three format fillers: pull
+/// the next mono sample and, when a [`PttTone`] is active, the keying
+/// tone for the companion channel.
+///
+/// Returns `(sample, tone)` where `sample` is the AFSK value for `want`
+/// (0 when the queue is idle) and `tone` is `Some((channel, value))`
+/// only while real audio is flowing — so the keying tone spans exactly
+/// the submitted buffer (lead-in silence, packet, and txtail) and is
+/// silent between transmissions. On an idle frame the tone phase is
+/// reset so the next burst starts clean.
+fn next_frame_samples(
+    next: &mut dyn FnMut() -> Option<i16>,
+    tone: &mut Option<&mut PttTone>,
+) -> (i16, Option<(usize, i16)>) {
+    match next() {
+        Some(sample) => {
+            let t = tone.as_deref_mut().map(|t| (t.channel, t.tick()));
+            (sample, t)
+        }
+        None => {
+            if let Some(t) = tone.as_deref_mut() {
+                t.reset();
+            }
+            (0, None)
+        }
+    }
+}
+
 /// Fill an `f32` output buffer with samples from `next`, routing each
-/// mono sample into channel `want` of a `channels`-wide frame. The
-/// remaining channels are zeroed. Silence (`0`) is written when `next`
-/// returns `None`.
+/// mono sample into channel `want` of a `channels`-wide frame. When a
+/// [`PttTone`] is supplied its sample is written into the companion
+/// channel; every other channel is zeroed. Silence (`0`) is written
+/// when `next` returns `None`.
 fn fill_output_f32(
     data: &mut [f32],
     channels: usize,
     want: usize,
     next: &mut dyn FnMut() -> Option<i16>,
+    mut tone: Option<&mut PttTone>,
 ) {
     let ch = channels.max(1);
+    let conv = |s: i16| -> f32 { (s as f32) / 32768.0 };
     for frame in data.chunks_mut(ch) {
-        let sample = next().unwrap_or(0);
-        let f = (sample as f32) / 32768.0;
+        let (sample, tone_out) = next_frame_samples(next, &mut tone);
+        let f = conv(sample);
         if ch <= 1 {
             for slot in frame.iter_mut() {
                 *slot = f;
             }
         } else {
             for (i, slot) in frame.iter_mut().enumerate() {
-                *slot = if i == want { f } else { 0.0 };
+                *slot = if i == want {
+                    f
+                } else if tone_out.map(|(c, _)| c) == Some(i) {
+                    conv(tone_out.unwrap().1)
+                } else {
+                    0.0
+                };
             }
         }
     }
@@ -1380,17 +1526,24 @@ fn fill_output_i16(
     channels: usize,
     want: usize,
     next: &mut dyn FnMut() -> Option<i16>,
+    mut tone: Option<&mut PttTone>,
 ) {
     let ch = channels.max(1);
     for frame in data.chunks_mut(ch) {
-        let sample = next().unwrap_or(0);
+        let (sample, tone_out) = next_frame_samples(next, &mut tone);
         if ch <= 1 {
             for slot in frame.iter_mut() {
                 *slot = sample;
             }
         } else {
             for (i, slot) in frame.iter_mut().enumerate() {
-                *slot = if i == want { sample } else { 0 };
+                *slot = if i == want {
+                    sample
+                } else if tone_out.map(|(c, _)| c) == Some(i) {
+                    tone_out.unwrap().1
+                } else {
+                    0
+                };
             }
         }
     }
@@ -1403,12 +1556,13 @@ fn fill_output_u16(
     channels: usize,
     want: usize,
     next: &mut dyn FnMut() -> Option<i16>,
+    mut tone: Option<&mut PttTone>,
 ) {
     let ch = channels.max(1);
     let to_u16 = |s: i16| -> u16 { (s as i32 + 32768) as u16 };
     let silence: u16 = 0x8000;
     for frame in data.chunks_mut(ch) {
-        let sample = next().unwrap_or(0);
+        let (sample, tone_out) = next_frame_samples(next, &mut tone);
         let out = to_u16(sample);
         if ch <= 1 {
             for slot in frame.iter_mut() {
@@ -1416,7 +1570,13 @@ fn fill_output_u16(
             }
         } else {
             for (i, slot) in frame.iter_mut().enumerate() {
-                *slot = if i == want { out } else { silence };
+                *slot = if i == want {
+                    out
+                } else if tone_out.map(|(c, _)| c) == Some(i) {
+                    to_u16(tone_out.unwrap().1)
+                } else {
+                    silence
+                };
             }
         }
     }
@@ -1529,7 +1689,7 @@ mod tests {
     fn fill_output_f32_writes_mono_sample_into_every_slot() {
         let mut out = [0.0f32; 3];
         let mut next = source(&[16_384, -16_384, 0]);
-        fill_output_f32(&mut out, 1, 0, &mut next);
+        fill_output_f32(&mut out, 1, 0, &mut next, None);
         assert_eq!(out, [0.5, -0.5, 0.0]);
     }
 
@@ -1537,7 +1697,7 @@ mod tests {
     fn fill_output_f32_routes_stereo_to_requested_channel() {
         let mut out = [0.0f32; 6];
         let mut next = source(&[16_384, -16_384, 8_192]);
-        fill_output_f32(&mut out, 2, 1, &mut next);
+        fill_output_f32(&mut out, 2, 1, &mut next, None);
         assert_eq!(out, [0.0, 0.5, 0.0, -0.5, 0.0, 8_192.0 / 32_768.0]);
     }
 
@@ -1545,7 +1705,7 @@ mod tests {
     fn fill_output_f32_emits_silence_when_source_exhausted() {
         let mut out = [1.0f32; 4];
         let mut next = source(&[100]);
-        fill_output_f32(&mut out, 1, 0, &mut next);
+        fill_output_f32(&mut out, 1, 0, &mut next, None);
         assert_eq!(out, [100.0 / 32_768.0, 0.0, 0.0, 0.0]);
     }
 
@@ -1553,7 +1713,7 @@ mod tests {
     fn fill_output_i16_mono_is_identity() {
         let mut out = [0i16; 3];
         let mut next = source(&[100, -200, 32_000]);
-        fill_output_i16(&mut out, 1, 0, &mut next);
+        fill_output_i16(&mut out, 1, 0, &mut next, None);
         assert_eq!(out, [100, -200, 32_000]);
     }
 
@@ -1561,7 +1721,7 @@ mod tests {
     fn fill_output_i16_stereo_routes_to_left_and_silences_right() {
         let mut out = [0i16; 4];
         let mut next = source(&[100, -200]);
-        fill_output_i16(&mut out, 2, 0, &mut next);
+        fill_output_i16(&mut out, 2, 0, &mut next, None);
         assert_eq!(out, [100, 0, -200, 0]);
     }
 
@@ -1569,7 +1729,7 @@ mod tests {
     fn fill_output_u16_mono_uses_offset_binary() {
         let mut out = [0u16; 3];
         let mut next = source(&[0, 32_767, -32_768]);
-        fill_output_u16(&mut out, 1, 0, &mut next);
+        fill_output_u16(&mut out, 1, 0, &mut next, None);
         assert_eq!(out, [0x8000, 0xFFFF, 0x0000]);
     }
 
@@ -1577,7 +1737,7 @@ mod tests {
     fn fill_output_u16_silence_is_mid_scale_on_unused_channels() {
         let mut out = [0u16; 4];
         let mut next = source(&[16_384, -16_384]);
-        fill_output_u16(&mut out, 2, 1, &mut next);
+        fill_output_u16(&mut out, 2, 1, &mut next, None);
         assert_eq!(out, [0x8000, 0xC000, 0x8000, 0x4000]);
     }
 
@@ -1655,11 +1815,101 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             audio_channel: 2,
+            ptt_tone_hz: 0,
         }, None);
         match result {
             Err(e) => assert!(e.contains("out of range"), "unexpected error: {}", e),
             Ok(_) => panic!("expected out-of-range rejection"),
         }
+    }
+
+    #[test]
+    fn ptt_tone_channel_picks_the_companion_or_none_on_mono() {
+        // Stereo: tone goes on whichever channel the AFSK does not.
+        assert_eq!(ptt_tone_channel(2, 0), Some(1));
+        assert_eq!(ptt_tone_channel(2, 1), Some(0));
+        // No companion on a mono device.
+        assert_eq!(ptt_tone_channel(1, 0), None);
+        assert_eq!(ptt_tone_channel(0, 0), None);
+        // >2 channels: always a channel distinct from `want` (the other
+        // channels are silenced anyway, so the exact pick is harmless).
+        assert_eq!(ptt_tone_channel(4, 0), Some(1));
+        assert_ne!(ptt_tone_channel(4, 2), Some(2));
+        assert_eq!(ptt_tone_channel(4, 2), Some(0));
+    }
+
+    #[test]
+    fn ptt_tone_reset_restarts_phase_at_zero_crossing() {
+        let mut tone = PttTone::new(1200.0, 48_000, 1);
+        // First sample is at phase 0 → sin(0) = 0.
+        assert_eq!(tone.tick(), 0);
+        // After advancing, the phase is non-zero so the tone is audible.
+        let mut saw_nonzero = false;
+        for _ in 0..40 {
+            if tone.tick() != 0 {
+                saw_nonzero = true;
+                break;
+            }
+        }
+        assert!(saw_nonzero, "tone must become audible after advancing");
+        // reset() returns the phase to zero so the next burst starts clean.
+        tone.reset();
+        assert_eq!(tone.tick(), 0);
+    }
+
+    #[test]
+    fn fill_output_i16_routes_afsk_and_tone_to_separate_channels() {
+        // Companion (tone) channel is 1; AFSK (want) channel is 0.
+        let mut tone = PttTone::new(1200.0, 48_000, 1);
+        // Four stereo frames: active, active, IDLE, active. The idle frame
+        // (None) must silence both channels and reset the tone phase, so
+        // the following active frame restarts at the phase-0 zero crossing.
+        let mut iter = [Some(1000i16), Some(2000), None, Some(-3000)].into_iter();
+        let mut next = move || iter.next().unwrap_or(None);
+        let mut data = vec![123i16; 8]; // 4 frames * 2 channels, pre-dirtied
+        fill_output_i16(&mut data, 2, 0, &mut next, Some(&mut tone));
+
+        // AFSK channel (0) carries the mono samples; idle frame is silent.
+        assert_eq!([data[0], data[2], data[4], data[6]], [1000, 2000, 0, -3000]);
+        // Tone channel (1): frame 0 is phase 0 → 0; frame 1 has advanced →
+        // audible; idle frame → silence + reset; frame 3 restarts at phase
+        // 0 → 0 again.
+        assert_eq!(data[1], 0, "tone starts at zero crossing");
+        assert_ne!(data[3], 0, "tone is audible while AFSK flows");
+        assert_eq!(data[5], 0, "idle frame must be silent on the tone channel");
+        assert_eq!(data[7], 0, "tone phase reset restarts at zero crossing");
+    }
+
+    #[test]
+    fn fill_output_i16_silences_unrelated_channels_on_multichannel_device() {
+        // 4-channel device, AFSK on 0, tone on 3: channels 1 and 2 stay
+        // silent even while audio flows.
+        let mut tone = PttTone::new(1200.0, 48_000, 3);
+        // Advance the phase off the zero crossing so the tone sample is
+        // unambiguously non-zero in the single active frame.
+        let _ = tone.tick();
+        tone.reset();
+        let mut iter = [Some(5000i16)].into_iter();
+        let mut next = move || iter.next().unwrap_or(None);
+        let mut data = vec![0i16; 8]; // 2 frames * 4 channels
+        fill_output_i16(&mut data, 4, 0, &mut next, Some(&mut tone));
+        // Frame 0 active: ch0 = AFSK, ch1 = ch2 = 0.
+        assert_eq!(data[0], 5000);
+        assert_eq!(data[1], 0);
+        assert_eq!(data[2], 0);
+        // Frame 1 idle: everything silent.
+        assert_eq!(&data[4..8], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn fill_output_i16_without_tone_matches_legacy_single_channel_routing() {
+        // No PttTone → behaviour is the original mono-into-want routing:
+        // want channel carries the sample, the other is silent.
+        let mut iter = [Some(1111i16), Some(2222)].into_iter();
+        let mut next = move || iter.next().unwrap_or(None);
+        let mut data = vec![9i16; 4];
+        fill_output_i16(&mut data, 2, 1, &mut next, None);
+        assert_eq!(data, vec![0, 1111, 0, 2222]);
     }
 
     // --- ALSA physical-card canonicalization --------------------------

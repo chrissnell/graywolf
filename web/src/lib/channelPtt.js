@@ -13,6 +13,8 @@ export const METHOD_NONE = 'none';
 
 const METHOD_LABELS = {
   none: 'None',
+  vox: 'VOX',
+  digirig_tone: 'Digirig Lite Tone PTT',
   serial_rts: 'Serial RTS',
   serial_dtr: 'Serial DTR',
   gpio: 'GPIO',

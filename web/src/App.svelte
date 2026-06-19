@@ -202,7 +202,12 @@
   .main-content.full-bleed {
     max-width: none;
     padding: 0;
+    /* dvh tracks the *visible* viewport as the mobile address bar
+       collapses/expands; 100vh (the largest viewport) would push the map's
+       bottom indicators behind the address bar (GH #348). vh first as a
+       fallback for browsers without dvh. */
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
     position: relative;
   }
@@ -218,6 +223,7 @@
     }
     .main-content.full-bleed {
       height: calc(100vh - 56px - env(safe-area-inset-top));
+      height: calc(100dvh - 56px - env(safe-area-inset-top));
     }
   }
 </style>

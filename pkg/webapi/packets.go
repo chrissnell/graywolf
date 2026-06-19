@@ -25,6 +25,14 @@ type packetDTO struct {
 	DistanceMi *float64 `json:"distance_mi,omitempty"`
 	// Via is the callsign of the last digipeater that forwarded this packet (H-bit set); empty string for direct packets.
 	Via string `json:"via,omitempty"`
+	// Lat/Lon are the packet's reported coordinates in decimal degrees (WGS84),
+	// surfaced for any transmission type that carries a fix -- position, Mic-E,
+	// weather-with-position, object, and item alike. Omitted for positionless
+	// packets (messages, telemetry, status). The web UI uses these to render the
+	// click-to-zoom map reticle on a log entry; unlike DistanceMi they do not
+	// depend on the local station having its own GPS fix.
+	Lat *float64 `json:"lat,omitempty"`
+	Lon *float64 `json:"lon,omitempty"`
 }
 
 // RegisterPackets installs a GET /api/packets handler backed by the
@@ -147,38 +155,56 @@ func enrichPacket(dto *packetDTO, havePos bool, myLat, myLon float64) {
 		dto.Device = &aprs.DeviceInfo{Model: d.MicE.Manufacturer}
 	}
 
-	// Distance calculation
-	if !havePos {
+	// Coordinates: surfaced for every transmission type that carries a fix,
+	// independent of whether the local station knows its own position. This is
+	// what the web log's click-to-zoom reticle keys off of.
+	pktLat, pktLon, hasPktPos := packetPosition(d)
+	if !hasPktPos {
 		return
 	}
-
-	var pktLat, pktLon float64
-	var hasPktPos bool
-
-	switch {
-	case d.Position != nil:
-		pktLat, pktLon = d.Position.Latitude, d.Position.Longitude
-		hasPktPos = true
-	case d.MicE != nil:
-		pktLat, pktLon = d.MicE.Position.Latitude, d.MicE.Position.Longitude
-		hasPktPos = true
-	case d.Object != nil && d.Object.Position != nil:
-		pktLat, pktLon = d.Object.Position.Latitude, d.Object.Position.Longitude
-		hasPktPos = true
-	case d.Item != nil && d.Item.Position != nil:
-		pktLat, pktLon = d.Item.Position.Latitude, d.Item.Position.Longitude
-		hasPktPos = true
-	}
-
-	if !hasPktPos || (pktLat == 0 && pktLon == 0) {
-		return
-	}
-
-	dist := aprs.HaversineDistanceMi(myLat, myLon, pktLat, pktLon)
-	dto.DistanceMi = &dist
+	dto.Lat, dto.Lon = &pktLat, &pktLon
 
 	// Determine via (last digipeater that set H-bit, or direct)
 	dto.Via = lastDigipeater(d.Path)
+
+	// Distance needs the local fix; coordinates above do not.
+	if !havePos {
+		return
+	}
+	dist := aprs.HaversineDistanceMi(myLat, myLon, pktLat, pktLon)
+	dto.DistanceMi = &dist
+}
+
+// packetPosition returns the reported coordinates for any APRS transmission
+// type that carries a fix -- a plain position report, a Mic-E report, an
+// object or item with an embedded position, or a weather report (whose fix
+// rides on the position field). Positionless packets (messages, telemetry,
+// bare status, positionless weather) yield ok=false. The 0/0 "null island"
+// guard rejects an unset Position struct so a packet that failed to decode a
+// fix doesn't masquerade as one off the African coast.
+//
+// d.Position is the primary path: the decoder copies the fix there for Mic-E
+// (pkg/aprs/mice.go) and positioned weather (pkg/aprs/position.go), so those
+// are caught by the first case. The d.MicE/d.Object/d.Item cases are defensive
+// fallbacks for synthesized packets or future decoder paths that populate only
+// the type-specific struct.
+func packetPosition(d *aprs.DecodedAPRSPacket) (lat, lon float64, ok bool) {
+	switch {
+	case d.Position != nil:
+		lat, lon = d.Position.Latitude, d.Position.Longitude
+	case d.MicE != nil:
+		lat, lon = d.MicE.Position.Latitude, d.MicE.Position.Longitude
+	case d.Object != nil && d.Object.Position != nil:
+		lat, lon = d.Object.Position.Latitude, d.Object.Position.Longitude
+	case d.Item != nil && d.Item.Position != nil:
+		lat, lon = d.Item.Position.Latitude, d.Item.Position.Longitude
+	default:
+		return 0, 0, false
+	}
+	if lat == 0 && lon == 0 {
+		return 0, 0, false
+	}
+	return lat, lon, true
 }
 
 // lastDigipeater returns the callsign of the last path element with H-bit set

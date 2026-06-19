@@ -46,6 +46,7 @@
   const methodLabels = {
     none: 'None',
     vox: 'VOX (voice-operated)',
+    digirig_tone: 'Digirig Lite Tone PTT',
     serial_rts: 'Serial RTS',
     serial_dtr: 'Serial DTR',
     gpio: 'GPIO',
@@ -235,6 +236,7 @@
     const w = method.wire.method;
     if (w === 'none') return false;
     if (w === 'vox') return false;
+    if (w === 'digirig_tone') return false;
     if (w === 'rigctld') return false;
     if (w === 'android' && method.wire.ptt_method === 4) return false;
     return true;
