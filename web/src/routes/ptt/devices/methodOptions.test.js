@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-test('DESKTOP_METHODS includes all six PTT methods in display order', async () => {
+test('DESKTOP_METHODS includes all seven PTT methods in display order', async () => {
   const { DESKTOP_METHODS } = await import('./methodOptions.desktop.js');
   assert.deepEqual(
     DESKTOP_METHODS.map(m => m.wire.method),
-    ['none', 'serial_rts', 'serial_dtr', 'gpio', 'cm108', 'rigctld'],
+    ['none', 'vox', 'serial_rts', 'serial_dtr', 'gpio', 'cm108', 'rigctld'],
   );
 });
 
