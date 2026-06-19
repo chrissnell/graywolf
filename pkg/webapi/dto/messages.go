@@ -396,10 +396,6 @@ type MessagePreferencesRequest struct {
 	// rejects out-of-range values with 400 rather than silently clamping
 	// so operators see a clear error.
 	MaxMessageTextOverride uint32 `json:"max_message_text_override,omitempty"`
-	// BulletinIntervalMins is the stable retransmit interval after the
-	// initial 3-send burst. 0 = burst only (no further retransmits);
-	// 1..20 = minutes between retransmits. Default: 20 (APRS spec).
-	BulletinIntervalMins uint32 `json:"bulletin_interval_mins"`
 }
 
 // Validate clamps FallbackPolicy to the canonical enum and enforces
@@ -421,9 +417,6 @@ func (r MessagePreferencesRequest) Validate() error {
 	}
 	if r.RetryIntervalSecs != 0 && (r.RetryIntervalSecs < 10 || r.RetryIntervalSecs > 120) {
 		return fmt.Errorf("retry_interval_secs %d out of range (use 0 for default, or 10..120)", r.RetryIntervalSecs)
-	}
-	if r.BulletinIntervalMins > 20 {
-		return fmt.Errorf("bulletin_interval_mins %d out of range (0..20)", r.BulletinIntervalMins)
 	}
 	// max_message_text_override: 0 = default; else must be in (MaxMessageText, MaxMessageTextUnsafe].
 	if r.MaxMessageTextOverride != 0 {
@@ -448,7 +441,6 @@ func (r MessagePreferencesRequest) ToModel() configstore.MessagePreferences {
 		RetryIntervalSecs:      r.RetryIntervalSecs,
 		RetentionDays:          r.RetentionDays,
 		MaxMessageTextOverride: r.MaxMessageTextOverride,
-		BulletinIntervalMins:   r.BulletinIntervalMins,
 	}
 }
 
@@ -465,9 +457,6 @@ type MessagePreferencesResponse struct {
 	// no override set returns. Positive values fall in
 	// (MaxMessageText, MaxMessageTextUnsafe].
 	MaxMessageTextOverride uint32 `json:"max_message_text_override"`
-	// BulletinIntervalMins is the stable retransmit interval in minutes
-	// after the initial burst. 0 = burst only. Default 20.
-	BulletinIntervalMins uint32 `json:"bulletin_interval_mins"`
 }
 
 // MessagePreferencesFromModel renders one row. Applies policy
@@ -501,7 +490,6 @@ func MessagePreferencesFromModel(m configstore.MessagePreferences) MessagePrefer
 		RetryIntervalSecs:      interval,
 		RetentionDays:          m.RetentionDays,
 		MaxMessageTextOverride: override,
-		BulletinIntervalMins:   m.BulletinIntervalMins,
 	}
 }
 

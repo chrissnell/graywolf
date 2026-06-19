@@ -80,10 +80,9 @@ The `Scheduler` runs a goroutine that:
     completes first and is unaffected.
 - Increments `send_count` and advances `next_send_at`:
   - `send_count < BulletinBurstCount` (3): next in `BulletinBurstInterval` (30 s)
-  - `send_count >= BulletinBurstCount`: uses the operator-configured retransmit
-    interval (`MessagePreferences.BulletinIntervalMins`, 1–20 min). When set to
-    0, `next_send_at` is cleared and no further retransmits are scheduled
-    (burst-only mode). Default: 20 min.
+  - `send_count >= BulletinBurstCount`: uses the per-bulletin `interval_mins`
+    set at compose time (0–20). When 0, `next_send_at` is cleared and no further
+    retransmits are scheduled (burst-only mode). Default in the compose form: 20.
   - Announcements always use `AnnouncementInterval` (1 h), no burst phase.
 - Responds to `Kick()` for immediate processing without waiting for the
   next tick.
@@ -172,13 +171,13 @@ Digipeater path for outbound bulletins (and messages) is configurable in the
 Messaging settings page (`MessagePreferences.DefaultPath`). The default is
 `WIDE1-1,WIDE2-1`, suitable for most fixed stations.
 
-The **Bulletins** section of the Messaging settings page exposes a
-**Retransmit interval** field (`MessagePreferences.BulletinIntervalMins`,
-range 0–20). Setting it to 0 enables burst-only mode: the bulletin sends 3
-times at 30-second intervals and then stops. Any value 1–20 sets the stable
-rate after the burst phase. Default is 20 minutes (APRS spec for 2-hop
-stations). This field is stored in the `messages_preferences` table (migration
-27 backfills existing rows to 20).
+The **retransmit interval** is set per-bulletin in the compose form on the
+Bulletins page (`Bulletins.svelte`). The **Every N min** field defaults to
+20 (APRS spec for 2-hop stations). Set to 0 to send the burst only with no
+further retransmits. Range: 0–20. The value is stored as `interval_mins` on
+the `bulletins` row (migration 28 adds the column with a DB default of 20
+and backfills any pre-existing rows). Announcements (BLNA-Z) always use
+1-hour retransmits regardless of this field.
 
 Route registered in `web/src/App.svelte` as `'/bulletins': Bulletins`.
 API client in `web/src/api/bulletins.js`.

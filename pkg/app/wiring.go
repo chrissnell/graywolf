@@ -1171,28 +1171,20 @@ func (a *App) wireBulletins(ctx context.Context) error {
 	}
 	var txChannel uint32 = 1
 	var txPath string = "WIDE1-1,WIDE2-1"
-	var bulletinIntervalMins uint32 = 20
 	if mc, _ := a.store.GetMessagesConfig(ctx); mc != nil && mc.TxChannel != 0 {
 		txChannel = mc.TxChannel
 	}
-	if prefs, _ := a.store.GetMessagePreferences(ctx); prefs != nil {
-		if prefs.DefaultPath != "" {
-			txPath = prefs.DefaultPath
-		}
-		// BulletinIntervalMins: 0 in the DB is valid (burst-only), but
-		// also the zero-value on old rows before migration 27 ran. The
-		// migration backfills 0→20, so any 0 here is intentional.
-		bulletinIntervalMins = prefs.BulletinIntervalMins
+	if prefs, _ := a.store.GetMessagePreferences(ctx); prefs != nil && prefs.DefaultPath != "" {
+		txPath = prefs.DefaultPath
 	}
 	svc, err := bulletins.NewService(bulletins.ServiceConfig{
-		DB:                   a.store.DB(),
-		TxSink:               a.gov,
-		IGateSender:          a.igateLineSender,
-		OurCall:              ourCall,
-		TxChannel:            txChannel,
-		Path:                 txPath,
-		BulletinIntervalMins: bulletinIntervalMins,
-		Logger:               a.logger.With("component", "bulletins"),
+		DB:          a.store.DB(),
+		TxSink:      a.gov,
+		IGateSender: a.igateLineSender,
+		OurCall:     ourCall,
+		TxChannel:   txChannel,
+		Path:        txPath,
+		Logger:      a.logger.With("component", "bulletins"),
 	})
 	if err != nil {
 		a.logger.Error("bulletins service init", "err", err)

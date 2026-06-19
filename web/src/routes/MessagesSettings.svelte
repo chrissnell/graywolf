@@ -96,28 +96,6 @@
   </p>
 </Box>
 
-<Box title="Bulletins">
-  <p class="tx-channel-label">Retransmit interval (minutes)</p>
-  <div class="interval-row">
-    <input
-      class="retry-input"
-      type="number"
-      min="0"
-      max="20"
-      value={messagesPreferencesState.bulletinIntervalMins}
-      disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
-      onchange={(e) => messagesPreferencesState.setBulletinIntervalMins(e.target.value)}
-    />
-    <span class="interval-label">minutes</span>
-  </div>
-  <p class="messages-hint">
-    How often a bulletin is retransmitted after the initial 3-send burst (spaced 30 seconds apart).
-    <strong>20 minutes</strong> is the APRS standard for a 2-hop station.
-    Set to <strong>0</strong> to send the burst only, with no further retransmits.
-    Range: 0–20.
-  </p>
-</Box>
-
 <Box title="Retry">
   <p class="tx-channel-label">Max retries</p>
   <input
@@ -176,15 +154,6 @@
   .path-input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  .interval-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .interval-label {
-    font-size: 13px;
-    color: var(--text-muted);
   }
   .retry-input {
     width: 80px;

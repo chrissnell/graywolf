@@ -35,7 +35,7 @@ func buildSchedulerRig(t *testing.T) (*Scheduler, *Store, *fakeBulletinTxSink, *
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	store := NewStore(cs.DB())
 	sender := NewSender(sink, nil, func() string { return "W5X-9" }, "", logger)
-	sc := NewScheduler(store, sender, 1, 20, logger)
+	sc := NewScheduler(store, sender, 1, logger)
 	return sc, store, sink, cs
 }
 
@@ -84,11 +84,12 @@ func TestScheduler_BurstThenStableRate(t *testing.T) {
 
 	past := time.Now().UTC().Add(-time.Second)
 	b := &configstore.Bulletin{
-		Slot:       "BLN0",
-		Text:       "burst test",
-		MaxSends:   12,
-		NextSendAt: &past,
-		SendCount:  BulletinBurstCount - 1, // one send left in burst window
+		Slot:         "BLN0",
+		Text:         "burst test",
+		MaxSends:     12,
+		NextSendAt:   &past,
+		SendCount:    BulletinBurstCount - 1, // one send left in burst window
+		IntervalMins: 20,
 	}
 	if err := store.Insert(ctx, b); err != nil {
 		t.Fatal(err)
@@ -166,16 +167,16 @@ func TestScheduler_DoesNotSendExhausted(t *testing.T) {
 
 func TestScheduler_BurstOnly_StopsAfterBurst(t *testing.T) {
 	sc, store, sink, _ := buildSchedulerRig(t)
-	sc.SetIntervalMins(0) // burst-only mode
 	ctx := context.Background()
 
 	past := time.Now().UTC().Add(-time.Second)
 	b := &configstore.Bulletin{
-		Slot:       "BLN3",
-		Text:       "burst only",
-		MaxSends:   12,
-		NextSendAt: &past,
-		SendCount:  BulletinBurstCount - 1, // one burst send left
+		Slot:         "BLN3",
+		Text:         "burst only",
+		MaxSends:     12,
+		NextSendAt:   &past,
+		SendCount:    BulletinBurstCount - 1, // one burst send left
+		IntervalMins: 0,                      // burst-only: stop after burst phase
 	}
 	if err := store.Insert(ctx, b); err != nil {
 		t.Fatal(err)
@@ -199,16 +200,16 @@ func TestScheduler_BurstOnly_StopsAfterBurst(t *testing.T) {
 
 func TestScheduler_CustomInterval(t *testing.T) {
 	sc, store, sink, _ := buildSchedulerRig(t)
-	sc.SetIntervalMins(5) // 5-minute stable interval
 	ctx := context.Background()
 
 	past := time.Now().UTC().Add(-time.Second)
 	b := &configstore.Bulletin{
-		Slot:       "BLN4",
-		Text:       "custom interval",
-		MaxSends:   12,
-		NextSendAt: &past,
-		SendCount:  BulletinBurstCount, // burst phase complete
+		Slot:         "BLN4",
+		Text:         "custom interval",
+		MaxSends:     12,
+		NextSendAt:   &past,
+		SendCount:    BulletinBurstCount, // burst phase complete
+		IntervalMins: 5,                  // 5-minute stable interval
 	}
 	if err := store.Insert(ctx, b); err != nil {
 		t.Fatal(err)

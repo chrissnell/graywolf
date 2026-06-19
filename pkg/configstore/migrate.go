@@ -233,6 +233,7 @@ var schemaMigrations = []migration{
 	{version: 26, name: "messages_retry_interval", phase: postAutoMigrate, run: migrateMessagesRetryInterval},
 	{version: 27, name: "bulletins_table", phase: postAutoMigrate, run: migrateBulletinsTable},
 	{version: 28, name: "bulletin_interval", phase: postAutoMigrate, run: migrateBulletinInterval},
+	{version: 29, name: "bulletin_row_interval", phase: postAutoMigrate, run: migrateBulletinRowInterval},
 }
 
 // runMigrations applies every pending migration in the given phase,

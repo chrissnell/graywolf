@@ -26,14 +26,13 @@ type IGateSender interface {
 
 // ServiceConfig holds the Service dependencies.
 type ServiceConfig struct {
-	DB                   *gorm.DB
-	TxSink               txgovernor.TxSink
-	IGateSender          IGateSender // may be nil; bulletins still send via RF
-	OurCall              func() string
-	TxChannel            uint32
-	Path                 string // digipeater path, e.g. "WIDE1-1,WIDE2-1"
-	BulletinIntervalMins uint32 // 0 = burst-only, 1..20 = stable rate (default 20)
-	Logger               *slog.Logger
+	DB          *gorm.DB
+	TxSink      txgovernor.TxSink
+	IGateSender IGateSender // may be nil; bulletins still send via RF
+	OurCall     func() string
+	TxChannel   uint32
+	Path        string // digipeater path, e.g. "WIDE1-1,WIDE2-1"
+	Logger      *slog.Logger
 }
 
 // Service is the bulletin subsystem: ingest, compose, schedule, and
@@ -64,13 +63,9 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	intervalMins := cfg.BulletinIntervalMins
-	if intervalMins == 0 {
-		intervalMins = 20 // spec default; 0 in config means "not set yet"
-	}
 	store := NewStore(cfg.DB)
 	sender := NewSender(cfg.TxSink, cfg.IGateSender, cfg.OurCall, cfg.Path, logger)
-	scheduler := NewScheduler(store, sender, cfg.TxChannel, intervalMins, logger)
+	scheduler := NewScheduler(store, sender, cfg.TxChannel, logger)
 	return &Service{
 		store:     store,
 		sender:    sender,
@@ -124,8 +119,9 @@ func (s *Service) IngestBulletin(ctx context.Context, pkt *aprs.DecodedAPRSPacke
 
 // SendRequest is the payload for creating an outbound bulletin.
 type SendRequest struct {
-	Slot string // "BLN0".."BLNZ"
-	Text string
+	Slot         string // "BLN0".."BLNZ"
+	Text         string
+	IntervalMins uint32 // 0=burst-only, 1-20=stable rate; ignored for announcements
 }
 
 // Validate returns an error if req is not a valid outbound bulletin request.
@@ -157,12 +153,19 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*configstore.Bulle
 	if isAnn {
 		maxSends = AnnouncementMaxSends
 	}
+	// IntervalMins is per-bulletin for bulletins (BLN0-9). For
+	// announcements the interval is always 1 hour regardless.
+	intervalMins := req.IntervalMins
+	if isAnn {
+		intervalMins = 0 // announcements use AnnouncementInterval, not this field
+	}
 	now := time.Now().UTC()
 	b := &configstore.Bulletin{
 		Slot:           slot,
 		Text:           strings.TrimSpace(req.Text),
 		IsAnnouncement: isAnn,
 		MaxSends:       maxSends,
+		IntervalMins:   intervalMins,
 		NextSendAt:     &now, // schedule for immediate send
 	}
 	if err := s.store.Insert(ctx, b); err != nil {
@@ -198,11 +201,6 @@ func (s *Service) SetTxChannel(ch uint32) {
 	s.scheduler.txChannel = ch
 }
 
-// SetBulletinIntervalMins updates the stable retransmit interval at
-// runtime without restarting the service.
-func (s *Service) SetBulletinIntervalMins(mins uint32) {
-	s.scheduler.SetIntervalMins(mins)
-}
 
 // validSlot reports whether slot is a legal APRS bulletin or
 // announcement identifier: BLN0..BLN9 or BLNA..BLNZ.

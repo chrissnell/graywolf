@@ -20,6 +20,7 @@
   // --- compose form ---
   let slot = $state('BLN0');
   let text = $state('');
+  let intervalMins = $state(20); // per-bulletin retransmit interval
   let sending = $state(false);
 
   const BULLETIN_SLOTS = ['BLN0','BLN1','BLN2','BLN3','BLN4',
@@ -31,6 +32,7 @@
   const MAX_TEXT = 67;
   let textLen = $derived(text.length);
   let textOver = $derived(textLen > MAX_TEXT);
+  let isAnnouncement = $derived(!BULLETIN_SLOTS.includes(slot));
 
   async function load() {
     try {
@@ -51,7 +53,7 @@
     if (textOver || !text.trim()) return;
     sending = true;
     try {
-      await sendBulletin({ slot, text: text.trim() });
+      await sendBulletin({ slot, text: text.trim(), interval_mins: isAnnouncement ? 0 : intervalMins });
       text = '';
       toasts.add({ kind: 'success', message: `Bulletin ${slot} queued for transmission.` });
       await load();
@@ -92,8 +94,13 @@
 
   function sendStatus(b) {
     if (b.send_count >= b.max_sends) return 'Complete';
-    const interval = b.is_announcement ? '1 hr' : '20 min';
-    return `${b.send_count} / ${b.max_sends} sent · every ${interval}`;
+    if (b.is_announcement) {
+      return `${b.send_count} / ${b.max_sends} sent · every 1 hr`;
+    }
+    if (!b.interval_mins) {
+      return `${b.send_count} / ${b.max_sends} sent · burst only`;
+    }
+    return `${b.send_count} / ${b.max_sends} sent · every ${b.interval_mins} min`;
   }
 
   function fmtTime(iso) {
@@ -145,6 +152,23 @@
         <span class="char-count" class:over={textOver}>{textLen} / {MAX_TEXT}</span>
       </div>
     </div>
+    {#if !isAnnouncement}
+    <div class="compose-row">
+      <label for="bln-interval" class="compose-label">Every</label>
+      <div class="interval-wrap">
+        <input
+          id="bln-interval"
+          class="interval-input"
+          type="number"
+          min="0"
+          max="20"
+          bind:value={intervalMins}
+        />
+        <span class="interval-unit">min</span>
+        <span class="interval-hint">(0 = burst only, 20 = APRS standard)</span>
+      </div>
+    </div>
+    {/if}
     <div class="compose-actions">
       <Button
         variant="primary"
@@ -285,6 +309,29 @@
     opacity: 1;
   }
 
+  .interval-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .interval-input {
+    width: 4rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-border, #444);
+    background: var(--color-input-bg, #1e1e1e);
+    color: inherit;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  .interval-unit {
+    font-size: 0.8rem;
+    opacity: 0.7;
+  }
+  .interval-hint {
+    font-size: 0.72rem;
+    opacity: 0.5;
+  }
   .compose-actions {
     margin-top: 0.75rem;
   }

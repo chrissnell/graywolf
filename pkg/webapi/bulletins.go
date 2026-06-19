@@ -81,8 +81,9 @@ func (s *Server) sendBulletin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b, err := svc.Send(r.Context(), bulletins.SendRequest{
-		Slot: strings.ToUpper(strings.TrimSpace(req.Slot)),
-		Text: strings.TrimSpace(req.Text),
+		Slot:         strings.ToUpper(strings.TrimSpace(req.Slot)),
+		Text:         strings.TrimSpace(req.Text),
+		IntervalMins: req.IntervalMins,
 	})
 	if err != nil {
 		s.internalError(w, r, "send bulletin", err)

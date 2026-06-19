@@ -20,6 +20,10 @@ type BulletinResponse struct {
 	IsAnnouncement bool       `json:"is_announcement"`
 	SendCount      uint32     `json:"send_count,omitempty"`
 	MaxSends       uint32     `json:"max_sends,omitempty"`
+	// IntervalMins is the per-bulletin stable retransmit interval after the
+	// initial burst phase. 0 = burst-only. Applies to outbound rows only;
+	// inbound rows always carry 0 here.
+	IntervalMins   uint32     `json:"interval_mins"`
 	Unread         bool       `json:"unread"`
 	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
 	NextSendAt     *time.Time `json:"next_send_at,omitempty"`
@@ -39,6 +43,7 @@ func BulletinFromModel(b configstore.Bulletin) BulletinResponse {
 		IsAnnouncement: b.IsAnnouncement,
 		SendCount:      b.SendCount,
 		MaxSends:       b.MaxSends,
+		IntervalMins:   b.IntervalMins,
 		Unread:         b.Unread,
 		ExpiresAt:      b.ExpiresAt,
 		NextSendAt:     b.NextSendAt,
@@ -49,8 +54,13 @@ func BulletinFromModel(b configstore.Bulletin) BulletinResponse {
 
 // SendBulletinRequest is the body for POST /api/bulletins.
 type SendBulletinRequest struct {
-	Slot string `json:"slot"`
-	Text string `json:"text"`
+	Slot         string `json:"slot"`
+	Text         string `json:"text"`
+	// IntervalMins is the per-bulletin stable retransmit interval after the
+	// initial 3-send burst. 0 = burst only (no retransmits after the burst).
+	// Range 0–20; omit or send 0 for burst-only; 20 is the APRS spec default.
+	// Announcements (BLNA-Z) ignore this field — their rate is always 1 hour.
+	IntervalMins uint32 `json:"interval_mins"`
 }
 
 // Validate returns an error if the request is not a valid bulletin.
@@ -65,6 +75,9 @@ func (r SendBulletinRequest) Validate() error {
 	}
 	if len(text) > 67 {
 		return fmt.Errorf("text too long (%d chars, max 67)", len(text))
+	}
+	if r.IntervalMins > 20 {
+		return fmt.Errorf("interval_mins %d out of range (0..20)", r.IntervalMins)
 	}
 	return nil
 }

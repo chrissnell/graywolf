@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -35,11 +34,10 @@ const (
 // retransmit schedule. It wakes every minute and dispatches any row
 // whose next_send_at is past.
 type Scheduler struct {
-	store        *Store
-	sender       *Sender
-	txChannel    uint32
-	intervalMins atomic.Uint32 // 0 = burst-only, 1..20 = stable retransmit
-	logger       *slog.Logger
+	store     *Store
+	sender    *Sender
+	txChannel uint32
+	logger    *slog.Logger
 
 	kick chan struct{}
 	done chan struct{}
@@ -50,13 +48,11 @@ type Scheduler struct {
 }
 
 // NewScheduler returns a ready Scheduler. Call Start to begin the loop.
-// intervalMins sets the stable retransmit interval after the burst phase;
-// 0 means burst-only (no retransmits after the initial 3 sends).
-func NewScheduler(store *Store, sender *Sender, txChannel uint32, intervalMins uint32, logger *slog.Logger) *Scheduler {
+func NewScheduler(store *Store, sender *Sender, txChannel uint32, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	sc := &Scheduler{
+	return &Scheduler{
 		store:     store,
 		sender:    sender,
 		txChannel: txChannel,
@@ -64,15 +60,6 @@ func NewScheduler(store *Store, sender *Sender, txChannel uint32, intervalMins u
 		kick:      make(chan struct{}, 1),
 		done:      make(chan struct{}),
 	}
-	sc.intervalMins.Store(intervalMins)
-	return sc
-}
-
-// SetIntervalMins updates the stable retransmit interval at runtime.
-// Takes effect on the next scheduler tick; existing rows are unaffected
-// until their next_send_at fires.
-func (sc *Scheduler) SetIntervalMins(mins uint32) {
-	sc.intervalMins.Store(mins)
 }
 
 // Start begins the retransmit loop. Idempotent.
@@ -139,12 +126,11 @@ func (sc *Scheduler) processDue(ctx context.Context) {
 			next := time.Now().UTC().Add(BulletinBurstInterval)
 			b.NextSendAt = &next
 		} else {
-			mins := sc.intervalMins.Load()
-			if mins == 0 {
+			if b.IntervalMins == 0 {
 				// Burst-only: no more retransmits after the burst phase.
 				b.NextSendAt = nil
 			} else {
-				next := time.Now().UTC().Add(time.Duration(mins) * time.Minute)
+				next := time.Now().UTC().Add(time.Duration(b.IntervalMins) * time.Minute)
 				b.NextSendAt = &next
 			}
 		}
