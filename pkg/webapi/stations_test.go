@@ -579,3 +579,19 @@ func TestStations_TrailPositionsTrimmedByTimerange(t *testing.T) {
 		t.Fatalf("delta mode: got %d positions, want 1", got)
 	}
 }
+
+func TestStationToDTO_LastDirectHeard(t *testing.T) {
+	direct := time.Now().Add(-10 * time.Minute)
+	s := stationcache.Station{
+		Callsign:        "W1ABC",
+		LastHeard:       time.Now(),
+		LastDirectHeard: direct,
+		Positions: []stationcache.Position{
+			{Lat: 40, Lon: -105, Direction: "RX", Timestamp: time.Now()},
+		},
+	}
+	dto := stationToDTO(s, false, false, nil, time.Now().Add(-time.Hour))
+	if !dto.LastDirectHeard.Equal(direct) {
+		t.Fatalf("LastDirectHeard not mapped: got %v want %v", dto.LastDirectHeard, direct)
+	}
+}

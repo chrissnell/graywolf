@@ -2689,6 +2689,13 @@ definitions:
       is_object:
         description: IsObject is true for APRS objects and items; false for regular stations.
         type: boolean
+      last_direct_heard:
+        description: |-
+          LastDirectHeard is the UTC RFC3339 timestamp of the most recent reception heard
+          directly on RF (RX, zero digi hops). Zero value (serialized as the JSON zero
+          time) means the station has never been heard directly. The Live Map "Direct
+          RX" filter requires this to fall within the selected time range.
+        type: string
       last_heard:
         description: LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station.
         type: string

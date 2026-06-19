@@ -3469,6 +3469,13 @@ export interface components {
             hops?: number;
             /** @description IsObject is true for APRS objects and items; false for regular stations. */
             is_object?: boolean;
+            /**
+             * @description LastDirectHeard is the UTC RFC3339 timestamp of the most recent reception heard
+             *     directly on RF (RX, zero digi hops). Zero value (serialized as the JSON zero
+             *     time) means the station has never been heard directly. The Live Map "Direct
+             *     RX" filter requires this to fall within the selected time range.
+             */
+            last_direct_heard?: string;
             /** @description LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station. */
             last_heard?: string;
             /** @description Path is the raw AX.25 digipeater path from the most recent packet (entries with trailing "*" have the H-bit set). */

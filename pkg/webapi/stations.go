@@ -34,6 +34,11 @@ type StationDTO struct {
 	Positions []StationPosDTO `json:"positions"`
 	// LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station.
 	LastHeard time.Time `json:"last_heard"`
+	// LastDirectHeard is the UTC RFC3339 timestamp of the most recent reception heard
+	// directly on RF (RX, zero digi hops). Zero value (serialized as the JSON zero
+	// time) means the station has never been heard directly. The Live Map "Direct
+	// RX" filter requires this to fall within the selected time range.
+	LastDirectHeard time.Time `json:"last_direct_heard"`
 	// Direction indicates the source of the most recent packet: "RX" (heard on air), "TX" (sent by us), or "IS" (APRS-IS).
 	Direction string `json:"direction"`
 	// Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets.
@@ -301,20 +306,21 @@ func collectDigiCallsigns(stations []stationcache.Station) []string {
 
 func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos map[string]stationcache.LatLon, trailCutoff time.Time) StationDTO {
 	dto := StationDTO{
-		Callsign:      s.Callsign,
-		IsObject:      s.IsObject,
-		Source:        s.Source,
-		SymbolTable:   string(rune(s.Symbol[0])),
-		SymbolCode:    string(rune(s.Symbol[1])),
-		LastHeard:     s.LastHeard,
-		Direction:     s.Direction,
-		Via:           s.Via,
-		Path:          s.Path,
-		PathPositions: resolvePathPositions(s.Path, digiPos),
-		Hops:          s.Hops,
-		Gated:         s.Gated,
-		Channel:       s.Channel,
-		Comment:       s.Comment,
+		Callsign:        s.Callsign,
+		IsObject:        s.IsObject,
+		Source:          s.Source,
+		SymbolTable:     string(rune(s.Symbol[0])),
+		SymbolCode:      string(rune(s.Symbol[1])),
+		LastHeard:       s.LastHeard,
+		LastDirectHeard: s.LastDirectHeard,
+		Direction:       s.Direction,
+		Via:             s.Via,
+		Path:            s.Path,
+		PathPositions:   resolvePathPositions(s.Path, digiPos),
+		Hops:            s.Hops,
+		Gated:           s.Gated,
+		Channel:         s.Channel,
+		Comment:         s.Comment,
 	}
 
 	// Positions — delta mode returns only positions[0]
