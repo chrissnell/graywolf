@@ -216,7 +216,8 @@ message ConfigurePtt {
   uint32 gpio_line = 11;
   // Android USB-PTT transport selector. Carries the PttMethod enum value
   // (proto/platform.proto: 1=PTT_METHOD_CP2102N_RTS, 2=PTT_METHOD_CM108_HID,
-  // 3=PTT_METHOD_AIOC_CDC_DTR, 4=PTT_METHOD_VOX). Typed uint32 (not the
+  // 3=PTT_METHOD_AIOC_CDC_DTR, 4=PTT_METHOD_VOX,
+  // 5=PTT_METHOD_DIGIRIG_TONE). Typed uint32 (not the
   // platform.proto enum) to keep this IPC contract self-contained
   // (invariant #2). Meaningful only when method=="android"; 0 otherwise.
   // Never overload gpio_pin for this.

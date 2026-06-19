@@ -15,6 +15,9 @@ pub const PTT_METHOD_CM108_HID: i32 = 2;
 pub const PTT_METHOD_AIOC_CDC_DTR: i32 = 3;
 /// proto `PTT_METHOD_VOX = 4` — no PTT wire; audio drives VOX
 pub const PTT_METHOD_VOX: i32 = 4;
+/// proto `PTT_METHOD_DIGIRIG_TONE = 5` — no PTT wire; a right-channel tone
+/// keys the Digirig Lite while AFSK plays on the left (Android tone PTT).
+pub const PTT_METHOD_DIGIRIG_TONE: i32 = 5;
 
 #[cfg(test)]
 mod tests {
@@ -30,5 +33,6 @@ mod tests {
         assert_eq!(PTT_METHOD_CM108_HID, 2);
         assert_eq!(PTT_METHOD_AIOC_CDC_DTR, 3);
         assert_eq!(PTT_METHOD_VOX, 4);
+        assert_eq!(PTT_METHOD_DIGIRIG_TONE, 5);
     }
 }

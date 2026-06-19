@@ -19,4 +19,6 @@ object PttMethodConsts {
     const val PTT_METHOD_AIOC_CDC_DTR = 3
     /** proto `PTT_METHOD_VOX = 4` — no PTT wire; audio drives VOX */
     const val PTT_METHOD_VOX = 4
+    /** proto `PTT_METHOD_DIGIRIG_TONE = 5` — no PTT wire; right-channel tone keys the Digirig Lite */
+    const val PTT_METHOD_DIGIRIG_TONE = 5
 }

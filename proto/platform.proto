@@ -137,6 +137,7 @@ enum PttMethod {
   PTT_METHOD_CM108_HID = 2;
   PTT_METHOD_AIOC_CDC_DTR = 3;
   PTT_METHOD_VOX = 4;
+  PTT_METHOD_DIGIRIG_TONE = 5;
 }
 
 message PttKeyRequest {
