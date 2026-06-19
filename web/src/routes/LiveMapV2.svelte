@@ -478,6 +478,12 @@
     fixedPointsLayer = mountFixedPointsLayer(map, () => fixedPointsStore.points, {
       onMarkerClick: (point) => openFixedPointPopup(map, point),
     });
+    // Render any points already in the store at mount time. The refresh
+    // $effect only fires on a points.length change, and on a remount (e.g.
+    // navigating back to the map) the layer is created here -- after that
+    // effect's first run -- so without this call pre-existing points stay
+    // invisible until the operator adds another one. (graywolf#347)
+    fixedPointsLayer.refresh();
     myPositionLayer = mountMyPositionLayer(map, () => dataStore.myPosition, {
       onMarkerEnter: () => {
         if (activePopup) return;
@@ -522,6 +528,16 @@
     map.on('mousemove', (e) => updateCoordText(e.lngLat));
     map.on('mouseout', () => (coordText = ''));
 
+    // Open the background context menu at viewport coords vx/vy anchored to
+    // the given lngLat. Shared by right-click (desktop) and long-press
+    // (touch) so both surfaces behave identically once triggered.
+    function openCtxMenuAt(vx, vy, lngLat) {
+      ctxMenu = { open: true, x: vx, y: vy, lat: lngLat.lat, lon: lngLat.lng };
+      // Suppress hover overlays while the menu is up.
+      closePopup();
+      hoverPathLayer?.clear();
+    }
+
     // Right-click background → open context menu. Bail when the click
     // landed on a station marker (or any DOM child of one): markers own
     // a left-click popup and we don't want to fight that surface.
@@ -539,17 +555,58 @@
       const oe = e.originalEvent;
       const vx = oe?.clientX ?? e.point.x;
       const vy = oe?.clientY ?? e.point.y;
-      ctxMenu = {
-        open: true,
-        x: vx,
-        y: vy,
-        lat: e.lngLat.lat,
-        lon: e.lngLat.lng,
-      };
-      // Suppress hover overlays while the menu is up.
-      closePopup();
-      hoverPathLayer?.clear();
+      openCtxMenuAt(vx, vy, e.lngLat);
     });
+
+    // Long-press background → same context menu, for touchscreens where no
+    // contextmenu event fires (graywolf#347). A single finger held still for
+    // LONGPRESS_MS opens the menu; any second touch (pinch), a drag past
+    // LONGPRESS_SLOP px, or an early lift cancels it so normal pan/zoom is
+    // untouched.
+    const LONGPRESS_MS = 500;
+    const LONGPRESS_SLOP = 10;
+    let lpTimer = null;
+    let lpStart = null;
+    function clearLongPress() {
+      if (lpTimer !== null) {
+        clearTimeout(lpTimer);
+        lpTimer = null;
+      }
+      lpStart = null;
+    }
+    map.on('touchstart', (e) => {
+      const touches = e.originalEvent?.touches;
+      if (!touches || touches.length !== 1) {
+        clearLongPress();
+        return;
+      }
+      const target = e.originalEvent?.target;
+      if (target && target.closest && target.closest('.gw-station-marker')) {
+        return;
+      }
+      const t = touches[0];
+      lpStart = { x: t.clientX, y: t.clientY };
+      const lngLat = e.lngLat;
+      lpTimer = setTimeout(() => {
+        lpTimer = null;
+        openCtxMenuAt(lpStart.x, lpStart.y, lngLat);
+        lpStart = null;
+      }, LONGPRESS_MS);
+    });
+    map.on('touchmove', (e) => {
+      if (!lpStart) return;
+      const t = e.originalEvent?.touches?.[0];
+      if (
+        !t ||
+        Math.abs(t.clientX - lpStart.x) > LONGPRESS_SLOP ||
+        Math.abs(t.clientY - lpStart.y) > LONGPRESS_SLOP
+      ) {
+        clearLongPress();
+      }
+    });
+    map.on('touchend', clearLongPress);
+    map.on('touchcancel', clearLongPress);
+
     // Any camera change closes the menu — its anchor lat/lon would drift.
     map.on('movestart', closeCtxMenu);
     map.on('zoomstart', closeCtxMenu);
