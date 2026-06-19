@@ -229,6 +229,46 @@ func TestSendBulletin_TextTooLong(t *testing.T) {
 	}
 }
 
+func TestSendBulletin_IntervalMins_PassedThrough(t *testing.T) {
+	var captured bulletins.SendRequest
+	svc := &fakeBulletinSvc{
+		sendFn: func(_ context.Context, req bulletins.SendRequest) (*configstore.Bulletin, error) {
+			captured = req
+			return &configstore.Bulletin{ID: 1, Slot: req.Slot, Text: req.Text, Direction: "out", IntervalMins: req.IntervalMins}, nil
+		},
+	}
+	_, mux := newBulletinTestServer(t, svc)
+
+	rec := postJSON(t, mux, "/api/bulletins", map[string]any{
+		"slot":          "BLN0",
+		"text":          "Net tonight",
+		"interval_mins": 10,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if captured.IntervalMins != 10 {
+		t.Errorf("IntervalMins: got %d, want 10", captured.IntervalMins)
+	}
+	var resp dto.BulletinResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.IntervalMins != 10 {
+		t.Errorf("response IntervalMins: got %d, want 10", resp.IntervalMins)
+	}
+}
+
+func TestSendBulletin_IntervalMins_OutOfRange(t *testing.T) {
+	_, mux := newBulletinTestServer(t, &fakeBulletinSvc{})
+	rec := postJSON(t, mux, "/api/bulletins", map[string]any{
+		"slot": "BLN0", "text": "hi", "interval_mins": 21,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for interval_mins=21, got %d", rec.Code)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // DELETE /api/bulletins/{id}
 // ---------------------------------------------------------------------------

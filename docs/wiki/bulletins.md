@@ -10,7 +10,7 @@ cycle rather than via retry-until-ACK.
 
 | Format | Type | Initial burst | Stable interval | Max sends | Expiry (inbound) |
 |---|---|---|---|---|---|
-| `BLN0`–`BLN9` | Bulletin | 3 × 30 s | 20 min | 12 (~4 h) | 4 h |
+| `BLN0`–`BLN9` | Bulletin | 3 × 30 s | configurable 1–20 min (default 20) | 12 (~4 h); 3 for burst-only | 4 h |
 | `BLNA`–`BLNZ` | Announcement | — | 1 h | 96 (~4 days) | 4 days |
 
 Bulletins fire 3 times at 30-second intervals immediately after creation
@@ -92,7 +92,7 @@ ignores it. Soft-deleting a row (via the UI or DELETE REST endpoint) also
 stops future retransmits immediately, since `ListPendingSends` excludes
 soft-deleted rows.
 
-## Database (migrations 26–27)
+## Database (migrations 26–28)
 
 Table `bulletins` columns:
 
@@ -110,7 +110,8 @@ Table `bulletins` columns:
 | `expires_at` | When the UI should stop showing the row |
 | `unread` | True until the operator dismisses |
 | `send_count` | How many times this outbound row has been sent |
-| `max_sends` | Send limit (12 for bulletins, 96 for announcements) |
+| `max_sends` | Send limit (12 for bulletins, 3 for burst-only, 96 for announcements) |
+| `interval_mins` | Per-bulletin stable retransmit interval after burst (0=burst-only, 1–20) |
 | `next_send_at` | When the scheduler should next send this row |
 | `created_at`, `updated_at`, `deleted_at` | GORM timestamps; soft-delete |
 
@@ -129,7 +130,7 @@ All endpoints in `pkg/webapi/bulletins.go`. The server returns 503 until
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/bulletins` | List; `?direction=in\|out`, `?unread_only=true` |
-| `POST` | `/api/bulletins` | Create outbound bulletin (`{slot, text}`) → 201 |
+| `POST` | `/api/bulletins` | Create outbound bulletin (`{slot, text, interval_mins}`) → 201 |
 | `DELETE` | `/api/bulletins/{id}` | Soft-delete; 404 on missing row |
 | `POST` | `/api/bulletins/{id}/read` | Mark single bulletin read |
 | `POST` | `/api/bulletins/read-all` | Mark all inbound bulletins read |
@@ -167,9 +168,12 @@ with an inline SVG clipboard icon (the chonky-ui `rss` icon is not in the
 component's allowlist, so `svgIcon: 'bulletins'` is used instead). An unread
 badge count is polled every 30 s via `GET /api/bulletins?direction=in&unread_only=true`.
 
-Digipeater path for outbound bulletins (and messages) is configurable in the
-Messaging settings page (`MessagePreferences.DefaultPath`). The default is
-`WIDE1-1,WIDE2-1`, suitable for most fixed stations.
+**Digipeater path** is a station-level setting shared by all outbound APRS
+traffic — both directed messages and bulletins. It reflects your antenna,
+location, and local network topology, so it is set once in the Messaging
+settings page (`MessagePreferences.DefaultPath`, default `WIDE1-1,WIDE2-1`)
+rather than per-bulletin. `WIDE1-1,WIDE2-1` is appropriate for most fixed
+2-hop stations; `WIDE1-1` for portable/mobile.
 
 The **retransmit interval** is set per-bulletin in the compose form on the
 Bulletins page (`Bulletins.svelte`). The **Every N min** field defaults to

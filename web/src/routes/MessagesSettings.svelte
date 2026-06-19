@@ -54,7 +54,10 @@
     onchange={(e) => messagesPreferencesState.setDefaultPath(e.target.value)}
   />
   <p class="messages-hint">
-    The digipeater path used for outbound APRS messages and bulletins.
+    The digipeater path used for all outbound APRS traffic from this station --
+    both directed messages and bulletins. This is a station-level setting that
+    reflects your antenna, location, and local network topology, not something
+    that changes per message.
     <strong>WIDE1-1,WIDE2-1</strong> is the standard for most fixed stations (2 hops).
     Use <strong>WIDE1-1</strong> for portable/mobile or when near a fill-in digipeater.
     Leave empty to transmit direct with no digipeating.

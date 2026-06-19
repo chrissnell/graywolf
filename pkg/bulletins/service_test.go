@@ -131,7 +131,7 @@ func TestSend_Valid(t *testing.T) {
 	rig := buildServiceRig(t)
 	ctx := context.Background()
 
-	b, err := rig.svc.Send(ctx, SendRequest{Slot: "BLN0", Text: "test bulletin"})
+	b, err := rig.svc.Send(ctx, SendRequest{Slot: "BLN0", Text: "test bulletin", IntervalMins: 20})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -177,6 +177,35 @@ func TestSend_EmptyText(t *testing.T) {
 
 	if _, err := rig.svc.Send(ctx, SendRequest{Slot: "BLN0", Text: ""}); err == nil {
 		t.Error("expected error for empty text")
+	}
+}
+
+func TestSend_BurstOnly_MaxSends(t *testing.T) {
+	rig := buildServiceRig(t)
+	ctx := context.Background()
+
+	b, err := rig.svc.Send(ctx, SendRequest{Slot: "BLN0", Text: "burst only", IntervalMins: 0})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if b.MaxSends != BulletinBurstCount {
+		t.Errorf("MaxSends: got %d, want %d (burst-only should exhaust after burst)", b.MaxSends, BulletinBurstCount)
+	}
+}
+
+func TestSend_IntervalMins_Stored(t *testing.T) {
+	rig := buildServiceRig(t)
+	ctx := context.Background()
+
+	b, err := rig.svc.Send(ctx, SendRequest{Slot: "BLN0", Text: "custom interval", IntervalMins: 10})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if b.IntervalMins != 10 {
+		t.Errorf("IntervalMins: got %d, want 10", b.IntervalMins)
+	}
+	if b.MaxSends != BulletinMaxSends {
+		t.Errorf("MaxSends: got %d, want %d", b.MaxSends, BulletinMaxSends)
 	}
 }
 

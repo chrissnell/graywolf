@@ -149,15 +149,20 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*configstore.Bulle
 	}
 	slot := strings.ToUpper(strings.TrimSpace(req.Slot))
 	isAnn := isAnnouncement(slot)
-	maxSends := uint32(BulletinMaxSends)
-	if isAnn {
-		maxSends = AnnouncementMaxSends
-	}
-	// IntervalMins is per-bulletin for bulletins (BLN0-9). For
-	// announcements the interval is always 1 hour regardless.
+	// IntervalMins is per-bulletin for bulletins (BLN0-9). Announcements
+	// always use AnnouncementInterval (1 h) regardless of this field.
 	intervalMins := req.IntervalMins
 	if isAnn {
-		intervalMins = 0 // announcements use AnnouncementInterval, not this field
+		intervalMins = 0 // announcements use AnnouncementInterval
+	}
+	maxSends := uint32(BulletinMaxSends)
+	switch {
+	case isAnn:
+		maxSends = AnnouncementMaxSends
+	case intervalMins == 0:
+		// Burst-only: cap MaxSends at the burst count so the row exhausts
+		// cleanly after 3 sends and the UI shows "Complete" naturally.
+		maxSends = BulletinBurstCount
 	}
 	now := time.Now().UTC()
 	b := &configstore.Bulletin{

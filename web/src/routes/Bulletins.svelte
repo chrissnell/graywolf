@@ -27,7 +27,6 @@
                           'BLN5','BLN6','BLN7','BLN8','BLN9'];
   const ANNOUNCEMENT_SLOTS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     .split('').map(l => 'BLN' + l);
-  const ALL_SLOTS = [...BULLETIN_SLOTS, ...ANNOUNCEMENT_SLOTS];
 
   const MAX_TEXT = 67;
   let textLen = $derived(text.length);
@@ -153,21 +152,21 @@
       </div>
     </div>
     {#if !isAnnouncement}
-    <div class="compose-row">
-      <label for="bln-interval" class="compose-label">Every</label>
-      <div class="interval-wrap">
-        <input
-          id="bln-interval"
-          class="interval-input"
-          type="number"
-          min="0"
-          max="20"
-          bind:value={intervalMins}
-        />
-        <span class="interval-unit">min</span>
-        <span class="interval-hint">(0 = burst only, 20 = APRS standard)</span>
+      <div class="compose-row">
+        <label for="bln-interval" class="compose-label">Every</label>
+        <div class="interval-wrap">
+          <input
+            id="bln-interval"
+            class="interval-input"
+            type="number"
+            min="0"
+            max="20"
+            bind:value={intervalMins}
+          />
+          <span class="interval-unit">min</span>
+          <span class="interval-hint">(0 = burst only, 20 = APRS standard)</span>
+        </div>
       </div>
-    </div>
     {/if}
     <div class="compose-actions">
       <Button
