@@ -35,7 +35,7 @@ func buildSchedulerRig(t *testing.T) (*Scheduler, *Store, *fakeBulletinTxSink, *
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	store := NewStore(cs.DB())
 	sender := NewSender(sink, nil, func() string { return "W5X-9" }, "", logger)
-	sc := NewScheduler(store, sender, 1, logger)
+	sc := NewScheduler(store, sender, 1, 20, logger)
 	return sc, store, sink, cs
 }
 
@@ -161,6 +161,73 @@ func TestScheduler_DoesNotSendExhausted(t *testing.T) {
 
 	if sink.count() != 0 {
 		t.Errorf("expected 0 sends for exhausted bulletin, got %d", sink.count())
+	}
+}
+
+func TestScheduler_BurstOnly_StopsAfterBurst(t *testing.T) {
+	sc, store, sink, _ := buildSchedulerRig(t)
+	sc.SetIntervalMins(0) // burst-only mode
+	ctx := context.Background()
+
+	past := time.Now().UTC().Add(-time.Second)
+	b := &configstore.Bulletin{
+		Slot:       "BLN3",
+		Text:       "burst only",
+		MaxSends:   12,
+		NextSendAt: &past,
+		SendCount:  BulletinBurstCount - 1, // one burst send left
+	}
+	if err := store.Insert(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+
+	sc.Start(ctx)
+	t.Cleanup(sc.Stop)
+
+	waitFor(t, 3*time.Second, func() bool { return sink.count() > 0 }, "burst send")
+
+	got, err := store.GetByID(ctx, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With interval=0 the scheduler should clear NextSendAt so the row
+	// never fires again.
+	if got.NextSendAt != nil {
+		t.Errorf("expected NextSendAt=nil for burst-only bulletin, got %v", got.NextSendAt)
+	}
+}
+
+func TestScheduler_CustomInterval(t *testing.T) {
+	sc, store, sink, _ := buildSchedulerRig(t)
+	sc.SetIntervalMins(5) // 5-minute stable interval
+	ctx := context.Background()
+
+	past := time.Now().UTC().Add(-time.Second)
+	b := &configstore.Bulletin{
+		Slot:       "BLN4",
+		Text:       "custom interval",
+		MaxSends:   12,
+		NextSendAt: &past,
+		SendCount:  BulletinBurstCount, // burst phase complete
+	}
+	if err := store.Insert(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+
+	sc.Start(ctx)
+	t.Cleanup(sc.Stop)
+
+	waitFor(t, 3*time.Second, func() bool { return sink.count() > 0 }, "stable-rate send")
+
+	got, err := store.GetByID(ctx, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// NextSendAt should be ~5 minutes from now.
+	minExpected := time.Now().UTC().Add(4 * time.Minute)
+	maxExpected := time.Now().UTC().Add(6 * time.Minute)
+	if got.NextSendAt == nil || got.NextSendAt.Before(minExpected) || got.NextSendAt.After(maxExpected) {
+		t.Errorf("expected NextSendAt ~5 min from now, got %v", got.NextSendAt)
 	}
 }
 

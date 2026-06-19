@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -34,10 +35,11 @@ const (
 // retransmit schedule. It wakes every minute and dispatches any row
 // whose next_send_at is past.
 type Scheduler struct {
-	store     *Store
-	sender    *Sender
-	txChannel uint32
-	logger    *slog.Logger
+	store        *Store
+	sender       *Sender
+	txChannel    uint32
+	intervalMins atomic.Uint32 // 0 = burst-only, 1..20 = stable retransmit
+	logger       *slog.Logger
 
 	kick chan struct{}
 	done chan struct{}
@@ -48,11 +50,13 @@ type Scheduler struct {
 }
 
 // NewScheduler returns a ready Scheduler. Call Start to begin the loop.
-func NewScheduler(store *Store, sender *Sender, txChannel uint32, logger *slog.Logger) *Scheduler {
+// intervalMins sets the stable retransmit interval after the burst phase;
+// 0 means burst-only (no retransmits after the initial 3 sends).
+func NewScheduler(store *Store, sender *Sender, txChannel uint32, intervalMins uint32, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Scheduler{
+	sc := &Scheduler{
 		store:     store,
 		sender:    sender,
 		txChannel: txChannel,
@@ -60,6 +64,15 @@ func NewScheduler(store *Store, sender *Sender, txChannel uint32, logger *slog.L
 		kick:      make(chan struct{}, 1),
 		done:      make(chan struct{}),
 	}
+	sc.intervalMins.Store(intervalMins)
+	return sc
+}
+
+// SetIntervalMins updates the stable retransmit interval at runtime.
+// Takes effect on the next scheduler tick; existing rows are unaffected
+// until their next_send_at fires.
+func (sc *Scheduler) SetIntervalMins(mins uint32) {
+	sc.intervalMins.Store(mins)
 }
 
 // Start begins the retransmit loop. Idempotent.
@@ -119,18 +132,22 @@ func (sc *Scheduler) processDue(ctx context.Context) {
 			continue
 		}
 		b.SendCount++
-		var interval time.Duration
-		switch {
-		case b.IsAnnouncement:
-			interval = AnnouncementInterval
-		case b.SendCount < BulletinBurstCount:
-			// Still in the initial burst phase — retransmit quickly.
-			interval = BulletinBurstInterval
-		default:
-			interval = BulletinInterval
+		if b.IsAnnouncement {
+			next := time.Now().UTC().Add(AnnouncementInterval)
+			b.NextSendAt = &next
+		} else if b.SendCount < BulletinBurstCount {
+			next := time.Now().UTC().Add(BulletinBurstInterval)
+			b.NextSendAt = &next
+		} else {
+			mins := sc.intervalMins.Load()
+			if mins == 0 {
+				// Burst-only: no more retransmits after the burst phase.
+				b.NextSendAt = nil
+			} else {
+				next := time.Now().UTC().Add(time.Duration(mins) * time.Minute)
+				b.NextSendAt = &next
+			}
 		}
-		next := time.Now().UTC().Add(interval)
-		b.NextSendAt = &next
 		if err := sc.store.Update(ctx, b); err != nil {
 			sc.logger.Warn("bulletins scheduler update failed",
 				"id", b.ID, "slot", b.Slot, "error", err)

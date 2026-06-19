@@ -232,6 +232,7 @@ var schemaMigrations = []migration{
 	{version: 25, name: "beacon_send_path", phase: postAutoMigrate, run: migrateBeaconSendPath},
 	{version: 26, name: "messages_retry_interval", phase: postAutoMigrate, run: migrateMessagesRetryInterval},
 	{version: 27, name: "bulletins_table", phase: postAutoMigrate, run: migrateBulletinsTable},
+	{version: 28, name: "bulletin_interval", phase: postAutoMigrate, run: migrateBulletinInterval},
 }
 
 // runMigrations applies every pending migration in the given phase,

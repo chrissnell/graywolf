@@ -60,6 +60,7 @@ function buildPayload(baseline, patch) {
     retry_max_attempts: merged.retry_max_attempts,
     retry_interval_secs: merged.retry_interval_secs,
     max_message_text_override: normalizeOverride(merged.max_message_text_override),
+    bulletin_interval_mins: merged.bulletin_interval_mins ?? 20,
   };
 }
 
@@ -235,6 +236,34 @@ export const messagesPreferencesState = (() => {
     }
   }
 
+  async function setBulletinIntervalMins(n) {
+    const v = Math.max(0, Math.min(20, Math.floor(Number(n))));
+    if (!hydrated) {
+      await fetchPreferences();
+      if (!hydrated) {
+        toasts.error("Couldn't load preferences — try again in a moment.");
+        return;
+      }
+    }
+    if (prefs?.bulletin_interval_mins === v) return;
+    const baseline = prefs;
+    const prev = baseline;
+    prefs = { ...baseline, bulletin_interval_mins: v };
+    saving = true;
+    error = null;
+    try {
+      const resp = await putPreferences(buildPayload(baseline, { bulletin_interval_mins: v }));
+      prefs = resp ?? prefs;
+      toasts.success('Saved');
+    } catch (e) {
+      prefs = prev;
+      error = e?.message || String(e);
+      toasts.error("Couldn't save bulletin interval — try again.");
+    } finally {
+      saving = false;
+    }
+  }
+
   async function setDefaultPath(path) {
     const v = (path ?? '').trim();
     if (!hydrated) {
@@ -281,6 +310,7 @@ export const messagesPreferencesState = (() => {
     get retryMaxAttempts() { return prefs?.retry_max_attempts ?? DEFAULT_RETRY_MAX_ATTEMPTS; },
     get retryIntervalSecs() { return prefs?.retry_interval_secs ?? DEFAULT_RETRY_INTERVAL_SECS; },
     get defaultPath() { return prefs?.default_path ?? 'WIDE1-1,WIDE2-1'; },
+    get bulletinIntervalMins() { return prefs?.bulletin_interval_mins ?? 20; },
     // Effective cap the compose bar should enforce. Mirrors the server's
     // sender gate: 0 => 67, otherwise => the override value itself.
     get maxMessageText() {
@@ -295,6 +325,7 @@ export const messagesPreferencesState = (() => {
     setRetryMaxAttempts,
     setRetryIntervalSecs,
     setDefaultPath,
+    setBulletinIntervalMins,
   };
 })();
 

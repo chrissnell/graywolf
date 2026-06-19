@@ -833,7 +833,8 @@ type MessagePreferences struct {
 	FallbackPolicy   string    `gorm:"size:16;not null;default:'is_fallback'" json:"fallback_policy"` // rf_only | is_fallback | is_only | both
 	DefaultPath      string    `gorm:"size:64;not null;default:'WIDE1-1,WIDE2-1'" json:"default_path"`
 	RetryMaxAttempts  uint32    `gorm:"not null;default:4" json:"retry_max_attempts"`
-	RetryIntervalSecs uint32    `gorm:"not null;default:30" json:"retry_interval_secs"` // seconds between retries; 0 = use default (30)
+	RetryIntervalSecs    uint32    `gorm:"not null;default:30" json:"retry_interval_secs"`    // seconds between retries; 0 = use default (30)
+	BulletinIntervalMins uint32    `gorm:"not null;default:20" json:"bulletin_interval_mins"` // 0 = burst-only, 1..20 = stable retransmit interval
 	RetentionDays     uint32    `gorm:"not null;default:0" json:"retention_days"`        // 0 = forever
 	// MaxMessageTextOverride raises the default 67-char cap on
 	// addressee-line direct messages up to 200. 0 (the column default,

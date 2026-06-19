@@ -26,13 +26,14 @@ type IGateSender interface {
 
 // ServiceConfig holds the Service dependencies.
 type ServiceConfig struct {
-	DB           *gorm.DB
-	TxSink       txgovernor.TxSink
-	IGateSender  IGateSender // may be nil; bulletins still send via RF
-	OurCall      func() string
-	TxChannel    uint32
-	Path         string // digipeater path, e.g. "WIDE1-1,WIDE2-1"
-	Logger       *slog.Logger
+	DB                   *gorm.DB
+	TxSink               txgovernor.TxSink
+	IGateSender          IGateSender // may be nil; bulletins still send via RF
+	OurCall              func() string
+	TxChannel            uint32
+	Path                 string // digipeater path, e.g. "WIDE1-1,WIDE2-1"
+	BulletinIntervalMins uint32 // 0 = burst-only, 1..20 = stable rate (default 20)
+	Logger               *slog.Logger
 }
 
 // Service is the bulletin subsystem: ingest, compose, schedule, and
@@ -63,9 +64,13 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	intervalMins := cfg.BulletinIntervalMins
+	if intervalMins == 0 {
+		intervalMins = 20 // spec default; 0 in config means "not set yet"
+	}
 	store := NewStore(cfg.DB)
 	sender := NewSender(cfg.TxSink, cfg.IGateSender, cfg.OurCall, cfg.Path, logger)
-	scheduler := NewScheduler(store, sender, cfg.TxChannel, logger)
+	scheduler := NewScheduler(store, sender, cfg.TxChannel, intervalMins, logger)
 	return &Service{
 		store:     store,
 		sender:    sender,
@@ -191,6 +196,12 @@ func (s *Service) MarkAllRead(ctx context.Context) error {
 // SetTxChannel updates the channel used for outbound bulletin sends.
 func (s *Service) SetTxChannel(ch uint32) {
 	s.scheduler.txChannel = ch
+}
+
+// SetBulletinIntervalMins updates the stable retransmit interval at
+// runtime without restarting the service.
+func (s *Service) SetBulletinIntervalMins(mins uint32) {
+	s.scheduler.SetIntervalMins(mins)
 }
 
 // validSlot reports whether slot is a legal APRS bulletin or
