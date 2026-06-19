@@ -1012,3 +1012,43 @@ from under it (avoiding an fd-reuse race).
 Source: [`../../pkg/gps/serial_open_linux.go`](../../pkg/gps/serial_open_linux.go) (`openNMEASerial`, `linuxNMEAPort`);
 [`../../pkg/gps/serial_open_other.go`](../../pkg/gps/serial_open_other.go) (non-Linux opener);
 [`../../graywolf-modem/src/tx/ptt_unix.rs`](../../graywolf-modem/src/tx/ptt_unix.rs) (`UnixSerialLines::open`).
+
+### 48. "Direct RX" is a time-windowed filter, backed by a sticky-but-timestamped direct hearing
+
+The Live Map "Direct RX" filter shows a station only if it was heard directly
+on RF (RX, zero digi hops) **within the selected time range** -- not merely if
+it has *ever* been heard directly. Two pieces enforce this and must stay in
+sync:
+
+- `stationcache` records `Station.LastDirectHeard` -- the timestamp of the most
+  recent direct reception. It is set in `updateMetadata` only when
+  `isDirectRF(direction, hops)` is true, and is **never** advanced by a
+  digipeated, gated, or IS copy. The static-rebeacon merge keeps the most
+  RF-reachable reception metadata via `rfRank` (issue #130, so a direct copy is
+  not masked by a later digipeated one) **but advances the fix's `Timestamp` to
+  the latest beacon** -- so the fix's own timestamp is *not* a reliable "when
+  heard directly". `LastDirectHeard` is the authoritative answer and is exposed
+  as `last_direct_heard` in `StationDTO`.
+
+- The frontend predicate `directHeardWithin(station, cutoffMs)`
+  (`web/src/lib/map/direct-rx-core.js`) qualifies a station only when
+  `last_direct_heard >= serverNow() - timerangeMs`. `isDirectRx` in
+  `LiveMapV2.svelte` builds the cutoff from `clockOffset.serverNow()` and the
+  active time range.
+
+*Why:* a mobile station heard directly earlier in the day but only via a
+digipeater recently must drop out of Direct RX once the direct hearing ages
+past the window (issue #349). Classifying off the position's direction/hops
+alone -- the old behavior -- kept it visible forever because issue #130's merge
+keeps the direct copy sticky.
+
+*How to apply:* never advance `LastDirectHeard` on a non-direct reception, and
+never re-derive "heard directly within range" from a position's `Direction`/
+`Hops`/`Timestamp` -- those describe the *displayed* fix, not when the station
+was last heard directly. `LastDirectHeard` is in-memory only; it is not yet
+persisted in `historydb`, so after a restart a station re-qualifies for Direct
+RX only once it is heard directly again.
+
+Source: [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go) (`updateMetadata`, `isDirectRF`, `rfRank`);
+[`../../pkg/webapi/stations.go`](../../pkg/webapi/stations.go) (`StationDTO.LastDirectHeard`);
+[`../../web/src/lib/map/direct-rx-core.js`](../../web/src/lib/map/direct-rx-core.js) (`directHeardWithin`).
