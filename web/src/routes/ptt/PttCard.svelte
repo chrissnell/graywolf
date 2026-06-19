@@ -46,13 +46,17 @@
     <dt>Method</dt>
     <dd class="value-text">{methodLabel}</dd>
 
-    {#if item.method !== 'none' && item.method !== 'vox'}
+    {#if item.method !== 'none' && item.method !== 'vox' && item.method !== 'digirig_tone'}
       <dt>Device</dt>
       <dd title={item.device_path}>{truncatePath(item.device_path)}</dd>
     {/if}
     {#if item.method === 'vox'}
       <dt>Lead-in tone</dt>
       <dd class="muted">500 ms before each packet</dd>
+    {/if}
+    {#if item.method === 'digirig_tone'}
+      <dt>Keying</dt>
+      <dd class="muted">Right-channel tone, left-channel audio</dd>
     {/if}
     {#if item.method === 'cm108'}
       <dt>GPIO Pin</dt>
@@ -71,7 +75,7 @@
   <div class="device-actions">
     <Button variant="primary" onclick={() => onChangeMethod(item)}>Change Method</Button>
     <Button variant="primary" onclick={() => onChangeDevice(item)}>Change Device</Button>
-    <Button disabled={testing || item.method === 'none' || item.method === 'vox'} onclick={testPtt}>
+    <Button disabled={testing || item.method === 'none' || item.method === 'vox' || item.method === 'digirig_tone'} onclick={testPtt}>
       {testing ? 'Keying…' : 'Test PTT (1s)'}
     </Button>
     <Button variant="danger" onclick={() => onDelete(item)}>Delete</Button>

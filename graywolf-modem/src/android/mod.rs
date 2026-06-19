@@ -519,6 +519,8 @@ fn run_demod(
                                                 sample_rate: TARGET_SAMPLE_RATE,
                                                 channels: 1,
                                                 audio_channel: 0,
+                                                // Android keys PTT via JNI, never via a companion-channel tone.
+                                                ptt_tone_hz: 0,
                                             },
                                     };
                                     if let Err(e) = tx_worker.transmit(job) {
@@ -585,6 +587,8 @@ fn run_demod(
                                                 sample_rate: TARGET_SAMPLE_RATE,
                                                 channels: 1,
                                                 audio_channel: 0,
+                                                // Android keys PTT via JNI, never via a companion-channel tone.
+                                                ptt_tone_hz: 0,
                                             },
                                     };
                                     // Ok here means "enqueued on the TX

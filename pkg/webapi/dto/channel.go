@@ -124,7 +124,7 @@ type ChannelResponse struct {
 // fanning out to the PTT endpoint per card.
 //
 // Method is the PttConfig.Method enum (none|serial_rts|serial_dtr|gpio|
-// cm108|rigctld). Configured is true iff Method is non-empty and not
+// cm108|rigctld|vox|digirig_tone). Configured is true iff Method is non-empty and not
 // "none" — the convenience flag the UI uses to colour the badge and
 // drive the "PTT not configured" hint.
 //

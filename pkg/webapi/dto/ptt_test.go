@@ -52,7 +52,7 @@ func TestPttRequest_AndroidRequiresPttMethod(t *testing.T) {
 // TestPttRequest_Validate_NonAndroid confirms the android ptt_method gate
 // does not interfere with other methods (they may carry any gpio_pin value).
 func TestPttRequest_Validate_NonAndroid(t *testing.T) {
-	for _, method := range []string{"serial_rts", "cm108_hid", "gpio", "vox", "none"} {
+	for _, method := range []string{"serial_rts", "cm108_hid", "gpio", "vox", "digirig_tone", "none"} {
 		r := PttRequest{ChannelID: 1, Method: method, GpioPin: 0}
 		if err := r.Validate(); err != nil {
 			t.Errorf("method=%s gpio_pin=0: unexpected error: %v", method, err)

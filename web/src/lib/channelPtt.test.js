@@ -13,6 +13,7 @@ test('methodLabel translates known methods and falls back to raw', () => {
   assert.equal(methodLabel('cm108'), 'CM108');
   assert.equal(methodLabel('serial_rts'), 'Serial RTS');
   assert.equal(methodLabel('rigctld'), 'rigctld');
+  assert.equal(methodLabel('digirig_tone'), 'Digirig Lite Tone PTT');
   assert.equal(methodLabel(''), 'None');
   assert.equal(methodLabel(undefined), 'None');
   // Unknown method -> degrade to raw token rather than blank.

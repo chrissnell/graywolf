@@ -71,6 +71,7 @@ Reproduce with `./bench.sh`.
   - Linux GPIO (Raspberry Pi, BeagleBone)
   - Hamlib rigctld (CAT control)
   - VOX (voice-operated keying, no PTT wiring required)
+  - Digirig Lite Tone PTT (keys on a right-channel tone, no PTT wiring required)
 
 - **Digipeater** - Full-featured APRS digipeater
 
