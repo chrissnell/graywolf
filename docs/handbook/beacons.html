@@ -134,7 +134,7 @@
             <tr>
               <td><code>channel</code></td>
               <td>&mdash;</td>
-              <td>Radio channel to transmit on</td>
+              <td>Radio channel to transmit on. Not required when <em>Send to</em> is <em>APRS-IS only</em>.</td>
             </tr>
             <tr>
               <td><code>callsign</code></td>
@@ -169,24 +169,100 @@
             <tr>
               <td><code>send_path</code></td>
               <td><code>rf</code></td>
-              <td>Where the beacon is sent: <code>rf</code> (radio only), <code>both</code> (radio and APRS-IS), or <code>is_only</code> (APRS-IS only, no radio)</td>
+              <td>Where the beacon is sent &mdash; see <a href="#where-a-beacon-is-sent">Where a beacon is sent</a> below</td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
 
+    <h2 id="where-a-beacon-is-sent">Where a beacon is sent</h2>
+
+    <p>
+      Every beacon has a <strong>Send to</strong> setting that controls
+      where it is transmitted:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Send to</th><th><code>send_path</code></th><th>What happens</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>RF only</td>
+              <td><code>rf</code></td>
+              <td>Transmitted over the radio on the selected channel. Other igates may relay it to APRS-IS.</td>
+            </tr>
+            <tr>
+              <td>RF + APRS-IS</td>
+              <td><code>both</code></td>
+              <td>Transmitted over the radio <em>and</em> sent straight to APRS-IS.</td>
+            </tr>
+            <tr>
+              <td>APRS-IS only (no radio)</td>
+              <td><code>is_only</code></td>
+              <td>Sent only to APRS-IS. No radio transmission and no radio channel required.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>APRS-IS-only beaconing (no radio)</h2>
+
+    <p>
+      You don&rsquo;t need a radio to put your station on the APRS map.
+      Set a beacon&rsquo;s <strong>Send to</strong> to
+      <em>APRS-IS only (no radio)</em> and Graywolf sends it directly to
+      the APRS-IS network over the internet &mdash; ideal for a receive-only
+      site, a fixed home station with no transmitter, or anyone who just
+      wants to appear on <a href="https://aprs.fi" rel="noopener">aprs.fi</a>.
+    </p>
+
+    <p>Here&rsquo;s how the no-radio path works end to end:</p>
+
+    <ul>
+      <li>
+        <strong>No channel needed.</strong> When <em>Send to</em> is
+        <em>APRS-IS only</em>, the radio-channel picker disappears from the
+        beacon form &mdash; there is no RF leg to assign a channel to. You can
+        create one of these beacons even when <a href="channels.html">no
+        radio channels</a> exist at all.
+      </li>
+      <li>
+        <strong>The Beacons page tells you when you have no radio.</strong>
+        If no channels are configured, a banner at the top of the page
+        reminds you that you can beacon to APRS-IS only, and links to the
+        Channels page in case you do want to add RF later. New beacons
+        default to <em>APRS-IS only</em> in that situation.
+      </li>
+      <li>
+        <strong>The iGate is enabled automatically.</strong> An APRS-IS-only
+        beacon reaches the network through Graywolf&rsquo;s
+        <a href="igate.html">iGate</a> connection, so saving one turns the
+        iGate on for you if it wasn&rsquo;t already. You&rsquo;ll see a
+        confirmation when this happens.
+      </li>
+      <li>
+        <strong>Set your station callsign first.</strong> The iGate logs in
+        to APRS-IS using your <a href="callsign.html">station callsign</a>.
+        Without it the connection can&rsquo;t come up, so the beacon
+        won&rsquo;t reach the network until a callsign is set.
+      </li>
+    </ul>
+
     <div class="callout info">
       <span class="callout-icon">&#9432;</span>
       <div class="callout-body">
         <p>
-          <strong>APRS-IS only (no radio)?</strong> Set this beacon's
-          <em>Send to</em> to <em>APRS-IS only</em>. The beacon is gated
-          straight to APRS-IS and no radio channel is required &mdash; you
-          can add an APRS-IS-only beacon even with no channels configured.
-          Saving an APRS-IS-only beacon automatically enables the iGate so
-          an APRS-IS connection exists; make sure your station callsign is
-          set so the iGate can log in.
+          APRS-IS-only beacons are injected with a <code>TCPIP*</code> path
+          rather than an RF digipeater path (<code>WIDE1-1</code>, etc.).
+          This is the convention APRS-IS expects for self-originated
+          traffic &mdash; servers silently drop self-originated packets that
+          carry an RF path, so Graywolf sets the right path for you. The
+          <em>Path</em> field on the beacon only affects RF transmissions.
         </p>
       </div>
     </div>
