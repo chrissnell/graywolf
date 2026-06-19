@@ -81,6 +81,37 @@
   </p>
 </Box>
 
+<Box title="Retry">
+  <p class="tx-channel-label">Max retries</p>
+  <input
+    class="retry-input"
+    type="number"
+    min="1"
+    max="20"
+    value={messagesPreferencesState.retryMaxAttempts}
+    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+    onchange={(e) => messagesPreferencesState.setRetryMaxAttempts(e.target.value)}
+  />
+  <p class="messages-hint">
+    How many times to retransmit an unacknowledged message before marking it
+    failed. Default is 4 (1 initial send + 3 retries, ~90 seconds total).
+  </p>
+  <p class="tx-channel-label">Retry interval (seconds)</p>
+  <input
+    class="retry-input"
+    type="number"
+    min="10"
+    max="120"
+    value={messagesPreferencesState.retryIntervalSecs}
+    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+    onchange={(e) => messagesPreferencesState.setRetryIntervalSecs(e.target.value)}
+  />
+  <p class="messages-hint">
+    How long to wait between retries. Default is 30 seconds. Range: 10–120
+    seconds.
+  </p>
+</Box>
+
 <style>
   .messages-hint {
     margin-top: 12px;
@@ -94,5 +125,18 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--text-default);
+  }
+  .retry-input {
+    width: 80px;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-input, var(--bg-surface));
+    color: var(--text-default);
+  }
+  .retry-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

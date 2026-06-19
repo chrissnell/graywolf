@@ -70,9 +70,12 @@ type ServiceConfig struct {
 	// LocalTxRing / TacticalSet / EventHub can be injected for tests
 	// that need to observe them; if nil the Service constructs its
 	// own defaults.
-	LocalTxRing *LocalTxRing
-	TacticalSet *TacticalSet
-	EventHub    *EventHub
+	LocalTxRing  *LocalTxRing
+	TacticalSet  *TacticalSet
+	EventHub     *EventHub
+	// BulletinSink receives inbound BLN* packets detected by the
+	// Router. Optional: nil means bulletins are silently dropped.
+	BulletinSink BulletinSink
 }
 
 // Service is the top-level messages component. It owns Router,
@@ -203,16 +206,17 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 
 	router, err := NewRouter(RouterConfig{
-		Store:       cfg.Store,
-		TxSink:      cfg.TxSink,
-		IGateSender: cfg.IGate,
-		OurCall:     cfg.OurCall,
-		LocalTxRing: ring,
-		TacticalSet: tactSet,
-		EventHub:    hub,
-		Logger:      logger.With("component", "messages-router"),
-		Clock:       clock,
-		Preflight:   pf,
+		Store:        cfg.Store,
+		TxSink:       cfg.TxSink,
+		IGateSender:  cfg.IGate,
+		OurCall:      cfg.OurCall,
+		LocalTxRing:  ring,
+		TacticalSet:  tactSet,
+		EventHub:     hub,
+		Logger:       logger.With("component", "messages-router"),
+		Clock:        clock,
+		Preflight:    pf,
+		BulletinSink: cfg.BulletinSink,
 	})
 	if err != nil {
 		return nil, err

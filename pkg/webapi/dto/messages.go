@@ -383,10 +383,11 @@ type StationAutocomplete struct {
 
 // MessagePreferencesRequest is the body accepted by PUT /api/messages/preferences.
 type MessagePreferencesRequest struct {
-	FallbackPolicy   string `json:"fallback_policy"`
-	DefaultPath      string `json:"default_path"`
-	RetryMaxAttempts uint32 `json:"retry_max_attempts"`
-	RetentionDays    uint32 `json:"retention_days"`
+	FallbackPolicy    string `json:"fallback_policy"`
+	DefaultPath       string `json:"default_path"`
+	RetryMaxAttempts  uint32 `json:"retry_max_attempts"`
+	RetryIntervalSecs uint32 `json:"retry_interval_secs"`
+	RetentionDays     uint32 `json:"retention_days"`
 	// MaxMessageTextOverride raises the default 67-char addressee-line
 	// direct-message cap. 0 (or field absent) means "use the default";
 	// any positive value must fall in [MaxMessageText+1, MaxMessageTextUnsafe]
@@ -414,6 +415,9 @@ func (r MessagePreferencesRequest) Validate() error {
 	if r.RetryMaxAttempts > 100 {
 		return fmt.Errorf("retry_max_attempts %d exceeds sanity cap (100)", r.RetryMaxAttempts)
 	}
+	if r.RetryIntervalSecs != 0 && (r.RetryIntervalSecs < 10 || r.RetryIntervalSecs > 120) {
+		return fmt.Errorf("retry_interval_secs %d out of range (use 0 for default, or 10..120)", r.RetryIntervalSecs)
+	}
 	// max_message_text_override: 0 = default; else must be in (MaxMessageText, MaxMessageTextUnsafe].
 	if r.MaxMessageTextOverride != 0 {
 		if r.MaxMessageTextOverride <= MaxMessageText || r.MaxMessageTextOverride > MaxMessageTextUnsafe {
@@ -434,6 +438,7 @@ func (r MessagePreferencesRequest) ToModel() configstore.MessagePreferences {
 		FallbackPolicy:         policy,
 		DefaultPath:            r.DefaultPath,
 		RetryMaxAttempts:       r.RetryMaxAttempts,
+		RetryIntervalSecs:      r.RetryIntervalSecs,
 		RetentionDays:          r.RetentionDays,
 		MaxMessageTextOverride: r.MaxMessageTextOverride,
 	}
@@ -441,10 +446,11 @@ func (r MessagePreferencesRequest) ToModel() configstore.MessagePreferences {
 
 // MessagePreferencesResponse is the body returned by GET/PUT preferences.
 type MessagePreferencesResponse struct {
-	FallbackPolicy   string `json:"fallback_policy"`
-	DefaultPath      string `json:"default_path"`
-	RetryMaxAttempts uint32 `json:"retry_max_attempts"`
-	RetentionDays    uint32 `json:"retention_days"`
+	FallbackPolicy    string `json:"fallback_policy"`
+	DefaultPath       string `json:"default_path"`
+	RetryMaxAttempts  uint32 `json:"retry_max_attempts"`
+	RetryIntervalSecs uint32 `json:"retry_interval_secs"`
+	RetentionDays     uint32 `json:"retention_days"`
 	// MaxMessageTextOverride mirrors the request field on read. 0
 	// means "default enforce 67" — older servers that have never been
 	// upgraded return 0 here, which is also what a fresh singleton with
@@ -473,10 +479,15 @@ func MessagePreferencesFromModel(m configstore.MessagePreferences) MessagePrefer
 	if override != 0 && (override <= MaxMessageText || override > MaxMessageTextUnsafe) {
 		override = 0
 	}
+	interval := m.RetryIntervalSecs
+	if interval == 0 {
+		interval = messages.DefaultRetryIntervalSecs
+	}
 	return MessagePreferencesResponse{
 		FallbackPolicy:         policy,
 		DefaultPath:            path,
 		RetryMaxAttempts:       retry,
+		RetryIntervalSecs:      interval,
 		RetentionDays:          m.RetentionDays,
 		MaxMessageTextOverride: override,
 	}
