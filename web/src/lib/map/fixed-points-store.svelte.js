@@ -14,6 +14,46 @@ export const fixedPointsStore = (() => {
   let points = $state([]);
   let loaded = $state(false);
 
+  const LEGACY_KEY = 'map-fixed-points';
+  const MIGRATED_FLAG = 'map-fixed-points-migrated';
+
+  // One-time upload of points saved by the old localStorage-only build
+  // so upgrading operators don't lose them. Guarded by a flag so it runs
+  // at most once per browser. Best-effort: on any failure we leave the
+  // legacy data in place and do NOT set the flag, so a later load retries.
+  async function migrateLegacyLocalStorage() {
+    let legacy;
+    try {
+      if (localStorage.getItem(MIGRATED_FLAG)) return;
+      const raw = localStorage.getItem(LEGACY_KEY);
+      if (!raw) {
+        localStorage.setItem(MIGRATED_FLAG, '1');
+        return;
+      }
+      legacy = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!Array.isArray(legacy) || legacy.length === 0) {
+      try {
+        localStorage.setItem(MIGRATED_FLAG, '1');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      for (const p of legacy) {
+        if (!p || typeof p.name !== 'string' || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) continue;
+        await api.post('/fixed-points', fixedPointToApi(p));
+      }
+      localStorage.setItem(MIGRATED_FLAG, '1');
+      localStorage.removeItem(LEGACY_KEY);
+    } catch {
+      // Leave legacy data + unset flag so the next load() retries.
+    }
+  }
+
   return {
     get points() {
       return points;
@@ -27,6 +67,7 @@ export const fixedPointsStore = (() => {
     // failure the previous list is kept and the error is rethrown so the
     // caller can surface it.
     async load() {
+      await migrateLegacyLocalStorage();
       const rows = (await api.get('/fixed-points')) || [];
       points = rows.map(fixedPointFromApi).filter(Boolean);
       loaded = true;
