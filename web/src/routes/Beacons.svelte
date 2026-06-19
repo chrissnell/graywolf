@@ -121,7 +121,12 @@
     const n = parseInt(form.channel, 10);
     return lookupChannel(n);
   });
+  // APRS-IS-only beacons carry no RF leg, so the radio channel is
+  // irrelevant — the form hides the channel picker and skips the
+  // TX-capability gate entirely for them.
+  let needsChannel = $derived(form.send_path !== 'is_only');
   let txBlock = $derived.by(() => {
+    if (!needsChannel) return null;
     const c = selectedChannelObj;
     if (!c) return null;
     const cap = c.backing?.tx;
@@ -267,14 +272,18 @@
   });
 
   function openCreate() {
-    if (channels.length === 0) {
-      toasts.error('Create a channel first on the Channels page');
-      return;
-    }
     editing = null;
     form.type = 'position';
     form.object_name = '';
-    form.channel = String(channels[0].id);
+    // A radioless (APRS-IS-only) station has no channels at all. Rather
+    // than block beacon creation, default to an APRS-IS-only beacon so
+    // the operator can get on the network with no RF setup; the channel
+    // picker stays hidden until they pick an RF send path.
+    if (channels.length === 0) {
+      form.channel = '';
+    } else {
+      form.channel = String(channels[0].id);
+    }
     form.callsign = '';
     form.callsign_override = false;
     callsignError = '';
@@ -294,7 +303,7 @@
     form.comment = defaultComment;
     form.interval = '600';
     form.slot = '';
-    form.send_path = 'rf';
+    form.send_path = channels.length === 0 ? 'is_only' : 'rf';
     form.enabled = true;
     modalOpen = true;
   }
@@ -355,8 +364,10 @@
     callsignError = '';
     let channelId = parseInt(form.channel);
     if (form.send_path === 'is_only') {
-      // APRS-IS-only beacon: no RF channel needed.
-      if (!Number.isFinite(channelId) || channelId <= 0) channelId = 0;
+      // APRS-IS-only beacon: no RF channel needed. Store 0 unconditionally
+      // so the value is unambiguous even when switching from an RF beacon
+      // that had a channel selected.
+      channelId = 0;
     } else if (!Number.isFinite(channelId) || channelId <= 0) {
       toasts.error('Channel required');
       return;
@@ -502,8 +513,9 @@
 {:else}
   <div class="beacon-grid">
     {#each beacons as b}
+      {@const isOnly = b.send_path === 'is_only'}
       {@const refStatus = channelRefStatus(b.channel, channelsById)}
-      {@const broken = refStatus.status !== STATUS_OK}
+      {@const broken = !isOnly && refStatus.status !== STATUS_OK}
       {@const pillAriaLabel = broken
         ? (refStatus.status === STATUS_DELETED
             ? `Channel #${b.channel} deleted`
@@ -552,6 +564,10 @@
         </div>
 
         <div class="beacon-channel" class:broken>
+          {#if isOnly}
+            <span class="channel-label">Send to</span>
+            <span class="channel-value">APRS-IS only (no radio)</span>
+          {:else}
           <span
             class="channel-label"
             class:danger={broken}
@@ -568,6 +584,7 @@
           </span>
           {#if refStatus.status !== STATUS_DELETED}
             <span class="channel-value">{channelName(b.channel)}</span>
+          {/if}
           {/if}
         </div>
 
@@ -699,16 +716,36 @@
           <Input id="bcn-objname" bind:value={form.object_name} placeholder="e.g. FIELDDAY" maxlength="9" />
         </FormField>
       {/if}
-      <FormField label="Channel" id="bcn-channel"
-        hint="Radio channel this beacon transmits on. Defined on the Channels page.">
-        <ChannelListbox
-          id="bcn-channel"
-          bind:value={form.channel}
-          valueType="string"
-          channels={channels}
-          capabilityFilter={txPredicate}
-        />
+      <FormField label="Send to" id="bcn-send-path"
+        hint="Where this beacon is transmitted. APRS-IS only needs no radio channel — ideal for a station with no radio.">
+        <RadioGroup bind:value={form.send_path}>
+          <div class="pos-source-row">
+            <Radio value="rf" label="RF only" />
+            <Radio value="both" label="RF + APRS-IS" />
+            <Radio value="is_only" label="APRS-IS only (no radio)" />
+          </div>
+        </RadioGroup>
       </FormField>
+      {#if needsChannel}
+        {#if channels.length === 0}
+          <div class="no-channel-note" role="note">
+            No radio channels are configured. Add one on the
+            <a href="#/channels">Channels page</a>, or choose
+            <strong>APRS-IS only</strong> above to beacon without a radio.
+          </div>
+        {:else}
+          <FormField label="Channel" id="bcn-channel"
+            hint="Radio channel this beacon transmits on. Defined on the Channels page.">
+            <ChannelListbox
+              id="bcn-channel"
+              bind:value={form.channel}
+              valueType="string"
+              channels={channels}
+              capabilityFilter={txPredicate}
+            />
+          </FormField>
+        {/if}
+      {/if}
       <FormField
         label={form.type === 'object' ? 'Transmitting station (via)' : 'Callsign'}
         id="bcn-call"
@@ -842,16 +879,6 @@
       <FormField label="Slot (seconds past the hour)" id="bcn-slot"
         hint="Optional. Aligns each transmission to a fixed second past the top of the hour so multiple beacons stagger instead of flooding. E.g. 0 fires at :00/:30 with a 1800 s interval; 900 fires at :15/:45. Leave blank to fire on a plain interval.">
         <Input id="bcn-slot" bind:value={form.slot} type="number" min="0" max="3599" placeholder="e.g. 0" />
-      </FormField>
-      <FormField label="Destination" id="bcn-send-path"
-        hint="Where this beacon is transmitted. APRS-IS only needs no radio channel.">
-        <RadioGroup bind:value={form.send_path}>
-          <div class="pos-source-row">
-            <Radio value="rf" label="RF only" />
-            <Radio value="both" label="RF + APRS-IS" />
-            <Radio value="is_only" label="APRS-IS only (no radio)" />
-          </div>
-        </RadioGroup>
       </FormField>
     </div>
   </div>
@@ -1139,6 +1166,16 @@
     font-size: 12px;
     color: var(--color-text-muted, #888);
     line-height: 1.4;
+  }
+  .no-channel-note {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--color-text-muted, #888);
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius);
   }
   .symbol-swatch {
     flex: 0 0 auto;
