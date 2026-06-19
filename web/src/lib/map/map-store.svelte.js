@@ -42,14 +42,6 @@ const hasSavedView = hasSavedCenter && hasSavedZoom;
 export const mapState = (() => {
   let selectedStation = $state(null);
 
-  let layerToggles = $state({
-    stations: true,
-    aprsIs: true,
-    trails: true,
-    weather: false,
-    myPosition: false,
-  });
-
   let highContrastLabels = $state(localStorage.getItem('map-high-contrast-labels') === '1');
 
   let timerange = $state(loadInt('map-timerange', 3600));
@@ -63,9 +55,6 @@ export const mapState = (() => {
   return {
     get selectedStation() { return selectedStation; },
     set selectedStation(v) { selectedStation = v; },
-
-    get layerToggles() { return layerToggles; },
-    set layerToggles(v) { layerToggles = v; },
 
     get highContrastLabels() { return highContrastLabels; },
     set highContrastLabels(v) {

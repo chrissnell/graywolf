@@ -173,7 +173,13 @@
   let isMobile = $state(false);
   let panelOpen = $state(false);
   let layerCardCollapsed = $state(false);
-  let layerToggles = $state({
+  // Layer toggles are a per-browser preference (like the radar settings
+  // above): persisted to localStorage so unchecking e.g. Trails or Fixed
+  // Points survives navigating away and back. Stored as one JSON blob and
+  // merged over the defaults on load so toggles added in later versions
+  // pick up their default instead of becoming undefined.
+  const LAYER_TOGGLES_KEY = 'gw_map_layer_toggles';
+  const LAYER_TOGGLES_DEFAULTS = {
     stations: true,
     trails: true,
     weather: true,
@@ -181,7 +187,17 @@
     fixedPoints: true,
     directRxOnly: false,
     rfOnly: false,
-  });
+  };
+  function loadLayerToggles() {
+    try {
+      const raw = localStorage.getItem(LAYER_TOGGLES_KEY);
+      if (!raw) return { ...LAYER_TOGGLES_DEFAULTS };
+      return { ...LAYER_TOGGLES_DEFAULTS, ...JSON.parse(raw) };
+    } catch {
+      return { ...LAYER_TOGGLES_DEFAULTS };
+    }
+  }
+  let layerToggles = $state(loadLayerToggles());
 
   // Add-fixed-point dialog state. Opened from the context menu with the
   // clicked coordinates; onConfirm drops the point into the store.
@@ -585,6 +601,11 @@
     fixedPointsLayer?.refresh();
   });
 
+  // Persist the whole toggle set on any change. JSON.stringify reads every
+  // property, so Svelte tracks each one as a dependency.
+  $effect(() => {
+    localStorage.setItem(LAYER_TOGGLES_KEY, JSON.stringify(layerToggles));
+  });
   // Push the layer toggles into the layer modules. We MUST read the
   // reactive value before the optional-chain so Svelte 5 tracks it as a
   // dependency on the initial run. With `layer?.setVisible(toggle)`, if
