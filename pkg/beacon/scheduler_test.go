@@ -677,3 +677,32 @@ func TestSendBeaconImmediate_ISOnly_NoSink(t *testing.T) {
 		t.Fatal("expected error when is_only beacon has no APRS-IS sink")
 	}
 }
+
+// TestSendNow_ISOnly_NoRF models the dashboard "Beacon Now" action on an
+// APRS-IS-only beacon: it must transmit to APRS-IS and submit ZERO frames
+// to the RF/TNC sink (so nothing shows in the packet log as going over
+// the RF channel). Channel is deliberately non-zero to prove the skip is
+// driven by SendPath, not by an empty channel.
+func TestSendNow_ISOnly_NoRF(t *testing.T) {
+	sink := newMockSink(0)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, err := New(Options{Sink: sink, ISSink: is, Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := mkPathBeacon(SendPathISOnly)
+	b.ID = 42
+	b.Channel = 1
+	s.SetBeacons([]Config{b})
+
+	if err := s.SendNow(context.Background(), 42); err != nil {
+		t.Fatalf("SendNow: %v", err)
+	}
+	if got := len(sink.Frames()); got != 0 {
+		t.Fatalf("RF frames = %d, want 0 (is_only must not hit the RF sink)", got)
+	}
+	if got := len(is.Lines()); got != 1 {
+		t.Fatalf("IS lines = %d, want 1", got)
+	}
+}
