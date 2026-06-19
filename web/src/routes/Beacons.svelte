@@ -259,11 +259,14 @@
     }
     // Deep-link entry from the map context menu's "Add fixed beacon
     // here" item: open the create modal with pos_source=fixed and the
-    // clicked coordinates prefilled. Done after the channels store has
-    // been kicked above so openCreate() finds a default channel.
+    // clicked coordinates prefilled. Await the channels store's first
+    // load so openCreate() defaults the send path off a populated list
+    // (no channels => APRS-IS only; otherwise RF) instead of racing an
+    // empty list and wrongly preselecting APRS-IS only on an RF station.
     const { lat, lon } = parseLatLonFromHash();
     if (lat != null && lon != null) {
       clearLatLonFromHash();
+      await refreshChannels();
       openCreate();
       form.pos_source = 'fixed';
       form.latitude = String(lat);
@@ -467,8 +470,13 @@
       if (!cfg || cfg.enabled) return;
       await api.put('/igate/config', { ...cfg, enabled: true });
       toasts.success('iGate enabled so your APRS-IS-only beacon can reach the network');
-    } catch {
-      toasts.error('Beacon saved, but the iGate could not be enabled automatically. Enable it on the iGate page so APRS-IS-only beacons transmit.');
+    } catch (err) {
+      // The most common failure here is a missing station callsign: the
+      // backend refuses to enable the iGate until one is set, which is
+      // exactly the state of a fresh radioless install. Surface the
+      // server's own actionable message rather than a generic "try the
+      // iGate page" that would fail for the same reason.
+      toasts.error(`Beacon saved, but the iGate could not be enabled automatically: ${err.message || 'enable it on the iGate page so APRS-IS-only beacons transmit.'}`);
     }
   }
 
@@ -527,6 +535,10 @@
   <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
 </PageHeader>
 
+<!-- Gated on lastUpdated (set only after a successful fetch) so the
+     banner doesn't flash before the channels store's first load, and
+     stays hidden if that fetch errors — we don't claim "no channels"
+     when we don't actually know the channel set yet. -->
 {#if channelsStore.lastUpdated && channels.length === 0}
   <div class="no-rf-banner" role="note">
     <span class="no-rf-banner-icon" aria-hidden="true">&#9432;</span>
