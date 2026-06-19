@@ -373,10 +373,14 @@
     btn.type = 'button';
     btn.className = 'gw-fixed-popup-delete';
     btn.textContent = 'Delete point';
-    btn.addEventListener('click', () => {
-      fixedPointsStore.remove(point.id);
-      closePopup();
-      toasts.success(`Removed "${name}"`);
+    btn.addEventListener('click', async () => {
+      try {
+        await fixedPointsStore.remove(point.id);
+        closePopup();
+        toasts.success(`Removed "${name}"`);
+      } catch (err) {
+        toasts.error(`Could not remove point: ${err.message}`);
+      }
     });
     div.append(title, coords, btn);
 
@@ -477,6 +481,12 @@
     });
     fixedPointsLayer = mountFixedPointsLayer(map, () => fixedPointsStore.points, {
       onMarkerClick: (point) => openFixedPointPopup(map, point),
+    });
+    // Pull the server-side set so points placed on another device (or
+    // before a browser-data wipe) show up here. The points.length $effect
+    // re-runs refresh() once this resolves and the list grows. (graywolf#347)
+    fixedPointsStore.load().catch((err) => {
+      toasts.error(`Could not load fixed points: ${err.message}`);
     });
     myPositionLayer = mountMyPositionLayer(map, () => dataStore.myPosition, {
       onMarkerEnter: () => {
@@ -1040,16 +1050,20 @@
     bind:open={fpDialog.open}
     lat={fpDialog.lat}
     lon={fpDialog.lon}
-    onConfirm={({ name, table, symbol, overlay }) => {
-      const p = fixedPointsStore.add({
-        name,
-        table,
-        symbol,
-        overlay,
-        lat: fpDialog.lat,
-        lon: fpDialog.lon,
-      });
-      toasts.success(`Added "${p.name}"`);
+    onConfirm={async ({ name, table, symbol, overlay }) => {
+      try {
+        const p = await fixedPointsStore.add({
+          name,
+          table,
+          symbol,
+          overlay,
+          lat: fpDialog.lat,
+          lon: fpDialog.lon,
+        });
+        toasts.success(`Added "${p.name}"`);
+      } catch (err) {
+        toasts.error(`Could not add point: ${err.message}`);
+      }
     }}
   />
 
