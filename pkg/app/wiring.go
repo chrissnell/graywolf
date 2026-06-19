@@ -616,7 +616,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		return err
 	}
 	if ig := a.ig.Load(); ig != nil {
-		a.beaconSched.SetISSink(ig)
+		a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
 	}
 
 	// --- Messages service ---------------------------------------------
@@ -2755,7 +2755,7 @@ func (a *App) reloadIgate(ctx context.Context) {
 		a.ig.Store(ig)
 		a.igateOut.SetIgate(ig)
 		if a.beaconSched != nil {
-			a.beaconSched.SetISSink(ig)
+			a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
 		}
 		a.lastAppliedIgateFilter = composed
 		if err := ig.Start(ctx); err != nil {

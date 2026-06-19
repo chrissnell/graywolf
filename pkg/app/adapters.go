@@ -11,9 +11,44 @@ import (
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/metrics"
+	"github.com/chrissnell/graywolf/pkg/packetlog"
 )
 
 // --- Beacon observer for metrics -----------------------------------------
+
+// beaconISSink wraps the iGate line sender used by the beacon scheduler
+// so every successful APRS-IS beacon upload is recorded in the packet log
+// as a DirIS entry. Without this, APRS-IS-only beacons never produce a
+// visible log entry: they skip the RF TX hook (no RF leg) and the iGate's
+// SendLine does not log. Mirrors the RF->IS gate's RfToIsHook recording.
+type beaconISSink struct {
+	inner beacon.ISSink
+	plog  *packetlog.Log
+}
+
+// newBeaconISSink wraps inner so beacon APRS-IS sends are logged. Returns
+// nil when inner is nil so the scheduler's "no IS sink" path is preserved.
+func newBeaconISSink(inner beacon.ISSink, plog *packetlog.Log) beacon.ISSink {
+	if inner == nil {
+		return nil
+	}
+	return &beaconISSink{inner: inner, plog: plog}
+}
+
+func (w *beaconISSink) SendLine(line string) error {
+	if err := w.inner.SendLine(line); err != nil {
+		return err
+	}
+	if w.plog != nil {
+		w.plog.Record(packetlog.Entry{
+			Direction: packetlog.DirIS,
+			Source:    "beacon",
+			Display:   line,
+			Notes:     "aprs-is",
+		})
+	}
+	return nil
+}
 
 type beaconObserver struct{ m *metrics.Metrics }
 
