@@ -31,6 +31,10 @@
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
+  import {
+    LAYER_TOGGLES_KEY,
+    parseLayerToggles,
+  } from '../lib/map/layer-toggles-core.js';
   import { toMaidenhead } from '../lib/map/maidenhead.js';
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
   import { clockOffset, formatOffsetMagnitude } from '../lib/map/clock-offset.svelte.js';
@@ -175,29 +179,9 @@
   let layerCardCollapsed = $state(false);
   // Layer toggles are a per-browser preference (like the radar settings
   // above): persisted to localStorage so unchecking e.g. Trails or Fixed
-  // Points survives navigating away and back. Stored as one JSON blob and
-  // merged over the defaults on load so toggles added in later versions
-  // pick up their default instead of becoming undefined.
-  const LAYER_TOGGLES_KEY = 'gw_map_layer_toggles';
-  const LAYER_TOGGLES_DEFAULTS = {
-    stations: true,
-    trails: true,
-    weather: true,
-    myPosition: true,
-    fixedPoints: true,
-    directRxOnly: false,
-    rfOnly: false,
-  };
-  function loadLayerToggles() {
-    try {
-      const raw = localStorage.getItem(LAYER_TOGGLES_KEY);
-      if (!raw) return { ...LAYER_TOGGLES_DEFAULTS };
-      return { ...LAYER_TOGGLES_DEFAULTS, ...JSON.parse(raw) };
-    } catch {
-      return { ...LAYER_TOGGLES_DEFAULTS };
-    }
-  }
-  let layerToggles = $state(loadLayerToggles());
+  // Points survives navigating away and back. The load/merge logic lives in
+  // layer-toggles-core.js (pure, unit-tested); here we only read/write storage.
+  let layerToggles = $state(parseLayerToggles(localStorage.getItem(LAYER_TOGGLES_KEY)));
 
   // Add-fixed-point dialog state. Opened from the context menu with the
   // clicked coordinates; onConfirm drops the point into the store.
