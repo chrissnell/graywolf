@@ -446,7 +446,7 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 			}
 			return &SendNowError{Kind: SendNowErrorSubmit, Err: err}
 		}
-		s.logger.Info("beacon sent", "id", b.ID, "type", b.Type, "channel", b.Channel, "info", info)
+		s.logger.Info("beacon sent", "id", b.ID, "type", b.Type, "channel", b.Channel, "send_path", b.SendPath, "info", info)
 		sent = true
 	}
 
@@ -472,7 +472,7 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 					return &SendNowError{Kind: SendNowErrorSubmit, Err: err}
 				}
 			} else {
-				s.logger.Info("beacon sent to aprs-is", "id", b.ID, "line", line)
+				s.logger.Info("beacon sent to aprs-is", "id", b.ID, "send_path", b.SendPath, "line", line)
 				sent = true
 			}
 		}
