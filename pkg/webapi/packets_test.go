@@ -59,26 +59,60 @@ func TestListPackets_ResolvesChannelName(t *testing.T) {
 }
 
 // TestListPackets_ExposesCoordinates verifies that /api/packets surfaces Lat/Lon
-// for every transmission type that carries a fix (plain position, Mic-E, object,
-// item) regardless of the local station's own GPS, and omits them for
-// positionless packets. This is what the web log's click-to-zoom reticle keys on.
+// for every transmission type that carries a fix -- plain position, Mic-E,
+// weather-with-position, object, and item -- regardless of the local station's
+// own GPS, and omits them for positionless packets and the 0/0 "null island"
+// non-fix. This is what the web log's click-to-zoom reticle keys on.
 func TestListPackets_ExposesCoordinates(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	log := packetlog.New(packetlog.Config{Capacity: 10})
+	// Plain position report.
 	log.Record(packetlog.Entry{
 		Direction: packetlog.DirRX, Display: "POS>APRS:!pos",
 		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketPosition, Source: "POS",
 			Position: &aprs.Position{Latitude: 39.5, Longitude: -104.8}},
 	})
+	// Weather report carrying a fix: the position rides on the top-level
+	// Position field, exercising the primary (d.Position) branch the same way
+	// real decoded Mic-E/weather packets do.
+	log.Record(packetlog.Entry{
+		Direction: packetlog.DirRX, Display: "WX>APRS:@wx",
+		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketWeather, Source: "WX",
+			Position: &aprs.Position{Latitude: 47.6, Longitude: -122.3},
+			Weather:  &aprs.Weather{HasTemp: true, Temperature: 55}},
+	})
+	// Mic-E with only the MicE.Position populated: exercises the defensive
+	// fallback branch in packetPosition (real decodes also set d.Position).
 	log.Record(packetlog.Entry{
 		Direction: packetlog.DirRX, Display: "MIC>APRS:mice",
 		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketMicE, Source: "MIC",
 			MicE: &aprs.MicE{Position: aprs.Position{Latitude: 35.1, Longitude: -90.0}}},
 	})
+	// Object with an embedded position.
+	log.Record(packetlog.Entry{
+		Direction: packetlog.DirRX, Display: "OBJ>APRS:;obj",
+		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketObject, Source: "OBJ",
+			Object: &aprs.Object{Name: "EVENT", Live: true,
+				Position: &aprs.Position{Latitude: 30.0, Longitude: -97.0}}},
+	})
+	// Item with an embedded position.
+	log.Record(packetlog.Entry{
+		Direction: packetlog.DirRX, Display: "ITM>APRS:)item",
+		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketItem, Source: "ITM",
+			Item: &aprs.Item{Name: "AID", Live: true,
+				Position: &aprs.Position{Latitude: 41.9, Longitude: -87.6}}},
+	})
+	// Positionless message: must carry no coordinates.
 	log.Record(packetlog.Entry{
 		Direction: packetlog.DirRX, Display: "MSG>APRS::dest:hi",
 		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketMessage, Source: "MSG"},
+	})
+	// Null island (0,0): an unset Position struct must NOT masquerade as a fix.
+	log.Record(packetlog.Entry{
+		Direction: packetlog.DirRX, Display: "NUL>APRS:!null",
+		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketPosition, Source: "NUL",
+			Position: &aprs.Position{Latitude: 0, Longitude: 0}},
 	})
 
 	mux := http.NewServeMux()
@@ -104,13 +138,31 @@ func TestListPackets_ExposesCoordinates(t *testing.T) {
 		}
 	}
 
-	if p := bySrc["POS"]; p.Lat == nil || p.Lon == nil || *p.Lat != 39.5 || *p.Lon != -104.8 {
-		t.Errorf("position packet: expected (39.5,-104.8), got %v", p)
+	// Positioned types: coordinates present and exact.
+	for _, tc := range []struct {
+		src              string
+		wantLat, wantLon float64
+	}{
+		{"POS", 39.5, -104.8},
+		{"WX", 47.6, -122.3},
+		{"MIC", 35.1, -90.0},
+		{"OBJ", 30.0, -97.0},
+		{"ITM", 41.9, -87.6},
+	} {
+		p := bySrc[tc.src]
+		if p.Lat == nil || p.Lon == nil {
+			t.Errorf("%s: expected coordinates (%v,%v), got nil", tc.src, tc.wantLat, tc.wantLon)
+			continue
+		}
+		if *p.Lat != tc.wantLat || *p.Lon != tc.wantLon {
+			t.Errorf("%s: expected (%v,%v), got (%v,%v)", tc.src, tc.wantLat, tc.wantLon, *p.Lat, *p.Lon)
+		}
 	}
-	if p := bySrc["MIC"]; p.Lat == nil || p.Lon == nil || *p.Lat != 35.1 || *p.Lon != -90.0 {
-		t.Errorf("mic-e packet: expected (35.1,-90.0), got %v", p)
-	}
-	if p := bySrc["MSG"]; p.Lat != nil || p.Lon != nil {
-		t.Errorf("message packet: expected no coordinates, got lat=%v lon=%v", p.Lat, p.Lon)
+
+	// Positionless / null-island: coordinates omitted.
+	for _, src := range []string{"MSG", "NUL"} {
+		if p := bySrc[src]; p.Lat != nil || p.Lon != nil {
+			t.Errorf("%s: expected no coordinates, got lat=%v lon=%v", src, p.Lat, p.Lon)
+		}
 	}
 }

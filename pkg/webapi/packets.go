@@ -182,6 +182,12 @@ func enrichPacket(dto *packetDTO, havePos bool, myLat, myLon float64) {
 // bare status, positionless weather) yield ok=false. The 0/0 "null island"
 // guard rejects an unset Position struct so a packet that failed to decode a
 // fix doesn't masquerade as one off the African coast.
+//
+// d.Position is the primary path: the decoder copies the fix there for Mic-E
+// (pkg/aprs/mice.go) and positioned weather (pkg/aprs/position.go), so those
+// are caught by the first case. The d.MicE/d.Object/d.Item cases are defensive
+// fallbacks for synthesized packets or future decoder paths that populate only
+// the type-specific struct.
 func packetPosition(d *aprs.DecodedAPRSPacket) (lat, lon float64, ok bool) {
 	switch {
 	case d.Position != nil:
