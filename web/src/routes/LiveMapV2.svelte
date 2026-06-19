@@ -38,6 +38,7 @@
   import { toMaidenhead } from '../lib/map/maidenhead.js';
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
   import { clockOffset, formatOffsetMagnitude } from '../lib/map/clock-offset.svelte.js';
+  import { directHeardWithin } from '../lib/map/direct-rx-core.js';
   import { toasts } from '../lib/stores.js';
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
   import MapPinned from 'lucide-svelte/icons/map-pinned';
@@ -187,16 +188,16 @@
   // clicked coordinates; onConfirm drops the point into the store.
   let fpDialog = $state({ open: false, lat: 0, lon: 0 });
 
-  // Direct RX predicate: a station qualifies if at least one of its
-  // accumulated positions arrived directly on RF (RX direction with
-  // zero digi hops). Anything iGated (IS) or digipeated is excluded.
+  // Direct RX predicate: a station qualifies only if it was heard directly on
+  // RF (RX, zero digi hops) WITHIN the active time range. The server tracks the
+  // last direct-hearing time in last_direct_heard and never advances it on a
+  // later digipeated copy, so a station heard directly earlier but only via a
+  // digipeater recently drops out of this filter once the direct hearing falls
+  // outside the window (issue #349). Uses serverNow() so the cutoff matches the
+  // host clock that stamped the timestamps.
   function isDirectRx(station) {
-    const pts = station?.positions;
-    if (!Array.isArray(pts) || pts.length === 0) return false;
-    for (const p of pts) {
-      if (p.direction === 'RX' && (p.hops ?? 0) === 0) return true;
-    }
-    return false;
+    const cutoffMs = clockOffset.serverNow() - dataStore.timerangeMs;
+    return directHeardWithin(station, cutoffMs);
   }
 
   // RF Only predicate: a station qualifies if at least one position was
