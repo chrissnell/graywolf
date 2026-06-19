@@ -539,11 +539,12 @@
     }
 
     // Right-click background → open context menu. Bail when the click
-    // landed on a station marker (or any DOM child of one): markers own
-    // a left-click popup and we don't want to fight that surface.
+    // landed on a marker (or any DOM child of one): station markers own a
+    // left-click popup and fixed-point markers own a delete popup, so we
+    // don't want the background menu to fight either surface.
     map.on('contextmenu', (e) => {
       const target = e.originalEvent?.target;
-      if (target && target.closest && target.closest('.gw-station-marker')) {
+      if (target && target.closest && target.closest('.gw-station-marker, .gw-fixed-marker')) {
         return;
       }
       e.preventDefault?.();
@@ -562,7 +563,10 @@
     // contextmenu event fires (graywolf#347). A single finger held still for
     // LONGPRESS_MS opens the menu; any second touch (pinch), a drag past
     // LONGPRESS_SLOP px, or an early lift cancels it so normal pan/zoom is
-    // untouched.
+    // untouched. On browsers that DO synthesize a contextmenu on long-press,
+    // both paths call openCtxMenuAt with near-identical coords — the second
+    // open just overwrites the first single ctxMenu state, so it's a no-op,
+    // not a duplicate menu.
     const LONGPRESS_MS = 500;
     const LONGPRESS_SLOP = 10;
     let lpTimer = null;
@@ -581,7 +585,9 @@
         return;
       }
       const target = e.originalEvent?.target;
-      if (target && target.closest && target.closest('.gw-station-marker')) {
+      // Same guard as the right-click path: a press that lands on a marker
+      // belongs to that marker's own tap surface, not the background menu.
+      if (target && target.closest && target.closest('.gw-station-marker, .gw-fixed-marker')) {
         return;
       }
       const t = touches[0];
