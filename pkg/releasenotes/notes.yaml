@@ -7,6 +7,28 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.14.4"
+  date: "2026-06-19"
+  style: info
+  schema_version: 1
+  link: "#/map"
+  title: "Map toggles that stick, beacon slot timing and object altitude, Android fixes"
+  body: |
+    Your Live Map layer toggles now stick between sessions. Stations,
+    Trails, Weather, My Position, Fixed Points, and the RF filters all
+    come back the way you left them, instead of resetting to the
+    defaults on your next visit.
+
+    The beacon editor gains a slot timing field, so you can set how many
+    seconds past the hour a beacon transmits and stagger it from your
+    others instead of only picking a plain interval. Object beacons can
+    now also carry an altitude.
+
+    Two Android fixes: the app no longer crashes on launch on devices
+    with no GPS hardware, such as Facebook Portal, Android TV boxes, and
+    emulators, and the status-bar notification icon no longer shows up as
+    a solid white square.
+
 - version: "0.14.3"
   date: "2026-06-18"
   style: info
