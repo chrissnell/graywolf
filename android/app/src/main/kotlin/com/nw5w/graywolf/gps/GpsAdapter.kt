@@ -72,6 +72,15 @@ class GpsAdapter(
             Log.i(TAG, "GpsAdapter.start skipped — ACCESS_FINE_LOCATION not granted")
             return
         }
+        // Devices without a GPS HAL (Facebook Portal, Android TV boxes, the
+        // emulator) have no GPS_PROVIDER, and requestLocationUpdates throws
+        // IllegalArgumentException("provider doesn't exist: gps"). Skip cleanly,
+        // same posture as the missing-permission case above: the app runs
+        // without GPS rather than crashing onCreate (issue #338).
+        if (LocationManager.GPS_PROVIDER !in locationManager.allProviders) {
+            Log.i(TAG, "GpsAdapter.start skipped — no GPS provider on this device")
+            return
+        }
         try {
             locationManager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
@@ -82,7 +91,21 @@ class GpsAdapter(
             Log.i(TAG, "GpsAdapter started: GPS_PROVIDER 10s/0m + GNSS status callback")
         } catch (se: SecurityException) {
             Log.w(TAG, "GpsAdapter start hit SecurityException: $se")
+            rollbackPartialStart()
+        } catch (iae: IllegalArgumentException) {
+            // Belt-and-suspenders for the no-provider race or a device where
+            // registerGnssStatusCallback rejects the request after the guard.
+            Log.w(TAG, "GpsAdapter start hit IllegalArgumentException: $iae")
+            rollbackPartialStart()
         }
+    }
+
+    // requestLocationUpdates may have registered the listener before a later
+    // call in start() threw; started stays false, so stop() (which only cleans
+    // up when started) would leak it. Tear down whatever did register.
+    private fun rollbackPartialStart() {
+        try { locationManager.removeUpdates(locationListener) } catch (_: Throwable) {}
+        try { locationManager.unregisterGnssStatusCallback(gnssStatusCallback) } catch (_: Throwable) {}
     }
 
     fun stop() {

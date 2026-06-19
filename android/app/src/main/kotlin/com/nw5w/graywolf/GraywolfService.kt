@@ -381,7 +381,16 @@ class GraywolfService : Service() {
             stopSelf()
             return
         }
-        gpsAdapter = GpsAdapter(this, platformServer!!).also { it.start() }
+        // GPS is optional — the radio path is the point. start() already guards
+        // the known no-provider/no-permission cases, but keep the whole adapter
+        // init non-fatal so no future GPS-subsystem surprise can take the service
+        // down on launch (issue #338).
+        gpsAdapter = GpsAdapter(this, platformServer!!)
+        try {
+            gpsAdapter!!.start()
+        } catch (e: Throwable) {
+            Log.w(TAG, "GpsAdapter init failed; continuing without GPS", e)
+        }
 
         // Bluetooth-classic KISS TNC adapter. Wired AFTER PlatformServer.start()
         // because its sendMessage callback closes over platformServer.broadcastBt.
