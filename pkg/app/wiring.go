@@ -17,6 +17,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/actions"
 	"github.com/chrissnell/graywolf/pkg/agw"
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
+	"github.com/chrissnell/graywolf/pkg/bulletins"
 	"github.com/chrissnell/graywolf/pkg/app/txbackend"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
@@ -619,6 +620,13 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
 	}
 
+	// --- Bulletins service --------------------------------------------
+	// Constructed before Messages so the bulletin service can be passed
+	// as the BulletinSink in RouterConfig (messages.ServiceConfig).
+	if err := a.wireBulletins(ctx); err != nil {
+		return err
+	}
+
 	// --- Messages service ---------------------------------------------
 	if err := a.wireMessages(ctx); err != nil {
 		return err
@@ -709,6 +717,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.bridgeComponent(),
 		a.agwComponent(),
 		a.igateComponent(),
+		// bulletins runs after igate (shares TxSink) and before messages
+		// so that wireBulletins has already set a.bulletinSvc before
+		// wireMessages passes it as BulletinSink in RouterConfig.
+		a.bulletinsComponent(),
 		// messages runs after igate (sender needs IGateLineSender) and
 		// after the bridge fan-out is spun up (Router is already in the
 		// outputs slice). It runs BEFORE http so handlers see a fully
@@ -1092,6 +1104,7 @@ func (a *App) wireMessages(ctx context.Context) error {
 		OurCall:       ourCall,
 		ChannelModes:  a.store,
 		LocalTxRing:   a.msgLocalRing, // shared with iGate.Config.LocalOrigin
+		BulletinSink:  a.bulletinSvc,
 	})
 	if err != nil {
 		return fmt.Errorf("messages service init: %w", err)
@@ -1140,6 +1153,65 @@ func (a *App) wireActions(ctx context.Context) error {
 	}
 	a.actions = svc
 	return nil
+}
+
+// wireBulletins constructs the bulletins.Service. Failure is non-fatal:
+// a.bulletinSvc stays nil, the messages router drops BLN* packets
+// silently, and the webapi handlers return 503.
+//
+// Ordering: must run BEFORE wireMessages because wireMessages passes
+// a.bulletinSvc as the BulletinSink in messages.ServiceConfig.
+func (a *App) wireBulletins(ctx context.Context) error {
+	ourCall := func() string {
+		c, err := a.store.ResolveStationCallsign(context.Background())
+		if err != nil {
+			return ""
+		}
+		return c
+	}
+	var txChannel uint32 = 1
+	var txPath string = "WIDE1-1,WIDE2-1"
+	if mc, _ := a.store.GetMessagesConfig(ctx); mc != nil && mc.TxChannel != 0 {
+		txChannel = mc.TxChannel
+	}
+	if prefs, _ := a.store.GetMessagePreferences(ctx); prefs != nil && prefs.DefaultPath != "" {
+		txPath = prefs.DefaultPath
+	}
+	svc, err := bulletins.NewService(bulletins.ServiceConfig{
+		DB:          a.store.DB(),
+		TxSink:      a.gov,
+		IGateSender: a.igateLineSender,
+		OurCall:     ourCall,
+		TxChannel:   txChannel,
+		Path:        txPath,
+		Logger:      a.logger.With("component", "bulletins"),
+	})
+	if err != nil {
+		a.logger.Error("bulletins service init", "err", err)
+		return nil
+	}
+	a.bulletinSvc = svc
+	return nil
+}
+
+// bulletinsComponent manages the bulletins.Service lifecycle within
+// the startOrder component chain.
+func (a *App) bulletinsComponent() namedComponent {
+	return namedComponent{
+		name: "bulletins",
+		start: func(ctx context.Context) error {
+			if a.bulletinSvc != nil {
+				a.bulletinSvc.Start(ctx)
+			}
+			return nil
+		},
+		stop: func(_ context.Context) error {
+			if a.bulletinSvc != nil {
+				a.bulletinSvc.Stop()
+			}
+			return nil
+		},
+	}
 }
 
 // wireRemoteActions constructs the outbound-Actions service. Failure
@@ -1422,6 +1494,13 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// nil and the handler falls back to native pttdevice.Enumerate()
 	// (see pttsource_default.go).
 	apiSrv.SetPttDeviceSource(a.pttSourceForWebapi())
+
+	// Bulletin service: receives inbound BLN* packets and schedules
+	// retransmit of outbound bulletins. Nil when wireBulletins failed
+	// (non-fatal); the handlers return 503 until installed.
+	if a.bulletinSvc != nil {
+		apiSrv.SetBulletinService(a.bulletinSvc)
+	}
 
 	// Actions service runs the listener-addressee reload + test-fire
 	// path the REST handlers reach for. Skipped when wireActions

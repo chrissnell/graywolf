@@ -36,6 +36,9 @@ rust-artifacts/
 graywolf-modem-amd64
 graywolf-modem-arm64
 
+# Local Windows test builds — never commit the binary itself.
+/graywolf.exe
+
 # Git worktrees created by superpowers skill for isolated branch work.
 .worktrees/
 

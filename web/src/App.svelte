@@ -35,6 +35,7 @@
   import Terminal from './routes/Terminal.svelte';
   import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
   import Actions from './routes/Actions.svelte';
+  import Bulletins from './routes/Bulletins.svelte';
 
   const baseRoutes = {
     '/login': Login,
@@ -42,6 +43,7 @@
     '/map': LiveMapV2,
     '/messages': Messages,
     '/messages/*': Messages,
+    '/bulletins': Bulletins,
     '/terminal': Terminal,
     '/terminal/transcripts': TerminalTranscripts,
     '/actions': Actions,

@@ -44,10 +44,13 @@ function normalizeOverride(v) {
   return 0;
 }
 
+const DEFAULT_RETRY_MAX_ATTEMPTS = 4;
+const DEFAULT_RETRY_INTERVAL_SECS = 30;
+
 // Build the full preferences PUT payload from a hydrated baseline plus a
-// per-setter patch. The five-field shape is enumerated explicitly so that
-// adding a sixth field forces every setter to opt in (vs. silently
-// inheriting via spread). Always normalizes max_message_text_override.
+// per-setter patch. Fields are enumerated explicitly so adding a new field
+// forces every setter to opt in rather than silently inheriting via spread.
+// Always normalizes max_message_text_override.
 function buildPayload(baseline, patch) {
   const merged = { ...baseline, ...patch };
   return {
@@ -55,6 +58,7 @@ function buildPayload(baseline, patch) {
     fallback_policy: merged.fallback_policy,
     retention_days: merged.retention_days,
     retry_max_attempts: merged.retry_max_attempts,
+    retry_interval_secs: merged.retry_interval_secs,
     max_message_text_override: normalizeOverride(merged.max_message_text_override),
   };
 }
@@ -68,6 +72,7 @@ export const messagesPreferencesState = (() => {
     fallback_policy?: string,
     retention_days?: number,
     retry_max_attempts?: number,
+    retry_interval_secs?: number,
     max_message_text_override?: number,
   }} */ (null));
 
@@ -174,6 +179,62 @@ export const messagesPreferencesState = (() => {
     }
   }
 
+  async function setRetryMaxAttempts(n) {
+    const v = Math.max(1, Math.min(20, Math.floor(Number(n))));
+    if (!hydrated) {
+      await fetchPreferences();
+      if (!hydrated) {
+        toasts.error("Couldn't load preferences — try again in a moment.");
+        return;
+      }
+    }
+    if (prefs?.retry_max_attempts === v) return;
+    const baseline = prefs;
+    const prev = baseline;
+    prefs = { ...baseline, retry_max_attempts: v };
+    saving = true;
+    error = null;
+    try {
+      const resp = await putPreferences(buildPayload(baseline, { retry_max_attempts: v }));
+      prefs = resp ?? prefs;
+      toasts.success('Saved');
+    } catch (e) {
+      prefs = prev;
+      error = e?.message || String(e);
+      toasts.error("Couldn't save retry attempts — try again.");
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function setRetryIntervalSecs(n) {
+    const v = Math.max(10, Math.min(120, Math.floor(Number(n))));
+    if (!hydrated) {
+      await fetchPreferences();
+      if (!hydrated) {
+        toasts.error("Couldn't load preferences — try again in a moment.");
+        return;
+      }
+    }
+    if (prefs?.retry_interval_secs === v) return;
+    const baseline = prefs;
+    const prev = baseline;
+    prefs = { ...baseline, retry_interval_secs: v };
+    saving = true;
+    error = null;
+    try {
+      const resp = await putPreferences(buildPayload(baseline, { retry_interval_secs: v }));
+      prefs = resp ?? prefs;
+      toasts.success('Saved');
+    } catch (e) {
+      prefs = prev;
+      error = e?.message || String(e);
+      toasts.error("Couldn't save retry interval — try again.");
+    } finally {
+      saving = false;
+    }
+  }
+
   return {
     get loaded() { return loaded; },
     get saving() { return saving; },
@@ -189,6 +250,8 @@ export const messagesPreferencesState = (() => {
       return normalizeOverride(prefs?.max_message_text_override) > 0;
     },
     get fallbackPolicy() { return prefs?.fallback_policy || 'is_fallback'; },
+    get retryMaxAttempts() { return prefs?.retry_max_attempts ?? DEFAULT_RETRY_MAX_ATTEMPTS; },
+    get retryIntervalSecs() { return prefs?.retry_interval_secs ?? DEFAULT_RETRY_INTERVAL_SECS; },
     // Effective cap the compose bar should enforce. Mirrors the server's
     // sender gate: 0 => 67, otherwise => the override value itself.
     get maxMessageText() {
@@ -200,6 +263,8 @@ export const messagesPreferencesState = (() => {
     setOverride,
     setAllowLong,
     setFallbackPolicy,
+    setRetryMaxAttempts,
+    setRetryIntervalSecs,
   };
 })();
 

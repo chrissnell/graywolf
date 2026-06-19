@@ -195,6 +195,15 @@ type migration struct {
 //	    legacy column. Required by the per-beacon format selector
 //	    and uncompressed-only position ambiguity. See
 //	    docs/superpowers/plans/2026-05-29-beacon-position-format-and-ambiguity.md.
+//	26 — messages_retry_interval: add retry_interval_secs column to
+//	    messages_preferences (default 30 seconds). Post-AutoMigrate
+//	    because the table is created by AutoMigrate. Backfills any
+//	    row that AutoMigrate left at 0 to the 30s default.
+//	27 — bulletins_table: create the bulletins table and its three
+//	    indexes (inbound upsert unique index on (from_call, slot),
+//	    direction index for list queries, next_send_at index for the
+//	    outbound scheduler). The Bulletin model is NOT in the AutoMigrate
+//	    list; this migration is the single source of truth for its schema.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -221,6 +230,8 @@ var schemaMigrations = []migration{
 	{version: 23, name: "beacon_position_format", phase: postAutoMigrate, run: migrateBeaconPositionFormat},
 	{version: 24, name: "kiss_gate_tx_to_is", phase: postAutoMigrate, run: migrateKissGateTxToIs},
 	{version: 25, name: "beacon_send_path", phase: postAutoMigrate, run: migrateBeaconSendPath},
+	{version: 26, name: "messages_retry_interval", phase: postAutoMigrate, run: migrateMessagesRetryInterval},
+	{version: 27, name: "bulletins_table", phase: postAutoMigrate, run: migrateBulletinsTable},
 }
 
 // runMigrations applies every pending migration in the given phase,
