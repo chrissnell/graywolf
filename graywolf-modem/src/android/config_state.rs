@@ -20,9 +20,9 @@
 //! `tx::build_samples` with the same parameters that were used to set
 //! up the demodulator.
 
-#![cfg(target_os = "android")]
+#![cfg(any(target_os = "android", feature = "android-test-stub"))]
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// Default device id when no `ConfigureChannel` has been received yet.
 /// Matches the `id=1` the configstore assigns to the first user-created
@@ -105,6 +105,19 @@ pub fn mark_freq() -> u32 {
     MARK_FREQ.load(Ordering::Relaxed)
 }
 
+/// True when the active channel's PTT method is Digirig Lite tone PTT, so
+/// the TX builder prepends the silent left-channel lead-in for it. Set from
+/// the `ConfigurePtt` dispatch arm.
+static DIGIRIG_TONE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_digirig_tone(on: bool) {
+    DIGIRIG_TONE.store(on, Ordering::Relaxed);
+}
+
+pub fn digirig_tone() -> bool {
+    DIGIRIG_TONE.load(Ordering::Relaxed)
+}
+
 pub fn space_freq() -> u32 {
     SPACE_FREQ.load(Ordering::Relaxed)
 }
@@ -131,4 +144,17 @@ pub fn increment_tx_frames() {
 
 pub fn tx_frames() -> u64 {
     TX_FRAMES.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{digirig_tone, set_digirig_tone};
+
+    #[test]
+    fn digirig_tone_flag_round_trips() {
+        set_digirig_tone(true);
+        assert!(digirig_tone());
+        set_digirig_tone(false);
+        assert!(!digirig_tone());
+    }
 }

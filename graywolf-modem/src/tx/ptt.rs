@@ -596,10 +596,10 @@ impl PortRegistry {
                 {
                     use crate::tx::ptt_android_consts::{
                         PTT_METHOD_AIOC_CDC_DTR, PTT_METHOD_CM108_HID, PTT_METHOD_CP2102N_RTS,
-                        PTT_METHOD_VOX,
+                        PTT_METHOD_DIGIRIG_TONE, PTT_METHOD_VOX,
                     };
                     // The Android USB-PTT transport selector lives in
-                    // cfg.ptt_method (PttMethod enum 1..4). cfg.gpio_pin is
+                    // cfg.ptt_method (PttMethod enum 1..5). cfg.gpio_pin is
                     // ignored on the Android path — it carries the CM108
                     // pin and only the cm108 method consumes it.
                     let method = cfg.ptt_method as i32;
@@ -607,7 +607,8 @@ impl PortRegistry {
                         PTT_METHOD_CP2102N_RTS
                         | PTT_METHOD_CM108_HID
                         | PTT_METHOD_AIOC_CDC_DTR
-                        | PTT_METHOD_VOX => {
+                        | PTT_METHOD_VOX
+                        | PTT_METHOD_DIGIRIG_TONE => {
                             Ok(Box::new(super::ptt_android::AndroidPtt::new(method)))
                         }
                         n => Err(format!("android ptt: unknown method int {}", n)),

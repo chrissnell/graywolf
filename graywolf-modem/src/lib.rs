@@ -117,17 +117,28 @@ pub mod android_upcall;
 #[cfg(all(feature = "android-test-stub", not(target_os = "android")))]
 #[path = "android/audio_tx.rs"]
 pub mod android_audio_tx;
+#[cfg(all(feature = "android-test-stub", not(target_os = "android")))]
+#[path = "android/config_state.rs"]
+pub mod android_config_state;
 
 // Unified cross-cfg re-exports so T3/T4 callers use `crate::jni_ptt_set`
 // and `crate::jni_tx_push_samples` unconditionally inside their own cfg blocks.
 #[cfg(target_os = "android")]
-pub(crate) use android::upcall::{jni_ptt_set, jni_tx_push_samples};
+pub(crate) use android::upcall::{jni_audio_set_tone, jni_ptt_set, jni_tx_push_samples};
 #[cfg(all(not(target_os = "android"), feature = "android-test-stub"))]
-pub(crate) use android_upcall::{jni_ptt_set, jni_tx_push_samples};
+pub(crate) use android_upcall::{jni_audio_set_tone, jni_ptt_set, jni_tx_push_samples};
+
+// Unified `crate::config_state` path so the Android PTT driver reads the
+// channel's mark frequency under both the real android build and the host
+// stub (where android/mod.rs is not compiled).
+#[cfg(target_os = "android")]
+pub(crate) use android::config_state;
+#[cfg(all(not(target_os = "android"), feature = "android-test-stub"))]
+pub(crate) use android_config_state as config_state;
 
 // Test-hook re-exports: single import path for T3/T4 unit tests.
 #[cfg(feature = "android-test-stub")]
-pub use android_upcall::{clear_mocks, install_audio_tx_mock, install_ptt_mock};
+pub use android_upcall::{clear_mocks, install_audio_tx_mock, install_ptt_mock, install_tone_mock};
 
 /// Base semver string ("0.7.13"), injected at build time from the repo's
 /// VERSION file (via the GRAYWOLF_VERSION env var set by the Makefile / CI).

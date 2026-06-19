@@ -9,6 +9,7 @@
 #![cfg(any(target_os = "android", feature = "android-test-stub"))]
 
 use super::ptt::PttDriver;
+use super::ptt_android_consts::PTT_METHOD_DIGIRIG_TONE;
 
 pub(crate) struct AndroidPtt {
     method: i32,
@@ -22,11 +23,24 @@ impl AndroidPtt {
 
 impl PttDriver for AndroidPtt {
     fn key(&mut self) -> Result<(), String> {
+        if self.method == PTT_METHOD_DIGIRIG_TONE {
+            // Digirig Lite tone PTT: keying is done by a right-channel tone
+            // synthesised in Kotlin's AudioTxPump, not a USB line. Start it at
+            // the channel's current mark frequency.
+            let hz = crate::config_state::mark_freq() as i32;
+            return crate::jni_audio_set_tone(true, hz)
+                .map_err(|e| format!("android digirig tone key (hz={hz}): {e}"));
+        }
         crate::jni_ptt_set(self.method, true)
             .map_err(|e| format!("android ptt key (method={}): {}", self.method, e))
     }
 
     fn unkey(&mut self) -> Result<(), String> {
+        if self.method == PTT_METHOD_DIGIRIG_TONE {
+            let hz = crate::config_state::mark_freq() as i32;
+            return crate::jni_audio_set_tone(false, hz)
+                .map_err(|e| format!("android digirig tone unkey: {e}"));
+        }
         crate::jni_ptt_set(self.method, false)
             .map_err(|e| format!("android ptt unkey (method={}): {}", self.method, e))
     }
@@ -38,6 +52,38 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    #[serial]
+    fn digirig_tone_method_keys_via_tone_upcall_not_ptt() {
+        use crate::tx::ptt_android_consts::PTT_METHOD_DIGIRIG_TONE;
+        crate::clear_mocks();
+        // A known mark frequency so we can assert it is forwarded.
+        crate::config_state::set_channel_dsp(1200, 1500, 2200);
+        let tone: Arc<Mutex<Option<(bool, i32)>>> = Arc::new(Mutex::new(None));
+        let tone2 = tone.clone();
+        crate::install_tone_mock(move |active, hz| {
+            *tone2.lock().unwrap() = Some((active, hz));
+        });
+        // pttSet must never fire for the tone method.
+        crate::install_ptt_mock(|_, _| panic!("method 5 must not call pttSet"));
+
+        let mut ptt = AndroidPtt::new(PTT_METHOD_DIGIRIG_TONE);
+        ptt.key().expect("tone key should succeed");
+        assert_eq!(
+            *tone.lock().unwrap(),
+            Some((true, 1500)),
+            "key must start the tone at the channel mark frequency"
+        );
+
+        ptt.unkey().expect("tone unkey should succeed");
+        assert_eq!(
+            tone.lock().unwrap().unwrap().0,
+            false,
+            "unkey must stop the tone"
+        );
+        crate::clear_mocks();
+    }
 
     #[test]
     #[serial]
