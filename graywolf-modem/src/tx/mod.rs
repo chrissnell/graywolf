@@ -44,6 +44,21 @@ pub fn build_samples(
     afsk_mod::modulate(&bits, sample_rate, baud, mark_freq, space_freq)
 }
 
+/// Prepend `ms` milliseconds of silence (at `sample_rate`) to `samples`.
+///
+/// Used by the Android Digirig Lite tone PTT path: the AFSK (left channel)
+/// stays silent during the lead-in while the right-channel keying tone plays,
+/// so the radio keys before the HDLC preamble. Mirrors the desktop
+/// `DIGIRIG_TONE_LEAD_MS` silent lead-in. `pub(crate)` so the android arm can
+/// call it; `#[allow(dead_code)]` because non-android desktop builds never do.
+#[allow(dead_code)]
+pub(crate) fn prepend_silence(samples: Vec<i16>, sample_rate: u32, ms: u32) -> Vec<i16> {
+    let lead = (sample_rate as u64 * ms as u64 / 1000) as usize;
+    let mut buf = vec![0i16; lead];
+    buf.extend_from_slice(&samples);
+    buf
+}
+
 /// Number of `0x7e` flag bytes needed to cover `ms` milliseconds of airtime
 /// at the given baud. Each flag is 8 bits, so one flag occupies
 /// `8000 / baud` ms on the air; we round up so the preamble is never
@@ -60,6 +75,14 @@ mod tests {
     use super::*;
     use crate::demod_afsk::AfskDemodulator;
     use crate::types::AfskProfile;
+
+    #[test]
+    fn prepend_silence_adds_exact_lead() {
+        let out = prepend_silence(vec![7i16; 10], 22050, 500);
+        assert_eq!(out.len(), 11035); // 11025 silent + 10 original
+        assert!(out[..11025].iter().all(|&s| s == 0));
+        assert_eq!(&out[11025..], &[7i16; 10]);
+    }
 
     /// A plausible AX.25 UI frame: destination APRS, source KG7HFX-0,
     /// control 0x03 (UI), PID 0xF0 (no layer 3), short info. The bytes

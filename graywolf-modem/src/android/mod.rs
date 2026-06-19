@@ -458,6 +458,21 @@ fn run_demod(
                             let chan = cfg.channel;
                             // Persist timing for later TransmitFrame use.
                             config_state::set_ptt_timing(cfg.txdelay_ms, cfg.txtail_ms);
+                            // Digirig Lite tone PTT (Android method 5): record
+                            // the flag so TransmitFrame prepends the silent
+                            // lead-in, and pre-warm the Kotlin sink so it
+                            // rebuilds a stereo track (tone hz) — or mono
+                            // (hz=0) — before the first TX, avoiding a
+                            // track-rebuild stall on the first key.
+                            let is_tone = cfg.method == "android"
+                                && cfg.ptt_method as i32
+                                    == crate::tx::ptt_android_consts::PTT_METHOD_DIGIRIG_TONE;
+                            config_state::set_digirig_tone(is_tone);
+                            let warm_hz =
+                                if is_tone { config_state::mark_freq() as i32 } else { 0 };
+                            if let Err(e) = crate::jni_audio_set_tone(false, warm_hz) {
+                                warn!("pre-warm setTone(hz={warm_hz}): {e}");
+                            }
                             match ptt_registry.build_driver(&cfg) {
                                 Ok(driver) => {
                                     if let Err(e) = tx_worker.register_driver(chan, driver) {
@@ -506,6 +521,16 @@ fn run_demod(
                                 config_state::space_freq(),
                             ) {
                                 Ok(samples) => {
+                                    // Digirig Lite tone PTT: prepend a 500 ms
+                                    // silent left-channel lead-in so the
+                                    // right-channel keying tone (gated on at
+                                    // key) leads the packet, mirroring desktop's
+                                    // DIGIRIG_TONE_LEAD_MS.
+                                    let samples = if config_state::digirig_tone() {
+                                        crate::tx::prepend_silence(samples, TARGET_SAMPLE_RATE, 500)
+                                    } else {
+                                        samples
+                                    };
                                     let job = TxJob {
                                         channel: tf.channel,
                                         samples,
