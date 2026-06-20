@@ -70,7 +70,11 @@
   async function loadPackets() {
     try {
       packets = await api.get(`/packets?limit=${limit}`) || [];
-    } catch (_) { /* mock fallback */ }
+    } catch (_) {
+      // On a lost connection api.get throws; the `offline` state (driven by
+      // the connection store) renders the error indicator, and the $effect
+      // above clears any stale packets.
+    }
     loading = false;
   }
 

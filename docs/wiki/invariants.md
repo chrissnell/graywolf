@@ -1068,9 +1068,10 @@ Source: [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.g
 
 A genuine network failure (a thrown `fetch`) in the legacy REST client
 [`web/src/lib/api.js`](../../web/src/lib/api.js) falls back to canned mock
-data **only when `import.meta.env.DEV` is true**. In a production build Vite
-replaces that to `false`, so the mock branch is dead code (tree-shaken out)
-and a thrown `fetch` instead `throw`s `ApiError(0, …)` and calls
+data **only when `import.meta.env?.DEV` is truthy**. In a production build
+Vite resolves that to `false`, so the mock branch is dead code (`getMockData`
+and the whole mock dataset are tree-shaken out -- verified by grepping the
+built bundle) and a thrown `fetch` instead `throw`s `ApiError(0, …)` and calls
 `markDisconnected()`. Any response received -- even a 4xx/5xx -- calls
 `markConnected()`, since it proves the server is reachable.
 
@@ -1094,12 +1095,14 @@ channels (`VHF APRS`/`9600 Data`), mock position (`35.0N 106.0W`), and mock
 beacons as if they were live, with a green status dot -- the operator had no
 way to tell the connection was lost.
 
-*How to apply:* never evaluate `import.meta.env.DEV` at module top level in
-`api.js` (it is `undefined` under `node --test` and would break import);
-keep the check inside the `catch`. Only flip the connection store to offline
-on a genuine network failure -- in the data store that means gating
-`markDisconnected()` on `e instanceof TypeError`, since the manual
-HTTP-status `throw`s come from a reachable server.
+*How to apply:* use `import.meta.env?.DEV` (optional chaining) so the check
+is safe under `node --test`, where `import.meta.env` is `undefined` -- there
+it reads falsy, exercising the production throw path. `api.test.js` covers
+this with a rejected-fetch case asserting `ApiError(0)` and `online === false`.
+Only flip the connection store to offline on a genuine network failure -- in
+the data store that means gating `markDisconnected()` on `e instanceof
+TypeError`, since the manual HTTP-status `throw`s (incl. 401) come from a
+reachable server and already ran `markConnected()`.
 
 Source: [`../../web/src/lib/api.js`](../../web/src/lib/api.js),
 [`../../web/src/lib/stores/connection.js`](../../web/src/lib/stores/connection.js),

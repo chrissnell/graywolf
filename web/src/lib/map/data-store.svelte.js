@@ -205,9 +205,12 @@ export function createDataStore() {
       console.error('[data-store] poll error:', e);
       backoff = Math.min(backoff * 2, POLL_MAX_MS);
       pollingState = 'error';
-      // A thrown fetch (TypeError) is a genuine network failure; the manual
-      // HTTP-status throws above are from a reachable server, so don't let
-      // those flip the shared connection state to offline.
+      // Only a thrown fetch (a TypeError in every browser) is a genuine
+      // network failure. The manual HTTP-status throws above (incl. 401)
+      // come from a reachable server — markConnected() already ran for them
+      // right after fetch resolved — so they must NOT flip the shared
+      // connection state to offline, even though they still show 'error'
+      // locally on the map status bar.
       if (e instanceof TypeError) markDisconnected();
     } finally {
       inFlight = false;

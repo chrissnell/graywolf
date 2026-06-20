@@ -43,7 +43,7 @@ async function request(method, path, body = null) {
     // the UI stays explorable. In a production build a thrown fetch means
     // the browser genuinely lost contact with the server, so surface it as
     // an error instead of fabricating live-looking data (GH #365).
-    if (import.meta.env.DEV) {
+    if (import.meta.env?.DEV) {
       return getMockData(method, path, body);
     }
     throw new ApiError(0, { error: 'Connection to the server was lost' });
