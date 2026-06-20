@@ -96,7 +96,6 @@
 {#snippet srcDstCell(_value, entry)}
   {@const calls = parseDisplay(entry)}
   <span class="pkt-srcdst">
-    <span class="pkt-src">{calls.src || '—'}</span>
     {#if entry.lat != null && entry.lon != null}
       <a
         class="pkt-locate"
@@ -114,6 +113,7 @@
         </svg>
       </a>
     {/if}
+    <span class="pkt-src">{calls.src || '—'}</span>
     <span class="pkt-arrow" aria-hidden="true">→</span>
     <span class="pkt-dst">{calls.dst || '—'}</span>
   </span>
@@ -210,7 +210,7 @@
     flex-shrink: 0;
   }
 
-  /* Scope-reticle locate button: sits right after the source callsign on any
+  /* Scope-reticle locate button: sits just before the source callsign on any
      packet that carries coordinates. Dim by default like the inspect loupe,
      brightening on hover/focus so it stays quiet until the operator wants it. */
   .pkt-locate {
