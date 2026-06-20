@@ -271,6 +271,32 @@
       </div>
     </div>
 
+    <h3>On Android</h3>
+
+    <p>
+      The Android app offers this as <strong>&ldquo;Digirig Lite (tone
+      PTT)&rdquo;</strong> in the channel's PTT method picker. No device needs
+      to be selected: the app auto-routes audio to the connected USB sound
+      device and drives the keying tone itself. Unlike the desktop, there is no
+      output-channel selector &mdash; the mapping is fixed to the Digirig Lite
+      wiring, with the AFSK packet on the <strong>left</strong> channel and the
+      keying tone on the <strong>right</strong>. The same 500&nbsp;ms silent
+      lead-in applies so the radio keys before the packet starts.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          The Digirig Lite must connect as the phone's USB <strong>audio</strong>
+          output (it carries no PTT data line). The app runs the output in
+          stereo so the tone can ride the right channel; if the USB device only
+          negotiates mono, the tone cannot be separated and the radio will not
+          key.
+        </p>
+      </div>
+    </div>
+
     <h2>Serial PTT</h2>
 
     <p>
