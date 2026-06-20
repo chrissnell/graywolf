@@ -16,8 +16,8 @@ func TestClassify(t *testing.T) {
 		// At exactly the 16 s limit the kernel re-asserts STA_UNSYNC, and
 		// timedatectl reports unsynced too (`maxerror < 16 s`).
 		{"at the 16s limit", maxSyncedError, Unsynced},
-		{"boot default / no daemon", 16_500_000, Unsynced},
-		{"long-undisciplined, grown unbounded", 900_000_000, Unsynced},
+		{"boot default / no daemon", maxSyncedError + 500_000, Unsynced},
+		{"long-undisciplined, grown unbounded", maxSyncedError * 50, Unsynced},
 	}
 	for _, tc := range tests {
 		if got := classify(tc.maxerror); got != tc.want {
