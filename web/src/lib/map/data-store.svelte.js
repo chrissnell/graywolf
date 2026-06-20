@@ -22,6 +22,8 @@
 
 import { SvelteMap } from 'svelte/reactivity';
 import { clockOffset } from './clock-offset.svelte.js';
+import { get } from 'svelte/store';
+import { online, markConnected, markDisconnected } from '../stores/connection.js';
 
 const POLL_BASE_MS = 5_000;
 const POLL_MAX_MS = 60_000;
@@ -156,6 +158,10 @@ export function createDataStore() {
         headers,
       });
 
+      // The fetch resolved, so the server is reachable — even a 4xx/5xx
+      // response clears a prior lost-connection state (GH #365).
+      markConnected();
+
       // Refresh the server-clock offset from the host-stamped Date header on
       // every response (200 and 304 both carry it).
       clockOffset.observe(res.headers);
@@ -199,6 +205,10 @@ export function createDataStore() {
       console.error('[data-store] poll error:', e);
       backoff = Math.min(backoff * 2, POLL_MAX_MS);
       pollingState = 'error';
+      // A thrown fetch (TypeError) is a genuine network failure; the manual
+      // HTTP-status throws above are from a reachable server, so don't let
+      // those flip the shared connection state to offline.
+      if (e instanceof TypeError) markDisconnected();
     } finally {
       inFlight = false;
     }
@@ -295,7 +305,11 @@ export function createDataStore() {
     if (started) return;
     started = true;
     backoff = POLL_BASE_MS;
-    pollingState = 'polling';
+    // If the app already knows it's offline (e.g. the operator switched to
+    // the map after losing the connection on another screen), show the error
+    // state up front rather than a misleading green "live" dot until the
+    // first poll fails (GH #365).
+    pollingState = get(online) ? 'polling' : 'error';
 
     if (typeof document !== 'undefined') {
       visibilityHandler = onVisibility;

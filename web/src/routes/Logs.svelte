@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { Button, Input, Select, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
+  import { online } from '../lib/stores/connection.js';
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { parseDisplay } from '../lib/packetColumns.js';
@@ -24,6 +25,15 @@
   let dirFilter = $state('all');
   let limit = $state('100');
   let loading = $state(true);
+
+  let offline = $derived(!$online);
+
+  // Drop the held packets when contact is lost so the viewer shows no
+  // entries alongside the error indicator, rather than a frozen log that
+  // looks current (GH #365).
+  $effect(() => {
+    if (!$online) packets = [];
+  });
 
   const dirOptions = [
     { value: 'all', label: 'All' },
@@ -100,6 +110,9 @@
 </script>
 
 <PageHeader title="APRS Logs" subtitle="Packet log viewer with filter/search">
+  <span class="conn-status" class:error={offline} aria-live="polite">
+    <span class="conn-dot"></span>{offline ? 'error' : 'live'}
+  </span>
   <Button onclick={loadPackets} disabled={loading}>Refresh</Button>
   <Button onclick={exportCsv}>Export CSV</Button>
 </PageHeader>
@@ -124,7 +137,9 @@
 </Box>
 
 <div style="margin-top: 12px;">
-  {#if loading}
+  {#if offline}
+    <Box><div class="empty">No log entries — connection to the Graywolf server lost.</div></Box>
+  {:else if loading}
     <Box><div class="empty">Loading...</div></Box>
   {:else if filtered.length === 0}
     <Box><div class="empty">No packets match filter</div></Box>
@@ -142,6 +157,28 @@
 </div>
 
 <style>
+  .conn-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-success);
+  }
+  .conn-status.error { color: var(--color-danger); }
+  .conn-status .conn-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--color-success);
+  }
+  .conn-status.error .conn-dot {
+    background: var(--color-danger);
+    box-shadow: 0 0 8px var(--color-danger);
+  }
+
   .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; }
   .filter-input { flex: 1; min-width: 200px; }
   .filter-select { width: 140px; }

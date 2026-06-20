@@ -2,6 +2,7 @@
 // Returns mock data when the API is unreachable (dev without backend).
 
 import { getBearerToken } from './androidBridge.js';
+import { markConnected, markDisconnected } from './stores/connection.js';
 
 const MOCK_DELAY = 200;
 
@@ -34,11 +35,21 @@ async function request(method, path, body = null) {
   try {
     res = await fetch(`/api${path}`, opts);
   } catch {
-    // Genuine network failure (dev without backend, DNS, CORS). HTTP
-    // errors from a reachable backend must NOT fall through here —
-    // they need to surface so pages can render their error state.
-    return getMockData(method, path, body);
+    // Genuine network failure (DNS, CORS, server unreachable). HTTP errors
+    // from a reachable backend do NOT land here — they surface below so
+    // pages can render their own error state.
+    markDisconnected();
+    // Dev convenience: with no backend running, fall back to mock data so
+    // the UI stays explorable. In a production build a thrown fetch means
+    // the browser genuinely lost contact with the server, so surface it as
+    // an error instead of fabricating live-looking data (GH #365).
+    if (import.meta.env.DEV) {
+      return getMockData(method, path, body);
+    }
+    throw new ApiError(0, { error: 'Connection to the server was lost' });
   }
+  // Any response — even a 4xx/5xx — proves the server is reachable.
+  markConnected();
   if (res.status === 401) {
     if (getBearerToken() !== null) {
       // Android: no login route. The bearer token is per-launch and
