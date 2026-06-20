@@ -7,6 +7,30 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.14.7"
+  date: "2026-06-20"
+  style: info
+  schema_version: 1
+  link: "#/map"
+  title: "Lost-connection warning, world map and clock fixes, steadier audio"
+  body: |
+    When the app loses contact with the server it now shows a clear
+    lost-connection warning instead of filling the dashboard and logs
+    with placeholder data. The dashboard shows a banner with dashes in
+    place of the live numbers, and the logs and map show a red error
+    dot, so you can tell a dropped connection from a quiet one.
+
+    The world map no longer offers a Download button once you have
+    already downloaded it. And hosts that are in fact synced over NTP no
+    longer get a false clock-not-synchronized warning at startup, which
+    most often hit a Raspberry Pi with no battery-backed clock.
+
+    Returning to the Live Map now applies your saved layer toggles and
+    RF filters right away, instead of waiting until you toggle a
+    checkbox. Audio capture is also steadier on older 32-bit Linux
+    systems, where a timestamp-decoding bug could flood the logs and
+    keep rebuilding the audio stream.
+
 - version: "0.14.6"
   date: "2026-06-20"
   style: info
