@@ -423,3 +423,13 @@ const (
 	OpReorderRemoteActionMacros = "reorderRemoteActionMacros"
 	OpGenerateRemoteOTPCode     = "generateRemoteOTPCode"
 )
+
+// Fixed Points resource — /api/fixed-points/* — server-side fixed-point
+// storage for cross-device sync. Wire shape: pkg/webapi/fixed_points.go.
+const (
+	OpListFixedPoints  = "listFixedPoints"
+	OpCreateFixedPoint = "createFixedPoint"
+	OpGetFixedPoint    = "getFixedPoint"
+	OpUpdateFixedPoint = "updateFixedPoint"
+	OpDeleteFixedPoint = "deleteFixedPoint"
+)
