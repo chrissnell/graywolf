@@ -7,6 +7,36 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.14.6"
+  date: "2026-06-20"
+  style: info
+  schema_version: 1
+  link: "#/map"
+  title: "Fixed points sync across devices, jump from a log to the map, mobile map fixes"
+  body: |
+    Fixed map points you add now live on the server instead of in a
+    single browser, so they show up on every device you sign in from and
+    come back correctly when you return to the map. On a touchscreen you
+    can drop one with a long press on the map background.
+
+    Each packet log row now has a scope button next to the callsign
+    whenever the packet carries a position. Click it to jump to the Live
+    Map framed on that fix, the reverse of the map popup's link back to
+    the logs. This now works for position, Mic-E, weather, object, and
+    item reports.
+
+    The Live Map behaves better in a phone browser: a two-finger pinch no
+    longer accidentally rotates the map, the Layers button no longer
+    covers the compass in portrait, and the bottom scale and counters
+    stay on screen as the address bar collapses. The Direct RX filter
+    now also honors the time range you have selected.
+
+    There is a new PTT method for the Digirig Lite, on desktop and
+    Android, which keys the radio with a tone on the right audio channel.
+    Pick Digirig Lite Tone in your PTT settings if you use one. And
+    radioless stations can now create APRS-IS-only beacons without
+    configuring a channel; saving one turns on the iGate it needs.
+
 - version: "0.14.5"
   date: "2026-06-19"
   style: info
