@@ -40,6 +40,7 @@
   import { clockOffset, formatOffsetMagnitude } from '../lib/map/clock-offset.svelte.js';
   import { directHeardWithin } from '../lib/map/direct-rx-core.js';
   import { toasts } from '../lib/stores.js';
+  import { online } from '../lib/stores/connection.js';
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
   import MapPinned from 'lucide-svelte/icons/map-pinned';
   import Copy from 'lucide-svelte/icons/copy';
@@ -913,15 +914,21 @@
     // clock — not the host-corrected serverNow().
     return timeAgo(t.toISOString(), Date.now());
   });
+  // A lost connection forces the error state regardless of pollingState. When
+  // the operator opens the map while already offline, the basemap style fetch
+  // fails, so MaplibreMap never fires `oncreate`, dataStore.start() never runs,
+  // and pollingState is stuck at its initial 'idle' — which would otherwise
+  // render a misleading green dot + "idle". Reading $online directly makes the
+  // status bar honest no matter how the map mounted (GH #365, #374).
   let pollDotClass = $derived(
-    dataStore.pollingState === 'error'
+    !$online || dataStore.pollingState === 'error'
       ? 'error'
       : dataStore.pollingState === 'polling'
         ? 'polling'
         : '',
   );
   let pollLabel = $derived(
-    dataStore.pollingState === 'error'
+    !$online || dataStore.pollingState === 'error'
       ? 'error'
       : dataStore.pollingState === 'polling'
         ? 'live'

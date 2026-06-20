@@ -17,6 +17,7 @@
   import { localBoundsStore } from '../maps/local-bounds-store.svelte.js';
   import { createFederatedProtocol } from './sources/gw-federated-protocol.js';
   import { absolutizeStyleUrls } from './style-urls.js';
+  import { markConnected, markDisconnected } from '../stores/connection.js';
 
   let { initialCenter = [-98, 39], initialZoom = 4, oncreate = null } = $props();
 
@@ -85,7 +86,19 @@
   let cachedUpstreamStyle = null;
 
   async function fetchUpstreamStyle() {
-    const res = await fetch(STYLE_URL);
+    let res;
+    try {
+      res = await fetch(STYLE_URL);
+    } catch (e) {
+      // A thrown fetch is a genuine network failure. Surface it to the shared
+      // connection state so the map status bar shows "error" instead of a
+      // stale green dot when the operator opens the map while already offline
+      // and the basemap style can't be loaded (GH #365, #374).
+      if (e instanceof TypeError) markDisconnected();
+      throw e;
+    }
+    // Any response — even a 4xx/5xx — proves the server is reachable.
+    markConnected();
     if (!res.ok) throw new Error(`fetch style: ${res.status}`);
     return await res.json();
   }

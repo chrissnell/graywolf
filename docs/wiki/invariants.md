@@ -1106,9 +1106,12 @@ built bundle) and a thrown `fetch` instead `throw`s `ApiError(0, …)` and calls
 `markDisconnected()`. Any response received -- even a 4xx/5xx -- calls
 `markConnected()`, since it proves the server is reachable.
 
-Both `api.js` and the live-map data store
-[`web/src/lib/map/data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js)
-report into the shared store
+`api.js`, the live-map data store
+[`web/src/lib/map/data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js),
+and the basemap component
+[`web/src/lib/map/maplibre-map.svelte`](../../web/src/lib/map/maplibre-map.svelte)
+(its `fetchUpstreamStyle`, which uses a raw `fetch`, not `api.js`) all report
+into the shared store
 [`web/src/lib/stores/connection.js`](../../web/src/lib/stores/connection.js)
 (`online`, `markConnected`, `markDisconnected`). The store is plain
 `svelte/store` `writable`, **not** a `$state` runes module, because `api.js`
@@ -1116,10 +1119,18 @@ is imported by `node --test`, which has no Svelte compiler. Screens read
 `online` to swap stale values for `--` placeholders and a lost-connection
 indicator: the Dashboard clears `status`/`position`/`packets` and shows a red
 banner; the APRS Logs screen shows a red "error" dot and no entries; the map
-status bar shows the red "error" dot. The data store's `start()` seeds
-`pollingState` from `get(online)` so switching *to* the map after the
-connection was already lost shows "error" immediately rather than a
-misleading green "live" dot.
+status bar shows the red "error" dot.
+
+The map status bar (`LiveMapV2.svelte`) derives its dot/label from **both**
+`$online` and `dataStore.pollingState` -- `!$online` forces "error" on its
+own. This is load-bearing, not belt-and-suspenders: when the operator opens
+the map while *already* offline, the basemap style fetch fails, so
+`maplibre-map.svelte` never fires `oncreate`, `dataStore.start()` never runs,
+and `pollingState` stays stuck at its initial `'idle'`. Seeding `pollingState`
+from `get(online)` inside `start()` is therefore *insufficient* on its own
+(it's dead code on that path); the status bar must read `$online` directly so
+it shows "error" rather than a misleading green "idle" dot (GH #374). The
+`start()` seed is still kept for the connected-then-disconnected first paint.
 
 *Why:* before GH #365, a disconnected browser silently rendered the dev mock
 channels (`VHF APRS`/`9600 Data`), mock position (`35.0N 106.0W`), and mock
