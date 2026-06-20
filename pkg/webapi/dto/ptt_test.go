@@ -10,8 +10,8 @@ import (
 // TestPttRequest_Validate_Android covers the ptt_method gate for the
 // android method (spec Appendix B, C1 final-review sweep).
 func TestPttRequest_Validate_Android(t *testing.T) {
-	// Each valid ptt_method must pass.
-	for _, pin := range []uint32{1, 2, 3, 4} {
+	// Each valid ptt_method must pass (5 = Digirig Lite tone PTT).
+	for _, pin := range []uint32{1, 2, 3, 4, 5} {
 		r := PttRequest{ChannelID: 1, Method: "android", PttMethod: pin}
 		if err := r.Validate(); err != nil {
 			t.Errorf("ptt_method=%d: expected no error, got %v", pin, err)

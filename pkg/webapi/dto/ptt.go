@@ -38,14 +38,15 @@ func (r PttRequest) Validate() error {
 	if r.ChannelID == 0 {
 		return fmt.Errorf("channel_id is required")
 	}
-	// android method requires ptt_method in 1..4 (spec Appendix B):
-	//   1 = CP2102N_RTS, 2 = CM108_HID, 3 = AIOC_CDC_DTR, 4 = VOX
+	// android method requires ptt_method in 1..5 (spec Appendix B):
+	//   1 = CP2102N_RTS, 2 = CM108_HID, 3 = AIOC_CDC_DTR, 4 = VOX,
+	//   5 = DIGIRIG_TONE
 	if r.Method == "android" {
 		switch r.PttMethod {
-		case 1, 2, 3, 4:
+		case 1, 2, 3, 4, 5:
 			// valid
 		default:
-			return fmt.Errorf("android ptt method requires ptt_method in 1..4 (spec Appendix B), got %d", r.PttMethod)
+			return fmt.Errorf("android ptt method requires ptt_method in 1..5 (spec Appendix B), got %d", r.PttMethod)
 		}
 	}
 	return nil
