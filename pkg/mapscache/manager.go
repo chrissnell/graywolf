@@ -382,6 +382,12 @@ func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 		return err
 	}
 	stateDir := filepath.Join(m.cacheDir, "state")
+	// Repair the world archive an earlier release's migration wrongly
+	// relocated into the state/ subdir. Keeps the file in step with the
+	// DB slug restored by MigrateMapsDownloadSlugs.
+	if err := m.repairWorldArchive(stateDir); err != nil {
+		return err
+	}
 	leafRE := mapsslug.LeafRegexp()
 	for _, e := range entries {
 		if e.IsDir() {
@@ -392,6 +398,11 @@ func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 			continue
 		}
 		slug := strings.TrimSuffix(name, ".pmtiles")
+		if slug == "world" {
+			// The global world archive is a legitimate top-level slug,
+			// not a legacy bare state file -- leave it in place.
+			continue
+		}
 		if !leafRE.MatchString(slug) {
 			continue
 		}
@@ -413,6 +424,35 @@ func (m *Manager) MigrateLegacyArchives(ctx context.Context) error {
 		if err := os.Rename(oldPath, newPath); err != nil {
 			return fmt.Errorf("migrate %s: %w", name, err)
 		}
+	}
+	return nil
+}
+
+// repairWorldArchive moves a misplaced state/world.pmtiles back to the
+// top-level world.pmtiles. The world archive's legitimate slug is bare
+// "world"; an earlier release's legacy migration treated it as a state
+// slug and relocated the file under state/. Idempotent: a no-op when the
+// misplaced file is absent. If the canonical file already exists, the
+// misplaced copy is removed rather than clobbering it.
+func (m *Manager) repairWorldArchive(stateDir string) error {
+	misplaced := filepath.Join(stateDir, "world.pmtiles")
+	if _, err := os.Stat(misplaced); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("repair world archive: stat legacy: %w", err)
+	}
+	canonical := filepath.Join(m.cacheDir, "world.pmtiles")
+	if _, err := os.Stat(canonical); err == nil {
+		if err := os.Remove(misplaced); err != nil {
+			return fmt.Errorf("repair world archive: remove legacy: %w", err)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("repair world archive: stat target: %w", err)
+	}
+	if err := os.Rename(misplaced, canonical); err != nil {
+		return fmt.Errorf("repair world archive: %w", err)
 	}
 	return nil
 }
