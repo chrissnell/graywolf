@@ -30,6 +30,19 @@
     <p class="about-copyright">&copy; 2026 Chris Snell, NW5W</p>
   </section>
 
+  <blockquote class="about-quote">
+    <p>
+      "And behold, I tell you these things that ye may learn wisdom; that ye may learn
+      that when ye are in the service of your fellow beings ye are only in the service of your God."
+    </p>
+    <cite>
+      <a href="https://www.churchofjesuschrist.org/study/scriptures/bofm/mosiah/2?lang=eng&id=p17#p17"
+         target="_blank" rel="noopener">
+        Mosiah 2:17
+      </a>
+    </cite>
+  </blockquote>
+
   <section class="about-section" aria-labelledby="updates-heading">
     <h2 id="updates-heading" class="about-section-heading">Updates</h2>
     {#if updates.status === 'pending'}
@@ -64,18 +77,6 @@
     {/if}
   </section>
 
-  <blockquote class="about-quote">
-    <p>
-      "And behold, I tell you these things that ye may learn wisdom; that ye may learn
-      that when ye are in the service of your fellow beings ye are only in the service of your God."
-    </p>
-    <cite>
-      <a href="https://www.churchofjesuschrist.org/study/scriptures/bofm/mosiah/2?lang=eng&id=p17#p17"
-         target="_blank" rel="noopener">
-        Mosiah 2:17
-      </a>
-    </cite>
-  </blockquote>
   <p class="about-license">
     Released under the
     <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" target="_blank" rel="noopener">
