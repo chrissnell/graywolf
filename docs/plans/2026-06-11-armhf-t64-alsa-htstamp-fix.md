@@ -296,3 +296,27 @@ The actual t64 overflow only manifests under Layer 2 (QEMU) / Layer 3 (hardware)
 - **`get_audio_htstamp` width.** Audio htstamp is also a `timespec` in alsa-rs;
   same 16-byte treatment. Confirm there is no other `Status` accessor returning a
   bare `timespec` that cpal touches (current alsa-rs: just the three).
+
+---
+
+## Postscript: the inverse regression (#336)
+
+The 16-byte buffer landed in fork rev `bd06687`, but its decode assumed the
+**time64 layout unconditionally** (`tv_sec` i64 @0, `tv_nsec` i32 @8). Section 5
+above bet that the decoded value was "wrong but unused" on time32 systems --
+that bet was wrong. cpal's ALSA backend *derives and validates* `htstamp -
+trigger_htstamp` internally before handing over the (ignored) `InputCallbackInfo`,
+so the garbage decode on a **pre-t64 / time32** `libasound` (Ubuntu 22.04 armv7l,
+glibc 2.35) produced a flood of `get_htstamp was earlier than
+get_trigger_htstamp` errors and endless stream rebuilds. Reported as #336.
+
+Fix (fork rev `56099e8`, pinned in `Cargo.toml`): decode per ABI. 64-bit targets
+read the native 16-byte layout; 32-bit targets recover `tv_sec` at offset 0 and
+take `tv_nsec` from the t64 slot (@8) when non-zero, else the time32 slot (@4).
+The buffer is zeroed before the C call, so the unwritten tail is deterministic
+and a single time32 binary is correct on **both** pre-t64 and t64 userlands.
+Unit tests cover both layouts (alsa-rs PR #1).
+
+Test-gap note: the original plan added only a t64 canary (Layer 2). A time32 /
+pre-t64 canary is still missing and is what would have caught this -- worth
+adding alongside the t64 one.

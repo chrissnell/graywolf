@@ -18,7 +18,13 @@ resolver = "2"
 # htstamp accessors into a 16-byte buffer so the C call cannot overflow --
 # without compiling for time64, so the armhf binary still links against the
 # (pre-t64) cross toolchain and keeps running on older 32-bit systems too.
+#
+# This rev also fixes the inverse regression (issue #336): the buffer decode
+# assumed the time64 layout unconditionally and returned garbage on pre-t64
+# (time32) libasound, flooding cpal with "get_htstamp was earlier than
+# get_trigger_htstamp" errors. The decode is now ABI-aware, so one time32
+# binary is correct on both pre-t64 and t64 userlands.
 # See docs/plans/2026-06-11-armhf-t64-alsa-htstamp-fix.md. Drop once the fix
 # is released upstream.
 [patch.crates-io]
-alsa = { git = "https://github.com/chrissnell/alsa-rs", rev = "bd0668715753072e3ef74097a1bd65e96845fa7b" }
+alsa = { git = "https://github.com/chrissnell/alsa-rs", rev = "56099e8915af95f322d6eeca3a24da5d7c7098e4" }
