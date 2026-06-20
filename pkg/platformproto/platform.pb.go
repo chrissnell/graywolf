@@ -136,6 +136,7 @@ const (
 	PttMethod_PTT_METHOD_CM108_HID    PttMethod = 2
 	PttMethod_PTT_METHOD_AIOC_CDC_DTR PttMethod = 3
 	PttMethod_PTT_METHOD_VOX          PttMethod = 4
+	PttMethod_PTT_METHOD_DIGIRIG_TONE PttMethod = 5
 )
 
 // Enum value maps for PttMethod.
@@ -146,6 +147,7 @@ var (
 		2: "PTT_METHOD_CM108_HID",
 		3: "PTT_METHOD_AIOC_CDC_DTR",
 		4: "PTT_METHOD_VOX",
+		5: "PTT_METHOD_DIGIRIG_TONE",
 	}
 	PttMethod_value = map[string]int32{
 		"PTT_METHOD_UNKNOWN":      0,
@@ -153,6 +155,7 @@ var (
 		"PTT_METHOD_CM108_HID":    2,
 		"PTT_METHOD_AIOC_CDC_DTR": 3,
 		"PTT_METHOD_VOX":          4,
+		"PTT_METHOD_DIGIRIG_TONE": 5,
 	}
 )
 
@@ -2730,13 +2733,14 @@ const file_platform_proto_rawDesc = "" +
 	"\x0fUSB_CLASS_AUDIO\x10\x01\x12\x11\n" +
 	"\rUSB_CLASS_HID\x10\x02\x12\x15\n" +
 	"\x11USB_CLASS_CDC_ACM\x10\x03\x12\x14\n" +
-	"\x10USB_CLASS_VENDOR\x10\x04*\x8a\x01\n" +
+	"\x10USB_CLASS_VENDOR\x10\x04*\xa7\x01\n" +
 	"\tPttMethod\x12\x16\n" +
 	"\x12PTT_METHOD_UNKNOWN\x10\x00\x12\x1a\n" +
 	"\x16PTT_METHOD_CP2102N_RTS\x10\x01\x12\x18\n" +
 	"\x14PTT_METHOD_CM108_HID\x10\x02\x12\x1b\n" +
 	"\x17PTT_METHOD_AIOC_CDC_DTR\x10\x03\x12\x12\n" +
-	"\x0ePTT_METHOD_VOX\x10\x04*\xb6\x01\n" +
+	"\x0ePTT_METHOD_VOX\x10\x04\x12\x1b\n" +
+	"\x17PTT_METHOD_DIGIRIG_TONE\x10\x05*\xb6\x01\n" +
 	"\tErrorCode\x12\x11\n" +
 	"\rERROR_UNKNOWN\x10\x00\x12\x19\n" +
 	"\x15ERROR_NOT_IMPLEMENTED\x10\x01\x12\x19\n" +

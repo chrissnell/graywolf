@@ -1378,12 +1378,14 @@ func (x *ConfigureAudio) GetGainDb() float32 {
 type ConfigurePtt struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Channel uint32                 `protobuf:"varint,1,opt,name=channel,proto3" json:"channel,omitempty"`
-	Method  string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"` // "serial_rts" | "serial_dtr" | "gpio" | "cm108" | "rigctld" | "none"
+	Method  string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"` // "serial_rts" | "serial_dtr" | "gpio" | "cm108" | "rigctld" | "vox" | "digirig_tone" | "none"
 	// device is interpreted by the selected method:
 	//   - serial_rts/serial_dtr → filesystem device path, e.g. "/dev/ttyUSB0"
 	//   - cm108                 → HID device path, e.g. "/dev/hidraw0"
 	//   - rigctld               → "host:port", e.g. "localhost:4532" (IPv4/hostname only; no IPv6 bracketing)
 	//   - gpio                  → gpiochip device path, e.g. "/dev/gpiochip0"
+	//   - vox                   → ignored (radio keys on audio; a lead-in tone is prepended)
+	//   - digirig_tone          → ignored (Digirig Lite keys on a tone the audio path puts on the companion channel)
 	//   - none                  → ignored
 	//
 	// If a fourth PTT method needs to overload this field, migrate to a
@@ -1403,7 +1405,8 @@ type ConfigurePtt struct {
 	GpioLine uint32 `protobuf:"varint,11,opt,name=gpio_line,json=gpioLine,proto3" json:"gpio_line,omitempty"`
 	// Android USB-PTT transport selector. Carries the PttMethod enum value
 	// (proto/platform.proto: 1=PTT_METHOD_CP2102N_RTS, 2=PTT_METHOD_CM108_HID,
-	// 3=PTT_METHOD_AIOC_CDC_DTR, 4=PTT_METHOD_VOX). Typed uint32 (not the
+	// 3=PTT_METHOD_AIOC_CDC_DTR, 4=PTT_METHOD_VOX,
+	// 5=PTT_METHOD_DIGIRIG_TONE). Typed uint32 (not the
 	// platform.proto enum) to keep this IPC contract self-contained
 	// (invariant #2). Meaningful only when method=="android"; 0 otherwise.
 	// Never overload gpio_pin for this.
