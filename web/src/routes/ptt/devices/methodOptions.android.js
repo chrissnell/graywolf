@@ -25,4 +25,7 @@ export const ANDROID_METHODS = [
   { wire: { method: 'android', ptt_method: 4 },
     label: 'VOX (no keying)',
     meta: 'Radio detects audio and keys itself. No USB device required.' },
+  { wire: { method: 'android', ptt_method: 5 },
+    label: 'Digirig Lite (tone PTT)',
+    meta: 'No PTT wire — a tone on the right channel keys the radio while the packet plays on the left. Requires the Digirig Lite as the USB audio output.' },
 ];

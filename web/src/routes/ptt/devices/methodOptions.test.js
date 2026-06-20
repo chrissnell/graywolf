@@ -17,7 +17,7 @@ test('DESKTOP_METHODS entries carry label + wire', async () => {
   }
 });
 
-test('ANDROID_METHODS includes off + 3 USB methods + VOX in display order', async () => {
+test('ANDROID_METHODS includes off + 3 USB methods + VOX + Digirig tone in display order', async () => {
   const { ANDROID_METHODS } = await import('./methodOptions.android.js');
   assert.deepEqual(
     ANDROID_METHODS.map(m => ({ method: m.wire.method, ptt_method: m.wire.ptt_method ?? null })),
@@ -27,11 +27,12 @@ test('ANDROID_METHODS includes off + 3 USB methods + VOX in display order', asyn
       { method: 'android', ptt_method: 3 },   // AIOC CDC-ACM DTR
       { method: 'android', ptt_method: 2 },   // CM108 HID
       { method: 'android', ptt_method: 4 },   // VOX
+      { method: 'android', ptt_method: 5 },   // Digirig Lite tone PTT
     ],
   );
 });
 
-test('ANDROID_METHODS USB entries carry deviceClass; VOX and Off do not', async () => {
+test('ANDROID_METHODS USB entries carry deviceClass; VOX, Digirig tone, and Off do not', async () => {
   const { ANDROID_METHODS } = await import('./methodOptions.android.js');
   const byKey = (m) => `${m.wire.method}#${m.wire.ptt_method ?? ''}`;
   const map = new Map(ANDROID_METHODS.map(m => [byKey(m), m.deviceClass ?? null]));
@@ -39,5 +40,16 @@ test('ANDROID_METHODS USB entries carry deviceClass; VOX and Off do not', async 
   assert.equal(map.get('android#3'), 'cdc-acm');
   assert.equal(map.get('android#2'), 'hid-cm108');
   assert.equal(map.get('android#4'), null);
+  // Digirig Lite tone PTT keys via audio and needs no serial/HID device.
+  assert.equal(map.get('android#5'), null);
   assert.equal(map.get('none#'), null);
+});
+
+test('ANDROID_METHODS Digirig tone entry has a label', async () => {
+  const { ANDROID_METHODS } = await import('./methodOptions.android.js');
+  const tone = ANDROID_METHODS.find(
+    (m) => m.wire.method === 'android' && m.wire.ptt_method === 5,
+  );
+  assert.ok(tone, 'Digirig tone entry present');
+  assert.match(tone.label, /Digirig Lite/i);
 });
