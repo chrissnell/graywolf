@@ -26,6 +26,15 @@ interface UsbPttCallback {
  */
 interface AudioTxCallback {
     fun pushSamples(samples: ShortArray, count: Int): Int
+
+    /**
+     * Called by the Rust modem on PTT key/unkey for the Digirig Lite tone
+     * method. `active=true` starts emitting a sine of `hz` on the right
+     * channel (the radio keys on it); `active=false` stops it. A non-zero
+     * `hz` also marks this as a tone channel, so the pump runs the output in
+     * stereo (L=AFSK, R=tone); `hz=0` returns the pump to mono.
+     */
+    fun setTone(active: Boolean, hz: Int)
 }
 
 object ModemBridge {
