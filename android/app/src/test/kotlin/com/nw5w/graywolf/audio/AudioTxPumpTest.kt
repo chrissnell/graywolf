@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.media.AudioTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
@@ -111,5 +112,59 @@ class AudioTxPumpTest {
         pump.start() // second call — must short-circuit
 
         assertEquals(1, trackCreateCount)
+    }
+
+    // -----------------------------------------------------------------------
+    // Digirig Lite tone PTT: tone mode writes interleaved {L=AFSK, R=tone}.
+    // -----------------------------------------------------------------------
+    @Test fun `tone mode writes interleaved right-channel tone`() {
+        val written = mutableListOf<Short>()
+        val (ctx, _) = contextWith()
+        val track = mock<AudioTrack>()
+        whenever(track.write(any<ShortArray>(), any(), any(), any())).thenAnswer { inv ->
+            val buf = inv.getArgument<ShortArray>(0)
+            val off = inv.getArgument<Int>(1)
+            val len = inv.getArgument<Int>(2)
+            for (i in off until off + len) written.add(buf[i])
+            len
+        }
+        val pump = AudioTxPump(ctx) { _ -> track }
+
+        pump.start(22050)
+        pump.setTone(active = true, hz = 1200) // → stereo, tone on
+        pump.pushSamples(shortArrayOf(100, 200, 300), 3)
+
+        // 3 mono samples → 6 interleaved stereo samples (L,R pairs).
+        assertEquals(6, written.size)
+        // Left channel carries the AFSK unchanged.
+        assertEquals(100.toShort(), written[0])
+        assertEquals(200.toShort(), written[2])
+        assertEquals(300.toShort(), written[4])
+        // Right channel carries a non-silent tone (sample 0 of a sine is 0,
+        // so check across the buffer).
+        assertTrue(
+            written[1] != 0.toShort() || written[3] != 0.toShort() || written[5] != 0.toShort(),
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // Without tone, the mono path is an unchanged straight passthrough.
+    // -----------------------------------------------------------------------
+    @Test fun `mono mode is unchanged passthrough when no tone`() {
+        val written = mutableListOf<Short>()
+        val (ctx, _) = contextWith()
+        val track = mock<AudioTrack>()
+        whenever(track.write(any<ShortArray>(), any(), any(), any())).thenAnswer { inv ->
+            val buf = inv.getArgument<ShortArray>(0)
+            val len = inv.getArgument<Int>(2)
+            for (i in 0 until len) written.add(buf[i])
+            len
+        }
+        val pump = AudioTxPump(ctx) { _ -> track }
+
+        pump.start(22050)
+        pump.pushSamples(shortArrayOf(100, 200, 300), 3)
+
+        assertEquals(listOf<Short>(100, 200, 300), written)
     }
 }

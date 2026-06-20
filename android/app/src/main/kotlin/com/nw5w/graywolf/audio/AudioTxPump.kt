@@ -28,6 +28,17 @@ class AudioTxPump(
     @Volatile private var track: AudioTrack? = null
     @Volatile private var routedDevice: String = "<none>"
 
+    // Digirig Lite tone-PTT state. When `stereo` is true the output track is
+    // CHANNEL_OUT_STEREO and each mono AFSK sample becomes a frame
+    // {L=AFSK, R=tone-or-silence}. Driven by setTone() off the Rust TX thread.
+    @Volatile private var sampleRate: Int = 22050
+    @Volatile private var stereo: Boolean = false
+    @Volatile private var toneActive: Boolean = false
+    @Volatile private var toneHz: Int = 0
+    private var osc: ToneOscillator? = null
+    // Reused interleave scratch (written only on the TX/write thread).
+    private var stereoScratch: ShortArray = ShortArray(0)
+
     private val am: AudioManager by lazy {
         appContext.getSystemService(AudioManager::class.java)
     }
@@ -67,38 +78,56 @@ class AudioTxPump(
 
     fun start(sampleRate: Int = 22050) {
         if (track != null) return
+        this.sampleRate = sampleRate
+        if (stereo && osc == null) osc = ToneOscillator(sampleRate)
 
-        val t: AudioTrack = if (trackFactory != null) {
-            trackFactory.invoke(sampleRate)
-        } else {
-            val bufBytes = AudioTrack.getMinBufferSize(
-                sampleRate,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-            ) * 4
-            check(bufBytes > 0) { "AudioTrack.getMinBufferSize=$bufBytes" }
+        val t = buildTrack(stereo)
+        routeToUsb(t)
+        t.play()
+        track = t
 
-            AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build()
-                )
-                .setBufferSizeInBytes(bufBytes)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-        }
+        // Register for hot-swap notifications.
+        am.registerAudioDeviceCallback(deviceCallback, null)
 
-        // Auto-route to first USB audio output (TYPE_USB_DEVICE / USB_HEADSET /
-        // USB_ACCESSORY — see isUsbAudioOutput).
+        Log.i(TAG, "AudioTxPump init rate=$sampleRate stereo=$stereo routed=$routedDevice")
+    }
+
+    /** Build a streaming AudioTrack with the requested channel layout. The
+     *  test seam (trackFactory) ignores the layout and returns a mock. */
+    private fun buildTrack(stereo: Boolean): AudioTrack {
+        val tf = trackFactory
+        if (tf != null) return tf.invoke(sampleRate)
+
+        val channelMask =
+            if (stereo) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+        val bufBytes = AudioTrack.getMinBufferSize(
+            sampleRate,
+            channelMask,
+            AudioFormat.ENCODING_PCM_16BIT,
+        ) * 4
+        check(bufBytes > 0) { "AudioTrack.getMinBufferSize=$bufBytes" }
+
+        return AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(channelMask)
+                    .build()
+            )
+            .setBufferSizeInBytes(bufBytes)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+    }
+
+    /** Auto-route a track to the first USB audio output, else system default. */
+    private fun routeToUsb(t: AudioTrack) {
         val usbOut = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             .firstOrNull { isUsbAudioOutput(it) }
         if (usbOut != null) {
@@ -109,14 +138,52 @@ class AudioTxPump(
             routedDevice = "system default (no USB audio dongle found)"
             Log.w(TAG, "AudioTxPump: $routedDevice")
         }
+    }
 
+    /**
+     * Rust → Kotlin tone control (Digirig Lite tone PTT). A non-zero `hz` that
+     * differs from the current one rebuilds the track as stereo so the right
+     * channel can carry the keying tone; `hz == 0` rebuilds as mono. `active`
+     * gates whether the tone is emitted during the next transmission. Called
+     * off the modem TX thread.
+     */
+    @Synchronized
+    override fun setTone(active: Boolean, hz: Int) {
+        if (hz != toneHz) {
+            toneHz = hz
+            val wantStereo = hz > 0
+            if (wantStereo != stereo && track != null) {
+                // Layout must change on a live track — rebuild it.
+                rebuildTrack(wantStereo)
+            } else {
+                // No live track yet (pre-warm before start): record the layout
+                // so start() builds the right one.
+                stereo = wantStereo
+            }
+        }
+        // Keep the oscillator consistent with the layout regardless of path.
+        if (stereo && osc == null) osc = ToneOscillator(sampleRate)
+        if (!stereo) osc = null
+        if (active && !toneActive) osc?.reset()
+        toneActive = active
+        osc?.setFrequency(hz)
+        Log.i(TAG, "setTone active=$active hz=$hz stereo=$stereo")
+    }
+
+    @Synchronized
+    private fun rebuildTrack(wantStereo: Boolean) {
+        val old = track
+        if (old != null) {
+            try { old.stop() } catch (_: Throwable) {}
+            try { old.release() } catch (_: Throwable) {}
+        }
+        stereo = wantStereo
+        osc = if (wantStereo) ToneOscillator(sampleRate) else null
+        val t = buildTrack(wantStereo)
+        routeToUsb(t)
         t.play()
         track = t
-
-        // Register for hot-swap notifications.
-        am.registerAudioDeviceCallback(deviceCallback, null)
-
-        Log.i(TAG, "AudioTxPump init rate=$sampleRate routed=$routedDevice")
+        Log.i(TAG, "AudioTxPump rebuilt stereo=$wantStereo routed=$routedDevice")
     }
 
     /**
@@ -126,7 +193,19 @@ class AudioTxPump(
      */
     override fun pushSamples(samples: ShortArray, count: Int): Int {
         val t = track ?: return -1
-        return t.write(samples, 0, count, AudioTrack.WRITE_BLOCKING)
+        if (!stereo) {
+            return t.write(samples, 0, count, AudioTrack.WRITE_BLOCKING)
+        }
+        // Stereo (Digirig Lite tone PTT): L = AFSK, R = keying tone (while
+        // active) or silence (idle). The radio keys on the right channel.
+        if (stereoScratch.size < count * 2) stereoScratch = ShortArray(count * 2)
+        val o = osc
+        val emitTone = toneActive && o != null
+        for (i in 0 until count) {
+            stereoScratch[i * 2] = samples[i]
+            stereoScratch[i * 2 + 1] = if (emitTone) o!!.nextI16() else 0
+        }
+        return t.write(stereoScratch, 0, count * 2, AudioTrack.WRITE_BLOCKING)
     }
 
     fun stop() {
