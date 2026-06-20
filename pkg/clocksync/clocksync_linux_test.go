@@ -2,29 +2,26 @@
 
 package clocksync
 
-import (
-	"testing"
-
-	"golang.org/x/sys/unix"
-)
+import "testing"
 
 func TestClassify(t *testing.T) {
 	tests := []struct {
-		name   string
-		status int32
-		want   Status
+		name     string
+		maxerror int64
+		want     Status
 	}{
-		{"clean status", 0, Synced},
-		{"disciplined PLL, no unsync bit", unix.STA_PLL, Synced},
-		{"boot default / no daemon", unix.STA_UNSYNC, Unsynced},
-		{"daemon running but not converged", unix.STA_PLL | unix.STA_UNSYNC, Unsynced},
-		// A synced clock with a leap second queued sets STA_INS, not
-		// STA_UNSYNC -- it must not be reported as unsynced.
-		{"leap insert pending, still synced", unix.STA_INS, Synced},
+		{"freshly disciplined clock", 0, Synced},
+		{"small dispersion, well synced", 1_000, Synced},
+		{"converged daemon, mid-poll", maxSyncedError - 1, Synced},
+		// At exactly the 16 s limit the kernel re-asserts STA_UNSYNC, and
+		// timedatectl reports unsynced too (`maxerror < 16 s`).
+		{"at the 16s limit", maxSyncedError, Unsynced},
+		{"boot default / no daemon", maxSyncedError + 500_000, Unsynced},
+		{"long-undisciplined, grown unbounded", maxSyncedError * 50, Unsynced},
 	}
 	for _, tc := range tests {
-		if got := classify(tc.status); got != tc.want {
-			t.Errorf("%s: classify(%#x) = %d, want %d", tc.name, tc.status, got, tc.want)
+		if got := classify(tc.maxerror); got != tc.want {
+			t.Errorf("%s: classify(%d) = %d, want %d", tc.name, tc.maxerror, got, tc.want)
 		}
 	}
 }

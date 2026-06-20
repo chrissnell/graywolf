@@ -532,6 +532,28 @@
       },
     });
 
+    // Apply the saved toggle state to the freshly-mounted layers. The
+    // setVisible/setFilter effects only depend on layerToggles.*, not on the
+    // layer references, so assigning a layer above does NOT re-run them. On a
+    // remount with a non-default config (e.g. Trails unchecked) the layers
+    // would otherwise be created visible/unfiltered and the saved preference
+    // never applied until the operator toggled a checkbox. (graywolf#363)
+    stationsLayer.setVisible(layerToggles.stations);
+    trailsLayer.setVisible(layerToggles.trails);
+    weatherLayer.setVisible(layerToggles.weather);
+    windBarbsLayer.setVisible(layerToggles.weather);
+    myPositionLayer.setVisible(layerToggles.myPosition);
+    fixedPointsLayer.setVisible(layerToggles.fixedPoints);
+    const initialPred = layerToggles.directRxOnly
+      ? isDirectRx
+      : layerToggles.rfOnly
+        ? isRfOnly
+        : null;
+    stationsLayer.setFilter(initialPred);
+    trailsLayer.setFilter(initialPred);
+    weatherLayer.setFilter(initialPred);
+    windBarbsLayer.setFilter(initialPred);
+
     function updateBounds() {
       const b = map.getBounds();
       dataStore.setBounds({

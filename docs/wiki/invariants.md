@@ -1064,7 +1064,38 @@ Source: [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.g
 [`../../pkg/webapi/stations.go`](../../pkg/webapi/stations.go) (`StationDTO.LastDirectHeard`);
 [`../../web/src/lib/map/direct-rx-core.js`](../../web/src/lib/map/direct-rx-core.js) (`directHeardWithin`).
 
-## REST client surfaces a lost connection; it does not fabricate data in production
+### 49. `world` is a legitimate bare offline-map slug -- never namespace it
+
+The offline-map slug grammar (`pkg/mapsslug`) is namespaced -- `state/<x>`,
+`country/<iso2>`, `province/<iso2>/<x>` -- with exactly one bare exception: the
+single global archive `world`. The frontend region picker
+(`web/src/lib/maps/catalog-tree.js`, `buildWorldNode`) hardcodes this `world`
+slug, and the backend keys the DB row and the on-disk `world.pmtiles` by it.
+
+The two startup migrations that namespace **legacy** bare slugs predate the
+world archive (added in #277) and must explicitly skip `world`:
+
+- `Store.MigrateMapsDownloadSlugs` (`pkg/configstore/migrate_downloads.go`)
+  prepends `state/` to any DB slug lacking `/`.
+- `Manager.MigrateLegacyArchives` (`pkg/mapscache/manager.go`) moves any bare
+  `<x>.pmtiles` into `state/<x>.pmtiles`.
+
+*Why:* before the skip, every restart rewrote a downloaded `world` row+file to
+`state/world`. Offline rendering still worked (row and file moved together), but
+the picker's `statusOf('world')` lookup missed, so it showed a Download button
+for an already-downloaded world map (GH #364). Both migrations now also repair
+an existing `state/world` back to `world`.
+
+*How to apply:* any new top-level (non-regional) archive that uses a bare slug
+must be excluded from these bare-slug migrations the same way, or it will be
+mis-namespaced on the next startup.
+
+Source: [`../../pkg/configstore/migrate_downloads.go`](../../pkg/configstore/migrate_downloads.go);
+[`../../pkg/mapscache/manager.go`](../../pkg/mapscache/manager.go) (`MigrateLegacyArchives`, `repairWorldArchive`);
+[`../../pkg/mapsslug/slug.go`](../../pkg/mapsslug/slug.go);
+[`../../web/src/lib/maps/catalog-tree.js`](../../web/src/lib/maps/catalog-tree.js) (`buildWorldNode`).
+
+### 50. REST client surfaces a lost connection; it does not fabricate data in production
 
 A genuine network failure (a thrown `fetch`) in the legacy REST client
 [`web/src/lib/api.js`](../../web/src/lib/api.js) falls back to canned mock
