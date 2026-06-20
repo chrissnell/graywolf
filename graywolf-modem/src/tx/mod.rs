@@ -54,7 +54,8 @@ pub fn build_samples(
 #[allow(dead_code)]
 pub(crate) fn prepend_silence(samples: Vec<i16>, sample_rate: u32, ms: u32) -> Vec<i16> {
     let lead = (sample_rate as u64 * ms as u64 / 1000) as usize;
-    let mut buf = vec![0i16; lead];
+    let mut buf = Vec::with_capacity(lead + samples.len());
+    buf.resize(lead, 0i16);
     buf.extend_from_slice(&samples);
     buf
 }

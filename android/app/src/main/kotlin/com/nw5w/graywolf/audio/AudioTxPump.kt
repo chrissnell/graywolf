@@ -107,7 +107,7 @@ class AudioTxPump(
         ) * 4
         check(bufBytes > 0) { "AudioTrack.getMinBufferSize=$bufBytes" }
 
-        return AudioTrack.Builder()
+        val t = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -124,6 +124,16 @@ class AudioTxPump(
             .setBufferSizeInBytes(bufBytes)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        // Digirig Lite tone PTT needs a real stereo track to separate the
+        // keying tone (right) from the AFSK (left). If the device could only
+        // give us mono, the tone can't be emitted and the radio won't key —
+        // surface that instead of failing silently. (A HAL-level downmix on a
+        // 2ch track won't show here; that's covered by the on-device gate.)
+        if (stereo && t.channelCount < 2) {
+            Log.e(TAG, "AudioTxPump: requested stereo but got ${t.channelCount}ch — " +
+                "Digirig tone PTT cannot key the radio on this output device")
+        }
+        return t
     }
 
     /** Auto-route a track to the first USB audio output, else system default. */
@@ -190,7 +200,18 @@ class AudioTxPump(
      * Called from Rust modem via JNI on every TX PCM frame.
      * Blocking write — Rust modem TX thread is OK to block while audio drains.
      * Returns -1 if the pump is stopped.
+     *
+     * `@Synchronized` on the same monitor as [setTone]/[rebuildTrack]/[stop]:
+     * key/unkey and pushSamples already serialise on the single TX-worker
+     * thread, but the `ConfigurePtt` pre-warm calls setTone from the *IPC
+     * thread*. Without this lock that pre-warm could `stop()`/`release()` the
+     * AudioTrack mid-write (use-after-release / native crash) if a PTT
+     * reconfigure overlapped an in-flight transmission. Holding the monitor
+     * across the blocking write only stalls that rare cross-thread pre-warm,
+     * never the TX path itself. It also publishes a consistent
+     * track/stereo/osc snapshot to this thread.
      */
+    @Synchronized
     override fun pushSamples(samples: ShortArray, count: Int): Int {
         val t = track ?: return -1
         if (!stereo) {
@@ -208,6 +229,7 @@ class AudioTxPump(
         return t.write(stereoScratch, 0, count * 2, AudioTrack.WRITE_BLOCKING)
     }
 
+    @Synchronized
     fun stop() {
         val t = track ?: return
         am.unregisterAudioDeviceCallback(deviceCallback)

@@ -453,6 +453,19 @@ fn run_demod(
                             // Capture DSP params so TransmitFrame can call
                             // build_samples with the same baud / tone pair.
                             config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
+                            // If this channel already uses Digirig tone PTT,
+                            // re-pre-warm the sink at the (possibly new) mark
+                            // frequency. Covers the ConfigurePtt-before-
+                            // ConfigureChannel ordering, where the earlier
+                            // pre-warm ran at the default mark and would
+                            // otherwise force a track rebuild on the first key.
+                            if config_state::digirig_tone() {
+                                if let Err(e) =
+                                    crate::jni_audio_set_tone(false, cc.mark_freq as i32)
+                                {
+                                    warn!("re-pre-warm setTone(hz={}): {e}", cc.mark_freq);
+                                }
+                            }
                         }
                         Some(ipc_message::Payload::ConfigurePtt(cfg)) => {
                             let chan = cfg.channel;
