@@ -7,6 +7,7 @@
   import { beaconLabel } from '../lib/beaconLabel.js';
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
+  import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
 
   let packets = $state([]);
   let status = $state(null);
@@ -53,6 +54,25 @@
     }, {})
   );
 
+  // Same auto-refresh / auto-scroll switches as the APRS Logs page, rendered
+  // in the packet feed's own toolbar via Chonky's LogViewer toolbarToggles.
+  // State is the shared device-local store, so a preference set on either
+  // screen carries over (GH #373).
+  const toolbarToggles = $derived([
+    {
+      label: 'Auto-refresh',
+      checked: logPrefsState.autoRefresh,
+      onChange: (v) => logPrefsState.setAutoRefresh(v),
+      title: 'Poll for new packets every few seconds',
+    },
+    {
+      label: 'Auto-scroll',
+      checked: logPrefsState.autoScroll,
+      onChange: (v) => logPrefsState.setAutoScroll(v),
+      title: 'Follow new packets to the bottom',
+    },
+  ]);
+
   onMount(() => {
     loadData();
     loadBeacons();
@@ -68,7 +88,10 @@
       api.get('/position'),
       api.get('/status'),
     ]);
-    if (pkts.status === 'fulfilled') packets = pkts.value || [];
+    // Auto-refresh gates only the packet feed (its toolbar owns the toggle),
+    // so the operator can freeze the log to read it while the status cards
+    // and position keep updating. See the toolbarToggles wiring below.
+    if (pkts.status === 'fulfilled' && logPrefsState.autoRefresh) packets = pkts.value || [];
     if (pos.status === 'fulfilled') position = pos.value;
     if (st.status === 'fulfilled' && st.value) {
       // Track RX/TX activity changes for flash indicators
@@ -299,7 +322,9 @@
     <PacketLogViewer
       {packets}
       height="400px"
-      live
+      live={logPrefsState.autoRefresh}
+      autoscroll={logPrefsState.autoScroll}
+      {toolbarToggles}
       showHeader
       mobileBreakpoint="768px"
     />
