@@ -72,7 +72,7 @@
       title: 'Follow new packets to the bottom',
     },
     {
-      label: 'Hex bytes',
+      label: 'Non-ASCII data',
       checked: logPrefsState.showNonPrintable,
       onChange: (v) => logPrefsState.setShowNonPrintable(v),
       title: 'Show non-printable bytes as <0x7f> hex tokens',
