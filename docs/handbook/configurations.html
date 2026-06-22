@@ -226,10 +226,91 @@
             <li>Connect the TH-D75 to the Raspberry Pi via USB cable.</li>
           </ol>
         </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+
+    <div class="config-card" id="digirig-lite-pi-4">
+      <div class="config-card-header">Ailunce HA1UV + Digirig Lite + ASUS Laptop &mdash; Q4OS Andromeda</div>
+      <div class="config-card-body">
+        <div class="config-section">
+          <div class="config-section-label">System</div>
+          <table>
+            <tbody>
+              <tr>
+                <td><strong>OS</strong></td>
+                <td>Q4OS Andromeda (based on Debian Trixie)</td>
+              </tr>
+              <tr>
+                <td><strong>Hardware</strong></td>
+                <td>ASUS Laptop - vintage</td>
+              </tr>
+              <tr>
+                <td><strong>Audio Device</strong></td>
+                <td>Digirig Lite - black cable to radio</td>
+              </tr>
+              <tr>
+                <td><strong>Radio</strong></td>
+                <td>Ailunce HA1UV</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Audio Devices</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Direction</th>
+                <th>Path</th>
+                <th>Channels</th>
+                <th>Sample Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Input</td>
+                <td><code>plughw:CARD=Device,DEV=0</code></td>
+                <td>Mono</td>
+                <td>48000 Hz</td>
+              </tr>
+              <tr>
+                <td>Output</td>
+                <td><code>plughw:CARD=Device,DEV=0</code></td>
+                <td>Mono</td>
+                <td>48000 Hz</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Push-to-Talk</div>
+          <table>
+            <tbody>
+              <tr>
+                <td><strong>Method</strong></td>
+                <td>CM108 HID GPIO</td>
+              </tr>
+              <tr>
+                <td><strong>Device Path</strong></td>
+                <td><code>/dev/hidraw3</code></td>
+              </tr>
+              <tr>
+                <td><strong>GPIO Pin</strong></td>
+                <td>GPIO 3 (pin 13) - most common</td>
+              </tr>
+              <tr>
+                <td><strong>Invert Polarity</strong></td>
+                <td>Disabled</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
       </div>
-
-
     </div>
 
     <!-- ============================================================ -->
