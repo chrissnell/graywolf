@@ -100,7 +100,8 @@
       <li>The <strong>type filter</strong> at the top narrows the table to a single packet kind (mic-e, position, weather, telemetry, object, status, third-party, message, &hellip;).</li>
       <li><strong>Auto-refresh</strong> &mdash; on by default, the page polls for new packets every couple of seconds. Turn it off to freeze the list so the rows you&rsquo;re reading stop changing while you study a packet path; the Refresh button still pulls the latest on demand.</li>
       <li><strong>Auto-scroll</strong> &mdash; on by default, the view follows new packets to the bottom. Turn it off to keep your scroll position put as packets arrive, then use the Jump to bottom control when you want to catch up.</li>
-      <li>The entry count under the controls shows how many rows you&rsquo;re looking at. Both toggles are remembered per device, so a phone can stay frozen while a desktop keeps tailing.</li>
+      <li><strong>Hex bytes</strong> &mdash; off by default. Turn it on to surface non-printable bytes in the raw packet line as styled <code>&lt;0x7f&gt;</code> hex tokens, handy when a stray control character (for example a <code>0x7F</code> wedged into a position report) is breaking map plotting. Left off, the line reads as ordinary text.</li>
+      <li>The entry count under the controls shows how many rows you&rsquo;re looking at. The toggles are remembered per device, so a phone can stay frozen while a desktop keeps tailing.</li>
     </ul>
 
     <p>

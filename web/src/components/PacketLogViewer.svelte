@@ -36,6 +36,11 @@
     // the Logs route's auto-refresh / auto-scroll controls). Forwarded to
     // Chonky's LogViewer; see its LogToolbarToggle type.
     toolbarToggles = undefined,
+    // Surface non-printable bytes in the raw packet line as styled <0x7f>
+    // hex tokens (GH #376). Off by default so the line reads as clean text;
+    // the Logs/Dashboard toolbars bind this to an operator toggle for when
+    // a malformed packet needs diagnosing.
+    showNonPrintable = false,
     showHeader = true,
     mobileBreakpoint = '768px',
     // When set, each packet with a raw frame gets a subtle inspect affordance
@@ -162,10 +167,10 @@
 
 {#snippet rawPacketFooter(entry)}
   <div class="pkt-foot">
-    <code class="pkt-raw">{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
+    <code class="pkt-raw">{#if showNonPrintable}{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
           class="pkt-ctrl"
           title={seg.title}
-        >{seg.label}</span>{:else}{seg.text}{/if}{/each}</code>
+        >{seg.label}</span>{:else}{seg.text}{/if}{/each}{:else}{entry.display}{/if}</code>
     {#if inspectable && entry.raw}
       <button
         type="button"

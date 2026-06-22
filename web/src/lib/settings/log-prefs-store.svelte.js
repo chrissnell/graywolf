@@ -9,12 +9,17 @@
 //                 operator is reading stops changing.
 //   autoScroll  — follow new packets to the bottom of the viewer.
 //                 Off keeps the scroll position put as packets arrive.
+//   showNonPrintable — surface non-printable bytes in the raw packet line
+//                 as styled <0x7f> hex tokens (GH #376). Off by default:
+//                 ordinary operators see clean text, and only those
+//                 diagnosing a malformed packet opt into the noise.
 //
-// Both default on, preserving the prior always-live behavior for anyone
-// who never opens the toggles.
+// autoRefresh / autoScroll default on, preserving the prior always-live
+// behavior; showNonPrintable defaults off.
 
 const LS_AUTO_REFRESH = 'aprs-log-auto-refresh';
 const LS_AUTO_SCROLL = 'aprs-log-auto-scroll';
+const LS_SHOW_NONPRINTABLE = 'aprs-log-show-nonprintable';
 
 function readBool(key, dflt) {
   try {
@@ -32,10 +37,12 @@ function writeBool(key, v) {
 export const logPrefsState = (() => {
   let autoRefresh = $state(readBool(LS_AUTO_REFRESH, true));
   let autoScroll = $state(readBool(LS_AUTO_SCROLL, true));
+  let showNonPrintable = $state(readBool(LS_SHOW_NONPRINTABLE, false));
 
   return {
     get autoRefresh() { return autoRefresh; },
     get autoScroll() { return autoScroll; },
+    get showNonPrintable() { return showNonPrintable; },
     setAutoRefresh(v) {
       autoRefresh = !!v;
       writeBool(LS_AUTO_REFRESH, autoRefresh);
@@ -43,6 +50,10 @@ export const logPrefsState = (() => {
     setAutoScroll(v) {
       autoScroll = !!v;
       writeBool(LS_AUTO_SCROLL, autoScroll);
+    },
+    setShowNonPrintable(v) {
+      showNonPrintable = !!v;
+      writeBool(LS_SHOW_NONPRINTABLE, showNonPrintable);
     },
   };
 })();

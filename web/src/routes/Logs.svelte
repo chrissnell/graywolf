@@ -101,6 +101,12 @@
       onChange: (v) => logPrefsState.setAutoScroll(v),
       title: 'Follow new packets to the bottom',
     },
+    {
+      label: 'Hex bytes',
+      checked: logPrefsState.showNonPrintable,
+      onChange: (v) => logPrefsState.setShowNonPrintable(v),
+      title: 'Show non-printable bytes as <0x7f> hex tokens',
+    },
   ]);
 
   let filtered = $derived.by(() => {
@@ -179,6 +185,7 @@
       live={logPrefsState.autoRefresh}
       autoscroll={logPrefsState.autoScroll}
       {toolbarToggles}
+      showNonPrintable={logPrefsState.showNonPrintable}
       showHeader
       mobileBreakpoint="768px"
       inspectable
