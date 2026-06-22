@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFFFF</color>
+    <!-- App chrome tone. Single source for the status bar and the WebView
+         background painted behind the edge-to-edge inset strips. -->
+    <color name="chrome_bg">#111111</color>
 </resources>

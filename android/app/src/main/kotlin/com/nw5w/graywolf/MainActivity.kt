@@ -6,7 +6,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.hardware.usb.UsbManager
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
@@ -100,18 +99,24 @@ class MainActivity : Activity() {
      * mandatory: the platform stops auto-insetting content and no longer
      * resizes the window when the soft keyboard opens, so the SPA's sticky
      * compose bar (position:absolute; bottom:0) ends up underneath the IME --
-     * exactly the Messages-tab bug. We opt into edge-to-edge on every version
-     * for identical behavior, then pad the WebView by the system bars and,
-     * crucially, by the keyboard height. Padding the WebView's bottom shrinks
-     * the web viewport above the IME, so the compose bar sits atop the keyboard
-     * and `window.innerHeight` reflects the change (the visualViewport fallback
-     * in ComposeBar.svelte becomes a no-op rather than fighting this).
+     * exactly the Messages-tab bug. We opt into edge-to-edge on every version,
+     * then pad the WebView by the system bars and, crucially, by the keyboard
+     * height. Padding the WebView's bottom shrinks the web viewport above the
+     * IME, so the compose bar sits atop the keyboard and `window.innerHeight`
+     * reflects the change. ComposeBar.svelte skips its visualViewport translate
+     * in the Android shell (Platform.isAndroid) so the two don't double-offset.
+     *
+     * Two mechanisms feed the same listener: on API 30+ the IME arrives as a
+     * `Type.ime()` inset (handled here directly). On API 28-29 `Type.ime()` is
+     * always 0, so the manifest's `windowSoftInputMode="adjustResize"` resizes
+     * the decor frame instead, which re-fires this listener with a smaller
+     * frame -- do NOT drop adjustResize assuming the inset path covers 28-29.
      */
     private fun applyWindowInsets() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         // The padded inset strips render the WebView's own background; paint it
         // the chrome's dark tone so the bars don't flash white over the page.
-        webView.setBackgroundColor(Color.parseColor("#111111"))
+        webView.setBackgroundColor(getColor(R.color.chrome_bg))
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())

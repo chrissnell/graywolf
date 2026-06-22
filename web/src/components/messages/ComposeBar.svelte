@@ -27,6 +27,7 @@
 
   import { onMount } from 'svelte';
   import { Icon } from '@chrissnell/chonky-ui';
+  import { Platform } from '../../lib/platform.js';
   import CallsignAutocomplete from './CallsignAutocomplete.svelte';
   import {
     messagesPreferencesState,
@@ -258,6 +259,12 @@
     // the software keyboard without using position:fixed (which
     // floats under the keyboard on iOS). Gracefully degrades in
     // environments without visualViewport (desktop browsers, JSDOM).
+    //
+    // Skip entirely inside the Android shell: MainActivity pads the
+    // WebView by the IME inset, so the web viewport already shrinks
+    // above the keyboard. Translating again here would double-offset
+    // the bar off-screen.
+    if (Platform.isAndroid) return;
     const vv = typeof window !== 'undefined' ? window.visualViewport : null;
     if (!vv) return;
     function apply() {

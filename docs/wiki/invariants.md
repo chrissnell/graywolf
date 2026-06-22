@@ -680,12 +680,16 @@ cannot outlive the app, because no single mechanism covers both cases.
   `setOnApplyWindowInsetsListener` that pads the WebView by the system bars plus
   `max(systemBars.bottom, ime.bottom)`. The IME padding is the cross-system load-bearing
   bit: it shrinks the web viewport above the keyboard so the SPA's sticky compose bar
-  (`web/.../ComposeBar.svelte`, `position:absolute; bottom:0`) is never covered. The
-  manifest's `android:windowSoftInputMode="adjustResize"` is the pre-API-30 fallback
-  (where `WindowInsetsCompat.Type.ime()` reports 0). The WebView background is painted
-  the chrome's dark tone so the padded bar strips don't flash white. Do NOT revert to
-  letting the system manage insets -- on Android 15+ the compose bar disappears behind
-  the keyboard.
+  (`web/.../ComposeBar.svelte`, `position:absolute; bottom:0`) is never covered. That
+  component skips its own `visualViewport` translateY when `Platform.isAndroid` so the
+  two mechanisms don't stack into a double-offset; the web translate stays the path for
+  mobile browsers. The manifest's `android:windowSoftInputMode="adjustResize"` is the
+  pre-API-30 fallback: there `WindowInsetsCompat.Type.ime()` reports 0, so adjustResize
+  resizes the decor frame instead, re-firing the same listener -- do NOT drop it assuming
+  the inset path covers 28-29. The WebView background is painted `@color/chrome_bg` (the
+  single source the theme's `statusBarColor` also uses) so the padded bar strips don't
+  flash white. Do NOT revert to letting the system manage insets -- on Android 15+ the
+  compose bar disappears behind the keyboard.
 
 Source: [`../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/GraywolfService.kt),
 [`../../cmd/graywolf/parentwatch.go`](../../cmd/graywolf/parentwatch.go),

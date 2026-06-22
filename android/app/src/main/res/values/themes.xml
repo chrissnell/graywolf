@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Graywolf" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="android:statusBarColor">#111111</item>
+        <item name="android:statusBarColor">@color/chrome_bg</item>
     </style>
 </resources>
