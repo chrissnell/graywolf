@@ -28,6 +28,10 @@
     packets = [],
     height = '600px',
     live = true,
+    // Follow new packets to the bottom of the viewer. The Logs route binds
+    // this to an operator toggle so a full buffer can be read without the
+    // content shifting as packets arrive (GH #373); defaults on elsewhere.
+    autoscroll = true,
     showHeader = true,
     mobileBreakpoint = '768px',
     // When set, each packet with a raw frame gets a subtle inspect affordance
@@ -179,6 +183,7 @@
   entries={entries}
   {columns}
   {live}
+  {autoscroll}
   {showHeader}
   {height}
   {mobileBreakpoint}

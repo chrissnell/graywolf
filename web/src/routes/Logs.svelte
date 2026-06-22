@@ -1,12 +1,13 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Box } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Box, Toggle } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { online } from '../lib/stores/connection.js';
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { parseDisplay } from '../lib/packetColumns.js';
   import { start as startChannelsStore, getChannel } from '../lib/stores/channels.svelte.js';
+  import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
 
   // Resolve a packet's channel id to its operator-given name for the
   // CSV export; fall back to the raw id when the channel list hasn't
@@ -42,8 +43,6 @@
     { value: 'is', label: 'IS Only' },
   ];
 
-  let pollTimer;
-
   // Seed the search box from ?callsign=… on the hash route. The map's
   // station popup deep-links here ("APRS logs") so the operator lands on
   // a log already scoped to that station. svelte-spa-router doesn't hand
@@ -63,8 +62,16 @@
     // export can map channel ids to names.
     startChannelsStore();
     loadPackets();
-    pollTimer = setInterval(loadPackets, 2000);
-    return () => clearInterval(pollTimer);
+  });
+
+  // Poll for new packets only while auto-refresh is enabled. Turning the
+  // toggle off clears the timer so the displayed list freezes and stops
+  // shifting under the operator while they read a packet path; the manual
+  // Refresh button still fetches on demand. (GH #373)
+  $effect(() => {
+    if (!logPrefsState.autoRefresh) return;
+    const timer = setInterval(loadPackets, 2000);
+    return () => clearInterval(timer);
   });
 
   async function loadPackets() {
@@ -138,6 +145,18 @@
       ]} />
     </div>
   </div>
+  <div class="toggle-bar">
+    <Toggle
+      checked={logPrefsState.autoRefresh}
+      onCheckedChange={(v) => logPrefsState.setAutoRefresh(v)}
+      label="Auto-refresh"
+    />
+    <Toggle
+      checked={logPrefsState.autoScroll}
+      onCheckedChange={(v) => logPrefsState.setAutoScroll(v)}
+      label="Auto-scroll"
+    />
+  </div>
 </Box>
 
 <div style="margin-top: 12px;">
@@ -151,7 +170,8 @@
     <PacketLogViewer
       packets={filtered}
       height="600px"
-      live
+      live={logPrefsState.autoRefresh}
+      autoscroll={logPrefsState.autoScroll}
       showHeader
       mobileBreakpoint="768px"
       inspectable
@@ -186,6 +206,12 @@
   .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; }
   .filter-input { flex: 1; min-width: 200px; }
   .filter-select { width: 140px; }
+  .toggle-bar {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
   .empty { color: var(--color-text-dim); text-align: center; padding: 24px; }
 
   .log-foot {
