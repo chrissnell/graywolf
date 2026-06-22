@@ -187,6 +187,7 @@ func parseMicE(pkt *DecodedAPRSPacket, info []byte, frame *ax25.Frame) error {
 		Altitude:  mic.Position.Altitude,
 		HasAlt:    mic.Position.HasAlt,
 		Symbol:    mic.Position.Symbol,
+		DAODatum:  mic.Position.DAODatum,
 	}
 	pkt.Type = PacketMicE
 	return nil
@@ -295,6 +296,11 @@ func decodeMicEDest(dest string) (lat float64, msgCode int, nsSign float64, lonO
 // leaves the trailing "3" stranded as bogus comment text. Real
 // Byonics/McTracker mobile beacons emit exactly that shape, which is
 // what made GH #377's comments render as e.g. "KK4CUK Matt's Cozy3".
+//
+// APRS101 ch 13 reserves '|' for telemetry framing, so by design a lone
+// unterminated '|' is treated as a truncated telemetry opener and the
+// rest of the string is dropped — a bare '|' is not expected in
+// human-readable Mic-E status text.
 func stripMicEPipeTelemetry(comment string) string {
 	for {
 		open := strings.IndexByte(comment, '|')

@@ -458,6 +458,13 @@ func TestParseMicECommentSurfaced(t *testing.T) {
 			if pkt.MicE.Status != tc.want {
 				t.Errorf("MicE.Status = %q, want %q", pkt.MicE.Status, tc.want)
 			}
+			// All three beacons carry a base-91 DAO ("!w..!") wedged
+			// between the telemetry block and the trailing remnant. The
+			// strip rework exists precisely so extractDAO still consumes
+			// it — assert the precision was applied, not merely deleted.
+			if pkt.Position.DAODatum != 'W' {
+				t.Errorf("DAODatum = %q, want 'W' (DAO not applied)", pkt.Position.DAODatum)
+			}
 		})
 	}
 }
