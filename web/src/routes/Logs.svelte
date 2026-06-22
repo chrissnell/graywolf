@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Select, Box, Toggle } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { online } from '../lib/stores/connection.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -85,6 +85,24 @@
     loading = false;
   }
 
+  // Auto-refresh / auto-scroll switches live in the log viewer's own toolbar
+  // (Chonky's LogViewer toolbarToggles), so the controls sit in the table
+  // header next to the live indicator rather than in the filter bar (GH #373).
+  const toolbarToggles = $derived([
+    {
+      label: 'Auto-refresh',
+      checked: logPrefsState.autoRefresh,
+      onChange: (v) => logPrefsState.setAutoRefresh(v),
+      title: 'Poll for new packets every few seconds',
+    },
+    {
+      label: 'Auto-scroll',
+      checked: logPrefsState.autoScroll,
+      onChange: (v) => logPrefsState.setAutoScroll(v),
+      title: 'Follow new packets to the bottom',
+    },
+  ]);
+
   let filtered = $derived.by(() => {
     let list = packets;
     if (dirFilter !== 'all') {
@@ -145,18 +163,6 @@
       ]} />
     </div>
   </div>
-  <div class="toggle-bar">
-    <Toggle
-      checked={logPrefsState.autoRefresh}
-      onCheckedChange={(v) => logPrefsState.setAutoRefresh(v)}
-      label="Auto-refresh"
-    />
-    <Toggle
-      checked={logPrefsState.autoScroll}
-      onCheckedChange={(v) => logPrefsState.setAutoScroll(v)}
-      label="Auto-scroll"
-    />
-  </div>
 </Box>
 
 <div style="margin-top: 12px;">
@@ -172,6 +178,7 @@
       height="600px"
       live={logPrefsState.autoRefresh}
       autoscroll={logPrefsState.autoScroll}
+      {toolbarToggles}
       showHeader
       mobileBreakpoint="768px"
       inspectable
@@ -206,12 +213,6 @@
   .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; }
   .filter-input { flex: 1; min-width: 200px; }
   .filter-select { width: 140px; }
-  .toggle-bar {
-    display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
-    margin-top: 12px;
-  }
   .empty { color: var(--color-text-dim); text-align: center; padding: 24px; }
 
   .log-foot {
