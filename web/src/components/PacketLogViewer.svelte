@@ -156,7 +156,7 @@
   <div class="pkt-foot">
     <code class="pkt-raw">{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
           class="pkt-ctrl"
-          title={`non-printable byte 0x${seg.code.toString(16).padStart(2, '0')}`}
+          title={seg.title}
         >{seg.label}</span>{:else}{seg.text}{/if}{/each}</code>
     {#if inspectable && entry.raw}
       <button
