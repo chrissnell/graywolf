@@ -75,11 +75,24 @@
   <div class="device-actions">
     <Button variant="primary" onclick={() => onChangeMethod(item)}>Change Method</Button>
     <Button variant="primary" onclick={() => onChangeDevice(item)}>Change Device</Button>
-    <Button disabled={testing || item.method === 'none' || item.method === 'vox' || item.method === 'digirig_tone'} onclick={testPtt}>
-      {testing ? 'Keying…' : 'Test PTT (1s)'}
-    </Button>
+    {#if item.method !== 'none' && item.method !== 'vox' && item.method !== 'digirig_tone'}
+      <Button disabled={testing} onclick={testPtt}>
+        {testing ? 'Keying…' : 'Test PTT (1s)'}
+      </Button>
+    {/if}
     <Button variant="danger" onclick={() => onDelete(item)}>Delete</Button>
   </div>
+
+  <!-- VOX and Digirig tone PTT have no wire to pulse, so "Test PTT" (a
+       manual key/unkey) does nothing for them. Rather than show a dead,
+       greyed button, point the operator at Test TX, which transmits a tone
+       through the audio path and keys the radio the way these methods do. -->
+  {#if item.method === 'vox' || item.method === 'digirig_tone'}
+    <p class="test-hint">
+      No PTT wire to pulse — this method keys the radio from the transmit audio.
+      To verify keying, use <strong>Test TX</strong> on the Channels page.
+    </p>
+  {/if}
 </div>
 
 <style>
@@ -150,5 +163,12 @@
   .device-actions :global(.btn) {
     width: 100%;
     justify-content: center;
+  }
+
+  .test-hint {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
 </style>
