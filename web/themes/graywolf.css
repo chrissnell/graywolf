@@ -25,10 +25,17 @@
   --color-text-dim: #999999;
   --color-text-inverse: #ffffff;
   --color-accent: #215e21;
-  --color-primary: #ffaa00;
-  --color-primary-hover: #ffbb33;
-  --color-primary-muted: rgba(255, 170, 0, 0.12);
-  --color-primary-fg: #000000;
+  /* Deep orange rather than the bright #ffaa00. --color-primary doubles as a
+     foreground color (links, chonky-ui's outlined btn-primary at rest, message
+     leads/status icons) where bright orange on a light surface fell far below
+     readable contrast (~1.7:1 on the grey button background). #a85500 keeps the
+     orange brand identity while clearing WCAG AA as text on every light surface
+     here (>=4.6:1) and under white fill text (5.3:1) -- matching how the other
+     light themes (grayscale, high-contrast) use a dark primary with white fg. */
+  --color-primary: #a85500;
+  --color-primary-hover: #8a4500;
+  --color-primary-muted: rgba(168, 85, 0, 0.12);
+  --color-primary-fg: #ffffff;
   --color-danger: #c41010;
   --color-danger-hover: #d42020;
   --color-danger-muted: rgba(214, 2, 2, 0.12);
