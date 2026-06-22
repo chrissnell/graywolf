@@ -20,6 +20,7 @@
     formatTime,
     packetToEntry,
     audioLevel,
+    displaySegments,
   } from '../lib/packetColumns.js';
   import PacketInspector from './PacketInspector.svelte';
 
@@ -153,7 +154,10 @@
 
 {#snippet rawPacketFooter(entry)}
   <div class="pkt-foot">
-    <code class="pkt-raw">{entry.display || ''}</code>
+    <code class="pkt-raw">{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
+          class="pkt-ctrl"
+          title={seg.title}
+        >{seg.label}</span>{:else}{seg.text}{/if}{/each}</code>
     {#if inspectable && entry.raw}
       <button
         type="button"
@@ -342,6 +346,18 @@
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-all;
+  }
+
+  /* Non-printable byte token (e.g. <0x7f>): rendered inline in the raw line
+     with a distinct danger tint and chip so it can never be mistaken for
+     literal text that happens to read "<0x7f>". See GH #376. */
+  .pkt-ctrl {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: 700;
+    white-space: nowrap;
   }
 
   /* Subtle inspect affordance: dim by default, only brightens on

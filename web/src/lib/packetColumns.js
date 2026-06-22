@@ -106,6 +106,54 @@ export function directionToLevel(direction) {
 }
 
 /**
+ * Split a packet display string into printable runs and individual
+ * non-printable bytes for the log line. APRS payloads should be plain
+ * printable ASCII, but a malformed packet can carry control bytes — most
+ * famously a 0x7F (DEL) wedged into a position report (GH #376) that renders
+ * invisibly yet silently breaks map plotting. We surface each one as a styled
+ * `<0x7f>` token (aprs.fi's convention) so the caller can colour it distinctly
+ * from text that merely happens to read "<0x7f>".
+ *
+ * Returns an array of segments: `{ text }` for a printable run, or
+ * `{ ctrl: true, code, label, title }` for one non-printable byte. A code point
+ * is treated as non-printable when it is a C0 control (< 0x20), DEL (0x7F), a C1
+ * control (0x80–0x9F), or U+FFFD. In practice the two forms that reach the
+ * browser are DEL/C0 (valid single-byte UTF-8, passed through Go's json.Marshal
+ * untouched) and U+FFFD — the replacement char Go substitutes for any byte that
+ * is not valid UTF-8, which is how most corrupted high bytes actually arrive.
+ * The literal C1 range (0x80–0x9F) is only reachable if a payload carried those
+ * code points as valid 2-byte UTF-8; it is kept defensively rather than because
+ * the current backend emits it. Ordinary higher Unicode — accented status text
+ * and the like — is left in the printable run untouched.
+ */
+export function displaySegments(str) {
+  const out = [];
+  let run = '';
+  const flush = () => {
+    if (run) {
+      out.push({ text: run });
+      run = '';
+    }
+  };
+  for (const ch of str || '') {
+    const cp = ch.codePointAt(0);
+    const ctrl = cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp <= 0x9f) || cp === 0xfffd;
+    if (ctrl) {
+      flush();
+      const title =
+        cp === 0xfffd
+          ? 'invalid byte (replaced with U+FFFD in transit)'
+          : `non-printable byte 0x${cp.toString(16).padStart(2, '0')}`;
+      out.push({ ctrl: true, code: cp, label: `<0x${cp.toString(16).padStart(2, '0')}>`, title });
+    } else {
+      run += ch;
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
  * Project a raw packet into a Chonky LogEntry. Adds the `level` field
  * (so Chonky's level→class mapping picks up direction colour) without
  * mutating the original packet. The original direction is preserved on
