@@ -6,6 +6,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.hardware.usb.UsbManager
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
@@ -22,6 +23,9 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.nw5w.graywolf.webview.WebAppInterface
 import com.nw5w.graywolf.webview.WebBridgeIds
 import java.io.IOException
@@ -86,7 +90,34 @@ class MainActivity : Activity() {
             }
         }
         setContentView(webView)
+        applyWindowInsets()
         ensurePerms()
+    }
+
+    /**
+     * Drive layout off window insets instead of letting the system pan or
+     * resize the decor for us. On Android 15+ (targetSdk 35+) edge-to-edge is
+     * mandatory: the platform stops auto-insetting content and no longer
+     * resizes the window when the soft keyboard opens, so the SPA's sticky
+     * compose bar (position:absolute; bottom:0) ends up underneath the IME --
+     * exactly the Messages-tab bug. We opt into edge-to-edge on every version
+     * for identical behavior, then pad the WebView by the system bars and,
+     * crucially, by the keyboard height. Padding the WebView's bottom shrinks
+     * the web viewport above the IME, so the compose bar sits atop the keyboard
+     * and `window.innerHeight` reflects the change (the visualViewport fallback
+     * in ComposeBar.svelte becomes a no-op rather than fighting this).
+     */
+    private fun applyWindowInsets() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // The padded inset strips render the WebView's own background; paint it
+        // the chrome's dark tone so the bars don't flash white over the page.
+        webView.setBackgroundColor(Color.parseColor("#111111"))
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            insets
+        }
     }
 
     private fun ensurePerms() {
