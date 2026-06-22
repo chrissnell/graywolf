@@ -15,7 +15,7 @@ export const DESKTOP_METHODS = [
     meta: 'No PTT wire — the Digirig Lite keys the radio from a tone on the right channel while the packet audio plays on the left. Set this channel\'s output to the Left channel of a stereo Digirig Lite device.' },
   { wire: { method: 'serial_rts' },
     label: 'Serial RTS',
-    meta: 'USB-serial RTS line keys the radio. Use for FTDI / CP210x / CH340 cables.' },
+    meta: 'USB-serial RTS line keys the radio. The right choice for the Digirig Mobile, and works with FTDI / CP210x / CH340 cables.' },
   { wire: { method: 'serial_dtr' },
     label: 'Serial DTR',
     meta: 'USB-serial DTR line keys the radio. Less common than RTS.' },
