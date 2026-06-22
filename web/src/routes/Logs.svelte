@@ -7,6 +7,7 @@
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { parseDisplay } from '../lib/packetColumns.js';
   import { start as startChannelsStore, getChannel } from '../lib/stores/channels.svelte.js';
+  import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
 
   // Resolve a packet's channel id to its operator-given name for the
   // CSV export; fall back to the raw id when the channel list hasn't
@@ -42,8 +43,6 @@
     { value: 'is', label: 'IS Only' },
   ];
 
-  let pollTimer;
-
   // Seed the search box from ?callsign=… on the hash route. The map's
   // station popup deep-links here ("APRS logs") so the operator lands on
   // a log already scoped to that station. svelte-spa-router doesn't hand
@@ -63,8 +62,16 @@
     // export can map channel ids to names.
     startChannelsStore();
     loadPackets();
-    pollTimer = setInterval(loadPackets, 2000);
-    return () => clearInterval(pollTimer);
+  });
+
+  // Poll for new packets only while auto-refresh is enabled. Turning the
+  // toggle off clears the timer so the displayed list freezes and stops
+  // shifting under the operator while they read a packet path; the manual
+  // Refresh button still fetches on demand. (GH #373)
+  $effect(() => {
+    if (!logPrefsState.autoRefresh) return;
+    const timer = setInterval(loadPackets, 2000);
+    return () => clearInterval(timer);
   });
 
   async function loadPackets() {
@@ -77,6 +84,24 @@
     }
     loading = false;
   }
+
+  // Auto-refresh / auto-scroll switches live in the log viewer's own toolbar
+  // (Chonky's LogViewer toolbarToggles), so the controls sit in the table
+  // header next to the live indicator rather than in the filter bar (GH #373).
+  const toolbarToggles = $derived([
+    {
+      label: 'Auto-refresh',
+      checked: logPrefsState.autoRefresh,
+      onChange: (v) => logPrefsState.setAutoRefresh(v),
+      title: 'Poll for new packets every few seconds',
+    },
+    {
+      label: 'Auto-scroll',
+      checked: logPrefsState.autoScroll,
+      onChange: (v) => logPrefsState.setAutoScroll(v),
+      title: 'Follow new packets to the bottom',
+    },
+  ]);
 
   let filtered = $derived.by(() => {
     let list = packets;
@@ -151,7 +176,9 @@
     <PacketLogViewer
       packets={filtered}
       height="600px"
-      live
+      live={logPrefsState.autoRefresh}
+      autoscroll={logPrefsState.autoScroll}
+      {toolbarToggles}
       showHeader
       mobileBreakpoint="768px"
       inspectable

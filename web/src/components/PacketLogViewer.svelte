@@ -28,6 +28,14 @@
     packets = [],
     height = '600px',
     live = true,
+    // Follow new packets to the bottom of the viewer. The Logs route binds
+    // this to an operator toggle so a full buffer can be read without the
+    // content shifting as packets arrive (GH #373); defaults on elsewhere.
+    autoscroll = true,
+    // Optional compact switches rendered in the viewer's own toolbar (e.g.
+    // the Logs route's auto-refresh / auto-scroll controls). Forwarded to
+    // Chonky's LogViewer; see its LogToolbarToggle type.
+    toolbarToggles = undefined,
     showHeader = true,
     mobileBreakpoint = '768px',
     // When set, each packet with a raw frame gets a subtle inspect affordance
@@ -179,6 +187,8 @@
   entries={entries}
   {columns}
   {live}
+  {autoscroll}
+  {toolbarToggles}
   {showHeader}
   {height}
   {mobileBreakpoint}
