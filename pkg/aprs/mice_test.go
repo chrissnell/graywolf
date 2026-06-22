@@ -417,3 +417,47 @@ func TestMicE_EndToEnd_Issue219(t *testing.T) {
 		t.Errorf("lon = %.4f, want ~-106.6752", pkt.Position.Longitude)
 	}
 }
+
+// TestParseMicECommentSurfaced covers GH #377: a mobile beacon's
+// free-form comment ("KK4CUK Matt's Cozy") was decoded into MicE.Status
+// but never copied to pkt.Comment, so the stationcache and the mobile
+// UI showed nothing even though aprs.fi displayed it. The trailing
+// "|...|!DAO!|3" telemetry/DAO/remnant tail these Byonics/McTracker
+// radios emit must be stripped cleanly — a greedy pipe sweep used to
+// leave a stray "3" on the end. The companion packets carrying only
+// telemetry (no human text) must surface an empty comment, not "3".
+func TestParseMicECommentSurfaced(t *testing.T) {
+	cases := []struct {
+		name string
+		dest string
+		info string
+		want string
+	}{
+		{"comment", "S7TP0U", "`qa4.RI'/'\"M)}KK4CUK Matt's Cozy|!>&@'j|!w<(!|3", "KK4CUK Matt's Cozy"},
+		{"telemetry_only_a", "S7RW2Q", "`q4o-fG'/'\"O#}|!;&A'm|!wi@!|3", ""},
+		{"telemetry_only_b", "S7TT4S", "`q[m.RF'/'\"Jp}|!?&D'j|!woI!|3", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src, _ := ax25.ParseAddress("N9825W")
+			dst, _ := ax25.ParseAddress(tc.dest)
+			f, err := ax25.NewUIFrame(src, dst, nil, []byte(tc.info))
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkt, err := Parse(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pkt.MicE == nil {
+				t.Fatal("expected Mic-E packet")
+			}
+			if pkt.Comment != tc.want {
+				t.Errorf("pkt.Comment = %q, want %q", pkt.Comment, tc.want)
+			}
+			if pkt.MicE.Status != tc.want {
+				t.Errorf("MicE.Status = %q, want %q", pkt.MicE.Status, tc.want)
+			}
+		})
+	}
+}

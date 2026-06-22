@@ -1168,3 +1168,33 @@ Source: [`../../web/src/lib/api.js`](../../web/src/lib/api.js),
 [`../../web/src/lib/map/data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js),
 [`../../web/src/routes/Dashboard.svelte`](../../web/src/routes/Dashboard.svelte),
 [`../../web/src/routes/Logs.svelte`](../../web/src/routes/Logs.svelte).
+
+### 51. The stationcache reads `pkt.Comment`, so every parser must mirror its free-form text there
+
+*Why:* `pkg/stationcache/extract.go` (`buildStationEntry`) takes the
+displayed comment from `pkt.Comment` only -- it never reaches into the
+per-type sub-structs. Most parsers (position, object, item) already
+write their trailing text to `DecodedAPRSPacket.Comment` (or the
+sub-struct's `Comment`, which `ExtractEntry` forwards). Mic-E is the
+trap: `parseMicE` decodes the comment into `MicE.Status` and, before
+GH #377, stopped there -- so mobile-beacon comments like
+"KK4CUK Matt's Cozy" decoded correctly yet rendered blank in the UI
+while aprs.fi showed them. The fix copies `mic.Status` into
+`pkt.Comment` at the end of `parseMicE`. Any new packet type that
+carries human-readable trailing text must populate `pkt.Comment` (or a
+sub-struct `Comment` that `ExtractEntry` forwards); decoding it into a
+private field alone makes it invisible downstream.
+
+Mic-E corollary: the comment tail on real Byonics/McTracker mobile
+beacons is `<text>|<base91 telemetry>|!<DAO>!|3`. `stripMicEPipeTelemetry`
+removes each `|...|` block non-greedily (a greedy first-to-last sweep
+ate the DAO and left a stray "3"), then drops a lone unterminated `|`
+opener; `extractDAO` then consumes the `!DAO!`.
+
+Source: [`../../pkg/aprs/mice.go`](../../pkg/aprs/mice.go)
+(`parseMicE`, `stripMicEPipeTelemetry`),
+[`../../pkg/aprs/dao.go`](../../pkg/aprs/dao.go) (`extractDAO`),
+[`../../pkg/stationcache/extract.go`](../../pkg/stationcache/extract.go)
+(`buildStationEntry`),
+[`../../pkg/aprs/mice_test.go`](../../pkg/aprs/mice_test.go)
+(`TestParseMicECommentSurfaced`).

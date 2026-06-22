@@ -171,6 +171,12 @@ func parseMicE(pkt *DecodedAPRSPacket, info []byte, frame *ax25.Frame) error {
 	mic.Status = extractDAO(&mic.Position, mic.Status)
 
 	pkt.MicE = &mic
+	// Surface the decoded free-form text as the packet-level comment.
+	// Mic-E carries its comment in MicE.Status, but the stationcache and
+	// every other downstream consumer read pkt.Comment — without this
+	// copy the comment on mobile beacons (e.g. "KK4CUK Matt's Cozy")
+	// silently vanished even though aprs.fi showed it (GH #377).
+	pkt.Comment = mic.Status
 	// Present MicE as a position packet for downstream consumers.
 	pkt.Position = &Position{
 		Latitude:  mic.Position.Latitude,
@@ -278,21 +284,34 @@ func decodeMicEDest(dest string) (lat float64, msgCode int, nsSign float64, lonO
 	return
 }
 
-// stripMicEPipeTelemetry removes an APRS base-91 telemetry block
-// ("|...|", APRS101 ch 13) from the middle or tail of a Mic-E comment
-// and returns the comment with any adjacent whitespace tidied up. We
-// don't currently decode the telemetry values themselves.
+// stripMicEPipeTelemetry removes APRS base-91 telemetry blocks
+// ("|...|", APRS101 ch 13) from a Mic-E comment and returns the comment
+// with any adjacent whitespace tidied up. We don't currently decode the
+// telemetry values themselves.
+//
+// Each "|...|" pair is matched non-greedily, left to right: a greedy
+// first-pipe-to-last-pipe sweep over a comment like
+// "text|tlm|!DAO!|3" swallows the DAO (so extractDAO never sees it) and
+// leaves the trailing "3" stranded as bogus comment text. Real
+// Byonics/McTracker mobile beacons emit exactly that shape, which is
+// what made GH #377's comments render as e.g. "KK4CUK Matt's Cozy3".
 func stripMicEPipeTelemetry(comment string) string {
-	first := strings.IndexByte(comment, '|')
-	if first < 0 {
-		return comment
+	for {
+		open := strings.IndexByte(comment, '|')
+		if open < 0 {
+			break
+		}
+		rel := strings.IndexByte(comment[open+1:], '|')
+		if rel < 0 {
+			// A lone, unterminated '|': a telemetry-block opener the
+			// radio truncated (the "|3" tail on the GH #377 beacons).
+			// No human comment follows it, so drop to end of string.
+			comment = comment[:open]
+			break
+		}
+		comment = comment[:open] + comment[open+1+rel+1:]
 	}
-	last := strings.LastIndexByte(comment, '|')
-	if last <= first {
-		return comment
-	}
-	out := comment[:first] + comment[last+1:]
-	return strings.TrimSpace(out)
+	return strings.TrimSpace(comment)
 }
 
 // isMicESymTable reports whether c is a valid APRS symbol table
