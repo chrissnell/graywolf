@@ -363,15 +363,16 @@
     word-break: break-all;
   }
 
-  /* Non-printable byte token (e.g. <0x7f>): rendered inline in the raw line
-     with a distinct danger tint and chip so it can never be mistaken for
-     literal text that happens to read "<0x7f>". See GH #376. */
-  .pkt-ctrl {
+  /* Non-printable byte token (e.g. <0x7f>): flagged with the danger colour so
+     it reads distinctly from text that merely happens to spell "<0x7f>", but
+     kept as plain inline text -- no background, no chip. Chonky ships
+     `.log-body span { display: block }`, which would otherwise stack each token
+     on its own full-width line; the parent-child selector outweighs it after
+     Svelte scoping so `display: inline` wins. See GH #376. */
+  .pkt-raw .pkt-ctrl {
+    display: inline;
     color: var(--color-danger);
-    background: color-mix(in srgb, var(--color-danger) 14%, transparent);
-    border-radius: 2px;
-    padding: 0 2px;
-    font-weight: 700;
+    font-weight: 600;
     white-space: nowrap;
   }
 
