@@ -81,6 +81,16 @@
   let pttBlockedReason = $derived(pttDetectionBlockedReason(channels, pttByChannel));
   let canConfigureDetected = $derived(pttBlockedReason === null);
 
+  // When every modem-backed channel already has a PttConfig, the detected-
+  // hardware cards have nothing to attach to. Rendering a greyed-out
+  // "Recommended for PTT" card in that state reads as a malfunction — the
+  // operator's PTT is configured and working, but a disabled green card
+  // looks broken (GRA-184). Suppress the cards and let the inline notice
+  // carry the "edit the existing config" guidance instead. The
+  // no-modem-channel case still shows the cards: there the detected
+  // hardware is informative and motivates creating a channel.
+  let showDetectedDevices = $derived(pttBlockedReason !== 'all-configured');
+
   function channelName(id) {
     const c = channels.find(c => c.id === id);
     return c ? c.name : null;
@@ -386,9 +396,10 @@
 
 <!-- Available devices from hardware scan -->
 {#if available.length > 0}
-  <!-- Inline guidance when nothing is eligible: the cards below are
-       disabled, so explain why and where to go instead of leaving the
-       operator clicking a dead card. -->
+  <!-- Inline guidance when nothing is eligible. For no-modem-channel the
+       cards below still render (disabled) so the operator sees what was
+       detected; for all-configured the cards are suppressed entirely and
+       this notice stands alone. -->
   {#if pttBlockedReason}
     <div class="detected-blocked-notice" role="status" style="margin-top: 24px;">
       {#if pttBlockedReason === 'no-modem-channel'}
@@ -402,6 +413,7 @@
     </div>
   {/if}
 
+  {#if showDetectedDevices}
   <!-- Recommended section: prominent, visually distinct -->
   {#if recommendedDevices.length > 0}
     <section class="detected-section detected-recommended" style="margin-top: 24px;">
@@ -457,6 +469,7 @@
         {/each}
       </div>
     </section>
+  {/if}
   {/if}
 {/if}
 
