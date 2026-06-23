@@ -100,11 +100,21 @@ class MainActivity : Activity() {
      * resizes the window when the soft keyboard opens, so the SPA's sticky
      * compose bar (position:absolute; bottom:0) ends up underneath the IME --
      * exactly the Messages-tab bug. We opt into edge-to-edge on every version,
-     * then pad the WebView by the system bars and, crucially, by the keyboard
-     * height. Padding the WebView's bottom shrinks the web viewport above the
-     * IME, so the compose bar sits atop the keyboard and `window.innerHeight`
-     * reflects the change. ComposeBar.svelte skips its visualViewport translate
-     * in the Android shell (Platform.isAndroid) so the two don't double-offset.
+     * then pad the WebView by the side/bottom system bars and, crucially, by the
+     * keyboard height. Padding the WebView's bottom shrinks the web viewport
+     * above the IME, so the compose bar sits atop the keyboard and
+     * `window.innerHeight` reflects the change. ComposeBar.svelte skips its
+     * visualViewport translate in the Android shell (Platform.isAndroid) so the
+     * two don't double-offset.
+     *
+     * The TOP inset is deliberately NOT padded here. The SPA's top bar is
+     * `position:fixed; top:0`, and a fixed element is pinned to the visual
+     * viewport, which WebView top-padding does NOT shift -- padding the top
+     * would leave the bar stranded behind the status bar (GH #390). Instead the
+     * page opts into `viewport-fit=cover` (web/index.html) and the top bar
+     * reserves the status-bar strip itself via `env(safe-area-inset-top)`. So
+     * the top is owned by CSS, the bottom by native padding (the viewport must
+     * actually shrink for the keyboard, which env() cannot express).
      *
      * Two mechanisms feed the same listener: on API 30+ the IME arrives as a
      * `Type.ime()` inset (handled here directly). On API 28-29 `Type.ime()` is
@@ -120,7 +130,9 @@ class MainActivity : Activity() {
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            // Top stays 0: the fixed top bar reserves the status-bar strip in
+            // CSS via env(safe-area-inset-top) (GH #390). See the KDoc above.
+            v.setPadding(bars.left, 0, bars.right, maxOf(bars.bottom, ime.bottom))
             insets
         }
     }
