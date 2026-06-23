@@ -244,7 +244,12 @@
     box-shadow: -2px 0 12px rgba(0,0,0,0.15);
     display: flex;
     flex-direction: column;
-    padding: 16px;
+    /* Edge-to-edge: this drawer is pinned to the viewport edges, so it reserves
+       the status-bar / nav-bar safe areas itself (GH #390). On the Android shell
+       the bottom env() is 0 because the WebView is natively bottom-padded; it is
+       load-bearing for iOS / mobile-browser home indicators. */
+    padding: calc(16px + env(safe-area-inset-top)) 16px
+      calc(16px + env(safe-area-inset-bottom));
     overflow-y: auto;
     z-index: 50;
   }
