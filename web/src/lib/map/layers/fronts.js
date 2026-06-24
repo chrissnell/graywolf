@@ -44,13 +44,13 @@ const occludedTriSvg = coldSvg;
 // -- a cold triangle on the top half (apex up) and a warm semicircle on the
 // bottom half (bulges down) -- so when symbol-placement:line repeats it at
 // ~sprite-width spacing it tiles into triangle/semicircle/triangle/semicircle,
-// each on its own side. (Sweep-flag 1 with left-to-right endpoints bulges +y =
-// the bottom half, opposite the apex-up triangle.) The two colors are baked in,
-// so unlike the single-type pips this sprite is not parameterized by one fill.
+// each on its own side. (Arc sweep-flag 0 with left-to-right endpoints bulges
+// +y = the bottom half, opposite the apex-up triangle.) The two colors are
+// baked in, so unlike the single-type pips this is not parameterized by one fill.
 const stationarySvg = (cold, warm) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 18" width="36" height="18">` +
-  `<polygon points="3,9 15,9 9,1" fill="${cold}"/>` +
-  `<path d="M 21 9 A 6 6 0 0 1 33 9 Z" fill="${warm}"/></svg>`;
+  `<polygon points="3,9 15,9 9,1.5" fill="${cold}"/>` +
+  `<path d="M 21 9 A 6 6 0 0 0 33 9 Z" fill="${warm}"/></svg>`;
 
 export const FRONT_LAYER_IDS = [
   'fronts-line',
@@ -67,6 +67,12 @@ const IMG_COLD = 'front-cold';
 const IMG_WARM = 'front-warm';
 const IMG_OCCLUDED = 'front-occluded';
 const IMG_STATIONARY = 'front-stationary';
+
+// Rasterize sprites at this device-pixel multiple and register them with a
+// matching `pixelRatio`, so the pips stay crisp at any zoom / icon-size instead
+// of pixelating like a 1x bitmap upscaled. (A baked-color non-SDF sprite is
+// just a bitmap, so DPI is the lever for sharpness.)
+const SPRITE_PIXEL_RATIO = 4;
 
 // Rasterize an SVG string into an ImageData of the given pixel size. Returns a
 // Promise; resolves null in a non-DOM environment (e.g. node --test), where the
@@ -114,13 +120,16 @@ export function mountFrontsLayer(map, { visible }) {
     ];
     for (const [id, svg, w, h] of want) {
       if (map.hasImage && map.hasImage(id)) continue;
-      const data = await rasterizeSvg(svg, w, h);
+      // Rasterize at SPRITE_PIXEL_RATIO x the logical size for crispness.
+      const data = await rasterizeSvg(svg, w * SPRITE_PIXEL_RATIO, h * SPRITE_PIXEL_RATIO);
       if (!data) continue;
       // hasImage re-checked after the await -- a concurrent ensure() or another
       // mount may have registered it while we were rasterizing.
       if (map.hasImage && map.hasImage(id)) continue;
       // Non-SDF: color is baked into the sprite, so no runtime icon-color tint.
-      map.addImage(id, data, { sdf: false });
+      // pixelRatio tells MapLibre this bitmap is hi-DPI, so icon-size still maps
+      // to the logical w/h and the extra pixels just sharpen it.
+      map.addImage(id, data, { sdf: false, pixelRatio: SPRITE_PIXEL_RATIO });
     }
   }
 
