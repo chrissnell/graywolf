@@ -13,10 +13,13 @@
 // source/layers behind existence guards so the overlay survives a basemap
 // setStyle() (which rebuilds the style and can drop user-added layers).
 //
-// Frontal pips are sprite icons placed along the line (symbol-placement:line),
-// tinted at runtime via icon-color. The sprites are single-color black
-// silhouettes loaded as SDF images so the per-front-type icon-color tint
-// applies (a non-SDF image renders with its own pixels and ignores icon-color).
+// Frontal pips are sprite icons placed along the line (symbol-placement:line).
+// One colored sprite is baked per front type at registration time (the fill is
+// parameterized with the front-type color, then rasterized as a normal non-SDF
+// image). Earlier versions registered a single black silhouette as an SDF image
+// tinted at runtime via icon-color, but MapLibre's sdf flag reads the alpha
+// channel as a signed distance field -- a hard-rasterized binary mask is not a
+// distance field, so tinting fringed the edges at interpolated icon-size.
 
 import { frontsProvider, FRONTS_SOURCE_ID, FRONT_COLORS } from '../sources/fronts-source.js';
 
@@ -29,12 +32,12 @@ import { frontsProvider, FRONTS_SOURCE_ID, FRONT_COLORS } from '../sources/front
 //   ../style/front-sprites/warm.svg       (warm semicircle, flat edge on
 //                                           baseline)
 //   ../style/front-sprites/occluded-tri.svg  (same triangle, used for occluded)
-// All are single-color black silhouettes; the per-front-type color is applied
-// at runtime via icon-color (which requires the addImage SDF flag below).
-const coldSvg =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18"><polygon points="2,9 16,9 9,1" fill="#000"/></svg>';
-const warmSvg =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18"><path d="M 2 9 A 7 7 0 0 1 16 9 Z" fill="#000"/></svg>';
+// The canonical SVGs are single-color sources of truth for the glyph shapes;
+// the fill is parameterized below so each front type bakes its own color.
+const coldSvg = (fill) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18"><polygon points="2,9 16,9 9,1" fill="${fill}"/></svg>`;
+const warmSvg = (fill) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18"><path d="M 2 9 A 7 7 0 0 1 16 9 Z" fill="${fill}"/></svg>`;
 const occludedTriSvg = coldSvg;
 
 export const FRONT_LAYER_IDS = [
@@ -44,10 +47,10 @@ export const FRONT_LAYER_IDS = [
   'fronts-center-labels',
 ];
 
-// addImage ids for the pip sprites.
+// addImage ids for the colored pip sprites (one per front type).
 const IMG_COLD = 'front-cold';
 const IMG_WARM = 'front-warm';
-const IMG_OCC_TRI = 'front-occ-tri';
+const IMG_OCCLUDED = 'front-occluded';
 
 // Rasterize an SVG string into an ImageData of the given pixel size. Returns a
 // Promise; resolves null in a non-DOM environment (e.g. node --test), where the
@@ -81,14 +84,14 @@ export function mountFrontsLayer(map, { visible }) {
 
   const firstSymbolId = () => map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
 
-  // Load the pip sprites once and register them as SDF images so icon-color can
-  // tint each pip to its front-type color. Guarded by map.hasImage so a style
-  // swap (which drops user images) re-registers them on the next ensure().
+  // Load the pip sprites once, each baked with its front-type color. Guarded by
+  // map.hasImage so a style swap (which drops user images) re-registers them on
+  // the next ensure().
   async function loadImages() {
     const want = [
-      [IMG_COLD, coldSvg],
-      [IMG_WARM, warmSvg],
-      [IMG_OCC_TRI, occludedTriSvg],
+      [IMG_COLD, coldSvg(FRONT_COLORS.cold)],
+      [IMG_WARM, warmSvg(FRONT_COLORS.warm)],
+      [IMG_OCCLUDED, occludedTriSvg(FRONT_COLORS.occluded)],
     ];
     for (const [id, svg] of want) {
       if (map.hasImage && map.hasImage(id)) continue;
@@ -97,12 +100,12 @@ export function mountFrontsLayer(map, { visible }) {
       // hasImage re-checked after the await -- a concurrent ensure() or another
       // mount may have registered it while we were rasterizing.
       if (map.hasImage && map.hasImage(id)) continue;
-      // SDF so the single-color silhouette is tinted at runtime by icon-color.
-      map.addImage(id, data, { sdf: true });
+      // Non-SDF: color is baked into the sprite, so no runtime icon-color tint.
+      map.addImage(id, data, { sdf: false });
     }
   }
 
-  // line-color / icon-color share this match on the feature's front_type.
+  // line-color match on the feature's front_type.
   const frontColorMatch = () => [
     'match',
     ['get', 'front_type'],
@@ -121,7 +124,7 @@ export function mountFrontsLayer(map, { visible }) {
     ['get', 'front_type'],
     'cold', IMG_COLD,
     'warm', IMG_WARM,
-    'occluded', IMG_OCC_TRI,
+    'occluded', IMG_OCCLUDED,
     '',
   ];
 
@@ -193,9 +196,6 @@ export function mountFrontsLayer(map, { visible }) {
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
-          },
-          paint: {
-            'icon-color': frontColorMatch(),
           },
         },
         beforeId,
