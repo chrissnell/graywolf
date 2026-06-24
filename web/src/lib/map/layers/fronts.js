@@ -137,13 +137,23 @@ export function mountFrontsLayer(map, { visible }) {
 
     // 1) Base front line. trough is dashed; every other type is solid. The dash
     // array is gated on front_type so only troughs get it.
+    //
+    // stationary fronts are EXCLUDED entirely: without proper alternating
+    // opposite-side symbology (the deferred limitation noted below) they render
+    // as a bare colored line that reads as a random stray line on the map, so
+    // we hide them until that symbology exists rather than show a misleading
+    // boundary.
     if (!map.getLayer('fronts-line')) {
       map.addLayer(
         {
           id: 'fronts-line',
           type: 'line',
           source: provider.sourceId,
-          filter: ['==', ['get', 'feature'], 'front'],
+          filter: [
+            'all',
+            ['==', ['get', 'feature'], 'front'],
+            ['!=', ['get', 'front_type'], 'stationary'],
+          ],
           layout: {
             visibility: vis,
             'line-cap': 'round',
@@ -151,7 +161,9 @@ export function mountFrontsLayer(map, { visible }) {
           },
           paint: {
             'line-color': frontColorMatch(),
-            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.2, 8, 2.6],
+            // A touch thicker than v1 so the boundaries read clearly. Dash units
+            // are line-width-relative, so troughs' dashes scale up with this.
+            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.8, 8, 3.8],
             'line-dasharray': [
               'case',
               ['==', ['get', 'front_type'], 'trough'],
@@ -170,11 +182,11 @@ export function mountFrontsLayer(map, { visible }) {
     // symbol-placement:line draws a single sprite repeated on ONE side of the
     // line, so it cannot render a stationary front's alternating
     // opposite-side warm/cold pips, nor an occluded front's alternating
-    // triangle/semicircle. So this layer deliberately EXCLUDES stationary (its
-    // line still renders, just without pips) and occluded uses the cold
-    // triangle only. Proper alternating-side symbology needs either two offset
-    // symbol layers with side-tagged geometry from the generator, or a custom
-    // WebGL layer -- deferred past v1.
+    // triangle/semicircle. stationary fronts are hidden entirely (see the line
+    // layer above) until that symbology exists; occluded uses the cold triangle
+    // only. Proper alternating-side symbology needs either two offset symbol
+    // layers with side-tagged geometry from the generator, or a custom WebGL
+    // layer -- deferred past v1.
     if (!map.getLayer('fronts-pips')) {
       map.addLayer(
         {
@@ -190,9 +202,11 @@ export function mountFrontsLayer(map, { visible }) {
           layout: {
             visibility: vis,
             'symbol-placement': 'line',
-            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 28, 8, 60],
+            // Slightly wider spacing to keep the larger pips from crowding.
+            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 34, 8, 70],
             'icon-image': pipIconMatch(),
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.0],
+            // A little larger than v1 so the triangles/semicircles read clearly.
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.95, 8, 1.35],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,

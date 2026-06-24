@@ -1070,141 +1070,153 @@
   />
 
   {#snippet panelBody()}
-    <div class="layer-toggles">
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.stations}
-          onchange={(e) => (layerToggles.stations = e.currentTarget.checked)}
-        />
-        <span>Stations</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.trails}
-          onchange={(e) => (layerToggles.trails = e.currentTarget.checked)}
-        />
-        <span>Trails</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.weather}
-          onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
-        />
-        <span>Weather</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.myPosition}
-          onchange={(e) => (layerToggles.myPosition = e.currentTarget.checked)}
-        />
-        <span>My Position</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.fixedPoints}
-          onchange={(e) => (layerToggles.fixedPoints = e.currentTarget.checked)}
-        />
-        <span>Fixed Points</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.fronts}
-          onchange={(e) => (layerToggles.fronts = e.currentTarget.checked)}
-        />
-        <span>Fronts</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.directRxOnly}
-          onchange={(e) => (layerToggles.directRxOnly = e.currentTarget.checked)}
-        />
-        <span>Direct RX</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={layerToggles.rfOnly}
-          onchange={(e) => (layerToggles.rfOnly = e.currentTarget.checked)}
-        />
-        <span>RF Only</span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          checked={radarSettings.visible}
-          onchange={(e) => (radarSettings.visible = e.currentTarget.checked)}
-        />
-        <span>Radar</span>
-      </label>
-    </div>
-
-    <label class="timerange-label" for="radar-opacity-range">
-      Radar opacity: {Math.round(radarSettings.opacity * 100)}%
-    </label>
-    <input
-      id="radar-opacity-range"
-      type="range"
-      min="0.1"
-      max="1.0"
-      step="0.05"
-      class="radar-opacity-range"
-      bind:value={radarSettings.opacity}
-    />
-
-    {#if radarSettings.visible}
-      <!-- Radar loop animation: two text buttons [Play/Pause][Reset] and a
-           frame-position slider. Disabled until the manifest yields >1 frame. -->
-      <div class="radar-anim-buttons">
-        <button
-          type="button"
-          class="radar-anim-btn"
-          onclick={() => radarFrames.toggle()}
-          disabled={radarFrames.count <= 1}
-          aria-label={radarFrames.playing ? 'Pause radar loop' : 'Play radar loop'}
-        >
-          {radarFrames.playing ? 'Pause' : 'Play'}
-        </button>
-        <button
-          type="button"
-          class="radar-anim-btn"
-          onclick={() => radarFrames.stop()}
-          disabled={radarFrames.count <= 1}
-          aria-label="Reset radar loop and jump to the latest frame"
-        >
-          Reset
-        </button>
+    <!-- APRS: station/trail/position layers + the time-range filter. -->
+    <section class="layer-section">
+      <h3 class="layer-section-title">APRS</h3>
+      <div class="layer-toggles">
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.stations}
+            onchange={(e) => (layerToggles.stations = e.currentTarget.checked)}
+          />
+          <span>Stations</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.trails}
+            onchange={(e) => (layerToggles.trails = e.currentTarget.checked)}
+          />
+          <span>Trails</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.myPosition}
+            onchange={(e) => (layerToggles.myPosition = e.currentTarget.checked)}
+          />
+          <span>My Position</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.fixedPoints}
+            onchange={(e) => (layerToggles.fixedPoints = e.currentTarget.checked)}
+          />
+          <span>Fixed Points</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.directRxOnly}
+            onchange={(e) => (layerToggles.directRxOnly = e.currentTarget.checked)}
+          />
+          <span>Direct RX</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.rfOnly}
+            onchange={(e) => (layerToggles.rfOnly = e.currentTarget.checked)}
+          />
+          <span>RF Only</span>
+        </label>
       </div>
-      <label class="timerange-label" for="radar-frame-range">{radarFrameLabel}</label>
-      <input
-        id="radar-frame-range"
-        type="range"
-        class="radar-frame-range"
-        min="0"
-        max={Math.max(0, radarFrames.count - 1)}
-        step="1"
-        value={radarFrames.index}
-        oninput={(e) => radarFrames.seek(Number(e.currentTarget.value))}
-        disabled={radarFrames.count <= 1}
-      />
-    {/if}
 
-    <label class="timerange-label" for="map-timerange-select">Time range</label>
-    <select
-      id="map-timerange-select"
-      class="map-timerange-select"
-      bind:value={timerangeSec}
-    >
-      {#each TIMERANGES_S as opt}
-        <option value={opt.value}>{opt.label}</option>
-      {/each}
-    </select>
+      <label class="timerange-label" for="map-timerange-select">Time range</label>
+      <select
+        id="map-timerange-select"
+        class="map-timerange-select"
+        bind:value={timerangeSec}
+      >
+        {#each TIMERANGES_S as opt}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
+    </section>
+
+    <!-- Weather: fronts + radar overlays and their controls. The existing
+         "Weather" (surface obs / wind barbs) toggle lives here too. -->
+    <section class="layer-section">
+      <h3 class="layer-section-title">Weather</h3>
+      <div class="layer-toggles">
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.fronts}
+            onchange={(e) => (layerToggles.fronts = e.currentTarget.checked)}
+          />
+          <span>Fronts</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.weather}
+            onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
+          />
+          <span>Weather</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={radarSettings.visible}
+            onchange={(e) => (radarSettings.visible = e.currentTarget.checked)}
+          />
+          <span>Radar</span>
+        </label>
+      </div>
+
+      <label class="timerange-label" for="radar-opacity-range">
+        Radar opacity: {Math.round(radarSettings.opacity * 100)}%
+      </label>
+      <input
+        id="radar-opacity-range"
+        type="range"
+        min="0.1"
+        max="1.0"
+        step="0.05"
+        class="radar-opacity-range"
+        bind:value={radarSettings.opacity}
+      />
+
+      {#if radarSettings.visible}
+        <!-- Radar loop animation: two text buttons [Play/Pause][Reset] and a
+             frame-position slider. Disabled until the manifest yields >1 frame. -->
+        <div class="radar-anim-buttons">
+          <button
+            type="button"
+            class="radar-anim-btn"
+            onclick={() => radarFrames.toggle()}
+            disabled={radarFrames.count <= 1}
+            aria-label={radarFrames.playing ? 'Pause radar loop' : 'Play radar loop'}
+          >
+            {radarFrames.playing ? 'Pause' : 'Play'}
+          </button>
+          <button
+            type="button"
+            class="radar-anim-btn"
+            onclick={() => radarFrames.stop()}
+            disabled={radarFrames.count <= 1}
+            aria-label="Reset radar loop and jump to the latest frame"
+          >
+            Reset
+          </button>
+        </div>
+        <label class="timerange-label" for="radar-frame-range">{radarFrameLabel}</label>
+        <input
+          id="radar-frame-range"
+          type="range"
+          class="radar-frame-range"
+          min="0"
+          max={Math.max(0, radarFrames.count - 1)}
+          step="1"
+          value={radarFrames.index}
+          oninput={(e) => radarFrames.seek(Number(e.currentTarget.value))}
+          disabled={radarFrames.count <= 1}
+        />
+      {/if}
+    </section>
   {/snippet}
 
   {#if isMobile}
@@ -1419,6 +1431,22 @@
     padding: 10px 12px;
   }
 
+  /* Grouped sections (APRS, Weather) within the layers pane. A divider +
+     uppercase label separates the groups so the pane reads as two columns of
+     related controls rather than one long list. */
+  .layer-section + .layer-section {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--map-overlay-border);
+  }
+  .layer-section-title {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--color-text-muted);
+  }
   .layer-toggles {
     display: flex;
     flex-direction: column;
