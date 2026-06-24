@@ -32,11 +32,24 @@
   //     needs to see their previous choice and why it's invalid — but
   //     can't be selected, are skipped in keyboard nav, and are
   //     excluded from typeahead. Default: always-ok.
+  //   - allowNone / noneLabel: opt-in synthetic leading row that maps
+  //     to the unset sentinel (numeric 0 / empty string). iGate uses
+  //     this so an RX-only setup can clear its TX channel — the column
+  //     is genuinely optional there. The none row is always selectable
+  //     regardless of capabilityFilter, so a previously-selected
+  //     channel that has since gone non-TX-capable can still be
+  //     escaped. Default: off (Beacons/Digipeater/Kiss require a
+  //     channel, so they never expose it).
   //
   // The listbox is controlled: parent owns `value`, we call bindable.
 
   import ChannelOption from './ChannelOption.svelte';
   import { ariaLabel as rowAriaLabel } from '../channelBacking.js';
+  import {
+    buildOptions,
+    noneValueFor,
+    resolveCurrentIdx,
+  } from '../channelListboxOptions.js';
 
   let {
     value = $bindable(),
@@ -49,19 +62,23 @@
     placeholder = 'Select a channel',
     onChange = undefined,
     capabilityFilter = () => ({ ok: true, reason: '' }),
+    allowNone = false,
+    noneLabel = 'None',
   } = $props();
-
-  // Coerce value for comparison. Native handling: accept both string
-  // and number, match on numeric equality.
-  function asNumber(v) {
-    if (v === '' || v == null) return null;
-    const n = typeof v === 'string' ? parseInt(v, 10) : v;
-    return Number.isFinite(n) ? n : null;
-  }
 
   function emitValue(n) {
     if (n == null) return null;
     return valueType === 'number' ? n : String(n);
+  }
+
+  // Unified option model (see channelListboxOptions.js): an opt-in
+  // leading none row followed by one row per channel. Every
+  // index-based path below (capability, nav, typeahead, commit, aria,
+  // render) iterates this list so the none row participates uniformly.
+  let options = $derived(buildOptions(channels, allowNone));
+
+  function optionName(o) {
+    return o.none ? noneLabel : o.channel.name || '';
   }
 
   let open = $state(false);
@@ -71,10 +88,13 @@
 
   // Precompute the capability verdict per option so every consumer
   // (render, nav, typeahead, commit, aria) reads the same verdict —
-  // no drift, no re-evaluating in each code path.
+  // no drift, no re-evaluating in each code path. The none row is
+  // always enabled — it's the escape hatch and capabilityFilter never
+  // applies to it.
   let capability = $derived(
-    channels.map((c) => {
-      const v = capabilityFilter(c) || { ok: true, reason: '' };
+    options.map((o) => {
+      if (o.none) return { ok: true, reason: '' };
+      const v = capabilityFilter(o.channel) || { ok: true, reason: '' };
       return { ok: !!v.ok, reason: v.reason || '' };
     }),
   );
@@ -88,9 +108,9 @@
   // unchanged if every option ahead is disabled (so the caret doesn't
   // wrap past the ends and doesn't jump into a dead cell).
   function stepIdx(fromIdx, dir) {
-    if (channels.length === 0) return fromIdx;
+    if (options.length === 0) return fromIdx;
     let i = fromIdx + dir;
-    while (i >= 0 && i < channels.length) {
+    while (i >= 0 && i < options.length) {
       if (isEnabled(i)) return i;
       i += dir;
     }
@@ -100,13 +120,13 @@
   // First / last enabled index for Home / End. Falls back to the
   // current activeIdx if every option is disabled.
   function firstEnabledIdx() {
-    for (let i = 0; i < channels.length; i += 1) {
+    for (let i = 0; i < options.length; i += 1) {
       if (isEnabled(i)) return i;
     }
     return activeIdx;
   }
   function lastEnabledIdx() {
-    for (let i = channels.length - 1; i >= 0; i -= 1) {
+    for (let i = options.length - 1; i >= 0; i -= 1) {
       if (isEnabled(i)) return i;
     }
     return activeIdx;
@@ -124,8 +144,8 @@
     // Find first enabled option whose name starts with the buffer.
     // Disabled options are excluded: typeahead should land the user
     // on something they can actually commit.
-    const idx = channels.findIndex(
-      (c, i) => isEnabled(i) && (c.name || '').toLowerCase().startsWith(typeBuf),
+    const idx = options.findIndex(
+      (o, i) => isEnabled(i) && optionName(o).toLowerCase().startsWith(typeBuf),
     );
     if (idx !== -1) {
       activeIdx = idx;
@@ -133,14 +153,12 @@
     }
   }
 
-  let currentIdx = $derived.by(() => {
-    const n = asNumber(value);
-    if (n == null) return -1;
-    return channels.findIndex((c) => c.id === n);
-  });
+  let currentIdx = $derived(resolveCurrentIdx(options, value));
+  let selectedOption = $derived(currentIdx >= 0 ? options[currentIdx] : null);
   let selectedChannel = $derived(
-    currentIdx >= 0 ? channels[currentIdx] : null,
+    selectedOption && !selectedOption.none ? selectedOption.channel : null,
   );
+  let selectedIsNone = $derived(!!selectedOption?.none);
 
   function openList() {
     if (disabled) return;
@@ -152,7 +170,7 @@
       activeIdx = currentIdx;
     } else {
       const f = firstEnabledIdx();
-      activeIdx = f >= 0 ? f : (channels.length > 0 ? 0 : -1);
+      activeIdx = f >= 0 ? f : (options.length > 0 ? 0 : -1);
     }
     // Scroll into view after the popup mounts.
     queueMicrotask(scrollActiveIntoView);
@@ -165,14 +183,19 @@
   }
 
   function commit(idx) {
-    const c = channels[idx];
-    if (!c) return;
+    const o = options[idx];
+    if (!o) return;
     // Disabled options cannot be committed. No state change, no
     // onchange fire — just bail. The trigger stays open so the user
     // can pick a different row.
     if (!isEnabled(idx)) return;
-    value = emitValue(c.id);
-    onChange?.(c);
+    if (o.none) {
+      value = noneValueFor(valueType);
+      onChange?.(null);
+    } else {
+      value = emitValue(o.channel.id);
+      onChange?.(o.channel);
+    }
     closeList({ focusTrigger: true });
   }
 
@@ -274,8 +297,9 @@
   // option is disabled so screen readers announce e.g. "Channel 3,
   // VHF, no output device configured, unavailable" via
   // aria-activedescendant during keyboard nav.
-  function optionAriaLabel(c, idx) {
-    const base = rowAriaLabel(c);
+  function optionAriaLabel(o, idx) {
+    if (o.none) return noneLabel;
+    const base = rowAriaLabel(o.channel);
     const cap = capability[idx];
     if (cap && !cap.ok) {
       const r = cap.reason ? cap.reason + ', ' : '';
@@ -305,6 +329,8 @@
   >
     {#if selectedChannel}
       <ChannelOption channel={selectedChannel} variant="trigger-compact" />
+    {:else if selectedIsNone}
+      <span class="none-trigger">{noneLabel}</span>
     {:else}
       <span class="placeholder">{placeholder}</span>
     {/if}
@@ -320,12 +346,12 @@
       tabindex="-1"
       onkeydown={onListKey}
     >
-      {#if channels.length === 0}
+      {#if options.length === 0}
         <li class="empty" role="option" aria-selected="false" aria-disabled="true">
           No channels configured
         </li>
       {:else}
-        {#each channels as c, idx (c.id)}
+        {#each options as o, idx (o.none ? 'none' : o.channel.id)}
           <!-- Keyboard handling for options is centralised on the
                <ul role="listbox"> above via onListKey — Enter commits
                the active option. The svelte-a11y lint doesn't see
@@ -342,7 +368,7 @@
             role="option"
             aria-selected={currentIdx === idx}
             aria-disabled={!capability[idx]?.ok ? 'true' : undefined}
-            aria-label={optionAriaLabel(c, idx)}
+            aria-label={optionAriaLabel(o, idx)}
             onmouseenter={() => {
               // Honour the skip-in-nav rule on mouse hover too, so
               // arrow-key position doesn't teleport to a disabled row
@@ -351,11 +377,15 @@
             }}
             onclick={() => commit(idx)}
           >
-            <ChannelOption
-              channel={c}
-              unavailable={!capability[idx]?.ok}
-              unavailableReason={capability[idx]?.reason ?? ''}
-            />
+            {#if o.none}
+              <span class="none-row">{noneLabel}</span>
+            {:else}
+              <ChannelOption
+                channel={o.channel}
+                unavailable={!capability[idx]?.ok}
+                unavailableReason={capability[idx]?.reason ?? ''}
+              />
+            {/if}
           </li>
         {/each}
       {/if}
@@ -394,6 +424,16 @@
   }
   .placeholder {
     color: var(--text-muted);
+  }
+  /* The synthetic none row reads as a normal, selectable choice (not a
+     muted placeholder) since picking it is a deliberate action. */
+  .none-trigger {
+    color: var(--text-primary);
+  }
+  .none-row {
+    display: block;
+    padding: 2px 0;
+    color: var(--text-primary);
   }
   .chev {
     color: var(--text-muted);

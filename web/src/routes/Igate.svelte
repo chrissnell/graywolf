@@ -245,11 +245,13 @@
     // for string/numeric fields (server, port, software_name, etc.) so
     // no UI-side || fallbacks are needed. Booleans still use ??
     // because the server can't distinguish "unset" from "explicit
-    // false", and tx_channel falls back to the first available channel
-    // since the default only makes sense relative to the live list.
+    // false". tx_channel is taken verbatim: 0 means "none (RX only)",
+    // a first-class, selectable choice now (see graywolf#396) — forcing
+    // it onto the first available channel here would silently re-arm TX
+    // and make "none" impossible to persist.
     startChannelsStore();
-    // Invalidate synchronously so the default-channel fallback below
-    // sees a fresh list; then the poller keeps it current.
+    // Invalidate synchronously so the channel list is fresh before the
+    // form seeds from it; then the poller keeps it current.
     await refreshChannels();
     // Load station callsign in parallel with the iGate config. A
     // failed load is treated as "missing" so the banner renders — we
@@ -268,14 +270,13 @@
       })(),
       (async () => {
         const data = await api.get('/igate/config');
-        const defaultCh = channels.length ? Math.min(...channels.map(c => c.id)) : 0;
         loadedServerFilter = data.server_filter ?? '';
         form = {
           enabled: data.enabled ?? false,
           server: data.server,
           port: String(data.port),
           server_filter: data.server_filter ?? '',
-          tx_channel: data.tx_channel || defaultCh,
+          tx_channel: data.tx_channel ?? 0,
           simulation_mode: data.simulation_mode ?? false,
           gate_rf_to_is: data.gate_rf_to_is ?? true,
           gate_is_to_rf: data.gate_is_to_rf ?? false,
@@ -621,6 +622,8 @@
               channels={channels}
               ariaLabelledBy={describedBy}
               capabilityFilter={txPredicate}
+              allowNone
+              noneLabel="None (RX only)"
             />
           {/snippet}
         </FormField>
