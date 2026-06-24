@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mountFrontsLayer, FRONT_LAYER_IDS, smoothLine } from './fronts.js';
+import { mountFrontsLayer, FRONT_LAYER_IDS, smoothLine, pipSpans } from './fronts.js';
 
 // Sharpest turn (radians) between consecutive segments of a polyline.
 function maxTurn(pts) {
@@ -133,13 +133,32 @@ test('setData smooths front lines and pushes the object into the source', () => 
   layer.setData(raw);
   const pushed = map._sources.fronts.data;
   assert.equal(pushed.type, 'FeatureCollection');
-  const front = pushed.features[0];
+  const front = pushed.features.find((f) => f.properties.feature === 'front');
   // The front line is densified (more points than the 4 raw), endpoints kept.
   assert.ok(front.geometry.coordinates.length > 4, 'line densified');
   assert.deepEqual(front.geometry.coordinates[0], [0, 0]);
   assert.deepEqual(front.geometry.coordinates.at(-1), [9, 2]);
+  // A companion pipline (gentle-span geometry the pips follow) is emitted.
+  const pipline = pushed.features.find((f) => f.properties.feature === 'pipline');
+  assert.ok(pipline, 'pipline feature emitted');
+  assert.equal(pipline.geometry.type, 'MultiLineString');
   // The pressure-center Point is passed through untouched.
-  assert.deepEqual(pushed.features[1].geometry.coordinates, [4, 4]);
+  const center = pushed.features.find((f) => f.properties.feature === 'center');
+  assert.deepEqual(center.geometry.coordinates, [4, 4]);
+});
+
+test('pipSpans keeps gentle lines whole but cuts out a tight hairpin', () => {
+  // A nearly-straight line is one span, unbroken.
+  const gentle = [[0, 0], [1, 0.02], [2, 0], [3, 0.02], [4, 0]];
+  assert.equal(pipSpans(gentle).length, 1);
+  // A hairpin (doubles back) gets the tight section excluded, so pips won't be
+  // placed across the bend -- either split into spans or dropped entirely there.
+  const hairpin = [];
+  for (let i = 0; i <= 20; i++) hairpin.push([i * 0.05, 0]); // run out
+  for (let i = 1; i <= 20; i++) hairpin.push([1 - i * 0.05, 0.04]); // sharp U back
+  const spans = pipSpans(hairpin);
+  const totalPts = spans.reduce((n, s) => n + s.length, 0);
+  assert.ok(totalPts < hairpin.length, 'tight bend vertices were excluded from pip spans');
 });
 
 test('destroy removes every layer and the source', () => {

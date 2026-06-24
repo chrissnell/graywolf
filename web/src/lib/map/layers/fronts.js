@@ -132,18 +132,70 @@ export function smoothLine(pts, targetDeg = 0.03, maxSub = 40) {
   return out;
 }
 
-// Return a copy of the FeatureCollection with every front LineString smoothed.
-// Pressure-center Points are untouched. Tolerant of missing/empty input.
-export function smoothFronts(fc, targetDeg = 0.03, maxSub = 40) {
+// Absolute turn (radians) at vertex b between segments a->b and b->c.
+function turnAt(a, b, c) {
+  let t = Math.atan2(c[1] - b[1], c[0] - b[0]) - Math.atan2(b[1] - a[1], b[0] - a[0]);
+  while (t > Math.PI) t -= 2 * Math.PI;
+  while (t < -Math.PI) t += 2 * Math.PI;
+  return Math.abs(t);
+}
+
+// Split a (dense, smoothed) line into the runs that are gentle enough to carry
+// pips, dropping tight bends. At each vertex we sum the turning over a +/-
+// windowDeg arc window (~a pip's footprint); where that exceeds maxTurn the
+// curve is too tight for a pip to sit flat, so it's excluded. The result feeds
+// the pip layers (via symbol-placement:line) so pips appear only on the gentle
+// spans -- the tight curve still draws its line, just without clashing pips.
+export function pipSpans(line, windowDeg = 0.3, maxTurn = 0.7) {
+  if (!Array.isArray(line) || line.length < 2) return [];
+  if (line.length < 3) return [line];
+  const n = line.length;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+  const turn = new Array(n).fill(0);
+  for (let i = 1; i < n - 1; i++) turn[i] = turnAt(line[i - 1], line[i], line[i + 1]);
+  const excluded = new Array(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (let j = i; j < n && cum[j] - cum[i] <= windowDeg / 2; j++) s += turn[j];
+    for (let j = i - 1; j >= 0 && cum[i] - cum[j] <= windowDeg / 2; j--) s += turn[j];
+    if (s > maxTurn) excluded[i] = true;
+  }
+  const spans = [];
+  let run = [];
+  for (let i = 0; i < n; i++) {
+    if (!excluded[i]) run.push(line[i]);
+    else { if (run.length >= 2) spans.push(run); run = []; }
+  }
+  if (run.length >= 2) spans.push(run);
+  return spans;
+}
+
+// Return a copy of the FeatureCollection with every front LineString smoothed,
+// plus a companion `pipline` MultiLineString per front carrying only the gentle
+// spans (the pip layers follow these, so pips skip tight bends). Pressure-center
+// Points are untouched. Tolerant of missing/empty input.
+export function smoothFronts(fc, opts = {}) {
+  const { targetDeg = 0.03, maxSub = 40, pipWindowDeg = 0.3, pipMaxTurn = 0.7 } = opts;
   if (!fc || !Array.isArray(fc.features)) return fc;
-  const features = fc.features.map((f) => {
-    if (f?.properties?.feature !== 'front' || f?.geometry?.type !== 'LineString') return f;
-    return {
-      ...f,
-      geometry: { ...f.geometry, coordinates: smoothLine(f.geometry.coordinates, targetDeg, maxSub) },
-    };
-  });
-  return { ...fc, features };
+  const out = [];
+  for (const f of fc.features) {
+    if (f?.properties?.feature !== 'front' || f?.geometry?.type !== 'LineString') {
+      out.push(f);
+      continue;
+    }
+    const smoothed = smoothLine(f.geometry.coordinates, targetDeg, maxSub);
+    out.push({ ...f, geometry: { ...f.geometry, coordinates: smoothed } });
+    const spans = pipSpans(smoothed, pipWindowDeg, pipMaxTurn);
+    if (spans.length) {
+      out.push({
+        type: 'Feature',
+        properties: { ...f.properties, feature: 'pipline' },
+        geometry: { type: 'MultiLineString', coordinates: spans },
+      });
+    }
+  }
+  return { ...fc, features: out };
 }
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
@@ -159,6 +211,8 @@ export function mountFrontsLayer(map, { visible }) {
   let curData = EMPTY_FC;
   let lastRaw = EMPTY_FC; // unsmoothed document, kept so density can be re-tuned
   let smoothTargetDeg = 0.03; // Catmull-Rom resample target; smaller = curvier
+  let pipWindowDeg = 0.3; // arc window for the tight-bend pip test
+  let pipMaxTurn = 0.7; // radians of turn over that window before pips are dropped
 
   const firstSymbolId = () => map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
 
@@ -267,6 +321,12 @@ export function mountFrontsLayer(map, { visible }) {
       ['==', ['get', 'feature'], 'front'],
       ['==', ['get', 'front_type'], 'stationary'],
     ];
+    // Pips follow the gentle-span `pipline` geometry, not the full front line.
+    const stationaryPipFilter = [
+      'all',
+      ['==', ['get', 'feature'], 'pipline'],
+      ['==', ['get', 'front_type'], 'stationary'],
+    ];
     const stationaryWidth = ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 5];
     if (!map.getLayer('fronts-stationary-line')) {
       map.addLayer(
@@ -315,7 +375,7 @@ export function mountFrontsLayer(map, { visible }) {
           source: provider.sourceId,
           filter: [
             'all',
-            ['==', ['get', 'feature'], 'front'],
+            ['==', ['get', 'feature'], 'pipline'],
             ['!=', ['get', 'front_type'], 'trough'],
             ['!=', ['get', 'front_type'], 'stationary'],
           ],
@@ -348,7 +408,7 @@ export function mountFrontsLayer(map, { visible }) {
           id: 'fronts-stationary-pips',
           type: 'symbol',
           source: provider.sourceId,
-          filter: stationaryFilter,
+          filter: stationaryPipFilter,
           layout: {
             visibility: vis,
             'symbol-placement': 'line',
@@ -451,7 +511,7 @@ export function mountFrontsLayer(map, { visible }) {
     applySmoothed();
   }
   function applySmoothed() {
-    curData = smoothFronts(lastRaw, smoothTargetDeg) ?? EMPTY_FC;
+    curData = smoothFronts(lastRaw, { targetDeg: smoothTargetDeg, pipWindowDeg, pipMaxTurn }) ?? EMPTY_FC;
     map.getSource(FRONTS_SOURCE_ID)?.setData(curData);
   }
 
@@ -496,13 +556,15 @@ export function mountFrontsLayer(map, { visible }) {
     // dangle at bends) instead of force-rendering them.
     if (o.allowOverlap != null) for (const id of pipLayers) sl(id, 'icon-allow-overlap', o.allowOverlap);
     if (o.ignorePlacement != null) for (const id of pipLayers) sl(id, 'icon-ignore-placement', o.ignorePlacement);
-    // Re-smooth the lines at a new density (degrees per chord). Smaller = curvier
-    // (and more points). Re-runs the resample on the last fetched document.
-    if (o.smoothTarget != null) {
-      smoothTargetDeg = o.smoothTarget;
-      applySmoothed();
-    }
-    return { ...o, smoothTargetDeg };
+    // Re-process the geometry. smoothTarget = chord size (smaller = curvier).
+    // pipWindow/pipMaxTurn control the tight-bend pip dropout: a pip is dropped
+    // where the line turns more than pipMaxTurn radians across a +/-pipWindow
+    // arc. Lower pipMaxTurn (or larger pipWindow) drops pips on gentler bends.
+    if (o.smoothTarget != null) smoothTargetDeg = o.smoothTarget;
+    if (o.pipWindow != null) pipWindowDeg = o.pipWindow;
+    if (o.pipMaxTurn != null) pipMaxTurn = o.pipMaxTurn;
+    if (o.smoothTarget != null || o.pipWindow != null || o.pipMaxTurn != null) applySmoothed();
+    return { ...o, smoothTargetDeg, pipWindowDeg, pipMaxTurn };
   }
 
   // Snapshot of what's currently rendered, for console diagnostics.
@@ -511,6 +573,8 @@ export function mountFrontsLayer(map, { visible }) {
     return {
       zoom: map.getZoom?.(),
       smoothTargetDeg,
+      pipWindowDeg,
+      pipMaxTurn,
       frontFeatures: fronts.length,
       maxLinePoints: fronts.reduce((m, f) => Math.max(m, f.geometry?.coordinates?.length ?? 0), 0),
       stationarySpriteLoaded: map.hasImage?.(IMG_STATIONARY) ?? null,
