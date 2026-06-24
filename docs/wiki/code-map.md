@@ -30,6 +30,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | CPAL live audio I/O | `audio/soundcard.rs` |
 | ALSA card canonicalize + capture probe | `audio/soundcard.rs` (`parse_proc_asound_cards`, `group_alsa_cards`, `probe_capture`), `modem/mod.rs` (`collect_input_devices_linux`) |
 | Configured device name resolution (exact + ALSA shorthand alias) | `audio/soundcard.rs` (`find_device_by_id_or_alias`, `parse_alsa_hw_id`, `alsa_alias_matches`) |
+| Windows audio "enhancements"/APO detection (per-endpoint) -> UI warning | `modem/mod.rs` (`windows_enhancements_enabled`) reads the MMDevices registry hive `HKLM\…\MMDevices\Audio\{Render\|Capture}\{guid}\FxProperties` keyed off the cpal endpoint id; flows `AudioDeviceInfo.audio_enhancements_enabled` (proto) -> `modembridge.AvailableDevice.EnhancementsEnabled` (`enhancements_enabled` JSON) -> `web/src/routes/AudioDevices.svelte` banner/badge/per-device warning. Windows-only; always false elsewhere |
 | FLAC test vector playback | `audio/flac.rs` |
 | Stdin raw i16 PCM | `audio/stdin_raw.rs` |
 | SDR UDP audio bridge | `sdr/mod.rs` |
