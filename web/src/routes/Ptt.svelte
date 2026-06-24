@@ -238,7 +238,10 @@
     if (w === 'vox') return false;
     if (w === 'digirig_tone') return false;
     if (w === 'rigctld') return false;
-    if (w === 'android' && method.wire.ptt_method === 4) return false;
+    // Android ptt_method 4 (VOX) and 5 (Digirig Lite tone) key via audio and
+    // need no serial/HID device — skip the device-selection step, same as
+    // desktop 'vox' and 'digirig_tone' above.
+    if (w === 'android' && (method.wire.ptt_method === 4 || method.wire.ptt_method === 5)) return false;
     return true;
   }
 
