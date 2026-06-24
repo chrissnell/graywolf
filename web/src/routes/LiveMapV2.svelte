@@ -237,7 +237,10 @@
     }
     return false;
   }
-  let timerangeSec = $state(Math.floor(dataStore.timerangeMs / 1000));
+  // Seed from the persisted per-browser preference so a non-default time
+  // range survives reload/navigation. The $effect below pushes it into the
+  // data store and writes any change back to mapState.
+  let timerangeSec = $state(mapState.timerange);
   let coordText = $state('');
   let zoomLevel = $state(null);
 
@@ -819,9 +822,11 @@
     windBarbsLayer?.setFilter(pred);
   });
 
-  // Push the timerange into the data store.
+  // Push the timerange into the data store and persist the selection so it
+  // is restored on the next load.
   $effect(() => {
     dataStore.setTimerange(timerangeSec * 1000);
+    mapState.timerange = timerangeSec;
   });
 
   // One-shot recenter on the station's "My Position" as soon as the data
