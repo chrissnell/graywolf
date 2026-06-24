@@ -317,11 +317,11 @@ export function mountFrontsLayer(map, { visible }) {
           layout: {
             visibility: vis,
             'symbol-placement': 'line',
-            // Slightly wider spacing to keep the larger pips from crowding.
-            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 34, 8, 70],
+            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 30, 8, 60],
             'icon-image': pipIconMatch(),
-            // A little larger than v1 so the triangles/semicircles read clearly.
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.95, 8, 1.35],
+            // Sized to read as proper pips without dominating the line (~2-3x
+            // the line width). Tunable live via window.gwFronts.tune().
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.62, 8, 0.92],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -349,9 +349,9 @@ export function mountFrontsLayer(map, { visible }) {
             // Repeat at ~the rendered sprite width (36px * icon-size) so the
             // sprites abut and the triangle/semicircle stay evenly spaced
             // (even alternation) rather than clustering with gaps between units.
-            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 34, 8, 49],
+            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 24, 8, 34],
             'icon-image': IMG_STATIONARY,
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.95, 8, 1.35],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.62, 8, 0.92],
             'icon-rotation-alignment': 'map',
             'icon-keep-upright': false,
             'icon-allow-overlap': true,
@@ -462,5 +462,37 @@ export function mountFrontsLayer(map, { visible }) {
     } catch { /* map already removed */ }
   }
 
-  return { setVisible, refresh, setData, destroy };
+  // Live visual tuning from the browser console (exposed via window.gwFronts by
+  // LiveMapV2). Adjust any knob and watch the map, then report the values that
+  // look right so they can be baked into the defaults above. Examples:
+  //   window.gwFronts.tune({ pipSize: 0.7, pipSpacing: 40 })
+  //   window.gwFronts.tune({ statSize: 0.8, statSpacing: 30, lineWidth: 3 })
+  // A number applies at all zooms; pass a MapLibre expression for a zoom ramp.
+  function tune(o = {}) {
+    const sl = (id, p, v) => { if (v != null && map.getLayer(id)) map.setLayoutProperty(id, p, v); };
+    const sp = (id, p, v) => { if (v != null && map.getLayer(id)) map.setPaintProperty(id, p, v); };
+    if (o.lineWidth != null) {
+      for (const id of ['fronts-line', 'fronts-stationary-line', 'fronts-stationary-dash']) {
+        sp(id, 'line-width', o.lineWidth);
+      }
+    }
+    sl('fronts-pips', 'icon-size', o.pipSize);
+    sl('fronts-pips', 'symbol-spacing', o.pipSpacing);
+    sl('fronts-stationary-pips', 'icon-size', o.statSize);
+    sl('fronts-stationary-pips', 'symbol-spacing', o.statSpacing);
+    return o;
+  }
+
+  // Snapshot of what's currently rendered, for console diagnostics.
+  function info() {
+    const fronts = (curData?.features ?? []).filter((f) => f?.properties?.feature === 'front');
+    return {
+      zoom: map.getZoom?.(),
+      frontFeatures: fronts.length,
+      maxLinePoints: fronts.reduce((m, f) => Math.max(m, f.geometry?.coordinates?.length ?? 0), 0),
+      stationarySpriteLoaded: map.hasImage?.(IMG_STATIONARY) ?? null,
+    };
+  }
+
+  return { setVisible, refresh, setData, destroy, tune, info };
 }

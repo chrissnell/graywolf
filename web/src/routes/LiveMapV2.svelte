@@ -570,6 +570,13 @@
     // Surface fronts ride just above radar in the GL stack (lines + pip symbols
     // over the reflectivity fill) and below the station/trail markers.
     frontsLayer = mountFrontsLayer(map, { visible: layerToggles.fronts });
+    // Debug hooks for live front-symbology tuning from the browser console:
+    //   window.gwFronts.tune({ pipSize: 0.7, statSpacing: 30, lineWidth: 3 })
+    //   window.gwFronts.info()   window.gwMap.getZoom()
+    if (typeof window !== 'undefined') {
+      window.gwMap = map;
+      window.gwFronts = frontsLayer;
+    }
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
     trailsLayer = mountTrailsLayer(map, () => dataStore.stations, {
