@@ -44,6 +44,14 @@ test('parseLayerToggles ignores stale extra keys harmlessly', () => {
   assert.equal(got.stations, true);
 });
 
+test('parseLayerToggles defaults the fronts overlay on', () => {
+  // Fronts is a new display layer added after the original toggle set, so it
+  // must default on for both a fresh browser (null) and an older saved blob
+  // that predates the key.
+  assert.equal(parseLayerToggles(null).fronts, true);
+  assert.equal(parseLayerToggles('{"stations":false}').fronts, true);
+});
+
 test('parseLayerToggles never returns the shared defaults object', () => {
   const got = parseLayerToggles(null);
   got.trails = false;

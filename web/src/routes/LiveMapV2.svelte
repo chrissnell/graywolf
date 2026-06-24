@@ -23,6 +23,8 @@
     parseManifestFramesForRegion,
     RADAR_REGION_WORLD,
   } from '../lib/map/sources/radar-source.js';
+  import { mountFrontsLayer } from '../lib/map/layers/fronts.js';
+  import { frontsProvider } from '../lib/map/sources/fronts-source.js';
   import { createRadarFrames } from '../lib/map/radar-frames.svelte.js';
   import { mapsState } from '../lib/settings/maps-store.svelte.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
@@ -97,6 +99,7 @@
   let hoverPathLayer = null;
   let myPositionLayer = null;
   let radarLayer = null;
+  let frontsLayer = null;
   let fixedPointsLayer = null;
 
   // Radar overlay settings -- persisted per browser (not per account).
@@ -192,6 +195,72 @@
     const t = new Date(f.ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     return `${t} · ${radarFrames.index + 1}/${radarFrames.count}`;
   });
+
+  // Surface-fronts overlay. Unlike radar there is no frame loop -- one GeoJSON
+  // document holds the current analysis. A slow poll (every 5 min, only while
+  // the Fronts toggle is on) checks the tiny manifest and reloads the source
+  // when a newer analysis is published. The manifest is a plain fetch, so we
+  // append the bearer token (?t=) ourselves, mirroring loadRadarFrames(); the
+  // GeoJSON data URL itself is a MapLibre source request, so transformRequest
+  // attaches the token to it without any wiring here.
+  let frontsToken = null;
+  let frontsPollTimer = null;
+  let lastFrontsIssued = null;
+  // De-dupe diagnostics like warnRadar: a persistent failure would otherwise
+  // warn every poll. Only log when the failure stage changes.
+  let lastFrontsLoadStatus = null;
+  function warnFronts(status, ...args) {
+    if (lastFrontsLoadStatus === status) return;
+    lastFrontsLoadStatus = status;
+    console.warn(...args);
+  }
+  async function pollFrontsManifest() {
+    if (!mapsState.registered) return;
+    if (!frontsToken) frontsToken = await mapsState.revealToken();
+    if (!frontsToken) return;
+    const url = `${frontsProvider().manifestUrl}?t=${encodeURIComponent(frontsToken)}`;
+    let resp;
+    try {
+      resp = await fetch(url);
+    } catch (e) {
+      warnFronts('network', '[fronts] manifest fetch failed (network/CORS)', e);
+      return;
+    }
+    if (resp.status === 401) {
+      frontsToken = null; // stale token -- re-reveal next poll
+      warnFronts(401, '[fronts] manifest 401 -- token rejected; will re-reveal');
+      return;
+    }
+    if (!resp.ok) {
+      warnFronts(resp.status, `[fronts] manifest fetch HTTP ${resp.status}`);
+      return;
+    }
+    let issued;
+    try {
+      const json = await resp.json();
+      issued = json?.issued ?? json?.latest ?? null;
+    } catch (e) {
+      warnFronts('parse', '[fronts] manifest JSON parse failed', e);
+      return;
+    }
+    lastFrontsLoadStatus = null; // recovered
+    if (issued == null) return;
+    if (lastFrontsIssued !== null && issued !== lastFrontsIssued) {
+      frontsLayer?.reload();
+    }
+    lastFrontsIssued = issued;
+  }
+  function startFrontsPolling() {
+    if (frontsPollTimer) return;
+    pollFrontsManifest(); // immediate first check
+    frontsPollTimer = setInterval(pollFrontsManifest, 5 * 60 * 1000);
+  }
+  function stopFrontsPolling() {
+    if (frontsPollTimer) {
+      clearInterval(frontsPollTimer);
+      frontsPollTimer = null;
+    }
+  }
 
   let mapRef = null;
   let activePopup = null;
@@ -462,6 +531,9 @@
       // toggles opacity instead of refetching tiles every cycle.
       frames: radarFrames.frames.map((f) => f.ts),
     });
+    // Surface fronts ride just above radar in the GL stack (lines + pip symbols
+    // over the reflectivity fill) and below the station/trail markers.
+    frontsLayer = mountFrontsLayer(map, { visible: layerToggles.fronts });
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
     trailsLayer = mountTrailsLayer(map, () => dataStore.stations, {
@@ -545,6 +617,7 @@
     windBarbsLayer.setVisible(layerToggles.weather);
     myPositionLayer.setVisible(layerToggles.myPosition);
     fixedPointsLayer.setVisible(layerToggles.fixedPoints);
+    frontsLayer.setVisible(layerToggles.fronts);
     const initialPred = layerToggles.directRxOnly
       ? isDirectRx
       : layerToggles.rfOnly
@@ -705,6 +778,7 @@
     const _myPos = dataStore.myPosition; // track
     const _tick = tickNow; // 1s clock drives time-based layer refresh
     if (radarLayer) radarLayer.refresh();
+    if (frontsLayer) frontsLayer.refresh();
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
     if (weatherLayer) weatherLayer.refresh();
@@ -802,6 +876,15 @@
   $effect(() => {
     const v = layerToggles.fixedPoints;
     fixedPointsLayer?.setVisible(v);
+  });
+  // Surface fronts: toggle visibility, and run the slow manifest poll only while
+  // the overlay is on (mirrors the radar manifest poll being gated on its
+  // visibility). Reading `v` before the optional-chain registers the dep.
+  $effect(() => {
+    const v = layerToggles.fronts;
+    frontsLayer?.setVisible(v);
+    if (v) startFrontsPolling();
+    else stopFrontsPolling();
   });
   // RF reachability filter: predicate is shared across stations/trails/
   // weather/wind-barbs so the layers stay in lockstep. my-position is the
@@ -951,7 +1034,9 @@
     dataStore.stop();
     closePopup();
     radarFrames.destroy();
+    stopFrontsPolling();
     radarLayer?.destroy();
+    frontsLayer?.destroy();
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
@@ -960,6 +1045,7 @@
     myPositionLayer?.destroy();
     fixedPointsLayer?.destroy();
     radarLayer = null;
+    frontsLayer = null;
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
@@ -1026,6 +1112,14 @@
           onchange={(e) => (layerToggles.fixedPoints = e.currentTarget.checked)}
         />
         <span>Fixed Points</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={layerToggles.fronts}
+          onchange={(e) => (layerToggles.fronts = e.currentTarget.checked)}
+        />
+        <span>Fronts</span>
       </label>
       <label class="toggle-row">
         <input

@@ -15,6 +15,7 @@ export const LAYER_TOGGLES_DEFAULTS = {
   weather: true,
   myPosition: true,
   fixedPoints: true,
+  fronts: true,
   directRxOnly: false,
   rfOnly: false,
 };
