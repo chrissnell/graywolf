@@ -23,16 +23,19 @@ function fakeMap() {
   };
 }
 
-test('FRONT_LAYER_IDS lists the four overlay layers', () => {
+test('FRONT_LAYER_IDS lists the overlay layers (incl. the stationary set)', () => {
   assert.deepEqual(FRONT_LAYER_IDS, [
     'fronts-line',
+    'fronts-stationary-line',
+    'fronts-stationary-dash',
     'fronts-pips',
+    'fronts-stationary-pips',
     'fronts-centers',
     'fronts-center-labels',
   ]);
 });
 
-test('mount adds the source and all four layers behind the first symbol layer', () => {
+test('mount adds the source and all layers behind the first symbol layer', () => {
   const map = fakeMap();
   mountFrontsLayer(map, { visible: true });
   assert.ok(map._sources.fronts, 'geojson source added');
@@ -43,15 +46,24 @@ test('mount adds the source and all four layers behind the first symbol layer', 
   }
 });
 
-test('stationary fronts are excluded from the line and pip layers', () => {
-  // The stationary symbology (alternating opposite-side pips) is deferred, so a
-  // bare stationary line reads as a stray mark -- it must not render at all.
+test('stationary fronts render via their own dedicated layers, not the base ones', () => {
+  // Proper WMO stationary symbology: a two-tone line + alternating cold/warm
+  // pips. The base line and the single-type pip layer must EXCLUDE stationary
+  // (it would double-draw / mis-color), and the dedicated stationary layers
+  // must filter to ONLY stationary.
   const map = fakeMap();
   mountFrontsLayer(map, { visible: true });
   const lineFilter = JSON.stringify(map._layers['fronts-line'].filter);
   const pipFilter = JSON.stringify(map._layers['fronts-pips'].filter);
-  assert.match(lineFilter, /"!=".*"front_type".*"stationary"/s, 'line excludes stationary');
-  assert.match(pipFilter, /"stationary"/, 'pip layer excludes stationary');
+  assert.match(lineFilter, /"!=".*"front_type".*"stationary"/s, 'base line excludes stationary');
+  assert.match(pipFilter, /"!=".*"stationary"/s, 'base pips exclude stationary');
+  for (const id of ['fronts-stationary-line', 'fronts-stationary-dash', 'fronts-stationary-pips']) {
+    const f = JSON.stringify(map._layers[id].filter);
+    assert.match(f, /"==".*"front_type".*"stationary"/s, `${id} filters to stationary only`);
+  }
+  // The dashed overlay is what creates the alternating red/blue line.
+  assert.ok(map._layers['fronts-stationary-dash'].paint['line-dasharray'], 'dash overlay present');
+  assert.equal(map._layers['fronts-stationary-pips'].layout['icon-image'], 'front-stationary');
 });
 
 test('setVisible(false) sets every front layer visibility to none', () => {

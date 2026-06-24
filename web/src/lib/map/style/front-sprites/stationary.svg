@@ -1,0 +1,8 @@
+<!-- Stationary front: one full WMO period in a 36x18 sprite. Cold triangle on
+     the top half (apex up), warm semicircle on the bottom half (bulges down),
+     so symbol-placement:line repeats it into alternating opposite-side pips.
+     Colors here are placeholders; fronts.js bakes FRONT_COLORS.cold/warm. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 18" width="36" height="18">
+  <polygon points="3,9 15,9 9,1" fill="#1565d8"/>
+  <path d="M 21 9 A 6 6 0 0 1 33 9 Z" fill="#d81e1e"/>
+</svg>

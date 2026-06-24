@@ -39,10 +39,25 @@ const coldSvg = (fill) =>
 const warmSvg = (fill) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18"><path d="M 2 9 A 7 7 0 0 1 16 9 Z" fill="${fill}"/></svg>`;
 const occludedTriSvg = coldSvg;
+// Stationary front: the proper WMO depiction is alternating cold/warm symbols on
+// OPPOSITE sides of the line. This single 36x18 sprite carries one full period
+// -- a cold triangle on the top half (apex up) and a warm semicircle on the
+// bottom half (bulges down) -- so when symbol-placement:line repeats it at
+// ~sprite-width spacing it tiles into triangle/semicircle/triangle/semicircle,
+// each on its own side. (Sweep-flag 1 with left-to-right endpoints bulges +y =
+// the bottom half, opposite the apex-up triangle.) The two colors are baked in,
+// so unlike the single-type pips this sprite is not parameterized by one fill.
+const stationarySvg = (cold, warm) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 18" width="36" height="18">` +
+  `<polygon points="3,9 15,9 9,1" fill="${cold}"/>` +
+  `<path d="M 21 9 A 6 6 0 0 1 33 9 Z" fill="${warm}"/></svg>`;
 
 export const FRONT_LAYER_IDS = [
   'fronts-line',
+  'fronts-stationary-line',
+  'fronts-stationary-dash',
   'fronts-pips',
+  'fronts-stationary-pips',
   'fronts-centers',
   'fronts-center-labels',
 ];
@@ -51,11 +66,12 @@ export const FRONT_LAYER_IDS = [
 const IMG_COLD = 'front-cold';
 const IMG_WARM = 'front-warm';
 const IMG_OCCLUDED = 'front-occluded';
+const IMG_STATIONARY = 'front-stationary';
 
 // Rasterize an SVG string into an ImageData of the given pixel size. Returns a
 // Promise; resolves null in a non-DOM environment (e.g. node --test), where the
 // overlay's icon layers simply render without sprites.
-function rasterizeSvg(svg, size) {
+function rasterizeSvg(svg, w, h = w) {
   if (typeof document === 'undefined' || typeof Image === 'undefined') {
     return Promise.resolve(null);
   }
@@ -64,11 +80,11 @@ function rasterizeSvg(svg, size) {
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
+        canvas.width = w;
+        canvas.height = h;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, size, size);
-        resolve(ctx.getImageData(0, 0, size, size));
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(ctx.getImageData(0, 0, w, h));
       } catch {
         resolve(null);
       }
@@ -88,14 +104,17 @@ export function mountFrontsLayer(map, { visible }) {
   // map.hasImage so a style swap (which drops user images) re-registers them on
   // the next ensure().
   async function loadImages() {
+    // [id, svg, width, height] -- stationary is a wide 2-symbol sprite (36x18);
+    // the single-type pips are square (18x18).
     const want = [
-      [IMG_COLD, coldSvg(FRONT_COLORS.cold)],
-      [IMG_WARM, warmSvg(FRONT_COLORS.warm)],
-      [IMG_OCCLUDED, occludedTriSvg(FRONT_COLORS.occluded)],
+      [IMG_COLD, coldSvg(FRONT_COLORS.cold), 18, 18],
+      [IMG_WARM, warmSvg(FRONT_COLORS.warm), 18, 18],
+      [IMG_OCCLUDED, occludedTriSvg(FRONT_COLORS.occluded), 18, 18],
+      [IMG_STATIONARY, stationarySvg(FRONT_COLORS.cold, FRONT_COLORS.warm), 36, 18],
     ];
-    for (const [id, svg] of want) {
+    for (const [id, svg, w, h] of want) {
       if (map.hasImage && map.hasImage(id)) continue;
-      const data = await rasterizeSvg(svg, 18);
+      const data = await rasterizeSvg(svg, w, h);
       if (!data) continue;
       // hasImage re-checked after the await -- a concurrent ensure() or another
       // mount may have registered it while we were rasterizing.
@@ -105,16 +124,13 @@ export function mountFrontsLayer(map, { visible }) {
     }
   }
 
-  // line-color match on the feature's front_type. `stationary` is kept here
-  // even though stationary fronts are currently filtered out of every layer
-  // (see the line layer) so that re-enabling them later is a one-line filter
-  // change, not a color hunt.
+  // line-color match for the cold/warm/occluded/trough base line. stationary is
+  // not here -- it draws via its own two-tone (blue base + red dash) layers.
   const frontColorMatch = () => [
     'match',
     ['get', 'front_type'],
     'cold', FRONT_COLORS.cold,
     'warm', FRONT_COLORS.warm,
-    'stationary', FRONT_COLORS.stationary,
     'occluded', FRONT_COLORS.occluded,
     'trough', FRONT_COLORS.trough,
     '#888888',
@@ -138,14 +154,10 @@ export function mountFrontsLayer(map, { visible }) {
     const beforeId = firstSymbolId();
     const vis = curVisible ? 'visible' : 'none';
 
-    // 1) Base front line. trough is dashed; every other type is solid. The dash
-    // array is gated on front_type so only troughs get it.
-    //
-    // stationary fronts are EXCLUDED entirely: without proper alternating
-    // opposite-side symbology (the deferred limitation noted below) they render
-    // as a bare colored line that reads as a random stray line on the map, so
-    // we hide them until that symbology exists rather than show a misleading
-    // boundary.
+    // 1) Base front line for cold/warm/occluded/trough. trough is dashed; every
+    // other type is solid. stationary is handled by its own two-tone line +
+    // alternating-pip layers below (it needs cold/warm symbology on opposite
+    // sides), so it is excluded here.
     if (!map.getLayer('fronts-line')) {
       map.addLayer(
         {
@@ -179,17 +191,55 @@ export function mountFrontsLayer(map, { visible }) {
       );
     }
 
+    // 1b) Stationary front line: a solid cold-blue base with a warm-red dashed
+    // line painted on top, so the gaps reveal blue and the line reads as
+    // alternating red/blue segments -- the WMO two-tone stationary boundary --
+    // without needing per-segment color (which MapLibre line layers can't do).
+    const stationaryFilter = [
+      'all',
+      ['==', ['get', 'feature'], 'front'],
+      ['==', ['get', 'front_type'], 'stationary'],
+    ];
+    const stationaryWidth = ['interpolate', ['linear'], ['zoom'], 3, 1.8, 8, 3.8];
+    if (!map.getLayer('fronts-stationary-line')) {
+      map.addLayer(
+        {
+          id: 'fronts-stationary-line',
+          type: 'line',
+          source: provider.sourceId,
+          filter: stationaryFilter,
+          layout: { visibility: vis, 'line-cap': 'butt', 'line-join': 'round' },
+          paint: { 'line-color': FRONT_COLORS.cold, 'line-width': stationaryWidth },
+        },
+        beforeId,
+      );
+    }
+    if (!map.getLayer('fronts-stationary-dash')) {
+      map.addLayer(
+        {
+          id: 'fronts-stationary-dash',
+          type: 'line',
+          source: provider.sourceId,
+          filter: stationaryFilter,
+          layout: { visibility: vis, 'line-cap': 'butt', 'line-join': 'round' },
+          paint: {
+            'line-color': FRONT_COLORS.warm,
+            'line-width': stationaryWidth,
+            // Equal dash/gap: red covers half the line, blue base shows through
+            // the gaps -> alternating red/blue.
+            'line-dasharray': ['literal', [3, 3]],
+          },
+        },
+        beforeId,
+      );
+    }
+
     // 2) Frontal pips along the line.
     //
-    // v1 LIMITATION (documented, not an oversight): MapLibre
-    // symbol-placement:line draws a single sprite repeated on ONE side of the
-    // line, so it cannot render a stationary front's alternating
-    // opposite-side warm/cold pips, nor an occluded front's alternating
-    // triangle/semicircle. stationary fronts are hidden entirely (see the line
-    // layer above) until that symbology exists; occluded uses the cold triangle
-    // only. Proper alternating-side symbology needs either two offset symbol
-    // layers with side-tagged geometry from the generator, or a custom WebGL
-    // layer -- deferred past v1.
+    // cold/warm/occluded carry a single repeated sprite. occluded uses the cold
+    // triangle only (its alternating triangle/semicircle is still deferred).
+    // stationary is handled separately (layer 2b) with a combined 2-symbol
+    // sprite that produces the proper alternating opposite-side pips.
     if (!map.getLayer('fronts-pips')) {
       map.addLayer(
         {
@@ -211,6 +261,37 @@ export function mountFrontsLayer(map, { visible }) {
             // A little larger than v1 so the triangles/semicircles read clearly.
             'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.95, 8, 1.35],
             'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+        },
+        beforeId,
+      );
+    }
+
+    // 2b) Stationary pips. The combined cold-triangle/warm-semicircle sprite is
+    // repeated along the line at roughly its own width, so the two symbols tile
+    // into the alternating opposite-side pattern. symbol-spacing is matched to
+    // the sprite footprint (wider than the single-type pips since each unit is
+    // two symbols) to keep the pattern continuous without overlap.
+    if (!map.getLayer('fronts-stationary-pips')) {
+      map.addLayer(
+        {
+          id: 'fronts-stationary-pips',
+          type: 'symbol',
+          source: provider.sourceId,
+          filter: stationaryFilter,
+          layout: {
+            visibility: vis,
+            'symbol-placement': 'line',
+            // Repeat at ~the rendered sprite width (36px * icon-size) so the
+            // sprites abut and the triangle/semicircle stay evenly spaced
+            // (even alternation) rather than clustering with gaps between units.
+            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 34, 8, 49],
+            'icon-image': IMG_STATIONARY,
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.95, 8, 1.35],
+            'icon-rotation-alignment': 'map',
+            'icon-keep-upright': false,
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
           },
