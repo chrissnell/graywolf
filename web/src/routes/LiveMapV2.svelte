@@ -39,6 +39,7 @@
   import { fmtLat, fmtLon, timeAgo } from '../lib/map/popup-helpers.js';
   import { clockOffset, formatOffsetMagnitude } from '../lib/map/clock-offset.svelte.js';
   import { directHeardWithin } from '../lib/map/direct-rx-core.js';
+  import { isRfOnly } from '../lib/map/rf-only-core.js';
   import { toasts } from '../lib/stores.js';
   import { online } from '../lib/stores/connection.js';
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
@@ -224,19 +225,11 @@
     return directHeardWithin(station, cutoffMs);
   }
 
-  // RF Only predicate: a station qualifies if at least one position was
-  // heard over the air (RX) and did not arrive via Internet-to-RF gating
-  // (the `gated` flag, set on the inner packet of a third-party gate).
-  // Unlike Direct RX this keeps RF-digipeated stations; it only drops
-  // points that are merely Internet traffic some iGate pushed onto RF.
-  function isRfOnly(station) {
-    const pts = station?.positions;
-    if (!Array.isArray(pts) || pts.length === 0) return false;
-    for (const p of pts) {
-      if (p.direction === 'RX' && !p.gated) return true;
-    }
-    return false;
-  }
+  // RF Only predicate lives in rf-only-core.js: a station qualifies when its
+  // current fix (positions[0]) arrived over the air (RX) and was not
+  // Internet-to-RF gated. Evaluating the current fix rather than the whole
+  // trail keeps the filter consistent with the marker/popup, which label a
+  // station by its newest reception (graywolf #394).
   // Seed from the persisted per-browser preference so a non-default time
   // range survives reload/navigation. The $effect below pushes it into the
   // data store and writes any change back to mapState.
