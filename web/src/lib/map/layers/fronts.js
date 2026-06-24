@@ -114,7 +114,7 @@ function catmull(p0, p1, p2, p3, t) {
 // output is uniformly smooth regardless of the raw point spacing and the
 // straight-chord segmentation disappears. Endpoints are preserved; <3 points
 // (nothing to curve) pass through unchanged.
-export function smoothLine(pts, targetDeg = 0.15, maxSub = 10) {
+export function smoothLine(pts, targetDeg = 0.03, maxSub = 40) {
   if (!Array.isArray(pts) || pts.length < 3) return pts;
   const n = pts.length;
   const at = (i) => pts[Math.max(0, Math.min(n - 1, i))];
@@ -134,11 +134,14 @@ export function smoothLine(pts, targetDeg = 0.15, maxSub = 10) {
 
 // Return a copy of the FeatureCollection with every front LineString smoothed.
 // Pressure-center Points are untouched. Tolerant of missing/empty input.
-export function smoothFronts(fc) {
+export function smoothFronts(fc, targetDeg = 0.03, maxSub = 40) {
   if (!fc || !Array.isArray(fc.features)) return fc;
   const features = fc.features.map((f) => {
     if (f?.properties?.feature !== 'front' || f?.geometry?.type !== 'LineString') return f;
-    return { ...f, geometry: { ...f.geometry, coordinates: smoothLine(f.geometry.coordinates) } };
+    return {
+      ...f,
+      geometry: { ...f.geometry, coordinates: smoothLine(f.geometry.coordinates, targetDeg, maxSub) },
+    };
   });
   return { ...fc, features };
 }
@@ -154,6 +157,8 @@ export function mountFrontsLayer(map, { visible }) {
   // renders smooth curves and the pip icons sit flush instead of dangling off
   // the straight-chord corners. Starts empty until the first push.
   let curData = EMPTY_FC;
+  let lastRaw = EMPTY_FC; // unsmoothed document, kept so density can be re-tuned
+  let smoothTargetDeg = 0.03; // Catmull-Rom resample target; smaller = curvier
 
   const firstSymbolId = () => map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
 
@@ -238,9 +243,9 @@ export function mountFrontsLayer(map, { visible }) {
           },
           paint: {
             'line-color': frontColorMatch(),
-            // A touch thicker than v1 so the boundaries read clearly. Dash units
-            // are line-width-relative, so troughs' dashes scale up with this.
-            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.8, 8, 3.8],
+            // Dash units are line-width-relative, so troughs' dashes scale with
+            // this. Tunable live via window.gwFronts.tune({ lineWidth }).
+            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 5],
             'line-dasharray': [
               'case',
               ['==', ['get', 'front_type'], 'trough'],
@@ -262,7 +267,7 @@ export function mountFrontsLayer(map, { visible }) {
       ['==', ['get', 'feature'], 'front'],
       ['==', ['get', 'front_type'], 'stationary'],
     ];
-    const stationaryWidth = ['interpolate', ['linear'], ['zoom'], 3, 1.8, 8, 3.8];
+    const stationaryWidth = ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 5];
     if (!map.getLayer('fronts-stationary-line')) {
       map.addLayer(
         {
@@ -319,12 +324,13 @@ export function mountFrontsLayer(map, { visible }) {
             'symbol-placement': 'line',
             'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 30, 8, 60],
             'icon-image': pipIconMatch(),
-            // Sized to read as proper pips without dominating the line (~2-3x
-            // the line width). Tunable live via window.gwFronts.tune().
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.62, 8, 0.92],
+            // Tunable live via window.gwFronts.tune().
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.0],
             'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true,
-            'icon-ignore-placement': true,
+            // allow-overlap OFF (and no ignore-placement) so MapLibre drops pips
+            // it can't lay flat on a tight curve -- those are the ones that
+            // dangle off the bends -- instead of force-rendering them.
+            'icon-allow-overlap': false,
           },
         },
         beforeId,
@@ -349,13 +355,13 @@ export function mountFrontsLayer(map, { visible }) {
             // Repeat at ~the rendered sprite width (36px * icon-size) so the
             // sprites abut and the triangle/semicircle stay evenly spaced
             // (even alternation) rather than clustering with gaps between units.
-            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 24, 8, 34],
+            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 26, 8, 36],
             'icon-image': IMG_STATIONARY,
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.62, 8, 0.92],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.0],
             'icon-rotation-alignment': 'map',
             'icon-keep-upright': false,
-            'icon-allow-overlap': true,
-            'icon-ignore-placement': true,
+            // See cold/warm pips: drop rather than dangle on tight curves.
+            'icon-allow-overlap': false,
           },
         },
         beforeId,
@@ -441,7 +447,11 @@ export function mountFrontsLayer(map, { visible }) {
   // and hand it to the source. No source/layer churn. Called by LiveMapV2 on
   // initial load and whenever the manifest poll sees a new analysis.
   function setData(rawFc) {
-    curData = smoothFronts(rawFc) ?? EMPTY_FC;
+    lastRaw = rawFc ?? EMPTY_FC;
+    applySmoothed();
+  }
+  function applySmoothed() {
+    curData = smoothFronts(lastRaw, smoothTargetDeg) ?? EMPTY_FC;
     map.getSource(FRONTS_SOURCE_ID)?.setData(curData);
   }
 
@@ -471,6 +481,7 @@ export function mountFrontsLayer(map, { visible }) {
   function tune(o = {}) {
     const sl = (id, p, v) => { if (v != null && map.getLayer(id)) map.setLayoutProperty(id, p, v); };
     const sp = (id, p, v) => { if (v != null && map.getLayer(id)) map.setPaintProperty(id, p, v); };
+    const pipLayers = ['fronts-pips', 'fronts-stationary-pips'];
     if (o.lineWidth != null) {
       for (const id of ['fronts-line', 'fronts-stationary-line', 'fronts-stationary-dash']) {
         sp(id, 'line-width', o.lineWidth);
@@ -480,7 +491,18 @@ export function mountFrontsLayer(map, { visible }) {
     sl('fronts-pips', 'symbol-spacing', o.pipSpacing);
     sl('fronts-stationary-pips', 'icon-size', o.statSize);
     sl('fronts-stationary-pips', 'symbol-spacing', o.statSpacing);
-    return o;
+    // Placement flags drive the dangling fix: with overlap/ignore-placement
+    // OFF, MapLibre drops pips it can't lay cleanly on a curve (the ones that
+    // dangle at bends) instead of force-rendering them.
+    if (o.allowOverlap != null) for (const id of pipLayers) sl(id, 'icon-allow-overlap', o.allowOverlap);
+    if (o.ignorePlacement != null) for (const id of pipLayers) sl(id, 'icon-ignore-placement', o.ignorePlacement);
+    // Re-smooth the lines at a new density (degrees per chord). Smaller = curvier
+    // (and more points). Re-runs the resample on the last fetched document.
+    if (o.smoothTarget != null) {
+      smoothTargetDeg = o.smoothTarget;
+      applySmoothed();
+    }
+    return { ...o, smoothTargetDeg };
   }
 
   // Snapshot of what's currently rendered, for console diagnostics.
@@ -488,6 +510,7 @@ export function mountFrontsLayer(map, { visible }) {
     const fronts = (curData?.features ?? []).filter((f) => f?.properties?.feature === 'front');
     return {
       zoom: map.getZoom?.(),
+      smoothTargetDeg,
       frontFeatures: fronts.length,
       maxLinePoints: fronts.reduce((m, f) => Math.max(m, f.geometry?.coordinates?.length ?? 0), 0),
       stationarySpriteLoaded: map.hasImage?.(IMG_STATIONARY) ?? null,
