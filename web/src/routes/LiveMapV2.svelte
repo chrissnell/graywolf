@@ -1085,6 +1085,14 @@
         <label class="toggle-row">
           <input
             type="checkbox"
+            checked={layerToggles.weather}
+            onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
+          />
+          <span>Weather Stations</span>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
             checked={layerToggles.trails}
             onchange={(e) => (layerToggles.trails = e.currentTarget.checked)}
           />
@@ -1136,8 +1144,8 @@
       </select>
     </section>
 
-    <!-- Weather: fronts + radar overlays and their controls. The existing
-         "Weather" (surface obs / wind barbs) toggle lives here too. -->
+    <!-- Weather: fronts + radar overlays and their controls. (The surface-obs
+         layer toggle is "Weather Stations", grouped under APRS with Stations.) -->
     <section class="layer-section">
       <h3 class="layer-section-title">Weather</h3>
       <div class="layer-toggles">
@@ -1148,14 +1156,6 @@
             onchange={(e) => (layerToggles.fronts = e.currentTarget.checked)}
           />
           <span>Fronts</span>
-        </label>
-        <label class="toggle-row">
-          <input
-            type="checkbox"
-            checked={layerToggles.weather}
-            onchange={(e) => (layerToggles.weather = e.currentTarget.checked)}
-          />
-          <span>Weather</span>
         </label>
         <label class="toggle-row">
           <input
