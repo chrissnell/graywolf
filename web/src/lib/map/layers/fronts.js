@@ -105,7 +105,10 @@ export function mountFrontsLayer(map, { visible }) {
     }
   }
 
-  // line-color match on the feature's front_type.
+  // line-color match on the feature's front_type. `stationary` is kept here
+  // even though stationary fronts are currently filtered out of every layer
+  // (see the line layer) so that re-enabling them later is a one-line filter
+  // change, not a color hunt.
   const frontColorMatch = () => [
     'match',
     ['get', 'front_type'],

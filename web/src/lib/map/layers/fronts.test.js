@@ -43,6 +43,17 @@ test('mount adds the source and all four layers behind the first symbol layer', 
   }
 });
 
+test('stationary fronts are excluded from the line and pip layers', () => {
+  // The stationary symbology (alternating opposite-side pips) is deferred, so a
+  // bare stationary line reads as a stray mark -- it must not render at all.
+  const map = fakeMap();
+  mountFrontsLayer(map, { visible: true });
+  const lineFilter = JSON.stringify(map._layers['fronts-line'].filter);
+  const pipFilter = JSON.stringify(map._layers['fronts-pips'].filter);
+  assert.match(lineFilter, /"!=".*"front_type".*"stationary"/s, 'line excludes stationary');
+  assert.match(pipFilter, /"stationary"/, 'pip layer excludes stationary');
+});
+
 test('setVisible(false) sets every front layer visibility to none', () => {
   const map = fakeMap();
   const layer = mountFrontsLayer(map, { visible: true });
