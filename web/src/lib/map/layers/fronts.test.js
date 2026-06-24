@@ -1,6 +1,32 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mountFrontsLayer, FRONT_LAYER_IDS } from './fronts.js';
+import { mountFrontsLayer, FRONT_LAYER_IDS, smoothLine } from './fronts.js';
+
+// Sharpest turn (radians) between consecutive segments of a polyline.
+function maxTurn(pts) {
+  let m = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
+    const b = Math.atan2(pts[i + 1][1] - pts[i][1], pts[i + 1][0] - pts[i][0]);
+    let d = Math.abs(b - a);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    m = Math.max(m, d);
+  }
+  return m;
+}
+
+test('smoothLine rounds corners (sharpest turn shrinks) and keeps endpoints', () => {
+  const coarse = [[0, 0], [2, 0], [2, 2], [4, 2]]; // two ~90deg corners
+  const smooth = smoothLine(coarse);
+  assert.ok(smooth.length > coarse.length, 'densified');
+  assert.deepEqual(smooth[0], [0, 0]);
+  assert.deepEqual(smooth.at(-1), [4, 2]);
+  assert.ok(maxTurn(smooth) < maxTurn(coarse) * 0.6, 'sharpest turn meaningfully reduced');
+});
+
+test('smoothLine passes through lines too short to curve', () => {
+  assert.deepEqual(smoothLine([[0, 0], [1, 1]]), [[0, 0], [1, 1]]);
+});
 
 // Minimal MapLibre stand-in: records sources/layers, layout/paint edits, and
 // the image registry. No DOM, so rasterizeSvg resolves null and addImage is
@@ -92,11 +118,28 @@ test('refresh re-adds dropped layers after a style swap', () => {
   }
 });
 
-test('reload pushes the data url back into the geojson source', () => {
+test('setData smooths front lines and pushes the object into the source', () => {
   const map = fakeMap();
   const layer = mountFrontsLayer(map, { visible: true });
-  layer.reload();
-  assert.match(String(map._sources.fronts.data), /\/fronts\/latest\.geojson$/);
+  const raw = {
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', properties: { feature: 'front', front_type: 'cold' },
+        geometry: { type: 'LineString', coordinates: [[0, 0], [3, 1], [6, 0], [9, 2]] } },
+      { type: 'Feature', properties: { feature: 'center', kind: 'H', pressure_mb: 1020 },
+        geometry: { type: 'Point', coordinates: [4, 4] } },
+    ],
+  };
+  layer.setData(raw);
+  const pushed = map._sources.fronts.data;
+  assert.equal(pushed.type, 'FeatureCollection');
+  const front = pushed.features[0];
+  // The front line is densified (more points than the 4 raw), endpoints kept.
+  assert.ok(front.geometry.coordinates.length > 4, 'line densified');
+  assert.deepEqual(front.geometry.coordinates[0], [0, 0]);
+  assert.deepEqual(front.geometry.coordinates.at(-1), [9, 2]);
+  // The pressure-center Point is passed through untouched.
+  assert.deepEqual(pushed.features[1].geometry.coordinates, [4, 4]);
 });
 
 test('destroy removes every layer and the source', () => {

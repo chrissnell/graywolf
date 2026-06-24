@@ -100,9 +100,60 @@ function rasterizeSvg(svg, w, h = w) {
   });
 }
 
+// Catmull-Rom interpolation of one parametric coordinate at t in [0,1].
+function catmull(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const f = (a, b, c, d) =>
+    0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+  return [f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])];
+}
+
+// Densify a [lon,lat][] polyline into a smooth Catmull-Rom curve. Each input
+// segment is split into ceil(len/targetDeg) pieces (capped at maxSub), so the
+// output is uniformly smooth regardless of the raw point spacing and the
+// straight-chord segmentation disappears. Endpoints are preserved; <3 points
+// (nothing to curve) pass through unchanged.
+export function smoothLine(pts, targetDeg = 0.15, maxSub = 10) {
+  if (!Array.isArray(pts) || pts.length < 3) return pts;
+  const n = pts.length;
+  const at = (i) => pts[Math.max(0, Math.min(n - 1, i))];
+  const out = [];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = at(i - 1);
+    const p1 = at(i);
+    const p2 = at(i + 1);
+    const p3 = at(i + 2);
+    const segLen = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const sub = Math.max(1, Math.min(maxSub, Math.ceil(segLen / targetDeg)));
+    for (let s = 0; s < sub; s++) out.push(catmull(p0, p1, p2, p3, s / sub));
+  }
+  out.push(pts[n - 1]);
+  return out;
+}
+
+// Return a copy of the FeatureCollection with every front LineString smoothed.
+// Pressure-center Points are untouched. Tolerant of missing/empty input.
+export function smoothFronts(fc) {
+  if (!fc || !Array.isArray(fc.features)) return fc;
+  const features = fc.features.map((f) => {
+    if (f?.properties?.feature !== 'front' || f?.geometry?.type !== 'LineString') return f;
+    return { ...f, geometry: { ...f.geometry, coordinates: smoothLine(f.geometry.coordinates) } };
+  });
+  return { ...fc, features };
+}
+
+const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
 export function mountFrontsLayer(map, { visible }) {
   const provider = frontsProvider();
   let curVisible = visible;
+  // Smoothed FeatureCollection currently fed to the source. LiveMapV2 fetches
+  // the raw document (it holds the bearer token) and pushes it via setData();
+  // we Catmull-Rom the lines before handing them to MapLibre so the overlay
+  // renders smooth curves and the pip icons sit flush instead of dangling off
+  // the straight-chord corners. Starts empty until the first push.
+  let curData = EMPTY_FC;
 
   const firstSymbolId = () => map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
 
@@ -158,7 +209,9 @@ export function mountFrontsLayer(map, { visible }) {
 
   function ensure() {
     if (!map.getSource(provider.sourceId)) {
-      map.addSource(provider.sourceId, provider.source);
+      // Source data is pushed (and smoothed) via setData(); seed it with the
+      // current smoothed document so a style swap re-adds it without a flash.
+      map.addSource(provider.sourceId, { type: 'geojson', data: curData });
     }
     const beforeId = firstSymbolId();
     const vis = curVisible ? 'visible' : 'none';
@@ -384,10 +437,12 @@ export function mountFrontsLayer(map, { visible }) {
     ensure();
   }
 
-  // Re-fetch the GeoJSON document (new analysis published). No source/layer
-  // churn -- just hand the source new data.
-  function reload() {
-    map.getSource(FRONTS_SOURCE_ID)?.setData(provider.dataUrl);
+  // Accept a freshly fetched (raw) GeoJSON document, smooth its front lines,
+  // and hand it to the source. No source/layer churn. Called by LiveMapV2 on
+  // initial load and whenever the manifest poll sees a new analysis.
+  function setData(rawFc) {
+    curData = smoothFronts(rawFc) ?? EMPTY_FC;
+    map.getSource(FRONTS_SOURCE_ID)?.setData(curData);
   }
 
   function setVisible(v) {
@@ -407,5 +462,5 @@ export function mountFrontsLayer(map, { visible }) {
     } catch { /* map already removed */ }
   }
 
-  return { setVisible, refresh, reload, destroy };
+  return { setVisible, refresh, setData, destroy };
 }

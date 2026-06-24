@@ -5,11 +5,11 @@
 // Pure data + small builders only -- no MapLibre or DOM imports -- so it is
 // unit-testable under `node --test`, mirroring radar-source.js.
 //
-// Auth: the GeoJSON data URL is fetched by MapLibre as a source request, so the
-// map's transformRequest appends the bearer token (?t=) exactly as it does for
-// radar tiles -- no token wiring is needed on the data URL here. The manifest is
-// a plain fetch (transformRequest doesn't see it), so the caller appends ?t=
-// itself, the same pattern as radarManifestUrl().
+// Auth: both the manifest and the GeoJSON document are plain fetches by
+// LiveMapV2 (it holds the bearer token), so the caller appends ?t= to each, the
+// same pattern as radarManifestUrl(). The MapLibre source is fed an in-memory
+// (smoothed) object via the layer's setData, not a URL, so transformRequest is
+// not involved.
 
 // Same origin Worker as radar (see RADAR_TILE_BASE in radar-source.js). The
 // Worker serves the fronts product under /fronts/*.
@@ -32,7 +32,6 @@ export const FRONT_COLORS = {
 export function frontsProvider() {
   return {
     sourceId: FRONTS_SOURCE_ID,
-    source: { type: 'geojson', data: FRONTS_DATA_URL },
     dataUrl: FRONTS_DATA_URL,
     manifestUrl: FRONTS_MANIFEST_URL,
   };

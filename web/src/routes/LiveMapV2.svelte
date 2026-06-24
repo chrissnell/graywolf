@@ -206,6 +206,7 @@
   // attaches the token to it without any wiring here.
   let frontsToken = null;
   let frontsPollTimer = null;
+  let frontsDataRetry = null; // short retry until registration+token are ready
   let lastFrontsIssued = null;
   // De-dupe diagnostics like warnRadar: a persistent failure would otherwise
   // warn every poll. Only log when the failure stage changes.
@@ -247,19 +248,58 @@
     lastFrontsLoadStatus = null; // recovered
     if (issued == null) return;
     if (lastFrontsIssued !== null && issued !== lastFrontsIssued) {
-      frontsLayer?.reload();
+      loadFrontsData();
     }
     lastFrontsIssued = issued;
   }
+  // Fetch the GeoJSON document (token-gated, same as the manifest) and hand it
+  // to the layer, which smooths the lines before rendering. Kept here rather
+  // than in the layer module so all bearer-token handling stays in one place.
+  async function loadFrontsData() {
+    if (frontsDataRetry) { clearTimeout(frontsDataRetry); frontsDataRetry = null; }
+    if (!mapsState.registered) { frontsDataRetry = setTimeout(loadFrontsData, 2000); return; }
+    if (!frontsToken) frontsToken = await mapsState.revealToken();
+    if (!frontsToken) { frontsDataRetry = setTimeout(loadFrontsData, 2000); return; }
+    const url = `${frontsProvider().dataUrl}?t=${encodeURIComponent(frontsToken)}`;
+    let resp;
+    try {
+      resp = await fetch(url);
+    } catch (e) {
+      warnFronts('data-network', '[fronts] geojson fetch failed (network/CORS)', e);
+      return;
+    }
+    if (resp.status === 401) {
+      frontsToken = null;
+      warnFronts('data-401', '[fronts] geojson 401 -- token rejected; will re-reveal');
+      return;
+    }
+    if (!resp.ok) {
+      warnFronts('data-http', `[fronts] geojson fetch HTTP ${resp.status}`);
+      return;
+    }
+    let json;
+    try {
+      json = await resp.json();
+    } catch (e) {
+      warnFronts('data-parse', '[fronts] geojson JSON parse failed', e);
+      return;
+    }
+    frontsLayer?.setData(json);
+  }
   function startFrontsPolling() {
     if (frontsPollTimer) return;
-    pollFrontsManifest(); // immediate first check
+    loadFrontsData(); // pull the document now so the overlay paints immediately
+    pollFrontsManifest(); // immediate first manifest check (drives later reloads)
     frontsPollTimer = setInterval(pollFrontsManifest, 5 * 60 * 1000);
   }
   function stopFrontsPolling() {
     if (frontsPollTimer) {
       clearInterval(frontsPollTimer);
       frontsPollTimer = null;
+    }
+    if (frontsDataRetry) {
+      clearTimeout(frontsDataRetry);
+      frontsDataRetry = null;
     }
   }
 
