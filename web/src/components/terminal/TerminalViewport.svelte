@@ -7,6 +7,7 @@
 
   import { buildTheme } from '../../lib/terminal/theme.js';
   import { PRESETS } from '../../lib/terminal/presets.ts';
+  import { createEolNormalizer } from '../../lib/terminal/lineendings.js';
 
   // session is a createSession() result from lib/terminal/session.svelte.js.
   // preset is one of the keys in PRESETS (defaults to 'classic').
@@ -79,10 +80,11 @@
     term = new Terminal({
       cols: initialCols,
       rows: initialRows,
-      // convertEol must be false: packet-radio BBSes (FBB, JNOS) emit
-      // bare CR. xterm's convertEol: true rewrites bare LF to CRLF
-      // and corrupts mixed-line-ending streams. Pass bytes through
-      // verbatim.
+      // convertEol stays false: xterm's conversion only ever touches
+      // bare LF, never the bare CR that FBB/TNC hosts emit. We normalize
+      // all inbound line endings to CRLF ourselves (see the EOL
+      // normalizer wired into onDataRX below), which also handles CRLF
+      // pairs split across WebSocket chunks.
       convertEol: false,
       cursorBlink: false,
       // screenReaderMode populates xterm's off-screen accessibility
@@ -106,9 +108,12 @@
 
     // Inbound bytes from the bridge. session.svelte.js passes a
     // Uint8Array; xterm 5+ accepts that directly with no UTF-8
-    // decoding -- byte-faithful from BBS to glyph.
+    // decoding -- byte-faithful from BBS to glyph. The normalizer maps
+    // bare CR / bare LF / CRLF all to CRLF (stateful so it survives a
+    // CRLF split across two chunks) so lines advance instead of piling.
+    const normalizeEol = createEolNormalizer();
     session.state.onDataRX = (bytes) => {
-      try { term?.write(bytes); } catch { /* terminal disposed */ }
+      try { term?.write(normalizeEol(bytes)); } catch { /* terminal disposed */ }
     };
 
     // Operator keystrokes -> session bytes. xterm emits UTF-8 already
