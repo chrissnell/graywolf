@@ -244,6 +244,14 @@
   let inputDevices = $derived(devices.filter(d => d.direction === 'input'));
   let outputDevices = $derived(devices.filter(d => d.direction === 'output'));
   let configuredPaths = $derived(new Set(devices.map(d => d.device_path)));
+  // Windows audio "enhancements" (system effects / APOs) corrupt the
+  // AFSK/packet waveform. The modem flags affected endpoints during a
+  // hardware scan; cross-reference by path so we can warn on both the
+  // detected-hardware cards and the configured devices actually in use.
+  let enhancedPaths = $derived(
+    new Set(available.filter(d => d.enhancements_enabled).map(d => d.path))
+  );
+  let hasEnhancedDevices = $derived(enhancedPaths.size > 0);
   // Level meters in the modem only fire for devices that a channel
   // actively binds to. If no channel has audio assigned, the meters
   // here will sit at -inf no matter what hardware is plugged in.
@@ -307,6 +315,20 @@
   </div>
 {/if}
 
+{#if hasEnhancedDevices}
+  <div class="enhancements-banner" role="alert">
+    <strong>Windows audio enhancements detected.</strong>
+    One or more audio devices below have Windows "enhancements" (system
+    effects such as Loudness Equalization, Bass Boost, or noise
+    suppression) turned on. These effects alter the audio before it
+    reaches the modem and will degrade or break AFSK/packet decoding.
+    Turn them off for each flagged device: open <em>Settings → System →
+    Sound</em>, click the device, and set <em>Audio enhancements</em> to
+    <em>Off</em> (on older Windows, use the Sound control panel's
+    "Enhancements" tab and check "Disable all enhancements").
+  </div>
+{/if}
+
 <!-- Station readiness -->
 <div class="readiness">
   <div class="readiness-item" class:ready={hasInput}>
@@ -364,6 +386,14 @@
             <span class="detail-value">Mono</span>
           </div>
         </div>
+        {#if enhancedPaths.has(dev.device_path)}
+          <div class="device-enhance-warn" role="alert">
+            <Badge variant="danger">Enhancements On</Badge>
+            <span>Windows audio enhancements are active on this device and
+            will distort packet audio. Disable them in Windows Sound
+            settings.</span>
+          </div>
+        {/if}
         <!-- Audio level meter -->
         <div class="level-section">
           <div class="level-row">
@@ -417,6 +447,9 @@
             {/if}
             {#if dev.recommended}
               <Badge variant="warning">Recommended</Badge>
+            {/if}
+            {#if dev.enhancements_enabled}
+              <Badge variant="danger">Enhancements On</Badge>
             {/if}
             <Badge variant={dev.is_input ? 'info' : 'success'}>
               {dev.is_input ? 'Input' : 'Output'}
@@ -565,6 +598,39 @@
     background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
     padding: 1px 5px;
     border-radius: 3px;
+  }
+  .enhancements-banner {
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-danger, #f85149);
+    border-left-width: 4px;
+    border-radius: var(--radius);
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.12));
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .enhancements-banner strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+  .enhancements-banner em {
+    font-style: normal;
+    background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .device-enhance-warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    background: var(--color-danger-muted, rgba(248, 81, 73, 0.12));
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-primary);
   }
 
   /* Station readiness */

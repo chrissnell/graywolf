@@ -109,6 +109,10 @@ message AudioDeviceInfo {
   bool is_default = 7;
   string description = 8;        // human-friendly name (e.g. USB product string)
   bool recommended = 9;          // true for plughw: devices (ALSA software conversion)
+  // Windows only: the endpoint has audio "enhancements" (system effects /
+  // APOs) active. Those DSP effects mangle AFSK/packet audio and degrade
+  // decoding, so the UI warns the operator. Always false on Linux/macOS.
+  bool audio_enhancements_enabled = 10;
 }
 
 enum AudioDeviceKind {

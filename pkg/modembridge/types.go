@@ -33,6 +33,10 @@ type AvailableDevice struct {
 	IsDefault   bool     `json:"is_default"`
 	IsInput     bool     `json:"is_input"`
 	Recommended bool     `json:"recommended"` // true for plughw: devices (ALSA software conversion)
+	// EnhancementsEnabled is Windows-only: the endpoint has audio
+	// "enhancements" (system effects / APOs) active, which corrupt
+	// AFSK/packet audio. Always false on Linux/macOS.
+	EnhancementsEnabled bool `json:"enhancements_enabled"`
 }
 
 // InputLevel holds the level scan result for a single input device.

@@ -11024,6 +11024,10 @@
                     "description": "human-friendly name (e.g. USB product string)",
                     "type": "string"
                 },
+                "enhancements_enabled": {
+                    "description": "EnhancementsEnabled is Windows-only: the endpoint has audio\n\"enhancements\" (system effects / APOs) active, which corrupt\nAFSK/packet audio. Always false on Linux/macOS.",
+                    "type": "boolean"
+                },
                 "host_api": {
                     "type": "string"
                 },

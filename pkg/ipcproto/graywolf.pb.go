@@ -887,8 +887,12 @@ type AudioDeviceInfo struct {
 	IsDefault     bool                   `protobuf:"varint,7,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
 	Description   string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`  // human-friendly name (e.g. USB product string)
 	Recommended   bool                   `protobuf:"varint,9,opt,name=recommended,proto3" json:"recommended,omitempty"` // true for plughw: devices (ALSA software conversion)
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Windows only: the endpoint has audio "enhancements" (system effects /
+	// APOs) active. Those DSP effects mangle AFSK/packet audio and degrade
+	// decoding, so the UI warns the operator. Always false on Linux/macOS.
+	AudioEnhancementsEnabled bool `protobuf:"varint,10,opt,name=audio_enhancements_enabled,json=audioEnhancementsEnabled,proto3" json:"audio_enhancements_enabled,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *AudioDeviceInfo) Reset() {
@@ -980,6 +984,13 @@ func (x *AudioDeviceInfo) GetDescription() string {
 func (x *AudioDeviceInfo) GetRecommended() bool {
 	if x != nil {
 		return x.Recommended
+	}
+	return false
+}
+
+func (x *AudioDeviceInfo) GetAudioEnhancementsEnabled() bool {
+	if x != nil {
+		return x.AudioEnhancementsEnabled
 	}
 	return false
 }
@@ -2301,7 +2312,7 @@ const file_graywolf_proto_rawDesc = "" +
 	"\x0fAudioDeviceList\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\rR\trequestId\x123\n" +
-	"\adevices\x18\x02 \x03(\v2\x19.graywolf.AudioDeviceInfoR\adevices\"\xb9\x02\n" +
+	"\adevices\x18\x02 \x03(\v2\x19.graywolf.AudioDeviceInfoR\adevices\"\xf7\x02\n" +
 	"\x0fAudioDeviceInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tstable_id\x18\x02 \x01(\tR\bstableId\x12-\n" +
@@ -2312,7 +2323,9 @@ const file_graywolf_proto_rawDesc = "" +
 	"\n" +
 	"is_default\x18\a \x01(\bR\tisDefault\x12 \n" +
 	"\vdescription\x18\b \x01(\tR\vdescription\x12 \n" +
-	"\vrecommended\x18\t \x01(\bR\vrecommended\"\xd2\x01\n" +
+	"\vrecommended\x18\t \x01(\bR\vrecommended\x12<\n" +
+	"\x1aaudio_enhancements_enabled\x18\n" +
+	" \x01(\bR\x18audioEnhancementsEnabled\"\xd2\x01\n" +
 	"\rTransmitFrame\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12.\n" +

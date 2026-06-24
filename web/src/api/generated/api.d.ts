@@ -3360,6 +3360,12 @@ export interface components {
             channels?: number[];
             /** @description human-friendly name (e.g. USB product string) */
             description?: string;
+            /**
+             * @description EnhancementsEnabled is Windows-only: the endpoint has audio
+             *     "enhancements" (system effects / APOs) active, which corrupt
+             *     AFSK/packet audio. Always false on Linux/macOS.
+             */
+            enhancements_enabled?: boolean;
             host_api?: string;
             is_default?: boolean;
             is_input?: boolean;
