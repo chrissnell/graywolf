@@ -179,6 +179,15 @@
     return `${h}h ${m}m`;
   }
 
+  // Average packets/hour over the station's uptime, derived from the same
+  // cumulative counters shown above. Returns an em-dash until uptime is known.
+  function formatRate(total, uptimeSeconds) {
+    if (!uptimeSeconds || uptimeSeconds <= 0) return '—';
+    const perHour = (total * 3600) / uptimeSeconds;
+    const rounded = perHour >= 100 ? Math.round(perHour) : Math.round(perHour * 10) / 10;
+    return `${rounded.toLocaleString()}/hr`;
+  }
+
   function peakToPercent(peak) {
     if (peak == null) return 0;
     const clamped = Math.max(-60, Math.min(0, peak));
@@ -292,10 +301,12 @@
   <div class="stat-card">
     <span class="stat-value">{offline ? '—' : totalRx}</span>
     <span class="stat-label">Packets RX</span>
+    <span class="stat-rate">{offline ? '—' : formatRate(totalRx, status?.uptime_seconds)}</span>
   </div>
   <div class="stat-card">
     <span class="stat-value">{offline ? '—' : totalTx}</span>
     <span class="stat-label">Packets TX</span>
+    <span class="stat-rate">{offline ? '—' : formatRate(totalTx, status?.uptime_seconds)}</span>
   </div>
   <div class="stat-card">
     <span class="stat-value">{offline ? '—' : igated}</span>
@@ -535,6 +546,12 @@
     color: var(--color-text-dim);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+  }
+  .stat-rate {
+    font-size: var(--text-xs);
+    color: var(--color-text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   /* ── packet feed wrapper ───────────────────────── */
