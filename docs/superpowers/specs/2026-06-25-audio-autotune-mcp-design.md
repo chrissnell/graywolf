@@ -355,6 +355,54 @@ Net: the only genuinely new linked code is the per-OS mixer calls themselves
 (patched-ALSA mixer, CoreAudio, WASAPI); everything else is subprocess or an
 existing dependency, which keeps the old-RPi and cross-compile story intact.
 
+### 4.5 MCP server transport, supervision & management UI
+
+The MCP server runs in Graywolf's own "manage it in the browser" model: Graywolf
+owns its lifecycle and the operator turns it on/off and gets a copy-paste client
+config from a dedicated tab. Decided with the operator (2026-06-25):
+
+- **Transport — HTTP (streamable-HTTP), not stdio.** The server is a long-lived
+  local daemon listening on a port; the AI client connects to it by URL. This is
+  what lets *Graywolf* own the process (start/stop/status) rather than the AI
+  client spawning it over stdio. stdio is explicitly rejected for this product.
+- **Supervision — reuse `pkg/modembridge`'s pattern.** The Go service supervises
+  the MCP-server child process exactly as `modembridge`/`supervisor.go` already
+  supervises the `graywolf-modem` child: owns the lifecycle, restarts on crash,
+  exposes a `Running`/`Restarting`/`Stopped` state. The MCP server is a separate
+  Rust binary (§4, §11), so this is the same shape.
+- **Persisted toggle — a config singleton.** An `mcp_server` row
+  `{ enabled, bind_addr, port }` using the same `FirstOrCreate` singleton pattern
+  as `messages_config` / `ax25_terminal_config` (`pkg/configstore`). Flipping
+  `enabled` starts/stops the supervised child; the setting survives restarts.
+- **Binding — localhost default, 0.0.0.0 opt-in (allowed).** Default
+  `127.0.0.1`. The operator may opt into `0.0.0.0` (e.g. to drive the station
+  from another machine). Because the server is a **control surface** (it changes
+  OS/Graywolf audio levels and reads the station), a non-localhost bind requires
+  the bearer token and shows a prominent UI warning; never bind `0.0.0.0`
+  silently.
+- **Auth — reuse the existing bearer token** (`pkg/webauth`). The tab surfaces
+  the token so the operator can paste it into the client config.
+
+**The "MCP Server" tab** (`web/src/routes/McpServer.svelte`, next to Audio
+Devices), built on the existing settings-tab + status-endpoint patterns (Igate /
+Messages tabs are the template) and a new `mcp-server` REST resource (GET status,
+PUT config) backed by the supervisor's state:
+
+1. **Explainer** — what MCP is and that this lets an AI assistant auto-tune the
+   station's RX audio.
+2. **Status + controls** — live state (running / stopped / restarting), the
+   listen `addr:port`, the on/off **toggle**, and the bind-address selector
+   (localhost vs 0.0.0.0, with the warning above).
+3. **Click-to-copy client configs — an inner tabbed interface**, one sub-tab per
+   agent (**Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Cline, Zed,
+   and a generic HTTP-MCP** fallback). Each sub-tab renders a ready-to-paste
+   snippet **filled with the live host, port, and token**, with a copy button.
+   The exact per-agent shape (CLI command vs JSON block, field names) is produced
+   at render time from a small per-agent template table, since these formats
+   drift across agent releases — the tab is the single place to keep them current.
+
+This is **M4** work (the MCP server milestone, §12); it does not affect M1–M3.
+
 ---
 
 ## 5. The tuning state machine
@@ -542,6 +590,11 @@ bad_fcs_ratio}, escalations: [...], notes }`.
    treat per-packet `level_dbfs` as an indicator (not a setpoint) and confirm by
    decode count; twist ≤ ~2 dB. The reference rig is the *hot* baseline to steer
    away from, not to reproduce.
+4. **MCP transport + deployment — HTTP (streamable-HTTP), Graywolf-supervised,
+   browser-managed (§4.5).** stdio rejected. Localhost default, **0.0.0.0
+   opt-in allowed** (token-gated + warned). Managed from a new "MCP Server" tab
+   with a persisted on/off toggle and an inner tabbed, click-to-copy set of
+   per-agent client configs. M4 scope.
 
 **Still open:**
 
@@ -576,7 +629,10 @@ side-by-side rather than serially.
 3. **M3 — `--monitor` live stats + guidance** stream (§6/§9) — platform-neutral
    (pure DSP/stats), works everywhere M1 does.
 4. **M4 — MCP server + `autotune` state machine** (§5/§8), end-to-end on all
-   three desktop OSes.
+   three desktop OSes. Includes the **HTTP-transport server**, its Go-side
+   **supervisor** + `mcp_server` config singleton + `mcp-server` REST resource,
+   and the **"MCP Server" management tab** (toggle, status, bind-address,
+   per-agent click-to-copy configs) per §4.5.
 5. **M5 — Hardening + optional reference-signal validation** (TX-loopback /
    WA8LMF injection); per-OS device-quirk coverage (USB adapters with no/odd
    capture controls).
@@ -589,4 +645,7 @@ side-by-side rather than serially.
    mixer path is excluded; the OS layer targets only the three desktop APIs.
 - Auto-adjusting **TX** audio / deviation (this is RX decode tuning only).
 - Touching modem DSP profiles automatically beyond an optional offline sweep.
-- A GUI; the MCP/agent conversation is the interface for v1.
+- A GUI **for the tuning itself** — the auto-tune *interaction* stays the
+  MCP/agent conversation. (Note: there **is** a management UI — the "MCP Server"
+  tab of §4.5 — for enabling the server and copying client configs. That's
+  enable/connect plumbing, not a tuning GUI.)
