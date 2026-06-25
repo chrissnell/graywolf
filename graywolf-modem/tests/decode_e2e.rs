@@ -19,14 +19,15 @@ fn binary() -> PathBuf {
 }
 
 fn test_track() -> Option<PathBuf> {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("aprs-test-tracks");
-    p.push("03_100-Mic-E-Bursts-Flat.flac");
-    if p.exists() {
-        Some(p)
-    } else {
-        None
-    }
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Prefer the small committed AFSK-1200 fixture so this test actually runs
+    // in CI / a clean checkout; fall back to the large (optional, gitignored)
+    // WA8LMF track if someone has it locally.
+    let candidates = [
+        manifest.join("testdata/wav/afsk_1200.wav"),
+        manifest.join("aprs-test-tracks/03_100-Mic-E-Bursts-Flat.flac"),
+    ];
+    candidates.into_iter().find(|p| p.exists())
 }
 
 #[test]
