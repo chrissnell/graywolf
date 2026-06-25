@@ -128,52 +128,72 @@ Found while tracing `pump_all_audio`:
   `false`. The tuner should derive clipping from `peak_dbfs ≳ −0.5` rather than
   trusting the flag. *Optional modem fix: compute `clipping` unconditionally.*
 
-### 3.5 Reference station — measured target (NW5W, 2026-06-25)
+### 3.5 Reference station — a real *working* baseline (NW5W, 2026-06-25)
 
-The target zones below are **anchored to a real, well-tuned station**
-(`10.50.0.120`, NW5W-5), read live from its API. This is the calibration that
-matters most: it pins the per-packet correlator scale to reality rather than a
-guess.
+Read live from a real station (`10.50.0.120`, NW5W-5). It decodes well, but the
+operator is explicit that it's **hotter than ideal** and wants the tuner to aim
+for a *proper* radio output, not to reproduce his setup. So treat these as a
+**calibration data point**, not the target — the value is that they pin the
+relationships between the meters, which §3.6 then uses to define "proper."
 
 Active RX device (CM108AH USB, `plughw:CARD=Device`), channel "VHF APRS"
 (AFSK 1200), ~4 h uptime, 1443 good frames:
 
 | Quantity | Measured | Notes |
 |----------|----------|-------|
-| Per-packet `level_dbfs` (median) | **−29.7** (−29.6…−29.9, very tight) | the signal objective |
+| Per-packet `level_dbfs` (median) | **−29.7** (−29.6…−29.9, very tight) | a *measurement*, not a quality threshold (see below) |
 | `mark_dbfs` / `space_dbfs` | −29.6 / −29.8 | |
-| **Twist** \|mark − space\| (median) | **0.2 dB** (max 0.5) | near-perfect tone balance |
-| Graywolf software gain | **−25.5 dB** | hot radio feed, pulled down digitally |
-| Device meter `peak_dbfs` | −25.5, `clipping=false` | broadband, ~4 dB *above* per-packet |
+| **Twist** \|mark − space\| (median) | **0.2 dB** (max 0.5) | near-perfect tone balance — genuinely a target |
+| Graywolf software gain | **−25.5 dB** | large attenuation = the "hot" tell (see §3.6) |
+| Device meter `peak_dbfs` | −25.5, `clipping=false` | broadband, post-gain |
+| Implied **raw** ADC peak | ≈ **−25.5 − (−25.5) = ~0 dBFS** | **no headroom** — this is what "hot" means |
 | `rx_bad_fcs / (good+bad)` | 495 / 1938 ≈ 25% | normal for a busy collision-prone VHF channel |
 
-Two things this confirms with hard data:
+Three relationships this pins down (these, not the −30, are the durable lessons):
 
-- **The per-packet correlator scale is not the device-meter scale.** A
-  well-decoding signal reads ≈ **−30 dBFS** per-packet but ≈ −25 dBFS on the
-  broadband device meter — a built-in offset (the tone-matched correlator sits
-  below broadband peak). My earlier −12..−6 guess was wrong; it conflated the
-  two scales. This is exactly the device-tab-vs-packet-log discrepancy the
-  operator flagged, now quantified.
-- **Negative software gain is the clean direction.** His chain runs the radio
-  hot (raw near full-scale) and attenuates −25.5 dB in software (linear, no
-  `tanh`, not clipping) — and decodes great. So "hot in, pulled down clean" is a
-  legitimate well-tuned state, not a problem to correct.
+- **Per-packet level tracks the post-gain device peak**, offset ~4 dB low
+  (correlator vs broadband): here −29.7 ≈ −25.5 − 4. So per-packet
+  `level_dbfs` is *not* a fixed quality setpoint — it slides with the level you
+  set. His −30 is a **consequence of running hot then attenuating −25.5 dB**, not
+  a number to copy. (My last-turn "aim ≈ −30" over-anchored to his config;
+  corrected in §3.6.)
+- **Both meters are post software-gain**, so the front-end truth is
+  `raw_peak = device_peak − gain_db`. His ≈ 0 dBFS raw → essentially no
+  headroom; it works only because no packet has yet peaked into the rail.
+- **Negative software gain is clean** (linear, no `tanh`, no SNR cost), which is
+  *why* his hot-then-cut chain decodes fine. The problem with "hot" isn't
+  distortion or SNR — it's the **missing headroom** (a strong/close station or
+  noise burst can clip the ADC), and that a −25.5 dB software trim is *masking* a
+  mis-set analog level rather than fixing it.
 
-### 3.6 Target zones (defaults, operator-overridable; anchored to §3.5)
+### 3.6 Target zones — what "proper" means (defaults, operator-overridable)
 
-- Per-packet `level_dbfs`: aim **≈ −30 dBFS** (reference median), accept roughly
-  **−34 .. −26**. Treat the reference as the anchor and **confirm by decode
-  count**, since the absolute correlator level varies with modem profile
-  (Profile A/B, hard-limiter, slicer count) — do not hard-code −30 across all
-  configs.
-- Twist |mark − space|: **≤ ~2 dB** is excellent (reference 0.2); warn beyond
-  ~6 dB (points at de-emphasis / audio response, not level).
-- Device `peak_dbfs`: **< −1 dBFS** always (clipping veto / acquisition only —
-  *not* a signal-level target).
-- Decode health: good-frame rate not decreasing and `rx_bad_fcs / rx_frames`
+The real objective is **headroom at the ADC with software gain near unity**, then
+let the decoder do its job. The decoder's AGC normalizes a wide input range, so
+"louder" is not "better" past the point of adequate SNR — the win is robustness,
+not a magic level.
+
+- **Headroom (the "proper" criterion):** drive the analog/OS stage so the
+  **raw** ADC peak (`device_peak − gain_db`) sits around **−6 .. −12 dBFS** at
+  the loudest normal packets — comfortable margin against clipping on a strong
+  station. This is precisely what's wrong on the reference rig (raw ≈ 0).
+- **Software gain near unity:** aim `gain_db` within **±~6 dB of 0**. A large
+  trim in *either* direction (the reference's −25.5 is the example) means the
+  upstream level is mis-set — flag it and fix the analog level, even when decode
+  currently looks fine. Negative gain stays the clean direction for small trims;
+  positive gain >0 risks `tanh` distortion (§3.4).
+- **Per-packet `level_dbfs`:** treat as a **decode-quality indicator, not a
+  setpoint** — it must be comfortably above the noise floor and never clipping,
+  but its absolute value follows from the headroom choice above (for a proper
+  setup expect it *higher* than the reference's −30, roughly −10..−18 depending
+  on profile). **Confirm quality by decode count, not by hitting a level.**
+- **Twist |mark − space|:** **≤ ~2 dB** excellent (reference 0.2); warn beyond
+  ~6 dB (de-emphasis / audio response, not level).
+- **Device `peak_dbfs`:** **< −1 dBFS** always (hard clipping veto / acquisition
+  — *not* a signal-level target).
+- **Decode health:** good-frame *rate* not decreasing and `rx_bad_fcs / rx_frames`
   not increasing across a change (collisions inflate bad-FCS independent of
-  level, so weight good-frame *rate* most).
+  level, so weight good-frame rate most).
 
 ---
 
@@ -354,30 +374,38 @@ gates every committed change.
    • if no recent decodes: use device peak/rms to get peak into ~ −12..−3 dBFS,
      clipping=false — just enough to start decoding
 
-2. SET OS CAPTURE LEVEL  (primary automatic knob)
-   • adjust capture_db so device peak stays < −1 (no clip) AND
-     median per-packet level_dbfs trends toward the reference band (≈ −30, §3.6)
-   • monotone search w/ dwell time per step (§6 stats); never exceed clip veto
+2. SET HEADROOM at the analog/OS stage  (the "proper" step)
+   • goal: raw ADC peak = (device_peak − gain_db) in −12..−6 dBFS at loud
+     packets, clipping=false — real margin against strong stations
+   • knob priority: OS capture level if the device has one; else this is a
+     human-radio step (escalate, §5.5). CM108-class adapters have no capture
+     control, so for them "proper" lives entirely on the radio's AF knob.
 
-3. TRIM GW SOFTWARE GAIN  (fine, bounded)
-   • center median per-packet level_dbfs in the §3.6 band (≈ −30); negative gain
-     is clean, so prefer pulling a hot feed down; avoid >0 dB (tanh distortion)
-     unless the feed is genuinely too quiet
+3. RETURN SOFTWARE GAIN TOWARD UNITY  (fine trim only)
+   • once headroom is right, gain_db should land within ±~6 dB of 0. A large
+     residual trim means step 2 didn't actually fix the level — go back, don't
+     paper over it in software. Negative gain stays clean for small trims;
+     avoid >0 dB (tanh, §3.4).
 
-4. VALIDATE
+4. VALIDATE  (decode is the arbiter, not a level)
    • hold and watch a window of decodes: good-frame rate not down,
-     rx_bad_fcs/rx_frames not up vs the pre-change baseline
+     rx_bad_fcs/rx_frames not up vs the pre-change baseline. Per-packet
+     level_dbfs is a sanity indicator, not the pass/fail.
    • for digital-only sweeps, score deterministically on a captured clip (§7)
 
-5. ESCALATE TO HUMAN  (only if step 2 railed)
-   • railed HIGH and still clipping     → "turn radio volume DOWN a little"
-   • railed LOW  and still too quiet/SNR → "turn radio volume UP a little"
-   • enter live assist (§6); on each nudge, return to step 1
+5. ESCALATE TO HUMAN  (when there's no OS capture control, or it rails)
+   • too hot / raw near full-scale / clipping → "turn radio AF output DOWN"
+   • too quiet (gain would have to exceed ~+6 dB) → "turn radio AF output UP"
+   • target: raw peak ~ −9 dBFS with software gain near 0 (a proper output,
+     not a hot one); enter live assist (§6); on each nudge, return to step 1
 ```
 
 Commit policy: change one knob at a time, dwell, measure, keep only if decode
 health holds or improves; otherwise revert. Persist the winning OS level + GW
-gain; report the final settings and before/after metrics.
+gain; report the final settings and before/after metrics. A run that decodes
+fine but leaves a large software trim should still **report** the rig as "hot —
+back the radio down for headroom" rather than silently accepting it (the
+reference-station case the operator wants surfaced, not blessed).
 
 ---
 
@@ -389,13 +417,16 @@ aren't comparable across radio changes. The solution is **not** a batch sweep;
 it's a continuous loop closed *through the human*:
 
 - The `--monitor` stream reports **robust statistics over a rolling window**
-  (e.g. 95th-percentile device peak, **median per-packet `level_dbfs`**, and
-  clip-rate %) over ~20–60 s — never instantaneous values, so a quiet gap or one
-  loud neighbor doesn't jerk the guidance.
-- It emits a **direction + target range**, never a precise number:
-  *"Hot — clipping 8% of packets. Turn radio volume DOWN a little."* Humans
-  can't hit a number and traffic varies; precision is the automatic knobs' job
-  afterward.
+  (e.g. 95th-percentile **raw** ADC peak = device_peak − gain_db, median
+  per-packet `level_dbfs`, and clip-rate %) over ~20–60 s — never instantaneous
+  values, so a quiet gap or one loud neighbor doesn't jerk the guidance. Raw peak
+  is the headline because it's the "proper output" criterion (§3.6).
+- It emits a **direction + target range**, never a precise number, and aims for a
+  *proper* level (raw peak ~ −9 dBFS, software gain near 0) rather than whatever
+  decodes:
+  *"Radio's running hot — peaks near full-scale, no headroom. Turn the AF output
+  DOWN a little."* Humans can't hit a number and traffic varies; precision is the
+  automatic knobs' job afterward.
 - Because the user watches a **smoothed live meter converge** rather than
   comparing captures, the "different traffic each time" problem dissolves — it's
   tuning by ear, like peaking an analog signal.
@@ -454,18 +485,25 @@ operator) compose.
   "v": 1,
   "device_id": 1,
   "window_s": 30,
-  "device": { "peak_dbfs": -2.1, "rms_dbfs": -18.4, "clip_rate": 0.06 },
-  "packet": { "n": 24, "level_dbfs_med": -7.8, "level_dbfs_iqr": 1.9,
-              "twist_db_med": 3.1 },
+  "gain_db": -25.5,
+  "device": { "peak_dbfs": -25.5, "rms_dbfs": -26.3, "clip_rate": 0.0 },
+  "raw": { "peak_dbfs": 0.0, "headroom_ok": false, "hot": true },
+  "packet": { "n": 24, "level_dbfs_med": -29.7, "level_dbfs_iqr": 0.3,
+              "twist_db_med": 0.2 },
   "decode": { "rx_frames": 24, "rx_bad_fcs": 2 },
-  "guidance": { "stage": "human_radio", "direction": "down",
-                "reason": "clipping", "message": "Turn radio volume down a little." }
+  "guidance": { "stage": "human_radio", "direction": "down", "reason": "no_headroom",
+                "message": "Radio's running hot -- no headroom. Turn the AF output down a little." }
 }
 ```
 
-`autotune` result: `{ committed: {os_capture_db, gain_db}, before/after:
-{level_dbfs_med, peak_dbfs, rx_frames_rate, bad_fcs_ratio}, escalations: [...],
-notes }`.
+`raw.peak_dbfs = device.peak_dbfs − gain_db` is the front-end truth; `hot` trips
+when raw peak is above ~−6 dBFS or |gain_db| exceeds ~6 (the reference-station
+condition). The example above is literally the NW5W reading — decodes fine, but
+flagged hot.
+
+`autotune` result: `{ committed: {os_capture_db, gain_db}, raw_peak_dbfs,
+hot: bool, before/after: {raw_peak_dbfs, gain_db, level_dbfs_med, rx_frames_rate,
+bad_fcs_ratio}, escalations: [...], notes }`.
 
 ---
 
@@ -499,8 +537,11 @@ notes }`.
 2. **OS control lives in `graywolf-modem`.** Keeps device identity (cpal, all
    three hosts) and the vendored audio FFI in one place; the MCP server calls it
    via subcommands/IPC (§4.2).
-3. **Default target zone — settled by the NW5W reference (§3.5/§3.6):** aim
-   per-packet `level_dbfs` ≈ −30, twist ≤ ~2 dB, confirm by decode count.
+3. **Target model — "proper output," informed by the NW5W reference (§3.5/§3.6):**
+   aim for **raw ADC headroom (peak ~ −9 dBFS) with software gain near unity**;
+   treat per-packet `level_dbfs` as an indicator (not a setpoint) and confirm by
+   decode count; twist ≤ ~2 dB. The reference rig is the *hot* baseline to steer
+   away from, not to reproduce.
 
 **Still open:**
 
