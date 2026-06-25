@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mountFrontsLayer, FRONT_LAYER_IDS } from './fronts.js';
+import { mountFrontsLayer, FRONT_LAYER_IDS, FRONT_WORLD_LAYER_IDS } from './fronts.js';
 
 // Minimal MapLibre stand-in: records sources/layers, layout/paint edits, and
 // the image registry. No DOM, so rasterizeSvg resolves null and addImage is
@@ -41,6 +41,36 @@ test('mount adds the source and all four layers behind the first symbol layer', 
     assert.ok(map._layers[id], `${id} added`);
     assert.equal(map._layers[id].layout.visibility, 'visible');
   }
+});
+
+test('world layer ids exist and are distinct from the WPC layer ids', () => {
+  assert.ok(FRONT_WORLD_LAYER_IDS.includes('fronts-world-line'));
+  assert.ok(FRONT_WORLD_LAYER_IDS.includes('fronts-world-pips'));
+  for (const id of FRONT_WORLD_LAYER_IDS) {
+    assert.ok(!FRONT_LAYER_IDS.includes(id), `${id} must not collide with a WPC id`);
+  }
+});
+
+test('mount adds the world source + layers alongside WPC, under one toggle', () => {
+  const map = fakeMap();
+  const layer = mountFrontsLayer(map, { visible: true });
+  assert.ok(map._sources['fronts-world'], 'world geojson source added');
+  for (const id of FRONT_WORLD_LAYER_IDS) {
+    assert.ok(map._layers[id], `${id} added`);
+  }
+  // The single toggle hides both layer sets.
+  layer.setVisible(false);
+  for (const id of [...FRONT_LAYER_IDS, ...FRONT_WORLD_LAYER_IDS]) {
+    assert.equal(map._layers[id].layout.visibility, 'none');
+  }
+});
+
+test('reload pushes data urls into both geojson sources', () => {
+  const map = fakeMap();
+  const layer = mountFrontsLayer(map, { visible: true });
+  layer.reload();
+  assert.match(String(map._sources.fronts.data), /\/fronts\/latest\.geojson$/);
+  assert.match(String(map._sources['fronts-world'].data), /\/fronts\/world\/latest\.geojson$/);
 });
 
 test('setVisible(false) sets every front layer visibility to none', () => {

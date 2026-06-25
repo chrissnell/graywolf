@@ -24,7 +24,7 @@
     RADAR_REGION_WORLD,
   } from '../lib/map/sources/radar-source.js';
   import { mountFrontsLayer } from '../lib/map/layers/fronts.js';
-  import { frontsProvider } from '../lib/map/sources/fronts-source.js';
+  import { frontsProvider, frontsWorldProvider } from '../lib/map/sources/fronts-source.js';
   import { createRadarFrames } from '../lib/map/radar-frames.svelte.js';
   import { mapsState } from '../lib/settings/maps-store.svelte.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
@@ -206,7 +206,11 @@
   // attaches the token to it without any wiring here.
   let frontsToken = null;
   let frontsPollTimer = null;
+  // One issuance marker per source (WPC analysis + model-derived world). Either
+  // changing triggers a reload of both GeoJSON sources (the layer's reload()
+  // refreshes both -- cheap, and they share the toggle).
   let lastFrontsIssued = null;
+  let lastFrontsWorldIssued = null;
   // De-dupe diagnostics like warnRadar: a persistent failure would otherwise
   // warn every poll. Only log when the failure stage changes.
   let lastFrontsLoadStatus = null;
@@ -215,41 +219,51 @@
     lastFrontsLoadStatus = status;
     console.warn(...args);
   }
-  async function pollFrontsManifest() {
-    if (!mapsState.registered) return;
-    if (!frontsToken) frontsToken = await mapsState.revealToken();
-    if (!frontsToken) return;
-    const url = `${frontsProvider().manifestUrl}?t=${encodeURIComponent(frontsToken)}`;
+  // Fetch one fronts manifest and return its issuance marker, or undefined on
+  // any failure (network/401/HTTP/parse). A 401 clears the token to re-reveal.
+  async function fetchFrontsIssued(manifestUrl, label) {
+    const url = `${manifestUrl}?t=${encodeURIComponent(frontsToken)}`;
     let resp;
     try {
       resp = await fetch(url);
     } catch (e) {
-      warnFronts('network', '[fronts] manifest fetch failed (network/CORS)', e);
-      return;
+      warnFronts(`${label}-network`, `[fronts] ${label} manifest fetch failed (network/CORS)`, e);
+      return undefined;
     }
     if (resp.status === 401) {
       frontsToken = null; // stale token -- re-reveal next poll
-      warnFronts(401, '[fronts] manifest 401 -- token rejected; will re-reveal');
-      return;
+      warnFronts(`${label}-401`, `[fronts] ${label} manifest 401 -- token rejected; will re-reveal`);
+      return undefined;
     }
     if (!resp.ok) {
-      warnFronts(resp.status, `[fronts] manifest fetch HTTP ${resp.status}`);
-      return;
+      warnFronts(`${label}-${resp.status}`, `[fronts] ${label} manifest fetch HTTP ${resp.status}`);
+      return undefined;
     }
-    let issued;
     try {
       const json = await resp.json();
-      issued = json?.issued ?? json?.latest ?? null;
+      return json?.issued ?? json?.latest ?? null;
     } catch (e) {
-      warnFronts('parse', '[fronts] manifest JSON parse failed', e);
-      return;
+      warnFronts(`${label}-parse`, `[fronts] ${label} manifest JSON parse failed`, e);
+      return undefined;
     }
-    lastFrontsLoadStatus = null; // recovered
-    if (issued == null) return;
-    if (lastFrontsIssued !== null && issued !== lastFrontsIssued) {
-      frontsLayer?.reload();
+  }
+  async function pollFrontsManifest() {
+    if (!mapsState.registered) return;
+    if (!frontsToken) frontsToken = await mapsState.revealToken();
+    if (!frontsToken) return;
+    const na = await fetchFrontsIssued(frontsProvider().manifestUrl, 'na');
+    const world = await fetchFrontsIssued(frontsWorldProvider().manifestUrl, 'world');
+    if (na !== undefined || world !== undefined) lastFrontsLoadStatus = null; // recovered
+    let changed = false;
+    if (na !== undefined && na != null) {
+      if (lastFrontsIssued !== null && na !== lastFrontsIssued) changed = true;
+      lastFrontsIssued = na;
     }
-    lastFrontsIssued = issued;
+    if (world !== undefined && world != null) {
+      if (lastFrontsWorldIssued !== null && world !== lastFrontsWorldIssued) changed = true;
+      lastFrontsWorldIssued = world;
+    }
+    if (changed) frontsLayer?.reload();
   }
   function startFrontsPolling() {
     if (frontsPollTimer) return;

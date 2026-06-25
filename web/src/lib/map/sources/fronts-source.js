@@ -37,3 +37,20 @@ export function frontsProvider() {
     manifestUrl: FRONTS_MANIFEST_URL,
   };
 }
+
+// Model-derived GLOBAL fronts (GFS Thermal Front Parameter). Same schema and
+// styling as the WPC source, served under /fronts/world/* and tagged
+// region:"world". Rendered BENEATH the WPC layers so the analyst product wins
+// over North America and the model shows through everywhere else.
+export const FRONTS_WORLD_SOURCE_ID = 'fronts-world';
+export const FRONTS_WORLD_MANIFEST_URL = `${FRONTS_BASE}/fronts/world/manifest.json`;
+export const FRONTS_WORLD_DATA_URL = `${FRONTS_BASE}/fronts/world/latest.geojson`;
+
+export function frontsWorldProvider() {
+  return {
+    sourceId: FRONTS_WORLD_SOURCE_ID,
+    source: { type: 'geojson', data: FRONTS_WORLD_DATA_URL },
+    dataUrl: FRONTS_WORLD_DATA_URL,
+    manifestUrl: FRONTS_WORLD_MANIFEST_URL,
+  };
+}
