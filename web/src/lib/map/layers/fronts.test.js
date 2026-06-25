@@ -7,19 +7,26 @@ import { mountFrontsLayer, FRONT_LAYER_IDS, FRONT_WORLD_LAYER_IDS } from './fron
 // never reached -- the layer add path is what we exercise here.
 function fakeMap() {
   const sources = {}, layers = {}, images = {};
+  // `order` mirrors MapLibre's layer array (later = rendered on top) so tests
+  // can assert beforeId placement / z-order.
+  const order = [];
   return {
     addSource: (id, s) => { sources[id] = { ...s }; },
     getSource: (id) => (sources[id] ? { setData: (d) => { sources[id].data = d; } } : undefined),
-    addLayer: (l) => { layers[l.id] = { ...l, paint: { ...(l.paint ?? {}) }, layout: { ...(l.layout ?? {}) } }; },
+    addLayer: (l, beforeId) => {
+      layers[l.id] = { ...l, paint: { ...(l.paint ?? {}) }, layout: { ...(l.layout ?? {}) } };
+      const at = beforeId ? order.indexOf(beforeId) : -1;
+      if (at >= 0) order.splice(at, 0, l.id); else order.push(l.id);
+    },
     getLayer: (id) => layers[id],
     setLayoutProperty: (id, k, v) => { if (layers[id]) layers[id].layout[k] = v; },
     setPaintProperty: (id, k, v) => { if (layers[id]) layers[id].paint[k] = v; },
-    removeLayer: (id) => { delete layers[id]; },
+    removeLayer: (id) => { delete layers[id]; const i = order.indexOf(id); if (i >= 0) order.splice(i, 1); },
     removeSource: (id) => { delete sources[id]; },
     getStyle: () => ({ layers: [] }),
     hasImage: (id) => Boolean(images[id]),
     addImage: (id, img) => { images[id] = img; },
-    _sources: sources, _layers: layers, _images: images,
+    _sources: sources, _layers: layers, _images: images, _order: order,
   };
 }
 
@@ -65,6 +72,18 @@ test('mount adds the world source + layers alongside WPC, under one toggle', () 
   }
 });
 
+test('world layers are inserted beneath all WPC layers (z-order)', () => {
+  const map = fakeMap();
+  mountFrontsLayer(map, { visible: true });
+  const idx = (id) => map._order.indexOf(id);
+  const worldMax = Math.max(...FRONT_WORLD_LAYER_IDS.map(idx));
+  const wpcMin = Math.min(...FRONT_LAYER_IDS.map(idx));
+  for (const id of [...FRONT_LAYER_IDS, ...FRONT_WORLD_LAYER_IDS]) {
+    assert.ok(idx(id) >= 0, `${id} present in layer order`);
+  }
+  assert.ok(worldMax < wpcMin, 'every world layer renders beneath every WPC layer');
+});
+
 test('reload pushes data urls into both geojson sources', () => {
   const map = fakeMap();
   const layer = mountFrontsLayer(map, { visible: true });
@@ -94,7 +113,8 @@ test('refresh re-adds dropped layers after a style swap', () => {
 
   layer.refresh();
   assert.ok(map._sources.fronts, 'source re-added');
-  for (const id of FRONT_LAYER_IDS) {
+  assert.ok(map._sources['fronts-world'], 'world source re-added');
+  for (const id of [...FRONT_LAYER_IDS, ...FRONT_WORLD_LAYER_IDS]) {
     assert.ok(map._layers[id], `${id} re-added`);
   }
 });

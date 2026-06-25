@@ -212,12 +212,18 @@
   let lastFrontsIssued = null;
   let lastFrontsWorldIssued = null;
   // De-dupe diagnostics like warnRadar: a persistent failure would otherwise
-  // warn every poll. Only log when the failure stage changes.
-  let lastFrontsLoadStatus = null;
+  // warn every poll. The de-dupe is keyed by status string and tracked PER
+  // SOURCE: a healthy `na` must not clear a persistently-failing `world`'s
+  // warning (the normal state while the world source is rolling out). A source
+  // clears only its own statuses on success.
+  const frontsWarned = new Set();
   function warnFronts(status, ...args) {
-    if (lastFrontsLoadStatus === status) return;
-    lastFrontsLoadStatus = status;
+    if (frontsWarned.has(status)) return;
+    frontsWarned.add(status);
     console.warn(...args);
+  }
+  function clearFrontsWarn(label) {
+    for (const s of [...frontsWarned]) if (s.startsWith(`${label}-`)) frontsWarned.delete(s);
   }
   // Fetch one fronts manifest and return its issuance marker, or undefined on
   // any failure (network/401/HTTP/parse). A 401 clears the token to re-reveal.
@@ -241,7 +247,9 @@
     }
     try {
       const json = await resp.json();
-      return json?.issued ?? json?.latest ?? null;
+      const issued = json?.issued ?? json?.latest ?? null;
+      clearFrontsWarn(label); // this source recovered
+      return issued;
     } catch (e) {
       warnFronts(`${label}-parse`, `[fronts] ${label} manifest JSON parse failed`, e);
       return undefined;
@@ -252,8 +260,10 @@
     if (!frontsToken) frontsToken = await mapsState.revealToken();
     if (!frontsToken) return;
     const na = await fetchFrontsIssued(frontsProvider().manifestUrl, 'na');
+    // If `na` got a 401 it cleared the token; don't fire a guaranteed second
+    // 401 at the world manifest -- re-reveal on the next poll instead.
+    if (!frontsToken) return;
     const world = await fetchFrontsIssued(frontsWorldProvider().manifestUrl, 'world');
-    if (na !== undefined || world !== undefined) lastFrontsLoadStatus = null; // recovered
     let changed = false;
     if (na !== undefined && na != null) {
       if (lastFrontsIssued !== null && na !== lastFrontsIssued) changed = true;

@@ -253,12 +253,13 @@ export function mountFrontsLayer(map, { visible }) {
     if (!map.getSource(world.sourceId)) map.addSource(world.sourceId, world.source);
     if (!map.getSource(wpc.sourceId)) map.addSource(wpc.sourceId, wpc.source);
     const vis = curVisible ? 'visible' : 'none';
+    const firstSym = firstSymbolId();
 
     // WPC first, above the basemap symbol layers.
-    addLayers(layerSpecs(wpc.sourceId, 'fronts', vis), firstSymbolId());
+    addLayers(layerSpecs(wpc.sourceId, 'fronts', vis), firstSym);
     // World beneath WPC: insert before the WPC base line if present, else above
     // the basemap symbols. This keeps the analyst product on top over NA.
-    const worldBefore = map.getLayer('fronts-line') ? 'fronts-line' : firstSymbolId();
+    const worldBefore = map.getLayer('fronts-line') ? 'fronts-line' : firstSym;
     addLayers(layerSpecs(world.sourceId, 'fronts-world', vis), worldBefore);
   }
 
