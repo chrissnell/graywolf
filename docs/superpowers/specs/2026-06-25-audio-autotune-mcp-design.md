@@ -128,13 +128,52 @@ Found while tracing `pump_all_audio`:
   `false`. The tuner should derive clipping from `peak_dbfs ≳ −0.5` rather than
   trusting the flag. *Optional modem fix: compute `clipping` unconditionally.*
 
-### 3.5 Target zones (defaults, operator-overridable)
+### 3.5 Reference station — measured target (NW5W, 2026-06-25)
 
-- Per-packet `level_dbfs`: **−12 .. −6 dBFS** (green), aim center ≈ −9.
-- Twist |mark − space|: **≤ ~6 dB** healthy; warn beyond.
-- Device `peak_dbfs`: **< −1 dBFS** always (clipping veto).
+The target zones below are **anchored to a real, well-tuned station**
+(`10.50.0.120`, NW5W-5), read live from its API. This is the calibration that
+matters most: it pins the per-packet correlator scale to reality rather than a
+guess.
+
+Active RX device (CM108AH USB, `plughw:CARD=Device`), channel "VHF APRS"
+(AFSK 1200), ~4 h uptime, 1443 good frames:
+
+| Quantity | Measured | Notes |
+|----------|----------|-------|
+| Per-packet `level_dbfs` (median) | **−29.7** (−29.6…−29.9, very tight) | the signal objective |
+| `mark_dbfs` / `space_dbfs` | −29.6 / −29.8 | |
+| **Twist** \|mark − space\| (median) | **0.2 dB** (max 0.5) | near-perfect tone balance |
+| Graywolf software gain | **−25.5 dB** | hot radio feed, pulled down digitally |
+| Device meter `peak_dbfs` | −25.5, `clipping=false` | broadband, ~4 dB *above* per-packet |
+| `rx_bad_fcs / (good+bad)` | 495 / 1938 ≈ 25% | normal for a busy collision-prone VHF channel |
+
+Two things this confirms with hard data:
+
+- **The per-packet correlator scale is not the device-meter scale.** A
+  well-decoding signal reads ≈ **−30 dBFS** per-packet but ≈ −25 dBFS on the
+  broadband device meter — a built-in offset (the tone-matched correlator sits
+  below broadband peak). My earlier −12..−6 guess was wrong; it conflated the
+  two scales. This is exactly the device-tab-vs-packet-log discrepancy the
+  operator flagged, now quantified.
+- **Negative software gain is the clean direction.** His chain runs the radio
+  hot (raw near full-scale) and attenuates −25.5 dB in software (linear, no
+  `tanh`, not clipping) — and decodes great. So "hot in, pulled down clean" is a
+  legitimate well-tuned state, not a problem to correct.
+
+### 3.6 Target zones (defaults, operator-overridable; anchored to §3.5)
+
+- Per-packet `level_dbfs`: aim **≈ −30 dBFS** (reference median), accept roughly
+  **−34 .. −26**. Treat the reference as the anchor and **confirm by decode
+  count**, since the absolute correlator level varies with modem profile
+  (Profile A/B, hard-limiter, slicer count) — do not hard-code −30 across all
+  configs.
+- Twist |mark − space|: **≤ ~2 dB** is excellent (reference 0.2); warn beyond
+  ~6 dB (points at de-emphasis / audio response, not level).
+- Device `peak_dbfs`: **< −1 dBFS** always (clipping veto / acquisition only —
+  *not* a signal-level target).
 - Decode health: good-frame rate not decreasing and `rx_bad_fcs / rx_frames`
-  not increasing across a change.
+  not increasing across a change (collisions inflate bad-FCS independent of
+  level, so weight good-frame *rate* most).
 
 ---
 
@@ -260,6 +299,42 @@ default empty / localhost). MCP config = `{ base_url, token?, device_id }`. OS
 mixer access needs appropriate permissions (Linux `audio` group; macOS/Windows
 local user). All local-first; nothing leaves the host.
 
+### 4.4 Cross-platform / vendoring constraints (learned from the existing tree)
+
+The modem already carries hard-won portability work, especially for old/32-bit
+Raspberry Pi. The OS-control layer must inherit it, not fight it:
+
+- **Linux ALSA goes through the patched `alsa` crate, never stock.** The
+  workspace `Cargo.toml` pins `[patch.crates-io] alsa = { git =
+  ".../chrissnell/alsa-rs", rev = 56099e8 }` to fix a **t64 `struct timespec`
+  stack overflow** that SIGSEGV-crashes capture on current 32-bit Pi OS
+  (libasound2t64 — Pi Zero/1/2 and 32-bit Pi 3/4; issue #231,
+  `docs/plans/2026-06-11-armhf-t64-alsa-htstamp-fix.md`). The mixer FFI
+  (`snd_mixer_selem_*`) we need touches `i64`/MilliBel ranges, **not** timespec,
+  so it's outside the crashing path — but the layer must use the *patched* crate
+  and we should add an armhf-t64 smoke test for the mixer calls so we don't
+  reintroduce the class of bug. Old-Pi support thus comes essentially for free.
+- **Avoid new dynamically-linked system libs** — they break the cross/musl
+  release toolchain (`Cross.toml`) and old glibc targets. Precedent: `hidapi` is
+  pulled with `linux-native-basic-udev` (pure-Rust hidraw, **no libudev link**).
+  Apply the same rule here: do the **PipeWire/Pulse** path via `wpctl`/`pactl`
+  **subprocess**, not a linked `libpulse`/`libpipewire`, so nothing new has to
+  cross-compile for armv6/armhf/musl.
+- **Windows reuses the in-tree `windows` 0.59 crate** (already used for PTT and
+  the enhancements registry read) — add `Win32_Media_Audio` /
+  `Win32_System_Com` features for `IAudioEndpointVolume`; don't introduce a
+  parallel `windows-sys`.
+- **macOS reuses `coreaudio-sys`** (already in the tree transitively via cpal)
+  for the input volume/mute properties — no new top-level dep.
+- **Device identity comes from cpal**, which the modem already owns on every
+  host, so the OS-control layer maps `device_path`/`host_api` → mixer control in
+  the one process that already enumerated the device (avoids a second, drifting
+  enumeration world — the same reason §4.1 rejects shipping sox).
+
+Net: the only genuinely new linked code is the per-OS mixer calls themselves
+(patched-ALSA mixer, CoreAudio, WASAPI); everything else is subprocess or an
+existing dependency, which keeps the old-RPi and cross-compile story intact.
+
 ---
 
 ## 5. The tuning state machine
@@ -281,12 +356,13 @@ gates every committed change.
 
 2. SET OS CAPTURE LEVEL  (primary automatic knob)
    • adjust capture_db so device peak stays < −1 (no clip) AND
-     median per-packet level_dbfs trends toward −9
+     median per-packet level_dbfs trends toward the reference band (≈ −30, §3.6)
    • monotone search w/ dwell time per step (§6 stats); never exceed clip veto
 
 3. TRIM GW SOFTWARE GAIN  (fine, bounded)
-   • center median level_dbfs in −12..−6; prefer |gain| small; avoid >0 dB
-     (tanh distortion) unless unavoidable
+   • center median per-packet level_dbfs in the §3.6 band (≈ −30); negative gain
+     is clean, so prefer pulling a hot feed down; avoid >0 dB (tanh distortion)
+     unless the feed is genuinely too quiet
 
 4. VALIDATE
    • hold and watch a window of decodes: good-frame rate not down,
@@ -405,29 +481,34 @@ notes }`.
   write. (Possible nicety later: a per-packet WS feed; today only the AX.25
   terminal WS exists, so live per-packet data comes from the modem's own
   `--monitor` stream.)
-- New: the MCP server (separate small project; language TBD in §11).
+- New: the MCP server (Rust; §11) + a shared OS-audio-control crate used by both
+  the server and `graywolf-modem`.
 
 ---
 
-## 11. Open questions / decisions to confirm
+## 11. Decisions (settled) and remaining questions
 
-1. **MCP server language.** Rust (shares the modem's stack and the `alsa-rs`
-   mixer; mature cross-platform OS-audio crates — `coreaudio-sys`, the `windows`
-   crate) vs Go (matches the service, easy REST) vs Python (fastest to prototype
-   with `mcp-builder`). Recommendation: **Rust**, folding the OS-control layer
-   into a small crate the modem can also use — one audio-control implementation
-   covering all three desktop OSes, and direct (non-subprocess) bindings on every
-   platform except the Linux PipeWire/Pulse path.
-2. **Where OS control lives** — in `graywolf-modem` (proposed) vs the MCP server.
-   Proposed keeps device identity (cpal, all three hosts) in one place.
-3. **Linux PipeWire/Pulse path** — `wpctl`/`pactl` subprocess for v1 vs a
-   `libpulse`/PipeWire binding. Subprocess is fine to start; raw ALSA stays the
-   no-dep direct path for headless rigs. (macOS/Windows are direct bindings, no
-   subprocess.)
-4. **Reference-signal validation** — is a TX-loopback / WA8LMF-injection harness
-   in scope for v1, or just live-traffic + level targets?
-5. **Default target zones** (§3.5) — confirm −12..−6 dBFS / −9 center against
-   the team's field experience.
+**Settled with the operator (2026-06-25):**
+
+1. **MCP server language — Rust.** Shares the modem's stack and the patched
+   `alsa` crate; mature cross-platform OS-audio crates (`coreaudio-sys`, the
+   `windows` crate already in-tree). The OS-control layer is a small crate the
+   modem and the MCP server both use — one implementation, all three desktop
+   OSes, direct (non-subprocess) bindings everywhere except the Linux
+   PipeWire/Pulse path. May use the `creating-mcps` skill.
+2. **OS control lives in `graywolf-modem`.** Keeps device identity (cpal, all
+   three hosts) and the vendored audio FFI in one place; the MCP server calls it
+   via subcommands/IPC (§4.2).
+3. **Default target zone — settled by the NW5W reference (§3.5/§3.6):** aim
+   per-packet `level_dbfs` ≈ −30, twist ≤ ~2 dB, confirm by decode count.
+
+**Still open:**
+
+4. **Linux PipeWire/Pulse path** — `wpctl`/`pactl` subprocess for v1 vs a
+   `libpulse`/PipeWire binding. Subprocess preferred (no new linked dep; see
+   §4.4); raw ALSA stays the no-dep direct path for headless rigs.
+5. **Reference-signal validation** — is a TX-loopback / WA8LMF-injection harness
+   in scope for v1, or just live-traffic + level targets? (Deferred to M5.)
 
 ---
 
