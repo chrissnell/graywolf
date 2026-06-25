@@ -11,7 +11,14 @@ pub fn to_dbfs(v: f32) -> f32 {
         return -60.0;
     }
     let db = (20.0 * v.log10()).max(-60.0);
-    (db * 10.0).round() / 10.0
+    let rounded = (db * 10.0).round() / 10.0;
+    // Normalize -0.0 -> 0.0 so JSON emits "0", matching the Go toDBFS (a level
+    // just under full scale rounds to a negative zero otherwise).
+    if rounded == 0.0 {
+        0.0
+    } else {
+        rounded
+    }
 }
 
 /// Write mono i16 samples as a PCM s16le WAV at `rate` Hz.
@@ -105,6 +112,9 @@ mod tests {
         assert_eq!(to_dbfs(0.0), -60.0);
         assert_eq!(to_dbfs(-1.0), -60.0);
         assert_eq!(to_dbfs(0.0005), -60.0);
+        // A level just under full scale rounds toward zero: assert it is
+        // positive zero (bit-for-bit), not -0.0, so JSON emits "0" like Go.
+        assert_eq!(to_dbfs(0.999).to_bits(), 0.0_f32.to_bits());
     }
 
     #[test]
