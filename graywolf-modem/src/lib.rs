@@ -106,6 +106,7 @@ pub mod list_audio;
 #[cfg(not(target_os = "android"))]
 pub mod list_usb;
 pub mod rxonly;
+pub mod wavio;
 #[cfg(target_os = "android")]
 pub mod android;
 // On the host with android-test-stub, android/mod.rs is not compiled
