@@ -388,6 +388,114 @@
       reconfiguration.
     </p>
 
+    <h2>Command-line audio check (record &amp; decode)</h2>
+
+    <p>
+      The <code>graywolf-modem</code> helper that ships with graywolf has two
+      command-line subcommands that let you capture a short recording of your
+      receive audio and check how well it decodes &mdash; a quick way to verify
+      a new sound card, cable, or radio-audio level without watching the
+      dashboard, and to A/B-test gain settings against the exact same clip.
+    </p>
+
+    <h3>Record a clip</h3>
+
+    <p>
+      First, list the input devices to get the exact device name:
+    </p>
+
+    <pre><code>graywolf-modem --list-audio</code></pre>
+
+    <p>
+      Then capture a few seconds (or a minute, with packets coming in) to a
+      WAV file:
+    </p>
+
+    <pre><code>graywolf-modem --record "plughw:CARD=Device,DEV=0" --seconds 60 --out rx.wav</code></pre>
+
+    <p>
+      <code>--seconds</code> sets the capture length and <code>--out</code> the
+      output WAV. <code>--rate</code> is optional (default 48000). The recording
+      is mono, taken from the same audio path the modem decodes.
+    </p>
+
+    <h3>Decode and score a clip</h3>
+
+    <p>
+      Run a captured <code>.wav</code> (or <code>.flac</code>) back through
+      graywolf's real AFSK demodulator and print a summary:
+    </p>
+
+    <pre><code>graywolf-modem --decode rx.wav</code></pre>
+
+    <pre><code>{
+  "rx_frames": 14,
+  "rx_bad_fcs": 6,
+  "level_dbfs_med": -15.85,
+  "mark_dbfs_med": -16.2,
+  "space_dbfs_med": -15.75,
+  "twist_db_med": 0.3,
+  "sample_rate": 44100
+}</code></pre>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>rx_frames</code></td>
+              <td>Packets decoded successfully (good checksum).</td>
+            </tr>
+            <tr>
+              <td><code>rx_bad_fcs</code></td>
+              <td>Frames that demodulated but failed their checksum &mdash;
+                  normal on a busy channel (collisions), but a high ratio with
+                  few good frames can also mean the audio is too hot
+                  (clipping) or too weak.</td>
+            </tr>
+            <tr>
+              <td><code>level_dbfs_med</code></td>
+              <td>Median received audio level of the decoded packets, in dBFS.
+                  This is the same measurement shown in the packet log's
+                  <em>Level</em> column, so a clip reads the same here as it
+                  does live.</td>
+            </tr>
+            <tr>
+              <td><code>mark_dbfs_med</code> / <code>space_dbfs_med</code></td>
+              <td>Median level of each of the two AFSK tones.</td>
+            </tr>
+            <tr>
+              <td><code>twist_db_med</code></td>
+              <td>The spread between the mark and space tone levels. A large
+                  twist points at an audio-response / de-emphasis problem
+                  rather than overall level.</td>
+            </tr>
+            <tr>
+              <td><code>sample_rate</code></td>
+              <td>Sample rate read from the clip, in Hz.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Because <code>--decode</code> is deterministic on a fixed file, the
+          easiest way to dial in a setup is to record one clip, then decode it
+          repeatedly while you try different gain settings &mdash; the one that
+          yields the most <code>rx_frames</code> (with the fewest
+          <code>rx_bad_fcs</code> and no clipping) wins, with no need to wait
+          for live traffic to repeat.
+        </p>
+      </div>
+    </div>
+
     <nav class="page-nav">
       <a href="callsign.html">
         <span class="label">Previous</span>
