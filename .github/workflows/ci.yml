@@ -87,7 +87,17 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install shellcheck
-        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+        run: |
+          # The hosted-runner image ships Microsoft/Azure apt repos that
+          # intermittently return 403 ("no longer signed") and fail
+          # `apt-get update` -- even though shellcheck comes from Ubuntu's own
+          # mirror. Drop those third-party lists first so an unrelated outage
+          # can't fail this job. Ubuntu's own sources live in the deb822
+          # `ubuntu.sources` file and are untouched.
+          sudo rm -f /etc/apt/sources.list.d/*microsoft*.list \
+                     /etc/apt/sources.list.d/*azure*.list || true
+          sudo apt-get update -y
+          sudo apt-get install -y shellcheck
 
       - name: shellcheck POSIX example scripts
         run: shellcheck examples/actions/posix/*.sh
