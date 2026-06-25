@@ -125,6 +125,9 @@ fn main() -> ExitCode {
 fn bind_server(args: &[String]) -> Result<IpcServer, Box<dyn std::error::Error>> {
     if args.len() != 2 {
         eprintln!("usage: graywolf-modem <socket-path>");
+        eprintln!("       graywolf-modem --record <device> --seconds <N> --out <file.wav> [--rate <hz>]");
+        eprintln!("       graywolf-modem --decode <file.wav|file.flac>");
+        eprintln!("       graywolf-modem --list-audio | --list-cm108 | --list-usb | --version");
         std::process::exit(2);
     }
     Ok(IpcServer::bind(&args[1])?)

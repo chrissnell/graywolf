@@ -48,6 +48,9 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | CM108 HID enumeration (`--list-cm108`) | `cm108.rs` |
 | `--list-audio` JSON enumerator (cpal hosts/devices) | `src/audio/soundcard.rs` (`listing` module), `src/list_audio.rs` |
 | `--list-usb` JSON enumerator (nusb tree walk) | `src/list_usb.rs` |
+| `--record <device> --seconds N --out f.wav` (cpal capture to WAV) | `src/record.rs` (+ `src/wavio.rs`) |
+| `--decode <f.wav\|f.flac>` (offline decode -> JSON score: `rx_frames`, `rx_bad_fcs`, per-packet `*_dbfs`) | `src/decode.rs` (+ `src/wavio.rs`) |
+| WAV/FLAC sample I/O + linear->dBFS helper | `src/wavio.rs` |
 | Modem CLI dispatch + flag handlers | `src/bin/graywolf_modem.rs` |
 | IPC framing | `ipc/framing.rs` |
 | IPC server (UDS / Windows TCP) | `ipc/server.rs` |
