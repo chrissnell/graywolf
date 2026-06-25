@@ -5,7 +5,6 @@
   import { online } from '../lib/stores/connection.js';
   import { formatAltitude, formatSpeed } from '../lib/settings/units.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
-  import { pushRateSample } from '../lib/packetRate.js';
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
@@ -31,26 +30,12 @@
       status = null;
       position = null;
       packets = [];
-      // Drop the rolling-rate window so a reconnect starts measuring fresh
-      // rather than averaging across the offline gap.
-      rateSamples = [];
-      rxRate = null;
-      txRate = null;
     }
   });
 
   let totalRx = $derived(status?.channels?.reduce((sum, ch) => sum + (ch.rx_frames || 0), 0) ?? 0);
   let totalTx = $derived(status?.channels?.reduce((sum, ch) => sum + (ch.tx_frames || 0), 0) ?? 0);
   let igated = $derived(status?.igate?.rf_to_is_gated ?? 0);
-
-  // Rolling packets/hour rates over a trailing window. Each status poll
-  // samples the cumulative RX/TX counters; the rate is the delta divided by
-  // the elapsed wall-clock time, so it reflects recent activity rather than a
-  // lifetime average. Samples older than the window are dropped as it slides.
-  const RATE_WINDOW_MS = 10 * 60 * 1000;
-  let rateSamples = [];        // { t, rx, tx }, oldest first — not reactive
-  let rxRate = $state(null);   // packets/hour over the window, null until 2+ samples
-  let txRate = $state(null);
 
   // Activity tracking for RX/TX flash indicators
   let prevStats = {};
@@ -135,19 +120,7 @@
         }
       }
       status = st.value;
-      recordRateSample(st.value.channels);
     }
-  }
-
-  // Append a counter sample and recompute the trailing-window rates.
-  function recordRateSample(channels) {
-    const curRx = channels?.reduce((sum, ch) => sum + (ch.rx_frames || 0), 0) ?? 0;
-    const curTx = channels?.reduce((sum, ch) => sum + (ch.tx_frames || 0), 0) ?? 0;
-    const sample = { t: Date.now(), rx: curRx, tx: curTx };
-    const r = pushRateSample(rateSamples, sample, RATE_WINDOW_MS);
-    rateSamples = r.samples;
-    rxRate = r.rxRate;
-    txRate = r.txRate;
   }
 
   async function loadBeacons() {
@@ -206,9 +179,11 @@
     return `${h}h ${m}m`;
   }
 
-  // Format a packets/hour rate; returns an em-dash until enough samples exist.
-  function formatRate(perHour) {
-    if (perHour == null) return '—';
+  // Average packets/hour over the station's uptime, derived from the same
+  // cumulative counters shown above. Returns an em-dash until uptime is known.
+  function formatRate(total, uptimeSeconds) {
+    if (!uptimeSeconds || uptimeSeconds <= 0) return '—';
+    const perHour = (total * 3600) / uptimeSeconds;
     const rounded = perHour >= 100 ? Math.round(perHour) : Math.round(perHour * 10) / 10;
     return `${rounded.toLocaleString()}/hr`;
   }
@@ -326,16 +301,12 @@
   <div class="stat-card">
     <span class="stat-value">{offline ? '—' : totalRx}</span>
     <span class="stat-label">Packets RX</span>
-    <span class="stat-rate" title="Packets per hour, averaged over the last 10 minutes">
-      {offline ? '—' : formatRate(rxRate)}{#if !offline && rxRate != null}<span class="stat-rate-qual">10m avg</span>{/if}
-    </span>
+    <span class="stat-rate">{offline ? '—' : formatRate(totalRx, status?.uptime_seconds)}</span>
   </div>
   <div class="stat-card">
     <span class="stat-value">{offline ? '—' : totalTx}</span>
     <span class="stat-label">Packets TX</span>
-    <span class="stat-rate" title="Packets per hour, averaged over the last 10 minutes">
-      {offline ? '—' : formatRate(txRate)}{#if !offline && txRate != null}<span class="stat-rate-qual">10m avg</span>{/if}
-    </span>
+    <span class="stat-rate">{offline ? '—' : formatRate(totalTx, status?.uptime_seconds)}</span>
   </div>
   <div class="stat-card">
     <span class="stat-value">{offline ? '—' : igated}</span>
@@ -581,12 +552,6 @@
     color: var(--color-text-dim);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-  }
-  .stat-rate-qual {
-    margin-left: 4px;
-    opacity: 0.65;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
 
   /* ── packet feed wrapper ───────────────────────── */
