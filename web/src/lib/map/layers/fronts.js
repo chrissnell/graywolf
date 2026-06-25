@@ -1,17 +1,21 @@
 // Surface-fronts overlay layer for the Live Map (WMO frontal symbology).
 //
 // Backend-agnostic in the same spirit as radar.js: it asks fronts-source.js for
-// a provider descriptor and performs the MapLibre source/layer calls. Unlike
-// radar there is no per-frame loop -- a single GeoJSON document holds the
-// current analysis (fronts + pressure centers), and the overlay renders
+// provider descriptors and performs the MapLibre source/layer calls. Unlike
+// radar there is no per-frame loop -- a single GeoJSON document per source holds
+// the current analysis (fronts + pressure centers), and the overlay renders
 // whatever features it carries. A slow manifest poll (driven by LiveMapV2)
-// calls reload() when a new analysis is published.
+// pushes a fresh document via setData()/setWorldData() when a new analysis is
+// published.
 //
-// Mirrors the other layer modules (radar.js, stations.js, trails.js): mount
-// returns control methods; LiveMapV2 persists settings and drives them via
-// effects, and calls refresh() on every data tick. refresh() re-adds the
-// source/layers behind existence guards so the overlay survives a basemap
-// setStyle() (which rebuilds the style and can drop user-added layers).
+// TWO sources, one toggle:
+//   fronts       -- WPC coded surface bulletin (analysis, North America)
+//   fronts-world -- model-derived global fronts (GFS Thermal Front Parameter)
+// Both render with identical styling (same paint/layout, same pip sprites) and
+// both run through the same Catmull-Rom smoothing before reaching MapLibre. The
+// world layers are inserted BENEATH the WPC layers so the analyst product wins
+// over North America and the model shows through everywhere else. setVisible /
+// refresh / destroy fan out to both.
 //
 // Frontal pips are sprite icons placed along the line (symbol-placement:line).
 // One colored sprite is baked per front type at registration time (the fill is
@@ -21,7 +25,13 @@
 // channel as a signed distance field -- a hard-rasterized binary mask is not a
 // distance field, so tinting fringed the edges at interpolated icon-size.
 
-import { frontsProvider, FRONTS_SOURCE_ID, FRONT_COLORS } from '../sources/fronts-source.js';
+import {
+  frontsProvider,
+  frontsWorldProvider,
+  FRONTS_SOURCE_ID,
+  FRONTS_WORLD_SOURCE_ID,
+  FRONT_COLORS,
+} from '../sources/fronts-source.js';
 
 // Pip glyph markup. Kept inline (not a Vite `?raw` import) so this module loads
 // unchanged under plain `node --test`, which has no Vite to resolve `?raw`. The
@@ -32,8 +42,6 @@ import { frontsProvider, FRONTS_SOURCE_ID, FRONT_COLORS } from '../sources/front
 //   ../style/front-sprites/warm.svg       (warm semicircle, flat edge on
 //                                           baseline)
 //   ../style/front-sprites/occluded-tri.svg  (same triangle, used for occluded)
-// The canonical SVGs are single-color sources of truth for the glyph shapes;
-// the fill is parameterized below so each front type bakes its own color.
 const coldSvg = (fill) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18"><polygon points="2,9 16,9 9,1" fill="${fill}"/></svg>`;
 const warmSvg = (fill) =>
@@ -52,17 +60,24 @@ const stationarySvg = (cold, warm) =>
   `<polygon points="3,9 15,9 9,1.5" fill="${cold}"/>` +
   `<path d="M 21 9 A 6 6 0 0 0 33 9 Z" fill="${warm}"/></svg>`;
 
-export const FRONT_LAYER_IDS = [
-  'fronts-line',
-  'fronts-stationary-line',
-  'fronts-stationary-dash',
-  'fronts-pips',
-  'fronts-stationary-pips',
-  'fronts-centers',
-  'fronts-center-labels',
+// Layer id sets. WPC keeps its original ids (stable); world mirrors them with a
+// `fronts-world-` prefix. ALL_LAYER_IDS drives visibility/teardown over both.
+// Built from a shared suffix list so the two sets stay in lockstep.
+const LAYER_SUFFIXES = [
+  'line',
+  'stationary-line',
+  'stationary-dash',
+  'pips',
+  'stationary-pips',
+  'centers',
+  'center-labels',
 ];
+export const FRONT_LAYER_IDS = LAYER_SUFFIXES.map((s) => `fronts-${s}`);
+export const FRONT_WORLD_LAYER_IDS = LAYER_SUFFIXES.map((s) => `fronts-world-${s}`);
+const ALL_LAYER_IDS = [...FRONT_WORLD_LAYER_IDS, ...FRONT_LAYER_IDS];
 
-// addImage ids for the colored pip sprites (one per front type).
+// addImage ids for the colored pip sprites (one per front type, shared by both
+// sources).
 const IMG_COLD = 'front-cold';
 const IMG_WARM = 'front-warm';
 const IMG_OCCLUDED = 'front-occluded';
@@ -200,16 +215,221 @@ export function smoothFronts(fc, opts = {}) {
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
+// line-color match for the cold/warm/occluded/trough base line. stationary is
+// not here -- it draws via its own two-tone (blue base + red dash) layers.
+function frontColorMatch() {
+  return [
+    'match',
+    ['get', 'front_type'],
+    'cold', FRONT_COLORS.cold,
+    'warm', FRONT_COLORS.warm,
+    'occluded', FRONT_COLORS.occluded,
+    'trough', FRONT_COLORS.trough,
+    '#888888',
+  ];
+}
+
+// Pip sprite per front type. cold/warm/occluded carry pips; trough and
+// stationary resolve to '' (no icon) -- stationary draws its own combined
+// sprite, trough carries no pips.
+function pipIconMatch() {
+  return [
+    'match',
+    ['get', 'front_type'],
+    'cold', IMG_COLD,
+    'warm', IMG_WARM,
+    'occluded', IMG_OCCLUDED,
+    '',
+  ];
+}
+
+// Build the seven layer definitions for a source, with ids prefixed by idPrefix
+// ('fronts' or 'fronts-world'). Identical paint/layout for both sources.
+//
+// WMO symbology notes:
+//  - cold/warm/occluded carry a single repeated sprite along the line; occluded
+//    uses the cold triangle only (its alternating triangle/semicircle is still
+//    deferred). trough is dashed and carries no pips.
+//  - stationary needs cold/warm symbology on OPPOSITE sides, which a single
+//    MapLibre line layer can't do, so it draws as a solid cold-blue base with a
+//    warm-red dashed line on top (alternating red/blue segments) plus a combined
+//    2-symbol sprite for the alternating opposite-side pips.
+// The pip layers follow the smoothed `pipline` geometry (gentle spans only) so
+// pips skip tight bends; the line layers follow the full `front` geometry.
+function layerSpecs(sourceId, idPrefix, vis) {
+  const lineWidth = ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 5];
+  const stationaryFilter = [
+    'all',
+    ['==', ['get', 'feature'], 'front'],
+    ['==', ['get', 'front_type'], 'stationary'],
+  ];
+  return [
+    // 1) Base front line for cold/warm/occluded/trough. trough is dashed; every
+    // other type is solid. stationary is excluded (its own two-tone layers).
+    {
+      id: `${idPrefix}-line`,
+      type: 'line',
+      source: sourceId,
+      filter: [
+        'all',
+        ['==', ['get', 'feature'], 'front'],
+        ['!=', ['get', 'front_type'], 'stationary'],
+      ],
+      layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': frontColorMatch(),
+        // Dash units are line-width-relative, so troughs' dashes scale with
+        // this. Tunable live via window.gwFronts.tune({ lineWidth }).
+        'line-width': lineWidth,
+        'line-dasharray': [
+          'case',
+          ['==', ['get', 'front_type'], 'trough'],
+          ['literal', [2, 2]],
+          ['literal', [1]],
+        ],
+      },
+    },
+    // 1b) Stationary front: solid cold-blue base...
+    {
+      id: `${idPrefix}-stationary-line`,
+      type: 'line',
+      source: sourceId,
+      filter: stationaryFilter,
+      layout: { visibility: vis, 'line-cap': 'butt', 'line-join': 'round' },
+      paint: { 'line-color': FRONT_COLORS.cold, 'line-width': lineWidth },
+    },
+    // ...with a warm-red dashed line on top, so the gaps reveal blue and the
+    // line reads as alternating red/blue (the WMO two-tone stationary boundary).
+    {
+      id: `${idPrefix}-stationary-dash`,
+      type: 'line',
+      source: sourceId,
+      filter: stationaryFilter,
+      layout: { visibility: vis, 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': FRONT_COLORS.warm,
+        'line-width': lineWidth,
+        // Equal dash/gap: red covers half the line, blue base shows through
+        // the gaps -> alternating red/blue.
+        'line-dasharray': ['literal', [3, 3]],
+      },
+    },
+    // 2) Frontal pips along the gentle spans. cold/warm/occluded only.
+    {
+      id: `${idPrefix}-pips`,
+      type: 'symbol',
+      source: sourceId,
+      filter: [
+        'all',
+        ['==', ['get', 'feature'], 'pipline'],
+        ['!=', ['get', 'front_type'], 'trough'],
+        ['!=', ['get', 'front_type'], 'stationary'],
+      ],
+      layout: {
+        visibility: vis,
+        'symbol-placement': 'line',
+        'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 30, 8, 60],
+        'icon-image': pipIconMatch(),
+        // Tunable live via window.gwFronts.tune().
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.0],
+        'icon-rotation-alignment': 'map',
+        // allow-overlap OFF (and no ignore-placement) so MapLibre drops pips it
+        // can't lay flat on a tight curve -- those are the ones that dangle off
+        // the bends -- instead of force-rendering them.
+        'icon-allow-overlap': false,
+      },
+    },
+    // 2b) Stationary pips. The combined cold-triangle/warm-semicircle sprite is
+    // repeated along the line at roughly its own width, so the two symbols tile
+    // into the alternating opposite-side pattern.
+    {
+      id: `${idPrefix}-stationary-pips`,
+      type: 'symbol',
+      source: sourceId,
+      filter: [
+        'all',
+        ['==', ['get', 'feature'], 'pipline'],
+        ['==', ['get', 'front_type'], 'stationary'],
+      ],
+      layout: {
+        visibility: vis,
+        'symbol-placement': 'line',
+        // Repeat at ~the rendered sprite width (36px * icon-size) so the sprites
+        // abut and the triangle/semicircle stay evenly spaced (even alternation)
+        // rather than clustering with gaps between units.
+        'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 26, 8, 36],
+        'icon-image': IMG_STATIONARY,
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.0],
+        'icon-rotation-alignment': 'map',
+        'icon-keep-upright': false,
+        // See cold/warm pips: drop rather than dangle on tight curves.
+        'icon-allow-overlap': false,
+      },
+    },
+    // 3) Pressure-center glyphs (H / L). Blue H, red L, white halo for contrast
+    // on either basemap.
+    {
+      id: `${idPrefix}-centers`,
+      type: 'symbol',
+      source: sourceId,
+      filter: ['==', ['get', 'feature'], 'center'],
+      layout: {
+        visibility: vis,
+        'text-field': ['get', 'kind'],
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 3, 16, 8, 28],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': [
+          'match',
+          ['get', 'kind'],
+          'H', FRONT_COLORS.cold,
+          'L', FRONT_COLORS.warm,
+          '#333333',
+        ],
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 2,
+      },
+    },
+    // 4) Center pressure label (mb) below the H/L glyph.
+    {
+      id: `${idPrefix}-center-labels`,
+      type: 'symbol',
+      source: sourceId,
+      filter: ['==', ['get', 'feature'], 'center'],
+      layout: {
+        visibility: vis,
+        'text-field': ['to-string', ['get', 'pressure_mb']],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 3, 10, 8, 14],
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#333333',
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+      },
+    },
+  ];
+}
+
 export function mountFrontsLayer(map, { visible }) {
-  const provider = frontsProvider();
+  const wpc = frontsProvider();
+  const world = frontsWorldProvider();
   let curVisible = visible;
-  // Smoothed FeatureCollection currently fed to the source. LiveMapV2 fetches
-  // the raw document (it holds the bearer token) and pushes it via setData();
-  // we Catmull-Rom the lines before handing them to MapLibre so the overlay
-  // renders smooth curves and the pip icons sit flush instead of dangling off
-  // the straight-chord corners. Starts empty until the first push.
-  let curData = EMPTY_FC;
-  let lastRaw = EMPTY_FC; // unsmoothed document, kept so density can be re-tuned
+  // Smoothed FeatureCollection currently fed to each source. LiveMapV2 fetches
+  // the raw documents (it holds the bearer token) and pushes them via setData()
+  // / setWorldData(); we Catmull-Rom the lines before handing them to MapLibre
+  // so the overlay renders smooth curves and the pip icons sit flush instead of
+  // dangling off the straight-chord corners. Start empty until the first push.
+  let curData = EMPTY_FC; // WPC, for info()
+  let lastRawWpc = EMPTY_FC;
+  let lastRawWorld = EMPTY_FC;
   let smoothTargetDeg = 0.03; // Catmull-Rom resample target; smaller = curvier
   let pipWindowDeg = 0.3; // arc window for the tight-bend pip test
   let pipMaxTurn = 0.7; // radians of turn over that window before pips are dropped
@@ -217,8 +437,7 @@ export function mountFrontsLayer(map, { visible }) {
   const firstSymbolId = () => map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
 
   // Load the pip sprites once, each baked with its front-type color. Guarded by
-  // map.hasImage so a style swap (which drops user images) re-registers them on
-  // the next ensure().
+  // map.hasImage so a style swap (which drops user images) re-registers them.
   async function loadImages() {
     // [id, svg, width, height] -- stationary is a wide 2-symbol sprite (36x18);
     // the single-type pips are square (18x18).
@@ -233,8 +452,6 @@ export function mountFrontsLayer(map, { visible }) {
       // Rasterize at SPRITE_PIXEL_RATIO x the logical size for crispness.
       const data = await rasterizeSvg(svg, w * SPRITE_PIXEL_RATIO, h * SPRITE_PIXEL_RATIO);
       if (!data) continue;
-      // hasImage re-checked after the await -- a concurrent ensure() or another
-      // mount may have registered it while we were rasterizing.
       if (map.hasImage && map.hasImage(id)) continue;
       // Non-SDF: color is baked into the sprite, so no runtime icon-color tint.
       // pixelRatio tells MapLibre this bitmap is hi-DPI, so icon-size still maps
@@ -243,256 +460,34 @@ export function mountFrontsLayer(map, { visible }) {
     }
   }
 
-  // line-color match for the cold/warm/occluded/trough base line. stationary is
-  // not here -- it draws via its own two-tone (blue base + red dash) layers.
-  const frontColorMatch = () => [
-    'match',
-    ['get', 'front_type'],
-    'cold', FRONT_COLORS.cold,
-    'warm', FRONT_COLORS.warm,
-    'occluded', FRONT_COLORS.occluded,
-    'trough', FRONT_COLORS.trough,
-    '#888888',
-  ];
-
-  // Pip sprite per front type. cold/warm/occluded carry pips; trough and
-  // stationary resolve to '' (no icon) -- see the v1 limitation note below.
-  const pipIconMatch = () => [
-    'match',
-    ['get', 'front_type'],
-    'cold', IMG_COLD,
-    'warm', IMG_WARM,
-    'occluded', IMG_OCCLUDED,
-    '',
-  ];
-
-  function ensure() {
-    if (!map.getSource(provider.sourceId)) {
-      // Source data is pushed (and smoothed) via setData(); seed it with the
-      // current smoothed document so a style swap re-adds it without a flash.
-      map.addSource(provider.sourceId, { type: 'geojson', data: curData });
-    }
-    const beforeId = firstSymbolId();
-    const vis = curVisible ? 'visible' : 'none';
-
-    // 1) Base front line for cold/warm/occluded/trough. trough is dashed; every
-    // other type is solid. stationary is handled by its own two-tone line +
-    // alternating-pip layers below (it needs cold/warm symbology on opposite
-    // sides), so it is excluded here.
-    if (!map.getLayer('fronts-line')) {
-      map.addLayer(
-        {
-          id: 'fronts-line',
-          type: 'line',
-          source: provider.sourceId,
-          filter: [
-            'all',
-            ['==', ['get', 'feature'], 'front'],
-            ['!=', ['get', 'front_type'], 'stationary'],
-          ],
-          layout: {
-            visibility: vis,
-            'line-cap': 'round',
-            'line-join': 'round',
-          },
-          paint: {
-            'line-color': frontColorMatch(),
-            // Dash units are line-width-relative, so troughs' dashes scale with
-            // this. Tunable live via window.gwFronts.tune({ lineWidth }).
-            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 5],
-            'line-dasharray': [
-              'case',
-              ['==', ['get', 'front_type'], 'trough'],
-              ['literal', [2, 2]],
-              ['literal', [1]],
-            ],
-          },
-        },
-        beforeId,
-      );
-    }
-
-    // 1b) Stationary front line: a solid cold-blue base with a warm-red dashed
-    // line painted on top, so the gaps reveal blue and the line reads as
-    // alternating red/blue segments -- the WMO two-tone stationary boundary --
-    // without needing per-segment color (which MapLibre line layers can't do).
-    const stationaryFilter = [
-      'all',
-      ['==', ['get', 'feature'], 'front'],
-      ['==', ['get', 'front_type'], 'stationary'],
-    ];
-    // Pips follow the gentle-span `pipline` geometry, not the full front line.
-    const stationaryPipFilter = [
-      'all',
-      ['==', ['get', 'feature'], 'pipline'],
-      ['==', ['get', 'front_type'], 'stationary'],
-    ];
-    const stationaryWidth = ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 5];
-    if (!map.getLayer('fronts-stationary-line')) {
-      map.addLayer(
-        {
-          id: 'fronts-stationary-line',
-          type: 'line',
-          source: provider.sourceId,
-          filter: stationaryFilter,
-          layout: { visibility: vis, 'line-cap': 'butt', 'line-join': 'round' },
-          paint: { 'line-color': FRONT_COLORS.cold, 'line-width': stationaryWidth },
-        },
-        beforeId,
-      );
-    }
-    if (!map.getLayer('fronts-stationary-dash')) {
-      map.addLayer(
-        {
-          id: 'fronts-stationary-dash',
-          type: 'line',
-          source: provider.sourceId,
-          filter: stationaryFilter,
-          layout: { visibility: vis, 'line-cap': 'butt', 'line-join': 'round' },
-          paint: {
-            'line-color': FRONT_COLORS.warm,
-            'line-width': stationaryWidth,
-            // Equal dash/gap: red covers half the line, blue base shows through
-            // the gaps -> alternating red/blue.
-            'line-dasharray': ['literal', [3, 3]],
-          },
-        },
-        beforeId,
-      );
-    }
-
-    // 2) Frontal pips along the line.
-    //
-    // cold/warm/occluded carry a single repeated sprite. occluded uses the cold
-    // triangle only (its alternating triangle/semicircle is still deferred).
-    // stationary is handled separately (layer 2b) with a combined 2-symbol
-    // sprite that produces the proper alternating opposite-side pips.
-    if (!map.getLayer('fronts-pips')) {
-      map.addLayer(
-        {
-          id: 'fronts-pips',
-          type: 'symbol',
-          source: provider.sourceId,
-          filter: [
-            'all',
-            ['==', ['get', 'feature'], 'pipline'],
-            ['!=', ['get', 'front_type'], 'trough'],
-            ['!=', ['get', 'front_type'], 'stationary'],
-          ],
-          layout: {
-            visibility: vis,
-            'symbol-placement': 'line',
-            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 30, 8, 60],
-            'icon-image': pipIconMatch(),
-            // Tunable live via window.gwFronts.tune().
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.0],
-            'icon-rotation-alignment': 'map',
-            // allow-overlap OFF (and no ignore-placement) so MapLibre drops pips
-            // it can't lay flat on a tight curve -- those are the ones that
-            // dangle off the bends -- instead of force-rendering them.
-            'icon-allow-overlap': false,
-          },
-        },
-        beforeId,
-      );
-    }
-
-    // 2b) Stationary pips. The combined cold-triangle/warm-semicircle sprite is
-    // repeated along the line at roughly its own width, so the two symbols tile
-    // into the alternating opposite-side pattern. symbol-spacing is matched to
-    // the sprite footprint (wider than the single-type pips since each unit is
-    // two symbols) to keep the pattern continuous without overlap.
-    if (!map.getLayer('fronts-stationary-pips')) {
-      map.addLayer(
-        {
-          id: 'fronts-stationary-pips',
-          type: 'symbol',
-          source: provider.sourceId,
-          filter: stationaryPipFilter,
-          layout: {
-            visibility: vis,
-            'symbol-placement': 'line',
-            // Repeat at ~the rendered sprite width (36px * icon-size) so the
-            // sprites abut and the triangle/semicircle stay evenly spaced
-            // (even alternation) rather than clustering with gaps between units.
-            'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 3, 26, 8, 36],
-            'icon-image': IMG_STATIONARY,
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.0],
-            'icon-rotation-alignment': 'map',
-            'icon-keep-upright': false,
-            // See cold/warm pips: drop rather than dangle on tight curves.
-            'icon-allow-overlap': false,
-          },
-        },
-        beforeId,
-      );
-    }
-
-    // 3) Pressure-center glyphs (H / L). Blue H, red L, white halo for contrast
-    // on either basemap.
-    if (!map.getLayer('fronts-centers')) {
-      map.addLayer(
-        {
-          id: 'fronts-centers',
-          type: 'symbol',
-          source: provider.sourceId,
-          filter: ['==', ['get', 'feature'], 'center'],
-          layout: {
-            visibility: vis,
-            'text-field': ['get', 'kind'],
-            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-            'text-size': ['interpolate', ['linear'], ['zoom'], 3, 16, 8, 28],
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
-          },
-          paint: {
-            'text-color': [
-              'match',
-              ['get', 'kind'],
-              'H', FRONT_COLORS.cold,
-              'L', FRONT_COLORS.warm,
-              '#333333',
-            ],
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 2,
-          },
-        },
-        beforeId,
-      );
-    }
-
-    // 4) Center pressure label (mb) below the H/L glyph.
-    if (!map.getLayer('fronts-center-labels')) {
-      map.addLayer(
-        {
-          id: 'fronts-center-labels',
-          type: 'symbol',
-          source: provider.sourceId,
-          filter: ['==', ['get', 'feature'], 'center'],
-          layout: {
-            visibility: vis,
-            'text-field': ['to-string', ['get', 'pressure_mb']],
-            'text-font': ['Open Sans Semibold', 'Arial Unicode MS Regular'],
-            'text-size': ['interpolate', ['linear'], ['zoom'], 3, 10, 8, 14],
-            'text-offset': [0, 1.2],
-            'text-anchor': 'top',
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
-          },
-          paint: {
-            'text-color': '#333333',
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 1.5,
-          },
-        },
-        beforeId,
-      );
+  function addLayers(specs, beforeId) {
+    for (const spec of specs) {
+      if (!map.getLayer(spec.id)) map.addLayer(spec, beforeId);
     }
   }
 
-  // Register sprites (async, best-effort) then add layers. ensure() is safe
-  // before the images resolve: an icon-image that isn't loaded yet simply
-  // renders nothing until addImage lands, and MapLibre re-evaluates.
+  function ensure() {
+    // Sources are pushed (and smoothed) via setData()/setWorldData(); seed each
+    // with the current smoothed document so a style swap re-adds it without a
+    // flash.
+    if (!map.getSource(wpc.sourceId)) {
+      map.addSource(wpc.sourceId, { type: 'geojson', data: curData });
+    }
+    if (!map.getSource(world.sourceId)) {
+      map.addSource(world.sourceId, { type: 'geojson', data: smoothCurrent(lastRawWorld) });
+    }
+    const vis = curVisible ? 'visible' : 'none';
+    const firstSym = firstSymbolId();
+
+    // WPC first, above the basemap symbol layers.
+    addLayers(layerSpecs(wpc.sourceId, 'fronts', vis), firstSym);
+    // World beneath WPC: insert before the WPC base line if present, else above
+    // the basemap symbols. This keeps the analyst product on top over NA.
+    const worldBefore = map.getLayer('fronts-line') ? 'fronts-line' : firstSym;
+    addLayers(layerSpecs(world.sourceId, 'fronts-world', vis), worldBefore);
+  }
+
+  // Register sprites (async, best-effort) then add layers.
   loadImages();
   ensure();
 
@@ -503,32 +498,46 @@ export function mountFrontsLayer(map, { visible }) {
     ensure();
   }
 
-  // Accept a freshly fetched (raw) GeoJSON document, smooth its front lines,
-  // and hand it to the source. No source/layer churn. Called by LiveMapV2 on
-  // initial load and whenever the manifest poll sees a new analysis.
-  function setData(rawFc) {
-    lastRaw = rawFc ?? EMPTY_FC;
-    applySmoothed();
+  function smoothCurrent(rawFc) {
+    return smoothFronts(rawFc, { targetDeg: smoothTargetDeg, pipWindowDeg, pipMaxTurn }) ?? EMPTY_FC;
   }
-  function applySmoothed() {
-    curData = smoothFronts(lastRaw, { targetDeg: smoothTargetDeg, pipWindowDeg, pipMaxTurn }) ?? EMPTY_FC;
+
+  // Accept a freshly fetched (raw) GeoJSON document, smooth its front lines, and
+  // hand it to the WPC source. No source/layer churn. Called by LiveMapV2 on
+  // initial load and whenever the manifest poll sees a new WPC analysis.
+  function setData(rawFc) {
+    lastRawWpc = rawFc ?? EMPTY_FC;
+    curData = smoothCurrent(lastRawWpc);
     map.getSource(FRONTS_SOURCE_ID)?.setData(curData);
+  }
+
+  // Same for the model-derived global (world) source.
+  function setWorldData(rawFc) {
+    lastRawWorld = rawFc ?? EMPTY_FC;
+    map.getSource(FRONTS_WORLD_SOURCE_ID)?.setData(smoothCurrent(lastRawWorld));
+  }
+
+  // Re-run smoothing on both sources' last raw documents (used by tune()).
+  function applySmoothed() {
+    setData(lastRawWpc);
+    setWorldData(lastRawWorld);
   }
 
   function setVisible(v) {
     curVisible = v;
     const value = v ? 'visible' : 'none';
-    for (const id of FRONT_LAYER_IDS) {
+    for (const id of ALL_LAYER_IDS) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', value);
     }
   }
 
   function destroy() {
     try {
-      for (const id of FRONT_LAYER_IDS) {
+      for (const id of ALL_LAYER_IDS) {
         if (map.getLayer(id)) map.removeLayer(id);
       }
       if (map.getSource(FRONTS_SOURCE_ID)) map.removeSource(FRONTS_SOURCE_ID);
+      if (map.getSource(FRONTS_WORLD_SOURCE_ID)) map.removeSource(FRONTS_WORLD_SOURCE_ID);
     } catch { /* map already removed */ }
   }
 
@@ -538,24 +547,28 @@ export function mountFrontsLayer(map, { visible }) {
   //   window.gwFronts.tune({ pipSize: 0.7, pipSpacing: 40 })
   //   window.gwFronts.tune({ statSize: 0.8, statSpacing: 30, lineWidth: 3 })
   // A number applies at all zooms; pass a MapLibre expression for a zoom ramp.
+  // Knobs fan out across both sources' layers.
   function tune(o = {}) {
+    const idsFor = (suffix) => [`fronts-${suffix}`, `fronts-world-${suffix}`];
     const sl = (id, p, v) => { if (v != null && map.getLayer(id)) map.setLayoutProperty(id, p, v); };
     const sp = (id, p, v) => { if (v != null && map.getLayer(id)) map.setPaintProperty(id, p, v); };
-    const pipLayers = ['fronts-pips', 'fronts-stationary-pips'];
+    const slAll = (suffix, p, v) => { for (const id of idsFor(suffix)) sl(id, p, v); };
+    const spAll = (suffix, p, v) => { for (const id of idsFor(suffix)) sp(id, p, v); };
+    const pipSuffixes = ['pips', 'stationary-pips'];
     if (o.lineWidth != null) {
-      for (const id of ['fronts-line', 'fronts-stationary-line', 'fronts-stationary-dash']) {
-        sp(id, 'line-width', o.lineWidth);
+      for (const suffix of ['line', 'stationary-line', 'stationary-dash']) {
+        spAll(suffix, 'line-width', o.lineWidth);
       }
     }
-    sl('fronts-pips', 'icon-size', o.pipSize);
-    sl('fronts-pips', 'symbol-spacing', o.pipSpacing);
-    sl('fronts-stationary-pips', 'icon-size', o.statSize);
-    sl('fronts-stationary-pips', 'symbol-spacing', o.statSpacing);
+    slAll('pips', 'icon-size', o.pipSize);
+    slAll('pips', 'symbol-spacing', o.pipSpacing);
+    slAll('stationary-pips', 'icon-size', o.statSize);
+    slAll('stationary-pips', 'symbol-spacing', o.statSpacing);
     // Placement flags drive the dangling fix: with overlap/ignore-placement
     // OFF, MapLibre drops pips it can't lay cleanly on a curve (the ones that
     // dangle at bends) instead of force-rendering them.
-    if (o.allowOverlap != null) for (const id of pipLayers) sl(id, 'icon-allow-overlap', o.allowOverlap);
-    if (o.ignorePlacement != null) for (const id of pipLayers) sl(id, 'icon-ignore-placement', o.ignorePlacement);
+    if (o.allowOverlap != null) for (const s of pipSuffixes) slAll(s, 'icon-allow-overlap', o.allowOverlap);
+    if (o.ignorePlacement != null) for (const s of pipSuffixes) slAll(s, 'icon-ignore-placement', o.ignorePlacement);
     // Re-process the geometry. smoothTarget = chord size (smaller = curvier).
     // pipWindow/pipMaxTurn control the tight-bend pip dropout: a pip is dropped
     // where the line turns more than pipMaxTurn radians across a +/-pipWindow
@@ -581,5 +594,5 @@ export function mountFrontsLayer(map, { visible }) {
     };
   }
 
-  return { setVisible, refresh, setData, destroy, tune, info };
+  return { setVisible, refresh, setData, setWorldData, destroy, tune, info };
 }

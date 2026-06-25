@@ -1613,6 +1613,92 @@ fn windows_device_id(dev: &cpal::Device) -> Option<String> {
     dev.id().ok().map(|id| id.1)
 }
 
+/// On Windows, report whether audio "enhancements" (system effects /
+/// APOs) are active for the endpoint identified by `endpoint_id` (the
+/// cpal `Device::id()` string, e.g. `{0.0.1.00000000}.{guid}`).
+///
+/// These DSP effects (Loudness Equalization, Bass Boost, noise
+/// suppression, etc.) sit between the radio and the modem and corrupt
+/// the AFSK/packet waveform, so we surface them and let the UI nudge the
+/// operator to turn them off for the device's channel.
+///
+/// Windows keeps per-endpoint effect state in the registry under
+/// `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\
+/// {Render|Capture}\{guid}\FxProperties`. That subkey only exists for
+/// endpoints that actually carry an enhancement/APO pipeline — the bare
+/// USB-audio interfaces most TNC setups use (DigiRig, AIOC, generic
+/// CM108) have none, so its absence reads as "no enhancements" and stays
+/// quiet. When the subkey is present, `PKEY_AudioEndpoint_Disable_SysFx`
+/// (`{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5`) is the master toggle the
+/// user sees as "Audio enhancements" in Settings / the Sound control
+/// panel: `1` = disabled (fine), `0` or absent = enabled. We therefore
+/// warn only when effects are present and not explicitly disabled.
+#[cfg(target_os = "windows")]
+fn windows_enhancements_enabled(endpoint_id: &str, is_input: bool) -> bool {
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,
+    };
+
+    // Endpoint id format: `{0.0.<flow>.00000000}.{endpoint-guid}`. The
+    // trailing `{endpoint-guid}` is the MMDevices registry subkey name.
+    let Some(pos) = endpoint_id.rfind("}.") else {
+        return false;
+    };
+    let guid = &endpoint_id[pos + 2..];
+    if guid.is_empty() {
+        return false;
+    }
+    let dir = if is_input { "Capture" } else { "Render" };
+    let path = format!(
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\{dir}\\{guid}\\FxProperties"
+    );
+    let wpath: HSTRING = path.as_str().into();
+
+    let mut hkey = HKEY::default();
+    // SAFETY: `wpath` is a valid NUL-terminated UTF-16 string that
+    // outlives the call; `hkey` is a valid out-param. Read-only access.
+    let rc = unsafe { RegOpenKeyExW(HKEY_LOCAL_MACHINE, &wpath, Some(0), KEY_READ, &mut hkey) };
+    if rc != ERROR_SUCCESS {
+        // No FxProperties subkey -> endpoint has no enhancement pipeline.
+        return false;
+    }
+
+    // PKEY_AudioEndpoint_Disable_SysFx, a REG_DWORD: 1 = enhancements
+    // disabled, 0 = enabled.
+    let value: HSTRING = "{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5".into();
+    let mut data: u32 = 0;
+    let mut data_len: u32 = std::mem::size_of::<u32>() as u32;
+    // SAFETY: `value` is a valid UTF-16 string; `data`/`data_len` point at
+    // a u32 buffer whose size is given in `data_len`; `hkey` came from a
+    // successful open above.
+    let q = unsafe {
+        RegQueryValueExW(
+            hkey,
+            &value,
+            None,
+            None,
+            Some(&mut data as *mut u32 as *mut u8),
+            Some(&mut data_len),
+        )
+    };
+    // SAFETY: `hkey` is a live key handle from the successful open.
+    unsafe {
+        let _ = RegCloseKey(hkey);
+    }
+
+    if q == ERROR_SUCCESS {
+        // Explicit value present: enhancements on unless the user has
+        // toggled them off (value == 1).
+        data != 1
+    } else {
+        // FxProperties exists but no explicit disable flag -> the effect
+        // pipeline runs by default.
+        true
+    }
+}
+
 /// dBFS floor representing silence — the theoretical dynamic range of
 /// 16-bit audio (~96 dB). Used as the "no signal" value in level scans.
 const NOISE_FLOOR_DBFS: f32 = -96.0;
@@ -1711,16 +1797,18 @@ where
         // string; `recommended` is always false on Windows (no plughw).
         // Issue #100.
         #[cfg(target_os = "windows")]
-        let (stable_id, is_default, description, recommended) = {
+        let (stable_id, is_default, description, recommended, enhancements_enabled) = {
             let id = match windows_device_id(&dev) {
                 Some(id) => id,
                 None => continue,
             };
             let is_default = default_display_name == Some(id.as_str());
-            (id, is_default, windows_friendly_name(&dev), false)
+            let enhancements =
+                windows_enhancements_enabled(&id, kind == AudioDeviceKind::Input as i32);
+            (id, is_default, windows_friendly_name(&dev), false, enhancements)
         };
         #[cfg(not(target_os = "windows"))]
-        let (stable_id, is_default, description, recommended) = (
+        let (stable_id, is_default, description, recommended, enhancements_enabled) = (
             pcm_id.clone(),
             default_display_name == Some(display_name.as_str()),
             alsa_card_description(&pcm_id),
@@ -1728,6 +1816,8 @@ where
             // rather than a numeric index (CARD=0) which can change across
             // reboots if USB devices enumerate in a different order.
             crate::audio::soundcard::is_recommended_pcm_id(&pcm_id),
+            // Audio enhancements are a Windows-only concept.
+            false,
         );
 
         out.push(AudioDeviceInfo {
@@ -1740,6 +1830,7 @@ where
             is_default,
             description,
             recommended,
+            audio_enhancements_enabled: enhancements_enabled,
         });
     }
     out
@@ -1849,6 +1940,7 @@ fn collect_input_devices_linux(
                 is_default: false,
                 description: alsa_card_description(pcm),
                 recommended: true,
+                audio_enhancements_enabled: false,
             });
             continue;
         }
@@ -1911,6 +2003,7 @@ fn collect_input_devices_linux(
             is_default,
             description: alsa_card_description(&pcm),
             recommended,
+            audio_enhancements_enabled: false,
         });
     }
     out
@@ -2006,6 +2099,7 @@ fn collect_output_devices_linux(
                 is_default: false,
                 description: alsa_card_description(pcm),
                 recommended: is_recommended_pcm_id(pcm),
+                audio_enhancements_enabled: false,
             });
             continue;
         }
@@ -2038,6 +2132,7 @@ fn collect_output_devices_linux(
             is_default,
             description: alsa_card_description(&pcm),
             recommended: is_recommended_pcm_id(&pcm),
+            audio_enhancements_enabled: false,
         });
     }
     out

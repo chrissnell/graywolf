@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mountFrontsLayer, FRONT_LAYER_IDS, smoothLine, pipSpans } from './fronts.js';
+import { mountFrontsLayer, FRONT_LAYER_IDS, FRONT_WORLD_LAYER_IDS, smoothLine, pipSpans } from './fronts.js';
 
 // Sharpest turn (radians) between consecutive segments of a polyline.
 function maxTurn(pts) {
@@ -33,19 +33,26 @@ test('smoothLine passes through lines too short to curve', () => {
 // never reached -- the layer add path is what we exercise here.
 function fakeMap() {
   const sources = {}, layers = {}, images = {};
+  // `order` mirrors MapLibre's layer array (later = rendered on top) so tests
+  // can assert beforeId placement / z-order.
+  const order = [];
   return {
     addSource: (id, s) => { sources[id] = { ...s }; },
     getSource: (id) => (sources[id] ? { setData: (d) => { sources[id].data = d; } } : undefined),
-    addLayer: (l) => { layers[l.id] = { ...l, paint: { ...(l.paint ?? {}) }, layout: { ...(l.layout ?? {}) } }; },
+    addLayer: (l, beforeId) => {
+      layers[l.id] = { ...l, paint: { ...(l.paint ?? {}) }, layout: { ...(l.layout ?? {}) } };
+      const at = beforeId ? order.indexOf(beforeId) : -1;
+      if (at >= 0) order.splice(at, 0, l.id); else order.push(l.id);
+    },
     getLayer: (id) => layers[id],
     setLayoutProperty: (id, k, v) => { if (layers[id]) layers[id].layout[k] = v; },
     setPaintProperty: (id, k, v) => { if (layers[id]) layers[id].paint[k] = v; },
-    removeLayer: (id) => { delete layers[id]; },
+    removeLayer: (id) => { delete layers[id]; const i = order.indexOf(id); if (i >= 0) order.splice(i, 1); },
     removeSource: (id) => { delete sources[id]; },
     getStyle: () => ({ layers: [] }),
     hasImage: (id) => Boolean(images[id]),
     addImage: (id, img) => { images[id] = img; },
-    _sources: sources, _layers: layers, _images: images,
+    _sources: sources, _layers: layers, _images: images, _order: order,
   };
 }
 
@@ -92,6 +99,58 @@ test('stationary fronts render via their own dedicated layers, not the base ones
   assert.equal(map._layers['fronts-stationary-pips'].layout['icon-image'], 'front-stationary');
 });
 
+test('world layer ids exist and are distinct from the WPC layer ids', () => {
+  assert.ok(FRONT_WORLD_LAYER_IDS.includes('fronts-world-line'));
+  assert.ok(FRONT_WORLD_LAYER_IDS.includes('fronts-world-pips'));
+  for (const id of FRONT_WORLD_LAYER_IDS) {
+    assert.ok(!FRONT_LAYER_IDS.includes(id), `${id} must not collide with a WPC id`);
+  }
+});
+
+test('mount adds the world source + layers alongside WPC, under one toggle', () => {
+  const map = fakeMap();
+  const layer = mountFrontsLayer(map, { visible: true });
+  assert.ok(map._sources['fronts-world'], 'world geojson source added');
+  for (const id of FRONT_WORLD_LAYER_IDS) {
+    assert.ok(map._layers[id], `${id} added`);
+  }
+  // The single toggle hides both layer sets.
+  layer.setVisible(false);
+  for (const id of [...FRONT_LAYER_IDS, ...FRONT_WORLD_LAYER_IDS]) {
+    assert.equal(map._layers[id].layout.visibility, 'none');
+  }
+});
+
+test('world layers are inserted beneath all WPC layers (z-order)', () => {
+  const map = fakeMap();
+  mountFrontsLayer(map, { visible: true });
+  const idx = (id) => map._order.indexOf(id);
+  const worldMax = Math.max(...FRONT_WORLD_LAYER_IDS.map(idx));
+  const wpcMin = Math.min(...FRONT_LAYER_IDS.map(idx));
+  for (const id of [...FRONT_LAYER_IDS, ...FRONT_WORLD_LAYER_IDS]) {
+    assert.ok(idx(id) >= 0, `${id} present in layer order`);
+  }
+  assert.ok(worldMax < wpcMin, 'every world layer renders beneath every WPC layer');
+});
+
+test('setWorldData smooths and pushes the object into the world source', () => {
+  const map = fakeMap();
+  const layer = mountFrontsLayer(map, { visible: true });
+  const raw = {
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', properties: { feature: 'front', front_type: 'cold' },
+        geometry: { type: 'LineString', coordinates: [[0, 0], [3, 1], [6, 0], [9, 2]] } },
+    ],
+  };
+  layer.setWorldData(raw);
+  const pushed = map._sources['fronts-world'].data;
+  assert.equal(pushed.type, 'FeatureCollection');
+  const front = pushed.features.find((f) => f.properties.feature === 'front');
+  assert.ok(front.geometry.coordinates.length > 4, 'world line densified');
+  assert.ok(pushed.features.some((f) => f.properties.feature === 'pipline'), 'world pipline emitted');
+});
+
 test('setVisible(false) sets every front layer visibility to none', () => {
   const map = fakeMap();
   const layer = mountFrontsLayer(map, { visible: true });
@@ -113,7 +172,8 @@ test('refresh re-adds dropped layers after a style swap', () => {
 
   layer.refresh();
   assert.ok(map._sources.fronts, 'source re-added');
-  for (const id of FRONT_LAYER_IDS) {
+  assert.ok(map._sources['fronts-world'], 'world source re-added');
+  for (const id of [...FRONT_LAYER_IDS, ...FRONT_WORLD_LAYER_IDS]) {
     assert.ok(map._layers[id], `${id} re-added`);
   }
 });

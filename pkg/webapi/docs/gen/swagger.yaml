@@ -2429,6 +2429,12 @@ definitions:
       description:
         description: human-friendly name (e.g. USB product string)
         type: string
+      enhancements_enabled:
+        description: |-
+          EnhancementsEnabled is Windows-only: the endpoint has audio
+          "enhancements" (system effects / APOs) active, which corrupt
+          AFSK/packet audio. Always false on Linux/macOS.
+        type: boolean
       host_api:
         type: string
       is_default:

@@ -24,7 +24,7 @@
     RADAR_REGION_WORLD,
   } from '../lib/map/sources/radar-source.js';
   import { mountFrontsLayer } from '../lib/map/layers/fronts.js';
-  import { frontsProvider } from '../lib/map/sources/fronts-source.js';
+  import { frontsProvider, frontsWorldProvider } from '../lib/map/sources/fronts-source.js';
   import { createRadarFrames } from '../lib/map/radar-frames.svelte.js';
   import { mapsState } from '../lib/settings/maps-store.svelte.js';
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
@@ -207,84 +207,125 @@
   let frontsToken = null;
   let frontsPollTimer = null;
   let frontsDataRetry = null; // short retry until registration+token are ready
+  // One issuance marker per source (WPC analysis + model-derived world). Either
+  // changing triggers a refetch of both GeoJSON documents via loadFrontsData()
+  // (they share the toggle and the smoothing path).
   let lastFrontsIssued = null;
+  let lastFrontsWorldIssued = null;
   // De-dupe diagnostics like warnRadar: a persistent failure would otherwise
-  // warn every poll. Only log when the failure stage changes.
-  let lastFrontsLoadStatus = null;
+  // warn every poll. The de-dupe is keyed by status string and tracked PER
+  // SOURCE: a healthy `na` must not clear a persistently-failing `world`'s
+  // warning (the normal state while the world source is rolling out). A source
+  // clears only its own statuses on success.
+  const frontsWarned = new Set();
   function warnFronts(status, ...args) {
-    if (lastFrontsLoadStatus === status) return;
-    lastFrontsLoadStatus = status;
+    if (frontsWarned.has(status)) return;
+    frontsWarned.add(status);
     console.warn(...args);
+  }
+  function clearFrontsWarn(label) {
+    for (const s of [...frontsWarned]) if (s.startsWith(`${label}-`)) frontsWarned.delete(s);
+  }
+  // Fetch one fronts manifest and return its issuance marker, or undefined on
+  // any failure (network/401/HTTP/parse). A 401 clears the token to re-reveal.
+  async function fetchFrontsIssued(manifestUrl, label) {
+    const url = `${manifestUrl}?t=${encodeURIComponent(frontsToken)}`;
+    let resp;
+    try {
+      resp = await fetch(url);
+    } catch (e) {
+      warnFronts(`${label}-network`, `[fronts] ${label} manifest fetch failed (network/CORS)`, e);
+      return undefined;
+    }
+    if (resp.status === 401) {
+      frontsToken = null; // stale token -- re-reveal next poll
+      warnFronts(`${label}-401`, `[fronts] ${label} manifest 401 -- token rejected; will re-reveal`);
+      return undefined;
+    }
+    if (!resp.ok) {
+      warnFronts(`${label}-${resp.status}`, `[fronts] ${label} manifest fetch HTTP ${resp.status}`);
+      return undefined;
+    }
+    try {
+      const json = await resp.json();
+      const issued = json?.issued ?? json?.latest ?? null;
+      clearFrontsWarn(label); // this source recovered
+      return issued;
+    } catch (e) {
+      warnFronts(`${label}-parse`, `[fronts] ${label} manifest JSON parse failed`, e);
+      return undefined;
+    }
   }
   async function pollFrontsManifest() {
     if (!mapsState.registered) return;
     if (!frontsToken) frontsToken = await mapsState.revealToken();
     if (!frontsToken) return;
-    const url = `${frontsProvider().manifestUrl}?t=${encodeURIComponent(frontsToken)}`;
-    let resp;
-    try {
-      resp = await fetch(url);
-    } catch (e) {
-      warnFronts('network', '[fronts] manifest fetch failed (network/CORS)', e);
-      return;
+    const na = await fetchFrontsIssued(frontsProvider().manifestUrl, 'na');
+    // If `na` got a 401 it cleared the token; don't fire a guaranteed second
+    // 401 at the world manifest -- re-reveal on the next poll instead.
+    if (!frontsToken) return;
+    const world = await fetchFrontsIssued(frontsWorldProvider().manifestUrl, 'world');
+    let changed = false;
+    if (na !== undefined && na != null) {
+      if (lastFrontsIssued !== null && na !== lastFrontsIssued) changed = true;
+      lastFrontsIssued = na;
     }
-    if (resp.status === 401) {
-      frontsToken = null; // stale token -- re-reveal next poll
-      warnFronts(401, '[fronts] manifest 401 -- token rejected; will re-reveal');
-      return;
+    if (world !== undefined && world != null) {
+      if (lastFrontsWorldIssued !== null && world !== lastFrontsWorldIssued) changed = true;
+      lastFrontsWorldIssued = world;
     }
-    if (!resp.ok) {
-      warnFronts(resp.status, `[fronts] manifest fetch HTTP ${resp.status}`);
-      return;
-    }
-    let issued;
-    try {
-      const json = await resp.json();
-      issued = json?.issued ?? json?.latest ?? null;
-    } catch (e) {
-      warnFronts('parse', '[fronts] manifest JSON parse failed', e);
-      return;
-    }
-    lastFrontsLoadStatus = null; // recovered
-    if (issued == null) return;
-    if (lastFrontsIssued !== null && issued !== lastFrontsIssued) {
-      loadFrontsData();
-    }
-    lastFrontsIssued = issued;
+    if (changed) loadFrontsData();
   }
   // Fetch the GeoJSON document (token-gated, same as the manifest) and hand it
   // to the layer, which smooths the lines before rendering. Kept here rather
   // than in the layer module so all bearer-token handling stays in one place.
+  // Fetch one fronts GeoJSON document (token-gated, same as the manifest) and
+  // return the parsed object, or undefined on any failure. A 401 clears the
+  // token to re-reveal. Diagnostics are de-duped PER SOURCE like the manifest
+  // poll, so a healthy `na` never silences a persistently-failing `world`.
+  async function fetchFrontsDoc(dataUrl, label) {
+    const url = `${dataUrl}?t=${encodeURIComponent(frontsToken)}`;
+    let resp;
+    try {
+      resp = await fetch(url);
+    } catch (e) {
+      warnFronts(`${label}-data-network`, `[fronts] ${label} geojson fetch failed (network/CORS)`, e);
+      return undefined;
+    }
+    if (resp.status === 401) {
+      frontsToken = null; // stale token -- re-reveal next load
+      warnFronts(`${label}-data-401`, `[fronts] ${label} geojson 401 -- token rejected; will re-reveal`);
+      return undefined;
+    }
+    if (!resp.ok) {
+      warnFronts(`${label}-data-http`, `[fronts] ${label} geojson fetch HTTP ${resp.status}`);
+      return undefined;
+    }
+    try {
+      const json = await resp.json();
+      clearFrontsWarn(label); // this source recovered
+      return json;
+    } catch (e) {
+      warnFronts(`${label}-data-parse`, `[fronts] ${label} geojson JSON parse failed`, e);
+      return undefined;
+    }
+  }
+  // Fetch both GeoJSON documents and hand them to the layer, which smooths the
+  // lines before rendering. Kept here rather than in the layer module so all
+  // bearer-token handling stays in one place. The world source rolling out 404s
+  // until published -- that warns once and the WPC overlay still paints.
   async function loadFrontsData() {
     if (frontsDataRetry) { clearTimeout(frontsDataRetry); frontsDataRetry = null; }
     if (!mapsState.registered) { frontsDataRetry = setTimeout(loadFrontsData, 2000); return; }
     if (!frontsToken) frontsToken = await mapsState.revealToken();
     if (!frontsToken) { frontsDataRetry = setTimeout(loadFrontsData, 2000); return; }
-    const url = `${frontsProvider().dataUrl}?t=${encodeURIComponent(frontsToken)}`;
-    let resp;
-    try {
-      resp = await fetch(url);
-    } catch (e) {
-      warnFronts('data-network', '[fronts] geojson fetch failed (network/CORS)', e);
-      return;
-    }
-    if (resp.status === 401) {
-      frontsToken = null;
-      warnFronts('data-401', '[fronts] geojson 401 -- token rejected; will re-reveal');
-      return;
-    }
-    if (!resp.ok) {
-      warnFronts('data-http', `[fronts] geojson fetch HTTP ${resp.status}`);
-      return;
-    }
-    let json;
-    try {
-      json = await resp.json();
-    } catch (e) {
-      warnFronts('data-parse', '[fronts] geojson JSON parse failed', e);
-      return;
-    }
-    frontsLayer?.setData(json);
+    const na = await fetchFrontsDoc(frontsProvider().dataUrl, 'na');
+    if (na !== undefined) frontsLayer?.setData(na);
+    // A 401 on the WPC doc cleared the token; skip the guaranteed second 401 and
+    // re-reveal on the next load.
+    if (!frontsToken) return;
+    const world = await fetchFrontsDoc(frontsWorldProvider().dataUrl, 'world');
+    if (world !== undefined) frontsLayer?.setWorldData(world);
   }
   function startFrontsPolling() {
     if (frontsPollTimer) return;

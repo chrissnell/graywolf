@@ -120,6 +120,7 @@ mod tests {
                 is_default: true,
                 description: "Built-in Microphone".into(),
                 recommended: false,
+                audio_enhancements_enabled: false,
             }],
         });
         let mut buf = Vec::new();

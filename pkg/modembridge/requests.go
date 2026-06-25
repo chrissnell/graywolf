@@ -164,15 +164,16 @@ func convertDeviceList(list *pb.AudioDeviceList) []AvailableDevice {
 			path = d.Name
 		}
 		out = append(out, AvailableDevice{
-			Name:        d.Name,
-			Description: d.Description,
-			Path:        path,
-			SampleRates: d.SampleRates,
-			Channels:    d.ChannelCounts,
-			HostAPI:     d.HostApi,
-			IsDefault:   d.IsDefault,
-			IsInput:     d.Kind == pb.AudioDeviceKind_AUDIO_DEVICE_KIND_INPUT,
-			Recommended: d.Recommended,
+			Name:                d.Name,
+			Description:         d.Description,
+			Path:                path,
+			SampleRates:         d.SampleRates,
+			Channels:            d.ChannelCounts,
+			HostAPI:             d.HostApi,
+			IsDefault:           d.IsDefault,
+			IsInput:             d.Kind == pb.AudioDeviceKind_AUDIO_DEVICE_KIND_INPUT,
+			Recommended:         d.Recommended,
+			EnhancementsEnabled: d.AudioEnhancementsEnabled,
 		})
 	}
 	return out
