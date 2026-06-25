@@ -73,6 +73,26 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    if args.len() >= 2 && args[1] == "--decode" {
+        return match graywolfmodem::decode::run(&args[2..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("decode: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+
+    if args.len() >= 2 && args[1] == "--record" {
+        return match graywolfmodem::record::run(&args[2..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("record: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+
     let server = bind_server(&args);
     let server = match server {
         Ok(s) => s,
