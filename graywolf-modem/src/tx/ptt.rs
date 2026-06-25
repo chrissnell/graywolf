@@ -1511,7 +1511,10 @@ pub(crate) mod tests {
             build_result.is_err(),
             "LineGone during construction unkey should surface as build error"
         );
-        let err = build_result.unwrap_err();
+        // `.err().expect()` rather than `.unwrap_err()`: the Ok variant is a
+        // `Box<dyn PttDriver>`, which is not `Debug`, so `unwrap_err` would not
+        // compile. (Same reason `soundcard.rs` uses a match here.)
+        let err = build_result.err().expect("build error expected");
         assert_eq!(
             err,
             "gpio line 17 on /dev/fake-gpiochip: device went away mid-operation",
