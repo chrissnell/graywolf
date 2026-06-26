@@ -64,80 +64,45 @@ The `BulletinSink` interface lives in `pkg/messages/router.go` (not
 3. Calls `Scheduler.Kick()` so the first transmission happens immediately
    rather than waiting for the next tick.
 
-The `Scheduler` runs a goroutine that:
-- Polls every 15 seconds (`schedulerPollInterval`) and calls
-  `Store.ListPendingSends` to find rows where
-  `next_send_at <= now AND send_count < max_sends`.
-- For each due row, calls `Sender.Send` which:
-  - Encodes the bulletin as an APRS UI frame and submits to `txgovernor`
-    at `PriorityBeacon` priority using the digipeater path from
-    `MessagePreferences.DefaultPath` (operator-configurable in the
-    Messaging settings page; defaults to `WIDE1-1,WIDE2-1`).
-  - If an iGate sender is wired, also forwards directly to APRS-IS using
-    TNC2 format with path `TCPIP*`, so the bulletin appears on aprs.fi
-    regardless of whether a nearby iGate hears the RF. When IS is not
-    configured, `ErrNotEnabled` is silently swallowed; the RF send always
-    completes first and is unaffected.
-- Increments `send_count` and advances `next_send_at`:
-  - `send_count < BulletinBurstCount` (3): next in `BulletinBurstInterval` (30 s)
-  - `send_count >= BulletinBurstCount`: uses the per-bulletin `interval_mins`
-    set at compose time (0–20). When 0, `next_send_at` is cleared and no further
-    retransmits are scheduled (burst-only mode). Default in the compose form: 20.
-  - Announcements always use `AnnouncementInterval` (1 h), no burst phase.
-- Responds to `Kick()` for immediate processing without waiting for the
-  next tick.
+The `Scheduler` goroutine polls `ListPendingSends` and encodes each due
+row as an APRS UI frame, submitted via `txgovernor` at `PriorityBeacon`
+priority. The digipeater path comes from `MessagePreferences.DefaultPath`
+(the station-level setting shared with directed messages; configurable in
+the Messaging settings page). When an iGate sender is wired the bulletin
+is also forwarded to APRS-IS in TNC2 format (`TCPIP*` path) so it appears
+on aprs.fi regardless of RF coverage; RF always fires first and
+`ErrNotEnabled` is swallowed when IS is not configured.
 
-When `send_count == max_sends` the row is exhausted and the scheduler
-ignores it. Soft-deleting a row (via the UI or DELETE REST endpoint) also
-stops future retransmits immediately, since `ListPendingSends` excludes
-soft-deleted rows.
+The per-bulletin retransmit interval is set at compose time via
+`interval_mins` (0 = burst-only, 1–20 min). See `pkg/bulletins/scheduler.go`
+for the burst phase logic and `send_count`/`max_sends` lifecycle.
 
-## Database (migrations 26–28)
+## Database (migrations 27, 29)
 
-Table `bulletins` columns:
+Migration 27 (`bulletins_table`) creates the `bulletins` table as raw SQL,
+excluded from AutoMigrate — same pattern as actions/remoteactions migrations
+15–16. Migration 29 (`bulletin_row_interval`) adds `interval_mins` with
+`DEFAULT 20`.
 
-| Column | Purpose |
-|---|---|
-| `id` | PK |
-| `direction` | `'in'` or `'out'` |
-| `slot` | `BLN0`–`BLN9` or `BLNA`–`BLNZ` |
-| `from_call` | Source callsign (inbound) |
-| `text` | Bulletin content |
-| `source` | `'rf'` or `'is'` |
-| `channel` | RX channel index |
-| `raw_tnc2` | TNC-2 wire representation |
-| `is_announcement` | Bool derived from slot letter |
-| `expires_at` | When the UI should stop showing the row |
-| `unread` | True until the operator dismisses |
-| `send_count` | How many times this outbound row has been sent |
-| `max_sends` | Send limit (12 for bulletins, 3 for burst-only, 96 for announcements) |
-| `interval_mins` | Per-bulletin stable retransmit interval after burst (0=burst-only, 1–20) |
-| `next_send_at` | When the scheduler should next send this row |
-| `created_at`, `updated_at`, `deleted_at` | GORM timestamps; soft-delete |
+> **Note:** Migration 28 (`bulletin_interval`) adds `bulletin_interval_mins`
+> to `messages_preferences` but no Go struct field or code reads it. It is an
+> orphaned iteration artifact superseded by the per-row `interval_mins` on the
+> `bulletins` table added in migration 29.
 
-Indexes:
-- `idx_bulletin_inbound_slot` — partial unique on `(from_call, slot)` WHERE
-  `direction='in' AND deleted_at IS NULL` (enforces one active row per
-  station/slot; SQLite partial index, cannot be used as ON CONFLICT target).
-- `idx_bulletin_direction` — on `direction` for List queries.
-- `idx_bulletin_next_send_at` — on `next_send_at` for scheduler queries.
+Model: `configstore.Bulletin` in `pkg/configstore/models.go`. The partial
+unique index `idx_bulletin_inbound_slot` on `(from_call, slot)` WHERE
+`direction='in' AND deleted_at IS NULL` enforces one active inbound row per
+station/slot; because SQLite partial indexes cannot be used as ON CONFLICT
+targets, the upsert logic is handled in Go (`Store.UpsertInbound`).
 
 ## REST endpoints
 
-All endpoints in `pkg/webapi/bulletins.go`. The server returns 503 until
-`SetBulletinService` has been called (same pattern as other optional services).
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/bulletins` | List; `?direction=in\|out`, `?unread_only=true` |
-| `POST` | `/api/bulletins` | Create outbound bulletin (`{slot, text, interval_mins}`) → 201 |
-| `DELETE` | `/api/bulletins/{id}` | Soft-delete; 404 on missing row |
-| `POST` | `/api/bulletins/{id}/read` | Mark single bulletin read |
-| `POST` | `/api/bulletins/read-all` | Mark all inbound bulletins read |
-
-DTOs live in `pkg/webapi/dto/bulletins.go` (`BulletinResponse`,
-`SendBulletinRequest`). Slot validation (`validBulletinSlot`) and text
-length check live in `SendBulletinRequest.Validate()`.
+Five endpoints in `pkg/webapi/bulletins.go` (list, create, soft-delete,
+mark-read, mark-all-read). The server returns 503 until `SetBulletinService`
+has been called — same pattern as other optional services. Paths are listed
+in the code-map's `webapi` section. DTOs: `pkg/webapi/dto/bulletins.go`
+(`BulletinResponse`, `SendBulletinRequest`). Operator API reference belongs
+in the handbook.
 
 ## App wiring
 
