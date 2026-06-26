@@ -390,3 +390,28 @@ func TestMarkAllBulletinsRead_OK(t *testing.T) {
 		t.Error("MarkAllRead was not called")
 	}
 }
+
+func TestListBulletins_FilterPropagated(t *testing.T) {
+	var captured bulletins.Filter
+	svc := &fakeBulletinSvc{
+		listFn: func(_ context.Context, f bulletins.Filter) ([]configstore.Bulletin, error) {
+			captured = f
+			return nil, nil
+		},
+	}
+	_, mux := newBulletinTestServer(t, svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/bulletins?direction=out&unread_only=true", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if captured.Direction != "out" {
+		t.Errorf("Direction: got %q, want %q", captured.Direction, "out")
+	}
+	if !captured.UnreadOnly {
+		t.Error("UnreadOnly: expected true, got false")
+	}
+}

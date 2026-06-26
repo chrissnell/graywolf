@@ -247,3 +247,65 @@ func TestScheduler_Stop_ExitsCleanly(t *testing.T) {
 		t.Error("Stop() did not return within 2s")
 	}
 }
+
+func TestScheduler_AnnouncementUsesAnnouncementInterval(t *testing.T) {
+	sc, store, sink, _ := buildSchedulerRig(t)
+	ctx := context.Background()
+
+	past := time.Now().UTC().Add(-time.Second)
+	b := &configstore.Bulletin{
+		Slot:           "BLNA",
+		Text:           "Club net every Tuesday 2000z",
+		MaxSends:       AnnouncementMaxSends,
+		NextSendAt:     &past,
+		SendCount:      0,
+		IsAnnouncement: true,
+	}
+	if err := store.Insert(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+
+	sc.Start(ctx)
+	t.Cleanup(sc.Stop)
+
+	waitFor(t, 3*time.Second, func() bool { return sink.count() > 0 }, "announcement send")
+
+	got, err := store.GetByID(ctx, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Announcements skip the burst phase and always use AnnouncementInterval (1 h).
+	minExpected := time.Now().UTC().Add(AnnouncementInterval - 10*time.Second)
+	if got.NextSendAt == nil || got.NextSendAt.Before(minExpected) {
+		t.Errorf("expected NextSendAt ~%s from now (AnnouncementInterval), got %v",
+			AnnouncementInterval, got.NextSendAt)
+	}
+}
+
+func TestScheduler_SoftDeletedRowNotSent(t *testing.T) {
+	sc, store, sink, _ := buildSchedulerRig(t)
+	ctx := context.Background()
+
+	past := time.Now().UTC().Add(-time.Second)
+	b := &configstore.Bulletin{
+		Slot:       "BLN5",
+		Text:       "should not send",
+		MaxSends:   12,
+		NextSendAt: &past,
+	}
+	if err := store.Insert(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SoftDelete(ctx, b.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	sc.Start(ctx)
+	t.Cleanup(sc.Stop)
+	sc.Kick()
+
+	time.Sleep(300 * time.Millisecond)
+	if sink.count() != 0 {
+		t.Errorf("expected 0 sends for soft-deleted bulletin, got %d", sink.count())
+	}
+}

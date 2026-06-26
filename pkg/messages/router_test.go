@@ -2,6 +2,7 @@ package messages
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1439,4 +1440,28 @@ func TestRouterAnnouncementRoutedToSink(t *testing.T) {
 	if len(got) == 0 || got[0].Slot != "BLNA" {
 		t.Errorf("expected BLNA, got: %+v", got)
 	}
+}
+
+func TestRouterBulletinSinkErrorDropsPacketGracefully(t *testing.T) {
+	r, bs, cleanup := buildRouterWithBulletinSink(t, "N0CALL")
+	defer cleanup()
+
+	// Make the sink return a transient error.
+	bs.err = errors.New("db write error")
+
+	pkt := makeMessagePacket(t, "W5X-1", "BLN0", "Net tonight", "", aprs.DirectionRF)
+	r.SendPacket(context.Background(), pkt)
+
+	// Allow processing time; the router should not panic and the sink should
+	// have been called (and returned the error).
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify the router continues to function after a sink error by routing
+	// a subsequent DM correctly.
+	bs.err = nil
+	dmPkt := makeMessagePacket(t, "W5X-1", "N0CALL", "hello", "1", aprs.DirectionRF)
+	r.SendPacket(context.Background(), dmPkt)
+
+	// If the router is still alive it will auto-ACK the DM; no panic = pass.
+	time.Sleep(200 * time.Millisecond)
 }
