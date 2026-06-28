@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
 )
@@ -221,6 +222,14 @@ func ObjectInfo(objectName string, live bool, timestampDHM string, lat, lon, alt
 	}
 	sb.WriteString(comment)
 	return sb.String()
+}
+
+// DHMZulu formats t as the 7-char "DDHHMMz" UTC timestamp used in APRS
+// object reports (APRS101 ch 11) — day-of-month, hour, minute, then the
+// 'z' zulu indicator. The caller is responsible for passing a UTC time;
+// the 'z' suffix asserts UTC and the day/hour/minute are taken verbatim.
+func DHMZulu(t time.Time) string {
+	return fmt.Sprintf("%02d%02d%02dz", t.Day(), t.Hour(), t.Minute())
 }
 
 // StatusInfo builds an APRS status report: ">comment".
