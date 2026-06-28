@@ -23,7 +23,8 @@
     parseManifestFramesForRegion,
     RADAR_REGION_WORLD,
   } from '../lib/map/sources/radar-source.js';
-  import { mountFrontsLayer } from '../lib/map/layers/fronts.js';
+  // Fronts layer disabled for now -- see commented-out wiring below to re-enable.
+  // import { mountFrontsLayer } from '../lib/map/layers/fronts.js';
   import { frontsProvider, frontsWorldProvider } from '../lib/map/sources/fronts-source.js';
   import { createRadarFrames } from '../lib/map/radar-frames.svelte.js';
   import { mapsState } from '../lib/settings/maps-store.svelte.js';
@@ -610,13 +611,14 @@
     });
     // Surface fronts ride just above radar in the GL stack (lines + pip symbols
     // over the reflectivity fill) and below the station/trail markers.
-    frontsLayer = mountFrontsLayer(map, { visible: layerToggles.fronts });
+    // Fronts layer disabled for now.
+    // frontsLayer = mountFrontsLayer(map, { visible: layerToggles.fronts });
     // Debug hooks for live front-symbology tuning from the browser console:
     //   window.gwFronts.tune({ pipSize: 0.7, statSpacing: 30, lineWidth: 3 })
     //   window.gwFronts.info()   window.gwMap.getZoom()
     if (typeof window !== 'undefined') {
       window.gwMap = map;
-      window.gwFronts = frontsLayer;
+      // window.gwFronts = frontsLayer;
     }
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
@@ -701,7 +703,8 @@
     windBarbsLayer.setVisible(layerToggles.weather);
     myPositionLayer.setVisible(layerToggles.myPosition);
     fixedPointsLayer.setVisible(layerToggles.fixedPoints);
-    frontsLayer.setVisible(layerToggles.fronts);
+    // Fronts layer disabled for now.
+    // frontsLayer.setVisible(layerToggles.fronts);
     const initialPred = layerToggles.directRxOnly
       ? isDirectRx
       : layerToggles.rfOnly
@@ -964,12 +967,13 @@
   // Surface fronts: toggle visibility, and run the slow manifest poll only while
   // the overlay is on (mirrors the radar manifest poll being gated on its
   // visibility). Reading `v` before the optional-chain registers the dep.
-  $effect(() => {
-    const v = layerToggles.fronts;
-    frontsLayer?.setVisible(v);
-    if (v) startFrontsPolling();
-    else stopFrontsPolling();
-  });
+  // Fronts layer disabled for now.
+  // $effect(() => {
+  //   const v = layerToggles.fronts;
+  //   frontsLayer?.setVisible(v);
+  //   if (v) startFrontsPolling();
+  //   else stopFrontsPolling();
+  // });
   // RF reachability filter: predicate is shared across stations/trails/
   // weather/wind-barbs so the layers stay in lockstep. my-position is the
   // operator's own beacon and is intentionally exempt. Direct RX is the
@@ -1237,6 +1241,7 @@
     <section class="layer-section">
       <h3 class="layer-section-title">Weather</h3>
       <div class="layer-toggles">
+        <!-- Fronts layer disabled for now.
         <label class="toggle-row">
           <input
             type="checkbox"
@@ -1245,6 +1250,7 @@
           />
           <span>Fronts</span>
         </label>
+        -->
         <label class="toggle-row">
           <input
             type="checkbox"
