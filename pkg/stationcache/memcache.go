@@ -339,8 +339,20 @@ func mergeReception(p *Position, e *CacheEntry) {
 // reported within dupWindow of an existing fix. The head (index 0) is
 // handled separately by the static-rebeacon path, so the search starts at
 // index 1. Returns -1 when the fix is genuinely new. See issue #421.
+//
+// This scan cannot be skipped for fixes whose timestamp is newer than the
+// head: a non-timestamped APRS packet is stamped with its reception time,
+// so a delayed copy of an earlier beacon arrives with the newest timestamp
+// of all and is only identifiable by location + dupWindow, never by
+// ordering. The scan is bounded, not full-trail: positions are newest-first
+// by timestamp, so once an entry falls below the window's lower edge no
+// older entry can match and we stop.
 func duplicateFix(positions []Position, p Position) int {
+	lowerBound := p.Timestamp.Add(-dupWindow)
 	for i := 1; i < len(positions); i++ {
+		if positions[i].Timestamp.Before(lowerBound) {
+			break
+		}
 		if positionMoved(positions[i], p) {
 			continue
 		}

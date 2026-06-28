@@ -1296,6 +1296,18 @@ fix. Delta mode (`since`) still emits only `positions[0]`, so an out-of-order
 than as a live delta -- acceptable, because the live head stays the true
 newest fix and no backward line is emitted.
 
+The dedup scan **cannot** be short-circuited for fixes whose timestamp is
+newer than the head: a non-timestamped APRS packet is stamped with its
+*reception* time (`extract.go`, falling back to `time.Now()`), so a delayed
+copy of an earlier beacon -- the common real-world case -- carries the newest
+timestamp of all and is identifiable only by location within `dupWindow`,
+never by ordering. The scan is bounded, not full-trail: positions are
+newest-first, so `duplicateFix` stops once it drops below the window's lower
+edge. Note also that the history DB stores raw, un-deduplicated rows
+(`historydb.WriteEntries`), ordered `timestamp DESC` on `LoadRecent`; a
+hydrated trail therefore preserves correct ordering (no backward line) but
+may show a redundant point that the live cache would have merged.
+
 Source: [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go)
 (`Update`, `duplicateFix`, `insertPositionByTime`, `mergeReception`,
 `positionMoved`),

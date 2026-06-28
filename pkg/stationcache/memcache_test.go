@@ -680,3 +680,34 @@ func TestMemCache_DuplicateMergesRFMetadata(t *testing.T) {
 			s.Positions[1].Direction, s.Positions[1].Hops)
 	}
 }
+
+// TestMemCache_NonTimestampedDuplicateDedups locks in the dominant
+// real-world #421 case: a non-timestamped APRS beacon is stamped with its
+// reception time, so a delayed digipeated/IS copy of an earlier fix arrives
+// with the NEWEST timestamp of all. It must still merge into the original
+// fix by location + dupWindow, not get prepended as a new head. This guards
+// against "optimizing" duplicateFix away for newest-timestamp fixes.
+func TestMemCache_NonTimestampedDuplicateDedups(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now().Add(-90 * time.Second)
+
+	// A (oldest) then B (head); B is newer than A.
+	c.Update([]CacheEntry{movingEntry("stn:CAR3", "CAR3", 40.00, -105.0, base)})
+	c.Update([]CacheEntry{movingEntry("stn:CAR3", "CAR3", 40.02, -105.0, base.Add(30*time.Second))})
+
+	// Delayed copy of A, stamped at reception time — newer than the head B,
+	// but within dupWindow of A's timestamp.
+	dup := movingEntry("stn:CAR3", "CAR3", 40.00, -105.0, base.Add(90*time.Second))
+	c.Update([]CacheEntry{dup})
+
+	lats := trailLats(t, c, "stn:CAR3")
+	want := []float64{40.02, 40.00}
+	if len(lats) != len(want) {
+		t.Fatalf("newest-timestamp duplicate created a new trail point: got %v, want %v", lats, want)
+	}
+	for i := range want {
+		if lats[i] != want[i] {
+			t.Fatalf("trail order corrupted: got %v, want %v", lats, want)
+		}
+	}
+}
