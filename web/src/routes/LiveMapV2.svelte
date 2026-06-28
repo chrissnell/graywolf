@@ -1706,6 +1706,9 @@
     .map-status-bar {
       bottom: calc(14px + env(safe-area-inset-bottom));
     }
+    /* The coord readout is lifted clear of this status bar in the
+       max-width: 900px block below -- the two offsets are coupled; keep
+       them in sync if you change either. */
   }
 
   /* On narrow viewports the centered status bar grows wide enough to reach
