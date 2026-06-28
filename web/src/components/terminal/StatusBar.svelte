@@ -6,6 +6,7 @@
   let stateName = $derived(session.state.stateName ?? 'DISCONNECTED');
   let stats = $derived(session.state.stats);
   let suspended = $derived(session.state.suspended);
+  let echoOff = $derived(session.state.localEcho === false);
   let errMsg = $derived(session.state.errorMessage);
   let viaText = $derived((session.state.via ?? []).join(' -> '));
 
@@ -26,6 +27,9 @@
     <span class="metric" title="frames TX/RX"><span class="metric-key">frames</span> {stats.frames_tx ?? 0}/{stats.frames_rx ?? 0}</span>
   {:else}
     <span class="metric muted">RTT --</span>
+  {/if}
+  {#if echoOff}
+    <span class="metric muted" title="local echo disabled (:echo on to restore)">echo off</span>
   {/if}
   {#if suspended}
     <span class="suspended">Suspended (tab in background)</span>

@@ -38,6 +38,10 @@ export function createSession(initial, opts = {}) {
     suspended: false,
     focused: false,
     transcriptEnabled: false,
+    // Local echo of operator keystrokes. Packet BBSes run line-mode and
+    // do not echo, so default on; toggle off (`:echo off`) for the rare
+    // host that echoes and would otherwise double every character.
+    localEcho: true,
     // lastError carries the most-recent typed server error so the route
     // can decide whether to surface an AlertDialog (fatal codes) or
     // just show the StatusBar message (transient).
@@ -141,6 +145,12 @@ export function createSession(initial, opts = {}) {
     return send({ kind: 'transcript_set', transcript: { enabled: !!enabled } });
   }
 
+  // Local echo is a viewport-only concern (no wire frame); the
+  // TerminalViewport reads state.localEcho when echoing keystrokes.
+  function setLocalEcho(enabled) {
+    state.localEcho = !!enabled;
+  }
+
   function abort() {
     send({ kind: 'abort' });
   }
@@ -162,7 +172,7 @@ export function createSession(initial, opts = {}) {
 
   open();
 
-  return { state, sendData, disconnect, abort, close, clearUnread, clearLastError, setTranscript };
+  return { state, sendData, disconnect, abort, close, clearUnread, clearLastError, setTranscript, setLocalEcho };
 }
 
 // pickN2 returns the configured retry budget from `initial`, falling
