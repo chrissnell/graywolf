@@ -1706,8 +1706,16 @@
     .map-status-bar {
       bottom: calc(14px + env(safe-area-inset-bottom));
     }
+  }
+
+  /* On narrow viewports the centered status bar grows wide enough to reach
+     the bottom-right coord/zoom readout and hide it (graywolf #418). Lift
+     the readout clear of the status bar so the two stack instead of
+     overlapping. The offset also keeps it above the bottom safe-area inset
+     and MapLibre attribution on mobile. */
+  @media (max-width: 900px) {
     .map-coord-display {
-      bottom: calc(28px + env(safe-area-inset-bottom));
+      bottom: calc(52px + env(safe-area-inset-bottom));
     }
   }
 
