@@ -148,14 +148,36 @@ func (c *MemCache) QueryBBox(bbox BBox, maxAge time.Duration) []Station {
 		if len(s.Positions) == 0 {
 			continue
 		}
-		p := s.Positions[0]
-		if p.Lat < bbox.SwLat || p.Lat > bbox.NeLat ||
-			p.Lon < bbox.SwLon || p.Lon > bbox.NeLon {
+		// Include the station when ANY position that will be shipped to
+		// the client falls inside the bbox, not just the latest fix. A
+		// head-only test made a moving station's entire still-visible
+		// trail vanish the moment its newest position left the viewport
+		// (GH #413). positions[0] is always shipped; positions[1:] ship
+		// only when newer than the trail cutoff, so mirror that trimming
+		// here to avoid keeping a station for a breadcrumb that won't
+		// actually render.
+		if !stationInBBox(s, bbox, cutoff) {
 			continue
 		}
 		out = append(out, snapshotStation(s))
 	}
 	return out
+}
+
+// stationInBBox reports whether any of the station's visible positions lie
+// within bbox. The head (positions[0]) always counts; older positions count
+// only when newer than cutoff, matching stationToDTO's trail trimming.
+func stationInBBox(s *Station, bbox BBox, cutoff time.Time) bool {
+	for i, p := range s.Positions {
+		if i > 0 && p.Timestamp.Before(cutoff) {
+			continue
+		}
+		if p.Lat >= bbox.SwLat && p.Lat <= bbox.NeLat &&
+			p.Lon >= bbox.SwLon && p.Lon <= bbox.NeLon {
+			return true
+		}
+	}
+	return false
 }
 
 // Lookup returns positions for the given callsigns regardless of bbox.
