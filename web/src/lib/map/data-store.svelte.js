@@ -256,19 +256,27 @@ export function createDataStore() {
 
   // --- Imperative API ---
 
-  // pruneOutOfBounds drops stations whose primary position is outside
-  // the supplied bbox. Called from setBounds so a pan or zoom-in
-  // doesn't leave stale markers from the prior viewport floating around
-  // after the next /api/stations fetch (the server only returns
-  // stations inside the new bbox, so without this they'd never be
+  // pruneOutOfBounds drops stations whose ENTIRE trail is outside the
+  // supplied bbox. Called from setBounds so a pan or zoom-in doesn't
+  // leave stale markers from the prior viewport floating around after
+  // the next /api/stations fetch (the server only returns stations whose
+  // trail intersects the new bbox, so without this they'd never be
   // removed from the SvelteMap).
+  //
+  // Membership is any-position, not head-only: a moving station whose
+  // newest fix has left the viewport keeps its trail drawn as long as
+  // some earlier fix is still in view, and is dropped only once the
+  // whole track has scrolled off-screen (GH #413).
   function pruneOutOfBounds(b) {
     if (!b) return;
     for (const [callsign, s] of stations) {
-      const p = s.positions && s.positions[0];
-      if (!p) continue;
-      if (p.lat < b.swLat || p.lat > b.neLat ||
-          p.lon < b.swLon || p.lon > b.neLon) {
+      const pts = s.positions;
+      if (!pts || pts.length === 0) continue;
+      const visible = pts.some(
+        (p) => p.lat >= b.swLat && p.lat <= b.neLat &&
+               p.lon >= b.swLon && p.lon <= b.neLon,
+      );
+      if (!visible) {
         stations.delete(callsign);
         trails.delete(callsign);
         weather.delete(callsign);

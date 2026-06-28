@@ -130,6 +130,34 @@ func TestMemCache_MovingStationTrail(t *testing.T) {
 	assertFloat(t, "oldest lat", results[0].Positions[4].Lat, 40.0)
 }
 
+func TestMemCache_QueryBBoxKeepsTrailWhenHeadLeaves(t *testing.T) {
+	c := newTestCache(t)
+
+	// Station walks east out of the bbox: the first 3 fixes are inside,
+	// the last 2 (the newest, including the head) are outside.
+	bbox := BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}
+	lons := []float64{-105.0, -104.5, -104.2, -103.5, -103.0}
+	for _, lon := range lons {
+		c.Update([]CacheEntry{stationEntry("stn:ROVER", "ROVER", 40.0, lon)})
+	}
+
+	// Head is now outside the bbox, but earlier breadcrumbs remain inside,
+	// so the station (and its whole trail) must still be returned -- GH #413.
+	results := c.QueryBBox(bbox, 1*time.Hour)
+	if len(results) != 1 {
+		t.Fatalf("expected station retained while trail intersects bbox, got %d", len(results))
+	}
+	if len(results[0].Positions) != len(lons) {
+		t.Fatalf("expected full %d-point trail, got %d", len(lons), len(results[0].Positions))
+	}
+
+	// Once the entire track has left the viewport, the station drops out.
+	eastBox := BBox{SwLat: 39, SwLon: -90, NeLat: 41, NeLon: -88}
+	if got := c.QueryBBox(eastBox, 1*time.Hour); len(got) != 0 {
+		t.Fatalf("expected station dropped when whole trail is off-screen, got %d", len(got))
+	}
+}
+
 func TestMemCache_TrailCap(t *testing.T) {
 	c := newTestCache(t)
 
