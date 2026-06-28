@@ -38,6 +38,21 @@ test('rejects a minus sign combined with a hemisphere letter', () => {
   assert.match(parseCoordinate('-37.0 S', 'lat').error, /minus sign/);
 });
 
+test('round-trips the toFixed(6) seed used to pre-fill the dialog', () => {
+  // The dialog seeds its inputs with lat.toFixed(6) / lon.toFixed(6); the
+  // unedited path parses that string straight back, so it must recover the
+  // value losslessly at 6dp.
+  const lat = 37.774929;
+  const lon = -122.419418;
+  assert.deepEqual(parseCoordinate(lat.toFixed(6), 'lat'), { value: lat });
+  assert.deepEqual(parseCoordinate(lon.toFixed(6), 'lon'), { value: lon });
+});
+
+test('tolerates surrounding whitespace and a leading +', () => {
+  assert.deepEqual(parseCoordinate('  37.7749 N ', 'lat'), { value: 37.7749 });
+  assert.deepEqual(parseCoordinate('+37.7', 'lat'), { value: 37.7 });
+});
+
 test('rejects non-numeric junk', () => {
   assert.match(parseCoordinate('abc', 'lat').error, /valid number/);
   assert.match(parseCoordinate('12.3.4', 'lon').error, /valid number/);

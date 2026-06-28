@@ -38,8 +38,8 @@
       table = '/';
       symbol = '/';
       overlay = '';
-      latInput = lat.toFixed(5);
-      lonInput = lon.toFixed(5);
+      latInput = lat.toFixed(6);
+      lonInput = lon.toFixed(6);
       coordError = '';
     }
   });
@@ -112,7 +112,9 @@
           type="text"
           inputmode="decimal"
           bind:value={latInput}
-          placeholder="37.77490"
+          placeholder="37.774900"
+          aria-invalid={!!coordError}
+          aria-describedby={coordError ? 'fp-coord-error' : undefined}
           onkeydown={(e) => e.key === 'Enter' && confirm()}
         />
       </label>
@@ -123,14 +125,16 @@
           type="text"
           inputmode="decimal"
           bind:value={lonInput}
-          placeholder="-122.41940"
+          placeholder="-122.419400"
+          aria-invalid={!!coordError}
+          aria-describedby={coordError ? 'fp-coord-error' : undefined}
           onkeydown={(e) => e.key === 'Enter' && confirm()}
         />
       </label>
     </div>
 
     {#if coordError}
-      <div class="fp-coord-error" role="alert">{coordError}</div>
+      <div id="fp-coord-error" class="fp-coord-error" role="alert">{coordError}</div>
     {/if}
 
     <div class="fp-actions">
