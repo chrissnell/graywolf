@@ -1257,7 +1257,47 @@ Source: [`../../web/src/lib/map/rf-only-core.js`](../../web/src/lib/map/rf-only-
 [`../../web/src/lib/map/popup-helpers.js`](../../web/src/lib/map/popup-helpers.js)
 (`viaText`).
 
-### 53. The stationcache trail is ordered newest-first by timestamp and deduplicates re-received fixes
+### 53. Map-viewport membership is any-trail-position, not head-only
+
+A station belongs to the current map view when **any** position in its
+visible trail falls inside the bbox -- not only its newest fix
+(`positions[0]`). Both ends of the live-map pipeline must agree on this:
+
+- Server: `MemCache.QueryBBox` (`stationInBBox`) returns a station if the
+  head or any non-trimmed trail point is inside the bbox.
+- Client: the data store's `pruneOutOfBounds` keeps a station while any of
+  its accumulated positions is inside the bbox, and drops it only once the
+  whole track has scrolled off-screen.
+
+*Why:* a head-only test on either side made a moving station's entire
+still-visible trail vanish the moment its newest position left the viewport
+(graywolf GH #413) -- the server stopped returning it and the client pruned
+it. The two checks must stay symmetric: if the server is looser than the
+client (or vice versa), tracks either flicker on bounds changes or pile up
+as stale breadcrumbs.
+
+*How to apply:* mirror the trail-cutoff trimming when scanning positions on
+the server (head always counts; older points count only when newer than the
+trail cutoff, matching `stationToDTO`) so membership reflects what actually
+ships. Keep the client predicate any-position so it self-cleans: a track is
+retained while partly visible and pruned once fully off-screen. The two
+checks are symmetric in shape (any-position, inclusive bounds) but not
+bit-exact: the client trail is length-capped (`MAX_TRAIL_LEN`), not
+time-trimmed, so `trailIntersectsBBox` may scan slightly older breadcrumbs
+than the server's cutoff-trimmed set. `pruneStale` still drops whole stations
+by `last_heard`, so the looseness is bounded.
+
+Source:
+[`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go)
+(`QueryBBox`, `stationInBBox`),
+[`../../pkg/stationcache/memcache_test.go`](../../pkg/stationcache/memcache_test.go)
+(`TestMemCache_QueryBBoxKeepsTrailWhenHeadLeaves`),
+[`../../web/src/lib/map/viewport-membership-core.js`](../../web/src/lib/map/viewport-membership-core.js)
+(`trailIntersectsBBox`, `viewport-membership-core.test.js`),
+[`../../web/src/lib/map/data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js)
+(`pruneOutOfBounds`).
+
+### 54. The stationcache trail is ordered newest-first by timestamp and deduplicates re-received fixes
 
 `MemCache.Update` (`pkg/stationcache/memcache.go`) keeps each station's
 `Positions` slice strictly **newest-first by `Timestamp`** and treats a

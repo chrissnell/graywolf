@@ -1388,15 +1388,15 @@
     bind:open={fpDialog.open}
     lat={fpDialog.lat}
     lon={fpDialog.lon}
-    onConfirm={async ({ name, table, symbol, overlay }) => {
+    onConfirm={async ({ name, table, symbol, overlay, lat, lon }) => {
       try {
         const p = await fixedPointsStore.add({
           name,
           table,
           symbol,
           overlay,
-          lat: fpDialog.lat,
-          lon: fpDialog.lon,
+          lat,
+          lon,
         });
         toasts.success(`Added "${p.name}"`);
       } catch (err) {
