@@ -1280,12 +1280,19 @@ as stale breadcrumbs.
 the server (head always counts; older points count only when newer than the
 trail cutoff, matching `stationToDTO`) so membership reflects what actually
 ships. Keep the client predicate any-position so it self-cleans: a track is
-retained while partly visible and pruned once fully off-screen.
+retained while partly visible and pruned once fully off-screen. The two
+checks are symmetric in shape (any-position, inclusive bounds) but not
+bit-exact: the client trail is length-capped (`MAX_TRAIL_LEN`), not
+time-trimmed, so `trailIntersectsBBox` may scan slightly older breadcrumbs
+than the server's cutoff-trimmed set. `pruneStale` still drops whole stations
+by `last_heard`, so the looseness is bounded.
 
 Source:
 [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go)
 (`QueryBBox`, `stationInBBox`),
 [`../../pkg/stationcache/memcache_test.go`](../../pkg/stationcache/memcache_test.go)
 (`TestMemCache_QueryBBoxKeepsTrailWhenHeadLeaves`),
+[`../../web/src/lib/map/viewport-membership-core.js`](../../web/src/lib/map/viewport-membership-core.js)
+(`trailIntersectsBBox`, `viewport-membership-core.test.js`),
 [`../../web/src/lib/map/data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js)
 (`pruneOutOfBounds`).

@@ -24,6 +24,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { clockOffset } from './clock-offset.svelte.js';
 import { get } from 'svelte/store';
 import { online, markConnected, markDisconnected } from '../stores/connection.js';
+import { trailIntersectsBBox } from './viewport-membership-core.js';
 
 const POLL_BASE_MS = 5_000;
 const POLL_MAX_MS = 60_000;
@@ -270,17 +271,10 @@ export function createDataStore() {
   function pruneOutOfBounds(b) {
     if (!b) return;
     for (const [callsign, s] of stations) {
-      const pts = s.positions;
-      if (!pts || pts.length === 0) continue;
-      const visible = pts.some(
-        (p) => p.lat >= b.swLat && p.lat <= b.neLat &&
-               p.lon >= b.swLon && p.lon <= b.neLon,
-      );
-      if (!visible) {
-        stations.delete(callsign);
-        trails.delete(callsign);
-        weather.delete(callsign);
-      }
+      if (trailIntersectsBBox(s.positions, b)) continue;
+      stations.delete(callsign);
+      trails.delete(callsign);
+      weather.delete(callsign);
     }
   }
 
