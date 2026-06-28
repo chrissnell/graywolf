@@ -5,6 +5,8 @@
   import { Platform } from './lib/platform.js';
   import Sidebar from './components/Sidebar.svelte';
   import NewsPopup from './components/NewsPopup.svelte';
+  import ServerUpdatedBanner from './components/ServerUpdatedBanner.svelte';
+  import { serverVersion } from './lib/stores/server-version.svelte.js';
   import { start as startMessagesTransport } from './lib/messagesTransport.js';
   import { releaseNotes } from './lib/releaseNotesStore.svelte.js';
   import { unitsState } from './lib/settings/units-store.svelte.js';
@@ -138,6 +140,9 @@
     if (authChecked && !isLoginPage && !messagesTransportStarted) {
       messagesTransportStarted = true;
       startMessagesTransport();
+      // Watch for the server build changing underneath this tab (operator
+      // upgraded graywolf) and surface a reload banner. Idempotent.
+      serverVersion.start();
       // Pull release notes the user hasn't acknowledged yet. App.svelte
       // mounts <NewsPopup> only when unseen.length > 0, so an empty
       // response is a silent no-op.
@@ -155,6 +160,7 @@
 {#if isLoginPage}
   <Router {routes} />
 {:else if authChecked}
+  <ServerUpdatedBanner />
   <div class="app-layout">
     <Sidebar />
     <main class="main-content" class:full-bleed={currentPath === '/map' || currentPath === '/messages' || currentPath.startsWith('/messages/')}>

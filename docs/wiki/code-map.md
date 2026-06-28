@@ -266,6 +266,23 @@ PMTiles infrastructure (manifest gen, R2 sync, Cloudflare Worker) is in
 [`../../pkg/updatescheck/checker.go`](../../pkg/updatescheck/checker.go)
 polls GitHub Releases once per day and serves the snapshot via webapi `/api/updates`.
 
+Distinct from that "a newer release exists upstream" check is the
+**"the server you're talking to changed underneath you"** check, which
+catches an operator upgrading/rebuilding graywolf while a tab is open.
+`GET /api/version` returns `{version, commit}` (commit added so a
+same-version rebuild is still detected; sourced from `Config.GitCommit`
+via [`pkg/app/wiring.go`](../../pkg/app/wiring.go) → `webapi.Config.Commit`).
+The web client captures that identity at load and re-checks it from
+[`web/src/lib/stores/server-version.svelte.js`](../../web/src/lib/stores/server-version.svelte.js)
+(pure latch/identity logic in
+[`server-version-core.js`](../../web/src/lib/server-version-core.js)); on a
+change it raises `ServerUpdatedBanner` app-wide with a Reload button. The
+re-check is **driven by the shared `online` connection store**: an upgrade
+restarts the process, which trips `online` false→true, and that reconnect
+edge triggers the version fetch (a slow interval poll is the fallback). So
+the version watch is coupled to the same disconnect/reconnect signal that
+[`web/src/lib/api.js`](../../web/src/lib/api.js) feeds.
+
 ## Android Kotlin platform service (`android/app/`)
 
 Kotlin code that backs the Android tablet build. The webview hosts the

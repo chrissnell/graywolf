@@ -1335,6 +1335,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Logger:             a.logger,
 		HistoryDBPath:      a.cfg.HistoryDBPath,
 		Version:            a.cfg.Version,
+		Commit:             a.cfg.GitCommit,
 		MapsCache:          mapsCache,
 		Catalog:            catalog,
 		Style:              styleCache,

@@ -62,6 +62,7 @@ type Server struct {
 	startedAt          time.Time
 	historyDBPath      string // read-only; set by -history-db flag
 	version            string // build-time version string returned by GET /api/version
+	commit             string // build-time git commit returned by GET /api/version
 	igateStatusFn      func() *igate.Status
 	gpsReload          chan struct{} // signalled when GPS config changes
 	beaconReload       chan struct{} // signalled when beacon config changes
@@ -193,6 +194,7 @@ type Config struct {
 	Logger             *slog.Logger
 	HistoryDBPath      string // path to history database, from -history-db flag
 	Version            string // build-time version string reported by GET /api/version
+	Commit             string // build-time git commit reported by GET /api/version
 	// MapsAuth is the registration client used by
 	// POST /api/preferences/maps/register. Optional; NewServer
 	// defaults to a client pointed at mapsauth.DefaultBaseURL when
@@ -246,6 +248,7 @@ func NewServer(cfg Config) (*Server, error) {
 		startedAt:          time.Now(),
 		historyDBPath:      cfg.HistoryDBPath,
 		version:            cfg.Version,
+		commit:             cfg.Commit,
 		updatesReloadCh:    make(chan struct{}, 1),
 		mapsAuth:           mapsClient,
 		mapsCache:          cfg.MapsCache,
