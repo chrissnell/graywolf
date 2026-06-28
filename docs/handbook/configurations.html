@@ -314,6 +314,151 @@
     </div>
 
     <!-- ============================================================ -->
+
+    <div class="config-card" id="baofeng-uv5r-pi-zero">
+      <div class="config-card-header">Baofeng UV-5R + Digirig Mobile + Raspberry Pi Zero 2W &mdash; Raspberry Pi OS</div>
+      <div class="config-card-body">
+        <div class="config-section">
+          <div class="config-section-label">System</div>
+          <table>
+            <tbody>
+              <tr><td><strong>OS</strong></td><td>Raspberry Pi OS Lite, 64-bit</td></tr>
+              <tr><td><strong>Hardware</strong></td><td>Raspberry Pi Zero 2W</td></tr>
+              <tr><td><strong>Audio Device</strong></td><td>Digirig Mobile</td></tr>
+              <tr><td><strong>Radio</strong></td><td>Baofeng UV-5R</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Audio Devices</div>
+          <table>
+            <thead>
+              <tr><th>Direction</th><th>Path</th><th>Channels</th><th>Sample Rate</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Input</td>
+                <td><code>plughw:CARD=Device,DEV=0</code></td>
+                <td>Mono</td>
+                <td>8000 Hz</td>
+              </tr>
+              <tr>
+                <td>Output</td>
+                <td><code>plughw:CARD=Device,DEV=0</code></td>
+                <td>Mono</td>
+                <td>8000 Hz</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            Pick the audio devices that have <strong>USB</strong> in their name
+            (the Digirig enumerates as a USB sound card). On a low-powered Pi
+            Zero 2W, an 8000 Hz sample rate noticeably reduces CPU load versus
+            the 48000 Hz default and decodes just as well. A faster board can
+            stay at 48000 Hz.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Push-to-Talk</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Method</strong></td><td>Serial RTS</td></tr>
+              <tr><td><strong>Device Path</strong></td><td><code>/dev/ttyUSB0</code></td></tr>
+              <tr><td><strong>Invert Polarity</strong></td><td>Disabled</td></tr>
+            </tbody>
+          </table>
+          <p>
+            On the Digirig Mobile, use the <strong>USB-Serial</strong> port for
+            keying. The CM108 HID PTT method does not key the radio through this
+            interface &mdash; Serial RTS is the one that works.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Baofeng UV-5R Radio Setup</div>
+          <p>
+            APRS on a Baofeng works best with open squelch and most of the
+            radio's convenience features turned off. Set the channel to your
+            local APRS frequency (144.390 MHz in North America) and configure
+            the menu items below.
+          </p>
+          <table>
+            <thead>
+              <tr><th>Menu</th><th>Setting</th><th>Value</th><th>Why</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>SQL</td><td>Squelch</td><td>0</td><td>Open squelch &mdash; the radio's squelch is too slow and clips the start of packets</td></tr>
+              <tr><td>TXP</td><td>Transmit Power</td><td>HIGH or LOW</td><td>HIGH to reach a distant digipeater; LOW if you send packets rapidly and want to avoid overheating</td></tr>
+              <tr><td>SAVE</td><td>Battery Saver</td><td>OFF</td><td>Power-save can cut the receiver between packets</td></tr>
+              <tr><td>WN</td><td>Bandwidth</td><td>WIDE</td><td>Standard for 2m amateur use</td></tr>
+              <tr><td>VOX</td><td>Voice-Activated TX</td><td>OFF</td><td>VOX can delay PTT release after Serial RTS drops</td></tr>
+              <tr><td>TDR</td><td>Dual Watch</td><td>OFF</td><td>Keeps the radio locked on the APRS channel; also prevents open squelch from working</td></tr>
+              <tr><td>R-DCS</td><td>Receive DCS</td><td>OFF</td><td>Any receive tone/code squelch defeats open squelch</td></tr>
+              <tr><td>R-CTCS</td><td>Receive CTCSS</td><td>OFF</td><td>Any receive tone/code squelch defeats open squelch</td></tr>
+              <tr><td>BCL</td><td>Busy Channel Lockout</td><td>OFF</td><td>Incompatible with open squelch</td></tr>
+              <tr><td>SFT-D</td><td>Frequency Shift</td><td>OFF</td><td>Transmit and receive on the same frequency &mdash; no offset</td></tr>
+              <tr><td>STE</td><td>Squelch Tail Elimination</td><td>OFF</td><td>Not needed for packet</td></tr>
+              <tr><td>ROGER</td><td>Roger Beep</td><td>OFF</td><td>A roger beep would corrupt the end of each packet</td></tr>
+            </tbody>
+          </table>
+          <p>
+            Set the radio's <strong>volume to roughly 30&ndash;50%</strong> as a
+            starting point, then fine-tune the input level as described below.
+            With the Digirig cable unplugged from the radio and SQL=0, you
+            should hear a constant stream of static &mdash; if you don't, recheck
+            the volume and the R-DCS / R-CTCS settings.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Setting the Audio Input Level</div>
+          <p>
+            Correct receive audio level matters. Three controls feed into it:
+            the radio's volume knob, the Linux capture (mic) level, and the
+            graywolf input gain. Leave the graywolf input gain at
+            <strong>0.0&nbsp;dB</strong> and set the level with the other two so
+            that nothing upstream clips.
+          </p>
+          <ol class="steps">
+            <li>Set the graywolf input audio gain to <strong>0.0&nbsp;dB</strong>
+              on the Audio Devices screen.</li>
+            <li>With the Digirig cable temporarily unplugged from the radio,
+              adjust the volume knob by ear to a steady, moderate stream of
+              static and APRS chatter, then plug the cable back in. Baofeng
+              volume is sensitive, so set it roughly here and trim with Linux.</li>
+            <li>Run <code>alsamixer</code>, press <strong>F6</strong> to select
+              <strong>USB Audio Device</strong>, then <strong>F4</strong> to show
+              Capture controls. Raise or lower the capture level while watching
+              the <strong>LEVEL</strong> graph in graywolf.</li>
+            <li>Aim for an idle (no-signal) level just below
+              <strong>-20&nbsp;dBFS</strong>. A good received packet will read
+              lower, around -30 to -35 dBFS. A capture value near 30 of 100 is
+              typical; if you need it very near 0 or 100, adjust the radio
+              volume knob and try again.</li>
+          </ol>
+        </div>
+
+        <div class="callout info">
+          <span class="callout-icon">&#9432;</span>
+          <div class="callout-body">
+            <p>
+              After configuring audio devices and the channel, restart graywolf
+              so it picks them up:
+              <code>sudo systemctl restart graywolf</code>. Enable it to start
+              at boot with <code>sudo systemctl enable --now graywolf</code>. If
+              received audio is absent or intermittent, unplug the Digirig cable
+              from the radio and plug it back in &mdash; a flaky TRRS connection
+              is a common culprit.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
     <!-- Add new configurations above this line.                      -->
     <!-- Copy the Digirig Mobile section as a template and fill in    -->
     <!-- your own values. Group by device, then by OS/hardware.       -->
