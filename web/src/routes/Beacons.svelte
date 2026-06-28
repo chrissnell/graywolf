@@ -14,6 +14,7 @@
   import { getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
   import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
+  import { trackerBeaconFlags } from '../lib/trackerBeacon.js';
   import {
     channelRefStatus,
     buildChannelsById,
@@ -399,13 +400,13 @@
       }
       form.object_name = n;
     }
-    // Trackers always source position from the live GPS fix (the backend
-    // builder reads course/speed from it), so force use_gps regardless of
-    // the form's pos_source. The smart_beacon flag is the per-beacon
-    // opt-in the scheduler checks alongside the tracker type and the
-    // global SmartBeacon master switch.
+    // Trackers always source position from the live GPS fix and opt into
+    // SmartBeaconing; trackerBeaconFlags is the shared, tested rule (see
+    // lib/trackerBeacon.js). useGps also gates the fixed-coordinate
+    // validation below.
     const isTrackerSave = form.type === 'tracker';
-    const useGps = isTrackerSave || form.pos_source === 'gps';
+    const { use_gps: useGps, smart_beacon: smartBeaconFlag } =
+      trackerBeaconFlags(form.type, form.pos_source);
     const latStr = form.latitude.trim();
     const lonStr = form.longitude.trim();
     const lat = latStr === '' ? 0 : parseFloat(latStr);
@@ -447,7 +448,7 @@
       callsign: callsignToSend,
       channel: channelId,
       use_gps: useGps,
-      smart_beacon: isTrackerSave,
+      smart_beacon: smartBeaconFlag,
       interval: parseInt(form.interval),
       slot_seconds: slotSeconds,
       latitude: lat,
@@ -511,9 +512,12 @@
   async function ensureSmartBeaconEnabled() {
     try {
       const cfg = await api.get('/smart-beacon');
-      if (cfg && cfg.enabled) return;
-      const next = { ...(cfg || {}), enabled: true };
-      await api.put('/smart-beacon', next);
+      // GET always returns a fully-populated config (stored row or
+      // defaults). A missing one means something upstream is wrong —
+      // bail rather than PUT all-zero curve params the API would reject.
+      if (!cfg) throw new Error('SmartBeacon settings unavailable');
+      if (cfg.enabled) return;
+      await api.put('/smart-beacon', { ...cfg, enabled: true });
       smartBeacon = { ...smartBeacon, enabled: true };
       toasts.success('SmartBeaconing enabled so your tracker beacons transmit');
     } catch (err) {

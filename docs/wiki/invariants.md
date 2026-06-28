@@ -1356,3 +1356,23 @@ Source: [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.g
 `TestMemCache_OutOfOrderArrivalSortsByTime`,
 `TestMemCache_RevisitOutsideWindowKeepsPoint`),
 [`../../web/src/lib/map/layers/trails.js`](../../web/src/lib/map/layers/trails.js).
+
+### 55. SmartBeaconing requires a `tracker` beacon, not just the global toggle
+
+*Why:* The scheduler's `isSmart()` only adapts rate when a beacon's type is
+`tracker` AND its per-beacon `smart_beacon` flag is set AND the global
+`SmartBeaconConfig` singleton is enabled — all three. The global panel alone
+does nothing without a tracker beacon, which is why a station with a working
+GPS and SmartBeaconing "on" never beacons. The Beacons UI hides this: choosing
+the `Tracker` type forces `use_gps`, sets `smart_beacon`, and auto-enables the
+global singleton on save (mirroring the iGate auto-enable for APRS-IS-only
+beacons). If you add a beacon type or touch the save path, preserve all three
+gates or SmartBeaconing silently stops firing.
+
+Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
+(`isSmart`),
+[`../../pkg/app/adapters.go`](../../pkg/app/adapters.go)
+(`beaconConfigFromStore` SmartBeacon precedence),
+[`../../web/src/lib/trackerBeacon.js`](../../web/src/lib/trackerBeacon.js),
+[`../../web/src/routes/Beacons.svelte`](../../web/src/routes/Beacons.svelte)
+(`ensureSmartBeaconEnabled`).
