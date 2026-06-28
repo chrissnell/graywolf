@@ -21,6 +21,7 @@ type Metrics struct {
 	Registry *prometheus.Registry
 
 	RxFrames       *prometheus.CounterVec
+	RxBadFcs       *prometheus.CounterVec
 	DcdTransitions *prometheus.CounterVec
 	DcdDropped     prometheus.Counter
 	ChildRestarts  prometheus.Counter
@@ -103,6 +104,12 @@ type Metrics struct {
 	// don't double-count them from StatusUpdate.)
 	lastDcdTransitions map[uint32]uint64
 
+	// Same delta translation for bad-FCS counts. Bad frames are dropped in
+	// the Rust modem and never arrive as ReceivedFrame, so unlike rx_frames
+	// there is no per-frame hook — the absolute counter rides in on the
+	// periodic StatusUpdate and is differenced here, exactly like DCD.
+	lastRxBadFcs map[uint32]uint64
+
 	// serialLabels caches the {name, device} pair last reported by
 	// ObserveKissSerialState so that ObserveKissSerialReconnect (which
 	// only receives ifaceID, mirroring the client reconnect contract) can
@@ -131,6 +138,10 @@ func New() *Metrics {
 		RxFrames: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "graywolf_rx_frames_total",
 			Help: "AX.25 frames successfully received, by channel.",
+		}, []string{"channel"}),
+		RxBadFcs: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_rx_bad_fcs_total",
+			Help: "Frames received with a failed FCS (CRC) check and dropped, by channel. Only modem-backed channels report this; KISS-TNC channels stay absent because a hardware TNC validates the FCS itself and never forwards a bad frame over KISS (issue #132).",
 		}, []string{"channel"}),
 		DcdTransitions: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "graywolf_dcd_transitions_total",
@@ -298,10 +309,12 @@ func New() *Metrics {
 			Help: "Current backoff delay in seconds for the KISS serial supervisor while waiting to re-open. Zero when connected or not in backoff.",
 		}, []string{"interface_id", "name", "device"}),
 		lastDcdTransitions: make(map[uint32]uint64),
+		lastRxBadFcs:       make(map[uint32]uint64),
 		serialLabels:       make(map[uint32][2]string),
 	}
 	reg.MustRegister(
 		m.RxFrames,
+		m.RxBadFcs,
 		m.DcdTransitions,
 		m.DcdDropped,
 		m.ChildRestarts,
@@ -393,6 +406,13 @@ func (m *Metrics) UpdateFromStatus(s *pb.StatusUpdate) {
 	} else if s.DcdTransitions > prev {
 		m.DcdTransitions.WithLabelValues(label).Add(float64(s.DcdTransitions - prev))
 		m.lastDcdTransitions[s.Channel] = s.DcdTransitions
+	}
+
+	if prev, ok := m.lastRxBadFcs[s.Channel]; !ok || s.RxBadFcs < prev {
+		m.lastRxBadFcs[s.Channel] = s.RxBadFcs
+	} else if s.RxBadFcs > prev {
+		m.RxBadFcs.WithLabelValues(label).Add(float64(s.RxBadFcs - prev))
+		m.lastRxBadFcs[s.Channel] = s.RxBadFcs
 	}
 
 	m.AudioLevel.WithLabelValues(label).Set(float64(s.AudioLevelPeak))

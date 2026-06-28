@@ -53,13 +53,15 @@ func TestUpdateFromStatus(t *testing.T) {
 	m.UpdateFromStatus(&pb.StatusUpdate{
 		Channel:        0,
 		DcdTransitions: 5,
+		RxBadFcs:       10,
 		AudioLevelPeak: 0.4,
 		DcdState:       true,
 	})
-	// Second update: +3 DCD transitions.
+	// Second update: +3 DCD transitions, +4 bad-FCS.
 	m.UpdateFromStatus(&pb.StatusUpdate{
 		Channel:        0,
 		DcdTransitions: 8,
+		RxBadFcs:       14,
 		AudioLevelPeak: 0.2,
 		DcdState:       false,
 	})
@@ -67,6 +69,7 @@ func TestUpdateFromStatus(t *testing.T) {
 	body := scrape(t, m)
 	for _, want := range []string{
 		`graywolf_dcd_transitions_total{channel="0"} 3`,
+		`graywolf_rx_bad_fcs_total{channel="0"} 4`,
 		`graywolf_dcd_active{channel="0"} 0`,
 		`graywolf_audio_level{channel="0"} 0.2`,
 	} {
@@ -78,15 +81,19 @@ func TestUpdateFromStatus(t *testing.T) {
 
 func TestUpdateFromStatusHandlesRestart(t *testing.T) {
 	m := New()
-	m.UpdateFromStatus(&pb.StatusUpdate{Channel: 0, DcdTransitions: 100})
-	// Child restarted, counter reset to 2. Should rebaseline, not go negative.
-	m.UpdateFromStatus(&pb.StatusUpdate{Channel: 0, DcdTransitions: 2})
-	m.UpdateFromStatus(&pb.StatusUpdate{Channel: 0, DcdTransitions: 5})
+	m.UpdateFromStatus(&pb.StatusUpdate{Channel: 0, DcdTransitions: 100, RxBadFcs: 50})
+	// Child restarted, counters reset. Should rebaseline, not go negative.
+	m.UpdateFromStatus(&pb.StatusUpdate{Channel: 0, DcdTransitions: 2, RxBadFcs: 1})
+	m.UpdateFromStatus(&pb.StatusUpdate{Channel: 0, DcdTransitions: 5, RxBadFcs: 4})
 
 	body := scrape(t, m)
 	// 0 from first, rebaseline to 2, then +3 → total 3.
 	if !strings.Contains(body, `graywolf_dcd_transitions_total{channel="0"} 3`) {
 		t.Errorf("unexpected transitions counter after restart:\n%s", body)
+	}
+	// Same rebaseline math for bad-FCS: 0, rebaseline to 1, then +3 → total 3.
+	if !strings.Contains(body, `graywolf_rx_bad_fcs_total{channel="0"} 3`) {
+		t.Errorf("unexpected bad-fcs counter after restart:\n%s", body)
 	}
 }
 

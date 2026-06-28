@@ -108,6 +108,11 @@
               <td>Received packets (label: <code>channel</code>)</td>
             </tr>
             <tr>
+              <td><code>graywolf_rx_bad_fcs_total</code></td>
+              <td>counter</td>
+              <td>Packets received with a failed FCS (CRC) check and dropped (label: <code>channel</code>). Reported only for modem channels; a hardware KISS TNC validates the FCS itself, so its channels never report bad frames.</td>
+            </tr>
+            <tr>
               <td><code>graywolf_tx_frames_total</code></td>
               <td>counter</td>
               <td>Transmitted packets (label: <code>channel</code>)</td>
