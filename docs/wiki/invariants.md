@@ -1256,3 +1256,51 @@ Source: [`../../web/src/lib/map/rf-only-core.js`](../../web/src/lib/map/rf-only-
 (filter `$effect`, `rfOnlyStationCount`),
 [`../../web/src/lib/map/popup-helpers.js`](../../web/src/lib/map/popup-helpers.js)
 (`viaText`).
+
+### 53. The stationcache trail is ordered newest-first by timestamp and deduplicates re-received fixes
+
+`MemCache.Update` (`pkg/stationcache/memcache.go`) keeps each station's
+`Positions` slice strictly **newest-first by `Timestamp`** and treats a
+single physical beacon heard more than once as one trail point, not several.
+Three paths enforce this for a position that differs from the head fix:
+
+- *Static re-beacon* (`!positionMoved(positions[0], new)`): fold into
+  `positions[0]`, advancing its timestamp/comment and rfRank-merging path
+  metadata (invariant #48).
+- *Late duplicate of an older fix* (`duplicateFix`): a digipeated, APRS-IS,
+  or second-channel copy of an earlier beacon that lands within `posEpsilon`
+  of an existing point **and** within `dupWindow` (2 min) of its timestamp.
+  Merge the reception metadata into that existing point; do **not** insert a
+  new point.
+- *Genuinely new fix*: insert in timestamp order via `insertPositionByTime`
+  (a plain prepend in the common in-order case), then cap at `MaxTrailLen`.
+
+*Why:* the Live Map trail layer (`web/src/lib/map/layers/trails.js`) draws
+one line segment between each consecutive pair of `positions`, so the array
+order **is** the rendered path. The earlier code prepended every moved fix in
+arrival order with no timestamp check and only deduplicated against
+`positions[0]`. On APRS-IS and digipeated feeds, duplicate and out-of-order
+copies are routine, so a delayed copy of an old fix was prepended as the new
+head -- the track doubled back on itself, drawing spurious lines between
+non-adjacent beacons (graywolf GitHub #421, reproduced "both with my own and
+others tracks"). Ordering by timestamp and collapsing same-fix copies makes
+the rendered line the chronological dot-to-dot path again.
+
+*How to apply:* never assume packet arrival order equals chronological order.
+Any new ingest path into the cache must go through `Update` so the ordering
+and dedup hold. `dupWindow` is a deliberate spatial+temporal guard: it is
+wide enough to absorb APRS-IS/store-and-forward delay but narrow enough that
+a genuine return to a prior location well outside the window stays a distinct
+fix. Delta mode (`since`) still emits only `positions[0]`, so an out-of-order
+*historical* fix inserted mid-slice surfaces on the next full reload rather
+than as a live delta -- acceptable, because the live head stays the true
+newest fix and no backward line is emitted.
+
+Source: [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go)
+(`Update`, `duplicateFix`, `insertPositionByTime`, `mergeReception`,
+`positionMoved`),
+[`../../pkg/stationcache/memcache_test.go`](../../pkg/stationcache/memcache_test.go)
+(`TestMemCache_DuplicateOldFixDoesNotDoubleBack`,
+`TestMemCache_OutOfOrderArrivalSortsByTime`,
+`TestMemCache_RevisitOutsideWindowKeepsPoint`),
+[`../../web/src/lib/map/layers/trails.js`](../../web/src/lib/map/layers/trails.js).

@@ -11,6 +11,14 @@ import (
 // identical (~1m at the equator). Used to deduplicate static re-beacons.
 const posEpsilon = 0.00001
 
+// dupWindow bounds how far apart in time two same-location fixes may be
+// and still be treated as the same physical beacon re-received over a
+// different path (a digipeated, APRS-IS, or second-channel copy that
+// arrived after the station has moved on). Copies of a single beacon
+// normally arrive within seconds of each other; this window leaves slack
+// for APRS-IS and store-and-forward digipeater delays. See issue #421.
+const dupWindow = 2 * time.Minute
+
 // MaxStations is the hard upper bound on resident MemCache entries.
 // The TTL-based prune (memMaxAge, default 24h) is the primary eviction
 // path for routine operation; this cap is a safety bound for the
@@ -101,34 +109,40 @@ func (c *MemCache) Update(entries []CacheEntry) {
 
 		if len(s.Positions) == 0 {
 			s.Positions = []Position{newPos}
-		} else if positionMoved(s.Positions[0], newPos) {
-			// Station moved — prepend new position, cap trail.
-			s.Positions = append(s.Positions, Position{}) // grow
-			copy(s.Positions[1:], s.Positions)
-			s.Positions[0] = newPos
-			if len(s.Positions) > MaxTrailLen {
-				s.Positions = s.Positions[:MaxTrailLen]
-			}
-		} else {
-			// Static re-beacon — advance the last-heard timestamp and the
-			// free-form comment from the latest packet. Reception-path
-			// metadata (via/path/hops/direction/channel/gated), however, is
-			// kept at the *most RF-reachable* copy seen for this fix (see
-			// rfRank). A station heard both directly and via a digipeater
-			// would otherwise have its direct copy clobbered by a later
-			// digipeated one, hiding it from the "Direct RX" filter (issue
-			// #130); likewise an RF-heard copy must not be clobbered by a
-			// later Internet-to-RF gated copy, which would hide it from the
+		} else if !positionMoved(s.Positions[0], newPos) {
+			// Static re-beacon at the current head — advance the last-heard
+			// timestamp and the free-form comment from the latest packet.
+			// Reception-path metadata (via/path/hops/direction/channel/gated),
+			// however, is kept at the *most RF-reachable* copy seen for this
+			// fix (see rfRank). A station heard both directly and via a
+			// digipeater would otherwise have its direct copy clobbered by a
+			// later digipeated one, hiding it from the "Direct RX" filter
+			// (issue #130); likewise an RF-heard copy must not be clobbered by
+			// a later Internet-to-RF gated copy, which would hide it from the
 			// "RF Only" filter. Ties refresh (latest wins).
+			mergeReception(&s.Positions[0], e)
 			s.Positions[0].Timestamp = e.Timestamp
 			s.Positions[0].Comment = e.Comment
-			if rfRank(e.Direction, e.Hops, e.Gated) >= rfRank(s.Positions[0].Direction, s.Positions[0].Hops, s.Positions[0].Gated) {
-				s.Positions[0].Via = e.Via
-				s.Positions[0].Path = e.Path
-				s.Positions[0].Hops = e.Hops
-				s.Positions[0].Direction = e.Direction
-				s.Positions[0].Gated = e.Gated
-				s.Positions[0].Channel = e.Channel
+		} else if i := duplicateFix(s.Positions, newPos); i >= 0 {
+			// Late duplicate of an earlier fix: a digipeated, APRS-IS, or
+			// second-channel copy of a beacon the station has since moved on
+			// from. Merge its reception metadata into the existing fix rather
+			// than inserting a new trail point. Inserting one would make the
+			// track double back on itself — a spurious line out to the stale
+			// position and back — instead of the chronological dot-to-dot
+			// path (issue #421). The existing fix keeps its original
+			// timestamp and comment; only path/RF metadata is reconciled.
+			mergeReception(&s.Positions[i], e)
+		} else {
+			// Genuinely new fix. Insert it in timestamp order (newest first)
+			// so an out-of-order arrival — common on APRS-IS and digipeated
+			// feeds — lands in its correct chronological slot rather than at
+			// the head, which would also draw a backward line (issue #421).
+			// In the common case the new fix is the newest and this is a
+			// plain prepend.
+			insertPositionByTime(&s.Positions, newPos)
+			if len(s.Positions) > MaxTrailLen {
+				s.Positions = s.Positions[:MaxTrailLen]
 			}
 		}
 	}
@@ -303,6 +317,57 @@ func rfRank(direction string, hops int, gated bool) int {
 func positionMoved(old, new Position) bool {
 	return math.Abs(old.Lat-new.Lat) > posEpsilon ||
 		math.Abs(old.Lon-new.Lon) > posEpsilon
+}
+
+// mergeReception folds a re-received copy of a fix into an existing trail
+// point, keeping the most RF-reachable reception metadata (see rfRank).
+// Ties refresh (latest wins). It does not touch the point's timestamp,
+// comment, or coordinates — callers decide whether those advance.
+func mergeReception(p *Position, e *CacheEntry) {
+	if rfRank(e.Direction, e.Hops, e.Gated) >= rfRank(p.Direction, p.Hops, p.Gated) {
+		p.Via = e.Via
+		p.Path = e.Path
+		p.Hops = e.Hops
+		p.Direction = e.Direction
+		p.Gated = e.Gated
+		p.Channel = e.Channel
+	}
+}
+
+// duplicateFix reports the index of an existing trail point that the
+// incoming fix is a re-reception of: the same location (within posEpsilon)
+// reported within dupWindow of an existing fix. The head (index 0) is
+// handled separately by the static-rebeacon path, so the search starts at
+// index 1. Returns -1 when the fix is genuinely new. See issue #421.
+func duplicateFix(positions []Position, p Position) int {
+	for i := 1; i < len(positions); i++ {
+		if positionMoved(positions[i], p) {
+			continue
+		}
+		dt := positions[i].Timestamp.Sub(p.Timestamp)
+		if dt < 0 {
+			dt = -dt
+		}
+		if dt <= dupWindow {
+			return i
+		}
+	}
+	return -1
+}
+
+// insertPositionByTime inserts p into a newest-first-by-timestamp slice,
+// preserving that ordering. Equal timestamps place p ahead of the existing
+// entry, so the common in-order arrival is a plain prepend.
+func insertPositionByTime(positions *[]Position, p Position) {
+	ps := *positions
+	idx := 0
+	for idx < len(ps) && ps[idx].Timestamp.After(p.Timestamp) {
+		idx++
+	}
+	ps = append(ps, Position{}) // grow
+	copy(ps[idx+1:], ps[idx:])
+	ps[idx] = p
+	*positions = ps
 }
 
 // snapshotStation returns a deep-enough copy of Station so the caller
