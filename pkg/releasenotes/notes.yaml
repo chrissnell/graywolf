@@ -7,6 +7,35 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.14.9"
+  date: "2026-06-28"
+  style: info
+  schema_version: 1
+  link: "#/map"
+  title: "Steadier map tracks, manual fixed-point entry, and a SmartBeaconing tracker type"
+  body: |
+    Station tracks on the Live Map are steadier. A track no longer doubles
+    back on itself when a duplicate or out-of-order fix comes in, and a
+    callsign's trail stays on screen even when the newest fix moves outside
+    the current view. On narrow displays the coordinate readout no longer
+    overlaps the map status text.
+
+    You can now type coordinates straight into the fixed point dialog
+    instead of only dropping a pin, so it is easy to place a point at an
+    exact known location. The Live Map also remembers the time range you
+    picked for its layers as you navigate away and reload.
+
+    Beacons gain a tracker beacon type in the editor, which turns on
+    SmartBeaconing so a moving station beacons more often when it is
+    turning or speeding up and less often when it is sitting still. The
+    iGate TX channel can now be cleared to run a receive-only iGate.
+
+    Smaller fixes: the RF Only map filter no longer shows APRS-IS stations,
+    the AX.25 terminal no longer overlaps lines on carriage returns, and on
+    Android the top bar stays below the system status bar. On Windows,
+    Graywolf now warns when audio enhancements are turned on for your
+    capture device, since they distort the received signal.
+
 - version: "0.14.8"
   date: "2026-06-22"
   style: info

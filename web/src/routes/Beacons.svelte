@@ -14,6 +14,7 @@
   import { getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
   import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
+  import { trackerBeaconFlags } from '../lib/trackerBeacon.js';
   import {
     channelRefStatus,
     buildChannelsById,
@@ -98,6 +99,7 @@
     position_format: 'compressed', ambiguity: 0,
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
+    smart_beacon: false,
   });
 
   let callsignError = $state('');
@@ -144,9 +146,18 @@
   let saveBlocked = $derived(!!txBlock && !txBlockAllowsSave);
   // The format radio + ambiguity sub-block apply only to types that
   // carry an APRS101 ch 6/9/10 position field. Object and custom
-  // beacons hide the whole section. The Beacons UI today only exposes
-  // 'position' and 'object', so the practical gate is "show on position".
-  let showFormat = $derived(form.type === 'position');
+  // beacons hide the whole section. Position and tracker beacons both
+  // emit a position report, so they share the format selector.
+  let showFormat = $derived(form.type === 'position' || form.type === 'tracker');
+  // A tracker is a GPS-driven mobile beacon: the backend builder always
+  // sources its position (and the CSE/SPD course-speed extension) from
+  // the live GPS fix, so fixed coordinates are never valid for it. Force
+  // the position source to GPS whenever tracker is selected so the form
+  // can't get into a state the scheduler would reject at send time.
+  let isTracker = $derived(form.type === 'tracker');
+  $effect(() => {
+    if (isTracker && form.pos_source !== 'gps') form.pos_source = 'gps';
+  });
   let showAmbiguity = $derived(
     showFormat &&
     (form.position_format === 'uncompressed' || form.position_format === 'mic_e'),
@@ -308,6 +319,7 @@
     form.slot = '';
     form.send_path = channels.length === 0 ? 'is_only' : 'rf';
     form.enabled = true;
+    form.smart_beacon = false;
     modalOpen = true;
   }
 
@@ -388,7 +400,13 @@
       }
       form.object_name = n;
     }
-    const useGps = form.pos_source === 'gps';
+    // Trackers always source position from the live GPS fix and opt into
+    // SmartBeaconing; trackerBeaconFlags is the shared, tested rule (see
+    // lib/trackerBeacon.js). useGps also gates the fixed-coordinate
+    // validation below.
+    const isTrackerSave = form.type === 'tracker';
+    const { use_gps: useGps, smart_beacon: smartBeaconFlag } =
+      trackerBeaconFlags(form.type, form.pos_source);
     const latStr = form.latitude.trim();
     const lonStr = form.longitude.trim();
     const lat = latStr === '' ? 0 : parseFloat(latStr);
@@ -430,6 +448,7 @@
       callsign: callsignToSend,
       channel: channelId,
       use_gps: useGps,
+      smart_beacon: smartBeaconFlag,
       interval: parseInt(form.interval),
       slot_seconds: slotSeconds,
       latitude: lat,
@@ -454,6 +473,9 @@
       if (data.send_path === 'is_only') {
         await ensureIgateEnabled();
       }
+      if (isTrackerSave) {
+        await ensureSmartBeaconEnabled();
+      }
     } catch (err) {
       toasts.error(err.message);
     }
@@ -477,6 +499,29 @@
       // server's own actionable message rather than a generic "try the
       // iGate page" that would fail for the same reason.
       toasts.error(`Beacon saved, but the iGate could not be enabled automatically: ${err.message || 'enable it on the iGate page so APRS-IS-only beacons transmit.'}`);
+    }
+  }
+
+  // A tracker only SmartBeacons when the global SmartBeacon master
+  // switch is on — the scheduler gates on tracker type AND per-beacon
+  // smart_beacon AND this singleton's Enabled flag. A fresh install ships
+  // it off, so saving a tracker without flipping it would silently never
+  // transmit (the exact symptom users report). Auto-enable it on save,
+  // preserving the operator's existing curve parameters. Best-effort: the
+  // beacon is already saved, so failures surface as a toast.
+  async function ensureSmartBeaconEnabled() {
+    try {
+      const cfg = await api.get('/smart-beacon');
+      // GET always returns a fully-populated config (stored row or
+      // defaults). A missing one means something upstream is wrong —
+      // bail rather than PUT all-zero curve params the API would reject.
+      if (!cfg) throw new Error('SmartBeacon settings unavailable');
+      if (cfg.enabled) return;
+      await api.put('/smart-beacon', { ...cfg, enabled: true });
+      smartBeacon = { ...smartBeacon, enabled: true };
+      toasts.success('SmartBeaconing enabled so your tracker beacons transmit');
+    } catch (err) {
+      toasts.error(`Beacon saved, but SmartBeaconing could not be enabled automatically: ${err.message || 'enable it in the SmartBeaconing panel below.'}`);
     }
   }
 
@@ -596,6 +641,8 @@
             <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
             {#if b.type === 'object'}
               <Badge variant="info">Object</Badge>
+            {:else if b.type === 'tracker'}
+              <Badge variant="info">Tracker</Badge>
             {/if}
             {#if b.send_path === 'is_only'}
               <Badge variant="info">APRS-IS only</Badge>
@@ -745,13 +792,22 @@
           <div class="pos-source-row">
             <Radio value="position" label="Position" />
             <Radio value="object" label="Object" />
+            <Radio value="tracker" label="Tracker" />
           </div>
         </RadioGroup>
         <div class="type-hint">
           <div><strong>Position:</strong> a beacon for a station.</div>
           <div><strong>Object:</strong> a named item such as a repeater, event site, hospital.</div>
+          <div><strong>Tracker:</strong> a GPS-driven mobile beacon that uses SmartBeaconing to adapt its rate to your speed and turns.</div>
         </div>
       </FormField>
+      {#if isTracker}
+        <div class="tracker-note">
+          This beacon transmits your live GPS position and adjusts its rate
+          using the <strong>SmartBeaconing</strong> settings below. Saving it
+          turns SmartBeaconing on automatically.
+        </div>
+      {/if}
       {#if form.type === 'object'}
         <FormField label="Object name" id="bcn-objname"
           hint="1-9 characters. Appears as the object's label on APRS maps.">
@@ -879,17 +935,24 @@
     </div>
 
     <div class="beacon-form-col">
-      <FormField label="Position source" id="bcn-pos-source"
-        hint={form.type === 'object'
-          ? "Choose whether this object's coordinates come from the live GPS fix or from fixed values you enter below."
-          : "Choose whether this beacon's coordinates come from the live GPS fix or from fixed values you enter below."}>
-        <RadioGroup bind:value={form.pos_source}>
-          <div class="pos-source-row">
-            <Radio value="gps" label="Use latest fix from GPS" />
-            <Radio value="fixed" label="Use fixed coordinates" />
-          </div>
-        </RadioGroup>
-      </FormField>
+      {#if isTracker}
+        <FormField label="Position source" id="bcn-pos-source"
+          hint="Trackers always transmit the live GPS fix — that's what lets SmartBeaconing follow your movement.">
+          <div class="tracker-gps-fixed">Live GPS fix</div>
+        </FormField>
+      {:else}
+        <FormField label="Position source" id="bcn-pos-source"
+          hint={form.type === 'object'
+            ? "Choose whether this object's coordinates come from the live GPS fix or from fixed values you enter below."
+            : "Choose whether this beacon's coordinates come from the live GPS fix or from fixed values you enter below."}>
+          <RadioGroup bind:value={form.pos_source}>
+            <div class="pos-source-row">
+              <Radio value="gps" label="Use latest fix from GPS" />
+              <Radio value="fixed" label="Use fixed coordinates" />
+            </div>
+          </RadioGroup>
+        </FormField>
+      {/if}
       {#if form.pos_source === 'fixed'}
         <FormField label="Latitude" id="bcn-lat"
           hint="Decimal degrees, north positive (e.g. 37.5 for Half Moon Bay; -33.86 for Sydney).">
@@ -1208,6 +1271,24 @@
     font-size: 12px;
     color: var(--color-text-muted, #888);
     line-height: 1.4;
+  }
+  .tracker-note {
+    margin: 8px 0 12px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--color-text-muted, #888);
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius);
+  }
+  .tracker-gps-fixed {
+    padding: 8px 10px;
+    font-size: 13px;
+    color: var(--color-text-muted, #888);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
   }
   .no-channel-note {
     margin-bottom: 12px;

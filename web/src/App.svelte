@@ -230,4 +230,23 @@
       height: calc(100dvh - 56px - env(safe-area-inset-top));
     }
   }
+
+  /* Landscape phones: the sidebar becomes a slim vertical icon rail on the
+     left instead of a horizontal top bar, so the map keeps the full
+     viewport height — precious in landscape (GH #419). Declared after the
+     max-width rule so it overrides the top-bar margins for the narrow
+     landscape phones (<=768px wide) that match both. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .main-content {
+      margin-left: calc(
+        var(--landscape-rail-width) + env(safe-area-inset-left)
+      );
+      margin-top: 0;
+      padding: 16px;
+    }
+    .main-content.full-bleed {
+      height: 100vh;
+      height: 100dvh;
+    }
+  }
 </style>

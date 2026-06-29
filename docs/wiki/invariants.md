@@ -1257,7 +1257,127 @@ Source: [`../../web/src/lib/map/rf-only-core.js`](../../web/src/lib/map/rf-only-
 [`../../web/src/lib/map/popup-helpers.js`](../../web/src/lib/map/popup-helpers.js)
 (`viaText`).
 
-### 53. MapLibre `map.remove()` deletes `this.style`; any layer helper called after teardown must guard `getSource()`/`getLayer()`
+### 53. Map-viewport membership is any-trail-position, not head-only
+
+A station belongs to the current map view when **any** position in its
+visible trail falls inside the bbox -- not only its newest fix
+(`positions[0]`). Both ends of the live-map pipeline must agree on this:
+
+- Server: `MemCache.QueryBBox` (`stationInBBox`) returns a station if the
+  head or any non-trimmed trail point is inside the bbox.
+- Client: the data store's `pruneOutOfBounds` keeps a station while any of
+  its accumulated positions is inside the bbox, and drops it only once the
+  whole track has scrolled off-screen.
+
+*Why:* a head-only test on either side made a moving station's entire
+still-visible trail vanish the moment its newest position left the viewport
+(graywolf GH #413) -- the server stopped returning it and the client pruned
+it. The two checks must stay symmetric: if the server is looser than the
+client (or vice versa), tracks either flicker on bounds changes or pile up
+as stale breadcrumbs.
+
+*How to apply:* mirror the trail-cutoff trimming when scanning positions on
+the server (head always counts; older points count only when newer than the
+trail cutoff, matching `stationToDTO`) so membership reflects what actually
+ships. Keep the client predicate any-position so it self-cleans: a track is
+retained while partly visible and pruned once fully off-screen. The two
+checks are symmetric in shape (any-position, inclusive bounds) but not
+bit-exact: the client trail is length-capped (`MAX_TRAIL_LEN`), not
+time-trimmed, so `trailIntersectsBBox` may scan slightly older breadcrumbs
+than the server's cutoff-trimmed set. `pruneStale` still drops whole stations
+by `last_heard`, so the looseness is bounded.
+
+Source:
+[`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go)
+(`QueryBBox`, `stationInBBox`),
+[`../../pkg/stationcache/memcache_test.go`](../../pkg/stationcache/memcache_test.go)
+(`TestMemCache_QueryBBoxKeepsTrailWhenHeadLeaves`),
+[`../../web/src/lib/map/viewport-membership-core.js`](../../web/src/lib/map/viewport-membership-core.js)
+(`trailIntersectsBBox`, `viewport-membership-core.test.js`),
+[`../../web/src/lib/map/data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js)
+(`pruneOutOfBounds`).
+
+### 54. The stationcache trail is ordered newest-first by timestamp and deduplicates re-received fixes
+
+`MemCache.Update` (`pkg/stationcache/memcache.go`) keeps each station's
+`Positions` slice strictly **newest-first by `Timestamp`** and treats a
+single physical beacon heard more than once as one trail point, not several.
+Three paths enforce this for a position that differs from the head fix:
+
+- *Static re-beacon* (`!positionMoved(positions[0], new)`): fold into
+  `positions[0]`, advancing its timestamp/comment and rfRank-merging path
+  metadata (invariant #48).
+- *Late duplicate of an older fix* (`duplicateFix`): a digipeated, APRS-IS,
+  or second-channel copy of an earlier beacon that lands within `posEpsilon`
+  of an existing point **and** within `dupWindow` (2 min) of its timestamp.
+  Merge the reception metadata into that existing point; do **not** insert a
+  new point.
+- *Genuinely new fix*: insert in timestamp order via `insertPositionByTime`
+  (a plain prepend in the common in-order case), then cap at `MaxTrailLen`.
+
+*Why:* the Live Map trail layer (`web/src/lib/map/layers/trails.js`) draws
+one line segment between each consecutive pair of `positions`, so the array
+order **is** the rendered path. The earlier code prepended every moved fix in
+arrival order with no timestamp check and only deduplicated against
+`positions[0]`. On APRS-IS and digipeated feeds, duplicate and out-of-order
+copies are routine, so a delayed copy of an old fix was prepended as the new
+head -- the track doubled back on itself, drawing spurious lines between
+non-adjacent beacons (graywolf GitHub #421, reproduced "both with my own and
+others tracks"). Ordering by timestamp and collapsing same-fix copies makes
+the rendered line the chronological dot-to-dot path again.
+
+*How to apply:* never assume packet arrival order equals chronological order.
+Any new ingest path into the cache must go through `Update` so the ordering
+and dedup hold. `dupWindow` is a deliberate spatial+temporal guard: it is
+wide enough to absorb APRS-IS/store-and-forward delay but narrow enough that
+a genuine return to a prior location well outside the window stays a distinct
+fix. Delta mode (`since`) still emits only `positions[0]`, so an out-of-order
+*historical* fix inserted mid-slice surfaces on the next full reload rather
+than as a live delta -- acceptable, because the live head stays the true
+newest fix and no backward line is emitted.
+
+The dedup scan **cannot** be short-circuited for fixes whose timestamp is
+newer than the head: a non-timestamped APRS packet is stamped with its
+*reception* time (`extract.go`, falling back to `time.Now()`), so a delayed
+copy of an earlier beacon -- the common real-world case -- carries the newest
+timestamp of all and is identifiable only by location within `dupWindow`,
+never by ordering. The scan is bounded, not full-trail: positions are
+newest-first, so `duplicateFix` stops once it drops below the window's lower
+edge. Note also that the history DB stores raw, un-deduplicated rows
+(`historydb.WriteEntries`), ordered `timestamp DESC` on `LoadRecent`; a
+hydrated trail therefore preserves correct ordering (no backward line) but
+may show a redundant point that the live cache would have merged.
+
+Source: [`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go)
+(`Update`, `duplicateFix`, `insertPositionByTime`, `mergeReception`,
+`positionMoved`),
+[`../../pkg/stationcache/memcache_test.go`](../../pkg/stationcache/memcache_test.go)
+(`TestMemCache_DuplicateOldFixDoesNotDoubleBack`,
+`TestMemCache_OutOfOrderArrivalSortsByTime`,
+`TestMemCache_RevisitOutsideWindowKeepsPoint`),
+[`../../web/src/lib/map/layers/trails.js`](../../web/src/lib/map/layers/trails.js).
+
+### 55. SmartBeaconing requires a `tracker` beacon, not just the global toggle
+
+*Why:* The scheduler's `isSmart()` only adapts rate when a beacon's type is
+`tracker` AND its per-beacon `smart_beacon` flag is set AND the global
+`SmartBeaconConfig` singleton is enabled — all three. The global panel alone
+does nothing without a tracker beacon, which is why a station with a working
+GPS and SmartBeaconing "on" never beacons. The Beacons UI hides this: choosing
+the `Tracker` type forces `use_gps`, sets `smart_beacon`, and auto-enables the
+global singleton on save (mirroring the iGate auto-enable for APRS-IS-only
+beacons). If you add a beacon type or touch the save path, preserve all three
+gates or SmartBeaconing silently stops firing.
+
+Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
+(`isSmart`),
+[`../../pkg/app/adapters.go`](../../pkg/app/adapters.go)
+(`beaconConfigFromStore` SmartBeacon precedence),
+[`../../web/src/lib/trackerBeacon.js`](../../web/src/lib/trackerBeacon.js),
+[`../../web/src/routes/Beacons.svelte`](../../web/src/routes/Beacons.svelte)
+(`ensureSmartBeaconEnabled`).
+
+### 56. MapLibre `map.remove()` deletes `this.style`; any layer helper called after teardown must guard `getSource()`/`getLayer()`
 
 MapLibre GL JS v5 `map.remove()` → `_updateStyle(null)` → `delete this.style`.
 Any subsequent call to `map.getSource()` or `map.getLayer()` throws a

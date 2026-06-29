@@ -136,7 +136,12 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		} else if lat == 0 && lon == 0 {
 			return "", fmt.Errorf("object beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)")
 		}
-		return ObjectInfo(b.ObjectName, true, "", lat, lon, altM, b.SymbolTable, b.SymbolCode, phg, comment), nil
+		// Object reports carry a real DDHHMMz UTC timestamp (APRS101
+		// ch 11). Without one the encoder falls back to a fixed
+		// "111111z", which APRS-IS and APRS.fi reject as out-of-order
+		// once wall-clock time drifts away from it (issue #412).
+		ts := DHMZulu(s.clock.Now().UTC())
+		return ObjectInfo(b.ObjectName, true, ts, lat, lon, altM, b.SymbolTable, b.SymbolCode, phg, comment), nil
 
 	case TypeCustom:
 		if b.CustomInfo == "" {

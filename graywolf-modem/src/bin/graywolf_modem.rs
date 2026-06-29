@@ -73,6 +73,26 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    if args.len() >= 2 && args[1] == "--decode" {
+        return match graywolfmodem::decode::run(&args[2..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("decode: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+
+    if args.len() >= 2 && args[1] == "--record" {
+        return match graywolfmodem::record::run(&args[2..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("record: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+
     let server = bind_server(&args);
     let server = match server {
         Ok(s) => s,
@@ -105,6 +125,9 @@ fn main() -> ExitCode {
 fn bind_server(args: &[String]) -> Result<IpcServer, Box<dyn std::error::Error>> {
     if args.len() != 2 {
         eprintln!("usage: graywolf-modem <socket-path>");
+        eprintln!("       graywolf-modem --record <device> --seconds <N> --out <file.wav> [--rate <hz>]");
+        eprintln!("       graywolf-modem --decode <file.wav|file.flac>");
+        eprintln!("       graywolf-modem --list-audio | --list-cm108 | --list-usb | --version");
         std::process::exit(2);
     }
     Ok(IpcServer::bind(&args[1])?)

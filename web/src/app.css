@@ -24,6 +24,11 @@
   --warning: var(--color-warning);
   --font-sans: var(--font-mono);
   --sidebar-width: 220px;
+  /* Compact left rail shown in place of the full sidebar on small
+     landscape phones (GH #419). Kept narrow so the map keeps almost the
+     full width; mirrored by the matching CSS in Sidebar/App and the
+     COMPACT_LAYOUT_QUERY breakpoint in lib/compactLayout.js. */
+  --landscape-rail-width: 56px;
 }
 
 * {

@@ -130,6 +130,34 @@ func TestMemCache_MovingStationTrail(t *testing.T) {
 	assertFloat(t, "oldest lat", results[0].Positions[4].Lat, 40.0)
 }
 
+func TestMemCache_QueryBBoxKeepsTrailWhenHeadLeaves(t *testing.T) {
+	c := newTestCache(t)
+
+	// Station walks east out of the bbox: the first 3 fixes are inside,
+	// the last 2 (the newest, including the head) are outside.
+	bbox := BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}
+	lons := []float64{-105.0, -104.5, -104.2, -103.5, -103.0}
+	for _, lon := range lons {
+		c.Update([]CacheEntry{stationEntry("stn:ROVER", "ROVER", 40.0, lon)})
+	}
+
+	// Head is now outside the bbox, but earlier breadcrumbs remain inside,
+	// so the station (and its whole trail) must still be returned -- GH #413.
+	results := c.QueryBBox(bbox, 1*time.Hour)
+	if len(results) != 1 {
+		t.Fatalf("expected station retained while trail intersects bbox, got %d", len(results))
+	}
+	if len(results[0].Positions) != len(lons) {
+		t.Fatalf("expected full %d-point trail, got %d", len(lons), len(results[0].Positions))
+	}
+
+	// Once the entire track has left the viewport, the station drops out.
+	eastBox := BBox{SwLat: 39, SwLon: -90, NeLat: 41, NeLon: -88}
+	if got := c.QueryBBox(eastBox, 1*time.Hour); len(got) != 0 {
+		t.Fatalf("expected station dropped when whole trail is off-screen, got %d", len(got))
+	}
+}
+
 func TestMemCache_TrailCap(t *testing.T) {
 	c := newTestCache(t)
 
@@ -550,5 +578,164 @@ func TestMemCache_LastDirectHeardNotAdvancedByDigi(t *testing.T) {
 	p := results[0].Positions[0]
 	if !isDirectRF(p.Direction, p.Hops) {
 		t.Fatalf("issue #130 regressed: fix no longer direct (Direction=%q Hops=%d)", p.Direction, p.Hops)
+	}
+}
+
+// movingEntry builds a position fix at an explicit time and location so a
+// test can reproduce out-of-order and duplicate arrivals deterministically.
+func movingEntry(key, callsign string, lat, lon float64, ts time.Time) CacheEntry {
+	e := stationEntry(key, callsign, lat, lon)
+	e.Timestamp = ts
+	return e
+}
+
+// trailLats returns the trail latitudes newest-first for assertions.
+func trailLats(t *testing.T, c *MemCache, key string) []float64 {
+	t.Helper()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	s := c.stations[key]
+	if s == nil {
+		t.Fatalf("station %q not in cache", key)
+	}
+	out := make([]float64, len(s.Positions))
+	for i, p := range s.Positions {
+		out[i] = p.Lat
+	}
+	return out
+}
+
+// TestMemCache_DuplicateOldFixDoesNotDoubleBack reproduces issue #421: a
+// late copy of an earlier beacon (relayed via a digipeater or APRS-IS)
+// arrives after the station has already moved on. It must merge into the
+// existing fix rather than appear as a fresh trail point, which would make
+// the rendered track double back on itself.
+func TestMemCache_DuplicateOldFixDoesNotDoubleBack(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now().Add(-10 * time.Minute)
+
+	// Chronological track: A (oldest) -> B -> C (newest).
+	c.Update([]CacheEntry{movingEntry("stn:CAR1", "CAR1", 40.00, -105.0, base)})
+	c.Update([]CacheEntry{movingEntry("stn:CAR1", "CAR1", 40.01, -105.0, base.Add(1*time.Minute))})
+	c.Update([]CacheEntry{movingEntry("stn:CAR1", "CAR1", 40.02, -105.0, base.Add(2*time.Minute))})
+
+	// A delayed digipeated copy of fix A arrives now, after the move.
+	dup := digiEntry("stn:CAR1", "CAR1", 40.00, -105.0, 2)
+	dup.Timestamp = base.Add(30 * time.Second) // close to original A in time
+	c.Update([]CacheEntry{dup})
+
+	lats := trailLats(t, c, "stn:CAR1")
+	want := []float64{40.02, 40.01, 40.00}
+	if len(lats) != len(want) {
+		t.Fatalf("duplicate old fix created a new trail point: got %v, want %v", lats, want)
+	}
+	for i := range want {
+		if lats[i] != want[i] {
+			t.Fatalf("trail order corrupted: got %v, want %v", lats, want)
+		}
+	}
+}
+
+// TestMemCache_OutOfOrderArrivalSortsByTime verifies that a genuinely-new
+// fix carrying an older (timestamped) report time is inserted in its
+// chronological slot rather than at the head, keeping the trail in
+// newest-first order so the rendered line stays a clean dot-to-dot path.
+func TestMemCache_OutOfOrderArrivalSortsByTime(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now().Add(-10 * time.Minute)
+
+	c.Update([]CacheEntry{movingEntry("stn:PLANE", "PLANE", 40.00, -105.0, base)})
+	c.Update([]CacheEntry{movingEntry("stn:PLANE", "PLANE", 40.02, -105.0, base.Add(2*time.Minute))})
+	// This fix is chronologically between the two above but arrives last.
+	c.Update([]CacheEntry{movingEntry("stn:PLANE", "PLANE", 40.01, -105.0, base.Add(1*time.Minute))})
+
+	lats := trailLats(t, c, "stn:PLANE")
+	want := []float64{40.02, 40.01, 40.00}
+	if len(lats) != len(want) {
+		t.Fatalf("expected %d positions, got %v", len(want), lats)
+	}
+	for i := range want {
+		if lats[i] != want[i] {
+			t.Fatalf("out-of-order arrival not sorted: got %v, want %v", lats, want)
+		}
+	}
+}
+
+// TestMemCache_RevisitOutsideWindowKeepsPoint ensures the duplicate guard
+// does not collapse a legitimate return to a prior location well outside
+// dupWindow — that is a real second visit and must stay a distinct fix.
+func TestMemCache_RevisitOutsideWindowKeepsPoint(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now().Add(-30 * time.Minute)
+
+	c.Update([]CacheEntry{movingEntry("stn:LOOP", "LOOP", 40.00, -105.0, base)})
+	c.Update([]CacheEntry{movingEntry("stn:LOOP", "LOOP", 40.05, -105.0, base.Add(5*time.Minute))})
+	// Returns to the start 10 minutes later — far outside dupWindow.
+	c.Update([]CacheEntry{movingEntry("stn:LOOP", "LOOP", 40.00, -105.0, base.Add(10*time.Minute))})
+
+	lats := trailLats(t, c, "stn:LOOP")
+	if len(lats) != 3 {
+		t.Fatalf("legitimate revisit should remain a distinct fix, got %v", lats)
+	}
+}
+
+// TestMemCache_DuplicateMergesRFMetadata confirms a deduplicated old-fix
+// copy still upgrades the stored reception metadata per rfRank (issue #130
+// generalized to non-head fixes), without adding a trail point.
+func TestMemCache_DuplicateMergesRFMetadata(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now().Add(-10 * time.Minute)
+
+	// Fix A first heard only via a digipeater, then the station moves.
+	a := digiEntry("stn:CAR2", "CAR2", 40.00, -105.0, 2)
+	a.Timestamp = base
+	c.Update([]CacheEntry{a})
+	c.Update([]CacheEntry{movingEntry("stn:CAR2", "CAR2", 40.02, -105.0, base.Add(2*time.Minute))})
+
+	// A delayed *direct* copy of fix A arrives — should upgrade A to direct.
+	direct := movingEntry("stn:CAR2", "CAR2", 40.00, -105.0, base.Add(20*time.Second))
+	c.Update([]CacheEntry{direct})
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	s := c.stations["stn:CAR2"]
+	if len(s.Positions) != 2 {
+		t.Fatalf("duplicate copy added a trail point: got %d positions", len(s.Positions))
+	}
+	// Positions[1] is fix A (older); it should now be classified direct.
+	if !isDirectRF(s.Positions[1].Direction, s.Positions[1].Hops) {
+		t.Fatalf("direct copy did not upgrade old fix: Direction=%q Hops=%d",
+			s.Positions[1].Direction, s.Positions[1].Hops)
+	}
+}
+
+// TestMemCache_NonTimestampedDuplicateDedups locks in the dominant
+// real-world #421 case: a non-timestamped APRS beacon is stamped with its
+// reception time, so a delayed digipeated/IS copy of an earlier fix arrives
+// with the NEWEST timestamp of all. It must still merge into the original
+// fix by location + dupWindow, not get prepended as a new head. This guards
+// against "optimizing" duplicateFix away for newest-timestamp fixes.
+func TestMemCache_NonTimestampedDuplicateDedups(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now().Add(-90 * time.Second)
+
+	// A (oldest) then B (head); B is newer than A.
+	c.Update([]CacheEntry{movingEntry("stn:CAR3", "CAR3", 40.00, -105.0, base)})
+	c.Update([]CacheEntry{movingEntry("stn:CAR3", "CAR3", 40.02, -105.0, base.Add(30*time.Second))})
+
+	// Delayed copy of A, stamped at reception time — newer than the head B,
+	// but within dupWindow of A's timestamp.
+	dup := movingEntry("stn:CAR3", "CAR3", 40.00, -105.0, base.Add(90*time.Second))
+	c.Update([]CacheEntry{dup})
+
+	lats := trailLats(t, c, "stn:CAR3")
+	want := []float64{40.02, 40.00}
+	if len(lats) != len(want) {
+		t.Fatalf("newest-timestamp duplicate created a new trail point: got %v, want %v", lats, want)
+	}
+	for i := range want {
+		if lats[i] != want[i] {
+			t.Fatalf("trail order corrupted: got %v, want %v", lats, want)
+		}
 	}
 }

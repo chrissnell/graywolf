@@ -10,6 +10,7 @@
   import MaplibreMap from '../lib/map/maplibre-map.svelte';
   import InfoPanel from '../lib/map/info-panel.svelte';
   import MapContextMenu from '../lib/map/map-context-menu.svelte';
+  import { COMPACT_LAYOUT_QUERY } from '../lib/compactLayout.js';
   import { createDataStore } from '../lib/map/data-store.svelte.js';
   import { mountStationsLayer } from '../lib/map/layers/stations.js';
   import { mountTrailsLayer } from '../lib/map/layers/trails.js';
@@ -23,7 +24,8 @@
     parseManifestFramesForRegion,
     RADAR_REGION_WORLD,
   } from '../lib/map/sources/radar-source.js';
-  import { mountFrontsLayer } from '../lib/map/layers/fronts.js';
+  // Fronts layer disabled for now -- see commented-out wiring below to re-enable.
+  // import { mountFrontsLayer } from '../lib/map/layers/fronts.js';
   import { frontsProvider, frontsWorldProvider } from '../lib/map/sources/fronts-source.js';
   import { createRadarFrames } from '../lib/map/radar-frames.svelte.js';
   import { mapsState } from '../lib/settings/maps-store.svelte.js';
@@ -465,7 +467,10 @@
   let mqUnsub = null;
   onMount(() => {
     if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 768px)');
+    // Compact chrome (FAB + bottom-sheet) covers landscape phones too, not
+    // just narrow portrait ones, so a rotated phone doesn't fall back to the
+    // perma layer-card that crowds the map (GH #419).
+    const mq = window.matchMedia(COMPACT_LAYOUT_QUERY);
     isMobile = mq.matches;
     const handler = (e) => (isMobile = e.matches);
     mq.addEventListener('change', handler);
@@ -610,13 +615,14 @@
     });
     // Surface fronts ride just above radar in the GL stack (lines + pip symbols
     // over the reflectivity fill) and below the station/trail markers.
-    frontsLayer = mountFrontsLayer(map, { visible: layerToggles.fronts });
+    // Fronts layer disabled for now.
+    // frontsLayer = mountFrontsLayer(map, { visible: layerToggles.fronts });
     // Debug hooks for live front-symbology tuning from the browser console:
     //   window.gwFronts.tune({ pipSize: 0.7, statSpacing: 30, lineWidth: 3 })
     //   window.gwFronts.info()   window.gwMap.getZoom()
     if (typeof window !== 'undefined') {
       window.gwMap = map;
-      window.gwFronts = frontsLayer;
+      // window.gwFronts = frontsLayer;
     }
     // Trails first so the line sits beneath the (DOM) station markers
     // and below the weather labels in symbol-layer order.
@@ -701,7 +707,8 @@
     windBarbsLayer.setVisible(layerToggles.weather);
     myPositionLayer.setVisible(layerToggles.myPosition);
     fixedPointsLayer.setVisible(layerToggles.fixedPoints);
-    frontsLayer.setVisible(layerToggles.fronts);
+    // Fronts layer disabled for now.
+    // frontsLayer.setVisible(layerToggles.fronts);
     const initialPred = layerToggles.directRxOnly
       ? isDirectRx
       : layerToggles.rfOnly
@@ -964,12 +971,13 @@
   // Surface fronts: toggle visibility, and run the slow manifest poll only while
   // the overlay is on (mirrors the radar manifest poll being gated on its
   // visibility). Reading `v` before the optional-chain registers the dep.
-  $effect(() => {
-    const v = layerToggles.fronts;
-    frontsLayer?.setVisible(v);
-    if (v) startFrontsPolling();
-    else stopFrontsPolling();
-  });
+  // Fronts layer disabled for now.
+  // $effect(() => {
+  //   const v = layerToggles.fronts;
+  //   frontsLayer?.setVisible(v);
+  //   if (v) startFrontsPolling();
+  //   else stopFrontsPolling();
+  // });
   // RF reachability filter: predicate is shared across stations/trails/
   // weather/wind-barbs so the layers stay in lockstep. my-position is the
   // operator's own beacon and is intentionally exempt. Direct RX is the
@@ -1237,6 +1245,7 @@
     <section class="layer-section">
       <h3 class="layer-section-title">Weather</h3>
       <div class="layer-toggles">
+        <!-- Fronts layer disabled for now.
         <label class="toggle-row">
           <input
             type="checkbox"
@@ -1245,6 +1254,7 @@
           />
           <span>Fronts</span>
         </label>
+        -->
         <label class="toggle-row">
           <input
             type="checkbox"
@@ -1388,15 +1398,15 @@
     bind:open={fpDialog.open}
     lat={fpDialog.lat}
     lon={fpDialog.lon}
-    onConfirm={async ({ name, table, symbol, overlay }) => {
+    onConfirm={async ({ name, table, symbol, overlay, lat, lon }) => {
       try {
         const p = await fixedPointsStore.add({
           name,
           table,
           symbol,
           overlay,
-          lat: fpDialog.lat,
-          lon: fpDialog.lon,
+          lat,
+          lon,
         });
         toasts.success(`Added "${p.name}"`);
       } catch (err) {
@@ -1451,6 +1461,8 @@
     height: 44px;
     border-radius: 22px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     box-shadow: var(--map-overlay-shadow);
@@ -1472,6 +1484,8 @@
     left: 12px;
     width: 200px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 8px;
@@ -1628,6 +1642,8 @@
     right: 12px;
     padding: 4px 10px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 4px;
@@ -1647,6 +1663,8 @@
     transform: translateX(-50%);
     padding: 4px 10px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 4px;
@@ -1706,8 +1724,19 @@
     .map-status-bar {
       bottom: calc(14px + env(safe-area-inset-bottom));
     }
+    /* The coord readout is lifted clear of this status bar in the
+       max-width: 900px block below -- the two offsets are coupled; keep
+       them in sync if you change either. */
+  }
+
+  /* On narrow viewports the centered status bar grows wide enough to reach
+     the bottom-right coord/zoom readout and hide it (graywolf #418). Lift
+     the readout clear of the status bar so the two stack instead of
+     overlapping. The offset also keeps it above the bottom safe-area inset
+     and MapLibre attribution on mobile. */
+  @media (max-width: 900px) {
     .map-coord-display {
-      bottom: calc(28px + env(safe-area-inset-bottom));
+      bottom: calc(52px + env(safe-area-inset-bottom));
     }
   }
 
@@ -1832,6 +1861,8 @@
      popups, plus the interior name/coords/delete button. */
   :global(.gw-fixed-popup .maplibregl-popup-content) {
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 8px;
@@ -1881,6 +1912,8 @@
   /* Station popup: theme-aware container + tip + close button. */
   :global(.gw-station-popup .maplibregl-popup-content) {
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 8px;

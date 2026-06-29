@@ -108,6 +108,11 @@
               <td>Received packets (label: <code>channel</code>)</td>
             </tr>
             <tr>
+              <td><code>graywolf_rx_bad_fcs_total</code></td>
+              <td>counter</td>
+              <td>Packets received with a failed FCS (CRC) check and dropped (label: <code>channel</code>). Reported only for modem channels; a hardware KISS TNC validates the FCS itself, so its channels never report bad frames.</td>
+            </tr>
+            <tr>
               <td><code>graywolf_tx_frames_total</code></td>
               <td>counter</td>
               <td>Transmitted packets (label: <code>channel</code>)</td>
@@ -218,6 +223,139 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <h2>Understanding "Bad FCS"</h2>
+
+    <p>
+      Every AX.25 frame ends with a two-byte <em>Frame Check Sequence</em>
+      (FCS) &mdash; a CRC&#8209;16/CCITT checksum the sender computes over the
+      packet. The receiver recomputes it and compares. The dashboard's
+      <strong>Bad FCS</strong> counter (and the
+      <code>graywolf_rx_bad_fcs_total</code> metric) counts frame-shaped
+      signals that the modem demodulated all the way to a closing HDLC flag
+      but whose checksum did not match &mdash; so the frame was rejected and
+      dropped rather than passed on.
+    </p>
+
+    <p>
+      Only <em>plausible</em> candidates are counted: the demodulator must
+      have found an opening and closing flag with at least a minimum-length
+      packet of bits between them, and the frame must have failed both the
+      direct check and every configured bit-fix retry. Pure noise, runts, and
+      aborts are not counted. In other words, Bad FCS represents real
+      HDLC-shaped energy on the channel that <em>almost</em> decoded but
+      didn't.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>It is a trend, not a precise packet count.</strong> Graywolf
+          runs several bit-slicers per channel in parallel to maximize good
+          decodes. A single burst of noise can look like a broken frame to
+          many slicers at once, so the modem deliberately reports the bad-FCS
+          tally from one representative slicer instead of summing all of them.
+          Treat the number as a signal-quality indicator that you watch over
+          time, not as an exact tally of lost packets.
+        </p>
+      </div>
+    </div>
+
+    <h3>What counts as a "high" value?</h3>
+
+    <p>
+      There is no fixed threshold, because a healthy value depends entirely on
+      what your receiver hears. The two things that matter are the
+      <strong>ratio</strong> of bad to good frames and the
+      <strong>trend</strong> over time &mdash; not the raw number.
+    </p>
+
+    <div class="box">
+      <div class="box-header">Reading the ratio</div>
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Pattern</th><th>Most likely meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Many bad FCS <em>and</em> a healthy, growing good-frame
+                  count</td>
+              <td>Usually benign. A sensitive, wide-coverage receiver on a
+                  busy uncoordinated channel (such as 144.390 MHz APRS) hears
+                  constant collisions and distant stations right at the edge of
+                  decodability. A bad:good ratio of several&#8209;to&#8209;one
+                  is common and is not by itself a fault.</td>
+            </tr>
+            <tr>
+              <td>Many bad FCS but <em>few</em> good frames</td>
+              <td>Points at a local problem rather than the band: receive audio
+                  too hot (clipping) or too weak, a twist / de-emphasis
+                  mismatch, or RF interference &mdash; classic offenders include
+                  USB / switching-supply EMI near the radio or sound device.</td>
+            </tr>
+            <tr>
+              <td>A previously low count that climbs steadily</td>
+              <td>Something changed: a new noise source, an antenna or
+                  connector problem, or a drifted audio level. Investigate the
+                  change, not the absolute number.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      So a station seeing, for example, ~4,500 bad versus ~1,000 good frames is
+      not automatically in trouble &mdash; on a busy APRS receiver that ratio
+      is plausibly just collisions and weak DX. The question to answer is
+      whether the <em>good</em> count is healthy for your location and whether
+      the audio is clean. Use the steps below to decide.
+    </p>
+
+    <h3>Diagnosing poor FCS performance</h3>
+
+    <ol>
+      <li><strong>Check the good-frame rate alongside it.</strong> If RX is
+        still climbing at a normal pace for your area, you are mostly hearing
+        collisions and marginal traffic &mdash; benign. If good frames have
+        stalled while Bad FCS keeps rising, treat it as a local fault.</li>
+      <li><strong>Look at the channel's audio level.</strong> On the dashboard,
+        the per-channel level bar should peak comfortably without pinning at
+        the top (clipping) or barely moving (too weak). Both extremes wreck the
+        FCS rate.</li>
+      <li><strong>Record a clip and decode it offline.</strong> Capture a short
+        <code>.wav</code> of live traffic and run it back through the real
+        demodulator:
+        <pre><code>graywolf-modem --decode rx.wav</code></pre>
+        Watch <code>rx_bad_fcs</code> versus <code>rx_frames</code>, and check
+        <code>level_dbfs_med</code> (near 0&nbsp;dBFS means clipping; very low
+        means too weak) and <code>twist_db_med</code> (a large twist points at
+        a de-emphasis / audio-response problem rather than overall level). See
+        <a href="audio.html">Audio Devices</a> for the full field list.</li>
+      <li><strong>Tune against the same clip.</strong> Because
+        <code>--decode</code> is deterministic on a fixed file, decode the same
+        recording repeatedly while adjusting receive gain; the setting that
+        yields the most <code>rx_frames</code> with the fewest
+        <code>rx_bad_fcs</code> and no clipping wins.</li>
+      <li><strong>Hunt for interference.</strong> If the audio is clean but Bad
+        FCS stays high with few decodes, suspect EMI &mdash; move USB cables,
+        sound interfaces, and switching supplies away from the radio and
+        antenna feed.</li>
+    </ol>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          A hardware KISS TNC validates the FCS itself and never forwards a bad
+          frame, so its channels always show <strong>Bad FCS: 0</strong>. The
+          metric is only meaningful for software-modem (sound-card) channels,
+          where Graywolf does the demodulation and checksum itself.
+        </p>
       </div>
     </div>
 

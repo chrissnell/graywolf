@@ -1,14 +1,16 @@
 <script>
   // Dialog for adding a user-defined fixed map point. Opened from the map's
-  // right-click context menu with the clicked lat/lon. Collects a name and
-  // an APRS symbol (reusing the SymbolPicker so the icon vocabulary matches
-  // station/beacon markers), then hands the result back via onConfirm.
+  // right-click context menu with the clicked lat/lon. Collects a name, an
+  // APRS symbol (reusing the SymbolPicker so the icon vocabulary matches
+  // station/beacon markers), and the coordinates -- pre-filled from the
+  // clicked location but editable so operators can type exact lat/lon
+  // (graywolf#417). Hands the result back via onConfirm.
 
   import { Button } from '@chrissnell/chonky-ui';
   import Modal from '../../components/Modal.svelte';
   import SymbolPicker from '../../components/SymbolPicker.svelte';
   import { createAprsIconElement } from './aprs-icon-element.js';
-  import { fmtLat, fmtLon } from './popup-helpers.js';
+  import { parseCoordinate } from './coord-input.js';
 
   let {
     open = $bindable(false),
@@ -21,17 +23,24 @@
   let table = $state('/');
   let symbol = $state('.');
   let overlay = $state('');
+  let latInput = $state('');
+  let lonInput = $state('');
+  let coordError = $state('');
   let pickerOpen = $state(false);
 
   // Reset the working fields each time the dialog opens so a prior entry
-  // doesn't bleed into the next point. Default '//' is the APRS "Red dot",
-  // a neutral, clearly-visible generic waypoint.
+  // doesn't bleed into the next point, and seed the coordinate fields from
+  // the clicked location. Default '/' table + '/' symbol is the APRS "Red
+  // dot", a neutral, clearly-visible generic waypoint.
   $effect(() => {
     if (open) {
       name = '';
       table = '/';
       symbol = '/';
       overlay = '';
+      latInput = lat.toFixed(6);
+      lonInput = lon.toFixed(6);
+      coordError = '';
     }
   });
 
@@ -55,7 +64,14 @@
     // Name is required server-side; guard here so Enter / the button can't
     // fire an empty-name request that would only come back as a 400 toast.
     if (!name.trim()) return;
-    onConfirm?.({ name: name.trim(), table, symbol, overlay });
+    const latRes = parseCoordinate(latInput, 'lat');
+    const lonRes = parseCoordinate(lonInput, 'lon');
+    if (latRes.error || lonRes.error) {
+      coordError = latRes.error || lonRes.error;
+      return;
+    }
+    coordError = '';
+    onConfirm?.({ name: name.trim(), table, symbol, overlay, lat: latRes.value, lon: lonRes.value });
     open = false;
   }
 
@@ -88,7 +104,38 @@
       </div>
     </div>
 
-    <div class="fp-coords">{fmtLat(lat)} {fmtLon(lon)}</div>
+    <div class="fp-coord-row">
+      <label class="fp-field">
+        <span class="fp-label">Latitude</span>
+        <input
+          class="fp-input"
+          type="text"
+          inputmode="decimal"
+          bind:value={latInput}
+          placeholder="37.774900"
+          aria-invalid={!!coordError}
+          aria-describedby={coordError ? 'fp-coord-error' : undefined}
+          onkeydown={(e) => e.key === 'Enter' && confirm()}
+        />
+      </label>
+      <label class="fp-field">
+        <span class="fp-label">Longitude</span>
+        <input
+          class="fp-input"
+          type="text"
+          inputmode="decimal"
+          bind:value={lonInput}
+          placeholder="-122.419400"
+          aria-invalid={!!coordError}
+          aria-describedby={coordError ? 'fp-coord-error' : undefined}
+          onkeydown={(e) => e.key === 'Enter' && confirm()}
+        />
+      </label>
+    </div>
+
+    {#if coordError}
+      <div id="fp-coord-error" class="fp-coord-error" role="alert">{coordError}</div>
+    {/if}
 
     <div class="fp-actions">
       <Button onclick={cancel}>Cancel</Button>
@@ -142,10 +189,17 @@
     height: 28px;
     flex: 0 0 auto;
   }
-  .fp-coords {
-    font-family: var(--font-mono);
+  .fp-coord-row {
+    display: flex;
+    gap: 12px;
+  }
+  .fp-coord-row .fp-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .fp-coord-error {
     font-size: 12px;
-    color: var(--color-text-muted);
+    color: var(--color-danger, #ff6b6b);
   }
   .fp-actions {
     display: flex;

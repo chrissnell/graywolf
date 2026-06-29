@@ -385,8 +385,8 @@ function layerSpecs(sourceId, idPrefix, vis) {
         'text-color': [
           'match',
           ['get', 'kind'],
-          'H', FRONT_COLORS.cold,
-          'L', FRONT_COLORS.warm,
+          'H', FRONT_COLORS.warm,
+          'L', FRONT_COLORS.cold,
           '#333333',
         ],
         'text-halo-color': '#ffffff',
