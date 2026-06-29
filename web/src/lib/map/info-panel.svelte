@@ -1,14 +1,16 @@
 <script>
   // InfoPanel: a reusable map overlay container.
-  //   - Desktop (>=769px): floating card anchored top-right (or top-left
+  //   - Desktop (tall/wide): floating card anchored top-right (or top-left
   //     when anchor='left'), positioned absolutely over the map.
-  //   - Mobile (<=768px): bottom-sheet via chonky-ui Drawer.
+  //   - Compact (narrow portrait OR short landscape phone): bottom-sheet
+  //     via chonky-ui Drawer.
   //
   // The mobile/desktop split is driven by a matchMedia listener so the
   // panel reflows live if the operator resizes their window or rotates
   // their device. Body content is provided as a snippet child.
 
   import { Drawer } from '@chrissnell/chonky-ui';
+  import { COMPACT_LAYOUT_QUERY } from '../compactLayout.js';
 
   let {
     title,
@@ -20,7 +22,7 @@
   let isMobile = $state(false);
   $effect(() => {
     if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 768px)');
+    const mq = window.matchMedia(COMPACT_LAYOUT_QUERY);
     isMobile = mq.matches;
     const handler = (e) => (isMobile = e.matches);
     mq.addEventListener('change', handler);
@@ -59,6 +61,8 @@
     right: 12px;
     width: 280px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 8px;

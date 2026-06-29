@@ -10,6 +10,7 @@
   import MaplibreMap from '../lib/map/maplibre-map.svelte';
   import InfoPanel from '../lib/map/info-panel.svelte';
   import MapContextMenu from '../lib/map/map-context-menu.svelte';
+  import { COMPACT_LAYOUT_QUERY } from '../lib/compactLayout.js';
   import { createDataStore } from '../lib/map/data-store.svelte.js';
   import { mountStationsLayer } from '../lib/map/layers/stations.js';
   import { mountTrailsLayer } from '../lib/map/layers/trails.js';
@@ -466,7 +467,10 @@
   let mqUnsub = null;
   onMount(() => {
     if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 768px)');
+    // Compact chrome (FAB + bottom-sheet) covers landscape phones too, not
+    // just narrow portrait ones, so a rotated phone doesn't fall back to the
+    // perma layer-card that crowds the map (GH #419).
+    const mq = window.matchMedia(COMPACT_LAYOUT_QUERY);
     isMobile = mq.matches;
     const handler = (e) => (isMobile = e.matches);
     mq.addEventListener('change', handler);
@@ -1457,6 +1461,8 @@
     height: 44px;
     border-radius: 22px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     box-shadow: var(--map-overlay-shadow);
@@ -1478,6 +1484,8 @@
     left: 12px;
     width: 200px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 8px;
@@ -1634,6 +1642,8 @@
     right: 12px;
     padding: 4px 10px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 4px;
@@ -1653,6 +1663,8 @@
     transform: translateX(-50%);
     padding: 4px 10px;
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 4px;
@@ -1849,6 +1861,8 @@
      popups, plus the interior name/coords/delete button. */
   :global(.gw-fixed-popup .maplibregl-popup-content) {
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 8px;
@@ -1898,6 +1912,8 @@
   /* Station popup: theme-aware container + tip + close button. */
   :global(.gw-station-popup .maplibregl-popup-content) {
     background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
     color: var(--map-overlay-fg);
     border: 1px solid var(--map-overlay-border);
     border-radius: 8px;

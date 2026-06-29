@@ -92,6 +92,13 @@ every theme regardless of light/dark mode.
   temperature chip beside each station marker. Keep the text legible
   on the chip's own background, not on the page surface; the chip can
   sit over any basemap tile.
+- `--map-overlay-bg` / `--map-overlay-blur` — surface and backdrop blur
+  for the floating map chrome (layer card, status bar, coord readout,
+  FAB, popups). Standard themes make `--map-overlay-bg` translucent
+  (`color-mix(... 88%, transparent)`) and pair it with
+  `--map-overlay-blur: 10px` so the map shows through without losing
+  text legibility. High-contrast themes keep the surface opaque and set
+  `--map-overlay-blur: 0px` so contrast is never reduced.
 
 ## Contrast and legibility
 

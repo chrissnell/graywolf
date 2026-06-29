@@ -343,7 +343,8 @@
   /* Hide MapLibre's +/- zoom buttons on touch viewports — pinch-zoom
      is sufficient and the buttons would clash with the FAB. Keep the
      compass so operators can still reset bearing after a rotate. */
-  @media (max-width: 768px) {
+  @media (max-width: 768px),
+    (orientation: landscape) and (max-height: 500px) {
     :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-zoom-in),
     :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-zoom-out) {
       display: none;

@@ -678,11 +678,94 @@
     padding: 6px 0;
   }
 
-  /* ===== Top app bar (mobile only) ===== */
+  /* ===== Top app bar / left rail (compact layouts only) ===== */
 
   .top-bar {
-    /* Hidden on desktop; shown via @media below. */
+    /* Hidden on the full desktop layout. Shown by the media queries below
+       as a horizontal top bar (portrait/narrow) or a vertical icon rail
+       down the left edge (landscape phone, GH #419). */
     display: none;
+  }
+
+  /* Shared top-bar element styles. They only paint while .top-bar is
+     displayed, so they live at the top level and both the horizontal-bar
+     and vertical-rail container rules reuse them. */
+  .top-bar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    padding: 0 8px;
+    height: 44px;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  .top-bar-logo {
+    width: 32px;
+    height: 32px;
+    display: block;
+    flex-shrink: 0;
+  }
+  .top-bar-wordmark {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  .top-bar-action {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+    /* Reset button defaults */
+    padding: 0;
+    font: inherit;
+  }
+  .top-bar-action:hover,
+  .top-bar-action:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .top-bar-action.active {
+    color: var(--accent);
+    background: var(--bg-tertiary);
+  }
+  .top-bar-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+    position: relative;
+  }
+  /* Activity dot overlaid on the top-bar icon (parallel of .nav-icon-dot). */
+  .top-bar-dot {
+    position: absolute;
+    top: -1px;
+    right: -2px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--color-danger, #c41010);
+    border: 2px solid var(--bg-primary, #fff);
+    box-sizing: content-box;
+    pointer-events: none;
+  }
+  .top-bar-spacer {
+    flex: 1 1 auto;
   }
 
   /* Drawer brand row (lives inside Drawer.Header on mobile only). */
@@ -711,14 +794,16 @@
     display: block;
   }
 
+  /* Portrait / narrow: horizontal top bar across the top edge. */
   @media (max-width: 768px) {
-    /* Desktop sidebar collapses on mobile; replaced by top bar + drawer. */
+    /* Desktop sidebar collapses; replaced by top bar + drawer. */
     .sidebar {
       display: none;
     }
 
     .top-bar {
       display: flex;
+      flex-direction: row;
       align-items: center;
       gap: 4px;
       position: fixed;
@@ -734,86 +819,49 @@
       z-index: 100;
       box-sizing: border-box;
     }
+  }
 
-    .top-bar-brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      text-decoration: none;
-      color: var(--text-secondary);
-      padding: 0 8px;
-      height: 44px;
-      flex-shrink: 0;
-      min-width: 0;
+  /* Landscape phone: vertical icon rail down the left edge. Wins back the
+     full viewport height for the map, which a horizontal bar would eat
+     into (GH #419). The shared snippet's brand/icons/hamburger stack
+     top-to-bottom; the flex spacer pushes the hamburger to the bottom. */
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 769px) {
+    .sidebar {
+      display: none;
     }
-    .top-bar-logo {
-      width: 32px;
-      height: 32px;
-      display: block;
-      flex-shrink: 0;
+
+    .top-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: calc(var(--landscape-rail-width) + env(safe-area-inset-left));
+      padding: max(8px, env(safe-area-inset-top)) 0
+        max(8px, env(safe-area-inset-bottom));
+      padding-left: env(safe-area-inset-left);
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border-color);
+      z-index: 100;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+
+    /* The 56px rail is too narrow for the wordmark; show just the logo. */
+    .top-bar-brand {
+      padding: 0;
+      height: auto;
+      margin-bottom: 4px;
     }
     .top-bar-wordmark {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      white-space: nowrap;
+      display: none;
     }
-
-    .top-bar-action {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 44px;
-      height: 44px;
-      flex-shrink: 0;
-      color: var(--text-secondary);
-      background: transparent;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background 0.15s, color 0.15s;
-      /* Reset button defaults */
-      padding: 0;
-      font: inherit;
-    }
-    .top-bar-action:hover,
-    .top-bar-action:focus-visible {
-      background: var(--bg-hover);
-      color: var(--text-primary);
-    }
-    .top-bar-action.active {
-      color: var(--accent);
-      background: var(--bg-tertiary);
-    }
-    .top-bar-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-      position: relative;
-    }
-    /* Activity dot overlaid on the top-bar icon (mobile parallel of
-       .nav-icon-dot). Same red, slightly larger to keep visible at
-       24px-touch-target scale. */
-    .top-bar-dot {
-      position: absolute;
-      top: -1px;
-      right: -2px;
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--color-danger, #c41010);
-      border: 2px solid var(--bg-primary, #fff);
-      box-sizing: content-box;
-      pointer-events: none;
-    }
-
-    .top-bar-spacer {
-      flex: 1 1 auto;
+    .top-bar-logo {
+      width: 28px;
+      height: 28px;
     }
   }
 </style>

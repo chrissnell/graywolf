@@ -47,7 +47,10 @@
   --font-mono: 'Inconsolata', 'Courier New', monospace;
   --radius: 2px;
   /* Map overlay tokens (used by MapLibre Live Map rebuild) */
+  /* High-contrast keeps overlays fully opaque with no blur so chrome text
+     never loses contrast against the basemap. */
   --map-overlay-bg: var(--color-surface);
+  --map-overlay-blur: 0px;
   --map-overlay-fg: var(--color-text);
   --map-overlay-muted: var(--color-text-muted);
   --map-overlay-border: var(--color-border);
