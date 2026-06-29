@@ -40,6 +40,17 @@
   --safe-area-top: max(env(safe-area-inset-top), var(--android-inset-top, 0px));
 }
 
+/* chonky-ui's <Drawer> reserves the top safe area with raw
+   env(safe-area-inset-top), which is 0 in the Android WebView (see
+   --safe-area-top above) -- so the mobile nav drawer's header would render
+   behind the status bar, the same GH #390 bug the top bar hits. Override it to
+   the native-fed inset. This rule follows chonky's @import so it wins on source
+   order at equal specificity. The proper home is chonky-ui itself; this
+   app-side override covers it until that lands. */
+.drawer {
+  padding-top: var(--safe-area-top);
+}
+
 * {
   margin: 0;
   padding: 0;

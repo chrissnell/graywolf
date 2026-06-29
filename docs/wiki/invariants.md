@@ -696,9 +696,13 @@ cannot outlive the app, because no single mechanism covers both cases.
     var(--android-inset-top, 0px))` so the Android shell (var set, env 0) and iOS / mobile
     browsers (env populated, var unset) both reserve the strip; all top-inset consumers
     (`App.svelte`, `Sidebar.svelte`, `RemoteActionsDrawer.svelte`) read `var(--safe-area-top)`.
-    Do NOT re-add `bars.top` to the WebView padding, do NOT make the top bar depend on
-    `env(safe-area-inset-top)` directly, and keep `viewport-fit=cover` in `web/index.html`
-    (it is still needed for the env() path on iOS / mobile browsers).
+    chonky-ui's `<Drawer>` (the mobile nav drawer, `web/.../Sidebar.svelte` `anchor="left"`)
+    bakes raw `env(safe-area-inset-top)` into its `.drawer` rule, so `app.css` overrides
+    `.drawer { padding-top: var(--safe-area-top) }` to feed it the native inset too -- the
+    proper fix belongs in chonky-ui itself; until then any new `.drawer`-based surface
+    inherits the override. Do NOT re-add `bars.top` to the WebView padding, do NOT make the
+    top bar depend on `env(safe-area-inset-top)` directly, and keep `viewport-fit=cover` in
+    `web/index.html` (it is still needed for the env() path on iOS / mobile browsers).
   - **Bottom is owned by native padding.** `env()` cannot express the keyboard, so the
     IME padding is the cross-system load-bearing bit: it shrinks the web viewport above
     the keyboard so the SPA's sticky compose bar (`web/.../ComposeBar.svelte`,
