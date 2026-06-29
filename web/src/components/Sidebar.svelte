@@ -823,9 +823,14 @@
 
   /* Landscape phone: vertical icon rail down the left edge. Wins back the
      full viewport height for the map, which a horizontal bar would eat
-     into (GH #419). The shared snippet's brand/icons/hamburger stack
-     top-to-bottom; the flex spacer pushes the hamburger to the bottom. */
-  @media (orientation: landscape) and (max-height: 500px) and (min-width: 769px) {
+     into (GH #419) -- this matters most on the *smallest* landscape phones
+     (e.g. iPhone SE, 667x375), so the rule keys off orientation + short
+     height rather than a min-width floor. On phones <=768px wide it shares
+     the viewport with the portrait rule above; declared last, it overrides
+     that rule's row layout (note the right/height/border-bottom resets).
+     The shared snippet's brand/icons/hamburger stack top-to-bottom; the
+     flex spacer pushes the hamburger to the bottom. */
+  @media (orientation: landscape) and (max-height: 500px) {
     .sidebar {
       display: none;
     }
@@ -838,12 +843,15 @@
       position: fixed;
       top: 0;
       left: 0;
+      right: auto;
       bottom: 0;
       width: calc(var(--landscape-rail-width) + env(safe-area-inset-left));
+      height: auto;
       padding: max(8px, env(safe-area-inset-top)) 0
         max(8px, env(safe-area-inset-bottom));
       padding-left: env(safe-area-inset-left);
       background: var(--bg-secondary);
+      border-bottom: none;
       border-right: 1px solid var(--border-color);
       z-index: 100;
       box-sizing: border-box;
