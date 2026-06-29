@@ -29,6 +29,15 @@
      full width; mirrored by the matching CSS in Sidebar/App and the
      COMPACT_LAYOUT_QUERY breakpoint in lib/compactLayout.js. */
   --landscape-rail-width: 56px;
+  /* Effective top safe-area inset. Android WebView does NOT populate
+     env(safe-area-inset-top) from the status bar (only the display cutout, and
+     unreliably below WebView 140), so the CSS-reserved status-bar strip from
+     GH #390 collapsed to 0 and the mobile top bar slid back behind the status
+     bar. The native shell injects the real status-bar inset as
+     --android-inset-top (MainActivity.applyWindowInsets); take whichever is
+     larger so iOS / mobile browsers (env populated, var unset) and the Android
+     shell (var set, env 0) both reserve the strip. */
+  --safe-area-top: max(env(safe-area-inset-top), var(--android-inset-top, 0px));
 }
 
 * {
