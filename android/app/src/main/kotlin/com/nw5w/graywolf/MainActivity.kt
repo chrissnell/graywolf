@@ -150,8 +150,10 @@ class MainActivity : Activity() {
             // status-bar strip in CSS, using the inset we hand it below (GH #390).
             v.setPadding(bars.left, 0, bars.right, maxOf(bars.bottom, ime.bottom))
             // Feed the real status-bar inset to CSS as --android-inset-top.
-            // Insets are physical px; CSS works in density-independent px.
-            val topCss = Math.round(bars.top / resources.displayMetrics.density)
+            // Insets are physical px; CSS works in density-independent px. Ceil
+            // (not round) so we never under-reserve the strip by a sub-pixel and
+            // let the bar creep back under the status bar.
+            val topCss = kotlin.math.ceil(bars.top / resources.displayMetrics.density).toInt()
             if (topCss != lastTopInsetCssPx) {
                 lastTopInsetCssPx = topCss
                 applyTopInsetToCss()
