@@ -680,14 +680,29 @@ cannot outlive the app, because no single mechanism covers both cases.
   and a `setOnApplyWindowInsetsListener` that pads the WebView by the side bars and
   `max(systemBars.bottom, ime.bottom)` -- but **leaves the top inset at 0 on purpose**.
   The split is load-bearing and not interchangeable:
-  - **Top is owned by CSS.** The SPA's mobile top bar is `position:fixed; top:0`
-    (`web/.../Sidebar.svelte`), and a fixed element is pinned to the visual viewport,
-    which WebView top-padding does NOT shift -- padding the top leaves the bar stranded
-    behind the status bar (GH #390). Instead `web/index.html` sets `viewport-fit=cover`
-    so `env(safe-area-inset-top)` is populated, and the top bar reserves the status-bar
-    strip itself (`height: calc(56px + env(safe-area-inset-top))`, matching
-    `margin-top` on `.main-content`). Do NOT re-add `bars.top` to the WebView padding and
-    do NOT drop `viewport-fit=cover`.
+  - **Top is owned by CSS, fed the inset by native.** The SPA's mobile top bar is
+    `position:fixed; top:0` (`web/.../Sidebar.svelte`), and a fixed element is pinned to
+    the visual viewport, which WebView top-padding does NOT shift -- padding the top leaves
+    the bar stranded behind the status bar (GH #390). So the top bar reserves the
+    status-bar strip in CSS (`height: calc(56px + var(--safe-area-top))`, matching
+    `margin-top` on `.main-content`). The value is **not** taken from
+    `env(safe-area-inset-top)` alone: Android WebView derives that env var from the
+    display cutout, not the status bar, and returns 0 (or wrong values below WebView 140)
+    on most devices -- relying on it is what made the first GH #390 fix regress. Instead
+    `MainActivity.applyTopInsetToCss` injects the real status-bar inset (`systemBars.top`,
+    converted to CSS px) as the `--android-inset-top` custom property on the document root,
+    re-applied from `onPageFinished` because each `loadUrl` swaps in a fresh document.
+    `web/src/app.css` defines `--safe-area-top: max(env(safe-area-inset-top),
+    var(--android-inset-top, 0px))` so the Android shell (var set, env 0) and iOS / mobile
+    browsers (env populated, var unset) both reserve the strip; all top-inset consumers
+    (`App.svelte`, `Sidebar.svelte`, `RemoteActionsDrawer.svelte`) read `var(--safe-area-top)`.
+    chonky-ui's `<Drawer>` (the mobile nav drawer, `web/.../Sidebar.svelte` `anchor="left"`)
+    bakes raw `env(safe-area-inset-top)` into its `.drawer` rule, so `app.css` overrides
+    `.drawer { padding-top: var(--safe-area-top) }` to feed it the native inset too -- the
+    proper fix belongs in chonky-ui itself; until then any new `.drawer`-based surface
+    inherits the override. Do NOT re-add `bars.top` to the WebView padding, do NOT make the
+    top bar depend on `env(safe-area-inset-top)` directly, and keep `viewport-fit=cover` in
+    `web/index.html` (it is still needed for the env() path on iOS / mobile browsers).
   - **Bottom is owned by native padding.** `env()` cannot express the keyboard, so the
     IME padding is the cross-system load-bearing bit: it shrinks the web viewport above
     the keyboard so the SPA's sticky compose bar (`web/.../ComposeBar.svelte`,

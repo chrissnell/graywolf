@@ -218,12 +218,12 @@
   @media (max-width: 768px) {
     .main-content {
       margin-left: 0;
-      margin-top: calc(56px + env(safe-area-inset-top));
+      margin-top: calc(56px + var(--safe-area-top));
       padding: 16px;
     }
     .main-content.full-bleed {
-      height: calc(100vh - 56px - env(safe-area-inset-top));
-      height: calc(100dvh - 56px - env(safe-area-inset-top));
+      height: calc(100vh - 56px - var(--safe-area-top));
+      height: calc(100dvh - 56px - var(--safe-area-top));
     }
   }
 </style>
