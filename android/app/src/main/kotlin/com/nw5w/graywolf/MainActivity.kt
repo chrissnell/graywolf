@@ -38,6 +38,9 @@ class MainActivity : Activity() {
     // request. Cleared in onRequestPermissionsResult after we post the
     // window.__btResult dispatch back to the WebView.
     private var pendingBtPermCallback: String? = null
+    // Last status-bar inset (CSS px) handed to the page as --android-inset-top.
+    // Re-applied after each navigation; see applyTopInsetToCss (GH #390).
+    private var lastTopInsetCssPx: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +89,13 @@ class MainActivity : Activity() {
                         mainHandler.postDelayed({ view.reload() }, 1000)
                     }
                 }
+                override fun onPageFinished(view: WebView, url: String) {
+                    // loadUrl() swaps in a fresh document, dropping the inline
+                    // --android-inset-top we set on the previous one. Re-apply
+                    // the last known status-bar inset so the CSS-reserved top
+                    // strip survives navigation/reload (GH #390).
+                    applyTopInsetToCss()
+                }
             }
         }
         setContentView(webView)
@@ -107,14 +117,20 @@ class MainActivity : Activity() {
      * visualViewport translate in the Android shell (Platform.isAndroid) so the
      * two don't double-offset.
      *
-     * The TOP inset is deliberately NOT padded here. The SPA's top bar is
-     * `position:fixed; top:0`, and a fixed element is pinned to the visual
-     * viewport, which WebView top-padding does NOT shift -- padding the top
-     * would leave the bar stranded behind the status bar (GH #390). Instead the
-     * page opts into `viewport-fit=cover` (web/index.html) and the top bar
-     * reserves the status-bar strip itself via `env(safe-area-inset-top)`. So
-     * the top is owned by CSS, the bottom by native padding (the viewport must
-     * actually shrink for the keyboard, which env() cannot express).
+     * The TOP inset is deliberately NOT padded on the WebView here. The SPA's
+     * top bar is `position:fixed; top:0`, and a fixed element is pinned to the
+     * visual viewport, which WebView top-padding does NOT shift -- padding the
+     * top would leave the bar stranded behind the status bar (GH #390). The top
+     * bar reserves the status-bar strip itself in CSS. We cannot rely on
+     * `env(safe-area-inset-top)` for that value: Android WebView derives it from
+     * the display cutout, not the status bar, and returns 0 (or wrong values
+     * below WebView 140) on most devices -- which is why the first GH #390 fix
+     * regressed. Instead we feed the real status-bar inset to CSS as the
+     * `--android-inset-top` custom property (see `applyTopInsetToCss`); the SPA
+     * takes `max(env(safe-area-inset-top), var(--android-inset-top))` so both
+     * the Android shell and iOS / mobile browsers reserve the strip. So the top
+     * is owned by CSS (fed by us), the bottom by native padding (the viewport
+     * must actually shrink for the keyboard, which env() cannot express).
      *
      * Two mechanisms feed the same listener: on API 30+ the IME arrives as a
      * `Type.ime()` inset (handled here directly). On API 28-29 `Type.ime()` is
@@ -130,10 +146,37 @@ class MainActivity : Activity() {
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            // Top stays 0: the fixed top bar reserves the status-bar strip in
-            // CSS via env(safe-area-inset-top) (GH #390). See the KDoc above.
+            // Top stays 0 on the WebView: the fixed top bar reserves the
+            // status-bar strip in CSS, using the inset we hand it below (GH #390).
             v.setPadding(bars.left, 0, bars.right, maxOf(bars.bottom, ime.bottom))
+            // Feed the real status-bar inset to CSS as --android-inset-top.
+            // Insets are physical px; CSS works in density-independent px.
+            val topCss = Math.round(bars.top / resources.displayMetrics.density)
+            if (topCss != lastTopInsetCssPx) {
+                lastTopInsetCssPx = topCss
+                applyTopInsetToCss()
+            }
             insets
+        }
+    }
+
+    /**
+     * Push the last-seen status-bar inset (in CSS px) into the page as the
+     * `--android-inset-top` custom property on the document root. The SPA's
+     * mobile top bar reserves the strip via
+     * `max(env(safe-area-inset-top), var(--android-inset-top))` (GH #390),
+     * working around Android WebView not reporting the status bar through
+     * env(safe-area-inset-top). Re-applied from onPageFinished because each
+     * navigation swaps in a fresh document that loses the inline property.
+     */
+    private fun applyTopInsetToCss() {
+        if (!::webView.isInitialized) return
+        val px = lastTopInsetCssPx
+        webView.post {
+            webView.evaluateJavascript(
+                "document.documentElement.style.setProperty('--android-inset-top', '${px}px')",
+                null,
+            )
         }
     }
 

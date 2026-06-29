@@ -245,10 +245,13 @@
     display: flex;
     flex-direction: column;
     /* Edge-to-edge: this drawer is pinned to the viewport edges, so it reserves
-       the status-bar / nav-bar safe areas itself (GH #390). On the Android shell
-       the bottom env() is 0 because the WebView is natively bottom-padded; it is
-       load-bearing for iOS / mobile-browser home indicators. */
-    padding: calc(16px + env(safe-area-inset-top)) 16px
+       the status-bar / nav-bar safe areas itself (GH #390). The top uses
+       --safe-area-top because Android WebView's env(safe-area-inset-top) is
+       unreliable; the native shell feeds the real status-bar inset there. On
+       the Android shell the bottom env() is 0 because the WebView is natively
+       bottom-padded; it is load-bearing for iOS / mobile-browser home
+       indicators. */
+    padding: calc(16px + var(--safe-area-top)) 16px
       calc(16px + env(safe-area-inset-bottom));
     overflow-y: auto;
     z-index: 50;
