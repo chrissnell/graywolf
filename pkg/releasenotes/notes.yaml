@@ -7,6 +7,41 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
+- version: "0.14.10"
+  date: "2026-06-30"
+  style: info
+  schema_version: 1
+  link: "#/map"
+  title: "Terminal local echo, an upgrade reload prompt, and a landscape map layout"
+  body: |
+    The AX.25 terminal now echoes what you type. Connected-mode BBSes do
+    not echo your keystrokes, so the terminal used to look dead while you
+    typed a command. It now shows your keystrokes locally as you go. Local
+    echo is on by default and you can flip it with the "echo on|off"
+    command for the rare host that echoes on its own.
+
+    When you upgrade Graywolf on the server while a browser tab is still
+    open, that tab now notices and offers a Reload button instead of
+    quietly running the old page against the new server. It prompts rather
+    than reloading on its own, so a half-typed message or an open terminal
+    session is never thrown away.
+
+    Landscape phones get a proper map layout. The sidebar collapses to a
+    slim vertical icon rail and the map takes the full width with its
+    floating button and bottom sheet, instead of the desktop sidebar
+    eating most of the screen. The smallest landscape phones are covered
+    too.
+
+    Fixed: object beacons were sending a fixed placeholder time instead of
+    the real time, so APRS-IS and APRS.fi treated them as stale and they
+    never showed up on the map. They now carry a correct timestamp.
+
+    Smaller touches: the surface fronts weather overlay is turned off for
+    now, monitoring dashboards gain a per-channel count of frames that
+    failed their checksum, and running an auth command with the config
+    flag in the wrong order now prints the correct invocation instead of
+    an opaque error.
+
 - version: "0.14.9"
   date: "2026-06-28"
   style: info
