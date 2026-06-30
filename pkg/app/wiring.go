@@ -593,6 +593,24 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		Observer:     &beaconObserver{m: a.metrics},
 		Version:      a.cfg.Version,
 		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
+		// IS-leg counterpart of the governor TX hook above (wiring.go ~498):
+		// feed our own beacon position into the station cache so an
+		// APRS-IS-only beacon (radioless / RX-only iGate) plots on the local
+		// map, not just aprs.fi (graywolf#438). The RF leg is covered by the
+		// governor hook; this covers the leg that never touches the governor.
+		OnISSent: func(frame *ax25.Frame, channel uint32) {
+			if frame == nil || !frame.IsUI() {
+				return
+			}
+			pkt, err := aprs.Parse(frame)
+			if err != nil || pkt == nil {
+				return
+			}
+			pkt.Channel = int(channel)
+			if entries := stationcache.ExtractEntry(pkt, "beacon", "TX", channel); len(entries) > 0 {
+				a.stationCache.Update(entries)
+			}
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("beacon scheduler init: %w", err)

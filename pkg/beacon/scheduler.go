@@ -53,6 +53,7 @@ type Scheduler struct {
 	maxFires     int
 	workers      chan struct{} // counting semaphore sized to maxFires
 	channelModes configstore.ChannelModeLookup
+	onISSent     func(frame *ax25.Frame, channel uint32)
 
 	mu       sync.Mutex
 	beacons  []Config
@@ -79,6 +80,14 @@ type Options struct {
 	// does-anything behavior). Lookup errors are silently ignored
 	// (fail-open): a DB failure does not suppress beaconing.
 	ChannelModes configstore.ChannelModeLookup
+	// OnISSent fires after a beacon frame is successfully uploaded to
+	// APRS-IS. It is the IS-leg counterpart of the governor's RF TX hook,
+	// which is what feeds a station's own beacon position into the station
+	// cache so it plots on the local map. Without it an APRS-IS-only
+	// beacon (a radioless / RX-only iGate) never enters the cache and the
+	// station is invisible on the map even though aprs.fi shows it
+	// (graywolf#438). nil = no-op.
+	OnISSent func(frame *ax25.Frame, channel uint32)
 }
 
 // New constructs a Scheduler.
@@ -110,6 +119,7 @@ func New(opts Options) (*Scheduler, error) {
 		workers:      make(chan struct{}, maxFires),
 		reloadCh:     make(chan struct{}, 1),
 		channelModes: opts.ChannelModes,
+		onISSent:     opts.OnISSent,
 	}, nil
 }
 
@@ -474,6 +484,12 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 			} else {
 				s.logger.Info("beacon sent to aprs-is", "id", b.ID, "send_path", b.SendPath, "line", line)
 				sent = true
+				// Feed our own position into the station cache so an
+				// APRS-IS-only beacon plots on the local map, mirroring the
+				// RF leg's governor TX hook (graywolf#438).
+				if s.onISSent != nil {
+					s.onISSent(frame, b.Channel)
+				}
 			}
 		}
 	}

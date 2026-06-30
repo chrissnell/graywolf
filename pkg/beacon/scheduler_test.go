@@ -731,3 +731,59 @@ func TestBeaconISLine_UsesTCPIP(t *testing.T) {
 		t.Errorf("IS line must not carry the RF digipeater path; got %q", line)
 	}
 }
+
+// TestOnISSent_FiresForISOnly is the graywolf#438 regression: an
+// APRS-IS-only beacon never touches the governor (RF) sink, so the
+// governor's RF TX hook — the thing that feeds a station's own position
+// into the station cache — never runs. The OnISSent hook is the IS-leg
+// counterpart; without it the station is invisible on the local map even
+// though aprs.fi shows it. It must fire once, carry a UI frame, and report
+// the beacon's channel.
+func TestOnISSent_FiresForISOnly(t *testing.T) {
+	sink := newMockSink(0)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	var gotFrames []*ax25.Frame
+	var gotChannels []uint32
+	s, err := New(Options{
+		Sink: sink, ISSink: is, Logger: logger,
+		OnISSent: func(frame *ax25.Frame, channel uint32) {
+			gotFrames = append(gotFrames, frame)
+			gotChannels = append(gotChannels, channel)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := mkPathBeacon(SendPathISOnly)
+	b.Channel = 3
+	s.sendBeacon(context.Background(), b)
+
+	if len(gotFrames) != 1 {
+		t.Fatalf("OnISSent fired %d times, want 1", len(gotFrames))
+	}
+	if gotFrames[0] == nil || !gotFrames[0].IsUI() {
+		t.Errorf("OnISSent frame = %v, want a non-nil UI frame", gotFrames[0])
+	}
+	if gotChannels[0] != 3 {
+		t.Errorf("OnISSent channel = %d, want 3", gotChannels[0])
+	}
+}
+
+// TestOnISSent_NotFiredForRFOnly proves the hook is gated on the IS leg
+// actually running: an RF-only beacon must not invoke OnISSent (its
+// position reaches the cache through the governor TX hook instead).
+func TestOnISSent_NotFiredForRFOnly(t *testing.T) {
+	sink := newMockSink(1)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	fired := 0
+	s, _ := New(Options{
+		Sink: sink, ISSink: is, Logger: logger,
+		OnISSent: func(*ax25.Frame, uint32) { fired++ },
+	})
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathRF))
+	if fired != 0 {
+		t.Fatalf("OnISSent fired %d times for RF-only beacon, want 0", fired)
+	}
+}
