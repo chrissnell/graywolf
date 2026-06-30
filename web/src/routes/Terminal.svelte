@@ -153,10 +153,23 @@
       }
       return { error: 'transcript on|off' };
     }
+    if (head === 'echo') {
+      if (!activeSession) return { error: 'No active session.' };
+      const arg = (parts[1] ?? '').toLowerCase();
+      if (arg === 'on' || arg === '') {
+        activeSession.setLocalEcho?.(true);
+        return { ok: true };
+      }
+      if (arg === 'off') {
+        activeSession.setLocalEcho?.(false);
+        return { ok: true };
+      }
+      return { error: 'echo on|off' };
+    }
     if (head === 'clear') {
       return { error: 'Use Ctrl-L (or your terminal’s clear) to wipe the canvas.' };
     }
-    return { error: `Unknown command: ${head}. Try transcript or clear. Macros: use the toolbar button.` };
+    return { error: `Unknown command: ${head}. Try transcript, echo, or clear. Macros: use the toolbar button.` };
   }
 </script>
 

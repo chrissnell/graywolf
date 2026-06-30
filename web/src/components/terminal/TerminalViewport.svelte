@@ -8,6 +8,7 @@
   import { buildTheme } from '../../lib/terminal/theme.js';
   import { PRESETS } from '../../lib/terminal/presets.ts';
   import { createEolNormalizer } from '../../lib/terminal/lineendings.js';
+  import { localEcho } from '../../lib/terminal/localecho.js';
 
   // session is a createSession() result from lib/terminal/session.svelte.js.
   // preset is one of the keys in PRESETS (defaults to 'classic').
@@ -117,11 +118,17 @@
     };
 
     // Operator keystrokes -> session bytes. xterm emits UTF-8 already
-    // for keyboard input, so wrap in a TextEncoder to get bytes.
+    // for keyboard input, so wrap in a TextEncoder to get bytes. When
+    // local echo is on (the default -- AX.25 BBSes don't echo), paint
+    // the keystroke locally too; the bytes sent to the host are never
+    // altered, only what the operator sees.
     const enc = new TextEncoder();
     term.onData((s) => {
-      const bytes = enc.encode(s);
-      session.sendData(bytes);
+      session.sendData(enc.encode(s));
+      if (session.state.localEcho) {
+        const echo = localEcho(s);
+        if (echo) { try { term?.write(echo); } catch { /* terminal disposed */ } }
+      }
     });
 
     // Re-resolve the theme on graywolf chrome theme changes.

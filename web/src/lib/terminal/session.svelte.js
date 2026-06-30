@@ -38,6 +38,12 @@ export function createSession(initial, opts = {}) {
     suspended: false,
     focused: false,
     transcriptEnabled: false,
+    // Local echo of operator keystrokes. Defaults on to match the
+    // classic TNC `ECHO ON` converse-mode default: AX.25 BBSes don't
+    // echo, so without this the operator can't see what they type.
+    // Toggle off (Ctrl-] `echo off`) for the rare host that echoes, to
+    // avoid doubled characters.
+    localEcho: true,
     // lastError carries the most-recent typed server error so the route
     // can decide whether to surface an AlertDialog (fatal codes) or
     // just show the StatusBar message (transient).
@@ -156,13 +162,17 @@ export function createSession(initial, opts = {}) {
     state.unreadBytes = 0;
   }
 
+  function setLocalEcho(enabled) {
+    state.localEcho = !!enabled;
+  }
+
   function clearLastError() {
     state.lastError = null;
   }
 
   open();
 
-  return { state, sendData, disconnect, abort, close, clearUnread, clearLastError, setTranscript };
+  return { state, sendData, disconnect, abort, close, clearUnread, clearLastError, setTranscript, setLocalEcho };
 }
 
 // pickN2 returns the configured retry budget from `initial`, falling

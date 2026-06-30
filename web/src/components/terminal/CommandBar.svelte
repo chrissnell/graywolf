@@ -5,6 +5,8 @@
   //
   //   transcript on|off -> toggle transcript recording for the active
   //                        session
+  //   echo on|off       -> toggle local echo of typed keystrokes for
+  //                        the active session (default on)
   //   clear             -> hint to the operator to use the terminal's
   //                        own clear (Ctrl-L)
   //
@@ -70,7 +72,7 @@
       <Input
         bind:value
         bind:this={inputEl}
-        placeholder="transcript on|off / clear"
+        placeholder="transcript on|off / echo on|off / clear"
         aria-label="Command"
       />
       <Button type="submit" variant="primary" size="sm">Run</Button>
