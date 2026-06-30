@@ -1387,8 +1387,10 @@ parser consumes `-config X` and reports the trailing `auth ...` as leftover
 positional arguments. The working order is subcommand first, flags after:
 `graywolf auth set-password --user admin -config X`. `flags.go` detects a known
 subcommand landing in the leftover positionals and returns a hint pointing at
-the correct order; keep that list in sync with the `main.go` dispatch switch if
-you add a subcommand. All operator docs must show the subcommand-first order.
+the correct order, using the `app.Subcommands` list (the single source of
+truth). If you add a subcommand, add a `case` to the `main.go` dispatch switch
+AND an entry to `app.Subcommands`. All operator docs must show the
+subcommand-first order.
 
 Source: [`../../cmd/graywolf/main.go`](../../cmd/graywolf/main.go)
 (dispatch switch),

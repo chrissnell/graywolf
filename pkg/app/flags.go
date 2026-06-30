@@ -9,6 +9,24 @@ import (
 	"strings"
 )
 
+// Subcommands lists the CLI subcommands the dispatch shim in
+// cmd/graywolf/main.go recognizes as os.Args[1]. It is the single source
+// of truth: keep it in sync with main.go's dispatch switch when adding a
+// subcommand, so ParseFlags can recognize a misplaced subcommand and hint
+// at the correct argument order.
+var Subcommands = []string{"auth", "flare", "version"}
+
+// IsSubcommand reports whether name is one of the recognized CLI
+// subcommands (see Subcommands).
+func IsSubcommand(name string) bool {
+	for _, s := range Subcommands {
+		if s == name {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseFlags parses the graywolf command-line flags (everything after
 // the program name, i.e. os.Args[1:]) into a Config. It uses a fresh
 // flag.FlagSet in ContinueOnError mode so callers get real errors
@@ -70,8 +88,7 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 		// recognizes a subcommand as os.Args[1], so point the user at the
 		// correct order rather than the opaque "unexpected positional
 		// arguments" message.
-		switch leftover[0] {
-		case "auth", "flare", "version":
+		if IsSubcommand(leftover[0]) {
 			return Config{}, fmt.Errorf(
 				"%q is a subcommand and must come first, before any flags; for example: graywolf %s -config %s",
 				leftover[0], strings.Join(leftover, " "), cfg.DBPath)

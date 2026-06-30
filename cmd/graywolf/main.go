@@ -42,6 +42,9 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	if len(os.Args) > 1 {
+		// Subcommands are only recognized as os.Args[1]. Keep these cases
+		// in sync with app.Subcommands, which ParseFlags uses to detect a
+		// misplaced subcommand and hint at the correct argument order.
 		switch os.Args[1] {
 		case "auth":
 			if err := authcli.Run(os.Args[2:], logger, Version); err != nil {
