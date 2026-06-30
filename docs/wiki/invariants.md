@@ -1397,3 +1397,41 @@ Source: [`../../cmd/graywolf/main.go`](../../cmd/graywolf/main.go)
 [`../../pkg/app/flags.go`](../../pkg/app/flags.go)
 (leftover-positional hint),
 [`../../cmd/graywolf/authcli/authcli.go`](../../cmd/graywolf/authcli/authcli.go).
+
+### 57. A station's own beacon reaches the map via the TX path, so every transmit leg must feed the station cache
+
+*Why:* The Live Map plots stations from the `stationcache`, and the only
+thing that puts the *local* station's own beacon into that cache is the
+transmit side re-extracting the frame it just sent — there is no RX copy of
+your own beacon (APRS-IS does not echo self-originated traffic back, and the
+iGate's local-origin suppression would drop it if it did). A beacon has two
+independent transmit legs, and **each leg owns its own cache feed**:
+
+- *RF leg* → `pkg/app/wiring.go` governor TX hook (`source.Kind == "beacon"`)
+  re-parses the frame as it hits the air and calls
+  `stationcache.ExtractEntry(pkt, "beacon", "TX", channel)`.
+- *APRS-IS leg* → `beacon.Options.OnISSent` (wired in the same spot) does the
+  identical extract after a successful `isSink.SendLine`. The scheduler fires
+  it from `sendBeaconWith` only on IS-send success.
+
+The IS leg bypasses the governor entirely (`sendRF := b.SendPath !=
+SendPathISOnly`), so it never reaches the RF TX hook. Before #438 only the RF
+hook existed, so an `is_only` beacon — the natural config for a radioless or
+RX-only iGate — was logged and reached aprs.fi but **never plotted on the
+local map** (the "my position" GPS marker is a separate path and is *not* a
+substitute). graywolf GitHub #438.
+
+*How to apply:* if you add a third transmit destination, or split/rename the
+send legs, wire a station-cache feed for it too — the map's view of your own
+station is exactly the set of legs that re-extract. The `"both"` path
+deliberately double-feeds (RF hook *and* OnISSent); that is harmless because
+`MemCache.Update` collapses same-fix copies (invariant #54). Use `dir == "TX"`
+for both legs so the fix keeps `rfRank` 0 (our own transmission, never
+counted as RF-reachability evidence).
+
+Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
+(`sendBeaconWith` IS leg, `Options.OnISSent`),
+[`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
+(governor TX hook + `OnISSent` wiring),
+[`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
+(`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
