@@ -139,6 +139,11 @@ func TestParseFlagsErrors(t *testing.T) {
 			args:    []string{"oops"},
 			wantErr: "unexpected positional",
 		},
+		{
+			name:    "subcommand after flag",
+			args:    []string{"-config", "/data/graywolf.db", "auth", "set-password", "--user", "admin"},
+			wantErr: "is a subcommand and must come first",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

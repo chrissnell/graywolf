@@ -1376,3 +1376,22 @@ Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 [`../../web/src/lib/trackerBeacon.js`](../../web/src/lib/trackerBeacon.js),
 [`../../web/src/routes/Beacons.svelte`](../../web/src/routes/Beacons.svelte)
 (`ensureSmartBeaconEnabled`).
+
+### 56. CLI subcommands must be the first argument, before any flags
+
+*Why:* `cmd/graywolf/main.go` dispatches on `os.Args[1]` only — `auth`,
+`flare`, and `version` are recognized solely in that position. Anything else
+falls through to the daemon's flag parser (`pkg/app/flags.go`). So
+`graywolf -config X auth set-password` does NOT run the auth subcommand: the
+parser consumes `-config X` and reports the trailing `auth ...` as leftover
+positional arguments. The working order is subcommand first, flags after:
+`graywolf auth set-password --user admin -config X`. `flags.go` detects a known
+subcommand landing in the leftover positionals and returns a hint pointing at
+the correct order; keep that list in sync with the `main.go` dispatch switch if
+you add a subcommand. All operator docs must show the subcommand-first order.
+
+Source: [`../../cmd/graywolf/main.go`](../../cmd/graywolf/main.go)
+(dispatch switch),
+[`../../pkg/app/flags.go`](../../pkg/app/flags.go)
+(leftover-positional hint),
+[`../../cmd/graywolf/authcli/authcli.go`](../../cmd/graywolf/authcli/authcli.go).

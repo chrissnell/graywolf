@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ParseFlags parses the graywolf command-line flags (everything after
@@ -63,6 +64,18 @@ func parseFlagsTo(args []string, w io.Writer) (Config, error) {
 		return Config{}, fmt.Errorf("parse flags: %w", err)
 	}
 	if leftover := fs.Args(); len(leftover) > 0 {
+		// A subcommand placed after a global flag (e.g.
+		// `graywolf -config X auth set-password`) stops flag parsing and
+		// lands here as a positional argument. The dispatch shim only
+		// recognizes a subcommand as os.Args[1], so point the user at the
+		// correct order rather than the opaque "unexpected positional
+		// arguments" message.
+		switch leftover[0] {
+		case "auth", "flare", "version":
+			return Config{}, fmt.Errorf(
+				"%q is a subcommand and must come first, before any flags; for example: graywolf %s -config %s",
+				leftover[0], strings.Join(leftover, " "), cfg.DBPath)
+		}
 		return Config{}, fmt.Errorf("unexpected positional arguments: %v", leftover)
 	}
 	// Derive tile-cache-dir from --config's parent dir when --config was

@@ -188,6 +188,8 @@ See [invariant 23](invariants.md) for the TX-gating contract.
 | Concern | File |
 |---|---|
 | `graywolf flare` CLI subcommand entry | `cmd/graywolf/flare.go` |
+| `graywolf auth {set-password,list-users,delete-user}` CLI | `cmd/graywolf/authcli/authcli.go` |
+| Subcommand dispatch (`auth`/`flare`/`version` must be `os.Args[1]`) | `cmd/graywolf/main.go` |
 | Diagnostic-flare orchestration (`Collect`, `Options`) | `pkg/diagcollect/collect.go` |
 | Flare DB discovery (graywolf.db) | `pkg/diagcollect/dbpath.go` |
 | Modem locator + listing exec helper | `pkg/diagcollect/modem.go` |

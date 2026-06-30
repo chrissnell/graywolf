@@ -235,12 +235,28 @@ nssm start Graywolf</code></pre>
         <h2>Setting the Admin Password</h2>
 
         <p>
-          Open a command prompt (or PowerShell) and run:
+          The easiest way is through the web interface. With the service
+          running, browse to <code>http://localhost:8080</code>. On first
+          run &mdash; when no users exist yet &mdash; the login screen shows
+          a <strong>Create Admin Account</strong> form. Enter a username and
+          password there and you&rsquo;re done; no command line needed.
         </p>
 
-<pre><code>"C:\Program Files\Graywolf\graywolf.exe" ^
-  -config "C:\ProgramData\Graywolf\graywolf.db" ^
-  auth set-password --user admin</code></pre>
+        <p>
+          If you prefer the command line, open a command prompt (or
+          PowerShell) and run the command below. The <code>auth</code>
+          subcommand must come <em>first</em>, before the <code>-config</code>
+          flag:
+        </p>
+
+<pre><code>"C:\Program Files\Graywolf\graywolf.exe" auth set-password --user admin ^
+  -config "C:\ProgramData\Graywolf\graywolf.db"</code></pre>
+
+        <p>
+          You&rsquo;ll be prompted to enter the password. The path is the
+          same config database the service runs with (see the NSSM command
+          above).
+        </p>
 
       </div>
 
