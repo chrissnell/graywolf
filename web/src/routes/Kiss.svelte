@@ -1141,7 +1141,7 @@
           <Checkbox id="kiss-allow-tx" bind:checked={form.allow_tx_from_governor} />
           <span>Allow digipeater/beacon/iGate to transmit on this interface</span>
         </label>
-        <span class="field-warning">Do not enable this feature if your TNC is configured for digipeating or iGate mode: it will produce packet loops!</span>
+        <span class="field-warning">Either Graywolf or your TNC can act as the digipeater/iGate, but not both — enabling this while the TNC is also configured for digipeating or iGate mode will produce packet loops! Typically you should disable digipeating on the TNC itself and let Graywolf be the digi.</span>
       </div>
     {/if}
     {#if form.mode === 'modem'}
