@@ -257,18 +257,23 @@
     return opts;
   });
 
+  // Mode names the source of the radio link, NOT the kind of device you
+  // plugged in. The parentheticals exist because operators routinely read
+  // "Modem" as "my device is a modem" and pick it for a hardware TNC,
+  // which then registers no TX backend (see modeHint / the handbook).
   const modeOptions = [
-    { value: 'modem', label: 'Modem' },
-    { value: 'tnc', label: 'TNC' },
+    { value: 'modem', label: "Modem (graywolf's radio does the RF)" },
+    { value: 'tnc', label: 'TNC (an external TNC/modem does the RF)' },
   ];
 
-  // Hint text is the primary explanation of Mode — option labels are
-  // deliberately terse. Wired to the <Select> via aria-describedby so
-  // screen readers announce it when the field gains focus.
+  // Hint text is the primary explanation of Mode. Wired to the <Select>
+  // via aria-describedby so screen readers announce it on focus. It leads
+  // with which device is doing the transmitting so the choice is
+  // unambiguous, then steers hardware-TNC users away from Modem mode.
   let modeHint = $derived(
     form.mode === 'tnc'
-      ? "Peer is a hardware TNC supplying off-air RX. Frames are routed to igate, digipeater, messages, and map — never auto-retransmitted."
-      : "Peer is an APRS app. Frames it sends are queued for transmission on graywolf's radio."
+      ? "Pick this when the peer is itself a TNC, LoRa modem, or radio that does its own modulation (hardware KISS TNC, another graywolf, etc.). Received packets feed the iGate, digipeater, messages, and map, and are never auto-retransmitted. Tick the box below to let graywolf transmit through it."
+      : "Pick this only when the peer is an APRS app (Xastir, YAAC, aprx) and graywolf's own software modem does the transmitting; this needs a modem-backed channel with an audio device. Do NOT use Modem for a hardware TNC or modem, or transmit will fail with 'no backend registered' -- choose TNC instead."
   );
 
   const modeLabels = { modem: 'Modem', tnc: 'TNC' };
