@@ -74,6 +74,60 @@ func TestDecodeMultipleFrames(t *testing.T) {
 	}
 }
 
+// TestDecodeSharedDelimiter covers TNCs that place a single FEND
+// between back-to-back frames (C0 f1 C0 f2 C0) rather than a full
+// C0..C0 wrapper per frame. Every frame must decode: the byte after a
+// frame's closing FEND is the next frame's type byte, not junk to skip.
+func TestDecodeSharedDelimiter(t *testing.T) {
+	// FEND, then <type> data <type> data <type> data, FEND-separated.
+	var buf bytes.Buffer
+	buf.WriteByte(FEND)
+	for _, s := range []string{"one", "two", "three"} {
+		buf.WriteByte(0x00) // type: port 0, data frame
+		buf.WriteString(s)
+		buf.WriteByte(FEND)
+	}
+	d := NewDecoder(&buf)
+	for _, want := range []string{"one", "two", "three"} {
+		f, err := d.Next()
+		if err != nil {
+			t.Fatalf("frame %q: %v", want, err)
+		}
+		if string(f.Data) != want {
+			t.Errorf("got %q want %q", f.Data, want)
+		}
+	}
+	if _, err := d.Next(); !errors.Is(err, io.EOF) {
+		t.Errorf("expected EOF, got %v", err)
+	}
+}
+
+// TestDecodeTrailingFendOnly covers TNCs that emit only a trailing FEND
+// per frame with no leading FEND at all. The first frame (before any
+// delimiter) is unavoidably discarded while syncing on the first FEND;
+// every frame after that must decode.
+func TestDecodeTrailingFendOnly(t *testing.T) {
+	var buf bytes.Buffer
+	for _, s := range []string{"lost", "two", "three"} {
+		buf.WriteByte(0x00)
+		buf.WriteString(s)
+		buf.WriteByte(FEND)
+	}
+	d := NewDecoder(&buf)
+	for _, want := range []string{"two", "three"} {
+		f, err := d.Next()
+		if err != nil {
+			t.Fatalf("frame %q: %v", want, err)
+		}
+		if string(f.Data) != want {
+			t.Errorf("got %q want %q", f.Data, want)
+		}
+	}
+	if _, err := d.Next(); !errors.Is(err, io.EOF) {
+		t.Errorf("expected EOF, got %v", err)
+	}
+}
+
 func TestDecodeInvalidEscape(t *testing.T) {
 	raw := []byte{FEND, 0x00, FESC, 0x99, FEND}
 	d := NewDecoder(bytes.NewReader(raw))
