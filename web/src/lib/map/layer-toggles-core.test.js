@@ -57,3 +57,15 @@ test('parseLayerToggles never returns the shared defaults object', () => {
   got.trails = false;
   assert.equal(LAYER_TOGGLES_DEFAULTS.trails, true);
 });
+
+test('defaults include directRxHeatmap off with default opacity', () => {
+  assert.equal(LAYER_TOGGLES_DEFAULTS.directRxHeatmap, false);
+  assert.equal(LAYER_TOGGLES_DEFAULTS.directRxHeatmapOpacity, 0.8);
+});
+
+test('parseLayerToggles supplies heatmap defaults for old blobs', () => {
+  const raw = JSON.stringify({ stations: true, trails: false });
+  const got = parseLayerToggles(raw);
+  assert.equal(got.directRxHeatmap, false);
+  assert.equal(got.directRxHeatmapOpacity, 0.8);
+});
