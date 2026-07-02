@@ -1435,3 +1435,30 @@ Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 (governor TX hook + `OnISSent` wiring),
 [`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
 (`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
+
+### 58. The heatmap's `rx_events` are attributed to the last RF transmitter, not the packet's origin
+
+The direct-RX heatmap answers "where did RF energy actually reach our antenna
+from," so `recordRxEvent` (`pkg/historydb/historydb.go`) writes one `rx_events`
+row per **`Direction == "RX"`, non-gated** cache entry with this attribution:
+
+- **Direct** (`Hops == 0`): attributed to the origin (`attr_key = e.Key`),
+  storing the packet's own coordinates when present (`has_pos = 1`). A
+  positionless direct packet stores `has_pos = 0` and is resolved at query time
+  from the origin's latest known position.
+- **Digipeated** (`Hops > 0` with a last H-bit `"*"` digi in the path):
+  attributed to that digipeater (`attr_key = "stn:" + lastDigi`) with
+  `has_pos = 0`. The origin's coordinates are deliberately **not** used — the
+  heat belongs at the digi we actually heard. The digi's position is resolved at
+  query time from its own beacon; if still unknown, the packet is counted in
+  `HeatmapResult.Unlocatable` rather than dropped.
+
+`IS` and `Gated` entries never produce an event. This is why counting is done in
+a dedicated append-only table and not by reusing the `positions` table, which
+dedups static re-beacons (invariant #54) and would undercount high-volume fixed
+stations. `QueryHeatmap` buckets located events at 4 decimal places (~11m).
+Retention is `rxEventsRetention` (8 days), pruned in `Prune`.
+
+Source: [`../../pkg/historydb/historydb.go`](../../pkg/historydb/historydb.go)
+(`recordRxEvent`, `QueryHeatmap`, `Prune`),
+[`../../pkg/historydb/heatmap_test.go`](../../pkg/historydb/heatmap_test.go).
