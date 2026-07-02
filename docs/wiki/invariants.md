@@ -1435,3 +1435,31 @@ Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 (governor TX hook + `OnISSent` wiring),
 [`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
 (`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
+
+### 58. MapLibre `map.remove()` deletes `this.style`; any layer helper called after teardown must guard `getSource()`/`getLayer()`
+
+MapLibre GL JS v5 `map.remove()` → `_updateStyle(null)` → `delete this.style`.
+Any subsequent call to `map.getSource()` or `map.getLayer()` throws a
+TypeError because those methods dereference `this.style`.
+
+In Svelte 5 components, **child `onDestroy` fires before parent `onDestroy`**.
+`MaplibreMap.svelte` (child) calls `map.remove()` first; if the parent's
+`onDestroy` (or a popup's `close` event handler fired during teardown) then
+calls a layer helper that has not been guarded, it crashes mid-teardown and
+aborts the cleanup sequence.
+
+Every layer helper that exposes a `clear()` or similar method callable from
+outside `onDestroy` context (e.g. from a popup close callback) must wrap
+`getSource()`/`getLayer()` in the same `try { ... } catch {}` guard already
+required on `destroy()`.
+
+*Why it matters:* A missing guard causes a silent TypeError during navigation
+away from `/map`. No user-visible error, but the map component's teardown
+is aborted mid-sequence, which can leak listeners or stale state into the
+next mount.
+
+Source: [`../../web/src/lib/map/layers/hover-path.js`](../../web/src/lib/map/layers/hover-path.js)
+(`clear()`, `destroy()` — both guarded),
+[`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte)
+(`closePopup` / popup `close` event handler),
+MapLibre GL JS v5 source: `map.remove()` → `_updateStyle(null)` → `delete this.style`.

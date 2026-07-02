@@ -87,9 +87,10 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 | `digipeater/blocklist` | Source-address pattern validator and matcher used only by the digipeater engine | — |
 | `igate` | APRS-IS bidirectional gateway: client/login/filter, RF<->IS gating, third-party encap, TNC2 | [`../handbook/igate.html`](../handbook/igate.html) |
 | `igate/filters` | IS->RF rule engine (priority-ordered, deny by default) | [`../handbook/igate.html`](../handbook/igate.html) |
-| `messages` | APRS messaging domain: router, store (GORM), sender, retry, invite, tactical_set, bots, preferences, event_hub, local_tx_ring, **preflight** (shared auto-ACK + dedup transport, owned by `messages.Service`, consulted by both `messages.Router` and `actions.Classifier`) | [`../handbook/messaging.html`](../handbook/messaging.html) |
+| `messages` | APRS messaging domain: router, store (GORM), sender, retry, invite, tactical_set, bots, preferences, event_hub, local_tx_ring, **preflight** (shared auto-ACK + dedup transport, owned by `messages.Service`, consulted by both `messages.Router` and `actions.Classifier`). Retry behavior is operator-configurable via `MessagePreferences` (`messages_preferences` table): `RetryIntervalSecs` (migration 26 adds `retry_interval_secs`; stored `0` = use default 30 s; UI range 10–120 s) and `RetryMaxAttempts` (stored `0` = use default 4; UI range 1–20). Settable in the Retry box of `MessagesSettings.svelte`. | [`../handbook/messaging.html`](../handbook/messaging.html) |
 | `actions` | `@@`-prefixed APRS message Actions: classifier, parser, OTP verifier, per-Action runner with rate limit + queue, command/webhook executors, source-aware reply, audit pruner | [`actions.md`](actions.md) |
 | `remoteactions` | OUTBOUND counterpart: macro + remote-OTP credential stores, base32/target-call/action-name validators, RFC 6238 TOTP generator, service composition root. Sibling, not fork, of `pkg/actions/` (shares only the wire grammar via exported `actions.ValidActionName`). | [`remote-actions.md`](remote-actions.md) |
+| `bulletins` | APRS bulletin board (BLN0–BLN9 bulletins, BLNA–BLNZ announcements). Inbound: `IngestBulletin` upserts into the `bulletins` table (migration 27, partial unique index `(from_call, slot)` for active inbound rows); outbound: `Send` inserts a row and the `Scheduler` retransmits at `BulletinInterval` (20 min) up to `BulletinMaxSends` (12) or `AnnouncementInterval` (1 h) up to `AnnouncementMaxSends` (96). Router hook: `pkg/messages/router.go` `BulletinSink` interface; wired in `pkg/app/wiring.go`. REST: `pkg/webapi/bulletins.go` (5 endpoints, see below). UI: `web/src/routes/Bulletins.svelte`. Migration 28 (`bulletin_interval`) adds `bulletin_interval_mins` to `messages_preferences` but no Go code reads it — orphaned by migration 29 which added `interval_mins` per-row on `bulletins`. | `service.go`, `store.go`, `scheduler.go`, `sender.go` |
 | `gps` | GPSD client + serial NMEA reader + cache + station-position layered cache + enumerate | [`../handbook/gps.html`](../handbook/gps.html) |
 | `callsign` | Callsign parsing, N0CALL detection, APRS-IS passcode | [`../handbook/preferences.html`](../handbook/preferences.html) |
 | `stationcache` | Heard-station cache (memory + persistent) and APRS-extract helpers | (no dedicated page) |
@@ -99,7 +100,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 
 | Package | Purpose | Handbook |
 |---|---|---|
-| `configstore` | SQLite config DB (GORM, glebarez/sqlite, pure Go); migrations, seeds, models. Actions tables live here too: `actions`, `otp_credentials`, `action_listener_addressees`, `action_invocations` (migration 15, raw SQL — not AutoMigrate; see [`actions.md`](actions.md)). Outbound Actions adds `remote_otp_credentials`, `remote_action_macros` (migration 16, raw SQL with FK ON DELETE SET NULL; see [`remote-actions.md`](remote-actions.md)). | [`../handbook/preferences.html`](../handbook/preferences.html) |
+| `configstore` | SQLite config DB (GORM, glebarez/sqlite, pure Go); migrations, seeds, models. Actions tables live here too: `actions`, `otp_credentials`, `action_listener_addressees`, `action_invocations` (migration 15, raw SQL — not AutoMigrate; see [`actions.md`](actions.md)). Outbound Actions adds `remote_otp_credentials`, `remote_action_macros` (migration 16, raw SQL with FK ON DELETE SET NULL; see [`remote-actions.md`](remote-actions.md)). Bulletins-related migrations: 26 adds `retry_interval_secs` to `messages_preferences`; 27 creates the `bulletins` table (raw SQL, not AutoMigrate); 28 adds `bulletin_interval_mins` to `messages_preferences` — **dead column**, no Go field reads it, superseded by migration 29 which adds `interval_mins` per-row on `bulletins`. | [`../handbook/preferences.html`](../handbook/preferences.html) |
 | `historydb` | Position-history SQLite (separate DB, schema bootstrapped on `Open`) | [`../handbook/history-database.html`](../handbook/history-database.html) |
 | `packetlog` | In-memory ring of RX/TX/IS packet records with filter-query API. Live-tail fan-out (`Subscribe`) is in `subscribe.go`; per-subscriber bounded channel, drop-on-full -- backs the AX.25 terminal raw-tail mode and any future live monitor pages. | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
 | `metrics` | Prometheus metrics + helper to fold Rust-side StatusUpdate into them | [`../handbook/monitoring.html`](../handbook/monitoring.html) |
@@ -171,7 +172,7 @@ See [invariant 23](invariants.md) for the TX-gating contract.
 
 | Package | Purpose |
 |---|---|
-| `webapi` | REST API handlers (Gorilla mux); one handler file per feature -- see [`../../pkg/webapi/`](../../pkg/webapi/). The AX.25 terminal upgrades to a WebSocket via `coder/websocket` in [`ax25_terminal.go`](../../pkg/webapi/ax25_terminal.go) (`GET /api/ax25/terminal`); the handler returns 503 until `SetAX25Manager` has been called. |
+| `webapi` | REST API handlers (Gorilla mux); one handler file per feature -- see [`../../pkg/webapi/`](../../pkg/webapi/). The AX.25 terminal upgrades to a WebSocket via `coder/websocket` in [`ax25_terminal.go`](../../pkg/webapi/ax25_terminal.go) (`GET /api/ax25/terminal`); the handler returns 503 until `SetAX25Manager` has been called. `bulletins.go` adds 5 endpoints (`GET /api/bulletins`, `POST /api/bulletins`, `DELETE /api/bulletins/{id}`, `POST /api/bulletins/{id}/read`, `POST /api/bulletins/read-all`); returns 503 until `SetBulletinService` has been called. |
 | `webapi/dto` | Wire-shape DTOs; constants like `DefaultAgwListenAddr`, `MaxMessageText` live here |
 | `webapi/docs` | Swag annotation infra: `op_ids.go`, `cmd/idlint`, `cmd/tagify`, `gen/swagger.{json,yaml}` |
 | `webauth` | Password hash, session tokens (cookie), `RequireAuth` middleware, store, handlers |
@@ -182,6 +183,19 @@ See [invariant 23](invariants.md) for the TX-gating contract.
 | `app/{aprsfanout,rxfanout}` | RX fanout to digipeater / KISS broadcast / APRS submit |
 | `app/{auth_store,gpsmanager,adapters,wiring,modem,flags,config,shutdown,platform_*}` | Wiring helpers |
 | `internal/{backoff,dedup,ratelimit,testsync,testtx}` | Internal utilities |
+
+## Go binary entry point (`cmd/graywolf/`)
+
+| File | Purpose |
+|---|---|
+| `main.go` | Entry point; startup flag parsing, logger setup, service wiring. Contains `//go:generate goversioninfo -o resource_windows.syso versioninfo.json` — run `go generate .` here (after installing `goversioninfo`) to regenerate the Windows resource object. |
+| `versioninfo.json` | Source of truth for the Windows PE resource metadata: product name, version numbers (kept in sync by `make bump-*`), copyright, and `IconPath: "graywolf.ico"`. Edit this file and re-run `go generate` to change the embedded version or icon. |
+| `graywolf.ico` | Application icon embedded into the Windows `.exe`. Shown in Explorer, Task Manager, and the taskbar. |
+| `resource_windows.syso` | Pre-compiled Windows resource object generated from `versioninfo.json` + `graywolf.ico` by `goversioninfo`. **Committed to the repo** so that `go build` on any platform embeds the correct icon and version metadata without requiring `goversioninfo` to be installed. Go automatically links `*_windows.syso` files when cross-compiling for Windows. Regenerate with: `go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest && cd cmd/graywolf && go generate .` |
+| `authcli/` | CLI helpers for auth-related subcommands (password reset, etc.) |
+| `parentwatch.go` | Watchdog: exits the Go process when the parent PID disappears (Android / supervised-process use) |
+| `android_config.go` | Android-specific config path and environment setup |
+| `flare.go` | `graywolf flare` CLI subcommand wiring (see flare CLI section below) |
 
 ## Go service: diagnostic flare CLI
 
@@ -223,7 +237,7 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 | `package.json`, `vite.config.js`, `svelte.config.js` | Build config |
 | `embed.go` | `Handler()` and `SPAHandler()` |
 | `src/App.svelte`, `src/main.js` | App shell, route table |
-| `src/routes/` | One Svelte route per page (Dashboard, LiveMapV2, Channels, Beacons, Digipeater, Igate, Kiss, Agw, Ptt, Gps, AudioDevices, Messages, Terminal + TerminalTranscripts, PositionLog, MapsSettings, Preferences, MessagesSettings, Login, About, Logs, Simulation) |
+| `src/routes/` | One Svelte route per page (Dashboard, LiveMapV2, Channels, Beacons, Digipeater, Igate, Kiss, Agw, Ptt, Gps, AudioDevices, Messages, **Bulletins**, Terminal + TerminalTranscripts, PositionLog, MapsSettings, Preferences, MessagesSettings, Login, About, Logs, Simulation) |
 | `src/components/terminal/` | AX.25 terminal pieces: `TerminalViewport` (xterm.js host, 80x24 fixed), `PreConnectForm` (channel + CALL[-N] + advanced timers), `StatusBar`, `TabBar`, `CommandBar` (Ctrl-] command line: `disconnect`, `transcript on/off`, etc.), `MacroToolbar` + `MacroEditor` (operator-defined byte-payload buttons), `RawPacketView` (APRS-only channels show packetlog raw-tail in lieu of LAPB session), `TelemetryPanel` (live `link_stats` side panel: V(S)/V(R)/V(A), N2 retry, RTT EWMA, busy flags) |
 | `src/lib/terminal/` | Terminal client state: `session.svelte.js` (one WebSocket per link), `sessions.svelte.js` (multi-tab map, cap 6, focus + visibility tracking), `palette.ts` + `theme.js` (CSS-var-resolved xterm ITheme; `theme.test.js` covers the resolver), `presets.ts` (classic / phosphor-green / phosphor-amber), `envelope.js` (b64 ↔ Uint8Array), `macros.svelte.js` (singleton-config-backed macro store), `profiles.svelte.js` (saved + recent connection profiles store), `lineendings.js` (stateful inbound CR/LF→CRLF normalizer wired into `TerminalViewport`'s `onDataRX`; xterm runs `convertEol:false` and only rewrites bare LF, so this is what lets bare-CR BBS streams advance lines instead of overwriting. Bare-CR-as-in-place-overwrite (progress bars) is intentionally collapsed to a line advance -- AX.25 BBSes are line-oriented; ANSI CSI cursor moves still pass through untouched. `lineendings.test.js`), `localecho.js` (local echo of operator keystrokes on the outbound path: maps Enter->CRLF, BS/DEL->`\b \b`, drops control/escape sequences, prints the rest; AX.25 BBSes don't echo so this restores the classic TNC `ECHO ON` default. Wired into `TerminalViewport`'s `onData`, gated by per-session `state.localEcho` (default true), toggled via the Ctrl-] `echo on/off` command. `localecho.test.js`) |
 | `src/lib/stores/terminal.svelte.js` | Sidebar-facing summary: unread-bytes total across non-focused sessions for the Sidebar `NotificationBadge` |

@@ -37,6 +37,7 @@
   import Terminal from './routes/Terminal.svelte';
   import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
   import Actions from './routes/Actions.svelte';
+  import Bulletins from './routes/Bulletins.svelte';
 
   const baseRoutes = {
     '/login': Login,
@@ -44,6 +45,7 @@
     '/map': LiveMapV2,
     '/messages': Messages,
     '/messages/*': Messages,
+    '/bulletins': Bulletins,
     '/terminal': Terminal,
     '/terminal/transcripts': TerminalTranscripts,
     '/actions': Actions,
@@ -100,6 +102,7 @@
 
   let version = $state('');
   let authChecked = $state(false);
+  let authValid = $state(false);
 
   $effect(() => {
     // Probe auth state before rendering protected routes.
@@ -124,11 +127,12 @@
         // Fetch version (public endpoint) in parallel with auth probe.
         fetch('/api/version').then(r => r.json()).then(d => { version = d.version; }).catch(() => {});
         return fetch('/api/status', { credentials: 'same-origin' }).then(r => {
+          authValid = r.status !== 401;
           if (r.status === 401 && !isAndroid) window.location.hash = '#/login';
           authChecked = true;
         });
       })
-      .catch(() => { authChecked = true; });
+      .catch(() => { authChecked = true; authValid = false; });
   });
 
   // Start the messages transport once we know the user is authenticated.
@@ -137,7 +141,7 @@
   // every 5 s is cheap enough to be always-on; SSE is opt-in via `?sse=1`.
   let messagesTransportStarted = false;
   $effect(() => {
-    if (authChecked && !isLoginPage && !messagesTransportStarted) {
+    if (authChecked && authValid && currentPath !== '' && !isLoginPage && !messagesTransportStarted) {
       messagesTransportStarted = true;
       startMessagesTransport();
       // Watch for the server build changing underneath this tab (operator
