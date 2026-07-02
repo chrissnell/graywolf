@@ -18,6 +18,8 @@ export const LAYER_TOGGLES_DEFAULTS = {
   fronts: true,
   directRxOnly: false,
   rfOnly: false,
+  directRxHeatmap: false,
+  directRxHeatmapOpacity: 0.8,
 };
 
 export const LAYER_TOGGLES_KEY = 'gw_map_layer_toggles';

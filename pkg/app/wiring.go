@@ -1506,6 +1506,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// (srv, mux, deps...). Keep this block consistent.
 	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
 	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
+	webapi.RegisterHeatmap(apiSrv, apiMux, a.stationCache)
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
 	// /api/system-logs reads the slog ring buffer. a.cfg.LogBuffer is a
 	// concrete *logbuffer.DB that may be nil; assign through a typed

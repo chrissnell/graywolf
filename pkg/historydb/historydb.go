@@ -20,6 +20,15 @@ import (
 // posEpsilon matches stationcache's dedup threshold (~1 m at equator).
 const posEpsilon = 0.00001
 
+// rxEventsRetention bounds how long per-packet heatmap events are kept. The
+// Live Map's longest interval is 7 days, so 8 days covers it with margin.
+const rxEventsRetention = 8 * 24 * time.Hour
+
+// heatBucketDecimals controls coordinate rounding for heatmap aggregation.
+// 4 dp (~11 m) merges a fixed station's re-beacons into one bucket while
+// keeping mobile corridors at street resolution.
+const heatBucketDecimals = 4
+
 // DB wraps a gorm.DB handle to the history database.
 type DB struct {
 	db   *gorm.DB
@@ -139,6 +148,24 @@ func (d *DB) WriteEntries(entries []stationcache.CacheEntry) error {
 		}
 		return nil
 	})
+}
+
+// RecordRxEvent appends one rx_events row for a directly-received RF frame.
+// Attribution is computed once per frame at the ingest edge by
+// stationcache.BuildRxEvent, so this method only persists the result. It is
+// deliberately NOT called from WriteEntries: WriteEntries also runs for the
+// iGate RF->IS re-gate hook and the startup roster reload, neither of which is
+// a fresh reception, so counting there would inflate the heatmap.
+func (d *DB) RecordRxEvent(ev stationcache.RxEvent) error {
+	hasPos := 0
+	if ev.HasPos {
+		hasPos = 1
+	}
+	return d.db.Exec(
+		`INSERT INTO rx_events (timestamp, attr_key, hops, lat, lon, has_pos)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		ev.Timestamp, ev.AttrKey, ev.Hops, ev.Lat, ev.Lon, hasPos,
+	).Error
 }
 
 // insertPositionIfMoved appends a position row only when the station
@@ -371,8 +398,102 @@ func (d *DB) Prune(maxAge time.Duration) error {
 		if err := tx.Exec("DELETE FROM positions WHERE timestamp < ?", cutoff).Error; err != nil {
 			return err
 		}
-		return tx.Exec("DELETE FROM stations WHERE key NOT IN (SELECT DISTINCT station_key FROM positions)").Error
+		if err := tx.Exec("DELETE FROM stations WHERE key NOT IN (SELECT DISTINCT station_key FROM positions)").Error; err != nil {
+			return err
+		}
+		return tx.Exec(
+			"DELETE FROM rx_events WHERE timestamp < ?",
+			time.Now().Add(-rxEventsRetention),
+		).Error
 	})
+}
+
+func roundHeat(v float64) float64 {
+	p := math.Pow(10, heatBucketDecimals)
+	return math.Round(v*p) / p
+}
+
+func heatBucketKey(lat, lon float64) string {
+	return fmt.Sprintf("%.4f,%.4f", roundHeat(lat), roundHeat(lon))
+}
+
+// QueryHeatmap aggregates directly-received packets over the given window into
+// counted coordinate buckets within bbox. Events whose attributed transmitter
+// has no known position are tallied in Unlocatable rather than dropped.
+func (d *DB) QueryHeatmap(window time.Duration, bbox stationcache.BBox) (*stationcache.HeatmapResult, error) {
+	cutoff := time.Now().Add(-window)
+
+	type eventRow struct {
+		AttrKey string
+		Lat     float64
+		Lon     float64
+		HasPos  bool
+	}
+	var events []eventRow
+	if err := d.db.Raw(
+		"SELECT attr_key, lat, lon, has_pos FROM rx_events WHERE timestamp >= ?",
+		cutoff,
+	).Scan(&events).Error; err != nil {
+		return nil, fmt.Errorf("load rx_events: %w", err)
+	}
+
+	// Resolve latest position for keys that were stored without one.
+	needResolve := map[string]struct{}{}
+	for _, e := range events {
+		if !e.HasPos {
+			needResolve[e.AttrKey] = struct{}{}
+		}
+	}
+	resolved := make(map[string]stationcache.LatLon, len(needResolve))
+	for key := range needResolve {
+		type ll struct {
+			Lat float64
+			Lon float64
+		}
+		var got ll
+		res := d.db.Raw(
+			"SELECT lat, lon FROM positions WHERE station_key = ? ORDER BY timestamp DESC LIMIT 1",
+			key,
+		).Scan(&got)
+		if res.Error == nil && res.RowsAffected > 0 {
+			resolved[key] = stationcache.LatLon{Lat: got.Lat, Lon: got.Lon}
+		}
+	}
+
+	buckets := map[string]*stationcache.HeatPoint{}
+	unlocatable := 0
+	for _, e := range events {
+		lat, lon := e.Lat, e.Lon
+		if !e.HasPos {
+			ll, ok := resolved[e.AttrKey]
+			if !ok {
+				unlocatable++
+				continue
+			}
+			lat, lon = ll.Lat, ll.Lon
+		}
+		if lat < bbox.SwLat || lat > bbox.NeLat || lon < bbox.SwLon || lon > bbox.NeLon {
+			continue
+		}
+		key := heatBucketKey(lat, lon)
+		if b, ok := buckets[key]; ok {
+			b.Count++
+		} else {
+			buckets[key] = &stationcache.HeatPoint{Lat: roundHeat(lat), Lon: roundHeat(lon), Count: 1}
+		}
+	}
+
+	out := &stationcache.HeatmapResult{
+		Points:      make([]stationcache.HeatPoint, 0, len(buckets)),
+		Unlocatable: unlocatable,
+	}
+	for _, b := range buckets {
+		if b.Count > out.MaxCount {
+			out.MaxCount = b.Count
+		}
+		out.Points = append(out.Points, *b)
+	}
+	return out, nil
 }
 
 // bootstrap creates the schema tables and indices if they don't exist.
@@ -418,6 +539,16 @@ func bootstrap(db *gorm.DB) error {
 			snow_24h      REAL, has_snow_24h INTEGER NOT NULL DEFAULT 0,
 			luminosity    INTEGER, has_luminosity INTEGER NOT NULL DEFAULT 0
 		)`,
+		`CREATE TABLE IF NOT EXISTS rx_events (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp DATETIME NOT NULL,
+			attr_key  TEXT NOT NULL,
+			hops      INTEGER NOT NULL DEFAULT 0,
+			lat       REAL NOT NULL DEFAULT 0,
+			lon       REAL NOT NULL DEFAULT 0,
+			has_pos   INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rx_events_time ON rx_events(timestamp)`,
 	}
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {
