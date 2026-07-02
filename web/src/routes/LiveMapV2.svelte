@@ -1200,8 +1200,10 @@
     closePopup();
     radarFrames.destroy();
     stopFrontsPolling();
+    stopHeatmapPolling();
     radarLayer?.destroy();
     frontsLayer?.destroy();
+    heatmapLayer?.destroy();
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
@@ -1211,6 +1213,7 @@
     fixedPointsLayer?.destroy();
     radarLayer = null;
     frontsLayer = null;
+    heatmapLayer = null;
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;

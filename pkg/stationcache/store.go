@@ -31,6 +31,7 @@ type HistoryStore interface {
 	LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*Station, error)
 	Prune(maxAge time.Duration) error
 	QueryHeatmap(window time.Duration, bbox BBox) (*HeatmapResult, error)
+	RecordRxEvent(ev RxEvent) error
 	Close() error
 }
 

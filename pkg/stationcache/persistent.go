@@ -72,6 +72,22 @@ func (p *PersistentCache) QueryHeatmap(window time.Duration, bbox BBox) (*Heatma
 	return hdb.QueryHeatmap(window, bbox)
 }
 
+// RecordRxEvent persists one heatmap reception event, best-effort. It is a
+// no-op when persistence is disabled. Called once per RF frame from the ingest
+// edge; failures are logged, never surfaced, so a history-write hiccup cannot
+// disrupt packet processing (mirrors Update).
+func (p *PersistentCache) RecordRxEvent(ev RxEvent) {
+	p.mu.RLock()
+	hdb := p.hdb
+	p.mu.RUnlock()
+	if hdb == nil {
+		return
+	}
+	if err := hdb.RecordRxEvent(ev); err != nil {
+		p.logger.Warn("heatmap rx_event write failed", "err", err)
+	}
+}
+
 // Gen returns the in-memory generation counter (ETag support).
 func (p *PersistentCache) Gen() uint64 {
 	return p.mem.Gen()

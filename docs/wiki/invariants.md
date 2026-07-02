@@ -1436,29 +1436,47 @@ Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 [`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
 (`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
 
-### 58. The heatmap's `rx_events` are attributed to the last RF transmitter, not the packet's origin
+### 58. The heatmap counts one `rx_events` row per physical RF frame, at the ingest edge only
 
 The direct-RX heatmap answers "where did RF energy actually reach our antenna
-from," so `recordRxEvent` (`pkg/historydb/historydb.go`) writes one `rx_events`
-row per **`Direction == "RX"`, non-gated** cache entry with this attribution:
+from," weighted by packet count, so it must count each off-air frame **exactly
+once**. The counting lives at the sole RF-ingest edge — `dispatchRxFrame`
+(`pkg/app/rxfanout.go`) calls `stationcache.BuildRxEvent(pkt)` and, on success,
+`PersistentCache.RecordRxEvent`, which appends one `rx_events` row.
 
-- **Direct** (`Hops == 0`): attributed to the origin (`attr_key = e.Key`),
-  storing the packet's own coordinates when present (`has_pos = 1`). A
-  positionless direct packet stores `has_pos = 0` and is resolved at query time
-  from the origin's latest known position.
-- **Digipeated** (`Hops > 0` with a last H-bit `"*"` digi in the path):
-  attributed to that digipeater (`attr_key = "stn:" + lastDigi`) with
-  `has_pos = 0`. The origin's coordinates are deliberately **not** used — the
-  heat belongs at the digi we actually heard. The digi's position is resolved at
-  query time from its own beacon; if still unknown, the packet is counted in
-  `HeatmapResult.Unlocatable` rather than dropped.
+**Do NOT record from the station-cache write path.** `PersistentCache.Update` /
+`historydb.WriteEntries` also run for the iGate RF->IS re-gate hook
+(`wiring.go` `RfToIsHook`, which re-`Update`s the same RF packet with
+`Direction "RX"`) and the startup roster reload (`wiring.go` seeds the cache
+from `LoadRecent`). Counting there double-counts every gateable packet on an
+iGate node and re-counts the whole roster on each restart.
+`TestWriteEntriesDoesNotRecordRxEvents` guards this.
 
-`IS` and `Gated` entries never produce an event. This is why counting is done in
-a dedicated append-only table and not by reusing the `positions` table, which
-dedups static re-beacons (invariant #54) and would undercount high-volume fixed
-stations. `QueryHeatmap` buckets located events at 4 decimal places (~11m).
-Retention is `rxEventsRetention` (8 days), pruned in `Prune`.
+`BuildRxEvent` (`pkg/stationcache/heatmap.go`) is the single source of
+attribution truth:
 
-Source: [`../../pkg/historydb/historydb.go`](../../pkg/historydb/historydb.go)
-(`recordRxEvent`, `QueryHeatmap`, `Prune`),
-[`../../pkg/historydb/heatmap_test.go`](../../pkg/historydb/heatmap_test.go).
+- **Gated** (third-party, `pkt.ThirdParty != nil`) or sourceless → no event.
+- **Digipeated** (`aprs.CountHops > 0` with a last non-alias H-bit `"*"` digi):
+  `attr_key = "stn:" + lastDigi`, `has_pos = false`. The origin's coordinates
+  are deliberately **not** used — heat belongs at the digi we actually heard.
+  `lastHBitDigi` skips generic aliases (WIDE/RELAY/…) to stay consistent with
+  `aprs.CountHops`, so `SHEPRD*,WIDE1*` attributes to `SHEPRD`, not `WIDE1`.
+- **Direct** (else): `attr_key = "stn:" + source`, carrying the packet's own
+  coordinates when present (`has_pos = true`); positionless direct frames
+  (messages/status) still count with `has_pos = false`.
+
+At query time `QueryHeatmap` resolves every `has_pos = false` event from the
+attributed station's latest stored position; still-unknown ones land in
+`HeatmapResult.Unlocatable` rather than being dropped. Counting uses a dedicated
+append-only table, not the `positions` table, because the latter dedups static
+re-beacons (invariant #54) and would undercount high-volume fixed stations.
+`QueryHeatmap` buckets located events at 4 decimal places (~11m). Retention is
+`rxEventsRetention` (8 days), pruned in `Prune`.
+
+Source: [`../../pkg/stationcache/heatmap.go`](../../pkg/stationcache/heatmap.go)
+(`BuildRxEvent`, `lastHBitDigi`),
+[`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go) (`dispatchRxFrame`),
+[`../../pkg/historydb/historydb.go`](../../pkg/historydb/historydb.go)
+(`RecordRxEvent`, `QueryHeatmap`, `Prune`),
+[`../../pkg/historydb/heatmap_test.go`](../../pkg/historydb/heatmap_test.go),
+[`../../pkg/stationcache/heatmap_test.go`](../../pkg/stationcache/heatmap_test.go).

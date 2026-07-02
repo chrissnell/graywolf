@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/stationcache"
@@ -146,50 +145,26 @@ func (d *DB) WriteEntries(entries []stationcache.CacheEntry) error {
 					return err
 				}
 			}
-
-			if err := recordRxEvent(tx, e); err != nil {
-				return fmt.Errorf("record rx_event %s: %w", e.Key, err)
-			}
 		}
 		return nil
 	})
 }
 
-// lastHBitDigi returns the callsign of the last used (H-bit, "*"-suffixed)
-// digipeater in path, or "" if there is none.
-func lastHBitDigi(path []string) string {
-	last := ""
-	for _, hop := range path {
-		if strings.HasSuffix(hop, "*") {
-			last = strings.TrimSuffix(hop, "*")
-		}
-	}
-	return last
-}
-
-// recordRxEvent appends one rx_events row for a directly-received packet.
-// Entries that did not arrive on RF, or that are Internet-to-RF gated, are
-// skipped. Digipeated packets are attributed to the last-hop digipeater's
-// station key with has_pos=0 (its position is resolved at query time); direct
-// packets are attributed to the origin, storing the packet's own coordinates
-// when present.
-func recordRxEvent(tx *gorm.DB, e *stationcache.CacheEntry) error {
-	if e.Direction != "RX" || e.Gated {
-		return nil
-	}
-	attrKey := e.Key
-	lat, lon := 0.0, 0.0
+// RecordRxEvent appends one rx_events row for a directly-received RF frame.
+// Attribution is computed once per frame at the ingest edge by
+// stationcache.BuildRxEvent, so this method only persists the result. It is
+// deliberately NOT called from WriteEntries: WriteEntries also runs for the
+// iGate RF->IS re-gate hook and the startup roster reload, neither of which is
+// a fresh reception, so counting there would inflate the heatmap.
+func (d *DB) RecordRxEvent(ev stationcache.RxEvent) error {
 	hasPos := 0
-	if digi := lastHBitDigi(e.Path); e.Hops > 0 && digi != "" {
-		attrKey = "stn:" + digi
-	} else if e.HasPos {
-		lat, lon = e.Lat, e.Lon
+	if ev.HasPos {
 		hasPos = 1
 	}
-	return tx.Exec(
+	return d.db.Exec(
 		`INSERT INTO rx_events (timestamp, attr_key, hops, lat, lon, has_pos)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		e.Timestamp, attrKey, e.Hops, lat, lon, hasPos,
+		ev.Timestamp, ev.AttrKey, ev.Hops, ev.Lat, ev.Lon, hasPos,
 	).Error
 }
 
