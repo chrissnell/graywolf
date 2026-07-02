@@ -19,6 +19,8 @@
   import { mountHoverPathLayer } from '../lib/map/layers/hover-path.js';
   import { mountMyPositionLayer } from '../lib/map/layers/my-position.js';
   import { mountRadarLayer } from '../lib/map/layers/radar.js';
+  import { mountHeatmapLayer } from '../lib/map/layers/direct-rx-heatmap.js';
+  import { loadHeatmap } from '../lib/map/sources/heatmap-source.js';
   import {
     radarManifestUrlForRegion,
     parseManifestFramesForRegion,
@@ -103,6 +105,8 @@
   let myPositionLayer = null;
   let radarLayer = null;
   let frontsLayer = null;
+  let heatmapLayer = null;
+  let heatmapTimer = null;
   let fixedPointsLayer = null;
 
   // Radar overlay settings -- persisted per browser (not per account).
@@ -613,6 +617,17 @@
       // toggles opacity instead of refetching tiles every cycle.
       frames: radarFrames.frames.map((f) => f.ts),
     });
+    // Direct-RX heatmap sits below markers/trails in the GL stack; off by
+    // default. Its data is fetched on demand (toggle/interval/pan) rather than
+    // riding the station poll.
+    heatmapLayer = mountHeatmapLayer(map, {
+      visible: layerToggles.directRxHeatmap,
+      opacity: layerToggles.directRxHeatmapOpacity,
+    });
+    if (layerToggles.directRxHeatmap) {
+      refreshHeatmap();
+      startHeatmapPolling();
+    }
     // Surface fronts ride just above radar in the GL stack (lines + pip symbols
     // over the reflectivity fill) and below the station/trail markers.
     // Fronts layer disabled for now.
@@ -730,6 +745,11 @@
     }
     map.on('moveend', updateBounds);
     updateBounds();
+
+    // The heatmap is bbox-scoped, so a new viewport needs a fresh fetch.
+    map.on('moveend', () => {
+      if (layerToggles.directRxHeatmap) refreshHeatmap();
+    });
 
     zoomLevel = map.getZoom();
     map.on('zoom', () => (zoomLevel = map.getZoom()));
@@ -870,6 +890,7 @@
     const _tick = tickNow; // 1s clock drives time-based layer refresh
     if (radarLayer) radarLayer.refresh();
     if (frontsLayer) frontsLayer.refresh();
+    if (heatmapLayer) heatmapLayer.refresh();
     if (stationsLayer) stationsLayer.refresh();
     if (trailsLayer) trailsLayer.refresh();
     if (weatherLayer) weatherLayer.refresh();
@@ -992,6 +1013,56 @@
     trailsLayer?.setFilter(pred);
     weatherLayer?.setFilter(pred);
     windBarbsLayer?.setFilter(pred);
+  });
+
+  // Direct-RX heatmap fetch + polling. Heat drifts slowly, so a 15s cadence
+  // (vs the 5s station poll) is plenty; the fetch is bbox-scoped to the
+  // current viewport and interval.
+  async function refreshHeatmap() {
+    if (!heatmapLayer || !mapRef) return;
+    const b = mapRef.getBounds();
+    const bbox = { swLat: b.getSouth(), swLon: b.getWest(), neLat: b.getNorth(), neLon: b.getEast() };
+    try {
+      const { geojson, maxCount } = await loadHeatmap(bbox, timerangeSec);
+      heatmapLayer.refresh(geojson, maxCount);
+    } catch {
+      // transient fetch error; the interval retries
+    }
+  }
+
+  function startHeatmapPolling() {
+    stopHeatmapPolling();
+    heatmapTimer = setInterval(refreshHeatmap, 15000);
+  }
+
+  function stopHeatmapPolling() {
+    if (heatmapTimer) {
+      clearInterval(heatmapTimer);
+      heatmapTimer = null;
+    }
+  }
+
+  // Toggle drives visibility + polling; opacity slider drives paint. Both keys
+  // live in layerToggles, so the existing localStorage-persist effect covers
+  // their persistence with no extra code.
+  $effect(() => {
+    const v = layerToggles.directRxHeatmap;
+    heatmapLayer?.setVisible(v);
+    if (v) {
+      refreshHeatmap();
+      startHeatmapPolling();
+    } else {
+      stopHeatmapPolling();
+    }
+  });
+
+  $effect(() => {
+    heatmapLayer?.setOpacity(layerToggles.directRxHeatmapOpacity);
+  });
+
+  $effect(() => {
+    const _t = timerangeSec; // refetch when the interval changes while on
+    if (layerToggles.directRxHeatmap) refreshHeatmap();
   });
 
   // Push the timerange into the data store and persist the selection so it
@@ -1129,8 +1200,10 @@
     closePopup();
     radarFrames.destroy();
     stopFrontsPolling();
+    stopHeatmapPolling();
     radarLayer?.destroy();
     frontsLayer?.destroy();
+    heatmapLayer?.destroy();
     stationsLayer?.destroy();
     trailsLayer?.destroy();
     weatherLayer?.destroy();
@@ -1140,6 +1213,7 @@
     fixedPointsLayer?.destroy();
     radarLayer = null;
     frontsLayer = null;
+    heatmapLayer = null;
     stationsLayer = null;
     trailsLayer = null;
     weatherLayer = null;
@@ -1226,7 +1300,30 @@
           />
           <span>RF Only</span>
         </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={layerToggles.directRxHeatmap}
+            onchange={(e) => (layerToggles.directRxHeatmap = e.currentTarget.checked)}
+          />
+          <span>RX Heatmap</span>
+        </label>
       </div>
+
+      {#if layerToggles.directRxHeatmap}
+        <label class="timerange-label" for="heatmap-opacity-range">
+          Heatmap opacity: {Math.round(layerToggles.directRxHeatmapOpacity * 100)}%
+        </label>
+        <input
+          id="heatmap-opacity-range"
+          type="range"
+          min="0.1"
+          max="1.0"
+          step="0.05"
+          class="radar-opacity-range"
+          bind:value={layerToggles.directRxHeatmapOpacity}
+        />
+      {/if}
 
       <label class="timerange-label" for="map-timerange-select">Time range</label>
       <select

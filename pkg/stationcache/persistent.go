@@ -60,6 +60,34 @@ func (p *PersistentCache) Lookup(callsigns []string) map[string]LatLon {
 	return p.mem.Lookup(callsigns)
 }
 
+// QueryHeatmap returns aggregated directly-received-packet heat over the
+// window within bbox. Returns an empty result when persistence is disabled.
+func (p *PersistentCache) QueryHeatmap(window time.Duration, bbox BBox) (*HeatmapResult, error) {
+	p.mu.RLock()
+	hdb := p.hdb
+	p.mu.RUnlock()
+	if hdb == nil {
+		return &HeatmapResult{}, nil
+	}
+	return hdb.QueryHeatmap(window, bbox)
+}
+
+// RecordRxEvent persists one heatmap reception event, best-effort. It is a
+// no-op when persistence is disabled. Called once per RF frame from the ingest
+// edge; failures are logged, never surfaced, so a history-write hiccup cannot
+// disrupt packet processing (mirrors Update).
+func (p *PersistentCache) RecordRxEvent(ev RxEvent) {
+	p.mu.RLock()
+	hdb := p.hdb
+	p.mu.RUnlock()
+	if hdb == nil {
+		return
+	}
+	if err := hdb.RecordRxEvent(ev); err != nil {
+		p.logger.Warn("heatmap rx_event write failed", "err", err)
+	}
+}
+
 // Gen returns the in-memory generation counter (ETag support).
 func (p *PersistentCache) Gen() uint64 {
 	return p.mem.Gen()
