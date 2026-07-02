@@ -60,6 +60,18 @@ func (p *PersistentCache) Lookup(callsigns []string) map[string]LatLon {
 	return p.mem.Lookup(callsigns)
 }
 
+// QueryHeatmap returns aggregated directly-received-packet heat over the
+// window within bbox. Returns an empty result when persistence is disabled.
+func (p *PersistentCache) QueryHeatmap(window time.Duration, bbox BBox) (*HeatmapResult, error) {
+	p.mu.RLock()
+	hdb := p.hdb
+	p.mu.RUnlock()
+	if hdb == nil {
+		return &HeatmapResult{}, nil
+	}
+	return hdb.QueryHeatmap(window, bbox)
+}
+
 // Gen returns the in-memory generation counter (ETag support).
 func (p *PersistentCache) Gen() uint64 {
 	return p.mem.Gen()
