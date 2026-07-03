@@ -810,8 +810,8 @@
       top: 0;
       left: 0;
       right: 0;
-      height: calc(56px + env(safe-area-inset-top));
-      padding: env(safe-area-inset-top) 8px 0
+      height: calc(56px + var(--safe-area-top));
+      padding: var(--safe-area-top) 8px 0
         max(8px, env(safe-area-inset-right));
       padding-left: max(8px, env(safe-area-inset-left));
       background: var(--bg-secondary);
