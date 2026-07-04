@@ -237,6 +237,23 @@ func ValidKissInterfaceType(t string) bool {
 	return false
 }
 
+// KissTypeDefaultsTnc reports whether an interface of type t defaults to
+// a TX-capable TNC link (Mode=tnc + AllowTxFromGovernor) when the caller
+// omits Mode. These types connect to a device that IS the radio (a
+// hardware TNC, modem, or radio with a built-in KISS TNC), so the
+// historical modem default misroutes their RX and never registers a TX
+// backend. Only tcp (server) keeps the modem default — its peer is an
+// APRS app. Bluetooth is force-TNC'd at the wiring layer instead.
+// Single source of truth for dto.KissRequest.ToModel,
+// normalizeKissInterface, and the mode-repair migration.
+func KissTypeDefaultsTnc(t string) bool {
+	switch t {
+	case KissTypeTCPClient, KissTypeSerial, KissTypeUsbSerial:
+		return true
+	}
+	return false
+}
+
 // U32Ptr returns a pointer to a copy of v. Small helper for call sites
 // (tests, DTO mappers, fixtures) that need to set Channel.InputDeviceID
 // — a *uint32 after the Phase 2 nullable migration — from a literal or

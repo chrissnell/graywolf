@@ -396,15 +396,21 @@
     modalOpen = true;
   }
 
-  // Phase 4 D4: new tcp-client rows default governor-TX on. Watch
-  // the form.type field and flip the checkbox when the operator
-  // selects tcp-client for the first time on a new row. (Not fired
-  // on edit — operator's existing choice is preserved.)
+  // New rows for interface types that connect to a hardware TNC
+  // (tcp-client, serial, usb-serial) default to Mode=tnc + governor-TX
+  // on. Left at the historical modem default these silently receive
+  // nothing (RX is routed to the TX governor, not the map) and fail TX
+  // with "no backend registered" -- the recurring serial-KISS report.
+  // Watch form.type and apply the defaults the first time the operator
+  // selects such a type on a new row; a one-shot flag lets them still
+  // switch to modem afterward. (Not fired on edit -- existing choice is
+  // preserved.) Bluetooth is handled by its own force-TNC effect below.
   $effect(() => {
     if (editing) return;
-    if (form.type === 'tcp-client' && !form._clientDefaultsApplied) {
+    const isTncType = form.type === 'tcp-client' || form.type === 'serial' || form.type === 'usbserial';
+    if (isTncType && !form._clientDefaultsApplied) {
       form.allow_tx_from_governor = true;
-      form.mode = 'tnc'; // tcp-client + governor TX only makes sense in TNC mode
+      form.mode = 'tnc'; // TNC-type + governor TX only makes sense in TNC mode
       form._clientDefaultsApplied = true;
     }
   });
