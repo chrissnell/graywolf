@@ -147,10 +147,6 @@
       {#if channel.output_device_id && channel.output_device_id !== 0 && txTiming}
         {@const t = txTiming}
         <div class="detail-row">
-          <span class="detail-label">TXD / Tail</span>
-          <span class="detail-value">{t.tx_delay_ms} / {t.tx_tail_ms} ms</span>
-        </div>
-        <div class="detail-row">
           <span class="detail-label">CSMA</span>
           <span class="detail-value">p{t.persist} slot {t.slot_ms}ms{t.full_dup ? ' FDX' : ''}</span>
         </div>
