@@ -90,8 +90,6 @@
       payload,
       isTxEnabled,
       txTiming: {
-        tx_delay_ms: parseInt(form.tx_delay_ms, 10),
-        tx_tail_ms: parseInt(form.tx_tail_ms, 10),
         slot_ms: parseInt(form.slot_ms, 10),
         persist: parseInt(form.persist, 10),
         full_dup: form.full_dup,
@@ -211,16 +209,13 @@
     <!-- ── Timing ─────────────────────────────────────────────────── -->
     {#if isTxEnabled}
       <div class="tx-timing-section">
-        <h4 class="section-label">Timing</h4>
-        <div class="form-grid-4">
-          <FormField label="TX Delay (ms)" id="ch-txd"
-            hint="Key-up time before sending. 300ms typical.">
-            <Input id="ch-txd" bind:value={form.tx_delay_ms} type="number" placeholder="300" />
-          </FormField>
-          <FormField label="TX Tail (ms)" id="ch-txt"
-            hint="Hold time after last byte. 100ms typical.">
-            <Input id="ch-txt" bind:value={form.tx_tail_ms} type="number" placeholder="100" />
-          </FormField>
+        <h4 class="section-label">CSMA Timing</h4>
+        <p class="section-hint">
+          TX delay and TX tail are set once for the whole station on the
+          <a href="#/ptt">PTT page</a> — they belong to the radio's PTT, not
+          this channel.
+        </p>
+        <div class="form-grid-2">
           <FormField label="Slot Time (ms)" id="ch-slot"
             hint="CSMA listen interval. 100ms is standard.">
             <Input id="ch-slot" bind:value={form.slot_ms} type="number" placeholder="100" />
@@ -292,6 +287,11 @@
     margin: 0 0 6px 0;
     font-size: 15px;
     font-weight: 600;
+  }
+  .section-hint {
+    margin: 0 0 10px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
   }
 
   .modal-actions {

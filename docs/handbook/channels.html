@@ -370,32 +370,20 @@
 
     <h2>TX Timing</h2>
 
-    <div class="box">
-      <div class="box-body">
-        <table>
-          <thead>
-            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>tx_delay_ms</code></td>
-              <td><code>300</code></td>
-              <td>Milliseconds of preamble flags before data</td>
-            </tr>
-            <tr>
-              <td><code>tx_tail_ms</code></td>
-              <td><code>100</code></td>
-              <td>Milliseconds of trailing flags after data</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <p>
+      <strong>TX Delay</strong> and <strong>TX Tail</strong> are set once for
+      the whole station on the <a href="ptt.html">Push-to-Talk</a> page, not
+      per channel &mdash; they belong to the radio&rsquo;s PTT keying, not to
+      any one mode. TX Delay gives the radio time to key up and stabilize
+      before data is sent (most radios need 200&ndash;500 ms; too short and the
+      beginning of your packet is lost, too long wastes airtime); TX Tail is
+      the trailing flags held before the radio unkeys.
+    </p>
 
     <p>
-      <code>tx_delay_ms</code> gives the radio time to key up and stabilize
-      before data is sent. Most radios need 200&ndash;500 ms. Too short and
-      the beginning of your packet will be lost; too long wastes airtime.
+      The per-channel CSMA parameters (slot time, persistence, and full-duplex)
+      remain on each channel because they govern how that channel shares the
+      frequency, not how the radio keys.
     </p>
 
     <nav class="page-nav">

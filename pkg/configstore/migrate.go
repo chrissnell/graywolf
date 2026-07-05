@@ -195,6 +195,15 @@ type migration struct {
 //	    legacy column. Required by the per-beacon format selector
 //	    and uncompressed-only position ambiguity. See
 //	    docs/superpowers/plans/2026-05-29-beacon-position-format-and-ambiguity.md.
+//	26 — ptt_timing_global: TX delay / TX tail move from the per-channel
+//	    tx_timings table to the new global ptt_timings singleton (id=1).
+//	    PTT keying timing is a property of the radio, not the digital
+//	    mode, so it is now configured once for the whole station. Runs
+//	    post-AutoMigrate (needs ptt_timings created): seeds the singleton
+//	    from the first existing tx_timings row so an operator's prior
+//	    per-channel value is preserved, then DROPs the vestigial
+//	    tx_delay_ms / tx_tail_ms columns from tx_timings. Idempotent via
+//	    column-existence and row-count guards.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -221,6 +230,7 @@ var schemaMigrations = []migration{
 	{version: 23, name: "beacon_position_format", phase: postAutoMigrate, run: migrateBeaconPositionFormat},
 	{version: 24, name: "kiss_gate_tx_to_is", phase: postAutoMigrate, run: migrateKissGateTxToIs},
 	{version: 25, name: "beacon_send_path", phase: postAutoMigrate, run: migrateBeaconSendPath},
+	{version: 26, name: "ptt_timing_global", phase: postAutoMigrate, run: migratePttTimingGlobal},
 }
 
 // runMigrations applies every pending migration in the given phase,
@@ -352,6 +362,66 @@ func migrateDropChannelTxTiming(tx *gorm.DB) error {
 			continue
 		}
 		if err := tx.Exec("ALTER TABLE channels DROP COLUMN " + col).Error; err != nil {
+			return fmt.Errorf("drop %s: %w", col, err)
+		}
+	}
+	return nil
+}
+
+// migratePttTimingGlobal moves TX delay / TX tail out of the per-channel
+// tx_timings table into the global ptt_timings singleton (id=1). PTT
+// keying timing is a property of the radio, not the digital mode, so it
+// is configured once for the whole station. AutoMigrate has already
+// created ptt_timings (empty) by the time this runs; we seed the
+// singleton from the first existing tx_timings row so an operator's
+// prior per-channel value survives the upgrade, then drop the vestigial
+// columns. Both steps are guarded so re-runs and fresh installs (where
+// tx_timings never had the columns) are no-ops.
+func migratePttTimingGlobal(tx *gorm.DB) error {
+	// Seed the singleton only if it has no row yet.
+	var ptRows int
+	if err := tx.Raw("SELECT COUNT(*) FROM ptt_timings").Scan(&ptRows).Error; err != nil {
+		return fmt.Errorf("count ptt_timings: %w", err)
+	}
+	if ptRows == 0 {
+		// Default to the protocol defaults, then override from an existing
+		// per-channel row if the legacy columns are still present.
+		delay, tail := uint32(300), uint32(100)
+		var hasCols int
+		if err := tx.Raw("SELECT COUNT(*) FROM pragma_table_info('tx_timings') WHERE name IN ('tx_delay_ms','tx_tail_ms')").Scan(&hasCols).Error; err != nil {
+			return fmt.Errorf("probe tx_timings columns: %w", err)
+		}
+		if hasCols == 2 {
+			var row struct {
+				TxDelayMs uint32
+				TxTailMs  uint32
+			}
+			err := tx.Raw("SELECT tx_delay_ms, tx_tail_ms FROM tx_timings ORDER BY channel LIMIT 1").Scan(&row).Error
+			if err != nil {
+				return fmt.Errorf("read legacy tx timing: %w", err)
+			}
+			// Scan leaves the zero value when no row matched; a legacy row
+			// with an explicit 0 is indistinguishable and equally harmless.
+			if row.TxDelayMs != 0 || row.TxTailMs != 0 {
+				delay, tail = row.TxDelayMs, row.TxTailMs
+			}
+		}
+		if err := tx.Exec(
+			"INSERT INTO ptt_timings (tx_delay_ms, tx_tail_ms) VALUES (?, ?)", delay, tail,
+		).Error; err != nil {
+			return fmt.Errorf("seed ptt_timings: %w", err)
+		}
+	}
+	// Drop the vestigial per-channel columns.
+	for _, col := range []string{"tx_delay_ms", "tx_tail_ms"} {
+		var count int
+		if err := tx.Raw("SELECT COUNT(*) FROM pragma_table_info('tx_timings') WHERE name=?", col).Scan(&count).Error; err != nil {
+			return fmt.Errorf("probe %s: %w", col, err)
+		}
+		if count == 0 {
+			continue
+		}
+		if err := tx.Exec("ALTER TABLE tx_timings DROP COLUMN " + col).Error; err != nil {
 			return fmt.Errorf("drop %s: %w", col, err)
 		}
 	}

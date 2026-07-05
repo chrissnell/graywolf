@@ -467,14 +467,25 @@ func TestConfigTablesRoundTrip(t *testing.T) {
 		t.Fatalf("agw get: %v %+v", err, c)
 	}
 
-	if err := s.UpsertTxTiming(ctx, &TxTiming{Channel: 1, TxDelayMs: 250, TxTailMs: 100, SlotMs: 100, Persist: 63}); err != nil {
+	if err := s.UpsertTxTiming(ctx, &TxTiming{Channel: 1, SlotMs: 100, Persist: 63}); err != nil {
 		t.Fatalf("tx timing upsert: %v", err)
 	}
-	if err := s.UpsertTxTiming(ctx, &TxTiming{Channel: 1, TxDelayMs: 400, TxTailMs: 100, SlotMs: 100, Persist: 63}); err != nil {
+	if err := s.UpsertTxTiming(ctx, &TxTiming{Channel: 1, SlotMs: 200, Persist: 63}); err != nil {
 		t.Fatalf("tx timing second upsert: %v", err)
 	}
-	if ts, err := s.ListTxTimings(ctx); err != nil || len(ts) != 1 || ts[0].TxDelayMs != 400 {
+	if ts, err := s.ListTxTimings(ctx); err != nil || len(ts) != 1 || ts[0].SlotMs != 200 {
 		t.Fatalf("tx list: %v %+v", err, ts)
+	}
+
+	// PttTiming is a global singleton — upsert must replace, not append.
+	if err := s.UpsertPttTiming(ctx, &PttTiming{TxDelayMs: 250, TxTailMs: 80}); err != nil {
+		t.Fatalf("ptt timing upsert: %v", err)
+	}
+	if err := s.UpsertPttTiming(ctx, &PttTiming{TxDelayMs: 400, TxTailMs: 120}); err != nil {
+		t.Fatalf("ptt timing second upsert: %v", err)
+	}
+	if pt, err := s.GetPttTiming(ctx); err != nil || pt == nil || pt.TxDelayMs != 400 || pt.TxTailMs != 120 {
+		t.Fatalf("ptt timing get: %v %+v", err, pt)
 	}
 
 	if err := s.UpsertDigipeaterConfig(ctx, &DigipeaterConfig{Enabled: true, DedupeWindowSeconds: 30, MyCall: "N0CAL"}); err != nil {

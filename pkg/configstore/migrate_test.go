@@ -444,6 +444,79 @@ INSERT INTO channels (id,name,audio_device_id,audio_channel)
 	}
 }
 
+// TestPttTimingGlobalMigration builds a pre-version-26 tx_timings table
+// that still carries the per-channel tx_delay_ms / tx_tail_ms columns,
+// stamps PRAGMA user_version = 25, then re-opens under the current
+// binary. Migration 26 must seed the global ptt_timings singleton from
+// the first per-channel row (preserving the operator's prior value) and
+// drop the vestigial columns from tx_timings.
+func TestPttTimingGlobalMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pre-v26.db")
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	// A real v25 database has i_gate_configs.callsign (added by
+	// migration 11); include it so the Open-time station-config seed,
+	// which reads that column, does not trip on this synthetic fixture.
+	_, err = raw.Exec(`
+CREATE TABLE i_gate_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  callsign TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE tx_timings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel INTEGER NOT NULL UNIQUE,
+  tx_delay_ms INTEGER NOT NULL DEFAULT 300,
+  tx_tail_ms INTEGER NOT NULL DEFAULT 100,
+  slot_ms INTEGER NOT NULL DEFAULT 100,
+  persist INTEGER NOT NULL DEFAULT 63,
+  full_dup NUMERIC NOT NULL DEFAULT 0,
+  rate1_min INTEGER NOT NULL DEFAULT 0,
+  rate5_min INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME,
+  updated_at DATETIME
+);
+INSERT INTO tx_timings (channel, tx_delay_ms, tx_tail_ms, slot_ms, persist)
+  VALUES (1, 450, 60, 100, 63);
+PRAGMA user_version = 25;
+`)
+	raw.Close()
+	if err != nil {
+		t.Fatalf("seed pre-v26 schema: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open pre-v26 db: %v", err)
+	}
+	defer s.Close()
+
+	// The per-channel columns must be gone.
+	var legacyCols int
+	s.DB().Raw("SELECT COUNT(*) FROM pragma_table_info('tx_timings') WHERE name IN ('tx_delay_ms','tx_tail_ms')").Scan(&legacyCols)
+	if legacyCols != 0 {
+		t.Errorf("tx_timings still carries tx_delay_ms/tx_tail_ms after migration: count=%d", legacyCols)
+	}
+
+	// The global singleton must have inherited the operator's prior value.
+	ctx := context.Background()
+	pt, err := s.GetPttTiming(ctx)
+	if err != nil || pt == nil {
+		t.Fatalf("GetPttTiming: %v %+v", err, pt)
+	}
+	if pt.TxDelayMs != 450 || pt.TxTailMs != 60 {
+		t.Errorf("ptt timing = %d/%d, want 450/60 seeded from legacy row", pt.TxDelayMs, pt.TxTailMs)
+	}
+
+	// The per-channel row's surviving CSMA fields must be intact.
+	tt, err := s.GetTxTiming(ctx, 1)
+	if err != nil || tt == nil || tt.SlotMs != 100 || tt.Persist != 63 {
+		t.Fatalf("GetTxTiming(1): %v %+v", err, tt)
+	}
+}
+
 // TestNullableInputDeviceMigration builds a pre-version-8 channels
 // table with input_device_id declared NOT NULL, populates it with
 // a representative row, stamps PRAGMA user_version = 7, and then

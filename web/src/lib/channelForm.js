@@ -15,7 +15,7 @@ export function blankForm() {
     input_device_id: '0', input_channel: '0',
     output_device_id: '0', output_channel: '0',
     modem_type: 'afsk', bit_rate: '1200', mark_freq: '1200', space_freq: '2200',
-    tx_delay_ms: '300', tx_tail_ms: '100', slot_ms: '100', persist: '63', full_dup: false,
+    slot_ms: '100', persist: '63', full_dup: false,
   };
 }
 
@@ -39,8 +39,6 @@ export function rowToForm(row, timing) {
     bit_rate: String(row.bit_rate),
     mark_freq: String(row.mark_freq),
     space_freq: String(row.space_freq),
-    tx_delay_ms: String(t.tx_delay_ms ?? 300),
-    tx_tail_ms: String(t.tx_tail_ms ?? 100),
     slot_ms: String(t.slot_ms ?? 100),
     persist: String(t.persist ?? 63),
     full_dup: t.full_dup ?? false,

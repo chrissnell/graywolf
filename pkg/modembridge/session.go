@@ -199,6 +199,17 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 	// zero ConfigureChannel messages, and in that case the caller
 	// must NOT emit StartAudio.
 	configured := 0
+
+	// PTT keying timing (TX delay / TX tail) is a global station setting —
+	// a property of the radio's PTT, not of any channel or mode — so it is
+	// read once and stamped onto every channel's ConfigurePtt. Fall back to
+	// protocol defaults if the singleton row is missing.
+	var txDelayMs, txTailMs uint32 = 300, 100
+	if pt, err := b.cfg.Store.GetPttTiming(ctx); err == nil && pt != nil {
+		txDelayMs = pt.TxDelayMs
+		txTailMs = pt.TxTailMs
+	}
+
 	for _, ch := range channels {
 		// KISS-TNC-only channels are not served by the modem
 		// subprocess. The TX dispatcher (Phase 3) will route their
@@ -236,14 +247,6 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 		if err != nil {
 			// No PTT row → send a "none" configuration.
 			ptt = &configstore.PttConfig{ChannelID: ch.ID, Method: "none"}
-		}
-
-		// TX timing lives in the TxTiming table; fall back to
-		// protocol defaults if no row exists for this channel.
-		var txDelayMs, txTailMs uint32 = 300, 100
-		if tt, err := b.cfg.Store.GetTxTiming(ctx, ch.ID); err == nil && tt != nil {
-			txDelayMs = tt.TxDelayMs
-			txTailMs = tt.TxTailMs
 		}
 
 		// Pre-gpio_line configs stashed the user-typed line number in

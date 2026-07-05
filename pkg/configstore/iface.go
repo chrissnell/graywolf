@@ -28,10 +28,14 @@ type ConfigStore interface {
 	RekeyPttConfig(ctx context.Context, oldChannelID uint32, p *PttConfig) error
 	DeletePttConfig(ctx context.Context, channelID uint32) error
 
-	// TX timing
+	// TX timing (per-channel CSMA)
 	ListTxTimings(ctx context.Context) ([]TxTiming, error)
 	GetTxTiming(ctx context.Context, channel uint32) (*TxTiming, error)
 	UpsertTxTiming(ctx context.Context, t *TxTiming) error
+
+	// PTT keying timing (global singleton)
+	GetPttTiming(ctx context.Context) (*PttTiming, error)
+	UpsertPttTiming(ctx context.Context, t *PttTiming) error
 
 	// KISS interfaces
 	ListKissInterfaces(ctx context.Context) ([]KissInterface, error)

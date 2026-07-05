@@ -99,7 +99,7 @@ func seedChannelWithDependents(ctx context.Context, t *testing.T, s *Store) (chI
 		t.Fatalf("seed igate filter: %v", err)
 	}
 	tt := &TxTiming{
-		Channel: ch.ID, TxDelayMs: 300, TxTailMs: 100, SlotMs: 100, Persist: 63,
+		Channel: ch.ID, SlotMs: 100, Persist: 63,
 	}
 	if err := s.UpsertTxTiming(ctx, tt); err != nil {
 		t.Fatalf("seed tx timing: %v", err)

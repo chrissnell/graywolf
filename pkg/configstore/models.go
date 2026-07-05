@@ -255,18 +255,33 @@ type AgwConfig struct {
 }
 
 // TxTiming holds per-channel CSMA parameters. Mirrors
-// txgovernor.ChannelTiming.
+// txgovernor.ChannelTiming. PTT keying timing (TX delay / TX tail) is
+// NOT here — it is a property of the radio's PTT, independent of the
+// modem mode, and lives in the global PttTiming singleton instead.
 type TxTiming struct {
-	ID        uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
-	Channel   uint32 `gorm:"not null;uniqueIndex" json:"channel"`
-	TxDelayMs uint32 `gorm:"not null;default:300" json:"tx_delay_ms"`
-	TxTailMs  uint32 `gorm:"not null;default:100" json:"tx_tail_ms"`
-	SlotMs    uint32 `gorm:"not null;default:100" json:"slot_ms"`
-	Persist   uint32 `gorm:"not null;default:63" json:"persist"`
-	FullDup   bool   `gorm:"not null;default:false" json:"full_dup"`
+	ID      uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Channel uint32 `gorm:"not null;uniqueIndex" json:"channel"`
+	SlotMs  uint32 `gorm:"not null;default:100" json:"slot_ms"`
+	Persist uint32 `gorm:"not null;default:63" json:"persist"`
+	FullDup bool   `gorm:"not null;default:false" json:"full_dup"`
 	// Rate limits; 0 = unlimited.
 	Rate1Min  uint32    `gorm:"not null;default:0" json:"rate_1min"`
 	Rate5Min  uint32    `gorm:"not null;default:0" json:"rate_5min"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// PttTiming is a singleton (id=1) row holding the global PTT keying
+// timing applied to every transmitting channel. TX delay (the audio
+// preamble that lets the radio's PTT fully key before packet data) and
+// TX tail (the postamble held before unkeying) are properties of the
+// radio's PTT hardware, not of any digital mode, so they are configured
+// once globally rather than per channel. The modem bridge reads this row
+// and stamps the same values onto every channel's ConfigurePtt.
+type PttTiming struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	TxDelayMs uint32    `gorm:"not null;default:300" json:"tx_delay_ms"`
+	TxTailMs  uint32    `gorm:"not null;default:100" json:"tx_tail_ms"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 }

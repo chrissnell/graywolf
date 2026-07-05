@@ -96,6 +96,13 @@ const (
 	OpUpdateTxTiming = "updateTxTiming"
 )
 
+// Ptt-timing resource — /api/ptt-timing. Global singleton (TX delay /
+// TX tail), GET + PUT only.
+const (
+	OpGetPttTiming    = "getPttTiming"
+	OpUpdatePttTiming = "updatePttTiming"
+)
+
 // Digipeater rules resource — /api/digipeater/rules (Phase 2). The
 // singleton config at /api/digipeater is Phase 3's concern and not
 // registered here. No single-rule GET exists — the list endpoint

@@ -290,6 +290,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerFixedPoints(mux)
 	s.registerPtt(mux)
 	s.registerTxTiming(mux)
+	s.registerPttTiming(mux)
 	s.registerKiss(mux)
 	s.registerAgw(mux)
 	s.registerIgateConfig(mux)

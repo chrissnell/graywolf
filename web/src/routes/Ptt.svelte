@@ -1,9 +1,10 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Badge, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Badge, AlertDialog, Input } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
+  import FormField from '../components/FormField.svelte';
   import PttCard from './ptt/PttCard.svelte';
   import DialogChangeMethod from './ptt/DialogChangeMethod.svelte';
   import DialogChangeDevice from './ptt/DialogChangeDevice.svelte';
@@ -28,6 +29,12 @@
   let capabilities = $state(null);
   let deleteTarget = $state(null);
   let deleteOpen = $state(false);
+
+  // Global PTT keying timing. TX delay / TX tail are a property of the
+  // radio's PTT, not any channel or mode, so they are configured once for
+  // the whole station here rather than per channel.
+  let timing = $state({ tx_delay_ms: '300', tx_tail_ms: '100' });
+  let savingTiming = $state(false);
 
   // Two-dialog flow state
   let dialogMethodOpen = $state(false);
@@ -89,7 +96,7 @@
   onMount(async () => {
     // Load items, channels, capabilities in parallel. Capabilities gates the
     // GPIO method dropdown and must be loaded before the user opens the dialog.
-    await Promise.all([loadItems(), loadChannels(), loadCapabilities()]);
+    await Promise.all([loadItems(), loadChannels(), loadCapabilities(), loadTiming()]);
     // Silent auto-scan so `available` is populated before the user opens the
     // Add PTT dialog. Failure is surfaced as an inline notice (see template),
     // not a toast — toasts are reserved for manual "Detect Devices" clicks.
@@ -123,6 +130,29 @@
 
   async function loadItems() {
     items = await api.get('/ptt') || [];
+  }
+
+  async function loadTiming() {
+    const t = await api.get('/ptt-timing');
+    if (t) timing = { tx_delay_ms: String(t.tx_delay_ms ?? 300), tx_tail_ms: String(t.tx_tail_ms ?? 100) };
+  }
+
+  async function saveTiming() {
+    const delayMs = parseInt(timing.tx_delay_ms, 10);
+    const tailMs = parseInt(timing.tx_tail_ms, 10);
+    if (isNaN(delayMs) || delayMs < 0 || isNaN(tailMs) || tailMs < 0) {
+      toasts.error('TX delay and TX tail must be non-negative numbers.');
+      return;
+    }
+    savingTiming = true;
+    try {
+      await api.put('/ptt-timing', { tx_delay_ms: delayMs, tx_tail_ms: tailMs });
+      toasts.success('PTT timing saved');
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      savingTiming = false;
+    }
   }
 
   async function loadChannels() {
@@ -355,6 +385,31 @@
   </div>
 </div>
 
+<!-- Global PTT keying timing -->
+<div class="section-label">TX Timing</div>
+<div class="timing-card">
+  <p class="timing-hint">
+    Applies to every channel. TX delay is the key-up lead-in before packet
+    data; TX tail is the hold time before the radio unkeys. These belong to
+    the radio's PTT, so they are set once for the whole station.
+  </p>
+  <div class="timing-grid">
+    <FormField label="TX Delay (ms)" id="ptt-txd"
+      hint="Key-up time before sending. 300ms typical.">
+      <Input id="ptt-txd" bind:value={timing.tx_delay_ms} type="number" placeholder="300" />
+    </FormField>
+    <FormField label="TX Tail (ms)" id="ptt-txt"
+      hint="Hold time after last byte. 100ms typical.">
+      <Input id="ptt-txt" bind:value={timing.tx_tail_ms} type="number" placeholder="100" />
+    </FormField>
+    <div class="timing-save">
+      <Button variant="primary" onclick={saveTiming} disabled={savingTiming}>
+        {savingTiming ? 'Saving...' : 'Save Timing'}
+      </Button>
+    </div>
+  </div>
+</div>
+
 <!-- Configured PTT devices -->
 <div class="section-label">Configured PTT</div>
 {#if modemChannels.length === 0}
@@ -558,6 +613,30 @@
     font-size: 13px;
     color: var(--text-muted);
     margin: -4px 0 10px;
+  }
+
+  .timing-card {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .timing-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+  }
+  .timing-grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+  }
+  .timing-grid :global(.form-field) {
+    min-width: 140px;
+  }
+  .timing-save {
+    margin-left: auto;
   }
 
   .empty-state {

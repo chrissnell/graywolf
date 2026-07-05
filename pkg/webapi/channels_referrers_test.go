@@ -240,7 +240,7 @@ func TestTxTiming_RejectsOrphanChannel(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	body := `{"tx_delay_ms":300,"tx_tail_ms":100,"slot_ms":100,"persist":63}`
+	body := `{"slot_ms":100,"persist":63}`
 	req := httptest.NewRequest(http.MethodPut, "/api/tx-timing/9999", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

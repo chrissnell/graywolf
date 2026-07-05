@@ -135,6 +135,16 @@ channel-only; an earlier PR-#157-era Android branch in
 the unified tab. The Channels page's read-only PTT indicator row stays
 — that's a glance-surface, not a config surface.
 
+### 9e. PTT keying timing (TX delay / TX tail) is global, not per-channel
+
+*Why:* TX delay (the audio preamble that lets the radio's PTT fully key before packet data) and TX tail (the postamble held before unkeying) are properties of the radio's PTT hardware, not of any digital mode or channel — so they are configured once for the whole station. They live in the `PttTiming` singleton (id=1), exposed as `GET`/`PUT /api/ptt-timing` and edited on the **PTT tab** (not the channel editor). The modem bridge reads the singleton once per reconfigure and stamps the same `TxdelayMs`/`TxtailMs` onto **every** channel's `ConfigurePtt` (`session.go`, before the per-channel loop). This is distinct from `TxTiming`, which stays **per-channel** and now carries only CSMA parameters (slot time, persistence, full-duplex, rate limits) at `GET/POST/PUT /api/tx-timing`. Migration 26 (`ptt_timing_global`) moved the two columns out of `tx_timings`, seeding the singleton from the first existing per-channel row so an operator's prior value survives the upgrade. A `PUT /api/ptt-timing` triggers a global bridge reload (`notifyBridgeReload`) so the new timing reaches all channels.
+
+Source: [`../../pkg/configstore/models.go`](../../pkg/configstore/models.go) (`PttTiming`, `TxTiming`);
+[`../../pkg/configstore/migrate.go`](../../pkg/configstore/migrate.go) (`migratePttTimingGlobal`, v26);
+[`../../pkg/webapi/ptt_timing.go`](../../pkg/webapi/ptt_timing.go);
+[`../../pkg/modembridge/session.go`](../../pkg/modembridge/session.go) (global read before the channel loop);
+[`../../web/src/routes/Ptt.svelte`](../../web/src/routes/Ptt.svelte) (TX Timing card).
+
 ### 10. Gitignored output dirs are not canonical
 
 *Why:* `target/`, `bin/`, `dist/`, `rust-bin/`, `rust-artifacts/`, `web/dist/`, `.worktrees/`, `.context/`, `*.db*` regenerate from sources and are gitignored, so never reference them as authoritative.

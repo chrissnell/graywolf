@@ -4,8 +4,14 @@ import { blankForm, rowToForm, formToPayload, validateForm } from './channelForm
 
 test('blankForm has modem defaults', () => {
   const f = blankForm();
-  assert.equal(f.tx_delay_ms, '300');
+  assert.equal(f.slot_ms, '100');
   assert.equal(f.input_device_id, '0');
+});
+
+test('blankForm carries no per-channel tx delay/tail (now global)', () => {
+  const f = blankForm();
+  assert.ok(!('tx_delay_ms' in f));
+  assert.ok(!('tx_tail_ms' in f));
 });
 
 test('rowToForm maps a kiss-tnc row (null input_device_id) to channel_type kiss-tnc', () => {
@@ -28,11 +34,11 @@ test('rowToForm maps a modem row (non-null input_device_id)', () => {
     id: 3, name: 'VHF', input_device_id: 7, output_device_id: 8,
     input_channel: 0, output_channel: 1,
     bit_rate: 1200, mark_freq: 1200, space_freq: 2200,
-  }, { tx_delay_ms: 250, tx_tail_ms: 50, slot_ms: 200, persist: 127, full_dup: true });
+  }, { slot_ms: 200, persist: 127, full_dup: true });
   assert.equal(f.channel_type, 'modem');
   assert.equal(f.input_device_id, '7');
   assert.equal(f.output_device_id, '8');
-  assert.equal(f.tx_delay_ms, '250');
+  assert.equal(f.slot_ms, '200');
   assert.equal(f.persist, '127');
   assert.equal(f.full_dup, true);
 });
@@ -43,8 +49,6 @@ test('rowToForm uses fallback timing defaults when timing is missing', () => {
     input_channel: 0, output_channel: 0,
     bit_rate: 1200, mark_freq: 1200, space_freq: 2200,
   }, null);
-  assert.equal(f.tx_delay_ms, '300');
-  assert.equal(f.tx_tail_ms, '100');
   assert.equal(f.slot_ms, '100');
   assert.equal(f.persist, '63');
   assert.equal(f.full_dup, false);

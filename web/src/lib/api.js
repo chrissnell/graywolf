@@ -234,9 +234,13 @@ function getMockData(method, path, body) {
   if (path.match(/^\/ptt\/\d+$/) && method === 'PUT') return delay(body);
   if (path.match(/^\/ptt\/\d+$/) && method === 'DELETE') return delay(null);
 
-  // TX Timing (used by channel editor)
+  // TX Timing (per-channel CSMA, used by channel editor)
   if (path === '/tx-timing' && method === 'GET') return delay([]);
   if (path.match(/^\/tx-timing\/\d+$/) && method === 'PUT') return delay(body);
+
+  // PTT Timing (global TX delay / TX tail, used by the PTT page)
+  if (path === '/ptt-timing' && method === 'GET') return delay({ id: 1, tx_delay_ms: 300, tx_tail_ms: 100 });
+  if (path === '/ptt-timing' && method === 'PUT') return delay({ id: 1, ...body });
 
   // KISS
   if (path === '/kiss' && method === 'GET') return delay(mockKiss);

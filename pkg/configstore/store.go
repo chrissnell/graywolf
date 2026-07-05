@@ -148,6 +148,7 @@ func (s *Store) Migrate() error {
 		&KissInterface{},
 		&AgwConfig{},
 		&TxTiming{},
+		&PttTiming{},
 		&DigipeaterConfig{},
 		&DigipeaterRule{},
 		&DigipeaterBlocklist{},
@@ -1133,6 +1134,35 @@ func (s *Store) UpsertTxTiming(ctx context.Context, t *TxTiming) error {
 	}
 	if existing != nil {
 		t.ID = existing.ID
+	}
+	return s.db.WithContext(ctx).Save(t).Error
+}
+
+// ---------------------------------------------------------------------------
+// PttTiming (singleton)
+// ---------------------------------------------------------------------------
+
+func (s *Store) GetPttTiming(ctx context.Context) (*PttTiming, error) {
+	var t PttTiming
+	err := s.db.WithContext(ctx).Order("id").First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (s *Store) UpsertPttTiming(ctx context.Context, t *PttTiming) error {
+	if t.ID == 0 {
+		existing, err := s.GetPttTiming(ctx)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			t.ID = existing.ID
+		}
 	}
 	return s.db.WithContext(ctx).Save(t).Error
 }

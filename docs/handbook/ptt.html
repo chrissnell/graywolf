@@ -201,6 +201,37 @@
       </div>
     </div>
 
+    <h2 id="tx-timing">TX Timing</h2>
+
+    <p>
+      TX Delay and TX Tail are set once here, on the Push-to-Talk page, and
+      apply to every transmitting channel. They govern how the radio&rsquo;s
+      PTT keys, so they are a station-wide setting rather than a per-channel
+      one.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>tx_delay_ms</code></td>
+              <td><code>300</code></td>
+              <td>Milliseconds of preamble flags before data. Gives the radio time to key up and stabilize; most radios need 200&ndash;500&thinsp;ms. Too short and the start of the packet is lost, too long wastes airtime.</td>
+            </tr>
+            <tr>
+              <td><code>tx_tail_ms</code></td>
+              <td><code>100</code></td>
+              <td>Milliseconds of trailing flags held after data, before the radio unkeys.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <h2 id="vox-ptt">VOX PTT</h2>
 
     <p>
