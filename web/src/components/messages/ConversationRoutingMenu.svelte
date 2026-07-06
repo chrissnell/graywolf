@@ -46,7 +46,11 @@
       waitForAck = p?.wait_for_ack ?? true;
       loaded = true;
     } catch {
-      // Leave defaults; a failed load still lets the operator set values.
+      // Loaded stays false → the controls remain disabled so the operator
+      // can't unknowingly overwrite a stored override with the default
+      // state we're showing. Surface the failure and let them reopen to
+      // retry the fetch.
+      toasts.error("Couldn't load routing for this conversation — try again.");
     }
   }
 
@@ -122,7 +126,7 @@
   {#if open}
     <div class="panel" role="dialog" aria-label="Conversation routing" data-testid="conversation-routing-panel">
       <p class="panel-title">Send path</p>
-      <RadioGroup value={sendPath} onValueChange={onSendPath} disabled={saving}>
+      <RadioGroup value={sendPath} onValueChange={onSendPath} disabled={saving || !loaded}>
         <div class="opts">
           <Radio value="" label="Use default" />
           <Radio value="rf_only" label="RF only" />
@@ -134,7 +138,7 @@
       {#if kind === 'dm'}
         <hr class="sep" />
         <label class="ack-row">
-          <Checkbox checked={waitForAck} onCheckedChange={onWaitForAck} disabled={saving} />
+          <Checkbox checked={waitForAck} onCheckedChange={onWaitForAck} disabled={saving || !loaded} />
           <span>Automatic Resend until ACK</span>
         </label>
         <p class="panel-hint">On: resend until the recipient acknowledges. Turn off for radios that never send acks (e.g. TIDRadio TD-H9) so a message is sent once, with no re-sends.</p>

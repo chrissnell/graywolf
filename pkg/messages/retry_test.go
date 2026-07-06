@@ -37,6 +37,83 @@ func buildRetry(t *testing.T, policy string) *retryRig {
 	return &retryRig{senderRig: sr, mgr: mgr}
 }
 
+// TestRetry_HonorsStampedSendPath proves the anti-leak invariant: a row
+// stamped SendPath=rf_only stays on RF when retried, even though the
+// global policy is "both" (which would otherwise fan out to APRS-IS).
+// This is the core guarantee of issue #453 — an RF-only contact must
+// never leak a local message onto the internet on a retry.
+func TestRetry_HonorsStampedSendPath(t *testing.T) {
+	rig := buildRetry(t, FallbackPolicyBoth)
+	defer rig.close()
+	ctx := context.Background()
+
+	row := newOutboundDM(t, rig.senderRig, "N0CALL", "W1ABC", "local only")
+	row.SendPath = FallbackPolicyRFOnly
+	if err := rig.store.Update(ctx, row); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	rig.mgr.retryOne(ctx, *row)
+
+	if got := len(rig.sink.list()); got != 1 {
+		t.Errorf("RF submits = %d, want 1 (rf_only override on retry)", got)
+	}
+	if got := len(rig.igate.list()); got != 0 {
+		t.Errorf("IS lines = %d, want 0 — rf_only leaked onto APRS-IS on retry", got)
+	}
+}
+
+// TestResend_SuppressedForNoAckContact verifies that a manual /resend of
+// a message to a WaitForAck=false conversation submits once but does NOT
+// re-arm the retry ladder — otherwise disabling auto-resend for a no-ACK
+// handheld would be undone the moment the operator hits Resend.
+func TestResend_SuppressedForNoAckContact(t *testing.T) {
+	rig := buildRetry(t, FallbackPolicyRFOnly)
+	defer rig.close()
+	ctx := context.Background()
+
+	if err := rig.cs.UpsertConversationPrefs(ctx, &configstore.ConversationPrefs{
+		ThreadKind: ThreadKindDM, ThreadKey: "W1ABC", SendPath: "", WaitForAck: false,
+	}); err != nil {
+		t.Fatalf("seed prefs: %v", err)
+	}
+	row := newOutboundDM(t, rig.senderRig, "N0CALL", "W1ABC", "hi")
+
+	if _, err := rig.mgr.Resend(ctx, row.ID); err != nil {
+		t.Fatalf("Resend: %v", err)
+	}
+	if got := len(rig.sink.list()); got != 1 {
+		t.Fatalf("RF submits = %d, want 1 (resend sends once)", got)
+	}
+	cur, err := rig.store.GetByID(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if cur.NextRetryAt != nil {
+		t.Errorf("NextRetryAt = %v, want nil (no re-enrollment for no-ACK contact)", cur.NextRetryAt)
+	}
+}
+
+// TestResend_ReenrollsNormalContact is the positive control: a normal
+// conversation (no prefs row) re-arms the retry ladder on resend.
+func TestResend_ReenrollsNormalContact(t *testing.T) {
+	rig := buildRetry(t, FallbackPolicyRFOnly)
+	defer rig.close()
+	ctx := context.Background()
+
+	row := newOutboundDM(t, rig.senderRig, "N0CALL", "W1ABC", "hi")
+	if _, err := rig.mgr.Resend(ctx, row.ID); err != nil {
+		t.Fatalf("Resend: %v", err)
+	}
+	cur, err := rig.store.GetByID(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if cur.NextRetryAt == nil {
+		t.Error("NextRetryAt = nil, want a scheduled retry for a normal contact")
+	}
+}
+
 func TestRetry_BackoffLadder(t *testing.T) {
 	rig := buildRetry(t, FallbackPolicyRFOnly)
 	defer rig.close()
