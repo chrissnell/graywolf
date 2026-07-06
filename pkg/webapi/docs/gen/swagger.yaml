@@ -50,6 +50,7 @@ definitions:
       raw:
         description: original AX.25 frame bytes
         items:
+          format: int32
           type: integer
         type: array
       source:
@@ -228,6 +229,7 @@ definitions:
     properties:
       altitude:
         description: meters (0 if none reported)
+        format: float64
         type: number
       ambiguity:
         description: 0..4, digits of ambiguity introduced by spaces
@@ -239,6 +241,7 @@ definitions:
         type: integer
       daodatum:
         description: DAO datum byte (APRS101 DAO extension), 0 if not present
+        format: int32
         type: integer
       hasAlt:
         type: boolean
@@ -246,12 +249,14 @@ definitions:
         type: boolean
       latitude:
         description: decimal degrees, positive north
+        format: float64
         type: number
       localTime:
         description: true if the timestamp was the '/' local-time form (APRS101 ch 6)
         type: boolean
       longitude:
         description: decimal degrees, positive east
+        format: float64
         type: number
       phg:
         allOf:
@@ -259,6 +264,7 @@ definitions:
         description: decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present
       speed:
         description: knots
+        format: float64
         type: number
       symbol:
         $ref: '#/definitions/aprs.Symbol'
@@ -269,14 +275,17 @@ definitions:
   aprs.Symbol:
     properties:
       code:
+        format: int32
         type: integer
       table:
+        format: int32
         type: integer
     type: object
   aprs.Telemetry:
     properties:
       analog:
         items:
+          format: float64
           type: number
         type: array
       analogHas:
@@ -289,6 +298,7 @@ definitions:
         type: string
       digital:
         description: bits 0..7 (only lower 8)
+        format: int32
         type: integer
       hasDigital:
         type: boolean
@@ -300,11 +310,13 @@ definitions:
     properties:
       bits:
         description: BITS. sense-bits bitmap (active-high per bit)
+        format: int32
         type: integer
       eqns:
         description: a, b, c coefficients per analog channel
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -357,25 +369,31 @@ definitions:
         type: integer
       pressure:
         description: tenths of millibar (e.g. 10132 = 1013.2)
+        format: float64
         type: number
       rain1Hour:
         description: hundredths of an inch
+        format: float64
         type: number
       rain24Hour:
+        format: float64
         type: number
       rainSinceMid:
+        format: float64
         type: number
       rawRainCounter:
         description: raw rain counter ('#' field)
         type: integer
       snowfall24h:
         description: inches (via 's' after 'g')
+        format: float64
         type: number
       softwareType:
         description: one-letter software code (e.g. 'w', 'x', 'd')
         type: string
       temperature:
         description: degrees F
+        format: float64
         type: number
       weatherUnitTag:
         description: 2..4 ASCII letters identifying the unit/model
@@ -385,9 +403,11 @@ definitions:
         type: integer
       windGust:
         description: mph (5-minute peak)
+        format: float64
         type: number
       windSpeed:
         description: mph (1-minute sustained)
+        format: float64
         type: number
     type: object
   configstore.Referrer:
@@ -1182,6 +1202,32 @@ definitions:
         $ref: '#/definitions/dto.ChannelPtt'
       space_freq:
         type: integer
+    type: object
+  dto.ConversationPrefsRequest:
+    properties:
+      send_path:
+        description: |-
+          SendPath overrides transport for this conversation. Empty ('')
+          means "inherit the global fallback policy"; otherwise one of
+          rf_only | is_only | both.
+        type: string
+      wait_for_ack:
+        description: |-
+          WaitForAck, when false, sends DMs to this contact once and skips
+          the retry ladder (no re-sends) — for handhelds that never ACK.
+          Defaults true.
+        type: boolean
+    type: object
+  dto.ConversationPrefsResponse:
+    properties:
+      send_path:
+        type: string
+      thread_key:
+        type: string
+      thread_kind:
+        type: string
+      wait_for_ack:
+        type: boolean
     type: object
   dto.ConversationSummary:
     properties:
@@ -2525,6 +2571,10 @@ definitions:
       DirIS: APRS-IS upload/download (iGate)
       DirRX: heard on the air
       DirTX: transmitted by us
+    x-enum-descriptions:
+      - heard on the air
+      - transmitted by us
+      - APRS-IS upload/download (iGate)
     x-enum-varnames:
       - DirRX
       - DirTX
@@ -2746,6 +2796,7 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -2812,6 +2863,7 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -3981,6 +4033,7 @@ paths:
       operationId: deleteAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4001,6 +4054,7 @@ paths:
       operationId: getAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4031,6 +4085,7 @@ paths:
       operationId: updateAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4072,6 +4127,7 @@ paths:
       operationId: pinAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4192,6 +4248,7 @@ paths:
       operationId: deleteAX25Transcript
       parameters:
         - description: Transcript session ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4212,6 +4269,7 @@ paths:
       operationId: getAX25Transcript
       parameters:
         - description: Transcript session ID
+          format: int32
           in: path
           name: id
           required: true
@@ -6290,6 +6348,81 @@ paths:
       security:
         - CookieAuth: []
       summary: List conversations
+      tags:
+        - messages
+  /messages/conversations/{kind}/{key}/prefs:
+    get:
+      operationId: getConversationPrefs
+      parameters:
+        - description: thread kind (dm|tactical)
+          in: path
+          name: kind
+          required: true
+          type: string
+        - description: peer callsign or tactical label
+          in: path
+          name: key
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get conversation preferences
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: putConversationPrefs
+      parameters:
+        - description: thread kind (dm|tactical)
+          in: path
+          name: kind
+          required: true
+          type: string
+        - description: peer callsign or tactical label
+          in: path
+          name: key
+          required: true
+          type: string
+        - description: Preferences
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update conversation preferences
       tags:
         - messages
   /messages/events:

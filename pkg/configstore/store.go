@@ -162,6 +162,7 @@ func (s *Store) Migrate() error {
 		&Message{},
 		&MessageCounter{},
 		&MessagePreferences{},
+		&ConversationPrefs{},
 		&TacticalCallsign{},
 		&StationConfig{},
 		&UpdatesConfig{},

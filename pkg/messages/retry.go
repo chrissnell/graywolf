@@ -177,7 +177,7 @@ func (r *RetryManager) Resend(ctx context.Context, id uint64) (SendResult, error
 	if err := r.cfg.Store.Update(ctx, row); err != nil {
 		return SendResult{}, err
 	}
-	result := r.cfg.Sender.Send(ctx, row)
+	result := r.cfg.Sender.SendWithPolicy(ctx, row, row.SendPath)
 	if result.Err == nil && result.Retryable && row.ThreadKind == ThreadKindDM {
 		// Re-enroll: schedule the next attempt per the backoff.
 		r.scheduleNext(ctx, row)
@@ -312,7 +312,10 @@ func (r *RetryManager) retryOne(ctx context.Context, row configstore.Message) {
 		return
 	}
 	cur.Attempts++
-	result := r.cfg.Sender.Send(ctx, cur)
+	// Route re-attempts via the row's stamped SendPath (empty defers to
+	// the global policy) so an "RF only" contact never leaks onto
+	// APRS-IS on retry. See configstore.ConversationPrefs / issue #453.
+	result := r.cfg.Sender.SendWithPolicy(ctx, cur, cur.SendPath)
 	if result.Err == nil {
 		// Submit accepted — schedule the next ack timeout.
 		r.scheduleNext(ctx, cur)

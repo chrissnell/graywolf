@@ -928,6 +928,87 @@ func TestPutPreferences_RoundTrip(t *testing.T) {
 	}
 }
 
+// --- Conversation prefs --------------------------------------------------
+
+func TestGetConversationPrefs_DefaultsWhenUnset(t *testing.T) {
+	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
+	req := httptest.NewRequest(http.MethodGet, "/api/messages/conversations/dm/W5XYZ/prefs", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got dto.ConversationPrefsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.SendPath != "" || !got.WaitForAck {
+		t.Fatalf("unset conversation should inherit defaults, got %+v", got)
+	}
+}
+
+func TestPutConversationPrefs_RoundTripAndReset(t *testing.T) {
+	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
+
+	// Set an override: RF only + no resend (no-ACK contact).
+	body := `{"send_path":"rf_only","wait_for_ack":false}`
+	req := httptest.NewRequest(http.MethodPut, "/api/messages/conversations/dm/w5xyz/prefs", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got dto.ConversationPrefsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.SendPath != "rf_only" || got.WaitForAck || got.ThreadKey != "W5XYZ" {
+		t.Fatalf("PUT round-trip mismatch (key should be uppercased): %+v", got)
+	}
+
+	// GET reflects the stored override.
+	req = httptest.NewRequest(http.MethodGet, "/api/messages/conversations/dm/W5XYZ/prefs", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.SendPath != "rf_only" || got.WaitForAck {
+		t.Fatalf("GET after PUT mismatch: %+v", got)
+	}
+
+	// Reset to defaults clears the row; GET returns inherited defaults.
+	body = `{"send_path":"","wait_for_ack":true}`
+	req = httptest.NewRequest(http.MethodPut, "/api/messages/conversations/dm/W5XYZ/prefs", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset PUT expected 200, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.SendPath != "" || !got.WaitForAck {
+		t.Fatalf("reset should return defaults, got %+v", got)
+	}
+}
+
+func TestPutConversationPrefs_Validation(t *testing.T) {
+	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
+	// Bad send_path.
+	req := httptest.NewRequest(http.MethodPut, "/api/messages/conversations/dm/W5XYZ/prefs",
+		strings.NewReader(`{"send_path":"nope","wait_for_ack":true}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad send_path: expected 400, got %d", rec.Code)
+	}
+	// Bad kind.
+	req = httptest.NewRequest(http.MethodPut, "/api/messages/conversations/bogus/W5XYZ/prefs",
+		strings.NewReader(`{"send_path":"","wait_for_ack":true}`))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad kind: expected 400, got %d", rec.Code)
+	}
+}
+
 // --- Tactical CRUD -------------------------------------------------------
 
 func TestCreateTactical_201(t *testing.T) {

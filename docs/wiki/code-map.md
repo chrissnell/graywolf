@@ -159,6 +159,20 @@ The split is enforced by [invariant 9](invariants.md).
 
 See [invariant 23](invariants.md) for the TX-gating contract.
 
+## Per-conversation message routing (issue #453)
+
+Overrides the global `MessagePreferences` on a single DM/tactical thread,
+set from the gear popover in the message thread header. Two knobs; a
+thread inherits the global defaults until the operator changes one.
+
+| Concern | Where |
+|---|---|
+| Storage | `pkg/configstore/models.go` — `ConversationPrefs` (unique on `thread_kind`+`thread_key`; `SendPath` `''`/`rf_only`/`is_only`/`both`, `WaitForAck` bool **with no gorm default** — a `default:true` bool would be dropped from INSERT when false, silently re-enabling resend). CRUD in `messages.go`; registered in `store.go` AutoMigrate. Sparse: `UpsertConversationPrefs` deletes the row when both fields are default. |
+| Send-time apply | `pkg/messages/service.go` — `SendMessage` looks up prefs by `(kind, To)`, stamps `Message.SendPath` (new column, `models.go`) for retry fidelity, uses it as the initial-dispatch policy, and skips retry enrollment when `WaitForAck=false` (no-ACK contact → sent once). One-shot `req.FallbackPolicyOverride` still wins for the initial send but is not persisted. |
+| Retry apply | `pkg/messages/retry.go` — `retryOne`/`Resend` route via `SendWithPolicy(cur, cur.SendPath)` so an `rf_only` contact never leaks onto APRS-IS on retry. |
+| REST | `webapi/messages.go` — GET/PUT `/api/messages/conversations/{kind}/{key}/prefs`; DTO + validation in `webapi/dto/messages.go`. GET returns inherited defaults (not 404) for an unset thread. |
+| UI | `web/src/components/messages/ConversationRoutingMenu.svelte` (gear popover: send-path radios + "Automatic Resend until ACK" checkbox, DM only), mounted in `ThreadHeader.svelte`; client in `api/messages.js`. |
+
 ### Channel TX test signal
 
 | Surface | Where |

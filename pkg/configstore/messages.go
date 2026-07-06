@@ -66,6 +66,51 @@ func (s *Store) seedMessagePreferences(ctx context.Context) error {
 }
 
 // ---------------------------------------------------------------------------
+// ConversationPrefs (per-thread overrides)
+// ---------------------------------------------------------------------------
+
+// GetConversationPrefs returns the override row for one thread, or
+// (nil, nil) when none exists (the common case — most conversations
+// inherit the global defaults, so no row is written). Callers treat a
+// nil result as "SendPath inherit, WaitForAck true". Kind/key are
+// matched exactly; callers normalize key to uppercase before calling.
+func (s *Store) GetConversationPrefs(ctx context.Context, kind, key string) (*ConversationPrefs, error) {
+	var c ConversationPrefs
+	err := s.db.WithContext(ctx).
+		Where("thread_kind = ? AND thread_key = ?", kind, key).
+		First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// UpsertConversationPrefs stores the override row for (kind, key),
+// adopting the existing row's ID when one is present so Save updates in
+// place rather than inserting a duplicate. When the incoming prefs carry
+// only default values (inherit SendPath + WaitForAck true), any existing
+// row is deleted instead so the table stays sparse.
+func (s *Store) UpsertConversationPrefs(ctx context.Context, cfg *ConversationPrefs) error {
+	existing, err := s.GetConversationPrefs(ctx, cfg.ThreadKind, cfg.ThreadKey)
+	if err != nil {
+		return err
+	}
+	if cfg.SendPath == "" && cfg.WaitForAck {
+		if existing != nil {
+			return s.db.WithContext(ctx).Delete(&ConversationPrefs{}, existing.ID).Error
+		}
+		return nil
+	}
+	if existing != nil {
+		cfg.ID = existing.ID
+	}
+	return s.db.WithContext(ctx).Save(cfg).Error
+}
+
+// ---------------------------------------------------------------------------
 // TacticalCallsign CRUD
 // ---------------------------------------------------------------------------
 

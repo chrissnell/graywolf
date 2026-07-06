@@ -247,6 +247,8 @@ const (
 	OpMarkMessageUnread       = "markMessageUnread"
 	OpResendMessage           = "resendMessage"
 	OpListConversations       = "listConversations"
+	OpGetConversationPrefs    = "getConversationPrefs"
+	OpPutConversationPrefs    = "putConversationPrefs"
 	OpStreamMessageEvents     = "streamMessageEvents"
 	OpGetMessagePreferences   = "getMessagePreferences"
 	OpPutMessagePreferences   = "putMessagePreferences"

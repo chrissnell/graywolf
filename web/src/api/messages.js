@@ -140,6 +140,29 @@ export function listConversations(params) {
   return api.get(`/messages/conversations${qs(params)}`);
 }
 
+/**
+ * GET /api/messages/conversations/{kind}/{key}/prefs — per-thread
+ * routing overrides. Returns the inherited defaults (send_path '',
+ * wait_for_ack true) when no override row exists, never 404.
+ * @param {string} kind 'dm' | 'tactical'
+ * @param {string} key  peer callsign (dm) or tactical label
+ * @returns {Promise<{thread_kind: string, thread_key: string, send_path: string, wait_for_ack: boolean}>}
+ */
+export function getConversationPrefs(kind, key) {
+  return api.get(`/messages/conversations/${encodeURIComponent(kind)}/${encodeURIComponent(key)}/prefs`);
+}
+
+/**
+ * PUT /api/messages/conversations/{kind}/{key}/prefs — upsert the
+ * override. Sending the defaults clears the row server-side.
+ * @param {string} kind 'dm' | 'tactical'
+ * @param {string} key  peer callsign (dm) or tactical label
+ * @param {{send_path: string, wait_for_ack: boolean}} req
+ */
+export function putConversationPrefs(kind, key, req) {
+  return api.put(`/messages/conversations/${encodeURIComponent(kind)}/${encodeURIComponent(key)}/prefs`, req);
+}
+
 // --- Preferences ----------------------------------------------------
 
 /**

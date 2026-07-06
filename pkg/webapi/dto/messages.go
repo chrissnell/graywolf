@@ -482,6 +482,82 @@ func MessagePreferencesFromModel(m configstore.MessagePreferences) MessagePrefer
 	}
 }
 
+// --- Conversation prefs (per-thread overrides) ---------------------------
+
+// ConversationPrefsRequest is the body accepted by PUT
+// /api/messages/conversations/{kind}/{key}/prefs. Both fields are
+// always present (the client sends the full state of the Routing
+// popover); the server deletes the row when they equal the defaults so
+// the table stays sparse.
+type ConversationPrefsRequest struct {
+	// SendPath overrides transport for this conversation. Empty ('')
+	// means "inherit the global fallback policy"; otherwise one of
+	// rf_only | is_only | both.
+	SendPath string `json:"send_path"`
+	// WaitForAck, when false, sends DMs to this contact once and skips
+	// the retry ladder (no re-sends) — for handhelds that never ACK.
+	// Defaults true.
+	WaitForAck bool `json:"wait_for_ack"`
+}
+
+// Validate constrains SendPath to the inherit-or-enum set. is_fallback
+// is rejected as an override: it is identical to inherit ('') and
+// accepting both would give two encodings for the same behavior.
+func (r ConversationPrefsRequest) Validate() error {
+	switch r.SendPath {
+	case "",
+		messages.FallbackPolicyRFOnly,
+		messages.FallbackPolicyISOnly,
+		messages.FallbackPolicyBoth:
+		return nil
+	default:
+		return fmt.Errorf("send_path %q is not one of (empty)|rf_only|is_only|both", r.SendPath)
+	}
+}
+
+// ToModel builds a configstore row for (kind, key). Key is uppercased
+// so lookups at send time (which also uppercase) hit the same row.
+func (r ConversationPrefsRequest) ToModel(kind, key string) configstore.ConversationPrefs {
+	return configstore.ConversationPrefs{
+		ThreadKind: strings.ToLower(strings.TrimSpace(kind)),
+		ThreadKey:  strings.ToUpper(strings.TrimSpace(key)),
+		SendPath:   r.SendPath,
+		WaitForAck: r.WaitForAck,
+	}
+}
+
+// ConversationPrefsResponse is returned by GET/PUT on the prefs
+// endpoint. A conversation with no stored row returns the defaults
+// (inherit + wait_for_ack true) rather than 404 so the client can
+// render the Routing control without a special-case.
+type ConversationPrefsResponse struct {
+	ThreadKind string `json:"thread_kind"`
+	ThreadKey  string `json:"thread_key"`
+	SendPath   string `json:"send_path"`
+	WaitForAck bool   `json:"wait_for_ack"`
+}
+
+// ConversationPrefsDefaults returns the response a thread with no stored
+// override row surfaces: inherit transport, ack-and-resend on.
+func ConversationPrefsDefaults(kind, key string) ConversationPrefsResponse {
+	return ConversationPrefsResponse{
+		ThreadKind: strings.ToLower(strings.TrimSpace(kind)),
+		ThreadKey:  strings.ToUpper(strings.TrimSpace(key)),
+		SendPath:   "",
+		WaitForAck: true,
+	}
+}
+
+// ConversationPrefsFromModel renders a stored row.
+func ConversationPrefsFromModel(m configstore.ConversationPrefs) ConversationPrefsResponse {
+	return ConversationPrefsResponse{
+		ThreadKind: m.ThreadKind,
+		ThreadKey:  m.ThreadKey,
+		SendPath:   m.SendPath,
+		WaitForAck: m.WaitForAck,
+	}
+}
+
 // --- Tactical callsigns --------------------------------------------------
 
 // TacticalCallsignRequest is the body accepted by POST + PUT on

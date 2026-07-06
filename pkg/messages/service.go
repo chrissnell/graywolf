@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -457,6 +458,25 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 		}
 	}
 
+	// Per-conversation overrides (issue #453). Absent row → inherit the
+	// global defaults. SendPath is stamped on the row so retry re-attempts
+	// route the same way as the initial send; WaitForAck=false disables
+	// retry enrollment below so a no-ACK contact (e.g. TIDRadio TD-H9) is
+	// sent once and not re-transmitted. A one-shot req.FallbackPolicyOverride
+	// (e.g. an Actions reply echoing inbound transport) still wins for the
+	// initial dispatch, but is NOT persisted to row.SendPath so it doesn't
+	// bleed into that contact's retries.
+	convPrefs, err := s.cfg.Store.GetConversationPrefs(ctx, kind, strings.ToUpper(req.To))
+	if err != nil {
+		return nil, err
+	}
+	rowSendPath := ""
+	suppressRetry := false
+	if convPrefs != nil {
+		rowSendPath = convPrefs.SendPath
+		suppressRetry = !convPrefs.WaitForAck
+	}
+
 	row := &configstore.Message{
 		Direction:      "out",
 		OurCall:        req.OurCall,
@@ -468,6 +488,7 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 		Unread:         false,
 		Kind:           bodyKind,
 		InviteTactical: inviteTactical,
+		SendPath:       rowSendPath,
 	}
 	// DM requires a msgid; tactical may omit.
 	if kind == ThreadKindDM {
@@ -491,7 +512,12 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 	// reflect writes). Without the copy, -race flags this as a data
 	// race between handler response-serialization and background send.
 	rowCopy := *row
+	// Initial-dispatch policy: an explicit one-shot override wins, else
+	// the conversation's stamped SendPath, else (empty) the global pref.
 	policyOverride := req.FallbackPolicyOverride
+	if policyOverride == "" {
+		policyOverride = rowSendPath
+	}
 	go func() {
 		sendCtx := s.ctx
 		if sendCtx == nil {
@@ -504,8 +530,10 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 		}
 		// Enroll in the retry ladder for DM when the first attempt
 		// queues successfully or returned a retryable error. Tactical
-		// rows do not participate in the retry scheduler.
-		if result.Retryable && rowCopy.ThreadKind == ThreadKindDM {
+		// rows do not participate in the retry scheduler. A conversation
+		// with WaitForAck=false (no-ACK contact) is sent once and skips
+		// enrollment entirely — no re-sends.
+		if result.Retryable && rowCopy.ThreadKind == ThreadKindDM && !suppressRetry {
 			// Re-read the row — Sender may have flipped fields.
 			cur, err := s.cfg.Store.GetByID(sendCtx, rowCopy.ID)
 			if err == nil {

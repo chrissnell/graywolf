@@ -785,6 +785,14 @@ type Message struct {
 	IsBulletin     bool           `gorm:"not null;default:false" json:"is_bulletin"`
 	IsNWS          bool           `gorm:"column:is_nws;not null;default:false" json:"is_nws"`
 	PreferIS       bool           `gorm:"column:prefer_is;not null;default:false" json:"prefer_is"`
+	// SendPath is the effective per-message transport override stamped
+	// from the conversation's ConversationPrefs at send time. Empty ('')
+	// means "defer to the global MessagePreferences.FallbackPolicy".
+	// Persisted so retry re-attempts route the same way as the initial
+	// send — critical for "RF only" contacts, where a global fallback
+	// must never leak a local message onto APRS-IS on retry. Reuses the
+	// FallbackPolicy vocabulary (rf_only | is_only | both).
+	SendPath       string         `gorm:"column:send_path;size:16;not null;default:''" json:"send_path"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 	ThreadKind     string         `gorm:"size:10;not null;default:'dm';index:idx_msg_thread,priority:1" json:"thread_kind"` // dm | tactical
 	ThreadKey      string         `gorm:"size:9;not null;default:'';index:idx_msg_thread,priority:2" json:"thread_key"`     // peer callsign for dm, tactical label for tactical
@@ -845,6 +853,40 @@ type MessagePreferences struct {
 	MaxMessageTextOverride uint32    `gorm:"not null;default:0" json:"max_message_text_override"`
 	CreatedAt              time.Time `json:"-"`
 	UpdatedAt              time.Time `json:"-"`
+}
+
+// ConversationPrefs holds per-conversation overrides for one message
+// thread, keyed by (ThreadKind, ThreadKey) — the same identity the
+// Message rows carry. A row exists only when the operator has changed a
+// default from the thread's Routing control; absence means "inherit the
+// global MessagePreferences." This keeps the table sparse (one row per
+// customized contact, not one per contact).
+//
+// Two independent knobs, matching the ThreadHeader popover:
+//   - SendPath: per-conversation transport override. Empty ('') defers
+//     to the global FallbackPolicy; otherwise one of rf_only | is_only |
+//     both. Answers issue #453's "keep my local radio messages off
+//     APRS-IS" — set a contact to rf_only and every message (including
+//     retries) stays on RF.
+//   - WaitForAck: when false, outbound DMs to this contact are sent once
+//     and NOT enrolled in the retry ladder. Answers #453's "some
+//     handhelds (e.g. TIDRadio TD-H9) never ACK" — disable re-sends for
+//     just that contact instead of burning airtime retrying a device
+//     that will never answer. Defaults true (normal ack-and-retry).
+type ConversationPrefs struct {
+	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
+	ThreadKind string    `gorm:"size:10;not null;uniqueIndex:idx_convpref_thread,priority:1" json:"thread_kind"` // dm | tactical
+	ThreadKey  string    `gorm:"size:9;not null;uniqueIndex:idx_convpref_thread,priority:2" json:"thread_key"`   // peer callsign (dm) or tactical label
+	SendPath   string    `gorm:"size:16;not null;default:''" json:"send_path"`                                   // '' inherit | rf_only | is_only | both
+	// WaitForAck carries NO gorm default tag on purpose. A bool with
+	// `default:true` hits GORM's omit-zero-value-on-INSERT behavior:
+	// WaitForAck=false (a no-ACK contact — the whole point of the
+	// field) would be dropped from the INSERT and the DB default true
+	// would silently win. Every write path sets this field explicitly,
+	// so no DB-level default is needed.
+	WaitForAck bool      `gorm:"not null" json:"wait_for_ack"`
+	CreatedAt  time.Time `json:"-"`
+	UpdatedAt  time.Time `json:"-"`
 }
 
 // TacticalCallsign is one monitored tactical addressee label. Operators
