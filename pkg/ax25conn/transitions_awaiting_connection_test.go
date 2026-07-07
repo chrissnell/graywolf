@@ -2,8 +2,46 @@ package ax25conn
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
+
+// failSink rejects every Submit, standing in for a channel with no TX
+// backend registered.
+type failSink struct{}
+
+func (failSink) Submit(_ context.Context, _ uint32, _ *ax25.Frame, _ txgovernor.SubmitSource) error {
+	return errors.New("no backend for channel")
+}
+
+// TestAwaitingConnection_TxFailureSurfacesOnce guards graywolf #456: a
+// SABM that can't be transmitted must raise one operator-facing
+// tx-failed error rather than silently retrying to the misleading "no
+// response to SABM" timeout.
+func TestAwaitingConnection_TxFailureSurfacesOnce(t *testing.T) {
+	var emits []OutEvent
+	s := newTestSession(t, func(c *SessionConfig) {
+		c.TxSink = failSink{}
+		c.Observer = func(e OutEvent) { emits = append(emits, e) }
+	})
+	s.handle(context.Background(), Event{Kind: EventConnect})
+	// Two more SABM attempts on T1 expiry must not re-raise the error.
+	s.handle(context.Background(), Event{Kind: EventT1Expiry})
+	s.handle(context.Background(), Event{Kind: EventT1Expiry})
+
+	n := 0
+	for _, e := range emits {
+		if e.Kind == OutError && e.ErrCode == "tx-failed" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("expected exactly one tx-failed OutError, got %d (emits=%+v)", n, emits)
+	}
+}
 
 // putState forces the session into the requested state and zeroes the
 // counters. Used by transition tests that bypass the Connect path.
