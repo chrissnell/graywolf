@@ -634,7 +634,7 @@
               <span class="beacon-callsign">{stationCallsign}</span>
               <span class="beacon-callsign-inherited">(inherited)</span>
             {:else}
-              <span class="beacon-callsign beacon-callsign-unset">(not set)</span>
+              <span class="beacon-callsign beacon-callsign-unset">(Callsign not set)</span>
             {/if}
           </div>
           <div class="beacon-badges">
@@ -1426,7 +1426,7 @@
   }
   .beacon-callsign-unset {
     font-style: italic;
-    color: var(--text-muted, var(--color-text-muted, #888));
+    color: var(--color-danger, #f85149);
   }
 
   /* Phase 2 — TX-capability blocking callout. Replaces the prior
