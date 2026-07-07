@@ -2,6 +2,7 @@ package ax25conn
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
@@ -120,7 +121,17 @@ func (s *Session) submit(f *Frame) {
 		SkipDedup: true,
 	}
 	if err := s.cfg.TxSink.Submit(context.Background(), s.cfg.Channel, wrapper, src); err != nil {
-		s.cfg.Logger.Warn("ax25conn: tx submit failed", "err", err)
+		s.cfg.Logger.Warn("ax25conn: tx submit failed", "err", err, "channel", s.cfg.Channel)
+		// Surface the real reason to the operator once. Otherwise a
+		// channel that can't transmit (no KISS/modem backend, wrong
+		// channel picked) fails silently and the link setup reports the
+		// misleading "no response to SABM" after N2 retries (graywolf
+		// #456).
+		if !s.txFailNotified {
+			s.txFailNotified = true
+			s.emit(OutEvent{Kind: OutError, ErrCode: "tx-failed",
+				ErrMsg: fmt.Sprintf("could not transmit on channel %d: %v (check the channel has a TNC/KISS or modem backend)", s.cfg.Channel, err)})
+		}
 		return
 	}
 	s.mutateStats(func(st *LinkStats) {

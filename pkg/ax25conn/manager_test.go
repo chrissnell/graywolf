@@ -252,6 +252,44 @@ func TestManager_CloseCancelsSessions(t *testing.T) {
 	// races by polling above.)
 }
 
+// TestManager_FreesTripleAfterFailedConnect guards against graywolf
+// #456: a link that never comes up must not leave its (channel, local,
+// peer) triple bound. Before the fix the session parked in DISCONNECTED
+// forever, so the operator's next connect to the same peer failed with
+// ErrSessionExists until graywolf was restarted.
+func TestManager_FreesTripleAfterFailedConnect(t *testing.T) {
+	m := newTestManager(t)
+	defer m.Close()
+	_, s := openTestSession(t, m, 1, "KE7XYZ-1", "BBS-3", "op1")
+
+	// Drive the link: SABM out, then the peer refuses with DM(F=1),
+	// which is the fast terminal path into DISCONNECTED.
+	s.Submit(Event{Kind: EventConnect})
+	m.Dispatch(1, &Frame{
+		Source:  mustParse(t, "BBS-3"),
+		Dest:    mustParse(t, "KE7XYZ-1"),
+		Control: Control{Kind: FrameDM, PF: true},
+	})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && m.Count() != 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if m.Count() != 0 {
+		t.Fatalf("triple not freed after failed connect; Count=%d", m.Count())
+	}
+
+	// The operator must be able to reconnect to the same peer without a
+	// restart.
+	if _, _, err := m.Open(SessionConfig{
+		Local:   mustParse(t, "KE7XYZ-1"),
+		Peer:    mustParse(t, "BBS-3"),
+		Channel: 1,
+	}, "op1"); err != nil {
+		t.Fatalf("reconnect to same triple must succeed, got %v", err)
+	}
+}
+
 func TestManager_OpenAfterCloseFails(t *testing.T) {
 	m := newTestManager(t)
 	m.Close()

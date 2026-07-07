@@ -6,6 +6,7 @@
   import { profilesStore, profileLabel } from '../../lib/terminal/profiles.svelte.js';
   import { api } from '../../lib/api.js';
   import { isStationCallsignMissing } from '../../lib/callsign.js';
+  import { loadAdvanced, saveAdvanced } from '../../lib/settings/terminal-advanced-store.svelte.js';
 
   let { onSubmit, onRawTail } = $props();
 
@@ -71,16 +72,20 @@
 
   // Advanced (collapsed by default). Only one operator in fifty cares
   // about these knobs; default everything to 0 (server picks kernel
-  // defaults) and tuck the controls behind a disclosure.
+  // defaults) and tuck the controls behind a disclosure. Seed from the
+  // device-local store so an operator's tuned retry/timing settings
+  // survive across sessions (graywolf #456); handleSubmit persists the
+  // values actually used on each connect.
+  const savedAdvanced = loadAdvanced();
   let advancedOpen = $state(false);
-  let mod128 = $state(false);
-  let paclen = $state(0);
-  let maxframe = $state(0);
-  let n2 = $state(0);
-  let t1ms = $state(0);
-  let t2ms = $state(0);
-  let t3ms = $state(0);
-  let backoff = $state('linear');
+  let mod128 = $state(savedAdvanced.mod128);
+  let paclen = $state(savedAdvanced.paclen);
+  let maxframe = $state(savedAdvanced.maxframe);
+  let n2 = $state(savedAdvanced.n2);
+  let t1ms = $state(savedAdvanced.t1ms);
+  let t2ms = $state(savedAdvanced.t2ms);
+  let t3ms = $state(savedAdvanced.t3ms);
+  let backoff = $state(savedAdvanced.backoff);
 
   let selectedChannel = $derived(
     channelsStore.list.find((c) => String(c.id) === String(channelId)) ?? null
@@ -188,6 +193,10 @@
       t3_ms: Number(t3ms) || 0,
       backoff,
     };
+
+    // Remember the advanced knobs on this device so the next session
+    // opens with the same retry/timing settings (graywolf #456).
+    saveAdvanced({ mod128, paclen, maxframe, n2, t1ms, t2ms, t3ms, backoff });
 
     const id = terminalSessions.open(initial);
     if (id === null) {

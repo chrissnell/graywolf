@@ -1495,3 +1495,41 @@ Source: [`../../pkg/stationcache/heatmap.go`](../../pkg/stationcache/heatmap.go)
 (`RecordRxEvent`, `QueryHeatmap`, `Prune`),
 [`../../pkg/historydb/heatmap_test.go`](../../pkg/historydb/heatmap_test.go),
 [`../../pkg/stationcache/heatmap_test.go`](../../pkg/stationcache/heatmap_test.go).
+
+### 59. An ax25conn session self-removes from the manager on terminal DISCONNECTED
+
+`ax25conn.Manager` keys live sessions by the `(channel, local, peer)`
+triple and rejects a second `Open` on the same triple with
+`ErrSessionExists`. A session is removed from that table only when its
+`Run` goroutine returns — the manager runs `go func(){ s.Run(ctx);
+m.remove(key,id) }()`.
+
+The invariant: **every transition into `StateDisconnected` from a live
+state ends the session's life.** `setState` sets `s.terminated` whenever
+`ns == StateDisconnected` (the initial DISCONNECTED never trips it —
+`setState` short-circuits on an unchanged state), and `handle` returns
+`false` when `terminated` is set, so `Run` exits, `cleanup` emits the
+final DISCONNECTED, and `remove` frees the triple. This covers all
+terminal paths: SABM/N2 timeout and DM-reject during setup, a peer DROP
+while connected, and the DISC/UA release handshake.
+
+*Why:* Before this, terminal transitions returned `true` and the session
+parked in DISCONNECTED forever, leaking a goroutine + manager slot on
+**every** disconnect. The operator-visible symptom (graywolf #456) was a
+reconnect to the same peer failing with "ax25conn: session already
+exists for this triple" until graywolf was restarted; the bridge's
+`Close()` cancels only the bridge/pump context, not the session, so it
+could not clear the stale entry on its own. Relatedly, a frame that
+can't be handed to the TX backend now raises a one-shot `tx-failed`
+error (guarded by `txFailNotified`) so a channel with no TNC/KISS/modem
+backend surfaces the real reason instead of the misleading "no response
+to SABM after N2 retries."
+
+Source: [`../../pkg/ax25conn/session.go`](../../pkg/ax25conn/session.go)
+(`terminated`, `setState`, `handle`, `Run`),
+[`../../pkg/ax25conn/manager.go`](../../pkg/ax25conn/manager.go)
+(`Open`, `remove`, `ErrSessionExists`),
+[`../../pkg/ax25conn/transitions_disconnected.go`](../../pkg/ax25conn/transitions_disconnected.go)
+(`submit` tx-failed emit),
+[`../../pkg/ax25conn/manager_test.go`](../../pkg/ax25conn/manager_test.go)
+(`TestManager_FreesTripleAfterFailedConnect`).
