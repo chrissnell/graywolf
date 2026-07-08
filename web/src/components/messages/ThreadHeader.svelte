@@ -73,7 +73,9 @@
     </div>
     {#if !isTactical && thread?.key}
       <div class="actions">
-        <ConversationRoutingMenu kind="dm" threadKey={thread.key} />
+        {#key thread.key}
+          <ConversationRoutingMenu kind="dm" threadKey={thread.key} />
+        {/key}
         {#if onActionsToggle}
           <Tooltip>
             <Tooltip.Trigger>
@@ -95,7 +97,9 @@
     {#if isTactical}
       <div class="actions">
         {#if tacticalKey}
-          <ConversationRoutingMenu kind="tactical" threadKey={tacticalKey} />
+          {#key tacticalKey}
+            <ConversationRoutingMenu kind="tactical" threadKey={tacticalKey} />
+          {/key}
         {/if}
         <div class="monitor">
           <Toggle
