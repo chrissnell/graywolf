@@ -81,18 +81,69 @@
       <!-- ── Debian / Ubuntu ── -->
       <div class="tab-panel active" id="tab-deb">
 
+        <h2>Determine your architecture</h2>
+        <p>
+          Many users run graywolf on Raspberry Pi hardware. Graywolf works on every
+          Raspberry Pi, all the way back to the original Model B, including the Pi
+          Zero models, but you need to install the right build of graywolf for
+          your architecture.
+        </p>
+
+        <p>Log in to your Raspberry Pi, and run:</p>
+
+        <pre><code>dpkg --print-architecture</code></pre>
+
+        <h2>Download the right package</h2>
+
+        <p>Go to the <a href="https://github.com/chrissnell/graywolf/releases">GitHub Releases</a>
+        page and find the latest version. Use the output of the
+        <code>dpkg --print-architecture</code> command to tell you which file
+        you need. For example, if the output shows "armhf", then you would
+        use the "graywolf_0.14.10_armhf.deb" file (as of this writing 0.14.10 is the latest
+        version).
+        </p>
+
+        <p>
+          From your web browser, right click on the proper file and select "Copy Link Address".
+          The exact name may vary depending on which browser you use. While logged in to your
+          Raspberry Pi, type:
+        </p>
+
+<pre><code>$ cd /tmp
+$ wget </code></pre>
+
+        <p>
+          and then type a space, and paste the link you just copied from your browser. You should have
+          something that looks like this:
+        </p>
+
+        <pre><code>$ wget https://github.com/chrissnell/graywolf/releases/download/v0.14.10/graywolf_0.14.10_armhf.deb</code></pre>
+
+        <p>
+          The URL you see may differ as newer versions of graywolf are released. When you press return,
+          <code>wget</code> will download the installation file to your Raspberry Pi.
+        </p>
+
+        <p>
+          If you get an error message about wget not found or wget not installed, you can easily install it:
+        </p>
+
+        <pre><code>sudo apt install wget</code></pre>
+
+        <p>Then rerun the <code>wget</code> command with the url again.</p>
+
         <h2>Install the Package</h2>
 
         <p>
-          Download the <code>.deb</code> package for your architecture
-          (<code>amd64</code>, <code>arm64</code>, or <code>armv6l</code>
-          for 32-bit Raspberry Pi OS on any Pi model -- Pi 1, Pi 2, Pi 3,
-          Pi 4, Pi 5, Pi Zero, or Zero W) from the
-          <a href="https://github.com/chrissnell/graywolf/releases">GitHub Releases</a>
-          page, then install it:
+          With the right package downloaded, installation is easy:
         </p>
 
-<pre><code>sudo apt install ./graywolf_*.deb</code></pre>
+        <pre><code>sudo apt install ./graywolf_*.deb</code></pre>
+
+        <p>
+          The <code>./</code> before the package name is important. It tells apt
+          to install the local file instead of looking for graywolf in the package index.
+        </p>
 
         <p>
           The package installs both binaries (<code>/usr/bin/graywolf</code>
@@ -417,6 +468,17 @@ sudo packaging/scripts/postinstall.sh</code></pre>
       <code>http://localhost:8080</code>. The web UI is where you&rsquo;ll
       configure audio devices, radio channels, beacons, digipeater rules,
       and everything else.
+    </p>
+
+    <p>
+      If you are on a Linux machine and you aren't sure what IP address to use, type:
+    </p>
+
+    <pre><code>hostname -I</code></pre>
+
+    <p>
+      into a shell prompt on the Linux machine running graywolf and pick the first
+      IP address from the list.
     </p>
 
     <h2>Set a Password</h2>
