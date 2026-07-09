@@ -154,22 +154,26 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 	if ch == 0 {
 		ch = 1
 	}
-	// A tcp-client dials OUT to a hardware TNC, so the only useful
-	// default is a TX-capable TNC link (the Phase 4 contract documented
-	// on KissInterface.AllowTxFromGovernor). Every other interface type
-	// keeps the historical modem default; an explicitly supplied Mode is
-	// always honored verbatim. ToModel feeds both create and ToUpdate,
-	// and KISS PUT is full-resource replace (Store.UpdateKissInterface
-	// does db.Save) — a PUT that omits mode re-applies this default
-	// exactly as create does, consistent with every other field default
-	// here. validateKissInterface independently rejects the only
-	// hazardous outcome (tnc+governor TX on a modem-backed channel) on
-	// both paths. normalizeKissInterface applies the identical rule for
-	// callers that bypass the DTO.
+	// A tcp-client, serial, or usb-serial interface connects to a hardware
+	// TNC / modem / radio, so the only useful default is a TX-capable TNC
+	// link (the Phase 4 contract documented on
+	// KissInterface.AllowTxFromGovernor). Leaving them at the historical
+	// modem default misroutes RX into the TX governor (no packets shown)
+	// and fails TX with "no backend registered" -- the recurring
+	// serial-KISS failure. Only tcp (server) keeps the modem default (its
+	// peer is an APRS app); bluetooth is force-TNC'd in wiring. An
+	// explicitly supplied Mode is always honored verbatim. ToModel feeds
+	// both create and ToUpdate, and KISS PUT is full-resource replace
+	// (Store.UpdateKissInterface does db.Save) — a PUT that omits mode
+	// re-applies this default exactly as create does, consistent with
+	// every other field default here. validateKissInterface independently
+	// rejects the only hazardous outcome (tnc+governor TX on a
+	// modem-backed channel) on both paths. normalizeKissInterface applies
+	// the identical rule for callers that bypass the DTO.
 	mode := r.Mode
 	allowTx := r.AllowTxFromGovernor
 	if mode == "" {
-		if r.Type == configstore.KissTypeTCPClient {
+		if configstore.KissTypeDefaultsTnc(r.Type) {
 			mode = configstore.KissModeTnc
 			allowTx = true
 		} else {
