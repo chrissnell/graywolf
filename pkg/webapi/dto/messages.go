@@ -613,6 +613,62 @@ func TacticalCallsignFromModel(m configstore.TacticalCallsign) TacticalCallsignR
 	}
 }
 
+// --- Blocked call signs --------------------------------------------------
+
+// BlockedCallsignRequest is the body accepted by POST + PUT on
+// /api/messages/blocklist.
+type BlockedCallsignRequest struct {
+	Callsign string `json:"callsign"`
+	Note     string `json:"note,omitempty"`
+	Enabled  bool   `json:"enabled"`
+}
+
+// Validate enforces addressee syntax and a non-empty callsign. An
+// SSID-qualified entry (e.g. "N0CALL-7") is accepted and blocks only
+// that station; a bare callsign blocks every SSID of the base call.
+func (r BlockedCallsignRequest) Validate() error {
+	if strings.TrimSpace(r.Callsign) == "" {
+		return fmt.Errorf("callsign is required")
+	}
+	if err := ValidateAddressee(r.Callsign); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ToModel builds a configstore row from the request. Callsign is
+// uppercased by the model's BeforeSave hook; we upper here too so
+// validation and collision checks use the canonical form.
+func (r BlockedCallsignRequest) ToModel() configstore.BlockedCallsign {
+	return configstore.BlockedCallsign{
+		Callsign: strings.ToUpper(strings.TrimSpace(r.Callsign)),
+		Note:     r.Note,
+		Enabled:  r.Enabled,
+	}
+}
+
+// BlockedCallsignResponse is the body returned by GET/POST/PUT.
+type BlockedCallsignResponse struct {
+	ID        uint32    `json:"id"`
+	Callsign  string    `json:"callsign"`
+	Note      string    `json:"note,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// BlockedCallsignFromModel renders one row.
+func BlockedCallsignFromModel(m configstore.BlockedCallsign) BlockedCallsignResponse {
+	return BlockedCallsignResponse{
+		ID:        m.ID,
+		Callsign:  m.Callsign,
+		Note:      m.Note,
+		Enabled:   m.Enabled,
+		CreatedAt: m.CreatedAt.UTC(),
+		UpdatedAt: m.UpdatedAt.UTC(),
+	}
+}
+
 // AcceptInviteRequest is the body accepted by the accept-invite endpoint
 // (Phase 2 wires POST /api/tacticals/subscribe or similar). Acceptance
 // is tactical-keyed, not message-keyed: the message ID is optional and

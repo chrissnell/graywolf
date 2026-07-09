@@ -2915,6 +2915,9 @@ func (a *App) messagesComponent() namedComponent {
 							if err := a.msgSvc.ReloadTacticalCallsigns(ctx); err != nil {
 								a.logger.Warn("messages reload tactical callsigns", "err", err)
 							}
+							if err := a.msgSvc.ReloadBlockedCallsigns(ctx); err != nil {
+								a.logger.Warn("messages reload blocked callsigns", "err", err)
+							}
 							if err := a.msgSvc.ReloadPreferences(ctx); err != nil {
 								a.logger.Warn("messages reload preferences", "err", err)
 							}

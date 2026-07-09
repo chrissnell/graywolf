@@ -31,6 +31,7 @@ var ErrInvalidInvite = errors.New("messages: invite requires a valid invite_tact
 type ServiceConfigReader interface {
 	MessagePreferencesReader
 	ListEnabledTacticalCallsigns(ctx context.Context) ([]configstore.TacticalCallsign, error)
+	ListEnabledBlockedCallsigns(ctx context.Context) ([]configstore.BlockedCallsign, error)
 }
 
 // ServiceConfig wires the Service constructor.
@@ -96,6 +97,7 @@ type Service struct {
 	hub       *EventHub
 	ring      *LocalTxRing
 	tactSet   *TacticalSet
+	blockSet  *BlocklistSet
 	preflight *Preflight
 
 	// TxHook unregister closure — nil before Start, set in Start.
@@ -142,6 +144,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if tactSet == nil {
 		tactSet = NewTacticalSet()
 	}
+	blockSet := NewBlocklistSet()
 	hub := cfg.EventHub
 	if hub == nil {
 		hub = NewEventHub(DefaultSubscriberBuffer)
@@ -210,6 +213,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		OurCall:     cfg.OurCall,
 		LocalTxRing: ring,
 		TacticalSet: tactSet,
+		BlockedSet:  blockSet,
 		EventHub:    hub,
 		Logger:      logger.With("component", "messages-router"),
 		Clock:       clock,
@@ -229,6 +233,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		hub:       hub,
 		ring:      ring,
 		tactSet:   tactSet,
+		blockSet:  blockSet,
 		preflight: pf,
 	}, nil
 }
@@ -250,6 +255,10 @@ func (s *Service) Start(ctx context.Context) error {
 		if err := s.ReloadTacticalCallsigns(ctx); err != nil {
 			s.logger.Warn("messages tactical callsigns initial load failed", "error", err)
 			// Not fatal.
+		}
+		if err := s.ReloadBlockedCallsigns(ctx); err != nil {
+			s.logger.Warn("messages blocked callsigns initial load failed", "error", err)
+			// Not fatal — an empty blocklist blocks nothing.
 		}
 		_, unreg := s.cfg.TxHookReg.AddTxHook(s.sender.onTxComplete)
 		s.unregTxHook = unreg
@@ -377,6 +386,22 @@ func (s *Service) ReloadTacticalCallsigns(ctx context.Context) error {
 		set[row.Callsign] = struct{}{}
 	}
 	s.tactSet.Store(set)
+	return nil
+}
+
+// ReloadBlockedCallsigns refetches the enabled call-sign blocklist and
+// swaps it into the router's cache. Called at Start and by the Phase 4
+// messagesReload channel consumer after a blocklist CRUD mutation.
+func (s *Service) ReloadBlockedCallsigns(ctx context.Context) error {
+	rows, err := s.cfg.ConfigStore.ListEnabledBlockedCallsigns(ctx)
+	if err != nil {
+		return err
+	}
+	set := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		set[row.Callsign] = struct{}{}
+	}
+	s.blockSet.Store(set)
 	return nil
 }
 

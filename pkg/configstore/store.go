@@ -164,6 +164,7 @@ func (s *Store) Migrate() error {
 		&MessagePreferences{},
 		&ConversationPrefs{},
 		&TacticalCallsign{},
+		&BlockedCallsign{},
 		&StationConfig{},
 		&UpdatesConfig{},
 		&UnitsConfig{},

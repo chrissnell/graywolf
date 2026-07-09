@@ -250,6 +250,41 @@ export function getTacticalParticipants(key, params) {
   return api.get(`/messages/tactical/${encodeURIComponent(key)}/participants${qs(params)}`);
 }
 
+// --- Blocked call signs --------------------------------------------
+
+/**
+ * GET /api/messages/blocklist
+ * @returns {Promise<Array<{id: number, callsign: string, note?: string, enabled: boolean, created_at: string, updated_at: string}>>}
+ */
+export function listBlocklist() {
+  return api.get('/messages/blocklist');
+}
+
+/**
+ * POST /api/messages/blocklist
+ * @param {{callsign: string, note?: string, enabled: boolean}} req
+ */
+export function createBlocklistEntry(req) {
+  return api.post('/messages/blocklist', req);
+}
+
+/**
+ * PUT /api/messages/blocklist/{id}
+ * @param {number} id
+ * @param {{callsign: string, note?: string, enabled: boolean}} req
+ */
+export function updateBlocklistEntry(id, req) {
+  return api.put(`/messages/blocklist/${encodeURIComponent(id)}`, req);
+}
+
+/**
+ * DELETE /api/messages/blocklist/{id} — 204.
+ * @param {number} id
+ */
+export function deleteBlocklistEntry(id) {
+  return api.delete(`/messages/blocklist/${encodeURIComponent(id)}`);
+}
+
 // --- Tactical invite accept ----------------------------------------
 
 /**

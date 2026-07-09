@@ -916,6 +916,37 @@ func (t *TacticalCallsign) BeforeSave(_ *gorm.DB) error {
 	return nil
 }
 
+// BlockedCallsign is one sender the operator has muted for inbound
+// messages. When Enabled, the router drops any inbound message whose
+// source matches Callsign before it is persisted or auto-ACKed, so the
+// station's traffic never reaches the inbox. Motivating case: a station
+// that repeatedly fires certificate-claim messages during APRS Thursday
+// (upstream #465).
+//
+// Match semantics live in the router's BlocklistSet: a bare-callsign
+// entry (no SSID, e.g. "N0CALL") blocks every SSID of that base call,
+// while an SSID-qualified entry (e.g. "N0CALL-7") blocks only that exact
+// station. Callsign is normalized to uppercase via BeforeSave.
+type BlockedCallsign struct {
+	ID       uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Callsign string `gorm:"size:9;not null;uniqueIndex" json:"callsign"` // 1-9 [A-Z0-9-], uppercase; optional -SSID
+	Note     string `gorm:"size:128" json:"note"`                        // optional free-text reason
+	// Enabled: like TacticalCallsign, no default:true. The handler sets
+	// the intended value explicitly, and a GORM default:true would
+	// silently override a caller passing false (GORM treats the Go zero
+	// value as "use the DB default").
+	Enabled   bool      `gorm:"not null" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// BeforeSave normalizes Callsign to uppercase and trims whitespace so
+// the router's cached set always matches against a canonical value.
+func (b *BlockedCallsign) BeforeSave(_ *gorm.DB) error {
+	b.Callsign = strings.ToUpper(strings.TrimSpace(b.Callsign))
+	return nil
+}
+
 // Action is one operator-defined trigger. Identified by Name (used as
 // the message keyword). Type switches between command and webhook
 // execution; the type-specific fields are nullable.

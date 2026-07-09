@@ -41,6 +41,10 @@ type RouterConfig struct {
 	OurCall       func() string // returns our primary callsign (possibly with SSID)
 	LocalTxRing   *LocalTxRing
 	TacticalSet   *TacticalSet
+	// BlockedSet is the enabled call-sign blocklist. Optional: when nil
+	// the router constructs an empty set so nothing is blocked. Swapped
+	// by Service.ReloadBlockedCallsigns on CRUD mutations.
+	BlockedSet    *BlocklistSet
 	EventHub      *EventHub
 	Logger        *slog.Logger
 	Registerer    prometheus.Registerer
@@ -148,6 +152,10 @@ func NewRouter(cfg RouterConfig) (*Router, error) {
 	}
 	if cfg.TacticalSet == nil {
 		return nil, errors.New("messages: router requires TacticalSet")
+	}
+	// BlockedSet is optional; an empty set blocks nothing.
+	if cfg.BlockedSet == nil {
+		cfg.BlockedSet = NewBlocklistSet()
 	}
 	if cfg.EventHub == nil {
 		return nil, errors.New("messages: router requires EventHub")
@@ -353,6 +361,16 @@ func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
 	}
 	if r.cfg.LocalTxRing.Contains(source, effMsg.MessageID) {
 		r.mClassified.WithLabelValues("self_filter").Inc()
+		return
+	}
+
+	// Blocklist filter. A muted sender's traffic is dropped here — before
+	// addressee classification, persistence, and auto-ACK — so blocked
+	// certificate-claim style messages never reach the inbox and we never
+	// ACK them back. Checked after the self-filter so we can't accidentally
+	// block our own echo path. See upstream #465.
+	if r.cfg.BlockedSet.Blocked(source) {
+		r.mClassified.WithLabelValues("blocked").Inc()
 		return
 	}
 

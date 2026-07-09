@@ -1072,6 +1072,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages/blocklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List blocked call signs */
+        get: operations["listBlockedCallsigns"];
+        put?: never;
+        /** Block a call sign */
+        post: operations["createBlockedCallsign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/blocklist/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a blocked call sign */
+        put: operations["updateBlockedCallsign"];
+        post?: never;
+        /** Unblock a call sign */
+        delete: operations["deleteBlockedCallsign"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/config": {
         parameters: {
             query?: never;
@@ -2059,33 +2095,50 @@ export interface components {
         /** @enum {string} */
         "aprs.PacketType": "unknown" | "position" | "message" | "telemetry" | "weather" | "object" | "item" | "mic-e" | "status" | "capabilities" | "df-report" | "query" | "third-party";
         "aprs.Position": {
-            /** @description meters (0 if none reported) */
+            /**
+             * Format: float64
+             * @description meters (0 if none reported)
+             */
             altitude?: number;
             /** @description 0..4, digits of ambiguity introduced by spaces */
             ambiguity?: number;
             compressed?: boolean;
             /** @description degrees true (0..359) */
             course?: number;
-            /** @description DAO datum byte (APRS101 DAO extension), 0 if not present */
+            /**
+             * Format: int32
+             * @description DAO datum byte (APRS101 DAO extension), 0 if not present
+             */
             daodatum?: number;
             hasAlt?: boolean;
             hasCourse?: boolean;
-            /** @description decimal degrees, positive north */
+            /**
+             * Format: float64
+             * @description decimal degrees, positive north
+             */
             latitude?: number;
             /** @description true if the timestamp was the '/' local-time form (APRS101 ch 6) */
             localTime?: boolean;
-            /** @description decimal degrees, positive east */
+            /**
+             * Format: float64
+             * @description decimal degrees, positive east
+             */
             longitude?: number;
             /** @description decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present */
             phg?: components["schemas"]["aprs.PHG"];
-            /** @description knots */
+            /**
+             * Format: float64
+             * @description knots
+             */
             speed?: number;
             symbol?: components["schemas"]["aprs.Symbol"];
             /** @description nil if positionless or no embedded time */
             timestamp?: string;
         };
         "aprs.Symbol": {
+            /** Format: int32 */
             code?: number;
+            /** Format: int32 */
             table?: number;
         };
         "aprs.Telemetry": {
@@ -2094,14 +2147,20 @@ export interface components {
             analogHas?: boolean[];
             /** @description trailing free-form */
             comment?: string;
-            /** @description bits 0..7 (only lower 8) */
+            /**
+             * Format: int32
+             * @description bits 0..7 (only lower 8)
+             */
             digital?: number;
             hasDigital?: boolean;
             /** @description 0..999, -1 if absent */
             seq?: number;
         };
         "aprs.TelemetryMeta": {
-            /** @description BITS. sense-bits bitmap (active-high per bit) */
+            /**
+             * Format: int32
+             * @description BITS. sense-bits bitmap (active-high per bit)
+             */
             bits?: number;
             /** @description a, b, c coefficients per analog channel */
             eqns?: number[][];
@@ -2129,27 +2188,47 @@ export interface components {
             humidity?: number;
             /** @description watts/m^2 */
             luminosity?: number;
-            /** @description tenths of millibar (e.g. 10132 = 1013.2) */
+            /**
+             * Format: float64
+             * @description tenths of millibar (e.g. 10132 = 1013.2)
+             */
             pressure?: number;
-            /** @description hundredths of an inch */
+            /**
+             * Format: float64
+             * @description hundredths of an inch
+             */
             rain1Hour?: number;
+            /** Format: float64 */
             rain24Hour?: number;
+            /** Format: float64 */
             rainSinceMid?: number;
             /** @description raw rain counter ('#' field) */
             rawRainCounter?: number;
-            /** @description inches (via 's' after 'g') */
+            /**
+             * Format: float64
+             * @description inches (via 's' after 'g')
+             */
             snowfall24h?: number;
             /** @description one-letter software code (e.g. 'w', 'x', 'd') */
             softwareType?: string;
-            /** @description degrees F */
+            /**
+             * Format: float64
+             * @description degrees F
+             */
             temperature?: number;
             /** @description 2..4 ASCII letters identifying the unit/model */
             weatherUnitTag?: string;
             /** @description degrees true */
             windDirection?: number;
-            /** @description mph (5-minute peak) */
+            /**
+             * Format: float64
+             * @description mph (5-minute peak)
+             */
             windGust?: number;
-            /** @description mph (1-minute sustained) */
+            /**
+             * Format: float64
+             * @description mph (1-minute sustained)
+             */
             windSpeed?: number;
         };
         "configstore.Referrer": {
@@ -2451,6 +2530,19 @@ export interface components {
         "dto.BeaconSendResponse": {
             /** @description "sent" */
             status?: string;
+        };
+        "dto.BlockedCallsignRequest": {
+            callsign?: string;
+            enabled?: boolean;
+            note?: string;
+        };
+        "dto.BlockedCallsignResponse": {
+            callsign?: string;
+            created_at?: string;
+            enabled?: boolean;
+            id?: number;
+            note?: string;
+            updated_at?: string;
         };
         "dto.BlocklistEntryRequest": {
             enabled?: boolean;
@@ -3843,6 +3935,12 @@ export interface components {
         "dto.TxTimingRequest": {
             content: {
                 "application/json": components["schemas"]["dto.TxTimingRequest"];
+            };
+        };
+        /** @description Blocklist entry */
+        "dto.BlockedCallsignRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.BlockedCallsignRequest"];
             };
         };
         /** @description Action definition */
@@ -7908,6 +8006,189 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listBlockedCallsigns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlockedCallsignResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createBlockedCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlockedCallsignRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlockedCallsignResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateBlockedCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Blocklist entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlockedCallsignRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlockedCallsignResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteBlockedCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Blocklist entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

@@ -173,6 +173,20 @@ thread inherits the global defaults until the operator changes one.
 | REST | `webapi/messages.go` — GET/PUT `/api/messages/conversations/{kind}/{key}/prefs`; DTO + validation in `webapi/dto/messages.go`. GET returns inherited defaults (not 404) for an unset thread. |
 | UI | `web/src/components/messages/ConversationRoutingMenu.svelte` (gear popover: send-path radios + "Automatic Resend until ACK" checkbox, DM only), mounted in `ThreadHeader.svelte`; client in `api/messages.js`. |
 
+## Message call-sign blocklist (issue #465)
+
+Mutes inbound messages from specific senders (e.g. a station that
+repeatedly fires certificate-claim messages during APRS Thursday).
+Mirrors the tactical-callsign machinery end-to-end.
+
+| Concern | Where |
+|---|---|
+| Storage | `pkg/configstore/models.go` — `BlockedCallsign` (`callsign` uniqueIndex uppercased via `BeforeSave`, optional `note`, `enabled` bool **with no gorm default**). CRUD in `configstore/messages.go`; registered in `store.go` AutoMigrate. |
+| Router filter | `pkg/messages/blocklist_set.go` — `BlocklistSet` (atomic-pointer snapshot, same pattern as `TacticalSet`). `Blocked(source)` matches the full SSID-aware source **and** its base call, so a bare-callsign entry mutes every SSID while an SSID-qualified entry mutes only that station. Checked in `router.go` `classify` right after the self-filter, before persist/auto-ACK; a hit increments the `blocked` outcome on `messages_router_classified_total`. |
+| Reload | `pkg/messages/service.go` — `ReloadBlockedCallsigns` (called at `Start` and by the `messagesReload` drainer in `pkg/app/wiring.go`); swaps the enabled set into `BlocklistSet`. |
+| REST | `webapi/messages_blocklist.go` — GET/POST/PUT/DELETE `/api/messages/blocklist`; DTO in `webapi/dto/messages.go`; op-ids in `webapi/docs/op_ids.go`. Mutations call `reloadBlocklist` (inline reload + `signalMessagesReload`). Rejects blocking your own call sign. |
+| UI | `web/src/routes/MessagesSettings.svelte` — "Blocked call signs" Box (inline add form + list with enable toggle + remove); client in `api/messages.js`. |
+
 ### Channel TX test signal
 
 | Surface | Where |

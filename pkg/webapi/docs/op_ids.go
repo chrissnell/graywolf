@@ -365,6 +365,11 @@ const (
 const (
 	OpGetMessagesConfig = "getMessagesConfig"
 	OpPutMessagesConfig = "putMessagesConfig"
+
+	OpListBlockedCallsigns  = "listBlockedCallsigns"
+	OpCreateBlockedCallsign = "createBlockedCallsign"
+	OpUpdateBlockedCallsign = "updateBlockedCallsign"
+	OpDeleteBlockedCallsign = "deleteBlockedCallsign"
 )
 
 // Maps offline downloads — /api/maps/downloads (Plan 2). Per-state

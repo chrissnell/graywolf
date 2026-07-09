@@ -37,6 +37,7 @@ type fakeMessagesSvc struct {
 	markReadFn         func(ctx context.Context, id uint64) error
 	markUnreadFn       func(ctx context.Context, id uint64) error
 	reloadTacticalFn   func(ctx context.Context) error
+	reloadBlockedFn    func(ctx context.Context) error
 	reloadPrefsFn      func(ctx context.Context) error
 	hub                *messages.EventHub
 }
@@ -80,6 +81,12 @@ func (f *fakeMessagesSvc) MarkUnread(ctx context.Context, id uint64) error {
 func (f *fakeMessagesSvc) ReloadTacticalCallsigns(ctx context.Context) error {
 	if f.reloadTacticalFn != nil {
 		return f.reloadTacticalFn(ctx)
+	}
+	return nil
+}
+func (f *fakeMessagesSvc) ReloadBlockedCallsigns(ctx context.Context) error {
+	if f.reloadBlockedFn != nil {
+		return f.reloadBlockedFn(ctx)
 	}
 	return nil
 }
