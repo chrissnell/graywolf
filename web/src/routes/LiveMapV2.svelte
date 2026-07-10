@@ -109,6 +109,33 @@
   let heatmapTimer = null;
   let fixedPointsLayer = null;
 
+  // Bumping this key fully remounts <MaplibreMap>, which is how we recover
+  // from a permanent WebGL context loss (graywolf#461): the map component's
+  // onDestroy tears down the old (context-lost, black) map and a fresh one is
+  // built with a live context. Capped so a genuinely wedged GPU (every rebuild
+  // immediately loses its context too) degrades to a toast instead of an
+  // infinite remount loop.
+  let mapGeneration = $state(0);
+  let contextLossRecoveries = 0;
+  let contextRecoveryResetTimer = null;
+  const MAX_CONTEXT_RECOVERIES = 3;
+  // A map that stays alive this long after a recovery is considered stable, so
+  // the recovery budget is refilled. This distinguishes a wedged GPU (repeated
+  // losses within milliseconds) from a handful of unrelated losses spread
+  // across a long-running operator session, which should each recover.
+  const CONTEXT_RECOVERY_STABLE_MS = 30_000;
+
+  function handleMapContextLost() {
+    if (contextLossRecoveries >= MAX_CONTEXT_RECOVERIES) {
+      toasts.error(
+        'The map lost its graphics context and could not recover. Reload the page to restore it.',
+      );
+      return;
+    }
+    contextLossRecoveries += 1;
+    mapGeneration += 1;
+  }
+
   // Radar overlay settings -- persisted per browser (not per account).
   const radarSettings = $state({
     visible: localStorage.getItem('gw_radar_visible') === '1',
@@ -599,7 +626,19 @@
   }
 
   function onMapReady(map) {
+    // On a context-loss remount (graywolf#461) the previous generation's
+    // layers, popups and station-poll are still live; tear them down before
+    // wiring the fresh map so we don't double-poll or leak DOM markers that
+    // belonged to the dead map.
+    if (mapRef) teardownMapGeneration();
     mapRef = map;
+    // Refill the recovery budget once this map proves stable (see above). The
+    // timer is cleared in teardownMapGeneration, so a map that loses its
+    // context again before the window elapses does NOT get its budget back.
+    contextRecoveryResetTimer = setTimeout(() => {
+      contextRecoveryResetTimer = null;
+      contextLossRecoveries = 0;
+    }, CONTEXT_RECOVERY_STABLE_MS);
     // Radar first so the raster/fill sits below trails and station markers in
     // the GL stack. DOM layers (stations, weather) always render above the
     // canvas regardless, but GL line layers (trails) would otherwise cover it.
@@ -1195,11 +1234,19 @@
     };
   });
 
-  onDestroy(() => {
+  // Tear down everything onMapReady wires onto a specific map instance so the
+  // map can be swapped (context-loss remount, graywolf#461) or fully unmounted
+  // cleanly. The persistent stores/timers that are owned by the component and
+  // NOT re-created by onMapReady -- the radar frame poller, fronts poller, the
+  // 1s tick, the media-query listener -- outlive a generation swap and are
+  // cleared in onDestroy instead.
+  function teardownMapGeneration() {
+    if (contextRecoveryResetTimer) {
+      clearTimeout(contextRecoveryResetTimer);
+      contextRecoveryResetTimer = null;
+    }
     dataStore.stop();
     closePopup();
-    radarFrames.destroy();
-    stopFrontsPolling();
     stopHeatmapPolling();
     radarLayer?.destroy();
     frontsLayer?.destroy();
@@ -1222,6 +1269,15 @@
     myPositionLayer = null;
     fixedPointsLayer = null;
     mapRef = null;
+    // Drop the console debug handle so a context-lost/removed map isn't pinned
+    // in the heap after a recovery remount or navigation away (graywolf#461).
+    if (typeof window !== 'undefined' && window.gwMap) window.gwMap = null;
+  }
+
+  onDestroy(() => {
+    teardownMapGeneration();
+    radarFrames.destroy();
+    stopFrontsPolling();
     if (tickTimer) {
       clearInterval(tickTimer);
       tickTimer = null;
@@ -1232,12 +1288,17 @@
 </script>
 
 <div class="livemap-shell">
-  <!-- Start at planet view; onMapReady fits to recent stations after first poll. -->
-  <MaplibreMap
-    initialCenter={[mapState.mapCenter[1], mapState.mapCenter[0]]}
-    initialZoom={mapState.mapZoom}
-    oncreate={onMapReady}
-  />
+  <!-- Start at planet view; onMapReady fits to recent stations after first poll.
+       Keyed on mapGeneration so an unrecoverable WebGL context loss remounts the
+       map with a fresh context instead of leaving a black canvas (graywolf#461). -->
+  {#key mapGeneration}
+    <MaplibreMap
+      initialCenter={[mapState.mapCenter[1], mapState.mapCenter[0]]}
+      initialZoom={mapState.mapZoom}
+      oncreate={onMapReady}
+      oncontextlost={handleMapContextLost}
+    />
+  {/key}
 
   {#snippet panelBody()}
     <!-- APRS: station/trail/position layers + the time-range filter. -->

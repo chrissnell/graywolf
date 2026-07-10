@@ -19,11 +19,27 @@
   import { absolutizeStyleUrls } from './style-urls.js';
   import { markConnected, markDisconnected } from '../stores/connection.js';
 
-  let { initialCenter = [-98, 39], initialZoom = 4, oncreate = null } = $props();
+  let {
+    initialCenter = [-98, 39],
+    initialZoom = 4,
+    oncreate = null,
+    oncontextlost = null,
+  } = $props();
 
   let container;
   let map = null;
   let bearerToken = $state(null);
+  // Set in onDestroy. The onMount below is async and only creates the map
+  // after several awaited fetches; if the operator navigates away during
+  // that window, onDestroy runs first (with map still null, so map.remove()
+  // is a no-op) and the awaited map creation would otherwise leak a live
+  // WebGL context that is never torn down. Bailing on this flag prevents the
+  // orphan map -- accumulated orphan contexts are what push the browser past
+  // its per-page WebGL context budget and trigger the context loss in #461.
+  let destroyed = false;
+  // Debounce between 'webglcontextlost' and a possible 'webglcontextrestored'
+  // so we only escalate to a remount when the loss is permanent.
+  let ctxRestoreTimer = null;
 
   // Set context synchronously during component init -- setContext after
   // an await throws lifecycle_outside_component because Svelte's
@@ -191,6 +207,10 @@
     ]);
     await syncToken();
     const initialStyle = await buildStyle();
+    // The operator may have navigated away while the awaits above were in
+    // flight; onDestroy has already run. Don't build a map that will never
+    // be torn down (a leaked WebGL context).
+    if (destroyed) return;
     map = new maplibregl.Map({
       container,
       style: initialStyle,
@@ -287,8 +307,40 @@
     } else {
       map.once('style.load', () => oncreate?.(map));
     }
+    // WebGL context-loss recovery. When the browser loses the canvas'
+    // context (it happens on repeated create/destroy of the map across SPA
+    // navigations -- the browser has a hard per-page WebGL context budget),
+    // maplibre-gl 5.x calls painter.destroy() and sets map.style = null. If
+    // the browser then fires 'webglcontextrestored', maplibre rebuilds the
+    // style itself and we do nothing. If it does NOT -- the context was
+    // evicted for good -- the canvas stays black and any later map.getLayer()
+    // throws "this.style is undefined" (maplibre-gl-js #7022 / #7710, unfixed
+    // in the 5.x line). preventDefault keeps the context restorable; if no
+    // restore arrives shortly we treat the loss as permanent and ask the
+    // parent to remount us, which frees the stale context and builds a fresh
+    // one -- the same recovery the operator gets today by leaving the page
+    // and coming back (graywolf#461).
+    const canvas = map.getCanvas();
+    canvas.addEventListener('webglcontextlost', onContextLost, false);
+    canvas.addEventListener('webglcontextrestored', onContextRestored, false);
     if (typeof window !== 'undefined') window.__gwMap = map;
   });
+
+  function onContextLost(e) {
+    e.preventDefault();
+    if (ctxRestoreTimer) clearTimeout(ctxRestoreTimer);
+    ctxRestoreTimer = setTimeout(() => {
+      ctxRestoreTimer = null;
+      if (!destroyed) oncontextlost?.();
+    }, 400);
+  }
+
+  function onContextRestored() {
+    if (ctxRestoreTimer) {
+      clearTimeout(ctxRestoreTimer);
+      ctxRestoreTimer = null;
+    }
+  }
 
   // Track source/registered/completed-downloads changes; re-apply the
   // style. setStyle preserves user-added sources/layers as long as
@@ -316,8 +368,30 @@
   });
 
   onDestroy(() => {
-    map?.remove();
+    destroyed = true;
+    if (ctxRestoreTimer) {
+      clearTimeout(ctxRestoreTimer);
+      ctxRestoreTimer = null;
+    }
+    if (map) {
+      const canvas = map.getCanvas?.();
+      canvas?.removeEventListener('webglcontextlost', onContextLost, false);
+      canvas?.removeEventListener('webglcontextrestored', onContextRestored, false);
+    }
+    try {
+      // On the context-loss remount path (graywolf#461) this runs against a
+      // map whose GL context is already gone; maplibre's remove() pokes the
+      // (destroyed) painter/context, so guard against a throw leaving the
+      // teardown half-done.
+      map?.remove();
+    } catch {
+      /* map already torn down by the lost-context handler */
+    }
     map = null;
+    // Drop the debug handle so the removed map (and its now-dead canvas /
+    // WebGL context) can be garbage-collected instead of lingering pinned to
+    // the global until the next visit overwrites it.
+    if (typeof window !== 'undefined' && window.__gwMap) window.__gwMap = null;
   });
 </script>
 

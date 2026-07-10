@@ -77,8 +77,14 @@ export function mountHeatmapLayer(map, { visible = false, opacity = 0.8 } = {}) 
   }
 
   function destroy() {
-    if (map.getLayer(LYR)) map.removeLayer(LYR);
-    if (map.getSource(SRC)) map.removeSource(SRC);
+    // Guard: on the context-loss remount path (graywolf#461) this runs
+    // against a map whose remove() already nulled map.style, so getLayer()
+    // would throw. Match the other GL layers (trails, radar, hover-path) so a
+    // stale-map teardown can't strand the rest of teardownMapGeneration().
+    try {
+      if (map.getLayer(LYR)) map.removeLayer(LYR);
+      if (map.getSource(SRC)) map.removeSource(SRC);
+    } catch { /* map already removed */ }
   }
 
   ensure();
