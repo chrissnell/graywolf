@@ -117,7 +117,13 @@
   // infinite remount loop.
   let mapGeneration = $state(0);
   let contextLossRecoveries = 0;
+  let contextRecoveryResetTimer = null;
   const MAX_CONTEXT_RECOVERIES = 3;
+  // A map that stays alive this long after a recovery is considered stable, so
+  // the recovery budget is refilled. This distinguishes a wedged GPU (repeated
+  // losses within milliseconds) from a handful of unrelated losses spread
+  // across a long-running operator session, which should each recover.
+  const CONTEXT_RECOVERY_STABLE_MS = 30_000;
 
   function handleMapContextLost() {
     if (contextLossRecoveries >= MAX_CONTEXT_RECOVERIES) {
@@ -626,6 +632,13 @@
     // belonged to the dead map.
     if (mapRef) teardownMapGeneration();
     mapRef = map;
+    // Refill the recovery budget once this map proves stable (see above). The
+    // timer is cleared in teardownMapGeneration, so a map that loses its
+    // context again before the window elapses does NOT get its budget back.
+    contextRecoveryResetTimer = setTimeout(() => {
+      contextRecoveryResetTimer = null;
+      contextLossRecoveries = 0;
+    }, CONTEXT_RECOVERY_STABLE_MS);
     // Radar first so the raster/fill sits below trails and station markers in
     // the GL stack. DOM layers (stations, weather) always render above the
     // canvas regardless, but GL line layers (trails) would otherwise cover it.
@@ -1228,6 +1241,10 @@
   // 1s tick, the media-query listener -- outlive a generation swap and are
   // cleared in onDestroy instead.
   function teardownMapGeneration() {
+    if (contextRecoveryResetTimer) {
+      clearTimeout(contextRecoveryResetTimer);
+      contextRecoveryResetTimer = null;
+    }
     dataStore.stop();
     closePopup();
     stopHeatmapPolling();
@@ -1252,6 +1269,9 @@
     myPositionLayer = null;
     fixedPointsLayer = null;
     mapRef = null;
+    // Drop the console debug handle so a context-lost/removed map isn't pinned
+    // in the heap after a recovery remount or navigation away (graywolf#461).
+    if (typeof window !== 'undefined' && window.gwMap) window.gwMap = null;
   }
 
   onDestroy(() => {
