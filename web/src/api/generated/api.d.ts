@@ -2739,6 +2739,14 @@ export interface components {
         };
         "dto.KissRequest": {
             /**
+             * @description AllowConnectedMode opts a KISS interface in to passing non-UI
+             *     (connected-mode) AX.25 frames through to the radio instead of
+             *     dropping them, so connected-mode packet apps (Pat/Winlink via the
+             *     kernel AX.25 stack + kissattach) can use graywolf as a raw KISS
+             *     modem. Default false; the far end owns the LAPB session state.
+             */
+            allow_connected_mode?: boolean;
+            /**
              * @description AllowTxFromGovernor opts this TNC-mode interface in to receive
              *     frames from the TX governor (beacon / digipeater / iGate /
              *     KISS / AGW submissions). Only meaningful when Mode == "tnc";
@@ -2799,6 +2807,7 @@ export interface components {
             type?: string;
         };
         "dto.KissResponse": {
+            allow_connected_mode?: boolean;
             allow_tx_from_governor?: boolean;
             backoff_seconds?: number;
             baud_rate?: number;

@@ -221,6 +221,7 @@ var schemaMigrations = []migration{
 	{version: 23, name: "beacon_position_format", phase: postAutoMigrate, run: migrateBeaconPositionFormat},
 	{version: 24, name: "kiss_gate_tx_to_is", phase: postAutoMigrate, run: migrateKissGateTxToIs},
 	{version: 25, name: "beacon_send_path", phase: postAutoMigrate, run: migrateBeaconSendPath},
+	{version: 26, name: "kiss_allow_connected_mode", phase: postAutoMigrate, run: migrateKissAllowConnectedMode},
 }
 
 // runMigrations applies every pending migration in the given phase,

@@ -1955,6 +1955,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 					})
@@ -1979,6 +1980,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
@@ -2003,6 +2005,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
@@ -2028,6 +2031,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
@@ -2046,6 +2050,7 @@ func (a *App) kissComponent() namedComponent {
 					TncIngressRateHz:    ki.TncIngressRateHz,
 					TncIngressBurst:     ki.TncIngressBurst,
 					AllowTxFromGovernor: ki.AllowTxFromGovernor,
+					AllowConnectedMode:  ki.AllowConnectedMode,
 					GateTxToIs:          ki.GateTxToIs,
 					OnClientChange: func(n int) {
 						a.metrics.SetKissClients(name, n)

@@ -159,6 +159,15 @@ type KissInterface struct {
 	// reads the field unconditionally and the server only consults it
 	// inside the modem branch.
 	GateTxToIs bool `gorm:"column:gate_tx_to_is;not null;default:false" json:"gate_tx_to_is"`
+	// AllowConnectedMode: when true, non-UI (connected-mode) AX.25 frames
+	// a KISS client submits are passed through to the radio verbatim
+	// instead of being dropped. This lets connected-mode packet apps
+	// (e.g. Pat/Winlink over the Linux kernel AX.25 stack + kissattach)
+	// use graywolf as a raw KISS modem. The far end's session state
+	// machine owns SABM/DISC/I/S sequencing; graywolf only modulates the
+	// bytes. Default false so a shared APRS channel is not exposed to
+	// connected-mode traffic unless the operator opts in. See graywolf#463.
+	AllowConnectedMode bool `gorm:"column:allow_connected_mode;not null;default:false" json:"allow_connected_mode"`
 	// NeedsReconfig is set to true when a referential cascade (Phase 5)
 	// nulls this row's Channel. Phase 3 merely declares the column so
 	// the shape is stable before the cascade logic lands; no code reads

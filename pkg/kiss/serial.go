@@ -50,6 +50,9 @@ type SerialConfig struct {
 	// ModeModem; the field is read unconditionally and the server's
 	// dispatch path enforces the mode gate.
 	GateTxToIs bool
+	// AllowConnectedMode mirrors ServerConfig.AllowConnectedMode for the
+	// wrapping Server constructed in StartSerial.
+	AllowConnectedMode bool
 	// OnReload fires on every state transition so the wiring layer can
 	// rebuild the tx backend. Mirrors ClientConfig.OnReload.
 	OnReload func()

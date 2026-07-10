@@ -9932,6 +9932,10 @@
         "dto.KissRequest": {
             "type": "object",
             "properties": {
+                "allow_connected_mode": {
+                    "description": "AllowConnectedMode opts a KISS interface in to passing non-UI\n(connected-mode) AX.25 frames through to the radio instead of\ndropping them, so connected-mode packet apps (Pat/Winlink via the\nkernel AX.25 stack + kissattach) can use graywolf as a raw KISS\nmodem. Default false; the far end owns the LAPB session state.",
+                    "type": "boolean"
+                },
                 "allow_tx_from_governor": {
                     "description": "AllowTxFromGovernor opts this TNC-mode interface in to receive\nframes from the TX governor (beacon / digipeater / iGate /\nKISS / AGW submissions). Only meaningful when Mode == \"tnc\";\nthe validator rejects true with any other mode. Default false\non migrated rows so existing TNC servers do not silently start\ntransmitting; Phase 4 sets the DTO default to true for newly\ncreated tcp-client rows.",
                     "type": "boolean"
@@ -9990,6 +9994,9 @@
         "dto.KissResponse": {
             "type": "object",
             "properties": {
+                "allow_connected_mode": {
+                    "type": "boolean"
+                },
                 "allow_tx_from_governor": {
                     "type": "boolean"
                 },

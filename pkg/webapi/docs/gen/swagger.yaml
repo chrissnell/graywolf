@@ -1476,6 +1476,14 @@ definitions:
     type: object
   dto.KissRequest:
     properties:
+      allow_connected_mode:
+        description: |-
+          AllowConnectedMode opts a KISS interface in to passing non-UI
+          (connected-mode) AX.25 frames through to the radio instead of
+          dropping them, so connected-mode packet apps (Pat/Winlink via the
+          kernel AX.25 stack + kissattach) can use graywolf as a raw KISS
+          modem. Default false; the far end owns the LAPB session state.
+        type: boolean
       allow_tx_from_governor:
         description: |-
           AllowTxFromGovernor opts this TNC-mode interface in to receive
@@ -1549,6 +1557,8 @@ definitions:
     type: object
   dto.KissResponse:
     properties:
+      allow_connected_mode:
+        type: boolean
       allow_tx_from_governor:
         type: boolean
       backoff_seconds:

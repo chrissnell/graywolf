@@ -1,6 +1,7 @@
 package kiss
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -495,5 +496,130 @@ func TestServerGateTxToIsHookFires(t *testing.T) {
 			cancel()
 			<-serveDone
 		})
+	}
+}
+
+// connectedRawFrame builds a raw AX.25 connected-mode frame: the encoded
+// address block for src>dst followed by the given control/PID/info tail.
+func connectedRawFrame(t *testing.T, src, dst string, tail []byte) []byte {
+	t.Helper()
+	s, _ := ax25.ParseAddress(src)
+	d, _ := ax25.ParseAddress(dst)
+	base, _ := ax25.NewUIFrame(s, d, nil, nil)
+	addr, err := ax25.EncodeAddressBlock(base.Source, base.Dest, base.Path, base.CommandResp)
+	if err != nil {
+		t.Fatalf("encode address block: %v", err)
+	}
+	return append(append([]byte(nil), addr...), tail...)
+}
+
+// startServer binds an ephemeral port, starts ListenAndServe, and returns
+// the bound address plus a cancel/wait cleanup registered on t.
+func startServer(t *testing.T, srv *Server) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.cfg.ListenAddr = ln.Addr().String()
+	_ = ln.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	serveDone := make(chan struct{})
+	go func() { _ = srv.ListenAndServe(ctx); close(serveDone) }()
+	t.Cleanup(func() {
+		cancel()
+		<-serveDone
+	})
+	return srv.cfg.ListenAddr
+}
+
+// TestServerConnectedModePassthrough asserts that with AllowConnectedMode
+// a non-UI (connected-mode) KISS frame is forwarded to the sink verbatim
+// (Encode reproduces the exact wire bytes) and with dedup bypassed.
+func TestServerConnectedModePassthrough(t *testing.T) {
+	sink := newFakeSink()
+	srv := NewServer(ServerConfig{
+		Name:               "test",
+		Sink:               sink,
+		ChannelMap:         map[uint8]uint32{0: 1},
+		AllowConnectedMode: true,
+		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	addr := startServer(t, srv)
+
+	// SABM (0x2F) and an I-frame (control 0x00, PID 0xF0, info) exercise
+	// both the no-info and info-bearing connected-mode tails.
+	for _, tc := range []struct {
+		name string
+		tail []byte
+	}{
+		{"SABM", []byte{0x2F}},
+		{"I-frame", []byte{0x00, 0xF0, 'h', 'i'}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sink.Reset()
+			raw := connectedRawFrame(t, "W1AW-1", "RMS-5", tc.tail)
+			feedFrame(t, addr, raw)
+
+			select {
+			case <-sink.ch:
+			case <-time.After(2 * time.Second):
+				t.Fatal("sink did not receive connected-mode frame")
+			}
+			caps := sink.Captures()
+			if len(caps) != 1 {
+				t.Fatalf("expected 1 frame, got %d", len(caps))
+			}
+			c := caps[0]
+			if !c.Source.SkipDedup {
+				t.Error("expected SkipDedup=true for connected-mode passthrough")
+			}
+			out, err := c.Frame.Encode()
+			if err != nil {
+				t.Fatalf("encode passthrough frame: %v", err)
+			}
+			if !bytes.Equal(out, raw) {
+				t.Errorf("not verbatim\n got %x\nwant %x", out, raw)
+			}
+		})
+	}
+}
+
+// TestServerConnectedModeDroppedByDefault asserts that without
+// AllowConnectedMode a non-UI frame is dropped: a connected-mode frame
+// followed on the same connection by a UI frame yields exactly one sink
+// submit — the UI frame.
+func TestServerConnectedModeDroppedByDefault(t *testing.T) {
+	sink := newFakeSink()
+	srv := NewServer(ServerConfig{
+		Name:       "test",
+		Sink:       sink,
+		ChannelMap: map[uint8]uint32{0: 1},
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	addr := startServer(t, srv)
+
+	conn := dialWhenReady(t, addr, time.Second)
+	defer conn.Close()
+
+	// Connected-mode frame first (must be dropped), then a UI frame.
+	if _, err := conn.Write(Encode(0, connectedRawFrame(t, "W1AW-1", "RMS-5", []byte{0x2F}))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(Encode(0, kissUIFrameBytes(t, "hi"))); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-sink.ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sink did not receive the UI frame")
+	}
+	frames := sink.Frames()
+	if len(frames) != 1 {
+		t.Fatalf("expected only the UI frame to reach the sink, got %d frames", len(frames))
+	}
+	if string(frames[0].Info) != "hi" {
+		t.Errorf("expected UI frame info %q, got %q", "hi", frames[0].Info)
 	}
 }

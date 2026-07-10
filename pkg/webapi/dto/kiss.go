@@ -61,6 +61,12 @@ type KissRequest struct {
 	// already feeds the iGate via the RX fanout) and silently ignored
 	// there by the server.
 	GateTxToIs bool `json:"gate_tx_to_is"`
+	// AllowConnectedMode opts a KISS interface in to passing non-UI
+	// (connected-mode) AX.25 frames through to the radio instead of
+	// dropping them, so connected-mode packet apps (Pat/Winlink via the
+	// kernel AX.25 stack + kissattach) can use graywolf as a raw KISS
+	// modem. Default false; the far end owns the LAPB session state.
+	AllowConnectedMode bool `json:"allow_connected_mode"`
 	// Tcp-client fields (Phase 4): RemoteHost:RemotePort is the dial
 	// target; ReconnectInitMs / ReconnectMaxMs size the supervisor's
 	// exponential-backoff reconnect schedule. Unused / zero for
@@ -212,6 +218,7 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 		TncIngressBurst:     r.TncIngressBurst,
 		AllowTxFromGovernor: allowTx,
 		GateTxToIs:          r.GateTxToIs,
+		AllowConnectedMode:  r.AllowConnectedMode,
 		RemoteHost:          r.RemoteHost,
 		RemotePort:          r.RemotePort,
 		ReconnectInitMs:     initMs,
@@ -281,6 +288,7 @@ type KissResponse struct {
 	TncIngressBurst     uint32 `json:"tnc_ingress_burst"`
 	AllowTxFromGovernor bool   `json:"allow_tx_from_governor"`
 	GateTxToIs          bool   `json:"gate_tx_to_is"`
+	AllowConnectedMode  bool   `json:"allow_connected_mode"`
 	NeedsReconfig       bool   `json:"needs_reconfig"`
 	// Enabled mirrors KissInterface.Enabled so the Kiss page can show a
 	// "Disabled" state and offer a re-enable action. A disabled interface
@@ -335,6 +343,7 @@ func KissFromModel(m configstore.KissInterface) KissResponse {
 		TncIngressBurst:     m.TncIngressBurst,
 		AllowTxFromGovernor: m.AllowTxFromGovernor,
 		GateTxToIs:          m.GateTxToIs,
+		AllowConnectedMode:  m.AllowConnectedMode,
 		NeedsReconfig:       m.NeedsReconfig,
 		Enabled:             m.Enabled,
 		RemoteHost:          m.RemoteHost,
