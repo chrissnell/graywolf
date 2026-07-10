@@ -90,6 +90,54 @@ fn demodulates_multiple_frames() {
 }
 
 #[test]
+fn short_frame_roundtrip() {
+    // 56-bit short frame with a non-extended DF (DF11 all-call). append_parity
+    // makes it checksum to zero, and the demodulator must pick the short length
+    // from the DF rather than over-reading into trailing silence.
+    let mut frame = [0u8; 7];
+    frame[0] = (11 << 3) | 0x05;
+    frame[1] = 0x3C;
+    frame[2] = 0x64;
+    frame[3] = 0x44;
+    crc::append_parity(&mut frame);
+    assert!(crc::is_valid(&frame));
+
+    let wave = Modulator::new(2).modulate_padded(&frame, 4, 4);
+    let frames = Demodulator::new(2).demodulate(&wave);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].df, 11);
+    assert_eq!(frames[0].bytes.len(), 7);
+    assert_eq!(frames[0].bytes, frame);
+    assert!(frames[0].crc_ok());
+}
+
+#[test]
+fn require_crc_gates_corrupted_frames() {
+    let mut frame = encode_identification(0x484010, "GARBLED");
+    frame[6] ^= 0x20; // flip a data bit -> CRC no longer clears
+    assert!(!crc::is_valid(&frame));
+    let wave = Modulator::new(2).modulate_padded(&frame, 4, 4);
+
+    // Strict demodulation (default) drops it.
+    assert!(Demodulator::new(2).demodulate(&wave).is_empty());
+
+    // Lenient demodulation returns it with a non-zero residual and intact bytes.
+    let mut lenient = Demodulator::new(2);
+    lenient.require_crc = false;
+    let frames = lenient.demodulate(&wave);
+    assert_eq!(frames.len(), 1);
+    assert!(!frames[0].crc_ok());
+    assert_ne!(frames[0].crc_residual, 0);
+    assert_eq!(frames[0].bytes, frame);
+}
+
+#[test]
+fn callsign_preserves_embedded_space() {
+    let frame = encode_identification(0x400000, "AB CD");
+    assert_eq!(Frame::new(&frame).callsign().as_deref(), Some("AB CD"));
+}
+
+#[test]
 fn rejects_pure_noise() {
     // A flat / silent buffer must not yield any preamble matches.
     let wave = vec![0u16; 4096];

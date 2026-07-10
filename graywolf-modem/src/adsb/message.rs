@@ -15,9 +15,10 @@ pub const DF_ADSB: u8 = 17;
 /// Default transponder capability for a DF17 broadcast.
 pub const CA_LEVEL2: u8 = 5;
 
-/// 6-bit ident charset (index → ASCII). `#` marks unused slots.
+/// 6-bit ident charset (index → ASCII). Index 32 is space; `#` marks the
+/// unused/reserved slots that decoding skips.
 const IDENT_CHARSET: &[u8; 64] =
-    b"#ABCDEFGHIJKLMNOPQRSTUVWXYZ#####################0123456789######";
+    b"#ABCDEFGHIJKLMNOPQRSTUVWXYZ##### ###############0123456789######";
 
 /// Read `len` bits (`<= 32`) from `msg`, MSB-first, starting at bit `start`.
 fn get_bits(msg: &[u8], start: usize, len: usize) -> u32 {

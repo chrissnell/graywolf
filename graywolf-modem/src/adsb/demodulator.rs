@@ -35,8 +35,10 @@ impl DemodFrame {
 /// Decodes Mode S PPM from magnitude samples.
 #[derive(Clone, Copy, Debug)]
 pub struct Demodulator {
-    /// Samples per microsecond (must be even, default 2).
-    pub samples_per_us: usize,
+    /// Samples per microsecond. Private so the even/≥2 invariant established in
+    /// [`Demodulator::new`] cannot be bypassed by a struct literal (which would
+    /// make `slot_len` zero and panic on divide-by-zero).
+    samples_per_us: usize,
     /// Accept only frames whose extended-squitter CRC is zero. When false,
     /// frames are returned regardless of residual (useful for DF0/4/5/11/20/21
     /// whose parity is overlaid with an address).
@@ -55,6 +57,11 @@ impl Demodulator {
         Self { samples_per_us, ..Self::default() }
     }
 
+    /// Configured samples per microsecond.
+    pub fn samples_per_us(&self) -> usize {
+        self.samples_per_us
+    }
+
     fn slot_len(&self) -> usize {
         self.samples_per_us / 2
     }
@@ -70,6 +77,11 @@ impl Demodulator {
     }
 
     /// Preamble match at offset `i`: every high slot must exceed every low slot.
+    ///
+    /// This strict correlation is tuned for a clean modulator/offline stream —
+    /// on a noisy off-air envelope a single elevated low slot rejects the match.
+    /// A field-grade detector would add a per-pulse threshold and margin; that
+    /// belongs with the eventual live-pipeline wiring.
     fn preamble_ok(&self, mag: &[u16], i: usize) -> bool {
         let slot = self.slot_len();
         let mut high_min = u32::MAX;

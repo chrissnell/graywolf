@@ -20,6 +20,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | QPSK 2400 / 8-PSK 4800 | `modem_psk/mod.rs` |
 | FX.25 RS-coded FEC | `fx25/{mod,rs,tests}.rs` |
 | IL2P framing + RS | `il2p/{mod,header,payload,scramble,rs_il2p,tests}.rs` |
+| ADS-B / Mode S PPM mod+demod (1090 MHz) | `adsb/{mod,crc,modulator,demodulator,message,tests}.rs` |
 | HDLC RX (NRZI, FCS-16, bit-unstuff, fix-bits retry) | `hdlc.rs` |
 | HDLC TX bit stream | `tx/hdlc_encode.rs` |
 | AFSK modulator (NCO + sine LUT) | `tx/afsk_mod.rs` |

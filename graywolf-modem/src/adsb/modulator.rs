@@ -17,8 +17,10 @@ use super::{DATA_SLOTS_PER_BIT, PREAMBLE_HIGH_SLOTS, PREAMBLE_SLOTS};
 /// Builds Mode S PPM magnitude waveforms.
 #[derive(Clone, Copy, Debug)]
 pub struct Modulator {
-    /// Samples per microsecond. Must be even and non-zero (default 2).
-    pub samples_per_us: usize,
+    /// Samples per microsecond. Private so the even/≥2 invariant established in
+    /// [`Modulator::new`] cannot be bypassed by a struct literal (which would
+    /// make `slot_len` zero).
+    samples_per_us: usize,
     /// Magnitude emitted during a pulse.
     pub high: u16,
     /// Magnitude emitted between pulses.
@@ -36,6 +38,11 @@ impl Modulator {
     pub fn new(samples_per_us: usize) -> Self {
         assert!(samples_per_us >= 2 && samples_per_us.is_multiple_of(2), "samples_per_us must be even and >= 2");
         Self { samples_per_us, ..Self::default() }
+    }
+
+    /// Configured samples per microsecond.
+    pub fn samples_per_us(&self) -> usize {
+        self.samples_per_us
     }
 
     /// Samples in one half-microsecond slot.
