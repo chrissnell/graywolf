@@ -116,14 +116,22 @@ type ServerConfig struct {
 	// non-blocking — it runs on the per-connection read goroutine.
 	OnClientTxAccepted func(ctx context.Context, channel uint32, f *ax25.Frame)
 	// AllowConnectedMode, when true, passes non-UI (connected-mode)
-	// AX.25 frames from KISS clients through to the TX path instead of
-	// dropping them. KISS is a raw AX.25 transport, so this lets
-	// connected-mode packet apps (Pat/Winlink via the Linux kernel
-	// AX.25 stack + kissattach) use graywolf as a modem. The client
-	// owns the LAPB session state machine; graywolf only modulates the
-	// frame verbatim and bypasses the governor's dedup window (LAPB
-	// retransmits are legitimately identical). Default false — a shared
-	// APRS channel stays UI-only unless the operator opts in.
+	// AX.25 frames from KISS clients through instead of dropping them.
+	// KISS is a raw AX.25 transport, so this lets connected-mode packet
+	// apps (Pat/Winlink via the Linux kernel AX.25 stack + kissattach)
+	// use graywolf as a modem. The client owns the LAPB session state
+	// machine; graywolf only modulates the frame verbatim and bypasses
+	// the governor's dedup window (LAPB retransmits are legitimately
+	// identical). Default false — a shared APRS channel stays UI-only
+	// unless the operator opts in.
+	//
+	// Routing follows Mode like every other frame: in ModeModem the
+	// frame is submitted to the TX governor (radio); in ModeTnc it goes
+	// to RxIngress and is dispatched to ax25conn.Manager as a received
+	// frame. The ModeModem TX path is a raw passthrough — it does NOT
+	// consult channel mode, so unlike ax25conn.Manager.Open it will
+	// transmit on an aprs-only channel when the operator opts in. See
+	// invariants.md #23.
 	AllowConnectedMode bool
 }
 

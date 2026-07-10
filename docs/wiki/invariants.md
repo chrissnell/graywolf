@@ -243,6 +243,8 @@ When a channel's `Mode` is `packet`, the beacon scheduler, digipeater engine, iG
 
 The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns an error or `nil`, callers behave as if the channel were `aprs` (preserves the legacy any-channel-does-anything behavior). The IS→RF runtime gate also fails open -- a transient DB error does not silently suppress beaconing or gating.
 
+**Exception -- KISS `allow_connected_mode` passthrough.** The `aprs`-only refusal above is enforced by `ax25conn.Manager.Open` because that path *auto*-brings-up sessions (the web AX.25 terminal). The per-interface KISS `allow_connected_mode` opt-in (`pkg/kiss`, see [code-map](code-map.md)) is a *raw transport* path: it modulates client-supplied connected-mode frames directly via `Sink.Submit`, never touching `ax25conn.Manager`, so it does **not** consult `ChannelModeLookup`. An operator who sets `allow_connected_mode` on an interface mapped to an `aprs`-only channel can therefore transmit SABM/I/S frames there. This is deliberate: the flag is an explicit "stop filtering, KISS is a raw AX.25 transport" opt-in (graywolf#463), and the connecting client -- not graywolf -- owns the session. Default off keeps `aprs`-only channels connected-mode-free unless the operator overrides it.
+
 *Why:* Operators may want to dedicate a channel to AX.25 connected-mode without it accidentally absorbing APRS beacons, digipeated packets, IS→RF traffic, or outbound APRS messages. The `aprs+packet` value preserves the legacy "any channel does anything" behavior for setups that don't care about the split.
 
 Source: [`../../pkg/configstore/channel_mode_lookup.go`](../../pkg/configstore/channel_mode_lookup.go),
