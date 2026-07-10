@@ -279,6 +279,26 @@ the last-known region list when offline.
 PMTiles infrastructure (manifest gen, R2 sync, Cloudflare Worker) is in
 `~/dev/graywolf-maps`, not here. See [invariant 7](invariants.md).
 
+**WebGL context-loss recovery (graywolf#461).** A fresh MapLibre `Map`
+(a new WebGL context) is created on every navigation to `/map` and torn
+down on leave. Browsers cap live WebGL contexts per page, and maplibre-gl
+5.x nulls `map.style` on a context loss it can't restore, so a later
+`getLayer()` throws `this.style is undefined` and the canvas goes black
+(maplibre-gl-js #7022/#7710, unfixed in the 5.x line). `maplibre-map.svelte`
+listens for `webglcontextlost`/`webglcontextrestored` on the canvas and, if
+no restore arrives within 400ms, fires an `oncontextlost` prop.
+`LiveMapV2.svelte` responds by bumping a `mapGeneration` `$state` that keys
+the `{#key}` block around `<MaplibreMap>`, remounting it with a live
+context (capped at `MAX_CONTEXT_RECOVERIES` to avoid a loop on a wedged
+GPU). Because a remount re-fires `oncreate` without unmounting `LiveMapV2`,
+`onMapReady` first calls `teardownMapGeneration()` (the map-tied half of the
+old `onDestroy`) to drop the dead generation's layers/popups/poll; the
+component-lifetime stores (radar-frame poller, fronts poller, 1s tick, media
+query) survive the swap and are still cleared in `onDestroy`. Two supporting
+leak fixes live in the map shell: the async `onMount` bails on a `destroyed`
+flag so navigating away mid-load can't orphan a never-removed map, and
+`onDestroy` clears `window.__gwMap` so the dead map/context can be GC'd.
+
 ## Live updates
 
 [`../../pkg/updatescheck/checker.go`](../../pkg/updatescheck/checker.go)

@@ -109,6 +109,27 @@
   let heatmapTimer = null;
   let fixedPointsLayer = null;
 
+  // Bumping this key fully remounts <MaplibreMap>, which is how we recover
+  // from a permanent WebGL context loss (graywolf#461): the map component's
+  // onDestroy tears down the old (context-lost, black) map and a fresh one is
+  // built with a live context. Capped so a genuinely wedged GPU (every rebuild
+  // immediately loses its context too) degrades to a toast instead of an
+  // infinite remount loop.
+  let mapGeneration = $state(0);
+  let contextLossRecoveries = 0;
+  const MAX_CONTEXT_RECOVERIES = 3;
+
+  function handleMapContextLost() {
+    if (contextLossRecoveries >= MAX_CONTEXT_RECOVERIES) {
+      toasts.error(
+        'The map lost its graphics context and could not recover. Reload the page to restore it.',
+      );
+      return;
+    }
+    contextLossRecoveries += 1;
+    mapGeneration += 1;
+  }
+
   // Radar overlay settings -- persisted per browser (not per account).
   const radarSettings = $state({
     visible: localStorage.getItem('gw_radar_visible') === '1',
@@ -599,6 +620,11 @@
   }
 
   function onMapReady(map) {
+    // On a context-loss remount (graywolf#461) the previous generation's
+    // layers, popups and station-poll are still live; tear them down before
+    // wiring the fresh map so we don't double-poll or leak DOM markers that
+    // belonged to the dead map.
+    if (mapRef) teardownMapGeneration();
     mapRef = map;
     // Radar first so the raster/fill sits below trails and station markers in
     // the GL stack. DOM layers (stations, weather) always render above the
@@ -1195,11 +1221,15 @@
     };
   });
 
-  onDestroy(() => {
+  // Tear down everything onMapReady wires onto a specific map instance so the
+  // map can be swapped (context-loss remount, graywolf#461) or fully unmounted
+  // cleanly. The persistent stores/timers that are owned by the component and
+  // NOT re-created by onMapReady -- the radar frame poller, fronts poller, the
+  // 1s tick, the media-query listener -- outlive a generation swap and are
+  // cleared in onDestroy instead.
+  function teardownMapGeneration() {
     dataStore.stop();
     closePopup();
-    radarFrames.destroy();
-    stopFrontsPolling();
     stopHeatmapPolling();
     radarLayer?.destroy();
     frontsLayer?.destroy();
@@ -1222,6 +1252,12 @@
     myPositionLayer = null;
     fixedPointsLayer = null;
     mapRef = null;
+  }
+
+  onDestroy(() => {
+    teardownMapGeneration();
+    radarFrames.destroy();
+    stopFrontsPolling();
     if (tickTimer) {
       clearInterval(tickTimer);
       tickTimer = null;
@@ -1232,12 +1268,17 @@
 </script>
 
 <div class="livemap-shell">
-  <!-- Start at planet view; onMapReady fits to recent stations after first poll. -->
-  <MaplibreMap
-    initialCenter={[mapState.mapCenter[1], mapState.mapCenter[0]]}
-    initialZoom={mapState.mapZoom}
-    oncreate={onMapReady}
-  />
+  <!-- Start at planet view; onMapReady fits to recent stations after first poll.
+       Keyed on mapGeneration so an unrecoverable WebGL context loss remounts the
+       map with a fresh context instead of leaving a black canvas (graywolf#461). -->
+  {#key mapGeneration}
+    <MaplibreMap
+      initialCenter={[mapState.mapCenter[1], mapState.mapCenter[0]]}
+      initialZoom={mapState.mapZoom}
+      oncreate={onMapReady}
+      oncontextlost={handleMapContextLost}
+    />
+  {/key}
 
   {#snippet panelBody()}
     <!-- APRS: station/trail/position layers + the time-range filter. -->
