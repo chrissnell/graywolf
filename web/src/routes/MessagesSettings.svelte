@@ -240,7 +240,10 @@
     align-items: center;
     flex-wrap: wrap;
   }
-  .block-add :global(input) { min-width: 0; }
+  /* chonky inputs carry a 1rem bottom margin (stacked-form default); in
+     this single row it inflates the wrapper so align-items:center drops
+     the Block button below the fields. Zero it so input and button align. */
+  .block-add :global(input) { min-width: 0; margin-bottom: 0; }
   .err {
     margin-top: 8px;
     color: var(--color-danger, #d33);
