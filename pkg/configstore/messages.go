@@ -66,6 +66,51 @@ func (s *Store) seedMessagePreferences(ctx context.Context) error {
 }
 
 // ---------------------------------------------------------------------------
+// ConversationPrefs (per-thread overrides)
+// ---------------------------------------------------------------------------
+
+// GetConversationPrefs returns the override row for one thread, or
+// (nil, nil) when none exists (the common case — most conversations
+// inherit the global defaults, so no row is written). Callers treat a
+// nil result as "SendPath inherit, WaitForAck true". Kind/key are
+// matched exactly; callers normalize key to uppercase before calling.
+func (s *Store) GetConversationPrefs(ctx context.Context, kind, key string) (*ConversationPrefs, error) {
+	var c ConversationPrefs
+	err := s.db.WithContext(ctx).
+		Where("thread_kind = ? AND thread_key = ?", kind, key).
+		First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// UpsertConversationPrefs stores the override row for (kind, key),
+// adopting the existing row's ID when one is present so Save updates in
+// place rather than inserting a duplicate. When the incoming prefs carry
+// only default values (inherit SendPath + WaitForAck true), any existing
+// row is deleted instead so the table stays sparse.
+func (s *Store) UpsertConversationPrefs(ctx context.Context, cfg *ConversationPrefs) error {
+	existing, err := s.GetConversationPrefs(ctx, cfg.ThreadKind, cfg.ThreadKey)
+	if err != nil {
+		return err
+	}
+	if cfg.SendPath == "" && cfg.WaitForAck {
+		if existing != nil {
+			return s.db.WithContext(ctx).Delete(&ConversationPrefs{}, existing.ID).Error
+		}
+		return nil
+	}
+	if existing != nil {
+		cfg.ID = existing.ID
+	}
+	return s.db.WithContext(ctx).Save(cfg).Error
+}
+
+// ---------------------------------------------------------------------------
 // TacticalCallsign CRUD
 // ---------------------------------------------------------------------------
 
@@ -132,4 +177,56 @@ func (s *Store) GetTacticalCallsignByCallsign(ctx context.Context, callsign stri
 		return nil, err
 	}
 	return &t, nil
+}
+
+// ---------------------------------------------------------------------------
+// BlockedCallsign CRUD
+// ---------------------------------------------------------------------------
+
+// CreateBlockedCallsign inserts a new blocklist entry. Callsign is
+// normalized to uppercase by the BlockedCallsign.BeforeSave hook.
+func (s *Store) CreateBlockedCallsign(ctx context.Context, b *BlockedCallsign) error {
+	return s.db.WithContext(ctx).Create(b).Error
+}
+
+// UpdateBlockedCallsign saves changes to an existing row. Callsign
+// re-normalization happens via BeforeSave.
+func (s *Store) UpdateBlockedCallsign(ctx context.Context, b *BlockedCallsign) error {
+	return s.db.WithContext(ctx).Save(b).Error
+}
+
+// DeleteBlockedCallsign removes a blocklist entry by id. Historical
+// message rows already persisted are unaffected — the block only
+// applies to inbound traffic received after the entry is enabled.
+func (s *Store) DeleteBlockedCallsign(ctx context.Context, id uint32) error {
+	return s.db.WithContext(ctx).Delete(&BlockedCallsign{}, id).Error
+}
+
+// GetBlockedCallsign returns a single blocklist entry by id. Returns
+// (nil, nil) on not-found to match the other getters.
+func (s *Store) GetBlockedCallsign(ctx context.Context, id uint32) (*BlockedCallsign, error) {
+	var b BlockedCallsign
+	err := s.db.WithContext(ctx).First(&b, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// ListBlockedCallsigns returns every blocklist entry (enabled or not),
+// ordered by callsign for stable UI display.
+func (s *Store) ListBlockedCallsigns(ctx context.Context) ([]BlockedCallsign, error) {
+	var out []BlockedCallsign
+	return out, s.db.WithContext(ctx).Order("callsign").Find(&out).Error
+}
+
+// ListEnabledBlockedCallsigns returns only the entries with
+// Enabled=true. The router uses this at startup and on reload to
+// rebuild its in-memory blocklist set.
+func (s *Store) ListEnabledBlockedCallsigns(ctx context.Context) ([]BlockedCallsign, error) {
+	var out []BlockedCallsign
+	return out, s.db.WithContext(ctx).Where("enabled = ?", true).Order("callsign").Find(&out).Error
 }

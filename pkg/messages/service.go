@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -30,6 +31,7 @@ var ErrInvalidInvite = errors.New("messages: invite requires a valid invite_tact
 type ServiceConfigReader interface {
 	MessagePreferencesReader
 	ListEnabledTacticalCallsigns(ctx context.Context) ([]configstore.TacticalCallsign, error)
+	ListEnabledBlockedCallsigns(ctx context.Context) ([]configstore.BlockedCallsign, error)
 }
 
 // ServiceConfig wires the Service constructor.
@@ -98,6 +100,7 @@ type Service struct {
 	hub       *EventHub
 	ring      *LocalTxRing
 	tactSet   *TacticalSet
+	blockSet  *BlocklistSet
 	preflight *Preflight
 
 	// TxHook unregister closure — nil before Start, set in Start.
@@ -144,6 +147,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if tactSet == nil {
 		tactSet = NewTacticalSet()
 	}
+	blockSet := NewBlocklistSet()
 	hub := cfg.EventHub
 	if hub == nil {
 		hub = NewEventHub(DefaultSubscriberBuffer)
@@ -212,6 +216,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		OurCall:      cfg.OurCall,
 		LocalTxRing:  ring,
 		TacticalSet:  tactSet,
+		BlockedSet:   blockSet,
 		EventHub:     hub,
 		Logger:       logger.With("component", "messages-router"),
 		Clock:        clock,
@@ -232,6 +237,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		hub:       hub,
 		ring:      ring,
 		tactSet:   tactSet,
+		blockSet:  blockSet,
 		preflight: pf,
 	}, nil
 }
@@ -253,6 +259,10 @@ func (s *Service) Start(ctx context.Context) error {
 		if err := s.ReloadTacticalCallsigns(ctx); err != nil {
 			s.logger.Warn("messages tactical callsigns initial load failed", "error", err)
 			// Not fatal.
+		}
+		if err := s.ReloadBlockedCallsigns(ctx); err != nil {
+			s.logger.Warn("messages blocked callsigns initial load failed", "error", err)
+			// Not fatal — an empty blocklist blocks nothing.
 		}
 		_, unreg := s.cfg.TxHookReg.AddTxHook(s.sender.onTxComplete)
 		s.unregTxHook = unreg
@@ -383,6 +393,22 @@ func (s *Service) ReloadTacticalCallsigns(ctx context.Context) error {
 	return nil
 }
 
+// ReloadBlockedCallsigns refetches the enabled call-sign blocklist and
+// swaps it into the router's cache. Called at Start and by the Phase 4
+// messagesReload channel consumer after a blocklist CRUD mutation.
+func (s *Service) ReloadBlockedCallsigns(ctx context.Context) error {
+	rows, err := s.cfg.ConfigStore.ListEnabledBlockedCallsigns(ctx)
+	if err != nil {
+		return err
+	}
+	set := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		set[row.Callsign] = struct{}{}
+	}
+	s.blockSet.Store(set)
+	return nil
+}
+
 // SendMessageRequest is the Go-level compose input. The Phase 4 REST
 // handler decodes its DTO and calls Service.SendMessage(ctx, req).
 type SendMessageRequest struct {
@@ -461,6 +487,25 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 		}
 	}
 
+	// Per-conversation overrides (issue #453). Absent row → inherit the
+	// global defaults. SendPath is stamped on the row so retry re-attempts
+	// route the same way as the initial send; WaitForAck=false disables
+	// retry enrollment below so a no-ACK contact (e.g. TIDRadio TD-H9) is
+	// sent once and not re-transmitted. A one-shot req.FallbackPolicyOverride
+	// (e.g. an Actions reply echoing inbound transport) still wins for the
+	// initial dispatch, but is NOT persisted to row.SendPath so it doesn't
+	// bleed into that contact's retries.
+	convPrefs, err := s.cfg.Store.GetConversationPrefs(ctx, kind, strings.ToUpper(req.To))
+	if err != nil {
+		return nil, err
+	}
+	rowSendPath := ""
+	suppressRetry := false
+	if convPrefs != nil {
+		rowSendPath = convPrefs.SendPath
+		suppressRetry = !convPrefs.WaitForAck
+	}
+
 	row := &configstore.Message{
 		Direction:      "out",
 		OurCall:        req.OurCall,
@@ -472,6 +517,7 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 		Unread:         false,
 		Kind:           bodyKind,
 		InviteTactical: inviteTactical,
+		SendPath:       rowSendPath,
 	}
 	// DM requires a msgid; tactical may omit.
 	if kind == ThreadKindDM {
@@ -495,7 +541,12 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 	// reflect writes). Without the copy, -race flags this as a data
 	// race between handler response-serialization and background send.
 	rowCopy := *row
+	// Initial-dispatch policy: an explicit one-shot override wins, else
+	// the conversation's stamped SendPath, else (empty) the global pref.
 	policyOverride := req.FallbackPolicyOverride
+	if policyOverride == "" {
+		policyOverride = rowSendPath
+	}
 	go func() {
 		sendCtx := s.ctx
 		if sendCtx == nil {
@@ -508,8 +559,10 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 		}
 		// Enroll in the retry ladder for DM when the first attempt
 		// queues successfully or returned a retryable error. Tactical
-		// rows do not participate in the retry scheduler.
-		if result.Retryable && rowCopy.ThreadKind == ThreadKindDM {
+		// rows do not participate in the retry scheduler. A conversation
+		// with WaitForAck=false (no-ACK contact) is sent once and skips
+		// enrollment entirely — no re-sends.
+		if result.Retryable && rowCopy.ThreadKind == ThreadKindDM && !suppressRetry {
 			// Re-read the row — Sender may have flipped fields.
 			cur, err := s.cfg.Store.GetByID(sendCtx, rowCopy.ID)
 			if err == nil {

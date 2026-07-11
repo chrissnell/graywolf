@@ -196,6 +196,13 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 			if entries := stationcache.ExtractEntry(pkt, logSource, "RX", rf.Channel); len(entries) > 0 {
 				a.stationCache.Update(entries)
 			}
+			// Heatmap: count this physical RF reception exactly once, here at
+			// the sole off-air ingest edge — not in the station cache write
+			// path, which also runs for the iGate RF->IS re-gate and the
+			// startup roster reload (neither a fresh reception).
+			if ev, ok := stationcache.BuildRxEvent(pkt); ok {
+				a.stationCache.RecordRxEvent(ev)
+			}
 		}
 	} else if a.ax25Mgr != nil {
 		// Connected-mode dispatch: any non-UI frame that decodes goes to

@@ -4669,6 +4669,209 @@
                 }
             }
         },
+        "/messages/blocklist": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "List blocked call signs",
+                "operationId": "listBlockedCallsigns",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.BlockedCallsignResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Block a call sign",
+                "operationId": "createBlockedCallsign",
+                "parameters": [
+                    {
+                        "description": "Blocklist entry",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/blocklist/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Update a blocked call sign",
+                "operationId": "updateBlockedCallsign",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Blocklist entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Blocklist entry",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Unblock a call sign",
+                "operationId": "deleteBlockedCallsign",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Blocklist entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/messages/config": {
             "get": {
                 "security": [
@@ -4796,6 +4999,122 @@
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/conversations/{kind}/{key}/prefs": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Get conversation preferences",
+                "operationId": "getConversationPrefs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "thread kind (dm|tactical)",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "peer callsign or tactical label",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConversationPrefsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Update conversation preferences",
+                "operationId": "putConversationPrefs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "thread kind (dm|tactical)",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "peer callsign or tactical label",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Preferences",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConversationPrefsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConversationPrefsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -9015,6 +9334,43 @@
                 }
             }
         },
+        "dto.BlockedCallsignRequest": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.BlockedCallsignResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.BlocklistEntryRequest": {
             "type": "object",
             "properties": {
@@ -9376,6 +9732,36 @@
                 },
                 "space_freq": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.ConversationPrefsRequest": {
+            "type": "object",
+            "properties": {
+                "send_path": {
+                    "description": "SendPath overrides transport for this conversation. Empty ('')\nmeans \"inherit the global fallback policy\"; otherwise one of\nrf_only | is_only | both.",
+                    "type": "string"
+                },
+                "wait_for_ack": {
+                    "description": "WaitForAck, when false, sends DMs to this contact once and skips\nthe retry ladder (no re-sends) — for handhelds that never ACK.\nDefaults true.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.ConversationPrefsResponse": {
+            "type": "object",
+            "properties": {
+                "send_path": {
+                    "type": "string"
+                },
+                "thread_key": {
+                    "type": "string"
+                },
+                "thread_kind": {
+                    "type": "string"
+                },
+                "wait_for_ack": {
+                    "type": "boolean"
                 }
             }
         },
@@ -9786,6 +10172,10 @@
         "dto.KissRequest": {
             "type": "object",
             "properties": {
+                "allow_connected_mode": {
+                    "description": "AllowConnectedMode opts a KISS interface in to passing non-UI\n(connected-mode) AX.25 frames through to the radio instead of\ndropping them, so connected-mode packet apps (Pat/Winlink via the\nkernel AX.25 stack + kissattach) can use graywolf as a raw KISS\nmodem. Default false; the far end owns the LAPB session state.",
+                    "type": "boolean"
+                },
                 "allow_tx_from_governor": {
                     "description": "AllowTxFromGovernor opts this TNC-mode interface in to receive\nframes from the TX governor (beacon / digipeater / iGate /\nKISS / AGW submissions). Only meaningful when Mode == \"tnc\";\nthe validator rejects true with any other mode. Default false\non migrated rows so existing TNC servers do not silently start\ntransmitting; Phase 4 sets the DTO default to true for newly\ncreated tcp-client rows.",
                     "type": "boolean"
@@ -9844,6 +10234,9 @@
         "dto.KissResponse": {
             "type": "object",
             "properties": {
+                "allow_connected_mode": {
+                    "type": "boolean"
+                },
                 "allow_tx_from_governor": {
                     "type": "boolean"
                 },

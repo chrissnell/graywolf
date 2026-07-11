@@ -243,6 +243,8 @@ When a channel's `Mode` is `packet`, the beacon scheduler, digipeater engine, iG
 
 The lookup contract is fail-open at the resolver: if `ChannelModeLookup` returns an error or `nil`, callers behave as if the channel were `aprs` (preserves the legacy any-channel-does-anything behavior). The IS→RF runtime gate also fails open -- a transient DB error does not silently suppress beaconing or gating.
 
+**Exception -- KISS `allow_connected_mode` passthrough.** The `aprs`-only refusal above is enforced by `ax25conn.Manager.Open` because that path *auto*-brings-up sessions (the web AX.25 terminal). The per-interface KISS `allow_connected_mode` opt-in (`pkg/kiss`, see [code-map](code-map.md)) is a *raw transport* path: it modulates client-supplied connected-mode frames directly via `Sink.Submit`, never touching `ax25conn.Manager`, so it does **not** consult `ChannelModeLookup`. An operator who sets `allow_connected_mode` on an interface mapped to an `aprs`-only channel can therefore transmit SABM/I/S frames there. This is deliberate: the flag is an explicit "stop filtering, KISS is a raw AX.25 transport" opt-in (graywolf#463), and the connecting client -- not graywolf -- owns the session. Default off keeps `aprs`-only channels connected-mode-free unless the operator overrides it.
+
 *Why:* Operators may want to dedicate a channel to AX.25 connected-mode without it accidentally absorbing APRS beacons, digipeated packets, IS→RF traffic, or outbound APRS messages. The `aprs+packet` value preserves the legacy "any channel does anything" behavior for setups that don't care about the split.
 
 Source: [`../../pkg/configstore/channel_mode_lookup.go`](../../pkg/configstore/channel_mode_lookup.go),
@@ -680,14 +682,29 @@ cannot outlive the app, because no single mechanism covers both cases.
   and a `setOnApplyWindowInsetsListener` that pads the WebView by the side bars and
   `max(systemBars.bottom, ime.bottom)` -- but **leaves the top inset at 0 on purpose**.
   The split is load-bearing and not interchangeable:
-  - **Top is owned by CSS.** The SPA's mobile top bar is `position:fixed; top:0`
-    (`web/.../Sidebar.svelte`), and a fixed element is pinned to the visual viewport,
-    which WebView top-padding does NOT shift -- padding the top leaves the bar stranded
-    behind the status bar (GH #390). Instead `web/index.html` sets `viewport-fit=cover`
-    so `env(safe-area-inset-top)` is populated, and the top bar reserves the status-bar
-    strip itself (`height: calc(56px + env(safe-area-inset-top))`, matching
-    `margin-top` on `.main-content`). Do NOT re-add `bars.top` to the WebView padding and
-    do NOT drop `viewport-fit=cover`.
+  - **Top is owned by CSS, fed the inset by native.** The SPA's mobile top bar is
+    `position:fixed; top:0` (`web/.../Sidebar.svelte`), and a fixed element is pinned to
+    the visual viewport, which WebView top-padding does NOT shift -- padding the top leaves
+    the bar stranded behind the status bar (GH #390). So the top bar reserves the
+    status-bar strip in CSS (`height: calc(56px + var(--safe-area-top))`, matching
+    `margin-top` on `.main-content`). The value is **not** taken from
+    `env(safe-area-inset-top)` alone: Android WebView derives that env var from the
+    display cutout, not the status bar, and returns 0 (or wrong values below WebView 140)
+    on most devices -- relying on it is what made the first GH #390 fix regress. Instead
+    `MainActivity.applyTopInsetToCss` injects the real status-bar inset (`systemBars.top`,
+    converted to CSS px) as the `--android-inset-top` custom property on the document root,
+    re-applied from `onPageFinished` because each `loadUrl` swaps in a fresh document.
+    `web/src/app.css` defines `--safe-area-top: max(env(safe-area-inset-top),
+    var(--android-inset-top, 0px))` so the Android shell (var set, env 0) and iOS / mobile
+    browsers (env populated, var unset) both reserve the strip; all top-inset consumers
+    (`App.svelte`, `Sidebar.svelte`, `RemoteActionsDrawer.svelte`) read `var(--safe-area-top)`.
+    chonky-ui's `<Drawer>` (the mobile nav drawer, `web/.../Sidebar.svelte` `anchor="left"`)
+    bakes raw `env(safe-area-inset-top)` into its `.drawer` rule, so `app.css` overrides
+    `.drawer { padding-top: var(--safe-area-top) }` to feed it the native inset too -- the
+    proper fix belongs in chonky-ui itself; until then any new `.drawer`-based surface
+    inherits the override. Do NOT re-add `bars.top` to the WebView padding, do NOT make the
+    top bar depend on `env(safe-area-inset-top)` directly, and keep `viewport-fit=cover` in
+    `web/index.html` (it is still needed for the env() path on iOS / mobile browsers).
   - **Bottom is owned by native padding.** `env()` cannot express the keyboard, so the
     IME padding is the cross-system load-bearing bit: it shrinks the web viewport above
     the keyboard so the SPA's sticky compose bar (`web/.../ComposeBar.svelte`,
@@ -1436,7 +1453,7 @@ Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 [`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
 (`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
 
-### 58. MapLibre `map.remove()` deletes `this.style`; any layer helper called after teardown must guard `getSource()`/`getLayer()`
+### 60. MapLibre `map.remove()` deletes `this.style`; any layer helper called after teardown must guard `getSource()`/`getLayer()`
 
 MapLibre GL JS v5 `map.remove()` → `_updateStyle(null)` → `delete this.style`.
 Any subsequent call to `map.getSource()` or `map.getLayer()` throws a
@@ -1463,3 +1480,86 @@ Source: [`../../web/src/lib/map/layers/hover-path.js`](../../web/src/lib/map/lay
 [`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte)
 (`closePopup` / popup `close` event handler),
 MapLibre GL JS v5 source: `map.remove()` → `_updateStyle(null)` → `delete this.style`.
+
+### 58. The heatmap counts one `rx_events` row per physical RF frame, at the ingest edge only
+
+The direct-RX heatmap answers "where did RF energy actually reach our antenna
+from," weighted by packet count, so it must count each off-air frame **exactly
+once**. The counting lives at the sole RF-ingest edge — `dispatchRxFrame`
+(`pkg/app/rxfanout.go`) calls `stationcache.BuildRxEvent(pkt)` and, on success,
+`PersistentCache.RecordRxEvent`, which appends one `rx_events` row.
+
+**Do NOT record from the station-cache write path.** `PersistentCache.Update` /
+`historydb.WriteEntries` also run for the iGate RF->IS re-gate hook
+(`wiring.go` `RfToIsHook`, which re-`Update`s the same RF packet with
+`Direction "RX"`) and the startup roster reload (`wiring.go` seeds the cache
+from `LoadRecent`). Counting there double-counts every gateable packet on an
+iGate node and re-counts the whole roster on each restart.
+`TestWriteEntriesDoesNotRecordRxEvents` guards this.
+
+`BuildRxEvent` (`pkg/stationcache/heatmap.go`) is the single source of
+attribution truth:
+
+- **Gated** (third-party, `pkt.ThirdParty != nil`) or sourceless → no event.
+- **Digipeated** (`aprs.CountHops > 0` with a last non-alias H-bit `"*"` digi):
+  `attr_key = "stn:" + lastDigi`, `has_pos = false`. The origin's coordinates
+  are deliberately **not** used — heat belongs at the digi we actually heard.
+  `lastHBitDigi` skips generic aliases (WIDE/RELAY/…) to stay consistent with
+  `aprs.CountHops`, so `SHEPRD*,WIDE1*` attributes to `SHEPRD`, not `WIDE1`.
+- **Direct** (else): `attr_key = "stn:" + source`, carrying the packet's own
+  coordinates when present (`has_pos = true`); positionless direct frames
+  (messages/status) still count with `has_pos = false`.
+
+At query time `QueryHeatmap` resolves every `has_pos = false` event from the
+attributed station's latest stored position; still-unknown ones land in
+`HeatmapResult.Unlocatable` rather than being dropped. Counting uses a dedicated
+append-only table, not the `positions` table, because the latter dedups static
+re-beacons (invariant #54) and would undercount high-volume fixed stations.
+`QueryHeatmap` buckets located events at 4 decimal places (~11m). Retention is
+`rxEventsRetention` (8 days), pruned in `Prune`.
+
+Source: [`../../pkg/stationcache/heatmap.go`](../../pkg/stationcache/heatmap.go)
+(`BuildRxEvent`, `lastHBitDigi`),
+[`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go) (`dispatchRxFrame`),
+[`../../pkg/historydb/historydb.go`](../../pkg/historydb/historydb.go)
+(`RecordRxEvent`, `QueryHeatmap`, `Prune`),
+[`../../pkg/historydb/heatmap_test.go`](../../pkg/historydb/heatmap_test.go),
+[`../../pkg/stationcache/heatmap_test.go`](../../pkg/stationcache/heatmap_test.go).
+
+### 59. An ax25conn session self-removes from the manager on terminal DISCONNECTED
+
+`ax25conn.Manager` keys live sessions by the `(channel, local, peer)`
+triple and rejects a second `Open` on the same triple with
+`ErrSessionExists`. A session is removed from that table only when its
+`Run` goroutine returns — the manager runs `go func(){ s.Run(ctx);
+m.remove(key,id) }()`.
+
+The invariant: **every transition into `StateDisconnected` from a live
+state ends the session's life.** `setState` sets `s.terminated` whenever
+`ns == StateDisconnected` (the initial DISCONNECTED never trips it —
+`setState` short-circuits on an unchanged state), and `handle` returns
+`false` when `terminated` is set, so `Run` exits, `cleanup` emits the
+final DISCONNECTED, and `remove` frees the triple. This covers all
+terminal paths: SABM/N2 timeout and DM-reject during setup, a peer DROP
+while connected, and the DISC/UA release handshake.
+
+*Why:* Before this, terminal transitions returned `true` and the session
+parked in DISCONNECTED forever, leaking a goroutine + manager slot on
+**every** disconnect. The operator-visible symptom (graywolf #456) was a
+reconnect to the same peer failing with "ax25conn: session already
+exists for this triple" until graywolf was restarted; the bridge's
+`Close()` cancels only the bridge/pump context, not the session, so it
+could not clear the stale entry on its own. Relatedly, a frame that
+can't be handed to the TX backend now raises a one-shot `tx-failed`
+error (guarded by `txFailNotified`) so a channel with no TNC/KISS/modem
+backend surfaces the real reason instead of the misleading "no response
+to SABM after N2 retries."
+
+Source: [`../../pkg/ax25conn/session.go`](../../pkg/ax25conn/session.go)
+(`terminated`, `setState`, `handle`, `Run`),
+[`../../pkg/ax25conn/manager.go`](../../pkg/ax25conn/manager.go)
+(`Open`, `remove`, `ErrSessionExists`),
+[`../../pkg/ax25conn/transitions_disconnected.go`](../../pkg/ax25conn/transitions_disconnected.go)
+(`submit` tx-failed emit),
+[`../../pkg/ax25conn/manager_test.go`](../../pkg/ax25conn/manager_test.go)
+(`TestManager_FreesTripleAfterFailedConnect`).

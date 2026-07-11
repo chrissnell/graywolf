@@ -503,6 +503,7 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 		TncIngressBurst:     cfg.TncIngressBurst,
 		AllowTxFromGovernor: cfg.AllowTxFromGovernor,
 		GateTxToIs:          cfg.GateTxToIs,
+		AllowConnectedMode:  cfg.AllowConnectedMode,
 	}
 	scfg.Sink = m.sink
 	if cfg.Logger != nil {

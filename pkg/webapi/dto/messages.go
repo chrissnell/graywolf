@@ -493,6 +493,82 @@ func MessagePreferencesFromModel(m configstore.MessagePreferences) MessagePrefer
 	}
 }
 
+// --- Conversation prefs (per-thread overrides) ---------------------------
+
+// ConversationPrefsRequest is the body accepted by PUT
+// /api/messages/conversations/{kind}/{key}/prefs. Both fields are
+// always present (the client sends the full state of the Routing
+// popover); the server deletes the row when they equal the defaults so
+// the table stays sparse.
+type ConversationPrefsRequest struct {
+	// SendPath overrides transport for this conversation. Empty ('')
+	// means "inherit the global fallback policy"; otherwise one of
+	// rf_only | is_only | both.
+	SendPath string `json:"send_path"`
+	// WaitForAck, when false, sends DMs to this contact once and skips
+	// the retry ladder (no re-sends) — for handhelds that never ACK.
+	// Defaults true.
+	WaitForAck bool `json:"wait_for_ack"`
+}
+
+// Validate constrains SendPath to the inherit-or-enum set. is_fallback
+// is rejected as an override: it is identical to inherit ('') and
+// accepting both would give two encodings for the same behavior.
+func (r ConversationPrefsRequest) Validate() error {
+	switch r.SendPath {
+	case "",
+		messages.FallbackPolicyRFOnly,
+		messages.FallbackPolicyISOnly,
+		messages.FallbackPolicyBoth:
+		return nil
+	default:
+		return fmt.Errorf("send_path %q is not one of (empty)|rf_only|is_only|both", r.SendPath)
+	}
+}
+
+// ToModel builds a configstore row for (kind, key). Key is uppercased
+// so lookups at send time (which also uppercase) hit the same row.
+func (r ConversationPrefsRequest) ToModel(kind, key string) configstore.ConversationPrefs {
+	return configstore.ConversationPrefs{
+		ThreadKind: strings.ToLower(strings.TrimSpace(kind)),
+		ThreadKey:  strings.ToUpper(strings.TrimSpace(key)),
+		SendPath:   r.SendPath,
+		WaitForAck: r.WaitForAck,
+	}
+}
+
+// ConversationPrefsResponse is returned by GET/PUT on the prefs
+// endpoint. A conversation with no stored row returns the defaults
+// (inherit + wait_for_ack true) rather than 404 so the client can
+// render the Routing control without a special-case.
+type ConversationPrefsResponse struct {
+	ThreadKind string `json:"thread_kind"`
+	ThreadKey  string `json:"thread_key"`
+	SendPath   string `json:"send_path"`
+	WaitForAck bool   `json:"wait_for_ack"`
+}
+
+// ConversationPrefsDefaults returns the response a thread with no stored
+// override row surfaces: inherit transport, ack-and-resend on.
+func ConversationPrefsDefaults(kind, key string) ConversationPrefsResponse {
+	return ConversationPrefsResponse{
+		ThreadKind: strings.ToLower(strings.TrimSpace(kind)),
+		ThreadKey:  strings.ToUpper(strings.TrimSpace(key)),
+		SendPath:   "",
+		WaitForAck: true,
+	}
+}
+
+// ConversationPrefsFromModel renders a stored row.
+func ConversationPrefsFromModel(m configstore.ConversationPrefs) ConversationPrefsResponse {
+	return ConversationPrefsResponse{
+		ThreadKind: m.ThreadKind,
+		ThreadKey:  m.ThreadKey,
+		SendPath:   m.SendPath,
+		WaitForAck: m.WaitForAck,
+	}
+}
+
 // --- Tactical callsigns --------------------------------------------------
 
 // TacticalCallsignRequest is the body accepted by POST + PUT on
@@ -542,6 +618,62 @@ func TacticalCallsignFromModel(m configstore.TacticalCallsign) TacticalCallsignR
 		ID:        m.ID,
 		Callsign:  m.Callsign,
 		Alias:     m.Alias,
+		Enabled:   m.Enabled,
+		CreatedAt: m.CreatedAt.UTC(),
+		UpdatedAt: m.UpdatedAt.UTC(),
+	}
+}
+
+// --- Blocked call signs --------------------------------------------------
+
+// BlockedCallsignRequest is the body accepted by POST + PUT on
+// /api/messages/blocklist.
+type BlockedCallsignRequest struct {
+	Callsign string `json:"callsign"`
+	Note     string `json:"note,omitempty"`
+	Enabled  bool   `json:"enabled"`
+}
+
+// Validate enforces addressee syntax and a non-empty callsign. An
+// SSID-qualified entry (e.g. "N0CALL-7") is accepted and blocks only
+// that station; a bare callsign blocks every SSID of the base call.
+func (r BlockedCallsignRequest) Validate() error {
+	if strings.TrimSpace(r.Callsign) == "" {
+		return fmt.Errorf("callsign is required")
+	}
+	if err := ValidateAddressee(r.Callsign); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ToModel builds a configstore row from the request. Callsign is
+// uppercased by the model's BeforeSave hook; we upper here too so
+// validation and collision checks use the canonical form.
+func (r BlockedCallsignRequest) ToModel() configstore.BlockedCallsign {
+	return configstore.BlockedCallsign{
+		Callsign: strings.ToUpper(strings.TrimSpace(r.Callsign)),
+		Note:     r.Note,
+		Enabled:  r.Enabled,
+	}
+}
+
+// BlockedCallsignResponse is the body returned by GET/POST/PUT.
+type BlockedCallsignResponse struct {
+	ID        uint32    `json:"id"`
+	Callsign  string    `json:"callsign"`
+	Note      string    `json:"note,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// BlockedCallsignFromModel renders one row.
+func BlockedCallsignFromModel(m configstore.BlockedCallsign) BlockedCallsignResponse {
+	return BlockedCallsignResponse{
+		ID:        m.ID,
+		Callsign:  m.Callsign,
+		Note:      m.Note,
 		Enabled:   m.Enabled,
 		CreatedAt: m.CreatedAt.UTC(),
 		UpdatedAt: m.UpdatedAt.UTC(),

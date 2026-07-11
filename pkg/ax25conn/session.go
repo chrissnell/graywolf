@@ -103,6 +103,26 @@ type Session struct {
 	stats   LinkStats
 	pending [128]*Frame // I-frame retransmit buffer keyed by NS
 	txBuf   []byte      // operator bytes pending TX
+
+	// terminated is set by setState the first time the link reaches
+	// StateDisconnected from a live state (SABM failure, DM reject, a
+	// completed DISC handshake, or a dropped connection). It signals the
+	// run loop to exit so the manager can remove the session from its
+	// triple table — otherwise a dead session lingers and a reconnect to
+	// the same (channel, local, peer) fails with ErrSessionExists until
+	// the process restarts (graywolf #456). The initial DISCONNECTED
+	// state never sets it: setState short-circuits when the state is
+	// unchanged, so only a real transition into DISCONNECTED trips it.
+	terminated bool
+
+	// txFailNotified guards the one-shot operator-facing error emitted
+	// when a frame cannot be handed to the TX backend (e.g. the channel
+	// has no KISS/modem backend, or the wrong channel was selected).
+	// Without it, a failed SABM submit is silently logged and the link
+	// setup marches to N2 retries and reports the misleading "no
+	// response to SABM" -- even though nothing was ever transmitted
+	// (graywolf #456).
+	txFailNotified bool
 }
 
 // Snapshot returns a goroutine-safe copy of the current LinkStats.
@@ -313,19 +333,28 @@ func (s *Session) handle(ctx context.Context, ev Event) bool {
 		s.statsTick()
 		return true
 	}
+	var cont bool
 	switch s.state {
 	case StateDisconnected:
-		return s.onDisconnected(ctx, ev)
+		cont = s.onDisconnected(ctx, ev)
 	case StateAwaitingConnection:
-		return s.onAwaitingConnection(ctx, ev)
+		cont = s.onAwaitingConnection(ctx, ev)
 	case StateConnected:
-		return s.onConnected(ctx, ev)
+		cont = s.onConnected(ctx, ev)
 	case StateTimerRecovery:
-		return s.onTimerRecovery(ctx, ev)
+		cont = s.onTimerRecovery(ctx, ev)
 	case StateAwaitingRelease:
-		return s.onAwaitingRelease(ctx, ev)
+		cont = s.onAwaitingRelease(ctx, ev)
+	default:
+		return false
 	}
-	return false
+	// A transition into terminal DISCONNECTED ends the session's life;
+	// exit the run loop so cleanup() runs and the manager removes the
+	// session from its triple table.
+	if s.terminated {
+		return false
+	}
+	return cont
 }
 
 func (s *Session) cleanup() {
@@ -358,6 +387,11 @@ func (s *Session) setState(ns State) {
 	s.emit(OutEvent{Kind: OutLinkStats, Stats: s.Snapshot()})
 	if ns == StateConnected {
 		s.tStats.reset()
+	}
+	if ns == StateDisconnected {
+		// Terminal transition: the link has fully torn down. Flag the run
+		// loop to exit so the manager frees this triple (graywolf #456).
+		s.terminated = true
 	}
 }
 

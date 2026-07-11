@@ -179,6 +179,39 @@ func Decode(raw []byte) (*Frame, error) {
 	return f, nil
 }
 
+// ConnectedPassthrough builds a connected-mode Frame from an
+// already-decoded non-UI frame and the original wire bytes, such that
+// Encode() reproduces those bytes verbatim (modulo the canonical
+// address-block encoding shared with the pkg/ax25conn TX path).
+//
+// It exists for the KISS connected-mode passthrough: a KISS client
+// (e.g. the Linux kernel AX.25 stack driving Pat) owns the LAPB session
+// state machine and hands graywolf fully-formed SABM/DISC/I/S frames to
+// modulate. graywolf does not interpret them, so the entire control +
+// PID + info tail is carried opaquely in ConnectedControl (with
+// ConnectedHasInfo=false). This sidesteps the mod-8/mod-128 ambiguity —
+// a standalone frame can't reveal which the session negotiated — while
+// still round-tripping the exact bytes to the modem.
+//
+// parsed supplies the parsed address header (Source/Dest/Path and the
+// command/response C-bit polarity); raw is the frame parsed produced.
+func ConnectedPassthrough(parsed *Frame, raw []byte) (*Frame, error) {
+	ab, err := DecodeAddressBlock(raw)
+	if err != nil {
+		return nil, err
+	}
+	if ab.AddrLen >= len(raw) {
+		return nil, errors.New("ax25: connected frame missing control field")
+	}
+	return &Frame{
+		Dest:             parsed.Dest,
+		Source:           parsed.Source,
+		Path:             parsed.Path,
+		CommandResp:      parsed.CommandResp,
+		ConnectedControl: append([]byte(nil), raw[ab.AddrLen:]...),
+	}, nil
+}
+
 // DecodeAddressBlock parses dest+source+path from raw, returning the
 // number of bytes consumed in AddrLen.
 func DecodeAddressBlock(raw []byte) (AddressBlock, error) {

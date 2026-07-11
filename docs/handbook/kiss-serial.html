@@ -161,6 +161,31 @@
       the kernel recognizes the USB device.
     </p>
 
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Pin the device node so it never moves.</strong> USB serial
+          paths like <code>/dev/ttyUSB0</code> can jump to
+          <code>ttyUSB1</code> after a reboot or when another USB serial
+          device is present, which breaks the configured path. Add a udev
+          rule that creates a stable symlink keyed to the device&rsquo;s
+          serial number, then point graywolf at the symlink:
+        </p>
+        <pre><code># /etc/udev/rules.d/99-graywolf-tnc.rules
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{serial}=="YOUR_SERIAL", SYMLINK+="lorapi"</code></pre>
+        <p>
+          Find the values with
+          <code>udevadm info -a -n /dev/ttyUSB0 | grep -E 'idVendor|idProduct|serial'</code>,
+          reload with
+          <code>sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code>,
+          then set the serial device in graywolf to <code>/dev/lorapi</code>.
+          (The example IDs <code>0403:6015</code> are the FTDI chip on the
+          RPC&nbsp;Electronics LoRa-Pi; use your own device&rsquo;s IDs.)
+        </p>
+      </div>
+    </div>
+
     <h2>Baud Rate</h2>
 
     <p>
@@ -332,6 +357,15 @@
     </p>
 
     <ul>
+      <li><strong>Wrong mode &mdash; the Logs show
+        <code>txbackend: no backend registered for channel</code>.</strong>
+        The interface is set to <strong>Modem</strong> mode. A hardware
+        TNC/modem has no software modem behind it, so Modem mode registers
+        no transmit backend and every outbound frame is dropped before it
+        reaches the device (RX still works, which is why the interface looks
+        healthy). Change Mode to <strong>TNC</strong>, tick the transmit
+        checkbox, and save. See
+        <a href="kiss.html#mode">Mode: Modem vs. TNC</a>.</li>
       <li><strong>Transmit checkbox is off.</strong> Open the KISS
         interface, confirm Mode is <code>TNC</code> and the
         <strong>Allow digipeater/beacon/iGate to transmit on this
@@ -385,6 +419,19 @@
               <td>Issue <code>KISSMODE</code> from a terminal before
                 connecting in graywolf. To exit KISS mode later,
                 power-cycle the TNC.</td>
+            </tr>
+            <tr>
+              <td>RPC Electronics LoRa-Pi</td>
+              <td>USB-C (FTDI, <code>/dev/ttyUSB*</code>)</td>
+              <td>&mdash;</td>
+              <td>Use <strong>USB-C</strong>, not the Pi&rsquo;s GPIO UART.
+                Set Mode to <strong>TNC</strong> and tick the transmit
+                checkbox. Reported working on a Raspberry Pi&nbsp;3B+ with
+                graywolf&nbsp;v0.14.10. Connecting over the GPIO UART
+                (<code>/dev/ttyAMA0</code>) was <em>not</em> reliable for
+                the reporter. Pin the device node with a udev symlink (see
+                <a href="#device-paths">Device Paths</a>) so it does not jump
+                between <code>ttyUSB0</code> and <code>ttyUSB1</code>.</td>
             </tr>
           </tbody>
         </table>

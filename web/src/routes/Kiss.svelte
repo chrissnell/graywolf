@@ -257,18 +257,23 @@
     return opts;
   });
 
+  // Mode names the source of the radio link, NOT the kind of device you
+  // plugged in. The parentheticals exist because operators routinely read
+  // "Modem" as "my device is a modem" and pick it for a hardware TNC,
+  // which then registers no TX backend (see modeHint / the handbook).
   const modeOptions = [
-    { value: 'modem', label: 'Modem' },
-    { value: 'tnc', label: 'TNC' },
+    { value: 'modem', label: "Modem (graywolf's radio does the RF)" },
+    { value: 'tnc', label: 'TNC (an external TNC/modem does the RF)' },
   ];
 
-  // Hint text is the primary explanation of Mode — option labels are
-  // deliberately terse. Wired to the <Select> via aria-describedby so
-  // screen readers announce it when the field gains focus.
+  // Hint text is the primary explanation of Mode. Wired to the <Select>
+  // via aria-describedby so screen readers announce it on focus. It leads
+  // with which device is doing the transmitting so the choice is
+  // unambiguous, then steers hardware-TNC users away from Modem mode.
   let modeHint = $derived(
     form.mode === 'tnc'
-      ? "Peer is a hardware TNC supplying off-air RX. Frames are routed to igate, digipeater, messages, and map — never auto-retransmitted."
-      : "Peer is an APRS app. Frames it sends are queued for transmission on graywolf's radio."
+      ? "Pick this when the peer is itself a TNC, LoRa modem, or radio that does its own modulation (hardware KISS TNC, another graywolf, etc.). Received packets feed the iGate, digipeater, messages, and map, and are never auto-retransmitted. Tick the box below to let graywolf transmit through it."
+      : "Pick this only when the peer is an APRS app (Xastir, YAAC, aprx) and graywolf's own software modem does the transmitting; this needs a modem-backed channel with an audio device. Do NOT use Modem for a hardware TNC or modem, or transmit will fail with 'no backend registered' -- choose TNC instead."
   );
 
   const modeLabels = { modem: 'Modem', tnc: 'TNC' };
@@ -302,6 +307,11 @@
       // offered to the iGate's RF->IS gate after the TX governor
       // accepts them. Default off — operator opts in.
       gate_tx_to_is: false,
+      // When enabled, non-UI (connected-mode) AX.25 frames from KISS
+      // clients are passed through to the radio instead of dropped, so
+      // connected-mode apps (Pat/Winlink via kissattach) can use
+      // graywolf as a raw KISS modem. Default off — operator opts in.
+      allow_connected_mode: false,
       // Whether graywolf runs this interface. New rows start enabled;
       // the operator can disable an existing one to release its device
       // (e.g. a Bluetooth rfcomm tty) without losing the config.
@@ -387,6 +397,7 @@
       tnc_ingress_burst: String(row.tnc_ingress_burst || 100),
       allow_tx_from_governor: !!row.allow_tx_from_governor,
       gate_tx_to_is: !!row.gate_tx_to_is,
+      allow_connected_mode: !!row.allow_connected_mode,
       // Carry the persisted enabled state forward. KISS PUT is a
       // full-resource replace, so echoing it keeps a disabled interface
       // disabled across edits to unrelated fields. Default true for
@@ -639,6 +650,9 @@
       // iGate via the RX fanout). Force false outside that mode so
       // the persisted value matches the UI's visibility rule.
       gate_tx_to_is: form.mode === 'modem' ? !!form.gate_tx_to_is : false,
+      // Honored in both modem (TX passthrough) and tnc (RX ingest of
+      // connected-mode frames) modes, so send it verbatim.
+      allow_connected_mode: !!form.allow_connected_mode,
       // Full-resource replace: always send enabled so a PUT never
       // silently re-enables a disabled interface (the backend defaults a
       // missing flag to true). Default true for new rows.
@@ -1162,6 +1176,22 @@
         </span>
       </div>
     {/if}
+    <!-- Connected-mode passthrough opt-in. Independent of modem/tnc:
+         when on, non-UI AX.25 frames from KISS clients are forwarded to
+         the radio verbatim instead of being dropped. -->
+    <div class="field checkbox-field">
+      <label class="checkbox-row" for="kiss-allow-connected-mode">
+        <Checkbox id="kiss-allow-connected-mode" bind:checked={form.allow_connected_mode} />
+        <span>Allow connected-mode (non-UI) frames from KISS clients</span>
+      </label>
+      <span class="field-hint">
+        Passes connected-mode AX.25 frames (SABM, I-frames, etc.) through to
+        the radio so packet apps like Pat/Winlink can run connected sessions
+        over graywolf via the kernel AX.25 stack + kissattach. The connecting
+        client owns the session; graywolf just modulates the frames. Leave off
+        on a shared APRS channel unless you need it.
+      </span>
+    </div>
     {#if form.mode === 'tnc'}
       <!-- Per-interface ingress rate limiter. Only meaningful in TNC mode
            (Modem-mode ingest goes to the TxGovernor, not the RX fanout). -->

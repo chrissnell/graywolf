@@ -74,8 +74,12 @@
     <p>
       The KISS (Keep It Simple, Stupid) interface lets third-party packet
       software &mdash; such as Xastir, YAAC, pinpoint, or aprx &mdash; use
-      graywolf as their TNC. Graywolf supports multiple simultaneous KISS
-      interfaces over TCP, serial, or Bluetooth.
+      graywolf as their TNC &mdash; or, in the other direction, lets
+      graywolf drive a hardware TNC or LoRa modem as a radio channel.
+      Graywolf supports multiple simultaneous KISS interfaces over TCP
+      (as a server or a dial-out client), serial, USB serial, and
+      Bluetooth. Which role each interface plays is set by its
+      <a href="#mode">Mode</a>.
     </p>
 
     <div class="screenshot">
@@ -83,7 +87,7 @@
       <div class="caption">A TCP KISS interface configured on port 8071</div>
     </div>
 
-    <h2>Interface Types</h2>
+    <h2 id="interface-types">Interface Types</h2>
 
     <div class="box">
       <div class="box-body">
@@ -122,31 +126,89 @@
       </div>
     </div>
 
-    <h2>Mode</h2>
+    <h2 id="mode">Mode: Modem vs. TNC</h2>
 
     <p>
-      Each KISS interface runs in one of two modes. The Mode column on the
-      KISS Interfaces page shows you which.
+      Every KISS interface runs in one of two modes, and picking the wrong
+      one is the single most common KISS setup mistake. The mode does
+      <strong>not</strong> describe your hardware &mdash; it describes
+      <em>who provides the radio link</em>: graywolf&rsquo;s own software
+      modem, or the device on the other end of the KISS connection.
     </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">!</span>
+      <div class="callout-body">
+        <p>
+          <strong>&ldquo;Modem&rdquo; mode does not mean &ldquo;my device
+          is a modem.&rdquo;</strong> It means <em>graywolf&rsquo;s
+          built-in software modem</em> supplies the RF for this channel. If
+          the thing you are plugging in is itself a TNC or modem &mdash; a
+          hardware TNC, a LoRa modem such as the RPC&nbsp;Electronics
+          LoRa-Pi, a radio with a built-in KISS TNC, or another graywolf
+          &mdash; you want <strong>TNC</strong> mode, not Modem mode.
+        </p>
+      </div>
+    </div>
 
     <div class="box">
       <div class="box-body">
         <table>
-          <tr>
-            <td><strong>Modem</strong></td>
-            <td>The KISS interface rides on top of a modem-backed
-            <a href="channels.html">channel</a>. Frames you send through
-            KISS get modulated and transmitted on RF; frames heard on the
-            air get handed back to the KISS client.</td>
-          </tr>
-          <tr>
-            <td><strong>TNC</strong></td>
-            <td>The interface <em>is</em> the radio link &mdash; KISS frames
-            are forwarded to and from an external TNC, a LoRa modem, or
-            another graywolf over TCP Client. The channel itself is
-            KISS-TNC-only (no software modem).</td>
-          </tr>
+          <thead>
+            <tr><th>Mode</th><th>What it means</th><th>Choose it when&hellip;</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Modem</strong></td>
+              <td>The peer is an APRS <em>application</em>. Frames it sends
+              are queued for transmission on graywolf&rsquo;s own radio, and
+              packets graywolf hears on the air are handed back to the peer.
+              This interface rides on top of a
+              <a href="channels.html">channel</a> that has a software modem
+              and an audio device.</td>
+              <td>You are exposing graywolf as a TNC to APRS software
+              (Xastir, YAAC, pinpoint, aprx, APRSIS32&hellip;) that connects
+              <em>to</em> graywolf.</td>
+            </tr>
+            <tr>
+              <td><strong>TNC</strong> (peer)</td>
+              <td>The peer <em>is</em> the radio link. Received frames are
+              routed to the iGate, digipeater, messages, and map &mdash;
+              never auto-retransmitted. The channel is
+              <strong>KISS-TNC only</strong> (no software modem, no audio
+              device).</td>
+              <td>The device on the other end does its own modulation and
+              keys its own radio: a hardware TNC, a LoRa modem, a radio with
+              a built-in KISS TNC, or another graywolf.</td>
+            </tr>
+          </tbody>
         </table>
+      </div>
+    </div>
+
+    <p>
+      In TNC mode, graywolf only <em>receives</em> by default. To let
+      graywolf&rsquo;s own traffic (beacons, digipeated packets, iGate
+      IS&rarr;RF) go out through the device, tick
+      <strong>Allow digipeater/beacon/iGate to transmit on this
+      interface</strong> in the interface editor. See
+      <a href="#transmit-in-tnc-mode">Transmitting in TNC mode</a> below.
+    </p>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Symptom: TX fails with
+          <code>txbackend: no backend registered for channel</code>.</strong>
+          The interface connects and receives fine, but nothing you send
+          (beacons especially) reaches the radio. This is the classic
+          wrong-mode error: a hardware TNC or modem left in
+          <strong>Modem</strong> mode. Modem mode expects a software modem
+          on the channel to do the transmitting, and a KISS-only device has
+          none, so no TX backend is ever registered. Switch the interface to
+          <strong>TNC</strong> mode, tick the transmit checkbox, and save.
+        </p>
       </div>
     </div>
 
@@ -167,7 +229,27 @@
             <tr>
               <td><code>type</code></td>
               <td>&mdash;</td>
-              <td><code>tcp</code>, <code>serial</code>, or <code>bluetooth</code></td>
+              <td>Interface transport: <code>tcp</code> (server),
+              <code>tcp-client</code>, <code>serial</code>,
+              <code>usb-serial</code>, or <code>bluetooth</code>. See
+              <a href="#interface-types">Interface Types</a> above.</td>
+            </tr>
+            <tr>
+              <td><code>mode</code></td>
+              <td><code>modem</code><br>(<code>tnc</code> for tcp-client)</td>
+              <td><code>modem</code> or <code>tnc</code> &mdash; see
+              <a href="#mode">Mode: Modem vs. TNC</a> above. Serial,
+              USB-serial, and Bluetooth interfaces to a hardware TNC/modem
+              are almost always <code>tnc</code>.</td>
+            </tr>
+            <tr>
+              <td><code>allow_tx_from_governor</code></td>
+              <td><code>false</code><br>(<code>true</code> for tcp-client)</td>
+              <td>UI label: <strong>Allow digipeater/beacon/iGate to
+              transmit on this interface</strong>. Only meaningful when
+              <code>mode=tnc</code>. Off = receive-only; on = graywolf may
+              transmit its own beacons, digipeated packets, and iGate
+              IS&rarr;RF traffic through the device.</td>
             </tr>
             <tr>
               <td><code>listen_addr</code></td>
@@ -209,6 +291,30 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <h2 id="transmit-in-tnc-mode">Transmitting in TNC Mode</h2>
+
+    <p>
+      A <code>mode=tnc</code> interface receives by default but does not
+      transmit graywolf&rsquo;s own traffic until you opt in. In the
+      interface editor, tick <strong>Allow digipeater/beacon/iGate to
+      transmit on this interface</strong>. With it on, beacons, digipeated
+      packets, and iGate IS&rarr;RF frames are routed out through the KISS
+      device.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">!</span>
+      <div class="callout-body">
+        <p>
+          Either graywolf <em>or</em> your TNC can act as the
+          digipeater/iGate &mdash; not both. Enabling this while the TNC is
+          also configured for digipeating or iGate mode produces packet
+          loops. Typically you should disable digipeating on the TNC itself
+          and let graywolf be the digi.
+        </p>
       </div>
     </div>
 

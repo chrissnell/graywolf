@@ -219,6 +219,23 @@ func (s *Store) GetByID(ctx context.Context, id uint64) (*configstore.Message, e
 	return &m, nil
 }
 
+// GetConversationPrefs returns the per-thread override row for
+// (kind, key), or (nil, nil) when the conversation inherits defaults.
+// Callers normalize key to uppercase. See configstore.ConversationPrefs.
+func (s *Store) GetConversationPrefs(ctx context.Context, kind, key string) (*configstore.ConversationPrefs, error) {
+	var c configstore.ConversationPrefs
+	err := s.db.WithContext(ctx).
+		Where("thread_kind = ? AND thread_key = ?", kind, key).
+		First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 // List returns a page of messages matching the filter. The returned
 // cursor points at the last row in the page and can be fed back into a
 // subsequent List call to page forward deterministically.

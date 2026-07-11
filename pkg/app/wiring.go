@@ -1585,6 +1585,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// (srv, mux, deps...). Keep this block consistent.
 	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
 	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
+	webapi.RegisterHeatmap(apiSrv, apiMux, a.stationCache)
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
 	// /api/system-logs reads the slog ring buffer. a.cfg.LogBuffer is a
 	// concrete *logbuffer.DB that may be nil; assign through a typed
@@ -2033,6 +2034,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 					})
@@ -2057,6 +2059,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
@@ -2081,6 +2084,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
@@ -2106,6 +2110,7 @@ func (a *App) kissComponent() namedComponent {
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
 						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
@@ -2124,6 +2129,7 @@ func (a *App) kissComponent() namedComponent {
 					TncIngressRateHz:    ki.TncIngressRateHz,
 					TncIngressBurst:     ki.TncIngressBurst,
 					AllowTxFromGovernor: ki.AllowTxFromGovernor,
+					AllowConnectedMode:  ki.AllowConnectedMode,
 					GateTxToIs:          ki.GateTxToIs,
 					OnClientChange: func(n int) {
 						a.metrics.SetKissClients(name, n)
@@ -2992,6 +2998,9 @@ func (a *App) messagesComponent() namedComponent {
 							}
 							if err := a.msgSvc.ReloadTacticalCallsigns(ctx); err != nil {
 								a.logger.Warn("messages reload tactical callsigns", "err", err)
+							}
+							if err := a.msgSvc.ReloadBlockedCallsigns(ctx); err != nil {
+								a.logger.Warn("messages reload blocked callsigns", "err", err)
 							}
 							if err := a.msgSvc.ReloadPreferences(ctx); err != nil {
 								a.logger.Warn("messages reload preferences", "err", err)

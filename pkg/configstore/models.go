@@ -159,6 +159,15 @@ type KissInterface struct {
 	// reads the field unconditionally and the server only consults it
 	// inside the modem branch.
 	GateTxToIs bool `gorm:"column:gate_tx_to_is;not null;default:false" json:"gate_tx_to_is"`
+	// AllowConnectedMode: when true, non-UI (connected-mode) AX.25 frames
+	// a KISS client submits are passed through to the radio verbatim
+	// instead of being dropped. This lets connected-mode packet apps
+	// (e.g. Pat/Winlink over the Linux kernel AX.25 stack + kissattach)
+	// use graywolf as a raw KISS modem. The far end's session state
+	// machine owns SABM/DISC/I/S sequencing; graywolf only modulates the
+	// bytes. Default false so a shared APRS channel is not exposed to
+	// connected-mode traffic unless the operator opts in. See graywolf#463.
+	AllowConnectedMode bool `gorm:"column:allow_connected_mode;not null;default:false" json:"allow_connected_mode"`
 	// NeedsReconfig is set to true when a referential cascade (Phase 5)
 	// nulls this row's Channel. Phase 3 merely declares the column so
 	// the shape is stable before the cascade logic lands; no code reads
@@ -785,6 +794,14 @@ type Message struct {
 	IsBulletin     bool           `gorm:"not null;default:false" json:"is_bulletin"`
 	IsNWS          bool           `gorm:"column:is_nws;not null;default:false" json:"is_nws"`
 	PreferIS       bool           `gorm:"column:prefer_is;not null;default:false" json:"prefer_is"`
+	// SendPath is the effective per-message transport override stamped
+	// from the conversation's ConversationPrefs at send time. Empty ('')
+	// means "defer to the global MessagePreferences.FallbackPolicy".
+	// Persisted so retry re-attempts route the same way as the initial
+	// send — critical for "RF only" contacts, where a global fallback
+	// must never leak a local message onto APRS-IS on retry. Reuses the
+	// FallbackPolicy vocabulary (rf_only | is_only | both).
+	SendPath       string         `gorm:"column:send_path;size:16;not null;default:''" json:"send_path"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 	ThreadKind     string         `gorm:"size:10;not null;default:'dm';index:idx_msg_thread,priority:1" json:"thread_kind"` // dm | tactical
 	ThreadKey      string         `gorm:"size:9;not null;default:'';index:idx_msg_thread,priority:2" json:"thread_key"`     // peer callsign for dm, tactical label for tactical
@@ -855,7 +872,7 @@ type MessagePreferences struct {
 // them at the APRS-spec interval (every 20 min for 4 h / every 1 h for
 // 4 days) until MaxSends is reached or the row is soft-deleted.
 //
-// The table is managed entirely by migration 26 (raw SQL); it is NOT
+// The table is managed entirely by migration 28 (raw SQL); it is NOT
 // in the AutoMigrate list so GORM never alters its schema unilaterally.
 type Bulletin struct {
 	ID             uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -879,6 +896,40 @@ type Bulletin struct {
 }
 
 func (Bulletin) TableName() string { return "bulletins" }
+
+// ConversationPrefs holds per-conversation overrides for one message
+// thread, keyed by (ThreadKind, ThreadKey) — the same identity the
+// Message rows carry. A row exists only when the operator has changed a
+// default from the thread's Routing control; absence means "inherit the
+// global MessagePreferences." This keeps the table sparse (one row per
+// customized contact, not one per contact).
+//
+// Two independent knobs, matching the ThreadHeader popover:
+//   - SendPath: per-conversation transport override. Empty ('') defers
+//     to the global FallbackPolicy; otherwise one of rf_only | is_only |
+//     both. Answers issue #453's "keep my local radio messages off
+//     APRS-IS" — set a contact to rf_only and every message (including
+//     retries) stays on RF.
+//   - WaitForAck: when false, outbound DMs to this contact are sent once
+//     and NOT enrolled in the retry ladder. Answers #453's "some
+//     handhelds (e.g. TIDRadio TD-H9) never ACK" — disable re-sends for
+//     just that contact instead of burning airtime retrying a device
+//     that will never answer. Defaults true (normal ack-and-retry).
+type ConversationPrefs struct {
+	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
+	ThreadKind string    `gorm:"size:10;not null;uniqueIndex:idx_convpref_thread,priority:1" json:"thread_kind"` // dm | tactical
+	ThreadKey  string    `gorm:"size:9;not null;uniqueIndex:idx_convpref_thread,priority:2" json:"thread_key"`   // peer callsign (dm) or tactical label
+	SendPath   string    `gorm:"size:16;not null;default:''" json:"send_path"`                                   // '' inherit | rf_only | is_only | both
+	// WaitForAck carries NO gorm default tag on purpose. A bool with
+	// `default:true` hits GORM's omit-zero-value-on-INSERT behavior:
+	// WaitForAck=false (a no-ACK contact — the whole point of the
+	// field) would be dropped from the INSERT and the DB default true
+	// would silently win. Every write path sets this field explicitly,
+	// so no DB-level default is needed.
+	WaitForAck bool      `gorm:"not null" json:"wait_for_ack"`
+	CreatedAt  time.Time `json:"-"`
+	UpdatedAt  time.Time `json:"-"`
+}
 
 // TacticalCallsign is one monitored tactical addressee label. Operators
 // register these to participate in group threads keyed by the label.
@@ -904,6 +955,37 @@ type TacticalCallsign struct {
 // of how a handler constructed the row.
 func (t *TacticalCallsign) BeforeSave(_ *gorm.DB) error {
 	t.Callsign = strings.ToUpper(strings.TrimSpace(t.Callsign))
+	return nil
+}
+
+// BlockedCallsign is one sender the operator has muted for inbound
+// messages. When Enabled, the router drops any inbound message whose
+// source matches Callsign before it is persisted or auto-ACKed, so the
+// station's traffic never reaches the inbox. Motivating case: a station
+// that repeatedly fires certificate-claim messages during APRS Thursday
+// (upstream #465).
+//
+// Match semantics live in the router's BlocklistSet: a bare-callsign
+// entry (no SSID, e.g. "N0CALL") blocks every SSID of that base call,
+// while an SSID-qualified entry (e.g. "N0CALL-7") blocks only that exact
+// station. Callsign is normalized to uppercase via BeforeSave.
+type BlockedCallsign struct {
+	ID       uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Callsign string `gorm:"size:9;not null;uniqueIndex" json:"callsign"` // 1-9 [A-Z0-9-], uppercase; optional -SSID
+	Note     string `gorm:"size:128" json:"note"`                        // optional free-text reason
+	// Enabled: like TacticalCallsign, no default:true. The handler sets
+	// the intended value explicitly, and a GORM default:true would
+	// silently override a caller passing false (GORM treats the Go zero
+	// value as "use the DB default").
+	Enabled   bool      `gorm:"not null" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
+// BeforeSave normalizes Callsign to uppercase and trims whitespace so
+// the router's cached set always matches against a canonical value.
+func (b *BlockedCallsign) BeforeSave(_ *gorm.DB) error {
+	b.Callsign = strings.ToUpper(strings.TrimSpace(b.Callsign))
 	return nil
 }
 

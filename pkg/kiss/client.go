@@ -168,6 +168,11 @@ type ClientConfig struct {
 	// OnReload is invoked on every state transition so the wiring
 	// layer can nudge the txbackend dispatcher to rebuild. Optional.
 	OnReload func()
+	// AllowConnectedMode mirrors ServerConfig.AllowConnectedMode: when
+	// true, non-UI (connected-mode) frames from the peer are passed
+	// through to the TX path verbatim instead of being dropped. See
+	// server.go for the full rationale.
+	AllowConnectedMode bool
 }
 
 // newClient constructs a Client from cfg. It does NOT start the
@@ -417,7 +422,7 @@ func (c *Client) handleFrame(ctx context.Context, remote string, f *Frame) {
 				"remote", remote, "len", len(f.Data), "err", err)
 			return
 		}
-		if !ax.IsUI() {
+		if !ax.IsUI() && !c.cfg.AllowConnectedMode {
 			c.logger.Debug("dropping non-UI frame", "remote", remote)
 			return
 		}
@@ -459,17 +464,30 @@ func (c *Client) dispatchDataFrame(ctx context.Context, remote string, channel u
 		c.cfg.RxIngress(rf, ingress.KissTnc(c.cfg.InterfaceID))
 	default:
 		if c.cfg.Sink != nil {
-			err := c.cfg.Sink.Submit(ctx, channel, ax, txgovernor.SubmitSource{
-				Kind:     "kiss",
-				Detail:   c.cfg.Name + " " + remote,
-				Priority: ax25.PriorityClient,
+			out := ax
+			skipDedup := false
+			if !ax.IsUI() {
+				// Connected-mode passthrough — see server.go dispatchDataFrame.
+				cf, err := ax25.ConnectedPassthrough(ax, rawAX)
+				if err != nil {
+					c.logger.Warn("kiss connected-mode passthrough", "remote", remote, "err", err)
+					return
+				}
+				out = cf
+				skipDedup = true
+			}
+			err := c.cfg.Sink.Submit(ctx, channel, out, txgovernor.SubmitSource{
+				Kind:      "kiss",
+				Detail:    c.cfg.Name + " " + remote,
+				Priority:  ax25.PriorityClient,
+				SkipDedup: skipDedup,
 			})
 			if err != nil {
 				c.logger.Warn("tx governor rejected kiss frame", "err", err)
 				return
 			}
-			if c.cfg.GateTxToIs && c.cfg.OnClientTxAccepted != nil {
-				c.cfg.OnClientTxAccepted(ctx, channel, ax)
+			if c.cfg.GateTxToIs && c.cfg.OnClientTxAccepted != nil && out.IsUI() {
+				c.cfg.OnClientTxAccepted(ctx, channel, out)
 			}
 		}
 	}

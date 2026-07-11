@@ -115,6 +115,24 @@ type ServerConfig struct {
 	// APRS packet to the iGate's RF→IS gate. The hook MUST be
 	// non-blocking — it runs on the per-connection read goroutine.
 	OnClientTxAccepted func(ctx context.Context, channel uint32, f *ax25.Frame)
+	// AllowConnectedMode, when true, passes non-UI (connected-mode)
+	// AX.25 frames from KISS clients through instead of dropping them.
+	// KISS is a raw AX.25 transport, so this lets connected-mode packet
+	// apps (Pat/Winlink via the Linux kernel AX.25 stack + kissattach)
+	// use graywolf as a modem. The client owns the LAPB session state
+	// machine; graywolf only modulates the frame verbatim and bypasses
+	// the governor's dedup window (LAPB retransmits are legitimately
+	// identical). Default false — a shared APRS channel stays UI-only
+	// unless the operator opts in.
+	//
+	// Routing follows Mode like every other frame: in ModeModem the
+	// frame is submitted to the TX governor (radio); in ModeTnc it goes
+	// to RxIngress and is dispatched to ax25conn.Manager as a received
+	// frame. The ModeModem TX path is a raw passthrough — it does NOT
+	// consult channel mode, so unlike ax25conn.Manager.Open it will
+	// transmit on an aprs-only channel when the operator opts in. See
+	// invariants.md #23.
+	AllowConnectedMode bool
 }
 
 // Server is a multi-client KISS TCP server. A single Server instance
@@ -309,7 +327,7 @@ func (s *Server) handleFrame(ctx context.Context, remote string, f *Frame) {
 				"remote", remote, "len", len(f.Data), "err", err)
 			return
 		}
-		if !ax.IsUI() {
+		if !ax.IsUI() && !s.cfg.AllowConnectedMode {
 			s.logger.Debug("dropping non-UI frame from kiss client", "remote", remote)
 			return
 		}
@@ -391,17 +409,35 @@ func (s *Server) dispatchDataFrame(ctx context.Context, remote string, channel u
 		}
 	default:
 		if s.cfg.Sink != nil {
-			err := s.cfg.Sink.Submit(ctx, channel, ax, txgovernor.SubmitSource{
-				Kind:     "kiss",
-				Detail:   s.cfg.Name + " " + remote,
-				Priority: ax25.PriorityClient,
+			out := ax
+			skipDedup := false
+			if !ax.IsUI() {
+				// Connected-mode passthrough (AllowConnectedMode gated it in
+				// at handleFrame). Rebuild a verbatim frame so the governor's
+				// Encode() reproduces the wire bytes, and skip dedup — LAPB
+				// retransmits are legitimately identical byte-for-byte.
+				cf, err := ax25.ConnectedPassthrough(ax, rawAX)
+				if err != nil {
+					s.logger.Warn("kiss connected-mode passthrough", "remote", remote, "err", err)
+					return
+				}
+				out = cf
+				skipDedup = true
+			}
+			err := s.cfg.Sink.Submit(ctx, channel, out, txgovernor.SubmitSource{
+				Kind:      "kiss",
+				Detail:    s.cfg.Name + " " + remote,
+				Priority:  ax25.PriorityClient,
+				SkipDedup: skipDedup,
 			})
 			if err != nil {
 				s.logger.Warn("tx governor rejected kiss frame", "err", err)
 				return
 			}
-			if s.cfg.GateTxToIs && s.cfg.OnClientTxAccepted != nil {
-				s.cfg.OnClientTxAccepted(ctx, channel, ax)
+			// Only UI frames are eligible for the RF→IS gate; connected-mode
+			// frames carry no APRS payload to gate.
+			if s.cfg.GateTxToIs && s.cfg.OnClientTxAccepted != nil && out.IsUI() {
+				s.cfg.OnClientTxAccepted(ctx, channel, out)
 			}
 		}
 	}

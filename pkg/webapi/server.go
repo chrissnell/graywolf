@@ -165,6 +165,7 @@ type MessagesService interface {
 	MarkRead(ctx context.Context, id uint64) error
 	MarkUnread(ctx context.Context, id uint64) error
 	ReloadTacticalCallsigns(ctx context.Context) error
+	ReloadBlockedCallsigns(ctx context.Context) error
 	ReloadPreferences(ctx context.Context) error
 	EventHub() *messages.EventHub
 }
@@ -305,6 +306,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerMessages(mux)
 	s.registerMessagesConfig(mux)
 	s.registerBulletins(mux)
+	s.registerMessagesBlocklist(mux)
 	s.registerAX25Terminal(mux)
 	s.registerAX25TerminalConfig(mux)
 	s.registerAX25Profiles(mux)

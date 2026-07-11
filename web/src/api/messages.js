@@ -140,6 +140,29 @@ export function listConversations(params) {
   return api.get(`/messages/conversations${qs(params)}`);
 }
 
+/**
+ * GET /api/messages/conversations/{kind}/{key}/prefs — per-thread
+ * routing overrides. Returns the inherited defaults (send_path '',
+ * wait_for_ack true) when no override row exists, never 404.
+ * @param {string} kind 'dm' | 'tactical'
+ * @param {string} key  peer callsign (dm) or tactical label
+ * @returns {Promise<{thread_kind: string, thread_key: string, send_path: string, wait_for_ack: boolean}>}
+ */
+export function getConversationPrefs(kind, key) {
+  return api.get(`/messages/conversations/${encodeURIComponent(kind)}/${encodeURIComponent(key)}/prefs`);
+}
+
+/**
+ * PUT /api/messages/conversations/{kind}/{key}/prefs — upsert the
+ * override. Sending the defaults clears the row server-side.
+ * @param {string} kind 'dm' | 'tactical'
+ * @param {string} key  peer callsign (dm) or tactical label
+ * @param {{send_path: string, wait_for_ack: boolean}} req
+ */
+export function putConversationPrefs(kind, key, req) {
+  return api.put(`/messages/conversations/${encodeURIComponent(kind)}/${encodeURIComponent(key)}/prefs`, req);
+}
+
 // --- Preferences ----------------------------------------------------
 
 /**
@@ -225,6 +248,41 @@ export function deleteTactical(id) {
  */
 export function getTacticalParticipants(key, params) {
   return api.get(`/messages/tactical/${encodeURIComponent(key)}/participants${qs(params)}`);
+}
+
+// --- Blocked call signs --------------------------------------------
+
+/**
+ * GET /api/messages/blocklist
+ * @returns {Promise<Array<{id: number, callsign: string, note?: string, enabled: boolean, created_at: string, updated_at: string}>>}
+ */
+export function listBlocklist() {
+  return api.get('/messages/blocklist');
+}
+
+/**
+ * POST /api/messages/blocklist
+ * @param {{callsign: string, note?: string, enabled: boolean}} req
+ */
+export function createBlocklistEntry(req) {
+  return api.post('/messages/blocklist', req);
+}
+
+/**
+ * PUT /api/messages/blocklist/{id}
+ * @param {number} id
+ * @param {{callsign: string, note?: string, enabled: boolean}} req
+ */
+export function updateBlocklistEntry(id, req) {
+  return api.put(`/messages/blocklist/${encodeURIComponent(id)}`, req);
+}
+
+/**
+ * DELETE /api/messages/blocklist/{id} — 204.
+ * @param {number} id
+ */
+export function deleteBlocklistEntry(id) {
+  return api.delete(`/messages/blocklist/${encodeURIComponent(id)}`);
 }
 
 // --- Tactical invite accept ----------------------------------------

@@ -183,12 +183,27 @@ func (r *RetryManager) Resend(ctx context.Context, id uint64) (SendResult, error
 	if err := r.cfg.Store.Update(ctx, row); err != nil {
 		return SendResult{}, err
 	}
-	result := r.cfg.Sender.Send(ctx, row)
-	if result.Err == nil && result.Retryable && row.ThreadKind == ThreadKindDM {
+	result := r.cfg.Sender.SendWithPolicy(ctx, row, row.SendPath)
+	if result.Err == nil && result.Retryable && row.ThreadKind == ThreadKindDM && !r.suppressRetry(ctx, row) {
 		// Re-enroll: schedule the next attempt per the backoff.
 		r.scheduleNext(ctx, row)
 	}
 	return result, nil
+}
+
+// suppressRetry reports whether this conversation has opted out of the
+// ack-and-resend ladder (ConversationPrefs.WaitForAck=false — a no-ACK
+// contact). Mirrors the gate Service.SendMessage applies on the initial
+// send so a manual /resend on such a contact submits once without
+// re-arming the retry loop. A missing row or lookup error means "resend
+// normally" — the operator's explicit action should not be silently
+// dropped on a transient store hiccup.
+func (r *RetryManager) suppressRetry(ctx context.Context, row *configstore.Message) bool {
+	prefs, err := r.cfg.Store.GetConversationPrefs(ctx, row.ThreadKind, row.ThreadKey)
+	if err != nil || prefs == nil {
+		return false
+	}
+	return !prefs.WaitForAck
 }
 
 // CancelRetry clears NextRetryAt and removes the row from the
@@ -318,7 +333,10 @@ func (r *RetryManager) retryOne(ctx context.Context, row configstore.Message) {
 		return
 	}
 	cur.Attempts++
-	result := r.cfg.Sender.Send(ctx, cur)
+	// Route re-attempts via the row's stamped SendPath (empty defers to
+	// the global policy) so an "RF only" contact never leaks onto
+	// APRS-IS on retry. See configstore.ConversationPrefs / issue #453.
+	result := r.cfg.Sender.SendWithPolicy(ctx, cur, cur.SendPath)
 	if result.Err == nil {
 		// Submit accepted — schedule the next ack timeout.
 		r.scheduleNext(ctx, cur)

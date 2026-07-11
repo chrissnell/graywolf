@@ -29,6 +29,26 @@
      full width; mirrored by the matching CSS in Sidebar/App and the
      COMPACT_LAYOUT_QUERY breakpoint in lib/compactLayout.js. */
   --landscape-rail-width: 56px;
+  /* Effective top safe-area inset. Android WebView does NOT populate
+     env(safe-area-inset-top) from the status bar (only the display cutout, and
+     unreliably below WebView 140), so the CSS-reserved status-bar strip from
+     GH #390 collapsed to 0 and the mobile top bar slid back behind the status
+     bar. The native shell injects the real status-bar inset as
+     --android-inset-top (MainActivity.applyWindowInsets); take whichever is
+     larger so iOS / mobile browsers (env populated, var unset) and the Android
+     shell (var set, env 0) both reserve the strip. */
+  --safe-area-top: max(env(safe-area-inset-top), var(--android-inset-top, 0px));
+}
+
+/* chonky-ui's <Drawer> reserves the top safe area with raw
+   env(safe-area-inset-top), which is 0 in the Android WebView (see
+   --safe-area-top above) -- so the mobile nav drawer's header would render
+   behind the status bar, the same GH #390 bug the top bar hits. Override it to
+   the native-fed inset. This rule follows chonky's @import so it wins on source
+   order at equal specificity. The proper home is chonky-ui itself; this
+   app-side override covers it until that lands. */
+.drawer {
+  padding-top: var(--safe-area-top);
 }
 
 * {

@@ -1072,6 +1072,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages/blocklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List blocked call signs */
+        get: operations["listBlockedCallsigns"];
+        put?: never;
+        /** Block a call sign */
+        post: operations["createBlockedCallsign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/blocklist/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a blocked call sign */
+        put: operations["updateBlockedCallsign"];
+        post?: never;
+        /** Unblock a call sign */
+        delete: operations["deleteBlockedCallsign"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/config": {
         parameters: {
             query?: never;
@@ -1100,6 +1136,24 @@ export interface paths {
         /** List conversations */
         get: operations["listConversations"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/conversations/{kind}/{key}/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get conversation preferences */
+        get: operations["getConversationPrefs"];
+        /** Update conversation preferences */
+        put: operations["putConversationPrefs"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2434,6 +2488,19 @@ export interface components {
             /** @description "sent" */
             status?: string;
         };
+        "dto.BlockedCallsignRequest": {
+            callsign?: string;
+            enabled?: boolean;
+            note?: string;
+        };
+        "dto.BlockedCallsignResponse": {
+            callsign?: string;
+            created_at?: string;
+            enabled?: boolean;
+            id?: number;
+            note?: string;
+            updated_at?: string;
+        };
         "dto.BlocklistEntryRequest": {
             enabled?: boolean;
             pattern?: string;
@@ -2556,6 +2623,26 @@ export interface components {
             profile?: string;
             ptt?: components["schemas"]["dto.ChannelPtt"];
             space_freq?: number;
+        };
+        "dto.ConversationPrefsRequest": {
+            /**
+             * @description SendPath overrides transport for this conversation. Empty ('')
+             *     means "inherit the global fallback policy"; otherwise one of
+             *     rf_only | is_only | both.
+             */
+            send_path?: string;
+            /**
+             * @description WaitForAck, when false, sends DMs to this contact once and skips
+             *     the retry ladder (no re-sends) — for handhelds that never ACK.
+             *     Defaults true.
+             */
+            wait_for_ack?: boolean;
+        };
+        "dto.ConversationPrefsResponse": {
+            send_path?: string;
+            thread_key?: string;
+            thread_kind?: string;
+            wait_for_ack?: boolean;
         };
         "dto.ConversationSummary": {
             alias?: string;
@@ -2701,6 +2788,14 @@ export interface components {
         };
         "dto.KissRequest": {
             /**
+             * @description AllowConnectedMode opts a KISS interface in to passing non-UI
+             *     (connected-mode) AX.25 frames through to the radio instead of
+             *     dropping them, so connected-mode packet apps (Pat/Winlink via the
+             *     kernel AX.25 stack + kissattach) can use graywolf as a raw KISS
+             *     modem. Default false; the far end owns the LAPB session state.
+             */
+            allow_connected_mode?: boolean;
+            /**
              * @description AllowTxFromGovernor opts this TNC-mode interface in to receive
              *     frames from the TX governor (beacon / digipeater / iGate /
              *     KISS / AGW submissions). Only meaningful when Mode == "tnc";
@@ -2761,6 +2856,7 @@ export interface components {
             type?: string;
         };
         "dto.KissResponse": {
+            allow_connected_mode?: boolean;
             allow_tx_from_governor?: boolean;
             backoff_seconds?: number;
             baud_rate?: number;
@@ -3805,6 +3901,12 @@ export interface components {
         "dto.TxTimingRequest": {
             content: {
                 "application/json": components["schemas"]["dto.TxTimingRequest"];
+            };
+        };
+        /** @description Blocklist entry */
+        "dto.BlockedCallsignRequest": {
+            content: {
+                "application/json": components["schemas"]["dto.BlockedCallsignRequest"];
             };
         };
         /** @description Action definition */
@@ -7874,6 +7976,189 @@ export interface operations {
             };
         };
     };
+    listBlockedCallsigns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlockedCallsignResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createBlockedCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlockedCallsignRequest"];
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlockedCallsignResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateBlockedCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Blocklist entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["dto.BlockedCallsignRequest"];
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.BlockedCallsignResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteBlockedCallsign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Blocklist entry id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
     getMessagesConfig: {
         parameters: {
             query?: never;
@@ -7987,6 +8272,97 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getConversationPrefs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description thread kind (dm|tactical) */
+                kind: string;
+                /** @description peer callsign or tactical label */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ConversationPrefsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    putConversationPrefs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description thread kind (dm|tactical) */
+                kind: string;
+                /** @description peer callsign or tactical label */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /** @description Preferences */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.ConversationPrefsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ConversationPrefsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

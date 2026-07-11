@@ -180,6 +180,57 @@ func TestDecodeConnectedModeHeader(t *testing.T) {
 	}
 }
 
+func TestConnectedPassthroughRoundTrip(t *testing.T) {
+	src, _ := ParseAddress("W1AW-1")
+	dst, _ := ParseAddress("RMS-5")
+	// Address block only; the connected-mode tail is appended per case.
+	base, _ := NewUIFrame(src, dst, nil, nil)
+	addr, err := EncodeAddressBlock(base.Source, base.Dest, base.Path, base.CommandResp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := map[string][]byte{
+		"SABM":    {0x2F},                      // U-frame, no info
+		"RR":      {0x01},                      // S-frame, no info
+		"I-frame": {0x00, 0xF0, 'h', 'i', '!'}, // I-frame N(S)=0 N(R)=0, PID + info
+	}
+	for name, tail := range cases {
+		raw := append(append([]byte(nil), addr...), tail...)
+		parsed, err := Decode(raw)
+		if err != nil {
+			t.Fatalf("%s: decode: %v", name, err)
+		}
+		if parsed.IsUI() {
+			t.Fatalf("%s: expected non-UI frame", name)
+		}
+		pt, err := ConnectedPassthrough(parsed, raw)
+		if err != nil {
+			t.Fatalf("%s: passthrough: %v", name, err)
+		}
+		if !pt.IsConnectedMode() {
+			t.Errorf("%s: expected IsConnectedMode=true", name)
+		}
+		out, err := pt.Encode()
+		if err != nil {
+			t.Fatalf("%s: encode: %v", name, err)
+		}
+		if !bytes.Equal(out, raw) {
+			t.Errorf("%s: not verbatim\n got %x\nwant %x", name, out, raw)
+		}
+	}
+}
+
+func TestConnectedPassthroughMissingControl(t *testing.T) {
+	src, _ := ParseAddress("W1AW")
+	dst, _ := ParseAddress("W2XX")
+	base, _ := NewUIFrame(src, dst, nil, nil)
+	addr, _ := EncodeAddressBlock(base.Source, base.Dest, base.Path, base.CommandResp)
+	if _, err := ConnectedPassthrough(base, addr); err == nil {
+		t.Error("expected error for frame with no control field")
+	}
+}
+
 func TestDedupKey(t *testing.T) {
 	src, _ := ParseAddress("N0CALL-1")
 	dst, _ := ParseAddress("APRS")

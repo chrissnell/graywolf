@@ -8,6 +8,7 @@
 
   import { Icon, Toggle, Tooltip } from '@chrissnell/chonky-ui';
   import ParticipantChips from './ParticipantChips.svelte';
+  import ConversationRoutingMenu from './ConversationRoutingMenu.svelte';
   import InviteToTacticalModal from './InviteToTacticalModal.svelte';
   import { relativeLong } from './time.js';
 
@@ -70,26 +71,36 @@
         <span class="sub">Last heard {lastHeard}</span>
       {/if}
     </div>
-    {#if !isTactical && onActionsToggle}
+    {#if !isTactical && thread?.key}
       <div class="actions">
-        <Tooltip>
-          <Tooltip.Trigger>
-            <button
-              type="button"
-              class="zap-btn"
-              onclick={() => onActionsToggle?.()}
-              aria-label="Toggle remote actions drawer"
-              data-testid="thread-actions-toggle"
-            >
-              <span class="bolt" aria-hidden="true">⚡</span>
-            </button>
-          </Tooltip.Trigger>
-          <Tooltip.Content>Remote Actions</Tooltip.Content>
-        </Tooltip>
+        {#key thread.key}
+          <ConversationRoutingMenu kind="dm" threadKey={thread.key} />
+        {/key}
+        {#if onActionsToggle}
+          <Tooltip>
+            <Tooltip.Trigger>
+              <button
+                type="button"
+                class="zap-btn"
+                onclick={() => onActionsToggle?.()}
+                aria-label="Toggle remote actions drawer"
+                data-testid="thread-actions-toggle"
+              >
+                <span class="bolt" aria-hidden="true">⚡</span>
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content>Remote Actions</Tooltip.Content>
+          </Tooltip>
+        {/if}
       </div>
     {/if}
     {#if isTactical}
       <div class="actions">
+        {#if tacticalKey}
+          {#key tacticalKey}
+            <ConversationRoutingMenu kind="tactical" threadKey={tacticalKey} />
+          {/key}
+        {/if}
         <div class="monitor">
           <Toggle
             checked={!muted}

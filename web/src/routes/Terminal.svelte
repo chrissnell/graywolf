@@ -12,6 +12,11 @@
   const FATAL_ERROR_CODES = new Set([
     'link-establish-timeout',
     'peer-rejected',
+    // The channel could not transmit at all (no TNC/KISS or modem
+    // backend, or the wrong channel was picked). Surface it up front so
+    // the operator sees the real cause instead of waiting out N2
+    // retries for the misleading "no response to SABM" (graywolf #456).
+    'tx-failed',
   ]);
 
   import TabBar from '../components/terminal/TabBar.svelte';
@@ -96,6 +101,7 @@
       return 'Link did not come up';
     }
     if (code === 'peer-rejected') return 'Peer refused the connection';
+    if (code === 'tx-failed') return 'Could not transmit';
     return 'Session error';
   }
 
@@ -106,8 +112,14 @@
 
   function handleKey(e) {
     // Ctrl-] (or Cmd-]) opens the command bar from anywhere on the
-    // route.
-    if ((e.ctrlKey || e.metaKey) && e.key === ']') {
+    // route. Match on e.code (layout-stable physical key) as well as
+    // e.key: on Safari/macOS holding Ctrl makes e.key report the GS
+    // control character (U+001D) or an empty string instead of ']', so
+    // the e.key === ']' test alone never fired there (graywolf #456).
+    if (
+      (e.ctrlKey || e.metaKey) &&
+      (e.key === ']' || e.code === 'BracketRight')
+    ) {
       e.preventDefault();
       commandBarOpen = true;
       return;
