@@ -459,6 +459,125 @@
     </div>
 
     <!-- ============================================================ -->
+
+    <div class="config-card" id="ic7100-pi-zero-2w">
+      <div class="config-card-header">Icom IC-7100 + Raspberry Pi Zero 2W &mdash; Raspberry Pi OS</div>
+      <div class="config-card-body">
+        <div class="config-section">
+          <div class="config-section-label">System</div>
+          <table>
+            <tbody>
+              <tr><td><strong>OS</strong></td><td>Raspberry Pi OS</td></tr>
+              <tr><td><strong>Hardware</strong></td><td>Raspberry Pi Zero 2W</td></tr>
+              <tr><td><strong>Radio</strong></td><td>Icom IC-7100 (built-in USB audio + serial)</td></tr>
+              <tr><td><strong>GPS</strong></td><td>None &mdash; fixed position</td></tr>
+              <tr><td><strong>Role</strong></td><td>iGate + Digipeater, concurrent, single channel</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Audio Devices</div>
+          <table>
+            <thead>
+              <tr><th>Direction</th><th>Path</th><th>Channels</th><th>Sample Rate</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Input</td>
+                <td><code>plughw:CARD=CODEC,DEV=0</code></td>
+                <td>Mono</td>
+                <td>48000 Hz</td>
+              </tr>
+              <tr>
+                <td>Output</td>
+                <td><code>plughw:CARD=CODEC,DEV=0</code></td>
+                <td>Mono</td>
+                <td>48000 Hz</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            Input gain is left at <strong>0.0&nbsp;dB</strong>. Output gain is
+            set to <strong>-12.0&nbsp;dB</strong> &mdash; the IC-7100's USB
+            audio codec is known to enumerate as a microphone-type device,
+            which can cause the host to auto-boost input gain substantially.
+            The pad compensates for that rather than running with unnecessary
+            boosted gain.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Push-to-Talk</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Method</strong></td><td>CAT via Hamlib <code>rigctld</code></td></tr>
+              <tr><td><strong>Device Path</strong></td><td><code>127.0.0.1:4532</code></td></tr>
+            </tbody>
+          </table>
+          <p>
+            <code>rigctld</code> runs as its own systemd service, talking to
+            the radio over <code>/dev/ttyUSB0</code> at 19200 baud with
+            <code>civaddr=0x88</code>. Use Hamlib rig model
+            <strong><code>3070</code></strong> for the IC-7100 &mdash; model
+            <code>3081</code> is a different radio (IC-9700) and will connect
+            without error but is the wrong CI-V command set.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">GPS</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Source</strong></td><td>Fixed position</td></tr>
+            </tbody>
+          </table>
+          <p>No live GPS module on this station; position is entered manually.</p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">IC-7100 Radio Setup</div>
+          <table>
+            <thead>
+              <tr><th>Menu</th><th>Setting</th><th>Value</th><th>Why</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Mode</td><td>Operating Mode</td><td>FM</td><td>Tested against FM-D over comparable ~80 and ~120 minute windows; Bad-FCS rates were statistically indistinguishable (~1 per 13 min either way). FM kept since it was already field-proven.</td></tr>
+              <tr><td>SET &rarr; Connectors</td><td>DATA OFF MOD</td><td>USB</td><td>Routes USB audio as the TX modulation source while in plain FM (non-data) mode</td></tr>
+              <tr><td>SET &rarr; Connectors</td><td>DATA MOD</td><td>USB</td><td>Matches DATA OFF MOD for consistency if ever operating in a data mode</td></tr>
+              <tr><td>SET &rarr; Connectors</td><td>USB Audio SQL</td><td>OFF (OPEN)</td><td>Allows USB audio through regardless of squelch state</td></tr>
+              <tr><td>SET &rarr; Connectors</td><td>USB MOD Level</td><td>50% (default)</td><td>Left at factory default; no adjustment needed</td></tr>
+              <tr><td>Front panel</td><td>Notch Filter</td><td>OFF</td><td>An active notch can tune out AFSK tones and silently kill decode</td></tr>
+              <tr><td>Front panel</td><td>Squelch / VSC</td><td>OFF</td><td>Left open for packet</td></tr>
+              <tr><td>Front panel</td><td>RF Power</td><td>73% (~36&ndash;37 W)</td><td>Reduced from full 50W for the fill-in digi role, to complement rather than overlap existing regional digipeaters</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout info">
+          <span class="callout-icon">&#9432;</span>
+          <div class="callout-body">
+            <p>
+              Over a multi-day test period, the graywolf-modem subprocess
+              encountered periodic transient audio stream errors
+              (<code>alsa::poll() returned POLLERR</code> / buffer
+              underrun), typically isolated events every several hours,
+              though occasionally clustering more closely together with a
+              heavier retry burst. No corresponding USB-level disconnect or
+              hardware event was found in the kernel log for any occurrence,
+              suggesting a software-side buffer condition rather than a
+              cabling or power issue. In every case, including a clustered
+              episode, the modem process automatically rebuilt the affected
+              stream without a service restart or operator intervention
+              &mdash; normal beaconing and RF/APRS-IS gating continued
+              throughout, with no missed or corrupted packets observed.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
     <!-- Add new configurations above this line.                      -->
     <!-- Copy the Digirig Mobile section as a template and fill in    -->
     <!-- your own values. Group by device, then by OS/hardware.       -->
