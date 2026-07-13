@@ -1446,6 +1446,35 @@ deliberately double-feeds (RF hook *and* OnISSent); that is harmless because
 for both legs so the fix keeps `rfRank` 0 (our own transmission, never
 counted as RF-reachability evidence).
 
+### 58. KISS FEND is a frame delimiter: the decoder syncs once, then never discards frame bytes
+
+`kiss.Decoder` (`pkg/kiss/framing.go`) discards leading bytes only until the
+**first** FEND on a stream (`synced` flag) — that handles a TNC text banner or
+a mid-stream connect. After that first delimiter it never discards again: the
+byte immediately following a frame's closing FEND is the *start of the next
+frame*, and the read loop's `len(buf)==0` skip absorbs any run of delimiters
+(leading FENDs, empty frames, a shared single FEND between back-to-back
+frames).
+
+*Why:* KISS FEND (0xC0) is a delimiter, not a per-frame wrapper. Real TNCs vary:
+some send `C0 <frame> C0 C0 <frame> C0` (double FEND), some share one FEND
+(`C0 f1 C0 f2 C0`), and some emit only a trailing FEND per frame with no
+leading FEND at all. The original decoder re-ran "skip until the next FEND" on
+every `Next()` call, so after emitting a frame it threw away the following
+frame's bytes while hunting for a leading FEND that shared/trailing-only TNCs
+never send — silent RX loss (every-other frame, or effectively all frames when
+packets arrive with idle gaps). This was the "connects fine but sees no
+packets" report against the tcp-client path; the server/serial paths share the
+same decoder and had the same latent bug. Only the first pre-sync frame in
+trailing-FEND-only framing is (unavoidably) lost.
+
+*How to apply:* do not reintroduce a discard-until-FEND step that runs per
+frame. Regression guards: `TestDecodeSharedDelimiter`, `TestDecodeTrailingFendOnly`,
+`TestDecodeMultipleFrames`, `TestDecodeSkipsLeadingFends` in
+[`../../pkg/kiss/framing_test.go`](../../pkg/kiss/framing_test.go).
+
+Source: [`../../pkg/kiss/framing.go`](../../pkg/kiss/framing.go) (`Decoder.synced`, `Decoder.Next`).
+
 Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 (`sendBeaconWith` IS leg, `Options.OnISSent`),
 [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
