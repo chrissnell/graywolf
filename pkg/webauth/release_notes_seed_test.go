@@ -110,7 +110,7 @@ func TestSetupHandlerSeedsFromHandlerVersion(t *testing.T) {
 	h := &Handlers{Auth: s, BuildVersion: "0.11.0"}
 
 	req := httptest.NewRequest("POST", "/api/auth/setup",
-		strings.NewReader(`{"username":"admin","password":"pw"}`))
+		strings.NewReader(`{"username":"admin","password":"password1"}`))
 	rec := httptest.NewRecorder()
 	h.CreateFirstUser(rec, req)
 	if rec.Code != 201 {

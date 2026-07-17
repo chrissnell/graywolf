@@ -248,6 +248,10 @@ func (h *Handlers) CreateFirstUser(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "username and password required")
 		return
 	}
+	if len(req.Password) < MinPasswordBytes {
+		jsonError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
 	if len(req.Password) > MaxPasswordBytes {
 		jsonError(w, http.StatusBadRequest, "password must not exceed 72 bytes")
 		return
@@ -255,6 +259,10 @@ func (h *Handlers) CreateFirstUser(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := HashPassword(req.Password)
 	if err != nil {
+		if errors.Is(err, ErrPasswordTooShort) {
+			jsonError(w, http.StatusBadRequest, "password must be at least 8 characters")
+			return
+		}
 		if errors.Is(err, ErrPasswordTooLong) {
 			jsonError(w, http.StatusBadRequest, "password must not exceed 72 bytes")
 			return

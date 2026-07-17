@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -42,14 +43,14 @@ func testAuthStore(t *testing.T) *AuthStore {
 }
 
 func TestHashAndCheckPassword(t *testing.T) {
-	hash, err := HashPassword("hunter2")
+	hash, err := HashPassword("hunter2!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash == "" || hash == "hunter2" {
+	if hash == "" || hash == "hunter2!" {
 		t.Fatal("hash should be a bcrypt string")
 	}
-	if err := CheckPassword(hash, "hunter2"); err != nil {
+	if err := CheckPassword(hash, "hunter2!"); err != nil {
 		t.Fatal("correct password should match")
 	}
 	if err := CheckPassword(hash, "wrong"); err == nil {
@@ -67,6 +68,51 @@ func TestHashPasswordTooLong(t *testing.T) {
 	_, err := HashPassword(strings.Repeat("a", MaxPasswordBytes+1))
 	if !errors.Is(err, ErrPasswordTooLong) {
 		t.Fatalf("expected ErrPasswordTooLong, got %v", err)
+	}
+}
+
+func TestHashPasswordTooShort(t *testing.T) {
+	// Exactly at the minimum must hash.
+	if _, err := HashPassword(strings.Repeat("a", MinPasswordBytes)); err != nil {
+		t.Fatalf("%d-byte password should hash, got %v", MinPasswordBytes, err)
+	}
+	// One byte under must be rejected with the sentinel.
+	_, err := HashPassword(strings.Repeat("a", MinPasswordBytes-1))
+	if !errors.Is(err, ErrPasswordTooShort) {
+		t.Fatalf("expected ErrPasswordTooShort, got %v", err)
+	}
+}
+
+// TestCreateFirstUserPasswordTooShort is the regression for issue #476: a
+// too-short password must come back as a clean 400 with an actionable
+// message so the setup path can't create a credential the web login
+// would later refuse.
+func TestCreateFirstUserPasswordTooShort(t *testing.T) {
+	s := testAuthStore(t)
+	h := &Handlers{Auth: s}
+
+	body, _ := json.Marshal(setupRequest{
+		Username: "admin",
+		Password: "short",
+	})
+	req := httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.CreateFirstUser(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v (body=%s)", err, rec.Body.String())
+	}
+	if got := resp["error"]; got != "password must be at least 8 characters" {
+		t.Fatalf("unexpected error message: %q", got)
+	}
+
+	// No user should have been created.
+	if count, _ := s.UserCount(context.Background()); count != 0 {
+		t.Fatalf("expected 0 users after rejected setup, got %d", count)
 	}
 }
 
@@ -329,7 +375,7 @@ func TestFirstRunSetup(t *testing.T) {
 	h := &Handlers{Auth: s}
 
 	// First setup should succeed.
-	body, _ := json.Marshal(setupRequest{Username: "admin", Password: "secret"})
+	body, _ := json.Marshal(setupRequest{Username: "admin", Password: "secret12"})
 	req := httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	h.CreateFirstUser(rec, req)
@@ -338,7 +384,7 @@ func TestFirstRunSetup(t *testing.T) {
 	}
 
 	// Second setup should be forbidden.
-	body, _ = json.Marshal(setupRequest{Username: "hacker", Password: "evil"})
+	body, _ = json.Marshal(setupRequest{Username: "hacker", Password: "evilevil"})
 	req = httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
 	h.CreateFirstUser(rec, req)
@@ -347,12 +393,37 @@ func TestFirstRunSetup(t *testing.T) {
 	}
 }
 
+// TestLoginAcceptsLegacyShortPassword guards the #476 fix: enforcing a
+// minimum length at creation must not lock out accounts whose password
+// was set before the minimum existed. Login validates the hash only, so a
+// sub-minimum password stored directly still authenticates.
+func TestLoginAcceptsLegacyShortPassword(t *testing.T) {
+	s := testAuthStore(t)
+	ctx := context.Background()
+	h := &Handlers{Auth: s}
+
+	// Bypass HashPassword to mimic a legacy short-password hash.
+	raw, err := bcrypt.GenerateFromPassword([]byte("short"), bcryptCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.CreateUser(ctx, "admin", string(raw), "")
+
+	body, _ := json.Marshal(loginRequest{Username: "admin", Password: "short"})
+	req := httptest.NewRequest("POST", "/api/auth/login", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.HandleLogin(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for legacy short password, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLoginLogout(t *testing.T) {
 	s := testAuthStore(t)
 	ctx := context.Background()
 	h := &Handlers{Auth: s}
 
-	hash, _ := HashPassword("correct")
+	hash, _ := HashPassword("correct1")
 	s.CreateUser(ctx, "admin", hash, "")
 
 	// Wrong password → 401
@@ -365,7 +436,7 @@ func TestLoginLogout(t *testing.T) {
 	}
 
 	// Correct password → 200 + set-cookie
-	body, _ = json.Marshal(loginRequest{Username: "admin", Password: "correct"})
+	body, _ = json.Marshal(loginRequest{Username: "admin", Password: "correct1"})
 	req = httptest.NewRequest("POST", "/api/auth/login", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
 	h.HandleLogin(rec, req)
@@ -495,7 +566,7 @@ func TestCreateFirstUserErrorSanitization(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body, _ := json.Marshal(setupRequest{Username: "newbie", Password: "secret"})
+	body, _ := json.Marshal(setupRequest{Username: "newbie", Password: "secret12"})
 	req := httptest.NewRequest("POST", "/api/auth/setup", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	h.CreateFirstUser(rec, req)

@@ -1415,6 +1415,29 @@ Source: [`../../cmd/graywolf/main.go`](../../cmd/graywolf/main.go)
 (leftover-positional hint),
 [`../../cmd/graywolf/authcli/authcli.go`](../../cmd/graywolf/authcli/authcli.go).
 
+### 56b. Password length policy has one source of truth and is enforced only at creation
+
+*Why:* `webauth.MinPasswordBytes` (8) and `webauth.MaxPasswordBytes` (72) are
+the single source of truth for the password-length policy. Every
+*creation* path routes through `webauth.HashPassword`, which rejects both
+bounds, so the web setup form (`POST /api/auth/setup`), the `graywolf auth
+set-password` CLI, and the server handler can never disagree — the bug in
+graywolf#476 was setup accepting a sub-8 password the web login then
+refused. Enforcement is at creation ONLY: `HandleLogin` and `CheckPassword`
+do not length-check, so an account whose password predates the minimum
+still authenticates (a login-side minimum locked such users out). The web
+`Login.svelte` mirrors this — it validates min/max/confirm only in
+`setupMode`, never on sign-in. If you change a bound, change the constant
+and the operator docs (`docs/handbook/installation.html`), not a scattered
+literal.
+
+Source: [`../../pkg/webauth/auth.go`](../../pkg/webauth/auth.go)
+(constants + `HashPassword`),
+[`../../pkg/webauth/handlers.go`](../../pkg/webauth/handlers.go)
+(`CreateFirstUser` vs `HandleLogin`),
+[`../../web/src/routes/Login.svelte`](../../web/src/routes/Login.svelte)
+(`validate`).
+
 ### 57. A station's own beacon reaches the map via the TX path, so every transmit leg must feed the station cache
 
 *Why:* The Live Map plots stations from the `stationcache`, and the only

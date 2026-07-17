@@ -291,6 +291,9 @@ nssm start Graywolf</code></pre>
           run &mdash; when no users exist yet &mdash; the login screen shows
           a <strong>Create Admin Account</strong> form. Enter a username and
           password there and you&rsquo;re done; no command line needed.
+          The password must be at least 8 characters &mdash; the same
+          requirement the web login enforces, so a password set here always
+          works at sign-in.
         </p>
 
         <p>
@@ -499,7 +502,10 @@ sudo packaging/scripts/postinstall.sh</code></pre>
     <h2>Set a Password</h2>
 
     <p>
-      Before exposing the web UI on your network, set an admin password:
+      Before exposing the web UI on your network, set an admin password.
+      The password must be at least 8 characters &mdash; the same minimum
+      the web login enforces, so the credential you set here always works
+      at sign-in:
     </p>
 
 <pre><code>sudo graywolf auth set-password --user admin</code></pre>

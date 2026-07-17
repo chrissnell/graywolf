@@ -104,7 +104,7 @@ func runSetPassword(args []string, buildVersion string) error {
 		user = "admin"
 	}
 
-	fmt.Printf("Enter password for %s: ", user)
+	fmt.Printf("Enter password for %s (at least %d characters): ", user, webauth.MinPasswordBytes)
 	var password string
 	fmt.Scanln(&password)
 	if password == "" {

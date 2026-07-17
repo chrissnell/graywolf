@@ -17,9 +17,22 @@ import (
 // rather than surfacing the library's internal message.
 const MaxPasswordBytes = 72
 
+// MinPasswordBytes is the shortest password accepted at creation time.
+// This is the single source of truth for the minimum-length policy: the
+// web UI, the /api/auth/setup handler, and the `graywolf auth
+// set-password` CLI all enforce it through HashPassword so a password
+// accepted by one path can never be rejected by another (issue #476).
+// bcrypt is byte-oriented, so the bound is measured in bytes; for the
+// ASCII passwords this covers it matches "8 characters".
+const MinPasswordBytes = 8
+
 // ErrPasswordTooLong is returned by HashPassword when the password exceeds
 // MaxPasswordBytes. Callers should map it to a client-facing 400.
 var ErrPasswordTooLong = errors.New("password exceeds 72 bytes")
+
+// ErrPasswordTooShort is returned by HashPassword when the password is
+// shorter than MinPasswordBytes. Callers should map it to a client-facing 400.
+var ErrPasswordTooShort = errors.New("password must be at least 8 characters")
 
 const (
 	bcryptCost = 10
@@ -34,6 +47,9 @@ const (
 
 // HashPassword returns a bcrypt hash suitable for storage.
 func HashPassword(password string) (string, error) {
+	if len(password) < MinPasswordBytes {
+		return "", ErrPasswordTooShort
+	}
 	if len(password) > MaxPasswordBytes {
 		return "", ErrPasswordTooLong
 	}

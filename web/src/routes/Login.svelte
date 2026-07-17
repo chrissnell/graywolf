@@ -27,10 +27,16 @@
     const e = {};
     if (!username.trim()) e.username = 'Username is required';
     if (!password) e.password = 'Password is required';
-    if (password.length < 8) e.password = 'Minimum 8 characters';
-    // bcrypt rejects anything past 72 bytes; measure UTF-8 length so a
-    // multibyte password can't slip past a naive character count.
-    if (new TextEncoder().encode(password).length > 72) e.password = 'Maximum 72 characters';
+    // Length policy is enforced only when creating an account. On login we
+    // must accept whatever the account was created with — gating a correct
+    // password on length here locked out users whose password was set via
+    // `graywolf auth set-password` before the minimum was consistent (#476).
+    else if (setupMode) {
+      if (password.length < 8) e.password = 'Minimum 8 characters';
+      // bcrypt rejects anything past 72 bytes; measure UTF-8 length so a
+      // multibyte password can't slip past a naive character count.
+      else if (new TextEncoder().encode(password).length > 72) e.password = 'Maximum 72 characters';
+    }
     if (setupMode && password !== passwordConfirm) e.passwordConfirm = 'Passwords do not match';
     errors = e;
     return Object.keys(e).length === 0;
