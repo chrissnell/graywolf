@@ -111,3 +111,22 @@ test('no RF-reachable note when the plotted fix is Internet-to-RF gated', () => 
   };
   assert.equal(rfReachableDespiteNonRfLatest(station), false);
 });
+
+test('RF-reachable note fires when the latest packet is our own TX but the fix was RF-heard', () => {
+  // Our own beacon digipeated back and heard on RF (RX plotted fix), then a
+  // later TX beacon flips the station-level direction to TX. TX is not RF
+  // reception, so the note fires — the tooltip wording is deliberately generic
+  // ("did not arrive over RF") rather than APRS-IS-specific to stay truthful here.
+  const station = {
+    direction: 'TX',
+    positions: [{ direction: 'RX', hops: 1 }],
+  };
+  assert.equal(rfReachableDespiteNonRfLatest(station), true);
+});
+
+test('no RF-reachable note for missing/empty positions or undefined station', () => {
+  assert.equal(rfReachableDespiteNonRfLatest({ direction: 'IS', positions: [] }), false);
+  assert.equal(rfReachableDespiteNonRfLatest({ direction: 'IS' }), false);
+  assert.equal(rfReachableDespiteNonRfLatest({}), false);
+  assert.equal(rfReachableDespiteNonRfLatest(null), false);
+});

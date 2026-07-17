@@ -65,7 +65,7 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
       ? `via ${pos.hops} hop${pos.hops > 1 ? 's' : ''}`
       : 'direct';
     html +=
-      `<div class="stn-rf-reachable" title="This station's plotted position was heard on RF (radio), so it stays visible under the RF Only filter even though its most recent packet arrived via APRS-IS.">` +
+      `<div class="stn-rf-reachable" title="This station's plotted position was heard on RF (radio), so it stays visible under the RF Only filter even though its most recent packet did not arrive over RF (APRS-IS or Internet-to-RF gated).">` +
       `RF-reachable &middot; plotted fix heard on RF (${heard})</div>`;
   }
 
