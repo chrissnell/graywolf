@@ -235,6 +235,23 @@
       </div>
     </div>
 
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          <strong>SignaLink USB users:</strong> this is your PTT method. The
+          SignaLink USB has no serial port &mdash; it presents only a USB
+          sound card and keys the radio with its own internal VOX circuit.
+          It will therefore never appear in the <code>serial_rts</code> or
+          <code>serial_dtr</code> device list. Select <code>vox</code>, leave
+          the PTT device unset, and set the SignaLink's front-panel
+          <code>DLY</code> (delay) knob short enough that it releases between
+          packets. Graywolf's 500&nbsp;ms lead-in tone drives the SignaLink's
+          VOX directly, so no radio-side VOX setting is required.
+        </p>
+      </div>
+    </div>
+
     <h2 id="digirig-tone-ptt">Digirig Lite Tone PTT</h2>
 
     <p>
@@ -301,8 +318,12 @@
 
     <p>
       Serial RTS or DTR is the most common PTT method. The modem asserts
-      the chosen pin when transmitting and de-asserts it when done. Most
-      USB sound card interfaces (Digirig, SignaLink USB) use this approach.
+      the chosen pin when transmitting and de-asserts it when done. Many
+      USB interfaces use this approach, including the Digirig Mobile and
+      plain FTDI / CP210x / CH340 USB-serial cables. The
+      <strong>SignaLink USB is not one of them</strong> &mdash; it has no
+      serial port and keys the radio with its own VOX circuit
+      (see <a href="#vox-ptt">VOX PTT</a>).
     </p>
 
 <pre><code># Find your serial device

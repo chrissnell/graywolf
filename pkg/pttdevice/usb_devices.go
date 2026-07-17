@@ -59,7 +59,7 @@ var knownUSBDevices = []usbDevice{
 	{VID: "0403", PID: "6014", Name: "FTDI FT232H USB-Serial", LikelyPTT: true},
 	{VID: "0403", PID: "6015", Name: "FTDI FT-X USB-Serial", LikelyPTT: true},
 	{VID: "067b", PID: "2303", Name: "Prolific PL2303 USB-Serial", LikelyPTT: true},
-	{VID: "10c4", PID: "ea60", Name: "CP2102 USB-Serial (SignaLink, Digirig)", LikelyPTT: true},
+	{VID: "10c4", PID: "ea60", Name: "CP2102 USB-Serial (Digirig)", LikelyPTT: true},
 	{VID: "10c4", PID: "ea70", Name: "CP2105 Dual USB-Serial", LikelyPTT: true},
 
 	// Known-but-not-PTT: dev boards. Named so Detect Devices shows what

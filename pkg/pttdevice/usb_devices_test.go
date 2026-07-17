@@ -51,7 +51,7 @@ func TestLookupUSB(t *testing.T) {
 		{
 			name:          "CP2102 is a likely PTT serial chipset",
 			vid:           "10c4", pid: "ea60",
-			wantName:      "CP2102 USB-Serial (SignaLink, Digirig)",
+			wantName:      "CP2102 USB-Serial (Digirig)",
 			wantLikelyPTT: true,
 		},
 		{
