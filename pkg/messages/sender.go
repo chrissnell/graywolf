@@ -257,7 +257,7 @@ func (s *Sender) SendWithPolicy(ctx context.Context, row *configstore.Message, o
 	} else {
 		policy = NormalizeFallbackPolicy(s.cfg.Preferences.Current().FallbackPolicy)
 	}
-	rfAvailable := s.rfAvailable()
+	rfAvailable := s.rfAvailable(s.channelFor(row))
 
 	switch policy {
 	case FallbackPolicyRFOnly:
@@ -283,8 +283,11 @@ func (s *Sender) SendWithPolicy(ctx context.Context, row *configstore.Message, o
 // before the rfAvailable check because a misconfigured TxChannel is an
 // operator error that shouldn't be hidden by a transient bridge stop.
 func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailable bool) SendResult {
+	// ch is the effective TX channel for this row: a per-send override
+	// when set (compose dialog Advanced), else the live default.
+	ch := s.channelFor(row)
 	if s.cfg.ChannelModes != nil {
-		mode, _ := s.cfg.ChannelModes.ModeForChannel(ctx, s.txChannel.Load())
+		mode, _ := s.cfg.ChannelModes.ModeForChannel(ctx, ch)
 		if mode == configstore.ChannelModePacket {
 			err := errors.New("messages: tx channel is packet-mode")
 			row.FailureReason = truncReason(err.Error())
@@ -292,7 +295,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 			s.logger.Warn("message rf send failed",
 				"reason", "tx channel is packet-mode",
 				"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
-				"kind", row.ThreadKind, "channel", s.txChannel.Load())
+				"kind", row.ThreadKind, "channel", ch)
 			return SendResult{Path: SendPathRF, Err: err, Retryable: false}
 		}
 	}
@@ -307,7 +310,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 		s.logger.Warn("message rf send failed",
 			"reason", "frame encode error",
 			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
-			"kind", row.ThreadKind, "channel", s.txChannel.Load(), "error", err)
+			"kind", row.ThreadKind, "channel", ch, "error", err)
 		return SendResult{Path: SendPathRF, Err: err}
 	}
 	// Record (source, msg_id) in the LocalTxRing BEFORE submit so a
@@ -328,7 +331,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 	// wire. Opting out of dedup is correct for message TX; we keep the
 	// governor's other admission controls (rate limits, DCD-aware
 	// CSMA, queue capacity) active.
-	submitErr := s.cfg.TxSink.Submit(ctx, s.txChannel.Load(), frame, txgovernor.SubmitSource{
+	submitErr := s.cfg.TxSink.Submit(ctx, ch, frame, txgovernor.SubmitSource{
 		Kind:      SubmitKindMessages,
 		Priority:  txgovernor.PriorityIGateMsg,
 		SkipDedup: true,
@@ -365,7 +368,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 		s.logger.Warn("message rf send deferred",
 			"reason", "governor queue full",
 			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
-			"kind", row.ThreadKind, "channel", s.txChannel.Load())
+			"kind", row.ThreadKind, "channel", ch)
 		return SendResult{Path: SendPathRF, Err: submitErr, Retryable: true}
 	case errors.Is(submitErr, txgovernor.ErrStopped):
 		// Governor shut down — RF will not recover on its own.
@@ -376,7 +379,7 @@ func (s *Sender) sendRF(ctx context.Context, row *configstore.Message, rfAvailab
 		s.logger.Warn("message rf send failed",
 			"reason", "governor submit error",
 			"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
-			"kind", row.ThreadKind, "channel", s.txChannel.Load(), "error", submitErr)
+			"kind", row.ThreadKind, "channel", ch, "error", submitErr)
 		return SendResult{Path: SendPathRF, Err: submitErr, Retryable: row.ThreadKind == ThreadKindDM}
 	}
 }
@@ -393,7 +396,7 @@ func (s *Sender) finalizeRFFailure(ctx context.Context, row *configstore.Message
 	s.logger.Warn("message rf send failed",
 		"reason", reason,
 		"id", row.ID, "to", row.ToCall, "msg_id", row.MsgID,
-		"kind", row.ThreadKind, "channel", s.txChannel.Load(), "error", cause)
+		"kind", row.ThreadKind, "channel", s.channelFor(row), "error", cause)
 	return SendResult{Path: SendPathRF, Err: cause, Retryable: false}
 }
 
@@ -535,12 +538,24 @@ func (s *Sender) readOnlyIS() bool {
 // sender's view. Returns true when the caller didn't inject a bridge
 // (tests). The channel argument lets the wiring layer answer
 // "yes" when a KISS-TNC backend is attached even if the modem
-// subprocess isn't running.
-func (s *Sender) rfAvailable() bool {
+// subprocess isn't running — and lets a per-send channel override be
+// checked against its own backend rather than the default channel's.
+func (s *Sender) rfAvailable(channel uint32) bool {
 	if s.bridge == nil {
 		return true
 	}
-	return s.bridge.IsRunningForChannel(s.txChannel.Load())
+	return s.bridge.IsRunningForChannel(channel)
+}
+
+// channelFor resolves the RF TX channel for a single send. A non-zero
+// row.Channel is a per-send operator override (compose dialog Advanced
+// section, issue #472) persisted so retries reuse it; zero defers to
+// the live default TX channel set from the messages config.
+func (s *Sender) channelFor(row *configstore.Message) uint32 {
+	if row != nil && row.Channel != 0 {
+		return row.Channel
+	}
+	return s.txChannel.Load()
 }
 
 // buildFrame constructs the AX.25 UI frame carrying the APRS message

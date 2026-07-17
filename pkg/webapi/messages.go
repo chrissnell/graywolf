@@ -272,10 +272,30 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "cannot send a message to our own callsign")
 		return
 	}
+	// Per-send channel override from the compose dialog's Advanced
+	// section. Nil (or 0) defers to the operator's configured default TX
+	// channel; non-zero is persisted on the row so retries reuse it.
+	// Reject a packet-mode override up front — the same guard putMessagesConfig
+	// applies to the global tx_channel — so an operator gets a clear 400
+	// instead of a message that silently fails RF or falls back to IS.
+	if req.Channel != nil && *req.Channel != 0 {
+		mode, err := s.store.ModeForChannel(r.Context(), *req.Channel)
+		if err != nil {
+			s.internalError(w, r, "mode-for-channel lookup", err)
+			return
+		}
+		if mode == configstore.ChannelModePacket {
+			badRequest(w, "channel is packet-mode; choose an aprs or aprs+packet channel")
+			return
+		}
+	}
 	svcReq := messages.SendMessageRequest{
 		To:      to,
 		Text:    req.Text,
 		OurCall: ourCall,
+	}
+	if req.Channel != nil {
+		svcReq.Channel = *req.Channel
 	}
 	if isInvite {
 		svcReq.Kind = messages.MessageKindInvite

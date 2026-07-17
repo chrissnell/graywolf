@@ -435,6 +435,12 @@ type SendMessageRequest struct {
 	// transport). Applies only to the initial dispatch — retry-manager
 	// re-attempts use the stored preference.
 	FallbackPolicyOverride string
+	// Channel is a per-send RF TX channel override sourced from the
+	// compose dialog's Advanced section (issue #472). Zero means "use
+	// the operator's configured default TX channel". A non-zero value
+	// is stamped on the persisted row so retry re-attempts transmit on
+	// the same channel as the initial send.
+	Channel uint32
 }
 
 // SendMessage persists the outbound row via store.Insert (allocating
@@ -514,6 +520,7 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 		Kind:           bodyKind,
 		InviteTactical: inviteTactical,
 		SendPath:       rowSendPath,
+		Channel:        req.Channel,
 	}
 	// DM requires a msgid; tactical may omit.
 	if kind == ThreadKindDM {

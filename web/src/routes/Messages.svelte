@@ -213,7 +213,7 @@
   });
 
   // ---------- compose / optimistic send ----------
-  async function optimisticSend(text, to) {
+  async function optimisticSend(text, to, channel) {
     if (!to || !text) return;
     const clientId = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
@@ -243,11 +243,17 @@
       // too — the server echo would set this anyway, but computing
       // it locally avoids a flicker-in on long sends.
       extended: (text?.length || 0) > DEFAULT_MAX_MESSAGE_TEXT,
+      // Non-zero = per-send channel override from the compose Advanced
+      // section; null so the metadata panel hides "Channel" for default
+      // sends, matching the server echo (channel omitted when 0).
+      channel: channel || null,
     };
     store.addPendingSend(clientId, optimistic);
 
     try {
-      const res = await sendMessage({ to: threadKey, text, client_id: clientId });
+      const payload = { to: threadKey, text, client_id: clientId };
+      if (channel) payload.channel = channel;
+      const res = await sendMessage(payload);
       store.reconcilePending(clientId, res);
       return res;
     } catch (err) {
@@ -262,8 +268,8 @@
     refreshNow();
   }
 
-  async function handleNewSend(text, to) {
-    const res = await optimisticSend(text, to);
+  async function handleNewSend(text, to, channel) {
+    const res = await optimisticSend(text, to, channel);
     refreshNow();
     // Navigate to the thread we just opened.
     const threadKind = store.tacticals.has(to.toUpperCase()) ? 'tactical' : 'dm';

@@ -258,6 +258,56 @@ func TestService_SendMessage_PersistsAndDispatches(t *testing.T) {
 	}
 }
 
+func TestService_SendMessage_ChannelOverridePersistsAndDispatches(t *testing.T) {
+	svc, rig, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	// Compose with a per-send channel override (issue #472). The seeded
+	// default TxChannel is 1; the override picks channel 4.
+	row, err := svc.SendMessage(ctx, SendMessageRequest{
+		OurCall: "N0CALL",
+		To:      "W1ABC",
+		Text:    "band B",
+		Channel: 4,
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if row.Channel != 4 {
+		t.Errorf("row.Channel = %d, want 4 (persisted override)", row.Channel)
+	}
+	reloaded, err := rig.store.GetByID(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if reloaded.Channel != 4 {
+		t.Errorf("persisted Channel = %d, want 4", reloaded.Channel)
+	}
+
+	// The async dispatch must submit on the override channel, not the
+	// seeded default.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(rig.sink.list()) > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	got := rig.sink.list()
+	if len(got) == 0 {
+		t.Fatal("no RF submit after SendMessage")
+	}
+	if got[0].Channel != 4 {
+		t.Errorf("submit channel = %d, want 4 (override)", got[0].Channel)
+	}
+}
+
 func TestService_SendMessage_TacticalDerivedFromSet(t *testing.T) {
 	svc, rig, _, cleanup := buildService(t)
 	defer cleanup()

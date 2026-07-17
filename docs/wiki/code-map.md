@@ -173,6 +173,19 @@ thread inherits the global defaults until the operator changes one.
 | REST | `webapi/messages.go` — GET/PUT `/api/messages/conversations/{kind}/{key}/prefs`; DTO + validation in `webapi/dto/messages.go`. GET returns inherited defaults (not 404) for an unset thread. |
 | UI | `web/src/components/messages/ConversationRoutingMenu.svelte` (gear popover: send-path radios + "Automatic Resend until ACK" checkbox, DM only), mounted in `ThreadHeader.svelte`; client in `api/messages.js`. |
 
+## Per-send TX channel override (issue #472)
+
+Lets an operator running multiple radios on one instance pick which RF
+channel a single message goes out on, from a collapsed "Advanced" section
+in the new-message dialog. Zero = the configured default `tx_channel`.
+
+| Concern | Where |
+|---|---|
+| Request field | `pkg/messages/service.go` — `SendMessageRequest.Channel uint32` (0 = default). `SendMessage` stamps it onto the existing `Message.Channel` column so retries reuse it. |
+| Send-time apply | `pkg/messages/sender.go` — `channelFor(row)` returns `row.Channel` when non-zero else the live default `txChannel`; `sendRF` (packet-mode check, availability, `TxSink.Submit`, logs) and `rfAvailable(channel)` route on it. Retry/Resend re-read the persisted row, so no extra plumbing. |
+| REST | `webapi/messages.go` — `sendMessage` copies `dto.SendMessageRequest.Channel` (`*uint32`, already in the DTO) into `svcReq.Channel`, and rejects a packet-mode override with 400 (same `ModeForChannel` guard as `putMessagesConfig`; a missing row reads as APRS, matching the fail-open TX-gating convention, so existence is not hard-validated). |
+| UI | `web/src/components/messages/ComposeNewModal.svelte` — `<details class="advanced">` with a channel `Select` (non-packet channels + "Default" sentinel, same filter as `MessagesSettings.svelte`); threaded through `Messages.svelte` `handleNewSend`/`optimisticSend` → `sendMessage({channel})`. The override resets on the modal's open→true transition (NOT in `close()`), because `ComposeBar` calls `onSend`/`close` once per part of a multi-part message — resetting on close would zero the channel after part 1. |
+
 ## Message call-sign blocklist (issue #465)
 
 Mutes inbound messages from specific senders (e.g. a station that

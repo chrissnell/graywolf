@@ -271,6 +271,40 @@ func TestSender_RF_HappyPath_SentAtOnlyFlipsOnHookFire(t *testing.T) {
 	}
 }
 
+// A non-zero row.Channel is a per-send override (compose dialog
+// Advanced section, issue #472) and must drive the governor Submit
+// instead of the sender's default TX channel. A zero row.Channel
+// defers to the default. buildSender seeds TxChannel=1.
+func TestSender_RF_PerSendChannelOverride(t *testing.T) {
+	rig := buildSender(t, FallbackPolicyRFOnly, true)
+	defer rig.close()
+
+	override := newOutboundDM(t, rig, "N0CALL", "W1ABC", "band B")
+	override.Channel = 7
+	if err := rig.store.Update(context.Background(), override); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if res := rig.sender.Send(context.Background(), override); res.Err != nil {
+		t.Fatalf("Send override: %v", res.Err)
+	}
+
+	deflt := newOutboundDM(t, rig, "N0CALL", "W1ABC", "default band")
+	if res := rig.sender.Send(context.Background(), deflt); res.Err != nil {
+		t.Fatalf("Send default: %v", res.Err)
+	}
+
+	got := rig.sink.list()
+	if len(got) != 2 {
+		t.Fatalf("submitted = %d, want 2", len(got))
+	}
+	if got[0].Channel != 7 {
+		t.Errorf("override submit channel = %d, want 7", got[0].Channel)
+	}
+	if got[1].Channel != 1 {
+		t.Errorf("default submit channel = %d, want 1 (seeded TxChannel)", got[1].Channel)
+	}
+}
+
 func TestSender_RF_QueueFull_RetryableShortRetry(t *testing.T) {
 	rig := buildSender(t, FallbackPolicyRFOnly, true)
 	defer rig.close()

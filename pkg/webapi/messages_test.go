@@ -308,6 +308,68 @@ func TestSendMessage_202(t *testing.T) {
 	}
 }
 
+func TestSendMessage_ChannelOverridePassedThrough(t *testing.T) {
+	sentCh := make(chan messages.SendMessageRequest, 1)
+	svc := &fakeMessagesSvc{
+		sendFn: func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error) {
+			sentCh <- req
+			return &configstore.Message{
+				ID: 7, Direction: "out", OurCall: req.OurCall, FromCall: req.OurCall,
+				ToCall: req.To, Text: req.Text, ThreadKind: messages.ThreadKindDM,
+				ThreadKey: req.To, MsgID: "002", CreatedAt: time.Now(),
+				AckState: messages.AckStateNone, Channel: req.Channel,
+			}, nil
+		},
+	}
+	_, mux, _ := newMessagesTestServer(t, svc)
+
+	// Channel 4 does not exist in this fixture; ModeForChannel treats a
+	// missing row as APRS (non-packet) so it passes validation and flows
+	// through to the service request unchanged.
+	body := `{"to":"W1ABC","text":"hi","channel":4}`
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got := <-sentCh
+	if got.Channel != 4 {
+		t.Errorf("svcReq.Channel = %d, want 4", got.Channel)
+	}
+}
+
+func TestSendMessage_RejectsPacketModeChannel(t *testing.T) {
+	srv, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
+	ctx := context.Background()
+	dev := &configstore.AudioDevice{
+		Name: "test", Direction: "input", SourceType: "flac",
+		SourcePath: "/tmp/x.flac", SampleRate: 44100, Channels: 1, Format: "s16le",
+	}
+	if err := srv.store.CreateAudioDevice(ctx, dev); err != nil {
+		t.Fatalf("CreateAudioDevice: %v", err)
+	}
+	ch := &configstore.Channel{
+		Name: "p", InputDeviceID: configstore.U32Ptr(dev.ID),
+		ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200,
+		Profile: "A", NumSlicers: 1, FixBits: "none",
+		Mode: configstore.ChannelModePacket,
+	}
+	if err := srv.store.CreateChannel(ctx, ch); err != nil {
+		t.Fatalf("create packet channel: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"to":"W1ABC","text":"hi","channel":%d}`, ch.ID)
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400 for packet-mode channel", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSendMessage_BadAddressee(t *testing.T) {
 	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
 	body := `{"to":"","text":"hi"}`
