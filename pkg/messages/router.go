@@ -32,6 +32,13 @@ type realRouterClock struct{}
 
 func (realRouterClock) Now() time.Time { return time.Now().UTC() }
 
+// BulletinSink receives inbound bulletin packets detected by the router.
+// The router does not import pkg/bulletins to avoid an import cycle;
+// the wiring layer passes a *bulletins.Service via this interface.
+type BulletinSink interface {
+	IngestBulletin(ctx context.Context, pkt *aprs.DecodedAPRSPacket, msg *aprs.Message) error
+}
+
 // RouterConfig captures the router's collaborators. All fields except
 // Logger, Registerer, and Clock are required.
 type RouterConfig struct {
@@ -49,6 +56,9 @@ type RouterConfig struct {
 	Logger        *slog.Logger
 	Registerer    prometheus.Registerer
 	Clock         RouterClock
+	// BulletinSink receives inbound BLN* packets. Optional; nil disables
+	// bulletin ingestion (packets are still silently dropped).
+	BulletinSink  BulletinSink
 	// AutoAckChannel is the RF channel used when submitting auto-ACKs.
 	// Defaults to 1 (mirrors IGateConfig.TxChannel semantics). Forwarded
 	// into Preflight when Preflight is nil.
@@ -386,6 +396,17 @@ func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
 	case r.cfg.TacticalSet.Contains(addressee):
 		threadKind = ThreadKindTactical
 		threadKey = addressee
+	case effMsg.IsBulletin:
+		if r.cfg.BulletinSink != nil {
+			if err := r.cfg.BulletinSink.IngestBulletin(ctx, pkt, effMsg); err != nil {
+				r.logger.Warn("messages router bulletin ingest failed",
+					"error", err, "source", source, "slot", effMsg.Addressee)
+			}
+			r.mClassified.WithLabelValues("bulletin").Inc()
+		} else {
+			r.mClassified.WithLabelValues("not_for_us").Inc()
+		}
+		return
 	default:
 		r.mClassified.WithLabelValues("not_for_us").Inc()
 		return

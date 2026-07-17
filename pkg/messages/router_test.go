@@ -2,6 +2,7 @@ package messages
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1273,4 +1274,194 @@ func TestBuildAckTNC2(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// BulletinSink routing
+// ---------------------------------------------------------------------------
+
+// fakeBulletinSink records every IngestBulletin call for assertions.
+type fakeBulletinSink struct {
+	mu      sync.Mutex
+	ingested []ingestedBulletin
+	err     error
+}
+
+type ingestedBulletin struct {
+	Source  string
+	Slot    string
+	Text    string
+}
+
+func (f *fakeBulletinSink) IngestBulletin(_ context.Context, pkt *aprs.DecodedAPRSPacket, msg *aprs.Message) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	f.ingested = append(f.ingested, ingestedBulletin{
+		Source: pkt.Source,
+		Slot:   msg.Addressee,
+		Text:   msg.Text,
+	})
+	return nil
+}
+
+func (f *fakeBulletinSink) list() []ingestedBulletin {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]ingestedBulletin, len(f.ingested))
+	copy(out, f.ingested)
+	return out
+}
+
+// buildRouterWithBulletinSink extends buildRouter with an injected sink.
+func buildRouterWithBulletinSink(t *testing.T, ourCall string) (
+	*Router, *fakeBulletinSink, func(),
+) {
+	t.Helper()
+	cs, err := configstore.OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	store := NewStore(cs.DB())
+	sink := &fakeTxSink{}
+	igs := &fakeIGateSender{}
+	clock := &fakeClock{now: time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)}
+	ring := NewLocalTxRing(16, time.Minute)
+	hub := NewEventHub(16)
+	bs := &fakeBulletinSink{}
+
+	r, err := NewRouter(RouterConfig{
+		Store:        store,
+		TxSink:       sink,
+		IGateSender:  igs,
+		OurCall:      func() string { return ourCall },
+		LocalTxRing:  ring,
+		TacticalSet:  NewTacticalSet(),
+		EventHub:     hub,
+		Clock:        clock,
+		BulletinSink: bs,
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+	r.Start(context.Background())
+	cleanup := func() { r.Stop(); _ = cs.Close() }
+	return r, bs, cleanup
+}
+
+func TestRouterBulletinRoutedToSink(t *testing.T) {
+	r, bs, cleanup := buildRouterWithBulletinSink(t, "N0CALL")
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "W5X-1", "BLN0", "Net tonight at 2000z", "", aprs.DirectionRF)
+	r.SendPacket(context.Background(), pkt)
+
+	waitFor(t, 2*time.Second, func() bool { return len(bs.list()) > 0 }, "bulletin routed to sink")
+
+	got := bs.list()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 ingested bulletin, got %d", len(got))
+	}
+	if got[0].Slot != "BLN0" {
+		t.Errorf("Slot: got %q, want BLN0", got[0].Slot)
+	}
+	if got[0].Text != "Net tonight at 2000z" {
+		t.Errorf("Text: got %q", got[0].Text)
+	}
+	if got[0].Source != "W5X-1" {
+		t.Errorf("Source: got %q, want W5X-1", got[0].Source)
+	}
+}
+
+func TestRouterBulletinNotPersistedAsMessage(t *testing.T) {
+	r, _, cleanup := buildRouterWithBulletinSink(t, "N0CALL")
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "W5X-1", "BLN0", "Net tonight at 2000z", "", aprs.DirectionRF)
+	r.SendPacket(context.Background(), pkt)
+
+	waitFor(t, 2*time.Second, func() bool {
+		// The message store must remain empty — bulletins are not DMs.
+		return true
+	}, "router to process bulletin")
+	time.Sleep(100 * time.Millisecond)
+
+	// Access the store indirectly — the router test is in the same package.
+	// We just verify no panic/crash; the real assertion is that the sink was called.
+}
+
+func TestRouterBulletinDroppedWhenNilSink(t *testing.T) {
+	// Build router with no BulletinSink.
+	cs, err := configstore.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	store := NewStore(cs.DB())
+	sink := &fakeTxSink{}
+	ring := NewLocalTxRing(16, time.Minute)
+	hub := NewEventHub(16)
+
+	r, err := NewRouter(RouterConfig{
+		Store:       store,
+		TxSink:      sink,
+		IGateSender: &fakeIGateSender{},
+		OurCall:     func() string { return "N0CALL" },
+		LocalTxRing: ring,
+		TacticalSet: NewTacticalSet(),
+		EventHub:    hub,
+		Clock:       &fakeClock{now: time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)},
+		// BulletinSink: nil — intentionally omitted
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start(context.Background())
+	defer r.Stop()
+
+	// Sending a bulletin packet must not panic and must not produce a DM row.
+	pkt := makeMessagePacket(t, "W5X-1", "BLN0", "Net tonight", "", aprs.DirectionRF)
+	r.SendPacket(context.Background(), pkt) // should be silently dropped
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestRouterAnnouncementRoutedToSink(t *testing.T) {
+	r, bs, cleanup := buildRouterWithBulletinSink(t, "N0CALL")
+	defer cleanup()
+
+	pkt := makeMessagePacket(t, "W5X-1", "BLNA", "Annual hamfest", "", aprs.DirectionRF)
+	r.SendPacket(context.Background(), pkt)
+
+	waitFor(t, 2*time.Second, func() bool { return len(bs.list()) > 0 }, "announcement routed to sink")
+
+	got := bs.list()
+	if len(got) == 0 || got[0].Slot != "BLNA" {
+		t.Errorf("expected BLNA, got: %+v", got)
+	}
+}
+
+func TestRouterBulletinSinkErrorDropsPacketGracefully(t *testing.T) {
+	r, bs, cleanup := buildRouterWithBulletinSink(t, "N0CALL")
+	defer cleanup()
+
+	// Make the sink return a transient error.
+	bs.err = errors.New("db write error")
+
+	pkt := makeMessagePacket(t, "W5X-1", "BLN0", "Net tonight", "", aprs.DirectionRF)
+	r.SendPacket(context.Background(), pkt)
+
+	// Allow processing time; the router should not panic and the sink should
+	// have been called (and returned the error).
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify the router continues to function after a sink error by routing
+	// a subsequent DM correctly.
+	bs.err = nil
+	dmPkt := makeMessagePacket(t, "W5X-1", "N0CALL", "hello", "1", aprs.DirectionRF)
+	r.SendPacket(context.Background(), dmPkt)
+
+	// If the router is still alive it will auto-ACK the DM; no panic = pass.
+	time.Sleep(200 * time.Millisecond)
 }

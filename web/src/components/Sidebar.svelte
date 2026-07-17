@@ -1,5 +1,5 @@
 <script>
-  import { untrack } from 'svelte';
+  import { untrack, onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
   import { location } from 'svelte-spa-router';
   import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
@@ -7,7 +7,25 @@
   import { terminalSidebar } from '../lib/stores/terminal.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
   import { Platform } from '../lib/platform.js';
+  import { listBulletins } from '../api/bulletins.js';
   import logoUrl from '../assets/graywolf.svg';
+
+  let bulletinUnread = $state(0);
+
+  // Poll for unread bulletin count every 30 seconds so the badge stays fresh.
+  onMount(() => {
+    async function fetchBulletinUnread() {
+      try {
+        const rows = await listBulletins({ direction: 'in', unread_only: true });
+        bulletinUnread = Array.isArray(rows) ? rows.length : 0;
+      } catch (_) {
+        // Backend not ready yet — leave count as-is.
+      }
+    }
+    fetchBulletinUnread();
+    const t = setInterval(fetchBulletinUnread, 30_000);
+    return () => clearInterval(t);
+  });
 
   // Surfaces deferred or unsupported on Android. Hidden from the
   // sidebar so operators don't tap into a non-functional surface:
@@ -28,6 +46,7 @@
     { path: '/', label: 'Dashboard', svgIcon: 'dashboard' },
     { path: '/map', label: 'Live Map', svgIcon: 'globe' },
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
+    { path: '/bulletins', label: 'Bulletins', svgIcon: 'bulletins', badge: 'bulletins' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
     { path: '/logs', label: 'APRS Logs', svgIcon: 'logs' },
@@ -82,6 +101,7 @@
   function badgeCount(kind) {
     if (kind === 'terminal') return terminalUnread;
     if (kind === 'messages') return unreadTotal;
+    if (kind === 'bulletins') return bulletinUnread;
     return 0;
   }
 
@@ -229,6 +249,24 @@
                 stroke-linejoin="round"
               >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            {:else if item.svgIcon === 'bulletins'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="8" y="2" width="8" height="4" rx="1" />
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                <line x1="9" y1="10" x2="15" y2="10" />
+                <line x1="9" y1="14" x2="15" y2="14" />
+                <line x1="9" y1="18" x2="12" y2="18" />
               </svg>
             {:else if item.svgIcon === 'logs'}
               <svg

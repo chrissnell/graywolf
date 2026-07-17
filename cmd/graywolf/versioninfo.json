@@ -1,0 +1,43 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 0,
+      "Minor": 14,
+      "Patch": 3,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 0,
+      "Minor": 14,
+      "Patch": 3,
+      "Build": 0
+    },
+    "FileFlagsMask": "3f",
+    "FileFlags": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "Comments": "",
+    "CompanyName": "Chris Snell",
+    "FileDescription": "Graywolf APRS Station",
+    "FileVersion": "0.14.3",
+    "InternalName": "graywolf",
+    "LegalCopyright": "Copyright Chris Snell",
+    "LegalTrademarks": "",
+    "OriginalFilename": "graywolf.exe",
+    "PrivateBuild": "",
+    "ProductName": "Graywolf",
+    "ProductVersion": "0.14.3",
+    "SpecialBuild": ""
+  },
+  "VarFileInfo": {
+    "Translation": {
+      "LangID": "0409",
+      "CharsetID": "04B0"
+    }
+  },
+  "IconPath": "graywolf.ico",
+  "ManifestPath": ""
+}

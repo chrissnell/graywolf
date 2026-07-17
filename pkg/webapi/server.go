@@ -95,6 +95,10 @@ type Server struct {
 	messagesStore   MessagesStore // optional: defaults to messagesService.Store() via adapter
 	messagesBotDir  messages.BotDirectory
 
+	// bulletinService is late-bound like messagesService. Handlers return
+	// 503 until SetBulletinService is called.
+	bulletinService BulletinService
+
 	// ax25Mgr is wired by pkg/app at startup via SetAX25Manager. The
 	// /api/ax25/terminal WebSocket handler returns 503 until the
 	// manager is installed so ordering bugs in wiring fail loud.
@@ -301,6 +305,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerSmartBeacon(mux)
 	s.registerMessages(mux)
 	s.registerMessagesConfig(mux)
+	s.registerBulletins(mux)
 	s.registerMessagesBlocklist(mux)
 	s.registerAX25Terminal(mux)
 	s.registerAX25TerminalConfig(mux)
