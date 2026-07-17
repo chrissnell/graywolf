@@ -1358,7 +1358,10 @@
           />
           <span>Direct RX</span>
         </label>
-        <label class="toggle-row">
+        <label
+          class="toggle-row"
+          title="Show only stations whose plotted position was heard on RF (radio), including RF-digipeated. A station stays visible if its last fix reached us over the air, even when its most recent packet later arrived via APRS-IS."
+        >
           <input
             type="checkbox"
             checked={layerToggles.rfOnly}
@@ -2133,6 +2136,15 @@
   :global(.via-rf) { color: var(--color-success); }
   :global(.via-rf-hops) { color: var(--color-warning); }
   :global(.via-is) { color: #c39bff; }
+  /* RF-reachability note: shown when the latest packet is APRS-IS but the
+     plotted fix was heard on RF (why it survives the RF Only filter). RF
+     green with a help cursor to invite the explanatory tooltip. */
+  :global(.stn-rf-reachable) {
+    color: var(--color-success);
+    font-size: 11px;
+    margin-top: 2px;
+    cursor: help;
+  }
   :global(.stn-path) { color: var(--color-text-dim); font-size: 11px; }
   :global(.stn-path .path-link) { color: #6eb5ff; text-decoration: none; cursor: pointer; }
   :global(.stn-path .path-link:hover) { text-decoration: underline; }

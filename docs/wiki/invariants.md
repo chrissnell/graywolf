@@ -1266,11 +1266,26 @@ qualifies. RF Only is the looser companion to Direct RX (#48): it keeps
 RF-digipeated stations (`hops > 0`) and drops only APRS-IS and Internet-to-RF
 gated current fixes.
 
+*Surfacing the divergence in the popup (graywolf #482).* The badge-vs-`positions[0]`
+divergence above reads as a filter bug to operators: a station badged `APRS-IS`
+that stays visible under RF Only looks wrong even though it is correct. #482 was
+the second report of exactly this. The popup now renders an `RF-reachable`
+note (`popup.js`, class `.stn-rf-reachable`) whenever
+`rfReachableDespiteNonRfLatest(s)` holds -- the plotted fix (`positions[0]`)
+qualifies as RF-heard while the **latest** packet did not arrive over RF
+(`s.direction !== 'RX' || s.gated`). The RF Only toggle also carries a `title`
+tooltip stating the "ever RF-reachable at the current fix" semantics. This is a
+labeling affordance only; it does **not** change the predicate. If you ever make
+RF Only key on current-packet recency instead (the #482 option 2), retire this
+note too.
+
 Source: [`../../web/src/lib/map/rf-only-core.js`](../../web/src/lib/map/rf-only-core.js)
-(`isRfOnly`),
+(`isRfOnly`, `rfReachableDespiteNonRfLatest`),
 [`../../web/src/lib/map/rf-only-core.test.js`](../../web/src/lib/map/rf-only-core.test.js),
 [`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte)
-(filter `$effect`, `rfOnlyStationCount`),
+(filter `$effect`, `rfOnlyStationCount`, RF Only toggle `title`, `.stn-rf-reachable` CSS),
+[`../../web/src/lib/map/popup.js`](../../web/src/lib/map/popup.js)
+(`.stn-rf-reachable` note),
 [`../../web/src/lib/map/popup-helpers.js`](../../web/src/lib/map/popup-helpers.js)
 (`viaText`).
 

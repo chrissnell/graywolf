@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isRfOnly } from './rf-only-core.js';
+import { isRfOnly, rfReachableDespiteNonRfLatest } from './rf-only-core.js';
 
 test('station whose current fix was heard directly on RF qualifies', () => {
   const station = { positions: [{ direction: 'RX', hops: 0 }] };
@@ -53,4 +53,61 @@ test('missing or empty positions are excluded', () => {
   assert.equal(isRfOnly({ positions: [] }), false);
   assert.equal(isRfOnly({}), false);
   assert.equal(isRfOnly(null), false);
+});
+
+// rfReachableDespiteNonRfLatest — the popup "RF-reachable" note case (#482):
+// plotted fix is RF-heard but the latest packet arrived some other way.
+
+test('RF-reachable note fires when plotted fix is RF but latest packet is APRS-IS', () => {
+  // The K4MMG-10 shape from #482: rfRank-protected RX head, latest packet IS.
+  const station = {
+    direction: 'IS',
+    gated: false,
+    positions: [{ direction: 'RX', hops: 0 }],
+  };
+  assert.equal(rfReachableDespiteNonRfLatest(station), true);
+});
+
+test('RF-reachable note fires for a digipeated RF fix with an APRS-IS latest packet', () => {
+  const station = {
+    direction: 'IS',
+    positions: [{ direction: 'RX', hops: 2 }],
+  };
+  assert.equal(rfReachableDespiteNonRfLatest(station), true);
+});
+
+test('RF-reachable note fires when the latest packet is Internet-to-RF gated', () => {
+  // Latest arrival gated (not RF), plotted fix still RF-heard.
+  const station = {
+    direction: 'RX',
+    gated: true,
+    positions: [{ direction: 'RX', hops: 0 }],
+  };
+  assert.equal(rfReachableDespiteNonRfLatest(station), true);
+});
+
+test('no RF-reachable note when the latest packet itself arrived over RF', () => {
+  // Badge/via already say RF — nothing to disambiguate.
+  const station = {
+    direction: 'RX',
+    gated: false,
+    positions: [{ direction: 'RX', hops: 0 }],
+  };
+  assert.equal(rfReachableDespiteNonRfLatest(station), false);
+});
+
+test('no RF-reachable note for a pure APRS-IS station (plotted fix is IS)', () => {
+  const station = {
+    direction: 'IS',
+    positions: [{ direction: 'IS' }],
+  };
+  assert.equal(rfReachableDespiteNonRfLatest(station), false);
+});
+
+test('no RF-reachable note when the plotted fix is Internet-to-RF gated', () => {
+  const station = {
+    direction: 'IS',
+    positions: [{ direction: 'RX', gated: true }],
+  };
+  assert.equal(rfReachableDespiteNonRfLatest(station), false);
 });

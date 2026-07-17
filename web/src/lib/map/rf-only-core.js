@@ -19,3 +19,17 @@ export function isRfOnly(station) {
   const p = station?.positions?.[0];
   return !!p && p.direction === 'RX' && !p.gated;
 }
+
+// rfReachableDespiteNonRfLatest reports the popup "RF-reachable" note case:
+// the plotted fix (positions[0]) qualifies as RF-heard (isRfOnly) yet the
+// station's *latest* packet -- the one that drives the popup badge / via line
+// (station-level direction/gated, overwritten by every arrival) -- did NOT
+// arrive over RF. That divergence is why a station badged "APRS-IS" can still,
+// correctly, survive the RF Only filter: the marker is drawn at positions[0],
+// which the server pins to the most RF-reachable copy of the fix via rfRank.
+// The popup uses this to explain the visibility instead of reading as a bug
+// (graywolf #482, the second report of this after #394).
+export function rfReachableDespiteNonRfLatest(station) {
+  const latestIsRf = station?.direction === 'RX' && !station?.gated;
+  return !latestIsRf && isRfOnly(station);
+}

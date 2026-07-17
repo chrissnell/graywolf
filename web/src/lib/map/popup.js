@@ -5,6 +5,7 @@
 // .via-rf-hops, .path-link) are defined :global() in LiveMapV2.svelte.
 
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText, formatWeatherRows } from './popup-helpers.js';
+import { rfReachableDespiteNonRfLatest } from './rf-only-core.js';
 import { unitsState } from '../settings/units-store.svelte.js';
 
 // renderStationPopupHTML(station, { hasStation }) -> HTML string
@@ -49,6 +50,24 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
   if (meta.length) html += `<div class="stn-meta">${meta.join(' · ')}</div>`;
 
   html += `<div class="stn-via ${viaCls(s)}">${viaText(s)}</div>`;
+
+  // RF-reachability note. The badge and via line above reflect the *latest*
+  // packet (station-level fields, overwritten unconditionally by every
+  // arrival), but the marker is plotted at positions[0], whose reception the
+  // server pins to the most RF-reachable copy of that fix (stationcache
+  // rfRank). When the latest packet arrived via APRS-IS (or Internet-to-RF
+  // gated) yet the plotted fix was heard on RF, the station still -- correctly
+  // -- qualifies for the "RF Only" filter. Surface that here so the "APRS-IS" via
+  // doesn't read as a filter bug (graywolf #482, the second report of this
+  // divergence after #394).
+  if (rfReachableDespiteNonRfLatest(s)) {
+    const heard = pos.hops > 0
+      ? `via ${pos.hops} hop${pos.hops > 1 ? 's' : ''}`
+      : 'direct';
+    html +=
+      `<div class="stn-rf-reachable" title="This station's plotted position was heard on RF (radio), so it stays visible under the RF Only filter even though its most recent packet arrived via APRS-IS.">` +
+      `RF-reachable &middot; plotted fix heard on RF (${heard})</div>`;
+  }
 
   if (s.hops > 0 && s.path && s.path.length) {
     const pathHtml = s.path
