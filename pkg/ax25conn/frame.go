@@ -91,8 +91,15 @@ func Decode(raw []byte, mod128 bool) (*Frame, error) {
 		return nil, err
 	}
 	off := hdr.AddrLen
+	if off >= len(raw) {
+		return nil, fmt.Errorf("ax25conn: missing control field")
+	}
+	// Control-field width: 1 octet for mod-8, and for mod-128 U-frames
+	// (SABM/SABME/UA/DM/DISC/FRMR/UI/XID/TEST), which stay 1 octet under
+	// either modulus (v2.2 §4.2.2). Mod-128 I- and S-frames are 2 octets.
+	// Peek the low two bits of the first control octet: 11 => U-frame.
 	ctlSize := 1
-	if mod128 {
+	if mod128 && raw[off]&0x03 != 0x03 {
 		ctlSize = 2
 	}
 	if len(raw) < off+ctlSize {

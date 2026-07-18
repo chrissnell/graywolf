@@ -164,6 +164,42 @@ func (m *Manager) remove(k sessionKey, id uint64) {
 	delete(m.byID, id)
 }
 
+// DispatchRaw decodes connected-mode frame bytes with the owning
+// session's negotiated modulus, then routes them. The RX-fanout caller
+// cannot know whether a link negotiated SABME (mod-128), and decoding a
+// mod-128 control field as mod-8 corrupts N(S)/N(R) so every inbound
+// frame is dropped and the link stalls (graywolf #456). We resolve the
+// session from the address header (modulus-independent) first, read its
+// modulus race-free, then decode. Unmatched frames are dropped silently,
+// same as Dispatch.
+func (m *Manager) DispatchRaw(channel uint32, raw []byte) {
+	hdr, err := ax25.DecodeAddressBlock(raw)
+	if err != nil {
+		return
+	}
+	key := sessionKey{
+		Channel: channel,
+		Local:   hdr.Dest.String(),
+		Peer:    hdr.Source.String(),
+	}
+	m.mu.Lock()
+	ms := m.byKey[key]
+	m.mu.Unlock()
+	if ms == nil {
+		return
+	}
+	f, err := Decode(raw, ms.s.Mod128())
+	if err != nil {
+		return
+	}
+	// Deliver to the session we already resolved (and whose modulus we
+	// decoded with) rather than re-looking-up by key: a fast reconnect
+	// that rebound the triple between the two lookups would otherwise
+	// hand this frame to a different session than the one it was decoded
+	// for.
+	m.deliver(ms, f)
+}
+
 // Dispatch routes a non-UI frame to the matching session. Caller is
 // the pkg/app rxfanout; per the brainstorm §4.1, the frame is
 // guaranteed non-UI by the caller.
@@ -178,13 +214,19 @@ func (m *Manager) Dispatch(channel uint32, f *Frame) {
 	}
 	m.mu.Lock()
 	ms := m.byKey[key]
-	if ms != nil {
-		ms.lastPath = m.normalizeInboundPath(f)
-	}
 	m.mu.Unlock()
 	if ms == nil {
 		return
 	}
+	m.deliver(ms, f)
+}
+
+// deliver records the frame's inbound digipeater path on ms and submits
+// it to the session goroutine. Shared by Dispatch and DispatchRaw.
+func (m *Manager) deliver(ms *managedSession, f *Frame) {
+	m.mu.Lock()
+	ms.lastPath = m.normalizeInboundPath(f)
+	m.mu.Unlock()
 	ms.s.Submit(Event{Kind: EventFrameRX, Frame: f})
 }
 

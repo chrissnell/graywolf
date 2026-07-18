@@ -22,7 +22,7 @@ func (s *Session) onTimerRecovery(_ context.Context, ev Event) bool {
 			if !f.IsCommand {
 				break
 			}
-			s.cfg.Mod128 = f.Control.Kind == FrameSABME
+			s.setMod128(f.Control.Kind == FrameSABME)
 			if s.cfg.Mod128 {
 				s.cfg.Window = DefaultWindowMod128
 			} else {

@@ -17,7 +17,12 @@
   // fitToWidth=true grows the column count to fill the host container
   // and dynamically resizes on window resize. Use for monitor-mode
   // sessions where there is no LAPB peer enforcing 80-column screens.
-  let { session, preset = 'classic', narrowMin = 768, fitToWidth = false } = $props();
+  // onMenuChord fires when the operator presses Ctrl-] / Cmd-] while the
+  // terminal canvas has focus. xterm would otherwise swallow that keydown
+  // (it maps to the GS control code and xterm calls stopPropagation), so
+  // the route-level <svelte:window> handler never sees it — see the
+  // attachCustomKeyEventHandler wiring below (graywolf #456).
+  let { session, preset = 'classic', narrowMin = 768, fitToWidth = false, onMenuChord } = $props();
 
   let host = $state(null);
   let term = null;
@@ -98,6 +103,30 @@
     });
     term.loadAddon(new WebLinksAddon());
     term.loadAddon(new SearchAddon());
+    // Intercept Ctrl-] / Cmd-] before xterm processes it. Returning false
+    // tells xterm to leave the key alone, so it does not send the stray GS
+    // (0x1D) byte down the link. We also preventDefault + stopPropagation
+    // ourselves so this path is self-contained: preventDefault kills the
+    // macOS Cmd-] browser forward-navigation binding, and stopPropagation
+    // keeps the event from also reaching the route's <svelte:window>
+    // handler (which stays as the fallback for when the canvas is NOT
+    // focused — xterm's key handler only runs on a focused terminal).
+    // Without this interceptor, xterm's own cancel() stopPropagations the
+    // keydown because Ctrl-] maps to a control code, so the window handler
+    // never fired and the menu could not open while focused (graywolf #456).
+    term.attachCustomKeyEventHandler((ev) => {
+      if (
+        ev.type === 'keydown' &&
+        (ev.ctrlKey || ev.metaKey) &&
+        (ev.key === ']' || ev.code === 'BracketRight')
+      ) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onMenuChord?.();
+        return false;
+      }
+      return true;
+    });
     term.open(host);
     // Pull keyboard focus into the canvas so operators can type
     // immediately on session open without an extra click. SR users

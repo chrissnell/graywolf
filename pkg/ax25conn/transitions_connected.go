@@ -23,7 +23,7 @@ func (s *Session) onConnected(_ context.Context, ev Event) bool {
 			// Graceful rebind in place: full reset of seq vars, requeue
 			// pending I-frames so kick re-sends them under fresh
 			// numbers. ax25_std_in.c:146-165.
-			s.cfg.Mod128 = f.Control.Kind == FrameSABME
+			s.setMod128(f.Control.Kind == FrameSABME)
 			if s.cfg.Mod128 {
 				s.cfg.Window = DefaultWindowMod128
 			} else {

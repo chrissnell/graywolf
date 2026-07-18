@@ -7,7 +7,6 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
-	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
@@ -205,12 +204,12 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 			}
 		}
 	} else if a.ax25Mgr != nil {
-		// Connected-mode dispatch: any non-UI frame that decodes goes to
-		// the LAPB manager. Mismatch on (channel, local, peer) is silent —
-		// the manager has no session for it.
-		if cmFrame, err := ax25conn.Decode(rf.Data, false); err == nil {
-			a.ax25Mgr.Dispatch(rf.Channel, cmFrame)
-		}
+		// Connected-mode dispatch: any non-UI frame goes to the LAPB
+		// manager, which decodes it with the owning session's negotiated
+		// modulus (mod-8 vs mod-128) and drops it if no session matches
+		// (channel, local, peer). Decoding here with a fixed modulus would
+		// corrupt mod-128 sessions' N(S)/N(R) — see graywolf #456.
+		a.ax25Mgr.DispatchRaw(rf.Channel, rf.Data)
 	}
 	a.plog.Record(e)
 }

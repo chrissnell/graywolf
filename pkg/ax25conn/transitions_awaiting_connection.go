@@ -24,14 +24,14 @@ func (s *Session) onAwaitingConnection(_ context.Context, ev Event) bool {
 			}
 			// Peer sent SABM (collision or simultaneous-open). Kernel:
 			// emit UA, set modulus=8, stay in state 1.
-			s.cfg.Mod128 = false
+			s.setMod128(false)
 			s.cfg.Window = DefaultWindowMod8
 			s.sendUA(f.Control.PF)
 		case FrameSABME:
 			if !f.IsCommand {
 				return true
 			}
-			s.cfg.Mod128 = true
+			s.setMod128(true)
 			s.cfg.Window = DefaultWindowMod128
 			s.sendUA(f.Control.PF)
 		case FrameDISC:
@@ -56,7 +56,7 @@ func (s *Session) onAwaitingConnection(_ context.Context, ev Event) bool {
 			if s.cfg.Mod128 {
 				// Kernel ax25_std_in.c:84-87: downgrade to mod-8, keep
 				// T1 running, retry as SABM on next T1 expiry.
-				s.cfg.Mod128 = false
+				s.setMod128(false)
 				s.cfg.Window = DefaultWindowMod8
 				return true
 			}
@@ -70,7 +70,7 @@ func (s *Session) onAwaitingConnection(_ context.Context, ev Event) bool {
 			if s.cfg.Mod128 {
 				// Kernel ax25_std_timer.c:128-133: auto-fall-back to
 				// mod-8 with a fresh N2 budget.
-				s.cfg.Mod128 = false
+				s.setMod128(false)
 				s.cfg.Window = DefaultWindowMod8
 				s.v.N2Count = 0
 				s.sendSABM(false)

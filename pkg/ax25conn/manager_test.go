@@ -177,6 +177,82 @@ func TestManager_DispatchRoutes(t *testing.T) {
 	}
 }
 
+// TestManager_DispatchRawMod128Delivers is the regression guard for
+// graywolf #456: inbound connected-mode frames must be decoded with the
+// owning session's negotiated modulus. A mod-128 I-frame's control field
+// is 2 octets; decoding it as mod-8 corrupts N(S)/N(R) so the payload is
+// never delivered and the link stalls. DispatchRaw honors Session.Mod128.
+func TestManager_DispatchRawMod128Delivers(t *testing.T) {
+	m := newTestManager(t)
+	defer m.Close()
+
+	rxCh := make(chan []byte, 4)
+	scfg := SessionConfig{
+		Local:   mustParse(t, "KE7XYZ-1"),
+		Peer:    mustParse(t, "BBS-3"),
+		Channel: 1,
+		Mod128:  true,
+		Observer: func(ev OutEvent) {
+			if ev.Kind == OutDataRX {
+				rxCh <- append([]byte(nil), ev.Data...)
+			}
+		},
+	}
+	// Open starts the session's Run loop internally; do not spawn another.
+	_, s, err := m.Open(scfg, "op1")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Operator connect → session sends SABME; peer answers UA to
+	// establish the mod-128 link.
+	s.Submit(Event{Kind: EventConnect})
+	ua := &Frame{
+		Source: mustParse(t, "BBS-3"), Dest: mustParse(t, "KE7XYZ-1"),
+		Control: Control{Kind: FrameUA, PF: true},
+		Mod128:  true,
+	}
+	raw, err := ua.Encode()
+	if err != nil {
+		t.Fatalf("encode UA: %v", err)
+	}
+	m.DispatchRaw(1, raw)
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && s.Snapshot().State != StateConnected {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if s.Snapshot().State != StateConnected {
+		t.Fatalf("link never reached CONNECTED, state=%v", s.Snapshot().State)
+	}
+
+	// Inbound mod-128 I-frame N(S)=0 carrying data. Its 2-octet control
+	// field only decodes correctly when the manager honors the session's
+	// negotiated modulus.
+	iframe := &Frame{
+		Source: mustParse(t, "BBS-3"), Dest: mustParse(t, "KE7XYZ-1"),
+		Control:   Control{Kind: FrameI, NS: 0, NR: 0, PF: false},
+		PID:       0xF0,
+		Info:      []byte("welcome"),
+		IsCommand: true,
+		Mod128:    true,
+	}
+	raw, err = iframe.Encode()
+	if err != nil {
+		t.Fatalf("encode I: %v", err)
+	}
+	m.DispatchRaw(1, raw)
+
+	select {
+	case got := <-rxCh:
+		if string(got) != "welcome" {
+			t.Fatalf("payload drift: %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("mod-128 I-frame never delivered as OutDataRX")
+	}
+}
+
 func TestManager_DispatchUnknownTripleNoOp(t *testing.T) {
 	m := newTestManager(t)
 	defer m.Close()

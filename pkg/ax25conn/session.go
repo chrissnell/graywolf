@@ -115,6 +115,13 @@ type Session struct {
 	// unchanged, so only a real transition into DISCONNECTED trips it.
 	terminated bool
 
+	// mod128Bit mirrors cfg.Mod128 as an atomic so Manager.DispatchRaw,
+	// running on the RX-fanout goroutine, can pick the right control-field
+	// octet count (mod-8 vs mod-128) without racing the session goroutine
+	// that negotiates the modulus at SABM/SABME time. Always written via
+	// setMod128; read via Mod128().
+	mod128Bit atomic.Bool
+
 	// txFailNotified guards the one-shot operator-facing error emitted
 	// when a frame cannot be handed to the TX backend (e.g. the channel
 	// has no KISS/modem backend, or the wrong channel was selected).
@@ -159,6 +166,7 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 		wakeup: make(chan struct{}, 1),
 		state:  StateDisconnected,
 	}
+	s.mod128Bit.Store(cfg.Mod128)
 	s.t1 = newTimer(cfg.Clock, cfg.T1, func() { s.signalTimer(pendT1) })
 	s.t2 = newTimer(cfg.Clock, cfg.T2, func() { s.signalTimer(pendT2) })
 	s.t3 = newTimer(cfg.Clock, cfg.T3, func() { s.signalTimer(pendT3) })
@@ -174,6 +182,19 @@ func (s *Session) modulus() int {
 	}
 	return 8
 }
+
+// setMod128 updates the active modulus. Called only from the session
+// goroutine; mirrors the value into an atomic so Manager.DispatchRaw can
+// decode inbound control fields with the matching octet count without
+// racing this write.
+func (s *Session) setMod128(v bool) {
+	s.cfg.Mod128 = v
+	s.mod128Bit.Store(v)
+}
+
+// Mod128 reports the session's active modulus race-free. Safe to call
+// from any goroutine, unlike the cfg field it mirrors.
+func (s *Session) Mod128() bool { return s.mod128Bit.Load() }
 
 // nextT1 returns the T1 duration to set on the next reset. Mirrors
 // ax25_calculate_t1 in net/ax25/ax25_subr.c:220-258. The kernel
