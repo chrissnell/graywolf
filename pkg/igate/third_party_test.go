@@ -110,6 +110,31 @@ func TestWrapThirdPartyPreservesPath(t *testing.T) {
 	}
 }
 
+// TestWrapThirdPartyDropsInboundTCPIP verifies the inbound APRS-IS
+// routing marker (TCPIP) is not re-emitted, so the inner header carries
+// exactly one canonical ",TCPIP,IGATECALL*" rather than the malformed
+// ",TCPIP,TCPIP,…" that Kenwood handhelds refuse to parse as a directed
+// message. Regression for the IS→RF message-delivery bug.
+func TestWrapThirdPartyDropsInboundTCPIP(t *testing.T) {
+	// A real APRS-IS message line: path carries TCPIP*,qAC,<server>.
+	inner, err := parseTNC2("REPEAT>APZ100,TCPIP*,qAC,T2RDU::K0TFU-7  :ack32")
+	if err != nil {
+		t.Fatalf("parseTNC2: %v", err)
+	}
+	wrapped, err := wrapThirdParty(inner, "K0TFU-1")
+	if err != nil {
+		t.Fatalf("wrapThirdParty: %v", err)
+	}
+	got := string(wrapped.Info)
+	if strings.Contains(got, "TCPIP,TCPIP") {
+		t.Fatalf("duplicate TCPIP in inner header: %s", got)
+	}
+	want := "}REPEAT>APZ100,TCPIP,K0TFU-1*::K0TFU-7  :ack32"
+	if got != want {
+		t.Fatalf("inner mismatch:\n got: %s\nwant: %s", got, want)
+	}
+}
+
 // TestWrapThirdPartyRejectsNilFrame checks the guard clauses.
 func TestWrapThirdPartyRejectsNilFrame(t *testing.T) {
 	if _, err := wrapThirdParty(nil, "KE7XYZ"); err == nil {

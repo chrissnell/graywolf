@@ -58,6 +58,15 @@ func wrapThirdParty(inner *ax25.Frame, igateCall string) (*ax25.Frame, error) {
 		// inner path is informational and the '*' marker would
 		// confuse downstream parsers.
 		a.Repeated = false
+		// Drop any inbound internet-routing marker (TCPIP/TCPXX). We
+		// append the canonical ",TCPIP,IGATECALL*" below; re-emitting an
+		// existing TCPIP produced a duplicate ",TCPIP,TCPIP,…" that some
+		// receivers (notably Kenwood handhelds) refuse to parse as a
+		// directed message, so the message never reaches the operator's
+		// inbox. direwolf synthesizes the same single-TCPIP marker.
+		if u := strings.ToUpper(a.String()); u == "TCPIP" || u == "TCPXX" {
+			continue
+		}
 		hdr.WriteByte(',')
 		hdr.WriteString(a.String())
 	}
