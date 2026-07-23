@@ -1573,3 +1573,31 @@ Source: [`../../pkg/ax25conn/session.go`](../../pkg/ax25conn/session.go)
 (`submit` tx-failed emit),
 [`../../pkg/ax25conn/manager_test.go`](../../pkg/ax25conn/manager_test.go)
 (`TestManager_FreesTripleAfterFailedConnect`).
+
+### 60. IS→RF third-party wrap must not re-emit the inbound TCPIP/TCPXX marker
+
+`wrapThirdParty` appends the canonical `,TCPIP,IGATECALL*` marker to the
+inner third-party header itself. The inbound APRS-IS path it copies from
+often already carries a `TCPIP*` (or `TCPXX`) element positioned *before*
+the `qA*` construct, so `parseTNC2` — which only truncates at `qA*` —
+leaves it in the frame's `Path`. Any such element MUST be dropped while
+building the inner header, or the result has a duplicated `TCPIP`
+(`}SRC>DEST,TCPIP,TCPIP,IGATECALL*:…`). Kenwood handhelds (verified on a
+TH-D75) silently reject the malformed inner path, so IS→RF directed
+messages never reach the recipient and no ACK is generated.
+
+*Why:* graywolf#488 -- messages gated from APRS-IS to RF never appeared on
+the recipient's Kenwood radio; the sender kept retransmitting because no
+ACK came back.
+
+*How to apply:* the filter lives in the inner-header loop of
+[`wrapThirdParty`](../../pkg/igate/third_party.go) (skip any path address
+whose `Call` upper-cases to `TCPIP`/`TCPXX`). This is distinct from the
+RF→IS loop-prevention gate in
+[`pkg/igate/igate.go`](../../pkg/igate/igate.go), which *refuses to gate*
+RF packets already bearing those markers — different direction, different
+purpose.
+
+Source: [`../../pkg/igate/third_party.go`](../../pkg/igate/third_party.go),
+[`../../pkg/igate/third_party_test.go`](../../pkg/igate/third_party_test.go)
+(`TestWrapThirdPartyStripsInboundTCPIP`, `TestWrapThirdPartyStripsInboundTCPXX`).

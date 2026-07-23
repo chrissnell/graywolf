@@ -110,6 +110,51 @@ func TestWrapThirdPartyPreservesPath(t *testing.T) {
 	}
 }
 
+// TestWrapThirdPartyStripsInboundTCPIP verifies the inbound APRS-IS
+// "TCPIP" path marker is dropped so the wrapper's own canonical
+// ",TCPIP,IGATECALL*" marker is not duplicated. A duplicated TCPIP
+// element makes Kenwood handhelds silently drop the igated message
+// (graywolf#488).
+func TestWrapThirdPartyStripsInboundTCPIP(t *testing.T) {
+	inner, err := parseTNC2("W5ABC-7>APRS,TCPIP*,qAC,T2TEXAS::KE7XYZ   :hello{1")
+	if err != nil {
+		t.Fatalf("parseTNC2: %v", err)
+	}
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	if err != nil {
+		t.Fatalf("wrapThirdParty: %v", err)
+	}
+	want := "}W5ABC-7>APRS,TCPIP,KE7XYZ*::KE7XYZ   :hello{1"
+	if string(wrapped.Info) != want {
+		t.Fatalf("inner info mismatch:\n got: %s\nwant: %s", wrapped.Info, want)
+	}
+	header := string(wrapped.Info[:bytes.IndexByte(wrapped.Info, ':')])
+	if strings.Count(strings.ToUpper(header), "TCPIP") != 1 {
+		t.Fatalf("expected exactly one TCPIP in inner header, got: %s", header)
+	}
+}
+
+// TestWrapThirdPartyStripsInboundTCPXX mirrors the TCPIP case for the
+// TCPXX marker (used for unverified/unregistered login sources).
+func TestWrapThirdPartyStripsInboundTCPXX(t *testing.T) {
+	inner, err := parseTNC2("W5ABC-7>APRS,WIDE1-1,TCPXX,qAX,SERVER::KE7XYZ   :hi{2")
+	if err != nil {
+		t.Fatalf("parseTNC2: %v", err)
+	}
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	if err != nil {
+		t.Fatalf("wrapThirdParty: %v", err)
+	}
+	want := "}W5ABC-7>APRS,WIDE1-1,TCPIP,KE7XYZ*::KE7XYZ   :hi{2"
+	if string(wrapped.Info) != want {
+		t.Fatalf("inner info mismatch:\n got: %s\nwant: %s", wrapped.Info, want)
+	}
+	header := string(wrapped.Info[:bytes.IndexByte(wrapped.Info, ':')])
+	if strings.Contains(strings.ToUpper(header), "TCPXX") {
+		t.Fatalf("inbound TCPXX not stripped: %s", header)
+	}
+}
+
 // TestWrapThirdPartyRejectsNilFrame checks the guard clauses.
 func TestWrapThirdPartyRejectsNilFrame(t *testing.T) {
 	if _, err := wrapThirdParty(nil, "KE7XYZ"); err == nil {
