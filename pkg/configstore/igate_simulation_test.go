@@ -28,9 +28,9 @@ func TestSetIGateSimulationMode_TouchesOnlySimulationColumn(t *testing.T) {
 		ServerFilter:   "m/50",
 		SimulationMode: false,
 		GateRfToIs:     true,
-		MaxMsgHops:     2,
 		TxChannel:      1,
 		RfChannel:      3,
+		IsTxVia:        "WIDE1-1",
 	}
 	if err := s.UpsertIGateConfig(ctx, seed); err != nil {
 		t.Fatalf("seed UpsertIGateConfig: %v", err)
@@ -40,7 +40,7 @@ func TestSetIGateSimulationMode_TouchesOnlySimulationColumn(t *testing.T) {
 		t.Helper()
 		if got.Server != seed.Server || got.Port != seed.Port ||
 			got.ServerFilter != seed.ServerFilter || got.GateRfToIs != seed.GateRfToIs ||
-			got.MaxMsgHops != seed.MaxMsgHops || got.TxChannel != seed.TxChannel ||
+			got.IsTxVia != seed.IsTxVia || got.TxChannel != seed.TxChannel ||
 			got.RfChannel != seed.RfChannel || !got.Enabled {
 			t.Fatalf("simulation toggle clobbered sibling fields: got %+v want siblings from %+v", got, seed)
 		}

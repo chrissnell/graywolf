@@ -241,7 +241,7 @@ func TestPutIGateConfig_EnableWithoutStationReturns400(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	// No StationConfig row — expected 400 with the exact unset message.
-	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -269,7 +269,7 @@ func TestPutIGateConfig_EnableWithStationReturns200(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -287,7 +287,7 @@ func TestPutIGateConfig_DisabledSaveWithoutStationReturns200(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14581,"rf_channel":1,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14581,"rf_channel":1,"tx_channel":1,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -331,7 +331,7 @@ func TestPutIGateConfig_RejectsCallsignField(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"callsign":"W5XYZ-10","rf_channel":1,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"callsign":"W5XYZ-10","rf_channel":1,"tx_channel":1,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

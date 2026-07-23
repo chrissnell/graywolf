@@ -882,6 +882,7 @@ func (a *App) buildIgateInstance(ctx context.Context, igCfg *configstore.IGateCo
 		SoftwareVersion: igCfg.SoftwareVersion,
 		Rules:           rules,
 		TxChannel:       txCh,
+		IsTxVia:         igCfg.IsTxVia,
 		Governor:        igGov,
 		SimulationMode:  igCfg.SimulationMode,
 		Logger:          a.logger,
@@ -2799,8 +2800,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 		return
 	}
 
-	// enabled → enabled (TX channel + filter / rules push-through).
+	// enabled → enabled (TX channel + via-path + filter / rules push-through).
 	cur.SetTxChannel(a.resolveTxChannel(ctx, igCfg.TxChannel))
+	cur.SetIsTxVia(igCfg.IsTxVia)
 	rfFilters, _ := a.store.ListIGateRfFilters(ctx)
 	rules := make([]filters.Rule, 0, len(rfFilters))
 	for _, f := range rfFilters {

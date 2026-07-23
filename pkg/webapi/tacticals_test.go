@@ -30,7 +30,7 @@ func newTacticalsTestServer(t *testing.T) (*Server, *http.ServeMux, *messages.St
 	t.Cleanup(func() { _ = store.Close() })
 	if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
 		Server: "rotate.aprs2.net", Port: 14580,
-		TxChannel: 1, RfChannel: 1, MaxMsgHops: 2, GateRfToIs: true,
+		TxChannel: 1, RfChannel: 1, GateRfToIs: true,
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -940,7 +940,7 @@ func TestIGateConfigDefaults_ZeroChannels(t *testing.T) {
 	ctx := context.Background()
 	if err := s.UpsertIGateConfig(ctx, &IGateConfig{
 		Server: "rotate.aprs2.net", Port: 14580,
-		MaxMsgHops: 2, SoftwareName: "graywolf", SoftwareVersion: "0.1",
+		SoftwareName: "graywolf", SoftwareVersion: "0.1",
 	}); err != nil {
 		t.Fatal(err)
 	}

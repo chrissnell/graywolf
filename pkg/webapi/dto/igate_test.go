@@ -31,8 +31,10 @@ func TestIGateConfigFromModel_EmptyModelSeedsDefaults(t *testing.T) {
 	if got.TxChannel != 0 {
 		t.Errorf("TxChannel = %d, want 0 (no default)", got.TxChannel)
 	}
-	if got.MaxMsgHops != DefaultIGateMaxMsgHops {
-		t.Errorf("MaxMsgHops = %d, want %d", got.MaxMsgHops, DefaultIGateMaxMsgHops)
+	// is_tx_via has no default: empty means "direct" (no path), which is
+	// the safe, behavior-preserving zero value.
+	if got.IsTxVia != "" {
+		t.Errorf("IsTxVia = %q, want empty (direct)", got.IsTxVia)
 	}
 	if got.SoftwareName != DefaultIGateSoftwareName {
 		t.Errorf("SoftwareName = %q, want %q", got.SoftwareName, DefaultIGateSoftwareName)
@@ -47,6 +49,39 @@ func TestIGateConfigFromModel_EmptyModelSeedsDefaults(t *testing.T) {
 	// in StationConfig and the passcode is computed internally.
 	if got.Enabled {
 		t.Error("Enabled should stay zero-valued (false)")
+	}
+}
+
+// TestIGateConfigRequestValidateIsTxVia guards the DTO-layer syntax
+// check on the IS→RF digipeater via-path (issue #489). Empty is direct;
+// a comma-separated list of valid AX.25 addresses is accepted; anything
+// else is rejected so the running iGate never persists a path that would
+// make it drop every downlink.
+func TestIGateConfigRequestValidateIsTxVia(t *testing.T) {
+	tests := []struct {
+		name    string
+		via     string
+		wantErr bool
+	}{
+		{"empty_is_direct", "", false},
+		{"single_wide", "WIDE1-1", false},
+		{"two_hops", "WIDE1-1,WIDE2-1", false},
+		{"whitespace_padded", " WIDE1-1 , WIDE2-1 ", false},
+		{"repeated_marker_rejected", "WIDE1-1*", true},
+		{"bad_ssid_rejected", "WIDE1-99", true},
+		{"bad_call_rejected", "!!!", true},
+		{"too_many_hops_rejected", "A,B,C,D,E,F,G,H,I", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := IGateConfigRequest{IsTxVia: tc.via}.ValidateIsTxVia()
+			if tc.wantErr && err == nil {
+				t.Fatalf("ValidateIsTxVia(%q) = nil, want error", tc.via)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("ValidateIsTxVia(%q) = %v, want nil", tc.via, err)
+			}
+		})
 	}
 }
 
@@ -227,7 +262,7 @@ func TestIGateConfigFromModel_UserValuesWin(t *testing.T) {
 		Port:            14581,
 		ServerFilter:    "r/35/-106/100",
 		RfChannel:       3,
-		MaxMsgHops:      4,
+		IsTxVia:         "WIDE1-1,WIDE2-1",
 		SoftwareName:    "custom",
 		SoftwareVersion: "9.9",
 		TxChannel:       2,
@@ -245,6 +280,9 @@ func TestIGateConfigFromModel_UserValuesWin(t *testing.T) {
 	}
 	if got.RfChannel != 3 {
 		t.Errorf("RfChannel = %d, want 3", got.RfChannel)
+	}
+	if got.IsTxVia != "WIDE1-1,WIDE2-1" {
+		t.Errorf("IsTxVia = %q, want WIDE1-1,WIDE2-1", got.IsTxVia)
 	}
 	if got.SoftwareVersion != "9.9" {
 		t.Errorf("SoftwareVersion = %q, want 9.9", got.SoftwareVersion)

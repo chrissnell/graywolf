@@ -575,8 +575,14 @@ Priority: 100</code></pre>
         <a href="https://github.com/hessu/aprsc/blob/main/doc/IGATE-HINTS.md">IGATE-HINTS</a>.</li>
       <li><strong>Third-party wrapping</strong> &mdash; every IS&rarr;RF
         frame is wrapped in APRS third-party format (APRS101 &sect;20)
-        with an empty digipeater path, so other iGates can see the
-        packet originated on the internet side</li>
+        so other iGates can see the packet originated on the internet
+        side. The outer frame&rsquo;s digipeater path comes from the
+        <strong>IS&rarr;RF Digipeater Path</strong> setting (the
+        Direwolf <code>IGTXVIA</code> equivalent): leave it empty to
+        transmit direct &mdash; only stations in direct RF range hear
+        the packet &mdash; or set a literal path such as
+        <code>WIDE1-1,WIDE2-1</code> when your recipients sit behind a
+        digipeater (a common asymmetric-RF situation)</li>
       <li><strong>Reconnection</strong> &mdash; the APRS-IS connection
         is automatically re-established if it drops, with DNS
         re-resolved on every attempt so hostnames like

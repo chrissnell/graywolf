@@ -77,7 +77,6 @@ func newToggleHarness(t *testing.T) *toggleHarness {
 		Port:            uint32(port),
 		TxChannel:       1,
 		RfChannel:       1,
-		MaxMsgHops:      2,
 		ServerFilter:    "",
 		SoftwareName:    "graywolf-test",
 		SoftwareVersion: "toggle",

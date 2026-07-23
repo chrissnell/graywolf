@@ -200,11 +200,10 @@ func setupIntegration(t *testing.T, ourCall string) (*intTestContext, func()) {
 		t.Fatalf("UpsertStationConfig: %v", err)
 	}
 	if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
-		Server:     "rotate.aprs2.net",
-		Port:       14580,
-		TxChannel:  1,
-		RfChannel:  1,
-		MaxMsgHops: 2,
+		Server:    "rotate.aprs2.net",
+		Port:      14580,
+		TxChannel: 1,
+		RfChannel: 1,
 	}); err != nil {
 		t.Fatalf("UpsertIGateConfig: %v", err)
 	}
@@ -730,8 +729,7 @@ func TestMessagesIntegration(t *testing.T) {
 		}
 		if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
 			Server: "rotate.aprs2.net", Port: 14580,
-			TxChannel: 1, RfChannel: 1, MaxMsgHops: 2,
-		}); err != nil {
+			TxChannel: 1, RfChannel: 1}); err != nil {
 			t.Fatalf("UpsertIGateConfig: %v", err)
 		}
 		if err := store.UpsertMessagePreferences(ctx, &configstore.MessagePreferences{

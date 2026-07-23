@@ -65,6 +65,14 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	// is_tx_via has no legacy-invalid data (migration 27 seeds it empty),
+	// so unlike server_filter it is validated on every save, not only
+	// when it changed. A malformed via-path would otherwise persist and
+	// make the running iGate drop every IS→RF downlink.
+	if err := req.ValidateIsTxVia(); err != nil {
+		badRequest(w, err.Error())
+		return
+	}
 	// Idempotent pass-through for req.Validate(): a legacy persisted
 	// server_filter that contains `|` (saved by an older binary that
 	// allowed it) must not block saves of unrelated fields. The DTO

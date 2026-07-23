@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 )
 
@@ -28,7 +29,6 @@ import (
 const (
 	DefaultIGateServer          = "rotate.aprs2.net"
 	DefaultIGatePort            = 14580
-	DefaultIGateMaxMsgHops      = 2
 	DefaultIGateSoftwareName    = "graywolf"
 	DefaultIGateSoftwareVersion = "0.1"
 )
@@ -48,7 +48,7 @@ type IGateConfigRequest struct {
 	GateRfToIs      bool   `json:"gate_rf_to_is"`
 	GateIsToRf      bool   `json:"gate_is_to_rf"`
 	RfChannel       uint32 `json:"rf_channel"`
-	MaxMsgHops      uint32 `json:"max_msg_hops"`
+	IsTxVia         string `json:"is_tx_via"`
 	SoftwareName    string `json:"software_name"`
 	SoftwareVersion string `json:"software_version"`
 	TxChannel       uint32 `json:"tx_channel"`
@@ -69,6 +69,21 @@ func (r IGateConfigRequest) Validate() error {
 	return nil
 }
 
+// ValidateIsTxVia checks the is_tx_via digipeater via-path applied to
+// IS->RF third-party frames (Direwolf IGTXVIA equivalent). Empty means
+// "direct" (no path). It is separate from Validate because the handler
+// runs Validate only when server_filter changed (an idempotent
+// pass-through for a legacy `|` value); is_tx_via has no legacy-invalid
+// data to grandfather in, so it is validated unconditionally on every
+// save — rejecting a malformed path at save time instead of letting the
+// iGate silently drop every downlink.
+func (r IGateConfigRequest) ValidateIsTxVia() error {
+	if _, err := ax25.ParseVia(r.IsTxVia); err != nil {
+		return fmt.Errorf("is_tx_via: %w", err)
+	}
+	return nil
+}
+
 func (r IGateConfigRequest) ToModel() configstore.IGateConfig {
 	return configstore.IGateConfig{
 		Enabled:         r.Enabled,
@@ -79,7 +94,7 @@ func (r IGateConfigRequest) ToModel() configstore.IGateConfig {
 		GateRfToIs:      r.GateRfToIs,
 		GateIsToRf:      r.GateIsToRf,
 		RfChannel:       r.RfChannel,
-		MaxMsgHops:      r.MaxMsgHops,
+		IsTxVia:         r.IsTxVia,
 		SoftwareName:    r.SoftwareName,
 		SoftwareVersion: r.SoftwareVersion,
 		TxChannel:       r.TxChannel,
@@ -100,10 +115,6 @@ func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
 	if port == 0 {
 		port = DefaultIGatePort
 	}
-	maxMsgHops := m.MaxMsgHops
-	if maxMsgHops == 0 {
-		maxMsgHops = DefaultIGateMaxMsgHops
-	}
 	softwareName := m.SoftwareName
 	if softwareName == "" {
 		softwareName = DefaultIGateSoftwareName
@@ -123,7 +134,7 @@ func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
 			GateRfToIs:      m.GateRfToIs,
 			GateIsToRf:      m.GateIsToRf,
 			RfChannel:       m.RfChannel,
-			MaxMsgHops:      maxMsgHops,
+			IsTxVia:         m.IsTxVia,
 			SoftwareName:    softwareName,
 			SoftwareVersion: softwareVersion,
 			TxChannel:       m.TxChannel,

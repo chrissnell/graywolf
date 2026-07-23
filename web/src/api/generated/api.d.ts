@@ -2741,7 +2741,7 @@ export interface components {
             enabled?: boolean;
             gate_is_to_rf?: boolean;
             gate_rf_to_is?: boolean;
-            max_msg_hops?: number;
+            is_tx_via?: string;
             port?: number;
             rf_channel?: number;
             server?: string;
@@ -2756,7 +2756,7 @@ export interface components {
             gate_is_to_rf?: boolean;
             gate_rf_to_is?: boolean;
             id?: number;
-            max_msg_hops?: number;
+            is_tx_via?: string;
             port?: number;
             rf_channel?: number;
             server?: string;

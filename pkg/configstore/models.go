@@ -357,7 +357,7 @@ type IGateConfig struct {
 	GateRfToIs      bool      `gorm:"not null;default:true" json:"gate_rf_to_is"`
 	GateIsToRf      bool      `gorm:"not null;default:false" json:"gate_is_to_rf"`
 	RfChannel       uint32    `gorm:"not null;default:0" json:"rf_channel"`             // channel used when gating IS->RF; 0 = unset
-	MaxMsgHops      uint32    `gorm:"not null;default:2" json:"max_msg_hops"`           // WIDE hops for IS->RF messages
+	IsTxVia         string    `gorm:"not null;default:''" json:"is_tx_via"`             // literal digipeater via-path for IS->RF (like Direwolf IGTXVIA); empty = direct
 	SoftwareName    string    `gorm:"not null;default:'graywolf'" json:"software_name"` // APRS-IS login banner software name
 	SoftwareVersion string    `gorm:"not null;default:'0.1'" json:"software_version"`   // APRS-IS login banner version
 	// TxChannel governs IS->RF on this iGate. The messages-tx channel

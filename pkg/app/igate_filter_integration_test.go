@@ -205,7 +205,6 @@ func tfSetup(t *testing.T, baseFilter string, preseed []configstore.TacticalCall
 		Port:         14580,
 		TxChannel:    1,
 		RfChannel:    1,
-		MaxMsgHops:   2,
 		ServerFilter: baseFilter,
 	}); err != nil {
 		cancel()
@@ -781,4 +780,3 @@ func TestIgateFilterIntegration_TacticalMutations(t *testing.T) {
 		}
 	})
 }
-

@@ -24,7 +24,7 @@
     enabled: true, server: 'rotate.aprs2.net', port: '14580',
     server_filter: '', tx_channel: 0,
     simulation_mode: false, gate_rf_to_is: true, gate_is_to_rf: false,
-    rf_channel: 0, max_msg_hops: 2, software_name: 'graywolf', software_version: '0.1',
+    rf_channel: 0, is_tx_via: '', software_name: 'graywolf', software_version: '0.1',
   });
   let loading = $state(false);
 
@@ -69,7 +69,7 @@
     return { reason: cap?.reason || TX_REASON_FALLBACK };
   });
   let txBlockAllowsSave = $derived(form.enabled === false);
-  let saveBlocked = $derived(!!txBlock && !txBlockAllowsSave);
+  let saveBlocked = $derived((!!txBlock && !txBlockAllowsSave) || !!isTxViaError);
   const TX_CALLOUT_ID = 'igate-tx-callout';
   let calloutEl = $state(null);
 
@@ -95,6 +95,23 @@
       ? 'The `|` character is not valid APRS-IS filter syntax. Separate clauses with spaces.'
       : ''
   );
+
+  // Client mirror of ax25.ParseVia (pkg/ax25/address.go). The IS→RF
+  // via-path is a comma-separated list of AX.25 addresses; empty means
+  // direct. Surface the same error the server would return so the
+  // operator sees it before Save. Keep the rules in sync with ParseVia.
+  function validateIsTxVia(v) {
+    const elems = (v ?? '').split(',').map((e) => e.trim()).filter((e) => e !== '');
+    if (elems.length > 8) return 'Too many digipeaters (max 8).';
+    for (const e of elems) {
+      if (e.endsWith('*')) return `"${e}" must not include the "*" repeated marker.`;
+      const m = /^([A-Za-z0-9]{1,6})(?:-([0-9]{1,2}))?$/.exec(e);
+      if (!m) return `"${e}" is not a valid callsign-SSID.`;
+      if (m[2] !== undefined && Number(m[2]) > 15) return `"${e}" has an SSID above 15.`;
+    }
+    return '';
+  }
+  let isTxViaError = $derived(validateIsTxVia(form.is_tx_via));
 
   // Filters state
   let filters = $state([]);
@@ -281,7 +298,7 @@
           gate_rf_to_is: data.gate_rf_to_is ?? true,
           gate_is_to_rf: data.gate_is_to_rf ?? false,
           rf_channel: data.rf_channel,
-          max_msg_hops: data.max_msg_hops,
+          is_tx_via: data.is_tx_via ?? '',
           software_name: data.software_name,
           software_version: data.software_version,
         };
@@ -312,6 +329,10 @@
       toasts.error(serverFilterError);
       return false;
     }
+    if (isTxViaError) {
+      toasts.error(isTxViaError);
+      return false;
+    }
     return true;
   }
 
@@ -331,7 +352,7 @@
       gate_rf_to_is: form.gate_rf_to_is,
       gate_is_to_rf: form.gate_is_to_rf,
       rf_channel: form.rf_channel,
-      max_msg_hops: form.max_msg_hops,
+      is_tx_via: form.is_tx_via.trim(),
       software_name: form.software_name,
       software_version: form.software_version,
     };
@@ -625,6 +646,11 @@
               allowNone
               noneLabel="None (RX only)"
             />
+          {/snippet}
+        </FormField>
+        <FormField label="IS→RF Digipeater Path" id="ig-istxvia" error={isTxViaError} hint="Digipeater path applied to Internet-to-RF packets (like Direwolf's IGTXVIA), e.g. WIDE1-1,WIDE2-1. Leave empty to send direct — only stations in direct RF range hear the packet. Use a path only if your recipients need a digipeater to reach them.">
+          {#snippet children(describedBy)}
+            <Input id="ig-istxvia" bind:value={form.is_tx_via} placeholder="Direct (no path)" aria-describedby={describedBy} />
           {/snippet}
         </FormField>
         {#if txBlock}

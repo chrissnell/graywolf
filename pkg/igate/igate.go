@@ -116,6 +116,13 @@ type Config struct {
 	Rules []filters.Rule
 	// TxChannel is the radio channel IS->RF frames are submitted on.
 	TxChannel uint32
+	// IsTxVia is the literal digipeater via-path applied to the outer
+	// AX.25 frame of every IS->RF third-party downlink (the graywolf
+	// equivalent of Direwolf's IGTXVIA), e.g. "WIDE1-1,WIDE2-1". Empty
+	// means direct — no path — which targets only stations in direct RF
+	// range of the iGate. A malformed value is treated as direct and
+	// logged at New/SetIsTxVia time; see ax25.ParseVia for the syntax.
+	IsTxVia string
 	// ChannelModes resolves Channel.Mode at TX time. When the iGate's
 	// configured TxChannel is "packet"-mode, the IS->RF runtime gate
 	// drops the frame and logs a Warn (see handleISLine). Nil = treat
@@ -201,6 +208,13 @@ type Igate struct {
 	// a daemon restart. Reads on the IS→RF hot path are lock-free.
 	txChannel atomic.Uint32
 
+	// isTxVia holds the parsed IS→RF via-path (cfg.IsTxVia), mutable at
+	// runtime via SetIsTxVia so an iGate-config save can retarget the
+	// downlink path without a daemon restart. A nil pointer or a
+	// pointer to an empty slice both mean "direct". Reads on the IS→RF
+	// hot path are lock-free.
+	isTxVia atomic.Pointer[[]ax25.Address]
+
 	// inputCh fans IS->RF frames out to PacketInput consumers.
 	inputCh chan *aprs.InboundPacket
 
@@ -278,6 +292,15 @@ func New(cfg Config) (*Igate, error) {
 	ig.sessCtx.Store(&sessCtxHolder{ctx: context.Background()})
 	ig.simulation.Store(cfg.SimulationMode)
 	ig.txChannel.Store(cfg.TxChannel)
+	// Parse the IS→RF via-path once at construction. A malformed value
+	// (validated at save time, so normally unreachable) falls back to
+	// direct rather than refusing to start the whole iGate.
+	via, err := ax25.ParseVia(cfg.IsTxVia)
+	if err != nil {
+		logger.Warn("igate: invalid is_tx_via, sending IS→RF direct", "value", cfg.IsTxVia, "err", err)
+		via = nil
+	}
+	ig.isTxVia.Store(&via)
 	if err := ig.initMetrics(); err != nil {
 		return nil, err
 	}
@@ -498,7 +521,11 @@ func (ig *Igate) handleISLine(line string) {
 	// the packet originated on the internet side (prevents re-gating
 	// loops and stops receivers from treating the original sender as
 	// an RF-local station).
-	wrapped, err := wrapThirdParty(frame, ig.stationCallsign)
+	var via []ax25.Address
+	if v := ig.isTxVia.Load(); v != nil {
+		via = *v
+	}
+	wrapped, err := wrapThirdParty(frame, ig.stationCallsign, via)
 	if err != nil {
 		ig.logger.Debug("IS->RF drop: third-party wrap failed", "err", err)
 		return
@@ -836,6 +863,21 @@ func (ig *Igate) SetTxChannel(ch uint32) {
 	if prev != ch {
 		ig.logger.Info("igate tx channel updated", "previous", prev, "new", ch)
 	}
+}
+
+// SetIsTxVia updates the IS→RF digipeater via-path at runtime so an
+// iGate-config save can retarget the downlink path without a daemon
+// restart. The string is parsed with ax25.ParseVia; a malformed value
+// leaves the current path unchanged and logs a warning. Concurrent with
+// the IS→RF submit path; safe via atomic.
+func (ig *Igate) SetIsTxVia(s string) {
+	via, err := ax25.ParseVia(s)
+	if err != nil {
+		ig.logger.Warn("igate: invalid is_tx_via, keeping current path", "value", s, "err", err)
+		return
+	}
+	ig.isTxVia.Store(&via)
+	ig.logger.Info("igate is_tx_via updated", "via", s)
 }
 
 // SetSimulationMode toggles simulation-mode at runtime.

@@ -17,7 +17,7 @@ func TestWrapThirdPartyPositionPacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestWrapThirdPartyMessagePacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestWrapThirdPartyPreservesBinaryInfo(t *testing.T) {
 	}
 	inner.Info = []byte{'h', 0x00, 'i'}
 
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestWrapThirdPartyPreservesPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestWrapThirdPartyStripsInboundTCPIP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestWrapThirdPartyStripsInboundTCPIPHBit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewUIFrame: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestWrapThirdPartyStripsInboundTCPXX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ")
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -191,9 +191,39 @@ func TestWrapThirdPartyStripsInboundTCPXX(t *testing.T) {
 	}
 }
 
+// TestWrapThirdPartyAppliesVia verifies the operator-configured IS→RF
+// via-path lands on the OUTER frame (so digipeaters actually relay the
+// downlink) without disturbing the inner third-party header. This is the
+// fix for issue #489, where the outer path was hardcoded empty.
+func TestWrapThirdPartyAppliesVia(t *testing.T) {
+	inner, err := parseTNC2("W5ABC-7>APRS::KE7XYZ   :hello{1")
+	if err != nil {
+		t.Fatalf("parseTNC2: %v", err)
+	}
+	via, err := ax25.ParseVia("WIDE1-1,WIDE2-1")
+	if err != nil {
+		t.Fatalf("ParseVia: %v", err)
+	}
+	wrapped, err := wrapThirdParty(inner, "KE7XYZ", via)
+	if err != nil {
+		t.Fatalf("wrapThirdParty: %v", err)
+	}
+	if len(wrapped.Path) != 2 {
+		t.Fatalf("outer path len = %d, want 2: %v", len(wrapped.Path), wrapped.Path)
+	}
+	if wrapped.Path[0].String() != "WIDE1-1" || wrapped.Path[1].String() != "WIDE2-1" {
+		t.Fatalf("outer path = %v, want [WIDE1-1 WIDE2-1]", wrapped.Path)
+	}
+	// The via-path must not leak into the inner third-party header.
+	want := "}W5ABC-7>APRS,TCPIP,KE7XYZ*::KE7XYZ   :hello{1"
+	if string(wrapped.Info) != want {
+		t.Fatalf("inner info mismatch:\n got: %s\nwant: %s", wrapped.Info, want)
+	}
+}
+
 // TestWrapThirdPartyRejectsNilFrame checks the guard clauses.
 func TestWrapThirdPartyRejectsNilFrame(t *testing.T) {
-	if _, err := wrapThirdParty(nil, "KE7XYZ"); err == nil {
+	if _, err := wrapThirdParty(nil, "KE7XYZ", nil); err == nil {
 		t.Fatal("expected error for nil inner frame")
 	}
 }
@@ -205,10 +235,10 @@ func TestWrapThirdPartyRejectsEmptyCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	if _, err := wrapThirdParty(inner, ""); err == nil {
+	if _, err := wrapThirdParty(inner, "", nil); err == nil {
 		t.Fatal("expected error for empty igate callsign")
 	}
-	if _, err := wrapThirdParty(inner, "   "); err == nil {
+	if _, err := wrapThirdParty(inner, "   ", nil); err == nil {
 		t.Fatal("expected error for blank igate callsign")
 	}
 }

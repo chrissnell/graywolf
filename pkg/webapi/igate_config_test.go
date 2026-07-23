@@ -27,12 +27,52 @@ func TestIGateConfig_AcceptsTxCapableChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIGateConfig_RejectsInvalidIsTxVia verifies the handler rejects a
+// malformed IS→RF via-path on save (issue #489). Critically, is_tx_via
+// is validated unconditionally — even though this save leaves
+// server_filter unchanged (empty), which skips the server_filter
+// idempotent-guarded Validate() — so a bad path can never slip through
+// to the running iGate. A valid path then saves cleanly.
+func TestIGateConfig_RejectsInvalidIsTxVia(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+
+	if err := srv.store.UpsertStationConfig(ctx, configstore.StationConfig{Callsign: "N0CAL"}); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"is_tx_via":"WIDE1-1*","software_name":"graywolf","software_version":"0.1"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(bad))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid is_tx_via: expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	good := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":1,"is_tx_via":"WIDE1-1,WIDE2-1","software_name":"graywolf","software_version":"0.1"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(good))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid is_tx_via: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got, err := srv.store.GetIGateConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetIGateConfig: %v", err)
+	}
+	if got.IsTxVia != "WIDE1-1,WIDE2-1" {
+		t.Fatalf("persisted is_tx_via = %q, want WIDE1-1,WIDE2-1", got.IsTxVia)
 	}
 }
 
@@ -59,7 +99,7 @@ func TestIGateConfig_RejectsNonTxCapableChannel(t *testing.T) {
 	}
 
 	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":` +
-		strconv.FormatUint(uint64(rxCh.ID), 10) + `,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+		strconv.FormatUint(uint64(rxCh.ID), 10) + `,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -97,8 +137,7 @@ func TestIGateConfig_AllowsIdempotentOrphanFKs(t *testing.T) {
 	// migration / out-of-band-delete case.
 	if err := srv.store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
 		Enabled: true, Server: "rotate.aprs2.net", Port: 14580,
-		RfChannel: 99, TxChannel: 98, MaxMsgHops: 2,
-		SoftwareName: "graywolf", SoftwareVersion: "0.1",
+		RfChannel: 99, TxChannel: 98, SoftwareName: "graywolf", SoftwareVersion: "0.1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +146,7 @@ func TestIGateConfig_AllowsIdempotentOrphanFKs(t *testing.T) {
 	// pass-through). The operator might be saving a different field
 	// (server, server_filter, gate flags) and should not be blocked
 	// by the orphans they cannot see or edit.
-	body := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"rf_channel":99,"tx_channel":98,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"rf_channel":99,"tx_channel":98,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -118,7 +157,7 @@ func TestIGateConfig_AllowsIdempotentOrphanFKs(t *testing.T) {
 	// Repointing tx_channel to a NEW orphan must still 400. Idempotent
 	// pass-through must not become a backdoor for newly-introduced
 	// bad refs.
-	body2 := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"rf_channel":99,"tx_channel":77,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body2 := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"rf_channel":99,"tx_channel":77,"software_name":"graywolf","software_version":"0.1"}`
 	req2 := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body2))
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, req2)
@@ -146,13 +185,13 @@ func TestIGateConfig_AllowsIdempotentLegacyPipeFilter(t *testing.T) {
 	if err := srv.store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
 		Enabled: true, Server: "rotate.aprs2.net", Port: 14580,
 		ServerFilter: "g/NW5W | b/NW5W-12",
-		MaxMsgHops:   2, SoftwareName: "graywolf", SoftwareVersion: "0.1",
+		SoftwareName: "graywolf", SoftwareVersion: "0.1",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Echoing the persisted pipe-filter unchanged must succeed.
-	body := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"server_filter":"g/NW5W | b/NW5W-12","rf_channel":0,"tx_channel":0,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"server_filter":"g/NW5W | b/NW5W-12","rf_channel":0,"tx_channel":0,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -162,7 +201,7 @@ func TestIGateConfig_AllowsIdempotentLegacyPipeFilter(t *testing.T) {
 
 	// Changing server_filter to a *different* value that contains a
 	// pipe must still 400 — idempotent pass-through is not a backdoor.
-	body2 := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"server_filter":"new | clause","rf_channel":0,"tx_channel":0,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body2 := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"server_filter":"new | clause","rf_channel":0,"tx_channel":0,"software_name":"graywolf","software_version":"0.1"}`
 	req2 := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body2))
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, req2)
@@ -189,15 +228,14 @@ func TestIGateConfig_AllowsIdempotentOrphanTxChannelWhenEnabled(t *testing.T) {
 	// Seed: orphan tx_channel persisted with enabled=true.
 	if err := srv.store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
 		Enabled: true, Server: "rotate.aprs2.net", Port: 14580,
-		RfChannel: 0, TxChannel: 55, MaxMsgHops: 2,
-		SoftwareName: "graywolf", SoftwareVersion: "0.1",
+		RfChannel: 0, TxChannel: 55, SoftwareName: "graywolf", SoftwareVersion: "0.1",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Save with the same tx_channel and a different server — must pass
 	// despite enabled=true.
-	body := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"rf_channel":0,"tx_channel":55,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":true,"server":"noam.aprs2.net","port":14580,"rf_channel":0,"tx_channel":55,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -222,7 +260,7 @@ func TestIGateConfig_RejectsPipeInServerFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"server_filter":"g/NW5W | b/NW5W-12","rf_channel":1,"tx_channel":1,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"server_filter":"g/NW5W | b/NW5W-12","rf_channel":1,"tx_channel":1,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -254,7 +292,7 @@ func TestIGateConfig_AllowsNonTxCapableChannelWhenDisabled(t *testing.T) {
 	}
 
 	body := `{"enabled":false,"server":"rotate.aprs2.net","port":14580,"rf_channel":1,"tx_channel":` +
-		strconv.FormatUint(uint64(rxCh.ID), 10) + `,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+		strconv.FormatUint(uint64(rxCh.ID), 10) + `,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -279,7 +317,7 @@ func TestIGateConfig_NoChannelsISOnlySaveSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":0,"tx_channel":0,"max_msg_hops":2,"software_name":"graywolf","software_version":"0.1"}`
+	body := `{"enabled":true,"server":"rotate.aprs2.net","port":14580,"rf_channel":0,"tx_channel":0,"software_name":"graywolf","software_version":"0.1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/igate/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

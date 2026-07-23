@@ -59,6 +59,40 @@ func ParseAddress(s string) (Address, error) {
 	return a, nil
 }
 
+// ParseVia parses a comma-separated APRS digipeater via-path such as
+// "WIDE1-1,WIDE2-1" into the Address slice used for the Path of an
+// outgoing UI frame. Whitespace around each element is trimmed and
+// empty elements are skipped, so "" (and "  ,  ") yields a nil, direct
+// path. Each element must be a valid AX.25 address; a trailing '*'
+// (the "has-been-repeated" marker) is rejected because a via-path we
+// are about to transmit has not been repeated yet. At most
+// MaxRepeaters elements are permitted.
+func ParseVia(s string) ([]Address, error) {
+	fields := strings.Split(s, ",")
+	out := make([]Address, 0, len(fields))
+	for _, f := range fields {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if strings.HasSuffix(f, "*") {
+			return nil, fmt.Errorf("ax25: via path element %q must not carry the '*' repeated marker", f)
+		}
+		a, err := ParseAddress(f)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	if len(out) > MaxRepeaters {
+		return nil, fmt.Errorf("ax25: via path has %d elements, max %d", len(out), MaxRepeaters)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
 // String renders "CALL[-SSID][*]" (trailing '*' if Repeated is set).
 func (a Address) String() string {
 	var sb strings.Builder

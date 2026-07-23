@@ -120,7 +120,6 @@ func newMessagesTestServer(t *testing.T, svc MessagesService) (*Server, *http.Se
 		Port:       14580,
 		TxChannel:  1,
 		RfChannel:  1,
-		MaxMsgHops: 2,
 		GateRfToIs: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -613,7 +612,7 @@ func TestSendMessage_InviteEndToEndPersistsRow(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 	if err := store.UpsertIGateConfig(ctx, &configstore.IGateConfig{
 		Server: "rotate.aprs2.net", Port: 14580,
-		TxChannel: 1, RfChannel: 1, MaxMsgHops: 2, GateRfToIs: true,
+		TxChannel: 1, RfChannel: 1, GateRfToIs: true,
 	}); err != nil {
 		t.Fatal(err)
 	}

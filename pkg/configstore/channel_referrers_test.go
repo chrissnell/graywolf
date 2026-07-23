@@ -83,8 +83,7 @@ func seedChannelWithDependents(ctx context.Context, t *testing.T, s *Store) (chI
 	// the target channel (exercises both emit paths).
 	igc := &IGateConfig{
 		Enabled: false, Server: "rotate.aprs2.net", Port: 14580,
-		RfChannel: ch.ID, TxChannel: ch.ID, MaxMsgHops: 2,
-		SoftwareName: "graywolf", SoftwareVersion: "0.1",
+		RfChannel: ch.ID, TxChannel: ch.ID, SoftwareName: "graywolf", SoftwareVersion: "0.1",
 	}
 	if err := s.UpsertIGateConfig(ctx, igc); err != nil {
 		t.Fatalf("seed igate config: %v", err)

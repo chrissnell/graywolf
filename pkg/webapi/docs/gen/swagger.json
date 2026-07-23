@@ -10039,8 +10039,8 @@
                 "gate_rf_to_is": {
                     "type": "boolean"
                 },
-                "max_msg_hops": {
-                    "type": "integer"
+                "is_tx_via": {
+                    "type": "string"
                 },
                 "port": {
                     "type": "integer"
@@ -10083,8 +10083,8 @@
                 "id": {
                     "type": "integer"
                 },
-                "max_msg_hops": {
-                    "type": "integer"
+                "is_tx_via": {
+                    "type": "string"
                 },
                 "port": {
                     "type": "integer"
