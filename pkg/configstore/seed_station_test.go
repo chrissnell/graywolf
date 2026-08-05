@@ -31,15 +31,18 @@ func TestUpsertStationConfigNormalizes(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
-	if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "  ke7xyz-9  "}); err != nil {
+	if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "  ke7xyz  ", SSID: 9}); err != nil {
 		t.Fatalf("UpsertStationConfig: %v", err)
 	}
 	got, err := s.GetStationConfig(ctx)
 	if err != nil {
 		t.Fatalf("GetStationConfig: %v", err)
 	}
-	if got.Callsign != "KE7XYZ-9" {
-		t.Fatalf("expected normalized KE7XYZ-9, got %q", got.Callsign)
+	if got.Callsign != "KE7XYZ" {
+		t.Fatalf("expected normalized KE7XYZ, got %q", got.Callsign)
+	}
+	if got.SSID != 9 {
+		t.Fatalf("expected SSID 9, got %d", got.SSID)
 	}
 
 	// A second upsert with ID=0 must update in place.
@@ -75,15 +78,15 @@ func TestResolveStationCallsign(t *testing.T) {
 
 	t.Run("happy", func(t *testing.T) {
 		s := newTestStore(t)
-		if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "ke7xyz-9"}); err != nil {
+		if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "KE7XYZ", SSID: 9}); err != nil {
 			t.Fatalf("UpsertStationConfig: %v", err)
 		}
 		got, err := s.ResolveStationCallsign(ctx)
 		if err != nil {
 			t.Fatalf("ResolveStationCallsign: %v", err)
 		}
-		if got != "KE7XYZ-9" {
-			t.Fatalf("expected KE7XYZ-9, got %q", got)
+		if got != "KE7XYZ" {
+			t.Fatalf("expected KE7XYZ, got %q", got)
 		}
 	})
 
@@ -106,7 +109,7 @@ func TestResolveStationCallsign(t *testing.T) {
 
 	t.Run("n0call", func(t *testing.T) {
 		s := newTestStore(t)
-		if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "N0CALL-7"}); err != nil {
+		if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "N0CALL"}); err != nil {
 			t.Fatalf("UpsertStationConfig: %v", err)
 		}
 		_, err := s.ResolveStationCallsign(ctx)
@@ -146,7 +149,7 @@ func TestSeedStationConfigIdempotent(t *testing.T) {
 	s := newTestStore(t)
 
 	// Plant a user-set row first.
-	if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "VANITY-1"}); err != nil {
+	if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "VANITY", SSID: 1}); err != nil {
 		t.Fatalf("UpsertStationConfig: %v", err)
 	}
 	// Now add a beacon that *would* be chosen if the seeder ran on an
@@ -169,8 +172,8 @@ func TestSeedStationConfigIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStationConfig: %v", err)
 	}
-	if got.Callsign != "VANITY-1" {
-		t.Fatalf("seed clobbered user row: expected VANITY-1, got %q", got.Callsign)
+	if got.Callsign != "VANITY" {
+		t.Fatalf("seed clobbered user row: expected VANITY, got %q", got.Callsign)
 	}
 }
 
@@ -448,3 +451,71 @@ func TestUpsertIGateConfigZeroesCallsignAndPasscode(t *testing.T) {
 		t.Fatalf("expected orphan columns re-zeroed after upsert, got callsign=%q passcode=%q", row.Callsign, row.Passcode)
 	}
 }
+
+func TestResolveStationCallsignFull(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("ssid_zero_omits_suffix", func(t *testing.T) {
+		s := newTestStore(t)
+		if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "KE7XYZ", SSID: 0}); err != nil {
+			t.Fatalf("UpsertStationConfig: %v", err)
+		}
+		got, err := s.ResolveStationCallsignFull(ctx)
+		if err != nil {
+			t.Fatalf("ResolveStationCallsignFull: %v", err)
+		}
+		if got != "KE7XYZ" {
+			t.Errorf("SSID=0: got %q, want KE7XYZ (APRS convention omits -0)", got)
+		}
+	})
+
+	t.Run("ssid_nonzero_appends_suffix", func(t *testing.T) {
+		s := newTestStore(t)
+		if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "KE7XYZ", SSID: 7}); err != nil {
+			t.Fatalf("UpsertStationConfig: %v", err)
+		}
+		got, err := s.ResolveStationCallsignFull(ctx)
+		if err != nil {
+			t.Fatalf("ResolveStationCallsignFull: %v", err)
+		}
+		if got != "KE7XYZ-7" {
+			t.Errorf("SSID=7: got %q, want KE7XYZ-7", got)
+		}
+	})
+
+	t.Run("empty_returns_error", func(t *testing.T) {
+		s := newTestStore(t)
+		_, err := s.ResolveStationCallsignFull(ctx)
+		if !errors.Is(err, callsign.ErrCallsignEmpty) {
+			t.Errorf("empty store: got %v, want ErrCallsignEmpty", err)
+		}
+	})
+}
+
+func TestUpsertStationConfig_RejectsEmbeddedSSID(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "KE7XYZ-9"}); err == nil {
+		t.Error("expected error for callsign with embedded SSID, got nil")
+	}
+}
+
+func TestUpsertStationConfig_RejectsCallsignTooLong(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "ABCDEFG"}); err == nil {
+		t.Error("expected error for 7-char callsign, got nil")
+	}
+}
+
+func TestUpsertStationConfig_RejectsSSIDOutOfRange(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	if err := s.UpsertStationConfig(ctx, StationConfig{Callsign: "KE7XYZ", SSID: 16}); err == nil {
+		t.Error("expected error for SSID=16, got nil")
+	}
+}
+

@@ -4,12 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"gorm.io/gorm"
 
 	"github.com/chrissnell/graywolf/pkg/callsign"
 )
+
+// fccCallsignRe matches a valid FCC amateur callsign base: 1–6 uppercase
+// alphanumeric characters with no dash. An empty string passes — the
+// clear-callsign path is intentional.
+var fccCallsignRe = regexp.MustCompile(`^[A-Z0-9]{1,6}$`)
 
 // ---------------------------------------------------------------------------
 // StationConfig (singleton)
@@ -38,8 +44,18 @@ func (s *Store) GetStationConfig(ctx context.Context) (StationConfig, error) {
 // Save updates in place. Normalization at the store boundary means
 // every caller — including future ones — sees a canonical value
 // without having to remember to uppercase on write.
+//
+// Callsign must satisfy ^[A-Z0-9]{1,6}$ (FCC base callsign: alphanumeric,
+// max 6 chars, no embedded SSID dash). Empty string is accepted as the
+// intentional clear-callsign path. SSID must be 0–15.
 func (s *Store) UpsertStationConfig(ctx context.Context, c StationConfig) error {
 	c.Callsign = strings.ToUpper(strings.TrimSpace(c.Callsign))
+	if c.Callsign != "" && !fccCallsignRe.MatchString(c.Callsign) {
+		return fmt.Errorf("callsign %q is not valid: must be 1–6 alphanumeric characters with no SSID suffix", c.Callsign)
+	}
+	if c.SSID < 0 || c.SSID > 15 {
+		return fmt.Errorf("SSID %d is out of range: must be 0–15", c.SSID)
+	}
 	if c.ID == 0 {
 		existing, err := s.GetStationConfig(ctx)
 		if err != nil {
@@ -71,6 +87,30 @@ func (s *Store) ResolveStationCallsign(ctx context.Context) (string, error) {
 		return "", callsign.ErrCallsignN0Call
 	}
 	return strings.ToUpper(trimmed), nil
+}
+
+// ResolveStationCallsignFull returns the station callsign with its SSID
+// appended for use in RF transmissions, beacons, digipeater identity, and
+// message routing. SSID=0 follows the APRS convention of omitting the
+// suffix (returns bare callsign); SSID=1–15 appends "-N". Returns the same
+// sentinel errors as ResolveStationCallsign when the callsign is unset.
+func (s *Store) ResolveStationCallsignFull(ctx context.Context) (string, error) {
+	c, err := s.GetStationConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	trimmed := strings.TrimSpace(c.Callsign)
+	if trimmed == "" {
+		return "", callsign.ErrCallsignEmpty
+	}
+	if callsign.IsN0Call(trimmed) {
+		return "", callsign.ErrCallsignN0Call
+	}
+	base := strings.ToUpper(trimmed)
+	if c.SSID == 0 {
+		return base, nil
+	}
+	return fmt.Sprintf("%s-%d", base, c.SSID), nil
 }
 
 // seedStationConfig seeds the StationConfig singleton from legacy

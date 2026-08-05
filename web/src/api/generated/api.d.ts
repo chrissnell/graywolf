@@ -3313,9 +3313,11 @@ export interface components {
         };
         "dto.StationConfigRequest": {
             callsign?: string;
+            ssid?: number;
         };
         "dto.StationConfigResponse": {
             callsign?: string;
+            ssid?: number;
             disabled?: string[];
         };
         "dto.TacticalCallsignRequest": {

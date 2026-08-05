@@ -1,5 +1,11 @@
 package dto
 
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
 // StationConfigRequest is the body accepted by PUT /api/station/config.
 // An empty Callsign is permitted and triggers the clear-with-auto-disable
 // flow defined in the centralized station-callsign plan (D7 rule 2):
@@ -7,14 +13,24 @@ package dto
 // they were previously true.
 type StationConfigRequest struct {
 	Callsign string `json:"callsign"`
+	SSID     int    `json:"ssid"`
 }
 
-// Validate is a no-op. Any non-empty callsign that fails shape
-// validation is normalized (trim + uppercase) at the store boundary
-// via configstore.UpsertStationConfig; completely invalid strings
-// (internal whitespace etc.) are persisted verbatim and filtered at
-// the resolve site. This mirrors other singleton request DTOs.
-func (r StationConfigRequest) Validate() error { return nil }
+// Validate checks that Callsign is alphanumeric (no dash, max 6 chars)
+// and SSID is 0–15. Empty Callsign is allowed (clear-callsign path).
+func (r StationConfigRequest) Validate() error {
+	if r.SSID < 0 || r.SSID > 15 {
+		return fmt.Errorf("ssid %d is out of range: must be 0–15", r.SSID)
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(r.Callsign))
+	if normalized != "" && !stationCallsignRe.MatchString(normalized) {
+		return fmt.Errorf("callsign %q is not valid: must be 1–6 alphanumeric characters with no SSID suffix", r.Callsign)
+	}
+	return nil
+}
+
+// stationCallsignRe matches a valid FCC amateur callsign base (no SSID).
+var stationCallsignRe = regexp.MustCompile(`^[A-Z0-9]{1,6}$`)
 
 // StationConfigResponse is the body returned by both GET and PUT on
 // /api/station/config. Disabled is populated only on the PUT path
@@ -27,5 +43,6 @@ func (r StationConfigRequest) Validate() error { return nil }
 // cleared the station callsign" notice.
 type StationConfigResponse struct {
 	Callsign string   `json:"callsign"`
+	SSID     int      `json:"ssid"`
 	Disabled []string `json:"disabled,omitempty"`
 }

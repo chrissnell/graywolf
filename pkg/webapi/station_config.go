@@ -57,7 +57,7 @@ func (s *Server) getStationConfig(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "get station config", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.StationConfigResponse{Callsign: c.Callsign})
+	writeJSON(w, http.StatusOK, dto.StationConfigResponse{Callsign: c.Callsign, SSID: c.SSID})
 }
 
 // updateStationConfig replaces the singleton station config. When the
@@ -109,7 +109,7 @@ func (s *Server) updateStationConfig(w http.ResponseWriter, r *http.Request) {
 	var disabled []string
 	txErr := s.store.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Upsert StationConfig.
-		if err := upsertStationConfigTx(tx, normalized); err != nil {
+		if err := upsertStationConfigTx(tx, normalized, req.SSID); err != nil {
 			return err
 		}
 		if !clearing {
@@ -163,6 +163,7 @@ func (s *Server) updateStationConfig(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, dto.StationConfigResponse{
 		Callsign: c.Callsign,
+		SSID:     c.SSID,
 		Disabled: disabled,
 	})
 }
@@ -171,13 +172,13 @@ func (s *Server) updateStationConfig(w http.ResponseWriter, r *http.Request) {
 // against an open transaction. Duplicates the normalize + adopt-existing-id
 // logic from pkg/configstore/seed_station.go since the store's exported
 // method doesn't accept a *gorm.DB.
-func upsertStationConfigTx(tx *gorm.DB, normalized string) error {
+func upsertStationConfigTx(tx *gorm.DB, normalized string, ssid int) error {
 	var existing configstore.StationConfig
 	err := tx.Order("id").First(&existing).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	row := configstore.StationConfig{Callsign: normalized}
+	row := configstore.StationConfig{Callsign: normalized, SSID: ssid}
 	if existing.ID != 0 {
 		row.ID = existing.ID
 	}

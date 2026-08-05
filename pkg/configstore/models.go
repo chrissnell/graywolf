@@ -482,6 +482,7 @@ type AX25TranscriptEntry struct {
 type StationConfig struct {
 	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Callsign  string    `gorm:"not null;default:''" json:"callsign"`
+	SSID      int       `gorm:"column:ssid;not null;default:0" json:"ssid"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 }

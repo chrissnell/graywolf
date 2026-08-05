@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Box } from '@chrissnell/chonky-ui';
+  import { Button, Input, Box, Select } from '@chrissnell/chonky-ui';
   import { api, ApiError } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -11,6 +11,7 @@
   // focus/blur and mid-edit keystrokes don't fight the user. Visual
   // uppercase comes from `text-transform: uppercase` on the input.
   let callsign = $state('');
+  let ssid = $state(0);
   let loading = $state(false);
   let saving = $state(false);
   let loadError = $state('');
@@ -32,6 +33,7 @@
     try {
       const data = await api.get('/station/config');
       callsign = data?.callsign ?? '';
+      ssid = data?.ssid ?? 0;
     } catch (err) {
       // Legacy `api.js` throws ApiError on non-2xx; network failures
       // fall through to its mock data path. Either way, surface a
@@ -58,11 +60,10 @@
     loadError = '';
     const normalized = callsign.trim().toUpperCase();
     try {
-      const res = await api.put('/station/config', { callsign: normalized });
-      // Mirror the server's canonicalized value back into the form so
-      // the user sees exactly what's stored. Preserves "" if they
-      // cleared it.
+      const res = await api.put('/station/config', { callsign: normalized, ssid });
+      // Mirror the server's canonicalized values back into the form.
       callsign = res?.callsign ?? '';
+      ssid = res?.ssid ?? 0;
       // Surface auto-disable side-effect inline. `disabled` is omitted
       // when empty (per Phase 3B handoff), so guard on length.
       if (Array.isArray(res?.disabled) && res.disabled.length > 0) {
@@ -103,7 +104,7 @@
 
 <PageHeader
   title="Station Callsign"
-  subtitle="This callsign is used for APRS-IS login, messages, and as the default for beacons and the digipeater."
+  subtitle="APRS-IS login uses the base callsign only; beacons, messages, and RF use CALLSIGN-SSID (SSID 0 omits the suffix per APRS convention)."
 />
 
 <Box>
@@ -118,9 +119,21 @@
           id="station-callsign"
           class="callsign-input"
           bind:value={callsign}
-          placeholder="e.g. KE7XYZ-9"
+          placeholder="e.g. KE7XYZ"
           autocomplete="off"
           spellcheck={false}
+          maxlength="6"
+          disabled={loading}
+          aria-describedby={describedBy}
+        />
+      {/snippet}
+    </FormField>
+    <FormField label="SSID" id="station-ssid">
+      {#snippet children(describedBy)}
+        <Select
+          value={String(ssid)}
+          onValueChange={(v) => { ssid = Number(v); }}
+          options={Array.from({ length: 16 }, (_, i) => ({ value: String(i), label: String(i) }))}
           disabled={loading}
           aria-describedby={describedBy}
         />

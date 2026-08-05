@@ -1067,7 +1067,7 @@ func (a *App) wireMessages(ctx context.Context) error {
 	// self-addressed traffic". A proper operator-facing error is surfaced
 	// at the compose path (see Service.SendMessage's OurCall=="" check).
 	ourCall := func() string {
-		c, err := a.store.ResolveStationCallsign(context.Background())
+		c, err := a.store.ResolveStationCallsignFull(context.Background())
 		if err != nil {
 			return ""
 		}
@@ -1149,7 +1149,7 @@ func (a *App) wireActions(ctx context.Context) error {
 		return nil
 	}
 	ourCall := func() string {
-		c, err := a.store.ResolveStationCallsign(context.Background())
+		c, err := a.store.ResolveStationCallsignFull(context.Background())
 		if err != nil {
 			return ""
 		}
@@ -2266,7 +2266,7 @@ func (a *App) digipeaterComponent() namedComponent {
 		// the digipeater and log — the per-frame guard in pkg/digipeater
 		// would drop frames anyway, but refusing to flip Enabled=true is
 		// cleaner and avoids the WARN-per-frame flood.
-		stationCall, _ := a.store.ResolveStationCallsign(ctx)
+		stationCall, _ := a.store.ResolveStationCallsignFull(ctx)
 		resolved, err := callsign.Resolve(cfg.MyCall, stationCall)
 		if err != nil {
 			a.logger.Warn("digipeater will not be enabled: station callsign unset or N0CALL",
@@ -2426,7 +2426,7 @@ func (a *App) loadBeaconConfigs(ctx context.Context, source string) []beacon.Con
 	// relying on the station fallback fail with an error in
 	// beaconConfigFromStore and are skipped individually (D6 —
 	// "one bad beacon does not kill the scheduler").
-	stationCall, _ := a.store.ResolveStationCallsign(ctx)
+	stationCall, _ := a.store.ResolveStationCallsignFull(ctx)
 	var configs []beacon.Config
 	for _, b := range stored {
 		bc, err := beaconConfigFromStore(b, smart, stationCall)

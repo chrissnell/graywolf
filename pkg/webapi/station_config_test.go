@@ -55,7 +55,7 @@ func TestGetStationConfig_ReturnsStoredValue(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	if err := srv.store.UpsertStationConfig(context.Background(),
-		configstore.StationConfig{Callsign: "ke7xyz-9"}); err != nil {
+		configstore.StationConfig{Callsign: "KE7XYZ", SSID: 9}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -70,8 +70,11 @@ func TestGetStationConfig_ReturnsStoredValue(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Callsign != "KE7XYZ-9" {
-		t.Errorf("Callsign = %q, want KE7XYZ-9", resp.Callsign)
+	if resp.Callsign != "KE7XYZ" {
+		t.Errorf("Callsign = %q, want KE7XYZ", resp.Callsign)
+	}
+	if resp.SSID != 9 {
+		t.Errorf("SSID = %d, want 9", resp.SSID)
 	}
 }
 
@@ -87,7 +90,7 @@ func TestPutStationConfig_NormalizesCallsign(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	body := `{"callsign":"ke7xyz-9"}`
+	body := `{"callsign":"ke7xyz","ssid":9}`
 	req := httptest.NewRequest(http.MethodPut, "/api/station/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -99,8 +102,11 @@ func TestPutStationConfig_NormalizesCallsign(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Callsign != "KE7XYZ-9" {
-		t.Errorf("Callsign = %q, want KE7XYZ-9", resp.Callsign)
+	if resp.Callsign != "KE7XYZ" {
+		t.Errorf("Callsign = %q, want KE7XYZ", resp.Callsign)
+	}
+	if resp.SSID != 9 {
+		t.Errorf("SSID = %d, want 9", resp.SSID)
 	}
 	if len(resp.Disabled) != 0 {
 		t.Errorf("Disabled = %v, want empty", resp.Disabled)
@@ -110,8 +116,11 @@ func TestPutStationConfig_NormalizesCallsign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Callsign != "KE7XYZ-9" {
-		t.Errorf("stored Callsign = %q, want KE7XYZ-9", got.Callsign)
+	if got.Callsign != "KE7XYZ" {
+		t.Errorf("stored Callsign = %q, want KE7XYZ", got.Callsign)
+	}
+	if got.SSID != 9 {
+		t.Errorf("stored SSID = %d, want 9", got.SSID)
 	}
 }
 
@@ -125,7 +134,7 @@ func TestPutStationConfig_EmptyClearsAndAutoDisables(t *testing.T) {
 
 	// Seed: station callsign set, iGate + Digi both enabled.
 	if err := srv.store.UpsertStationConfig(ctx,
-		configstore.StationConfig{Callsign: "KE7XYZ-9"}); err != nil {
+		configstore.StationConfig{Callsign: "KE7XYZ", SSID: 9}); err != nil {
 		t.Fatal(err)
 	}
 	if err := srv.store.UpsertIGateConfig(ctx, &configstore.IGateConfig{Enabled: true}); err != nil {
@@ -208,7 +217,7 @@ func TestPutStationConfig_N0CallAutoDisables(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"callsign":"N0CALL-7"}`
+	body := `{"callsign":"N0CALL","ssid":7}`
 	req := httptest.NewRequest(http.MethodPut, "/api/station/config", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -220,11 +229,11 @@ func TestPutStationConfig_N0CallAutoDisables(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	// The stored value is the normalized "N0CALL-7" — the auto-
-	// disable fires because IsN0Call is true, but we don't wipe the
-	// stored string (user sees what they typed on the next GET).
-	if resp.Callsign != "N0CALL-7" {
-		t.Errorf("Callsign = %q, want N0CALL-7", resp.Callsign)
+	if resp.Callsign != "N0CALL" {
+		t.Errorf("Callsign = %q, want N0CALL", resp.Callsign)
+	}
+	if resp.SSID != 7 {
+		t.Errorf("SSID = %d, want 7", resp.SSID)
 	}
 	if len(resp.Disabled) != 1 || resp.Disabled[0] != "igate" {
 		t.Errorf("Disabled = %v, want [igate]", resp.Disabled)
@@ -265,7 +274,7 @@ func TestPutIGateConfig_EnableWithStationReturns200(t *testing.T) {
 	ctx := context.Background()
 
 	if err := srv.store.UpsertStationConfig(ctx,
-		configstore.StationConfig{Callsign: "KE7XYZ-9"}); err != nil {
+		configstore.StationConfig{Callsign: "KE7XYZ", SSID: 9}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -374,7 +383,7 @@ func TestPutDigipeaterConfig_EnableWithStationReturns200(t *testing.T) {
 	ctx := context.Background()
 
 	if err := srv.store.UpsertStationConfig(ctx,
-		configstore.StationConfig{Callsign: "KE7XYZ-9"}); err != nil {
+		configstore.StationConfig{Callsign: "KE7XYZ", SSID: 9}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,7 +421,7 @@ func TestPutDigipeaterConfig_MyCallOverrideSemantics(t *testing.T) {
 	ctx := context.Background()
 
 	if err := srv.store.UpsertStationConfig(ctx,
-		configstore.StationConfig{Callsign: "KE7XYZ-9"}); err != nil {
+		configstore.StationConfig{Callsign: "KE7XYZ", SSID: 9}); err != nil {
 		t.Fatal(err)
 	}
 

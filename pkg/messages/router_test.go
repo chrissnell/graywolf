@@ -432,6 +432,8 @@ func TestMatchAddresseeSSIDAware(t *testing.T) {
 		{"bare base call for ssid station", "K0TFU-1", "K0TFU", true, false},
 		{"ssid station for bare our call", "K0TFU", "K0TFU-1", false, false},
 		{"exact bare match", "K0TFU", "K0TFU", true, false},
+		{"ssid_zero equiv bare our call", "K0TFU", "K0TFU-0", true, false},
+		{"ssid_zero not equiv when our has ssid", "K0TFU-1", "K0TFU-0", false, false},
 		{"case insensitive", "k0tfu-1", "k0tfu-1", true, false},
 		{"different base", "K0TFU-1", "W1ABC", false, false},
 		{"tactical alias", "K0TFU-1", "NET", true, true},
