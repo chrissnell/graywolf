@@ -18,6 +18,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
+	"github.com/chrissnell/graywolf/pkg/historydb"
 	"github.com/chrissnell/graywolf/pkg/igate"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/kiss"
@@ -72,6 +73,9 @@ type App struct {
 	metrics      *metrics.Metrics
 	plog         *packetlog.Log
 	stationCache *stationcache.PersistentCache
+	// histdb is the history database; non-nil when the position log is
+	// enabled and the DB opened successfully. Updated by reconfigurePositionLog.
+	histdb       *historydb.DB
 	bridge       *modembridge.Bridge
 	gov          *txgovernor.Governor
 	// ax25Mgr owns the per-process LAPB session table for the
