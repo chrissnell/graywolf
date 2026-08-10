@@ -29,6 +29,7 @@
   import Logs from './routes/Logs.svelte';
   import SystemLogs from './routes/SystemLogs.svelte';
   import LiveMapV2 from './routes/LiveMapV2.svelte';
+  import Stations from './routes/Stations.svelte';
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
   import MapsSettings from './routes/MapsSettings.svelte';
@@ -42,6 +43,7 @@
     '/login': Login,
     '/': Dashboard,
     '/map': LiveMapV2,
+    '/stations': Stations,
     '/messages': Messages,
     '/messages/*': Messages,
     '/terminal': Terminal,
