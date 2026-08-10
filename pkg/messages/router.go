@@ -346,6 +346,11 @@ func (r *Router) classify(ctx context.Context, pkt *aprs.DecodedAPRSPacket) {
 	// caller's pkt is not mutated (the APRS fan-out shares packets
 	// across outputs).
 	effSource, effMsg := unwrapThirdParty(pkt)
+	// Trim any trailing whitespace or carriage return/newline characters from the message ID.
+	if effMsg.MessageID != "" {
+		effMsg.MessageID = strings.TrimRight(effMsg.MessageID, " \r\n")
+		effMsg.ReplyAck = strings.TrimRight(effMsg.ReplyAck, " \r\n")
+	}
 
 	source := strings.ToUpper(strings.TrimSpace(effSource))
 
@@ -857,6 +862,11 @@ func callAddressedToUs(addressee, ourCall string) bool {
 	// A bare base-call address (no SSID) is generic: any station sharing
 	// that base call answers it. addr has no '-', so addr == baseCall(addr).
 	if !strings.ContainsRune(addr, '-') && addr == baseCall(our) {
+		return true
+	}
+	// APRS convention: SSID-0 and the bare callsign are the same station.
+	// Match addr="CALL-0" when our="CALL" (configured with SSID=0).
+	if addr == baseCall(our)+"-0" {
 		return true
 	}
 	return false
