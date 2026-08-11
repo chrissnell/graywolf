@@ -108,6 +108,7 @@
   let heatmapLayer = null;
   let heatmapTimer = null;
   let fixedPointsLayer = null;
+  let myLocationControl = null;
 
   // Bumping this key fully remounts <MaplibreMap>, which is how we recover
   // from a permanent WebGL context loss (graywolf#461): the map component's
@@ -625,6 +626,31 @@
     if (mapRef) openStationPopup(mapRef, target);
   }
 
+  // Custom MapLibre IControl: single-button group placed below the NavigationControl
+  // at top-right that flies the camera to the operator's current position.
+  class MyLocationControl {
+    #container = null;
+    #onClick;
+    constructor(onClick) { this.#onClick = onClick; }
+    onAdd() {
+      this.#container = document.createElement('div');
+      this.#container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.title = 'Go to my position';
+      btn.setAttribute('aria-label', 'Go to my position');
+      btn.className = 'gw-my-location-btn';
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>';
+      btn.addEventListener('click', this.#onClick);
+      this.#container.appendChild(btn);
+      return this.#container;
+    }
+    onRemove() {
+      this.#container?.parentNode?.removeChild(this.#container);
+      this.#container = null;
+    }
+  }
+
   function onMapReady(map) {
     // On a context-loss remount (graywolf#461) the previous generation's
     // layers, popups and station-poll are still live; tear them down before
@@ -735,6 +761,12 @@
     fixedPointsStore.load().catch((err) => {
       toasts.error(`Could not load fixed points: ${err.message}`);
     });
+    myLocationControl = new MyLocationControl(() => {
+      const my = dataStore.myPosition;
+      if (!my) return;
+      map.easeTo({ center: [my.lon, my.lat], zoom: MY_POSITION_ZOOM, duration: 600 });
+    });
+    map.addControl(myLocationControl, 'top-right');
     myPositionLayer = mountMyPositionLayer(map, () => dataStore.myPosition, {
       onMarkerEnter: () => {
         if (activePopup) return;
@@ -1263,6 +1295,7 @@
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
     fixedPointsLayer?.destroy();
+    if (myLocationControl) { mapRef?.removeControl(myLocationControl); myLocationControl = null; }
     radarLayer = null;
     frontsLayer = null;
     heatmapLayer = null;
@@ -1928,6 +1961,15 @@
      icon and vertically centered, so its width doesn't shift the icon
      off-target. align-items:flex-end right-justifies the temp chip to the
      callsign's right edge regardless of callsign length. */
+  /* "Go to my position" button inside MapLibre's ctrl-group. The outer
+     div/button sizing comes from maplibre-gl.css (.maplibregl-ctrl-group button);
+     we just center the SVG icon inside. */
+  :global(.gw-my-location-btn) {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
   :global(.gw-station-marker) {
     width: 21px;
     height: 21px;
