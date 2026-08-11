@@ -970,7 +970,7 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 	}
 	a.plog.Record(packetlog.Entry{
 		Channel:   uint32(pkt.Channel),
-		Direction: packetlog.DirRX,
+		Direction: packetlog.DirIS,
 		Source:    "igate-is",
 		Raw:       pkt.Raw,
 		Display:   line,
