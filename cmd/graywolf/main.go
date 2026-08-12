@@ -85,6 +85,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	stopSleep := preventSystemSleep(logger)
+	defer stopSleep()
+
 	if err := app.New(cfg, logger).Run(ctx); err != nil {
 		logger.Error("graywolf exited with error", "err", err)
 		os.Exit(1)
