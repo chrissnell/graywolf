@@ -578,6 +578,161 @@
     </div>
 
     <!-- ============================================================ -->
+
+    <div class="config-card" id="lora-spi-hat-kiss">
+      <div class="config-card-header">LoRa SPI HATs (SX1262 / SX127x / RFM95) + Raspberry Pi &mdash; LoRa-APRS via KISS TNC</div>
+      <div class="config-card-body">
+        <div class="config-section">
+          <div class="config-section-label">System</div>
+          <table>
+            <tbody>
+              <tr><td><strong>OS</strong></td><td>Raspberry Pi OS (Debian 13 &ndash; trixie), 64-bit</td></tr>
+              <tr><td><strong>Hardware</strong></td><td>Raspberry Pi (field-tested on Zero 2W and Pi 5 16GB; any 40-pin Pi)</td></tr>
+              <tr><td><strong>Radio</strong></td><td>LoRa HAT on the Pi&rsquo;s SPI bus (see below)</td></tr>
+              <tr><td><strong>TNC</strong></td><td><a href="https://github.com/makrohard/loraham-kiss-tnc"><code>loraham-kiss-tnc</code></a> + <a href="https://github.com/makrohard/LoRaHAM_Daemon">LoRaHAM daemon</a> (software)</td></tr>
+              <tr><td><strong>GPS</strong></td><td>GPSD</td></tr>
+            </tbody>
+          </table>
+          <p>
+            graywolf runs unchanged &mdash; the LoRa side is a software TNC chain
+            that drives the HAT directly:<br>
+            <code>APRS-IS &harr; graywolf &harr; KISS/TCP :8001 &harr; loraham-kiss-tnc &harr; LoRaHAM daemon (RadioLib) &harr; LoRa HAT &harr; RF</code>
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">LoRa Hardware</div>
+          <table>
+            <thead>
+              <tr><th>HAT</th><th>Chip(s)</th><th>Bands</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>LoRaHAM_Pi</td>
+                <td>SX1278 + RFM95</td>
+                <td>433 and 868, simultaneously</td>
+                <td>Dual-module board, full feature set</td>
+              </tr>
+              <tr>
+                <td>Uputronics Pi Zero LoRa expansion board</td>
+                <td>SX127x</td>
+                <td>433 or 868</td>
+                <td>Two boards stackable (CE0/CE1). DIO1 and RESET are not routed &mdash; no CAD channel scan</td>
+              </tr>
+              <tr>
+                <td>Waveshare SX1262 LoRaWAN Node HAT</td>
+                <td>SX1262</td>
+                <td>433 (LF) or 868 (HF) variant</td>
+                <td><strong>SPI version only</strong> &mdash; Waveshare&rsquo;s UART &ldquo;SX1262 LoRa HAT&rdquo; is not supported</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            Other RadioLib-supported chips with SPI access can be added with a
+            small driver-profile patch.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">Software</div>
+          <p>
+            Build per the repos&rsquo; READMEs (the chain also builds on x86);
+            start one daemon process per band, then the TNC, then graywolf:
+          </p>
+          <table>
+            <tbody>
+              <tr>
+                <td><strong>Radio driver</strong></td>
+                <td><a href="https://github.com/makrohard/LoRaHAM_Daemon">LoRaHAM daemon</a>
+                    &mdash; a fork of Alexander Walter&rsquo;s LoRaHAM_Daemon, built on
+                    <a href="https://github.com/jgromes/RadioLib">RadioLib</a></td>
+              </tr>
+              <tr>
+                <td><strong>KISS TNC</strong></td>
+                <td><a href="https://github.com/makrohard/loraham-kiss-tnc">loraham-kiss-tnc</a>
+                    &mdash; AX.25/KISS &harr; LoRa bridge</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">KISS Interface</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Mode</strong></td><td>TNC</td></tr>
+              <tr><td><strong>Type</strong></td><td>TCP Client</td></tr>
+              <tr><td><strong>Host</strong></td><td><code>127.0.0.1</code></td></tr>
+              <tr><td><strong>Port</strong></td><td><code>8001</code></td></tr>
+            </tbody>
+          </table>
+          <p>
+            Use a KISS-only channel (no audio device, no modem, no PTT) in
+            <strong>TNC</strong> mode, not Modem. The TNC accepts a single KISS
+            client, so nothing else may hold port 8001.
+          </p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">LoRa Radio Setup</div>
+          <table>
+            <thead>
+              <tr><th>Band</th><th>Frequency</th><th>Modem</th><th>Sync</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>433</td>
+                <td>433.775 MHz, TX and RX</td>
+                <td>SF12 / BW 125 kHz / CR 4:5</td>
+                <td><code>0x12</code></td>
+                <td>Single-channel &mdash; the channel stock ESP32 LoRa-APRS trackers
+                    (CA2RXU / OE5BPA) both transmit and listen on. The classic
+                    RX&nbsp;433.775 / TX&nbsp;433.900 split is available by config.</td>
+              </tr>
+              <tr>
+                <td>868</td>
+                <td>869.525 MHz</td>
+                <td>SF11 / BW 250 kHz / CR 4:5</td>
+                <td><code>0x2B</code></td>
+                <td>869.4&ndash;869.65 MHz sub-band (10% duty cycle, 500 mW ERP)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Default TX power is 10 dBm; CRC on.</p>
+        </div>
+
+        <div class="config-section">
+          <div class="config-section-label">GPS</div>
+          <table>
+            <tbody>
+              <tr><td><strong>Source</strong></td><td>GPSD</td></tr>
+              <tr><td><strong>Host</strong></td><td>localhost</td></tr>
+              <tr><td><strong>Port</strong></td><td>2947</td></tr>
+            </tbody>
+          </table>
+          <p>
+            For a station that does not move, leave GPS off and put the
+            coordinates in the beacon.
+          </p>
+        </div>
+
+        <div class="callout info">
+          <span class="callout-icon">&#9432;</span>
+          <div class="callout-body">
+            <p>
+              Everything above runs standalone. The whole chain &mdash; and the
+              other LoRa stacks (Meshtastic, MeshCom, MeshCore, Reticulum) &mdash;
+              can also be installed, updated and run by
+              <a href="https://github.com/makrohard/loraham-pi-control">LoRaHAM
+              Pi Control</a>: a web console and CLI, with ready-to-flash Raspberry
+              Pi images.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
     <!-- Add new configurations above this line.                      -->
     <!-- Copy the Digirig Mobile section as a template and fill in    -->
     <!-- your own values. Group by device, then by OS/hardware.       -->
