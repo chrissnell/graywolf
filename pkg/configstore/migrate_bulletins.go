@@ -1,6 +1,7 @@
 package configstore
 
 import (
+	"context"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -45,6 +46,48 @@ func migrateBulletins(tx *gorm.DB) error {
 		if itemCount == 0 {
 			item := &BulletinItem{GroupID: 1, Slot: slot, Text: "", Active: false, SendCount: 0}
 			if err := tx.Create(item).Error; err != nil {
+				return fmt.Errorf("seed bulletin item slot %d: %w", slot, err)
+			}
+		}
+	}
+	return nil
+}
+
+// seedBulletinGlobalGroup ensures the undeleteable Global bulletin group
+// (ID=1, Name="") and its 10 item slots exist. Idempotent — no-op once all
+// rows are present. Called from Migrate() on every startup so any database
+// where migration 29 was skipped (e.g. a device whose user_version was already
+// ≥ 29 from a prior dev build) recovers automatically.
+func (s *Store) seedBulletinGlobalGroup(ctx context.Context) error {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&BulletinGroup{}).Where("id = 1").Count(&count).Error; err != nil {
+		return fmt.Errorf("probe bulletin_groups for global seed: %w", err)
+	}
+	if count == 0 {
+		global := &BulletinGroup{
+			ID:          1,
+			Name:        "",
+			SendPath:    "rf",
+			DigiPath:    "",
+			InitialRate: 60,
+			DecayFactor: 1.5,
+			StableRate:  600,
+			Active:      false,
+		}
+		if err := s.db.WithContext(ctx).Create(global).Error; err != nil {
+			return fmt.Errorf("seed global bulletin group: %w", err)
+		}
+	}
+	for slot := 0; slot <= 9; slot++ {
+		var itemCount int64
+		if err := s.db.WithContext(ctx).Model(&BulletinItem{}).
+			Where("group_id = 1 AND slot = ?", slot).
+			Count(&itemCount).Error; err != nil {
+			return fmt.Errorf("probe bulletin_items slot %d: %w", slot, err)
+		}
+		if itemCount == 0 {
+			item := &BulletinItem{GroupID: 1, Slot: slot, Text: "", Active: false, SendCount: 0}
+			if err := s.db.WithContext(ctx).Create(item).Error; err != nil {
 				return fmt.Errorf("seed bulletin item slot %d: %w", slot, err)
 			}
 		}

@@ -14,7 +14,7 @@ import (
 // alphanumeric form is valid per the APRS tocall registry convention.
 const aprsGatewayToCall = "APGWLF"
 
-// wrapThirdParty takes an APRS-IS frame inner and returns a new AX.25
+// WrapThirdParty takes an APRS-IS frame inner and returns a new AX.25
 // frame that carries inner as an APRS "third-party" payload.
 //
 // Per the APRS101 spec (§ 20) and aprsc's IGATE-HINTS, any packet the
@@ -32,7 +32,7 @@ const aprsGatewayToCall = "APGWLF"
 //
 // The inner "TCPIP,IGATECALL*" marker is what other iGates look at to
 // decide "I already have this from the net — do not re-gate".
-func wrapThirdParty(inner *ax25.Frame, igateCall string, via []ax25.Address) (*ax25.Frame, error) {
+func WrapThirdParty(inner *ax25.Frame, igateCall string, via []ax25.Address) (*ax25.Frame, error) {
 	if inner == nil {
 		return nil, errors.New("igate: wrapThirdParty: nil frame")
 	}

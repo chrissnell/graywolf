@@ -10,14 +10,24 @@ import (
 	_ "github.com/glebarez/go-sqlite"
 )
 
-// highestMigrationVersion returns the largest user_version number in
-// schemaMigrations. If you add a migration and forget to bump tests,
-// the fresh-DB test below will fail and tell you which version it
-// expected.
+// highestMigrationVersion returns the version that PRAGMA user_version
+// is expected to hold after all migrations have run on a fresh database.
+// Non-selfTxn migrations always bump user_version; selfTxn migrations
+// bump it only when they actually perform work (e.g. renaming a legacy
+// column that doesn't exist on fresh installs). The effective max for a
+// fresh DB is therefore the maximum across all non-selfTxn migrations,
+// since those always bump unconditionally.
 func highestMigrationVersion(t *testing.T) int {
 	t.Helper()
 	highest := 0
 	for _, m := range schemaMigrations {
+		// selfTxn migrations manage their own user_version bump; some
+		// (like migration 31) are no-ops on fresh databases and do not
+		// bump. Exclude them from the "guaranteed fresh-DB max" so the
+		// test reflects actual user_version after a clean install.
+		if m.selfTxn {
+			continue
+		}
 		if m.version > highest {
 			highest = m.version
 		}

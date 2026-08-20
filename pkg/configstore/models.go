@@ -408,6 +408,28 @@ type BulletinsConfig struct {
 	UpdatedAt time.Time `json:"-"`
 }
 
+// WeatherConfig is a singleton (id=1) row for the NWS weather-alert
+// forwarding subsystem.
+type WeatherConfig struct {
+	ID                 uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Enabled            bool      `gorm:"not null;default:false" json:"enabled"`
+	TxChannelID        uint32    `gorm:"not null;default:0" json:"tx_channel_id"`    // 0 = disabled
+	MaxDistanceMiles   float64   `gorm:"not null;default:50" json:"max_distance_miles"`
+	MinIntervalSeconds uint32    `gorm:"not null;default:300" json:"min_interval_seconds"` // minimum 300 (5 min)
+	AlertClearMinutes  uint32    `gorm:"not null;default:10" json:"alert_clear_minutes"`
+	CreatedAt          time.Time `json:"-"`
+	UpdatedAt          time.Time `json:"-"`
+}
+
+// WeatherCountyPref stores per-county RF-forwarding opt-in state. The
+// table is sparse: only counties explicitly enabled have a row; the
+// absence of a row implies AllowTX=false.
+type WeatherCountyPref struct {
+	FIPS      string    `gorm:"column:fips;primaryKey;size:5" json:"fips"` // explicit column name: GORM splits FIPS as f_ip_s without it
+	AllowTX   bool      `gorm:"not null;default:false" json:"allow_tx"`
+	UpdatedAt time.Time `json:"-"`
+}
+
 // AX25TerminalConfig is a singleton (id=1) row holding terminal-route
 // UI preferences and operator-defined macros. See plan §3c.1 for the
 // fields and how the bridge consumes them.

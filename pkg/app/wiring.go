@@ -47,6 +47,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
+	"github.com/chrissnell/graywolf/pkg/weather"
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/pkg/webauth"
 	"github.com/chrissnell/graywolf/web"
@@ -736,6 +737,12 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		return err
 	}
 
+	// --- Weather service -----------------------------------------------
+	// Constructs the NWS weather-alert forwarding subsystem. Non-fatal;
+	// if county data cannot be loaded the service stays nil and the
+	// weather REST endpoints return 503.
+	a.wireWeather(ctx)
+
 	// --- AGW server (optional) -----------------------------------------
 	if err := a.wireAGW(ctx); err != nil {
 		return err
@@ -787,6 +794,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.gpsComponent(),
 		a.beaconComponent(),
 		a.bulletinComponent(),
+		a.weatherComponent(),
 		a.bridgeComponent(),
 		a.agwComponent(),
 		a.igateComponent(),
@@ -1046,6 +1054,10 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 	}
 	if a.msgSvc != nil {
 		_ = a.msgSvc.Router().SendPacket(context.Background(), pkt)
+	}
+	// Forward eligible NWS packets to RF via the weather service.
+	if a.weatherSvc != nil {
+		a.weatherSvc.HandleISPacket(context.Background(), pkt)
 	}
 }
 
@@ -1647,6 +1659,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// seeds the response envelope's `current` field and is what the
 	// ack handler writes to LastSeenReleaseVersion.
 	webapi.RegisterReleaseNotes(apiSrv, apiMux, a.cfg.Version, a.authStore)
+	if a.weatherSvc != nil {
+		webapi.RegisterWeather(apiSrv, apiMux, a.weatherSvc, a.store)
+	}
 
 	mux.Handle("/api/", webauth.RequireAuth(a.authStore)(apiMux))
 
@@ -3321,5 +3336,51 @@ func waitGroup(shutdownCtx context.Context, wg interface{ Wait() }, name string)
 		return nil
 	case <-shutdownCtx.Done():
 		return fmt.Errorf("%s: shutdown timed out", name)
+	}
+}
+
+// wireWeather constructs the weather service. Non-fatal: if county data fails
+// to load the service stays nil and REST endpoints return 503.
+func (a *App) wireWeather(ctx context.Context) {
+	a.weatherReload = make(chan struct{}, 1)
+	svc, err := weather.New(weather.Options{
+		TxSink:   a.gov,
+		Store:    a.store,
+		PosCache: a.stationPos,
+		Logger:   a.logger.With("component", "weather"),
+		OurCallFn: func() string {
+			c, _ := a.store.ResolveStationCallsignFull(context.Background())
+			return c
+		},
+	})
+	if err != nil {
+		a.logger.Warn("weather: init failed, weather alerts disabled", "err", err)
+		return
+	}
+	svc.Reload(ctx)
+	a.weatherSvc = svc
+}
+
+// weatherComponent owns the weather service's background expiry loop and the
+// reload drainer goroutine that re-reads config after a REST PUT.
+func (a *App) weatherComponent() namedComponent {
+	return namedComponent{
+		name: "weather",
+		start: func(ctx context.Context) error {
+			if a.weatherSvc == nil {
+				return nil
+			}
+			a.weatherWG.Add(1)
+			go func() {
+				defer a.weatherWG.Done()
+				if err := a.weatherSvc.Run(ctx); err != nil && ctx.Err() == nil {
+					a.logger.Error("weather service error", "err", err)
+				}
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			return waitGroup(shutdownCtx, &a.weatherWG, "weather")
+		},
 	}
 }

@@ -174,6 +174,8 @@ func (s *Store) Migrate() error {
 		&LogBufferConfig{},
 		&MessagesConfig{},
 		&BulletinsConfig{},
+		&WeatherConfig{},
+		&WeatherCountyPref{},
 		&AX25TerminalConfig{},
 		&AX25SessionProfile{},
 		&AX25TranscriptSession{},

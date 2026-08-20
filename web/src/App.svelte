@@ -35,6 +35,8 @@
   import MapsSettings from './routes/MapsSettings.svelte';
   import MessagesSettings from './routes/MessagesSettings.svelte';
   import BulletinsSettings from './routes/BulletinsSettings.svelte';
+  import WeatherAlerts from './routes/WeatherAlerts.svelte';
+  import WeatherSettings from './routes/WeatherSettings.svelte';
   import Messages from './routes/Messages.svelte';
   import Bulletins from './routes/Bulletins.svelte';
   import Terminal from './routes/Terminal.svelte';
@@ -71,6 +73,8 @@
     '/preferences/maps': MapsSettings,
     '/preferences/bulletins': BulletinsSettings,
     '/preferences/messages': MessagesSettings,
+    '/weather': WeatherAlerts,
+    '/preferences/weather': WeatherSettings,
     '/about': About,
   };
   const routes = (() => {

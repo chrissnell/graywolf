@@ -525,7 +525,7 @@ func (ig *Igate) handleISLine(line string) {
 	if v := ig.isTxVia.Load(); v != nil {
 		via = *v
 	}
-	wrapped, err := wrapThirdParty(frame, ig.stationCallsign, via)
+	wrapped, err := WrapThirdParty(frame, ig.stationCallsign, via)
 	if err != nil {
 		ig.logger.Debug("IS->RF drop: third-party wrap failed", "err", err)
 		return

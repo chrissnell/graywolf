@@ -31,6 +31,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
+	"github.com/chrissnell/graywolf/pkg/weather"
 	"github.com/chrissnell/graywolf/pkg/webapi"
 	"github.com/chrissnell/graywolf/pkg/webauth"
 )
@@ -177,6 +178,10 @@ type App struct {
 	// runs; webapi handlers fall back to 503 when nil.
 	remoteActions *remoteactions.Service
 
+	// weatherSvc is the NWS weather-alert forwarding service. nil until
+	// wireWeather runs.
+	weatherSvc *weather.Service
+
 	// resolvedModem is the absolute path to the graywolf-modem binary
 	// after running through ResolveModemPath. Retained so diagnostic
 	// messages can name the exact binary being used.
@@ -187,6 +192,7 @@ type App struct {
 	beaconReload      chan struct{}
 	smartBeaconReload chan struct{}
 	bulletinReload    chan struct{}
+	weatherReload     chan struct{}
 	digipeaterReload  chan struct{}
 	igateReload       chan struct{}
 	positionLogReload chan struct{}
@@ -239,6 +245,7 @@ type App struct {
 	beaconReloadWG      sync.WaitGroup
 	bulletinWG          sync.WaitGroup
 	bulletinReloadWG    sync.WaitGroup
+	weatherWG           sync.WaitGroup
 	positionLogReloadWG sync.WaitGroup
 	httpWG              sync.WaitGroup
 	pprofWG             sync.WaitGroup

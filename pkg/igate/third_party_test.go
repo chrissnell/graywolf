@@ -17,7 +17,7 @@ func TestWrapThirdPartyPositionPacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestWrapThirdPartyMessagePacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestWrapThirdPartyPreservesBinaryInfo(t *testing.T) {
 	}
 	inner.Info = []byte{'h', 0x00, 'i'}
 
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestWrapThirdPartyPreservesPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestWrapThirdPartyStripsInboundTCPIP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestWrapThirdPartyStripsInboundTCPIPHBit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewUIFrame: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestWrapThirdPartyStripsInboundTCPXX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", nil)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", nil)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestWrapThirdPartyAppliesVia(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseVia: %v", err)
 	}
-	wrapped, err := wrapThirdParty(inner, "KE7XYZ", via)
+	wrapped, err := WrapThirdParty(inner, "KE7XYZ", via)
 	if err != nil {
 		t.Fatalf("wrapThirdParty: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestWrapThirdPartyAppliesVia(t *testing.T) {
 
 // TestWrapThirdPartyRejectsNilFrame checks the guard clauses.
 func TestWrapThirdPartyRejectsNilFrame(t *testing.T) {
-	if _, err := wrapThirdParty(nil, "KE7XYZ", nil); err == nil {
+	if _, err := WrapThirdParty(nil, "KE7XYZ", nil); err == nil {
 		t.Fatal("expected error for nil inner frame")
 	}
 }
@@ -235,10 +235,10 @@ func TestWrapThirdPartyRejectsEmptyCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTNC2: %v", err)
 	}
-	if _, err := wrapThirdParty(inner, "", nil); err == nil {
+	if _, err := WrapThirdParty(inner, "", nil); err == nil {
 		t.Fatal("expected error for empty igate callsign")
 	}
-	if _, err := wrapThirdParty(inner, "   ", nil); err == nil {
+	if _, err := WrapThirdParty(inner, "   ", nil); err == nil {
 		t.Fatal("expected error for blank igate callsign")
 	}
 }

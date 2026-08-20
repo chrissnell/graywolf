@@ -176,10 +176,12 @@ func (s *Store) seedStationConfig(ctx context.Context) error {
 	if err := db.Raw("SELECT callsign FROM i_gate_configs ORDER BY id LIMIT 1").Scan(&igateCallRaw).Error; err != nil {
 		// "no such table" on a very fresh DB (before AutoMigrate completes
 		// in the same migration round) is fine — treat as no candidate.
-		// Any other error (permission denied, schema corruption, etc.)
-		// must surface so the seeder doesn't silently skip a legitimate
-		// candidate under a corrupt DB.
-		if !strings.Contains(err.Error(), "no such table") {
+		// "no such column" occurs on fresh DBs where AutoMigrate created
+		// i_gate_configs without callsign (the field was removed from the
+		// struct); legacy DBs still have the column from the old schema.
+		// Any other error must surface so schema corruption is not silently swallowed.
+		errStr := err.Error()
+		if !strings.Contains(errStr, "no such table") && !strings.Contains(errStr, "no such column") {
 			return fmt.Errorf("read legacy igate callsign: %w", err)
 		}
 		igateCallRaw = nil
