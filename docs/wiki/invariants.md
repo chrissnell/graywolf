@@ -709,8 +709,11 @@ cannot outlive the app, because no single mechanism covers both cases.
   `targetSdk=36` forces edge-to-edge on Android 15+, where the platform no longer
   auto-insets the content view or resizes the window for the soft keyboard.
   `MainActivity.applyWindowInsets` calls `WindowCompat.setDecorFitsSystemWindows(window, false)`
-  and a `setOnApplyWindowInsetsListener` that pads the WebView by the side bars and
-  `max(systemBars.bottom, ime.bottom)` -- but **leaves the top inset at 0 on purpose**.
+  and a `setOnApplyWindowInsetsListener` that pads the WebView by the side/bottom
+  navigation bars and `max(navBars.bottom, ime.bottom)` -- but **leaves the top inset at
+  0 on purpose**. The inset types used are `statusBars()` for the status bar and
+  `navigationBars()` for the nav bar -- NOT the combined `systemBars()`, which some OEM
+  ROMs under-report when `setDecorFitsSystemWindows(false)` is set.
   The split is load-bearing and not interchangeable:
   - **Top is owned by CSS, fed the inset by native.** The SPA's mobile top bar is
     `position:fixed; top:0` (`web/.../Sidebar.svelte`), and a fixed element is pinned to
@@ -721,7 +724,7 @@ cannot outlive the app, because no single mechanism covers both cases.
     `env(safe-area-inset-top)` alone: Android WebView derives that env var from the
     display cutout, not the status bar, and returns 0 (or wrong values below WebView 140)
     on most devices -- relying on it is what made the first GH #390 fix regress. Instead
-    `MainActivity.applyTopInsetToCss` injects the real status-bar inset (`systemBars.top`,
+    `MainActivity.applyTopInsetToCss` injects the real status-bar inset (`statusBars.top`,
     converted to CSS px) as the `--android-inset-top` custom property on the document root,
     re-applied from `onPageFinished` because each `loadUrl` swaps in a fresh document.
     `web/src/app.css` defines `--safe-area-top: max(env(safe-area-inset-top),
@@ -735,12 +738,22 @@ cannot outlive the app, because no single mechanism covers both cases.
     inherits the override. Do NOT re-add `bars.top` to the WebView padding, do NOT make the
     top bar depend on `env(safe-area-inset-top)` directly, and keep `viewport-fit=cover` in
     `web/index.html` (it is still needed for the env() path on iOS / mobile browsers).
-  - **Bottom is owned by native padding.** `env()` cannot express the keyboard, so the
-    IME padding is the cross-system load-bearing bit: it shrinks the web viewport above
-    the keyboard so the SPA's sticky compose bar (`web/.../ComposeBar.svelte`,
+  - **Bottom is split: keyboard owned by native padding; navigation bar owned by CSS.**
+    `env()` cannot express the keyboard, so `max(navBars.bottom, ime.bottom)` native padding
+    on the WebView is the keyboard load-bearing bit: it shrinks the web viewport above the
+    keyboard so the SPA's sticky compose bar (`web/.../ComposeBar.svelte`,
     `position:absolute; bottom:0`) is never covered. That component skips its own
     `visualViewport` translateY when `Platform.isAndroid` so the two mechanisms don't
     stack into a double-offset; the web translate stays the path for mobile browsers.
+    For `position:fixed` elements such as chonky-ui toasts, native WebView padding does
+    NOT reliably shrink `window.innerHeight` (it only works for the keyboard via
+    `adjustResize`). On Android with 3-button navigation, `env(safe-area-inset-bottom)` is
+    also 0 (the nav bar is opaque). `MainActivity.applyBottomInsetToCss` therefore injects
+    `navBars.bottom` (in CSS px) as `--android-inset-bottom`; `app.css` defines
+    `--safe-area-bottom: max(env(safe-area-inset-bottom), var(--android-inset-bottom, 0px))`
+    and overrides `.toast { bottom: calc(1.5rem + var(--safe-area-bottom, 0px)) }` so toasts
+    clear the nav bar. Any new fixed-bottom element must read `--safe-area-bottom` for the
+    same reason.
   The manifest's `android:windowSoftInputMode="adjustResize"` is the pre-API-30 fallback:
   there `WindowInsetsCompat.Type.ime()` reports 0, so adjustResize resizes the decor
   frame instead, re-firing the same listener -- do NOT drop it assuming the inset path

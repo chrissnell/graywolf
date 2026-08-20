@@ -209,11 +209,12 @@ func ValidKissMode(m string) bool {
 // remote KISS TNC at RemoteHost:RemotePort and maintains a single
 // supervised connection with exponential backoff + jitter.
 const (
-	KissTypeTCP       = "tcp"
-	KissTypeTCPClient = "tcp-client"
-	KissTypeSerial    = "serial"
-	KissTypeBluetooth = "bluetooth"
-	KissTypeUsbSerial = "usbserial"
+	KissTypeTCP          = "tcp"
+	KissTypeTCPClient    = "tcp-client"
+	KissTypeSerial       = "serial"
+	KissTypeBluetooth    = "bluetooth"
+	KissTypeUsbSerial    = "usbserial"
+	KissTypeBLEMobilinkd = "ble-mobilinkd" // direct BLE to Mobilinkd TNC3/TNC4 (desktop)
 )
 
 // Channel.Mode values. Default is ChannelModeAPRS to preserve current
@@ -240,7 +241,7 @@ func ValidChannelMode(m string) bool {
 // of the KISS TCP-client + channel-backing plan.
 func ValidKissInterfaceType(t string) bool {
 	switch t {
-	case KissTypeTCP, KissTypeTCPClient, KissTypeSerial, KissTypeBluetooth, KissTypeUsbSerial:
+	case KissTypeTCP, KissTypeTCPClient, KissTypeSerial, KissTypeBluetooth, KissTypeUsbSerial, KissTypeBLEMobilinkd:
 		return true
 	}
 	return false

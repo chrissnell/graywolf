@@ -202,6 +202,12 @@ func (s *Store) Migrate() error {
 	if err := s.seedStationConfig(context.Background()); err != nil {
 		return fmt.Errorf("seed station config: %w", err)
 	}
+	// Seed the Global bulletin group on every startup.
+	// Idempotent: no-op once the row exists. Recovers any database where
+	// migration 29 was skipped because user_version was already ≥ 29.
+	if err := s.seedBulletinGlobalGroup(context.Background()); err != nil {
+		return fmt.Errorf("seed bulletin global group: %w", err)
+	}
 	return nil
 }
 

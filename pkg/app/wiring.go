@@ -215,6 +215,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- Station cache (map's last-known-state store) ------------------
 	a.stationCache = stationcache.NewPersistentCache(a.logger)
+	// On Android, inject the platform client into the kiss package so
+	// ScanBLEMobilinkd and OpenBLEMobilinkd can route through the Kotlin BLE bridge.
+	a.injectAndroidBLEClient()
 	plCfg, _ := a.store.GetPositionLogConfig(ctx)
 	// On Android, default the position log to enabled on first boot.
 	// The desktop default (off) protects SD-card-based Pi installs from
