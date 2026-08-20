@@ -25,7 +25,8 @@ func BearerAuthMiddleware(token string) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r.WithContext(withBearerAuthed(r.Context())))
 				return
 			}
-			if isWebSocketUpgrade(r) && matchQueryToken(r, want) {
+			// WebSocket and SSE cannot send custom headers; accept ?token= for both.
+			if (isWebSocketUpgrade(r) || isSSERequest(r)) && matchQueryToken(r, want) {
 				next.ServeHTTP(w, r.WithContext(withBearerAuthed(r.Context())))
 				return
 			}
@@ -50,6 +51,10 @@ func matchQueryToken(r *http.Request, want []byte) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare(got, want) == 1
+}
+
+func isSSERequest(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
 }
 
 func isWebSocketUpgrade(r *http.Request) bool {
