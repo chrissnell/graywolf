@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { Button, Input, Select, Badge, Checkbox, Toggle } from '@chrissnell/chonky-ui';
-  import { api, kissBt, kissUsb, kissSerial } from '../lib/api.js';
+  import { api, kissBt, kissUsb, kissSerial, kissBle } from '../lib/api.js';
   import { Platform } from '../lib/platform.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
@@ -105,15 +105,17 @@
   // menu re-derives if the JS bridge appears/disappears mid-session
   // (rare, but the reactive shape costs us nothing).
   const desktopTypeOptions = [
-    { value: 'tcp',        label: 'TCP (server)' },
-    { value: 'tcp-client', label: 'TCP Client' },
-    { value: 'serial',     label: 'Serial' },
+    { value: 'tcp',            label: 'TCP (server)' },
+    { value: 'tcp-client',    label: 'TCP Client' },
+    { value: 'serial',        label: 'Serial' },
+    { value: 'ble-mobilinkd', label: 'BLE TNC Devices' },
   ];
   const androidTypeOptions = [
-    { value: 'bluetooth',  label: 'Bluetooth Serial' },
-    { value: 'usbserial',  label: 'USB Serial' },
-    { value: 'tcp',        label: 'TCP (server)' },
-    { value: 'tcp-client', label: 'Network' },
+    { value: 'bluetooth',     label: 'Bluetooth Serial' },
+    { value: 'ble-mobilinkd', label: 'BLE TNC Devices' },
+    { value: 'usbserial',     label: 'USB Serial' },
+    { value: 'tcp',           label: 'TCP (server)' },
+    { value: 'tcp-client',    label: 'Network' },
   ];
   let typeOptions = $derived(Platform.isAndroid ? androidTypeOptions : desktopTypeOptions);
 
@@ -123,6 +125,24 @@
   let bondedDevices = $state([]);
   let bondedLoading = $state(false);
   let bondedError = $state('');
+
+  // BLE TNC device scanner. Auto-starts when the modal opens with
+  // type=ble-mobilinkd and stops on modal close or type change.
+  // bleMobilinkdSource is the active EventSource (null when not scanning).
+  let bleMobilinkdDevices = $state([]);
+  let bleMobilinkdScanning = $state(false);
+  let bleMobilinkdError = $state('');
+  let bleMobilinkdSource = $state(null);
+
+  let bleMobilinkdDeviceOptions = $derived(
+    bleMobilinkdDevices.map((d) => ({
+      value: d.addr,
+      label: d.name ? `${d.name} (${d.addr})` : d.addr,
+    }))
+  );
+
+  // Inline save-time error for the BLE device picker.
+  let bleMobilinkdSaveError = $state('');
   // Inline save-time validation error. Surfaced via the bonded-device
   // FormField's `error` prop alongside any network error from the
   // lazy loader. Cleared whenever the operator picks a device or the
@@ -358,6 +378,7 @@
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (clockTimer) clearInterval(clockTimer);
+    stopBLEScan();
   });
 
   function openCreate() {
@@ -425,9 +446,18 @@
   // type to bluetooth so the Mode-gated UI (rate/burst, governor-TX
   // checkbox) renders, and so buildPayload() doesn't try to send
   // mode=modem to a server that would reject it.
+  // ble-mobilinkd also always forces tnc for the same reason.
   $effect(() => {
-    if (form.type === 'bluetooth' && form.mode !== 'tnc') {
+    if ((form.type === 'bluetooth' || form.type === 'ble-mobilinkd') && form.mode !== 'tnc') {
       form.mode = 'tnc';
+    }
+  });
+
+  // Stop any in-progress BLE scan when the modal closes or the type changes
+  // away from ble-mobilinkd. Scan is started manually via the Scan button.
+  $effect(() => {
+    if (form.type !== 'ble-mobilinkd' || !modalOpen) {
+      stopBLEScan();
     }
   });
 
@@ -462,6 +492,63 @@
     } finally {
       bondedLoading = false;
     }
+  }
+
+  // startBLEScan opens an SSE stream to /api/kiss/ble-mobilinkd-scan.
+  // Devices appear in bleMobilinkdDevices in real time as BLE discovers
+  // them. The stream auto-closes after the server-side timeout (15 s).
+  // The operator can also close it early via stopBLEScan().
+  function startBLEScan() {
+    stopBLEScan(); // close any lingering source first
+    bleMobilinkdDevices = [];
+    bleMobilinkdError = '';
+    bleMobilinkdSaveError = '';
+    // Do not clear form.serial_device here — preserve a device the
+    // operator already selected from a previous scan.
+    bleMobilinkdScanning = true;
+
+    const source = kissBle.openScan();
+    bleMobilinkdSource = source;
+
+    source.onmessage = (e) => {
+      try {
+        const dev = JSON.parse(e.data);
+        // Deduplicate in case the server sends the same addr twice.
+        if (!bleMobilinkdDevices.some((d) => d.addr === dev.addr)) {
+          bleMobilinkdDevices = [...bleMobilinkdDevices, dev];
+        }
+      } catch {
+        // malformed JSON from server — ignore
+      }
+    };
+
+    source.addEventListener('done', () => {
+      bleMobilinkdScanning = false;
+      bleMobilinkdSource = null;
+      source.close();
+    });
+
+    source.addEventListener('error', (e) => {
+      // SSE "error" event carries a plain text message in e.data.
+      bleMobilinkdError = e.data || 'BLE scan failed';
+      stopBLEScan();
+    });
+
+    source.onerror = () => {
+      // Connection dropped (e.g. server returned 501 / 409).
+      if (bleMobilinkdScanning) {
+        bleMobilinkdError = 'BLE scan unavailable — this build may not include BLE support.';
+      }
+      stopBLEScan();
+    };
+  }
+
+  function stopBLEScan() {
+    if (bleMobilinkdSource) {
+      bleMobilinkdSource.close();
+      bleMobilinkdSource = null;
+    }
+    bleMobilinkdScanning = false;
   }
 
   // Phase 6 (Option A scope): prompt the operator to grant
@@ -675,6 +762,11 @@
         data.serial_device = form.serial_device || '';
         data.baud_rate = parseInt(form.baud_rate) || 9600;
         break;
+      case 'ble-mobilinkd':
+        // BLE address stored in serial_device; no baud rate.
+        data.serial_device = form.serial_device || '';
+        data.baud_rate = 0;
+        break;
     }
     return data;
   }
@@ -712,6 +804,11 @@
       saveError = 'Pick a USB serial device before saving.';
       return;
     }
+    if (form.type === 'ble-mobilinkd' && !form.serial_device) {
+      bleMobilinkdSaveError = 'Scan and select a device before saving.';
+      return;
+    }
+    bleMobilinkdSaveError = '';
     saveError = '';
     // Mode changes on an existing interface take effect the instant the
     // server restarts the per-interface KISS server — connected peers see
@@ -731,12 +828,13 @@
   // server-side type we don't recognize yet.
   function labelForType(t) {
     switch (t) {
-      case 'tcp':        return 'TCP (server)';
-      case 'tcp-client': return Platform.isAndroid ? 'Network' : 'TCP Client';
-      case 'serial':     return 'Serial';
-      case 'bluetooth':  return 'Bluetooth Serial';
-      case 'usbserial':  return 'USB Serial';
-      default:           return t;
+      case 'tcp':            return 'TCP (server)';
+      case 'tcp-client':     return Platform.isAndroid ? 'Network' : 'TCP Client';
+      case 'serial':         return 'Serial';
+      case 'bluetooth':      return 'Bluetooth Serial';
+      case 'usbserial':      return 'USB Serial';
+      case 'ble-mobilinkd':  return 'BLE TNC';
+      default:               return t;
     }
   }
 
@@ -780,6 +878,12 @@
     if (row.type === 'serial') return row.serial_device || '—';
     if (row.type === 'bluetooth') return friendlyDevice(row) || '—';
     if (row.type === 'usbserial') return row.serial_device || '—';
+    if (row.type === 'ble-mobilinkd') {
+      // Show friendly name if the device was discovered in this session.
+      const dev = bleMobilinkdDevices.find((d) => d.addr === (row.serial_device || row.device));
+      const addr = row.serial_device || row.device || '';
+      return dev ? `${dev.name} (${addr})` : addr || '—';
+    }
     return '—';
   }
 
@@ -900,6 +1004,8 @@
     <Badge variant="info">{labelForType(value)}</Badge>
   {:else if value === 'serial'}
     <Badge>{labelForType(value)}</Badge>
+  {:else if value === 'ble-mobilinkd'}
+    <Badge variant="success">{labelForType(value)}</Badge>
   {:else}
     <Badge>{value || '—'}</Badge>
   {/if}
@@ -980,7 +1086,7 @@
 {/snippet}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit KISS' : 'New KISS Interface'}>
-    {#if form.type !== 'bluetooth'}
+    {#if form.type !== 'bluetooth' && form.type !== 'ble-mobilinkd'}
       <FormField label="Mode" id="kiss-mode" hint={modeHint}>
         {#snippet children(describedBy)}
           <Select id="kiss-mode" bind:value={form.mode} options={modeOptions} aria-describedby={describedBy} />
@@ -1097,6 +1203,38 @@
         hint="Serial line speed. Must match the TNC's configured baud rate. Default 9600."
       >
         <Select id="kiss-usb-baud" bind:value={form.baud_rate} options={baudRateOptions} />
+      </FormField>
+    {:else if form.type === 'ble-mobilinkd'}
+      <!-- BLE scan: auto-starts when the modal opens; devices appear in
+           the picker in real time as CoreBluetooth / BlueZ discovers them. -->
+      <FormField
+        label="Device"
+        id="kiss-ble-device"
+        hint="Nearby BLE TNC devices (Mobilinkd TNC3/TNC4, BTECH UV-PRO, VERO VR-N76, Radioddity GA-5WB, and others). Power on the TNC before scanning."
+        error={bleMobilinkdSaveError || bleMobilinkdError}
+      >
+        {#snippet children(describedBy)}
+          <div class="bt-picker">
+            <Select
+              id="kiss-ble-device"
+              bind:value={form.serial_device}
+              options={bleMobilinkdDeviceOptions}
+              placeholder={bleMobilinkdScanning ? 'Scanning…' : (bleMobilinkdDevices.length === 0 ? 'Click Scan to find devices' : 'Select a device')}
+              onValueChange={() => { bleMobilinkdSaveError = ''; }}
+              aria-describedby={describedBy}
+            />
+            {#if bleMobilinkdScanning}
+              <Button variant="secondary" onclick={stopBLEScan}>Stop</Button>
+            {:else}
+              <Button variant="secondary" onclick={startBLEScan}>Scan</Button>
+            {/if}
+          </div>
+          {#if bleMobilinkdScanning}
+            <p class="field-hint">Scanning for BLE TNC devices — devices appear as they are found…</p>
+          {:else if bleMobilinkdDevices.length === 0 && !bleMobilinkdError}
+            <p class="field-hint">Power on the TNC and click Scan. Supported devices (Mobilinkd TNC3/TNC4, BTECH UV-PRO, VERO VR-N76, Radioddity GA-5WB) appear in the picker as they are discovered.</p>
+          {/if}
+        {/snippet}
       </FormField>
     {:else if form.type === 'serial'}
       <FormField

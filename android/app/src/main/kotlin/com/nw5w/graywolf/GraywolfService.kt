@@ -29,9 +29,11 @@ import com.nw5w.graywolf.binaries.GoLauncher
 import com.nw5w.graywolf.binaries.Supervisor
 import com.nw5w.graywolf.gps.GpsAdapter
 import com.nw5w.graywolf.jni.ModemBridge
+import com.nw5w.graywolf.platformsvc.BleAdapter
 import com.nw5w.graywolf.platformsvc.BtSerialAdapter
 import com.nw5w.graywolf.platformsvc.BindContendedException
 import com.nw5w.graywolf.platformsvc.PlatformServer
+import com.nw5w.graywolf.platformsvc.SystemBleFacade
 import com.nw5w.graywolf.platformsvc.SystemBluetoothFacade
 import com.nw5w.graywolf.platformsvc.SystemUsbSerialFacade
 import com.nw5w.graywolf.platformsvc.UsbDeviceLister
@@ -60,6 +62,7 @@ class GraywolfService : Service() {
     // partial state instead of finishing a boot that's about to be torn down.
     @Volatile private var stopping = false
     private var btSerialAdapter: BtSerialAdapter? = null
+    private var bleAdapter: BleAdapter? = null
     private var usbSerialAdapter: UsbSerialAdapter? = null
     private val supervisor = Supervisor(
         onRestart = ::supervisorRestart,
@@ -370,7 +373,7 @@ class GraywolfService : Service() {
             platformServer = PlatformServer(
                 socketPath = platformSocketPath(),
                 serverVersion = BuildConfig.VERSION_NAME,
-                schemaVersion = 3,
+                schemaVersion = 4,
             ).also { it.start() }
         } catch (e: BindContendedException) {
             // A previous instance still owns the platformsvc socket after the
@@ -402,6 +405,15 @@ class GraywolfService : Service() {
             facade = btFacade,
             sendMessage = { msg -> platformServer!!.broadcastBt(msg) },
         ).also { platformServer!!.attachBtAdapter(it) }
+
+        // BLE KISS TNC adapter (Mobilinkd TNC3/TNC4 and NUS-based radios).
+        // Wired AFTER PlatformServer.start() for the same sendMessage reason.
+        // Tolerates a missing BluetoothAdapter: SystemBleFacade no-ops startScan.
+        bleAdapter = BleAdapter(
+            facade = SystemBleFacade(btManager?.adapter, applicationContext),
+            appContext = applicationContext,
+            sendMessage = { msg -> platformServer!!.broadcastBt(msg) },
+        ).also { platformServer!!.attachBleAdapter(it) }
 
         // USB serial KISS TNC adapter (sibling of btSerialAdapter). Same
         // post-start() wiring because its sendMessage closes over broadcastBt.
@@ -529,6 +541,8 @@ class GraywolfService : Service() {
         // -- it MUST run before platformServer.stop() tears the socket down.
         btSerialAdapter?.shutdown()
         btSerialAdapter = null
+        bleAdapter?.shutdown()
+        bleAdapter = null
         usbSerialAdapter?.shutdown()
         usbSerialAdapter = null
         platformServer?.stop()
