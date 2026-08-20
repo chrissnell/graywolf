@@ -44,6 +44,17 @@
         } catch (e) {}
       })();
     </script>
+    <script>
+      // Apply force-compact-menu before the first frame so the correct
+      // sidebar layout is present without a flash on load.
+      (function () {
+        try {
+          if (localStorage.getItem('force-compact-menu') === 'true') {
+            document.documentElement.classList.add('force-compact-menu');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
