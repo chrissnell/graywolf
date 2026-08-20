@@ -330,62 +330,66 @@
       />
     </div>
     <div class="toolbar" data-testid="conversation-toolbar">
-      <label class="select-all" aria-label="Select all visible conversations">
-        <input
-          bind:this={masterEl}
-          type="checkbox"
-          checked={allVisibleSelected}
-          onchange={toggleSelectAll}
-          disabled={visibleThreadIds.length === 0}
-          data-testid="select-all-checkbox"
-        />
-      </label>
-      <div class="filters" role="radiogroup" aria-label="Filter conversations">
-        {#each FILTERS as f}
-          <button
-            type="button"
-            class="pill"
-            class:active={filter === f.id}
-            role="radio"
-            aria-checked={filter === f.id}
-            onclick={() => setFilter(f.id)}
-            data-testid="filter-pill-{f.id}"
-          >
-            {f.label}
-          </button>
-        {/each}
+      <div class="toolbar-row">
+        <label class="select-all" aria-label="Select all visible conversations">
+          <input
+            bind:this={masterEl}
+            type="checkbox"
+            checked={allVisibleSelected}
+            onchange={toggleSelectAll}
+            disabled={visibleThreadIds.length === 0}
+            data-testid="select-all-checkbox"
+          />
+        </label>
+        <div class="filters" role="radiogroup" aria-label="Filter conversations">
+          {#each FILTERS as f}
+            <button
+              type="button"
+              class="pill"
+              class:active={filter === f.id}
+              role="radio"
+              aria-checked={filter === f.id}
+              onclick={() => setFilter(f.id)}
+              data-testid="filter-pill-{f.id}"
+            >
+              {f.label}
+            </button>
+          {/each}
+        </div>
       </div>
-      <button
-        type="button"
-        class="delete-pill"
-        onclick={openDeleteConfirm}
-        disabled={!canDelete || deleting}
-        aria-label={
-          deleteTargets.length > 1
-            ? `Delete ${deleteTargets.length} selected conversations`
-            : 'Delete conversation'
-        }
-        title={
-          deleteTargets.length === 0
-            ? 'Open or select a conversation to delete'
-            : deleteTargets.length === 1
-              ? 'Delete this conversation'
-              : `Delete ${deleteTargets.length} selected`
-        }
-        data-testid="bulk-delete-btn"
-      >
-        Delete
-      </button>
-      <button
-        type="button"
-        class="new-btn"
-        onclick={() => onNew?.()}
-        aria-label="New message"
-        title="New message"
-        data-testid="new-message"
-      >
-        <Icon name="plus" size="sm" />
-      </button>
+      <div class="toolbar-row toolbar-actions">
+        <button
+          type="button"
+          class="delete-pill"
+          onclick={openDeleteConfirm}
+          disabled={!canDelete || deleting}
+          aria-label={
+            deleteTargets.length > 1
+              ? `Delete ${deleteTargets.length} selected conversations`
+              : 'Delete conversation'
+          }
+          title={
+            deleteTargets.length === 0
+              ? 'Open or select a conversation to delete'
+              : deleteTargets.length === 1
+                ? 'Delete this conversation'
+                : `Delete ${deleteTargets.length} selected`
+          }
+          data-testid="bulk-delete-btn"
+        >
+          Delete
+        </button>
+        <button
+          type="button"
+          class="new-btn"
+          onclick={() => onNew?.()}
+          aria-label="New message"
+          title="New message"
+          data-testid="new-message"
+        >
+          <Icon name="plus" size="sm" />
+        </button>
+      </div>
     </div>
   </header>
 
@@ -524,16 +528,21 @@
     box-shadow: 0 0 0 2px var(--color-primary-muted);
   }
 
-  /* Single consolidated toolbar — Fastmail-style. Master checkbox first
-     (sized to align with the per-row checkboxes that take its place
-     when select-mode kicks in), then filter pills, then bulk-delete
-     (only when something is selected), then New. */
+  /* Two-row toolbar: row 1 = checkbox + filter pills, row 2 = delete + new. */
   .toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 4px;
+  }
+  .toolbar-row {
     display: flex;
     align-items: center;
     gap: 6px;
     height: 36px;
-    padding-bottom: 4px;
+  }
+  .toolbar-actions {
+    height: 28px;
   }
   .select-all {
     display: inline-flex;

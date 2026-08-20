@@ -15,6 +15,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
+	"github.com/chrissnell/graywolf/pkg/bulletin"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
@@ -117,7 +118,8 @@ type App struct {
 	stationPos  *gps.StationPos
 	gpsMgr      *gpsManager
 	appAndroidExt // platformClient lives here on Android, empty on desktop
-	beaconSched *beacon.Scheduler
+	beaconSched    *beacon.Scheduler
+	bulletinSched  *bulletin.Scheduler
 	// ig is the live *igate.Igate; nil while the iGate is disabled.
 	// Held in an atomic pointer so the runtime enable/disable toggle
 	// (reloadIgate) can swap it without coordinating with consumers
@@ -184,6 +186,7 @@ type App struct {
 	gpsReload         chan struct{}
 	beaconReload      chan struct{}
 	smartBeaconReload chan struct{}
+	bulletinReload    chan struct{}
 	digipeaterReload  chan struct{}
 	igateReload       chan struct{}
 	positionLogReload chan struct{}
@@ -234,6 +237,8 @@ type App struct {
 	gpsWG               sync.WaitGroup
 	beaconWG            sync.WaitGroup
 	beaconReloadWG      sync.WaitGroup
+	bulletinWG          sync.WaitGroup
+	bulletinReloadWG    sync.WaitGroup
 	positionLogReloadWG sync.WaitGroup
 	httpWG              sync.WaitGroup
 	pprofWG             sync.WaitGroup

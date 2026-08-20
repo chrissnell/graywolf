@@ -34,7 +34,9 @@
   import Preferences from './routes/Preferences.svelte';
   import MapsSettings from './routes/MapsSettings.svelte';
   import MessagesSettings from './routes/MessagesSettings.svelte';
+  import BulletinsSettings from './routes/BulletinsSettings.svelte';
   import Messages from './routes/Messages.svelte';
+  import Bulletins from './routes/Bulletins.svelte';
   import Terminal from './routes/Terminal.svelte';
   import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
   import Actions from './routes/Actions.svelte';
@@ -46,6 +48,8 @@
     '/stations': Stations,
     '/messages': Messages,
     '/messages/*': Messages,
+    '/bulletins': Bulletins,
+    '/bulletins/*': Bulletins,
     '/terminal': Terminal,
     '/terminal/transcripts': TerminalTranscripts,
     '/actions': Actions,
@@ -65,6 +69,7 @@
     '/system-logs': SystemLogs,
     '/preferences': Preferences,
     '/preferences/maps': MapsSettings,
+    '/preferences/bulletins': BulletinsSettings,
     '/preferences/messages': MessagesSettings,
     '/about': About,
   };
@@ -165,7 +170,7 @@
   <ServerUpdatedBanner />
   <div class="app-layout">
     <Sidebar />
-    <main class="main-content" class:full-bleed={currentPath === '/map' || currentPath === '/messages' || currentPath.startsWith('/messages/')}>
+    <main class="main-content" class:full-bleed={currentPath === '/map' || currentPath === '/messages' || currentPath.startsWith('/messages/') || currentPath === '/bulletins' || currentPath.startsWith('/bulletins/')}>
       <Router {routes} />
       <footer class="app-footer">
         <a href="https://github.com/chrissnell/graywolf" target="_blank" rel="noopener">

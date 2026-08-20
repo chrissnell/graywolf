@@ -239,6 +239,8 @@ var schemaMigrations = []migration{
 	{version: 27, name: "igate_is_tx_via", phase: postAutoMigrate, run: migrateIGateIsTxVia},
 	{version: 28, name: "igate_gate_is_to_rf_backfill", phase: postAutoMigrate, run: migrateIGateGateIsToRfBackfill},
 	{version: 29, name: "station_config_ssid", phase: postAutoMigrate, run: migrateStationConfigSSID},
+	{version: 30, name: "bulletins", phase: postAutoMigrate, run: migrateBulletins},
+	{version: 31, name: "bulletins_config_singleton", phase: postAutoMigrate, run: migrateBulletinsConfig},
 }
 
 // runMigrations applies every pending migration in the given phase,

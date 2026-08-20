@@ -397,6 +397,17 @@ type MessagesConfig struct {
 	UpdatedAt time.Time `json:"-"`
 }
 
+// BulletinsConfig is a singleton (id=1) row that owns global bulletin
+// settings: the TX channel and the send path (RF / APRS-IS / both) applied
+// to every bulletin group.
+type BulletinsConfig struct {
+	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
+	TxChannel uint32    `gorm:"not null;default:0" json:"tx_channel"` // 0 = auto-resolve at runtime
+	SendPath  string    `gorm:"not null;default:'rf'" json:"send_path"` // rf | both | is_only
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
+}
+
 // AX25TerminalConfig is a singleton (id=1) row holding terminal-route
 // UI preferences and operator-defined macros. See plan §3c.1 for the
 // fields and how the bridge consumes them.
@@ -1050,4 +1061,29 @@ type ActionInvocation struct {
 	Truncated       bool
 	ReplyLineCount  int       `gorm:"not null;default:1"`
 	CreatedAt       time.Time `gorm:"index"`
+}
+
+// BulletinGroup is a named set of 10 bulletin slots. The Global group
+// (Name="") is seeded by migration and cannot be deleted.
+type BulletinGroup struct {
+	ID          uint32 `gorm:"primaryKey;autoIncrement"         json:"id"`
+	Name        string `gorm:"size:5;not null;uniqueIndex"      json:"name"`        // "" = Global; up to 5 chars A-Z0-9
+	SendPath    string `gorm:"not null;default:'rf'"            json:"send_path"`   // "rf" | "both" | "is_only"
+	DigiPath    string `gorm:"not null;default:''"              json:"digi_path"`   // empty = no digi
+	InitialRate int    `gorm:"not null;default:30"              json:"initial_rate"` // seconds; min 30
+	DecayFactor float64 `gorm:"not null;default:1.5"            json:"decay_factor"` // multiplier per transmission
+	StableRate  int    `gorm:"not null;default:600"             json:"stable_rate"`  // seconds; floor once stable
+	Active      bool   `gorm:"not null"                         json:"active"`
+	Items       []BulletinItem `gorm:"foreignKey:GroupID"     json:"items,omitempty"`
+}
+
+// BulletinItem is one of the 10 slots (0–9) within a BulletinGroup.
+// The composite unique index on (GroupID, Slot) is enforced at the DB level.
+type BulletinItem struct {
+	ID        uint64 `gorm:"primaryKey;autoIncrement"                            json:"id"`
+	GroupID   uint32 `gorm:"not null;uniqueIndex:idx_bulletin_group_slot"        json:"group_id"`
+	Slot      int    `gorm:"not null;uniqueIndex:idx_bulletin_group_slot"        json:"slot"` // 0..9
+	Text      string `gorm:"not null;default:''"                                 json:"text"` // max 67 chars
+	Active    bool   `gorm:"not null"                                            json:"active"`
+	SendCount int    `gorm:"not null;default:0"                                  json:"send_count"`
 }

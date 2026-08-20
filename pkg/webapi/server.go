@@ -85,6 +85,12 @@ type Server struct {
 	// non-blocking send coalesces bursts.
 	txBackendReload chan struct{}
 	beaconSendNow   func(ctx context.Context, id uint32) error // triggers an immediate beacon send
+	bulletinReload  chan struct{}                                // signalled when bulletin config changes
+	bulletinSendNow func(ctx context.Context, groupID uint32, slot int) error // triggers an immediate bulletin send
+	// bulletinNextFireAt queries the scheduler's current next-fire time for one slot.
+	bulletinNextFireAt func(groupID uint32, slot int) (time.Time, bool)
+	// bulletinResetSchedule resets send_count+last_sent_at for all items in a group.
+	bulletinResetSchedule func(ctx context.Context, groupID uint32) error
 
 	// messages-service is late-bound: it exists only after the Phase 5
 	// app wiring has constructed the configstore + txgovernor + igate,
@@ -308,6 +314,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerMessages(mux)
 	s.registerMessagesConfig(mux)
 	s.registerMessagesBlocklist(mux)
+	s.registerBulletins(mux)
 	s.registerAX25Terminal(mux)
 	s.registerAX25TerminalConfig(mux)
 	s.registerAX25Profiles(mux)
@@ -347,6 +354,29 @@ func (s *Server) SetBeaconReload(ch chan struct{}) { s.beaconReload = ch }
 // to trigger an immediate one-shot transmission of a beacon.
 func (s *Server) SetBeaconSendNow(fn func(ctx context.Context, id uint32) error) {
 	s.beaconSendNow = fn
+}
+
+// SetBulletinReload installs the channel signalled when bulletin group or item
+// config changes so the scheduler can rebuild its run list.
+func (s *Server) SetBulletinReload(ch chan struct{}) { s.bulletinReload = ch }
+
+// SetBulletinSendNow installs the callback used by
+// POST /api/bulletins/{id}/items/{slot}/send.
+func (s *Server) SetBulletinSendNow(fn func(ctx context.Context, groupID uint32, slot int) error) {
+	s.bulletinSendNow = fn
+}
+
+// SetBulletinNextFireAt installs the function used to read the scheduler's
+// current next-fire time for one slot. Used by GET /api/bulletins to populate
+// next_send_at in the response.
+func (s *Server) SetBulletinNextFireAt(fn func(groupID uint32, slot int) (time.Time, bool)) {
+	s.bulletinNextFireAt = fn
+}
+
+// SetBulletinResetSchedule installs the function that resets a group's
+// send_count and last_sent_at so the decay schedule restarts from scratch.
+func (s *Server) SetBulletinResetSchedule(fn func(ctx context.Context, groupID uint32) error) {
+	s.bulletinResetSchedule = fn
 }
 
 // SetDigipeaterReload installs the channel signalled after successful

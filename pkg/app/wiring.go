@@ -22,6 +22,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
+	"github.com/chrissnell/graywolf/pkg/bulletin"
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/clocksync"
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -623,6 +624,62 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.beaconReload = make(chan struct{}, 1)
 	a.smartBeaconReload = make(chan struct{}, 1)
 
+	// --- Bulletin scheduler --------------------------------------------
+	bulletinSched, err := bulletin.New(bulletin.Options{
+		TxSink: a.gov,
+		Logger: a.logger,
+		OurCallFn: func() string {
+			c, cerr := a.store.ResolveStationCallsignFull(context.Background())
+			if cerr != nil {
+				return ""
+			}
+			return c
+		},
+		OnSent: func(ctx context.Context, groupID uint32, slot int) {
+			if err := a.store.IncrBulletinSendCount(ctx, groupID, slot, time.Now()); err != nil {
+				a.logger.Warn("bulletin: increment send count", "err", err)
+			}
+		},
+		FetchGroup: func(ctx context.Context, groupID uint32) (*bulletin.GroupConfig, error) {
+			g, err := a.store.GetBulletinGroup(ctx, groupID)
+			if err != nil {
+				return nil, err
+			}
+			// Bulletins share the messages TX channel so all outbound traffic uses the same radio.
+			var msgTxCh uint32
+			if mc, _ := a.store.GetMessagesConfig(ctx); mc != nil {
+				msgTxCh = mc.TxChannel
+			}
+			ch := a.resolveTxChannel(ctx, msgTxCh)
+			gc := &bulletin.GroupConfig{
+				ID:          g.ID,
+				Name:        g.Name,
+				Channel:     ch,
+				SendPath:    g.SendPath,
+				DigiPath:    g.DigiPath,
+				InitialRate: clampBulletinRate(g.InitialRate),
+				DecayFactor: g.DecayFactor,
+				StableRate:  clampBulletinRate(g.StableRate),
+			}
+			for _, item := range g.Items {
+				if item.Text != "" {
+					gc.Items = append(gc.Items, bulletin.ItemConfig{
+						GroupID:   g.ID,
+						Slot:      item.Slot,
+						Text:      item.Text,
+						SendCount: item.SendCount,
+					})
+				}
+			}
+			return gc, nil
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("bulletin scheduler init: %w", err)
+	}
+	a.bulletinSched = bulletinSched
+	a.bulletinReload = make(chan struct{}, 1)
+
 	// --- Messages: LocalTxRing is shared by iGate gating + messages ----
 	//
 	// The ring is constructed before the iGate so we can pass it into
@@ -639,6 +696,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	}
 	if ig := a.ig.Load(); ig != nil {
 		a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
+		a.bulletinSched.SetISSink(ig)
 	}
 
 	// --- Messages service ---------------------------------------------
@@ -728,6 +786,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.digipeaterComponent(),
 		a.gpsComponent(),
 		a.beaconComponent(),
+		a.bulletinComponent(),
 		a.bridgeComponent(),
 		a.agwComponent(),
 		a.igateComponent(),
@@ -839,19 +898,6 @@ func (a *App) wireIGate(ctx context.Context) error {
 // log and let the caller treat the iGate as unavailable. Used by both
 // wireIGate at startup and reloadIgate when the operator toggles the
 // iGate on at runtime.
-// igateTxSink resolves the TX governor to wire into the iGate.
-// IGateConfig.GateIsToRf is the master IS->RF switch: when it is off the
-// iGate gets no governor and can never transmit to RF, regardless of the
-// gating rule table (which still default-denies on top of this). Both the
-// boot-time build and the runtime reload path go through here so the
-// on/off condition can't drift between them. See invariant #15.
-func igateTxSink(gateIsToRf bool, gov txgovernor.TxSink) txgovernor.TxSink {
-	if gateIsToRf {
-		return gov
-	}
-	return nil
-}
-
 func (a *App) buildIgateInstance(ctx context.Context, igCfg *configstore.IGateConfig) (*igate.Igate, string, error) {
 	stationCall, err := a.store.ResolveStationCallsign(ctx)
 	if err != nil {
@@ -879,7 +925,10 @@ func (a *App) buildIgateInstance(ctx context.Context, igCfg *configstore.IGateCo
 	}
 
 	serverAddr := fmt.Sprintf("%s:%d", igCfg.Server, igCfg.Port)
-	igGov := igateTxSink(igCfg.GateIsToRf, a.gov)
+	var igGov txgovernor.TxSink
+	if len(rules) > 0 {
+		igGov = a.gov
+	}
 
 	txCh := a.resolveTxChannel(ctx, igCfg.TxChannel)
 
@@ -1403,6 +1452,10 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	apiSrv.SetDigipeaterReload(a.digipeaterReload)
 	apiSrv.SetAgwReload(a.agwReload)
 	apiSrv.SetTxBackendReload(a.txBackendReload)
+	apiSrv.SetBulletinReload(a.bulletinReload)
+	apiSrv.SetBulletinSendNow(a.bulletinSched.SendNow)
+	apiSrv.SetBulletinNextFireAt(a.bulletinSched.NextFireAt)
+	apiSrv.SetBulletinResetSchedule(a.store.ResetBulletinGroupSchedule)
 	a.positionLogReload = make(chan struct{}, 1)
 	apiSrv.SetPositionLogReload(a.positionLogReload)
 
@@ -1448,6 +1501,11 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// builds return nil so GET /api/kiss/available-usb-serial-devices
 	// responds 501 Not Implemented (see usbserialsource_default.go).
 	apiSrv.SetUsbSerialSource(a.usbSerialSourceForWebapi())
+
+	// BLE Mobilinkd scanner. Non-Android builds wire a real BLE scan
+	// backed by kiss.ScanBLEMobilinkd (see blesource_desktop.go); Android
+	// returns nil so GET /api/kiss/ble-mobilinkd-scan responds 501.
+	apiSrv.SetBLEMobilinkdScanner(a.bleMobilinkdScannerForWebapi())
 
 	// PTT device source for the unified PTT tab. Android returns a
 	// live adapter backed by the platformsvc client (see
@@ -2060,6 +2118,32 @@ func (a *App) kissComponent() namedComponent {
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
 					continue
+				case configstore.KissTypeBLEMobilinkd:
+					// BLE KISS to Mobilinkd TNC3/TNC4. No baud rate; always TNC
+					// mode (the device owns the modem and PTT). The peripheral
+					// address (macOS UUID or Linux MAC) lives in ki.Device.
+					// Skip if no address — operator saves first, scans after.
+					if ki.Device == "" {
+						continue
+					}
+					a.kissMgr.StartSerial(ctx, ki.ID, kiss.SerialConfig{
+						Name:                name,
+						Device:              ki.Device,
+						BaudRate:            0,
+						Mode:                kiss.ModeTnc,
+						ChannelMap:          map[uint8]uint32{0: ch},
+						ReconnectInitMs:     ki.ReconnectInitMs,
+						ReconnectMaxMs:      ki.ReconnectMaxMs,
+						Logger:              a.logger,
+						TncIngressRateHz:    ki.TncIngressRateHz,
+						TncIngressBurst:     ki.TncIngressBurst,
+						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
+						GateTxToIs:          ki.GateTxToIs,
+						OnReload:            a.notifyTxBackendReload,
+						OpenFunc:            kiss.OpenBLEMobilinkd,
+					})
+					continue
 				default:
 					continue
 				}
@@ -2217,17 +2301,11 @@ func (a *App) buildTxBackendSnapshot() *txbackend.Snapshot {
 }
 
 // resolveTxChannel picks a usable TX channel for igate / messages
-// traffic. Returns the configured channel when it has a modem input
-// device bound (i.e. buildTxBackendSnapshot will register a modem
-// backend for it). Otherwise falls back to the lowest channel ID with
-// a modem input device, then to the lowest channel ID overall, then 0.
-//
-// Logs a warning when a non-zero configured value is overridden so an
-// operator can correlate stale TxChannel references against the on-box
-// logs without having to read the DB. Also logs a distinct warning
-// when no channel has a modem backend at all — the returned ID will
-// fail at submit time but is the least-bad option, and the dedicated
-// log line is the operator's diagnostic for that case.
+// traffic. When configured is non-zero and the channel ID exists in the
+// DB it is returned as-is — the operator's choice is honoured regardless
+// of backing type (modem, KISS-TNC, or none yet registered). A missing
+// or zero configured value falls back to the lowest-ID channel with a
+// modem input device, then to the lowest channel ID overall.
 //
 // Called from wireIGate / wireMessages at startup and from
 // reloadIgate / Service.ReloadConfig on iGate-config saves so a
@@ -2237,29 +2315,31 @@ func (a *App) resolveTxChannel(ctx context.Context, configured uint32) uint32 {
 	if err != nil || len(chs) == 0 {
 		return configured
 	}
+	// Honour the operator's explicit choice regardless of backing type.
+	// KISS-only channels have InputDeviceID==nil but are valid TX targets.
+	if configured != 0 {
+		for _, c := range chs {
+			if c.ID == configured {
+				return configured
+			}
+		}
+		a.logger.Warn("tx channel fallback: configured channel not found",
+			"configured", configured)
+	}
+	// Auto-select: prefer lowest-ID channel with a modem input device.
 	var firstWithModem uint32
 	for _, c := range chs {
-		if c.InputDeviceID == nil {
-			continue
-		}
-		if c.ID == configured {
-			return configured
-		}
-		if firstWithModem == 0 {
+		if c.InputDeviceID != nil && firstWithModem == 0 {
 			firstWithModem = c.ID
 		}
 	}
-	if firstWithModem == 0 {
-		fallback := chs[0].ID
-		a.logger.Warn("tx channel fallback: no channel has a modem backend; tx will fail at submit",
-			"configured", configured, "using", fallback)
-		return fallback
+	if firstWithModem != 0 {
+		return firstWithModem
 	}
-	if configured != 0 && configured != firstWithModem {
-		a.logger.Warn("tx channel fallback: configured channel has no modem backend",
-			"configured", configured, "using", firstWithModem)
-	}
-	return firstWithModem
+	fallback := chs[0].ID
+	a.logger.Warn("tx channel fallback: no channel has a modem backend; tx will fail at submit",
+		"configured", configured, "using", fallback)
+	return fallback
 }
 
 func (a *App) digipeaterComponent() namedComponent {
@@ -2480,6 +2560,105 @@ func (a *App) notifyBeaconReload() {
 	case a.beaconReloadDone <- struct{}{}:
 	default:
 	}
+}
+
+// bulletinComponent owns the bulletin scheduler goroutine and its reload
+// watcher. Follows the same pattern as beaconComponent.
+func (a *App) bulletinComponent() namedComponent {
+	return namedComponent{
+		name: "bulletin",
+		start: func(ctx context.Context) error {
+			a.bulletinSched.Reload(a.loadBulletinConfigs(ctx))
+			a.bulletinWG.Add(1)
+			go func() {
+				defer a.bulletinWG.Done()
+				if err := a.bulletinSched.Run(ctx); err != nil {
+					a.logger.Error("bulletin scheduler", "err", err)
+				}
+			}()
+			a.bulletinReloadWG.Add(1)
+			go func() {
+				defer a.bulletinReloadWG.Done()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-a.bulletinReload:
+						a.bulletinSched.Reload(a.loadBulletinConfigs(ctx))
+					}
+				}
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			if err := waitGroup(shutdownCtx, &a.bulletinReloadWG, "bulletin reload"); err != nil {
+				return err
+			}
+			return waitGroup(shutdownCtx, &a.bulletinWG, "bulletin scheduler")
+		},
+	}
+}
+
+// loadBulletinConfigs reads active bulletin groups from configstore and
+// converts them into bulletin.GroupConfig values for the scheduler.
+func (a *App) loadBulletinConfigs(ctx context.Context) []bulletin.GroupConfig {
+	groups, err := a.store.ListActiveBulletinGroups(ctx)
+	if err != nil {
+		a.logger.Error("bulletin load", "err", err)
+		return nil
+	}
+	// Channel and send_path come from the global BulletinsConfig singleton.
+	// TxChannel=0 means auto-resolve to the first modem-backed channel.
+	bc, _ := a.store.GetBulletinsConfig(ctx)
+	var globalChannel uint32
+	var globalSendPath string
+	if bc != nil {
+		globalChannel = a.resolveTxChannel(ctx, bc.TxChannel)
+		globalSendPath = bc.SendPath
+	} else {
+		globalChannel = a.resolveTxChannel(ctx, 0)
+		globalSendPath = "rf"
+	}
+	if globalSendPath == "" {
+		globalSendPath = "rf"
+	}
+	out := make([]bulletin.GroupConfig, 0, len(groups))
+	for _, g := range groups {
+		gc := bulletin.GroupConfig{
+			ID:          g.ID,
+			Name:        g.Name,
+			Channel:     globalChannel,
+			SendPath:    globalSendPath,
+			DigiPath:    g.DigiPath,
+			InitialRate: clampBulletinRate(g.InitialRate),
+			DecayFactor: g.DecayFactor,
+			StableRate:  clampBulletinRate(g.StableRate),
+		}
+		for _, item := range g.Items {
+			if !item.Active || item.Text == "" {
+				continue
+			}
+			gc.Items = append(gc.Items, bulletin.ItemConfig{
+				GroupID:   g.ID,
+				Slot:      item.Slot,
+				Text:      item.Text,
+				SendCount: item.SendCount,
+			})
+		}
+		if len(gc.Items) > 0 {
+			out = append(out, gc)
+		}
+	}
+	return out
+}
+
+// clampBulletinRate ensures the given seconds value is at least 30 (the APRS
+// minimum) and converts to a time.Duration.
+func clampBulletinRate(secs int) time.Duration {
+	if secs < 30 {
+		secs = 30
+	}
+	return time.Duration(secs) * time.Second
 }
 
 // bridgeComponent owns three things at once: the modembridge.Bridge
@@ -2779,6 +2958,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 		if a.beaconSched != nil {
 			a.beaconSched.SetISSink(nil)
 		}
+		if a.bulletinSched != nil {
+			a.bulletinSched.SetISSink(nil)
+		}
 		a.lastAppliedIgateFilter = ""
 		return
 	}
@@ -2805,6 +2987,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 		if a.beaconSched != nil {
 			a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
 		}
+		if a.bulletinSched != nil {
+			a.bulletinSched.SetISSink(ig)
+		}
 		a.lastAppliedIgateFilter = composed
 		if err := ig.Start(ctx); err != nil {
 			a.logger.Error("igate reload: start", "err", err)
@@ -2814,6 +2999,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 			a.igateOut.SetIgate(nil)
 			if a.beaconSched != nil {
 				a.beaconSched.SetISSink(nil)
+			}
+			if a.bulletinSched != nil {
+				a.bulletinSched.SetISSink(nil)
 			}
 			a.lastAppliedIgateFilter = ""
 			return
@@ -2840,7 +3028,10 @@ func (a *App) reloadIgate(ctx context.Context) {
 		})
 	}
 
-	gov := igateTxSink(igCfg.GateIsToRf, a.gov)
+	var gov txgovernor.TxSink
+	if len(rules) > 0 {
+		gov = a.gov
+	}
 
 	composed, err := buildIgateFilter(ctx, a.store)
 	if err != nil {
