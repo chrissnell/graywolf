@@ -186,6 +186,7 @@
   }
   .main-content {
     flex: 1;
+    min-width: 0; /* prevent flex item from expanding beyond viewport width */
     margin-left: var(--sidebar-width);
     padding: 24px;
     max-width: 1200px;
@@ -252,5 +253,17 @@
       height: 100vh;
       height: 100dvh;
     }
+  }
+
+  /* Force compact layout — mirrors the portrait mobile rules above but
+     with higher specificity so they override all media queries. */
+  :global(html.force-compact-menu) .main-content {
+    margin-left: 0;
+    margin-top: calc(56px + var(--safe-area-top));
+    padding: 16px;
+  }
+  :global(html.force-compact-menu) .main-content.full-bleed {
+    height: calc(100vh - 56px - var(--safe-area-top));
+    height: calc(100dvh - 56px - var(--safe-area-top));
   }
 </style>
