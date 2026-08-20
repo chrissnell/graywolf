@@ -39,6 +39,12 @@ type Client interface {
 	// vidPid ("vid:pid" hex) at baud, returning a multiplexed
 	// io.ReadWriteCloser routed independently by the dispatch layer.
 	UsbSerialOpen(ctx context.Context, vidPid string, baud uint32) (io.ReadWriteCloser, error)
+	// ScanBLEKISS starts a BLE scan and delivers discovered devices to
+	// discovered until ctx is cancelled. Sends BleScanStop on return.
+	ScanBLEKISS(ctx context.Context, discovered func(BLEKISSDevice)) error
+	// BLEOpen opens a BLE GATT KISS stream to addr, returning a multiplexed
+	// io.ReadWriteCloser routed independently by the dispatch layer.
+	BLEOpen(ctx context.Context, addr string) (io.ReadWriteCloser, error)
 	Close() error
 }
 

@@ -90,6 +90,28 @@ export const kissBt = {
   bondedDevices: () => api.get('/kiss/bonded-bt-devices'),
 };
 
+// kissBle groups the BLE TNC scanner helpers (desktop only, uses
+// tinygo.org/x/bluetooth; returns 501 on Android and on macOS release
+// builds compiled without CGO).
+export const kissBle = {
+  // openScan opens a Server-Sent Events stream that delivers discovered
+  // BLE TNC devices (Mobilinkd TNC3/TNC4, BTECH UV-PRO, VERO VR-N76,
+  // Radioddity GA-5WB, and others) in real time. Returns an EventSource.
+  // Each "message" event carries a JSON-encoded { addr, name, rssi }.
+  // The "done" event marks the end of the scan.
+  // timeout is optional scan duration in seconds (default 15, max 60).
+  openScan: (timeout) => {
+    const params = new URLSearchParams();
+    if (timeout) params.set('timeout', String(timeout));
+    // EventSource cannot set custom headers; pass bearer token as ?token=
+    // so the Android bearer middleware accepts it (same path as WebSocket).
+    const token = getBearerToken();
+    if (token) params.set('token', token);
+    const q = params.toString() ? '?' + params.toString() : '';
+    return new EventSource(`/api/kiss/ble-mobilinkd-scan${q}`);
+  },
+};
+
 // kissUsb groups the KISS-over-USB-serial helpers (Android-only; the device
 // list endpoint returns 501 on desktop hosts).
 export const kissUsb = {

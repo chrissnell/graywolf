@@ -1,0 +1,363 @@
+package com.nw5w.graywolf.platformsvc
+
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.Context
+import android.os.Build
+import android.os.ParcelUuid
+import android.util.Log
+import java.util.UUID
+
+/** A single BLE KISS TNC device found during a scan. */
+data class BleFoundDevice(val mac: String, val name: String, val rssi: Int)
+
+/** Narrow interface around the Android BLE API to allow unit testing. */
+interface BleFacade {
+    /** Start scanning; calls onFound for each matching device, onError if the scan cannot start. Idempotent if already scanning. */
+    fun startScan(onFound: (BleFoundDevice) -> Unit, onError: ((String) -> Unit)? = null)
+    /** Stop an in-progress scan. Idempotent. */
+    fun stopScan()
+    /**
+     * Open a GATT connection to [mac], discover services, enable TX notifications,
+     * and return a [BleGattSession] for data relay. Throws on failure.
+     * MUST be called from a worker thread (blocks until connection completes or fails).
+     */
+    fun openGatt(context: Context, mac: String): BleGattSession
+}
+
+/** GATT session returned by [BleFacade.openGatt]. Caller owns close(). */
+interface BleGattSession {
+    /** Write [bytes] to the TNC RX characteristic (write-without-response). */
+    fun write(bytes: ByteArray)
+    /** Register a callback invoked on each inbound notification from the TNC TX characteristic. */
+    fun onData(cb: (ByteArray) -> Unit)
+    /** Tear down the GATT connection. */
+    fun close()
+}
+
+/** Production implementation backed by android.bluetooth. */
+class SystemBleFacade(
+    private val adapter: BluetoothAdapter?,
+    private val appContext: Context,
+) : BleFacade {
+
+    companion object {
+        // Mobilinkd TNC3/TNC4 proprietary GATT service / characteristics.
+        val MOBILINKD_SVC: UUID = UUID.fromString("00000001-ba2a-46c9-ae49-01b0961f68bb")
+        val MOBILINKD_TX:  UUID = UUID.fromString("00000003-ba2a-46c9-ae49-01b0961f68bb")
+        val MOBILINKD_RX:  UUID = UUID.fromString("00000002-ba2a-46c9-ae49-01b0961f68bb")
+
+        // Nordic UART Service (NUS) — BTECH UV-PRO, VERO VR-N76, Radioddity GA-5WB, etc.
+        val NUS_SVC: UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+        val NUS_TX:  UUID = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
+        val NUS_RX:  UUID = UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
+
+        // CCCD descriptor UUID for enabling notifications.
+        val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
+        private val SCAN_SERVICE_UUIDS = listOf(MOBILINKD_SVC, NUS_SVC)
+    }
+
+    @Volatile private var activeScanCallback: ScanCallback? = null
+
+    override fun startScan(onFound: (BleFoundDevice) -> Unit, onError: ((String) -> Unit)?) {
+        val scanner = adapter?.bluetoothLeScanner ?: run {
+            val msg = "bluetoothLeScanner unavailable (Bluetooth off or adapter missing)"
+            Log.e("SystemBleFacade", msg)
+            onError?.invoke(msg)
+            return
+        }
+        if (activeScanCallback != null) return
+
+        val filters = SCAN_SERVICE_UUIDS.map { uuid ->
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(uuid)).build()
+        }
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        val seen = mutableSetOf<String>()
+        val cb = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                val mac = result.device.address ?: return
+                if (!seen.add(mac)) return
+                // Prefer the advertised name from the scan record — it is available
+                // without BLUETOOTH_CONNECT. Fall back to device.name only as a last resort.
+                val name = result.scanRecord?.deviceName
+                    ?: try { result.device.name } catch (_: SecurityException) { null }
+                onFound(BleFoundDevice(mac = mac, name = name ?: mac, rssi = result.rssi))
+            }
+
+            override fun onScanFailed(errorCode: Int) {
+                activeScanCallback = null
+                val msg = "scan_failed: " + when (errorCode) {
+                    SCAN_FAILED_ALREADY_STARTED            -> "already_started"
+                    SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> "registration_failed"
+                    SCAN_FAILED_INTERNAL_ERROR             -> "internal_error"
+                    SCAN_FAILED_FEATURE_UNSUPPORTED        -> "feature_unsupported"
+                    5 /* OUT_OF_HARDWARE_RESOURCES */       -> "out_of_hardware_resources"
+                    6 /* SCANNING_TOO_FREQUENTLY */         -> "scanning_too_frequently"
+                    else                                   -> "unknown_code_$errorCode"
+                }
+                Log.e("SystemBleFacade", msg)
+                onError?.invoke(msg)
+            }
+        }
+        activeScanCallback = cb
+        try {
+            scanner.startScan(filters, settings, cb)
+        } catch (e: SecurityException) {
+            activeScanCallback = null
+            val msg = "permission_denied: BLUETOOTH_SCAN not granted (${e.message})"
+            Log.e("SystemBleFacade", msg)
+            onError?.invoke(msg)
+        }
+    }
+
+    override fun stopScan() {
+        val cb = activeScanCallback ?: return
+        activeScanCallback = null
+        try {
+            adapter?.bluetoothLeScanner?.stopScan(cb)
+        } catch (_: SecurityException) { /* ignore */ }
+    }
+
+    override fun openGatt(context: Context, mac: String): BleGattSession {
+        val a = adapter ?: error("Bluetooth adapter not available")
+        val device: BluetoothDevice = try {
+            a.getRemoteDevice(mac)
+        } catch (_: IllegalArgumentException) {
+            error("BLE: invalid MAC address: $mac")
+        }
+        return SystemBleGattSession(device, context)
+    }
+}
+
+/**
+ * Blocking GATT session for one BLE KISS TNC. Constructor returns after
+ * the connection is established, services are discovered, and TX
+ * notifications are enabled — or throws if any step fails.
+ * MUST be constructed on a worker thread (not the main thread).
+ */
+class SystemBleGattSession(
+    private val device: BluetoothDevice,
+    private val context: Context,
+) : BleGattSession {
+    private val lock = java.util.concurrent.locks.ReentrantLock()
+    private val cond = lock.newCondition()
+
+    private enum class State { CONNECTING, CONNECTED, SERVICES_DISCOVERED, READY, FAILED, CLOSED }
+    @Volatile private var state = State.CONNECTING
+
+    private var gatt: BluetoothGatt? = null
+    private var rxChar: BluetoothGattCharacteristic? = null
+    @Volatile private var dataCallback: ((ByteArray) -> Unit)? = null
+
+    // Write serialization: BLE does not allow concurrent characteristic writes.
+    private val writeLock = java.util.concurrent.locks.ReentrantLock()
+    private val writeReady = writeLock.newCondition()
+    @Volatile private var writePending = false
+
+    private val gattCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+            when (newState) {
+                BluetoothGatt.STATE_CONNECTED -> {
+                    setState(State.CONNECTED)
+                    g.discoverServices()
+                }
+                else -> {
+                    if (state != State.CLOSED) setState(State.FAILED)
+                    signal()
+                }
+            }
+        }
+
+        override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) { setState(State.FAILED); signal(); return }
+            setState(State.SERVICES_DISCOVERED)
+            signal()
+        }
+
+        override fun onCharacteristicChanged(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray,
+        ) {
+            dataCallback?.invoke(value.copyOf())
+        }
+
+        @Deprecated("Deprecated in Java")
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicChanged(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+        ) {
+            onCharacteristicChanged(g, characteristic, characteristic.value ?: return)
+        }
+
+        @Suppress("DEPRECATION")
+        override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            setState(State.READY)
+            signal()
+        }
+
+        override fun onCharacteristicWrite(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int,
+        ) {
+            writeLock.lock()
+            try {
+                writePending = false
+                writeReady.signalAll()
+            } finally {
+                writeLock.unlock()
+            }
+        }
+
+        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+            // MTU response received; proceed with service discovery.
+            g.discoverServices()
+        }
+    }
+
+    init {
+        val g = try {
+            device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        } catch (e: SecurityException) {
+            error("BLE: BLUETOOTH_CONNECT permission denied: ${e.message}")
+        } ?: error("BLE: connectGatt returned null for ${device.address}")
+        gatt = g
+
+        // Wait for services to be discovered (connectGatt → onConnectionStateChange →
+        // discoverServices → onServicesDiscovered).
+        awaitState(State.SERVICES_DISCOVERED, timeoutMs = 20_000L)
+
+        // Request larger MTU so KISS frames fit without fragmentation.
+        try { g.requestMtu(244) } catch (_: SecurityException) {}
+        // Briefly wait for MTU negotiation (best-effort; discoverServices was
+        // called from onConnectionStateChange already, this is a second call).
+
+        // Find the first supported GATT profile (Mobilinkd, then NUS).
+        val profile = findProfile(g)
+            ?: run { g.disconnect(); error("BLE: no recognised KISS service on ${device.address}") }
+
+        rxChar = profile.rx
+
+        // Enable notifications on the TX characteristic.
+        try { g.setCharacteristicNotification(profile.tx, true) } catch (e: SecurityException) {
+            g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied enabling notify")
+        }
+        val cccdDescriptor = profile.tx.getDescriptor(SystemBleFacade.CCCD)
+            ?: run { g.disconnect(); error("BLE: no CCCD on TX characteristic") }
+
+        @Suppress("DEPRECATION")
+        cccdDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try { g.writeDescriptor(cccdDescriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) } catch (e: SecurityException) {
+                g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied writing CCCD")
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            try { g.writeDescriptor(cccdDescriptor) } catch (e: SecurityException) {
+                g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied writing CCCD")
+            }
+        }
+
+        // Wait for CCCD write to complete (→ onDescriptorWrite → READY).
+        awaitState(State.READY, timeoutMs = 10_000L)
+    }
+
+    private data class GattProfile(
+        val tx: BluetoothGattCharacteristic,
+        val rx: BluetoothGattCharacteristic,
+    )
+
+    private fun findProfile(g: BluetoothGatt): GattProfile? {
+        // Try Mobilinkd first, then NUS.
+        for ((svcUuid, txUuid, rxUuid) in listOf(
+            Triple(SystemBleFacade.MOBILINKD_SVC, SystemBleFacade.MOBILINKD_TX, SystemBleFacade.MOBILINKD_RX),
+            Triple(SystemBleFacade.NUS_SVC,       SystemBleFacade.NUS_TX,       SystemBleFacade.NUS_RX),
+        )) {
+            val svc = g.getService(svcUuid) ?: continue
+            val tx  = svc.getCharacteristic(txUuid) ?: continue
+            val rx  = svc.getCharacteristic(rxUuid) ?: continue
+            return GattProfile(tx, rx)
+        }
+        return null
+    }
+
+    private fun setState(s: State) { state = s }
+
+    private fun signal() {
+        lock.lock(); try { cond.signalAll() } finally { lock.unlock() }
+    }
+
+    private fun awaitState(target: State, timeoutMs: Long) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        lock.lock()
+        try {
+            while (state != target) {
+                if (state == State.FAILED || state == State.CLOSED)
+                    error("BLE: connection to ${device.address} failed (state=$state)")
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0)
+                    error("BLE: timed out waiting for $target from ${device.address}")
+                cond.await(remaining, java.util.concurrent.TimeUnit.MILLISECONDS)
+            }
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    override fun onData(cb: (ByteArray) -> Unit) { dataCallback = cb }
+
+    override fun write(bytes: ByteArray) {
+        val rc = rxChar ?: return
+        val g  = gatt  ?: return
+        val mtu = 244
+        var offset = 0
+        while (offset < bytes.size) {
+            val end = minOf(offset + mtu, bytes.size)
+            val chunk = bytes.copyOfRange(offset, end)
+
+            // Serialize writes: wait for the previous write to complete.
+            writeLock.lock()
+            try {
+                val deadline = System.currentTimeMillis() + 5_000L
+                while (writePending) {
+                    val remaining = deadline - System.currentTimeMillis()
+                    if (remaining <= 0) return  // timeout; drop remainder
+                    writeReady.await(remaining, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
+                writePending = true
+            } finally {
+                writeLock.unlock()
+            }
+
+            @Suppress("DEPRECATION")
+            rc.value = chunk
+            @Suppress("DEPRECATION")
+            try {
+                g.writeCharacteristic(rc)
+            } catch (_: SecurityException) { writeLock.lock(); writePending = false; writeLock.unlock(); return }
+            offset = end
+        }
+    }
+
+    override fun close() {
+        setState(State.CLOSED)
+        signal()
+        dataCallback = null
+        try { gatt?.close() } catch (_: Throwable) {}
+        gatt = null
+    }
+}
