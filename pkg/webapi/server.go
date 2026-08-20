@@ -138,6 +138,12 @@ type Server struct {
 	// pkg/webapi/ptt.go for the interface definition.
 	pttDeviceSource PttDeviceSource
 
+	// bleMobilinkdScanner scans for Mobilinkd TNC3/TNC4 BLE peripherals for
+	// GET /api/kiss/ble-mobilinkd-scan. Wired post-construction via
+	// SetBLEMobilinkdScanner on non-Android builds; nil elsewhere so the
+	// handler returns 501. On Android, TNCs are reached via the SPP path.
+	bleMobilinkdScanner BLEMobilinkdScanner
+
 	demo bool // true when running in screenshot/demo mode; set from Config.Demo
 }
 

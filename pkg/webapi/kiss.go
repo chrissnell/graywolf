@@ -21,6 +21,7 @@ func (s *Server) registerKiss(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/kiss/bonded-bt-devices", s.handleGetBondedBtDevices)
 	mux.HandleFunc("GET /api/kiss/available-usb-serial-devices", s.handleGetAvailableUsbSerialDevices)
 	mux.HandleFunc("GET /api/kiss/available-serial-ports", s.listAvailableKissSerialPorts)
+	mux.HandleFunc("GET /api/kiss/ble-mobilinkd-scan", s.handleBLEMobilinkdScan)
 	mux.HandleFunc("GET /api/kiss/{id}", s.getKiss)
 	mux.HandleFunc("PUT /api/kiss/{id}", s.updateKiss)
 	mux.HandleFunc("PUT /api/kiss/{id}/enabled", s.setKissEnabled)
@@ -401,6 +402,30 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			GateTxToIs:          ki.GateTxToIs,
 			OnReload:            s.notifyTxBackendReload,
 			OpenFunc:            s.kissSerialOpenFunc,
+		})
+	case configstore.KissTypeBLEMobilinkd:
+		// BLE KISS to Mobilinkd TNC3/TNC4. No baud rate; always TNC mode.
+		// Mirrors the boot-path in wiring.go's kissComponent.
+		if ki.Device == "" {
+			s.kissManager.Stop(ki.ID)
+			return
+		}
+		s.kissManager.StartSerial(s.kissCtx, ki.ID, kiss.SerialConfig{
+			Name:                ki.Name,
+			Device:              ki.Device,
+			BaudRate:            0,
+			Mode:                kiss.ModeTnc,
+			ChannelMap:          map[uint8]uint32{0: ch},
+			ReconnectInitMs:     ki.ReconnectInitMs,
+			ReconnectMaxMs:      ki.ReconnectMaxMs,
+			Logger:              s.logger,
+			TncIngressRateHz:    ki.TncIngressRateHz,
+			TncIngressBurst:     ki.TncIngressBurst,
+			AllowTxFromGovernor: ki.AllowTxFromGovernor,
+			AllowConnectedMode:  ki.AllowConnectedMode,
+			GateTxToIs:          ki.GateTxToIs,
+			OnReload:            s.notifyTxBackendReload,
+			OpenFunc:            kiss.OpenBLEMobilinkd,
 		})
 	default:
 		// Unknown interface type — stop any lingering session.
