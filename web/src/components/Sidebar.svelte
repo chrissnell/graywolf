@@ -27,7 +27,10 @@
   const mainItems = [
     { path: '/', label: 'Dashboard', svgIcon: 'dashboard' },
     { path: '/map', label: 'Live Map', svgIcon: 'globe' },
+    { path: '/stations', label: 'Stations', svgIcon: 'stations' },
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
+    { path: '/bulletins', label: 'Bulletins', svgIcon: 'bulletins' },
+    { path: '/weather', label: 'Weather Alerts', svgIcon: 'weather' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
     { path: '/logs', label: 'APRS Logs', svgIcon: 'logs' },
@@ -35,21 +38,23 @@
   ];
 
   const allSettingsItems = [
-    { path: '/agw', label: 'AGW' },
-    { path: '/audio-devices', label: 'Audio Devices' },
-    { path: '/beacons', label: 'Beacons' },
-    { path: '/channels', label: 'Channels' },
-    { path: '/digipeater', label: 'Digipeater' },
     { path: '/preferences', label: 'General' },
-    { path: '/gps', label: 'GPS' },
-    { path: '/igate', label: 'iGate' },
-    { path: '/kiss', label: 'KISS' },
-    { path: '/preferences/maps', label: 'Maps' },
-    { path: '/preferences/messages', label: 'Messaging' },
-    { path: '/position-log', label: 'Position Log' },
-    { path: '/ptt', label: 'PTT' },
-    { path: '/simulation', label: 'Simulation' },
     { path: '/callsign', label: 'Station Callsign' },
+    { path: '/audio-devices', label: 'Audio Devices' },
+    { path: '/ptt', label: 'PTT' },
+    { path: '/channels', label: 'Channels' },
+    { path: '/kiss', label: 'KISS' },
+    { path: '/gps', label: 'GPS' },
+    { path: '/beacons', label: 'Beacons' },
+    { path: '/igate', label: 'iGate' },
+    { path: '/digipeater', label: 'Digipeater' },
+    { path: '/preferences/maps', label: 'Maps' },
+    { path: '/position-log', label: 'Position Log' },
+    { path: '/preferences/messages', label: 'Messaging' },
+    { path: '/preferences/bulletins', label: 'Bulletins' },
+    { path: '/preferences/weather', label: 'Weather' },
+    { path: '/agw', label: 'AGW' },
+    { path: '/simulation', label: 'Simulation' },
   ];
   // mainItems carries the icon'd top section; it's filtered by the
   // same HIDDEN_ON_ANDROID set as the settings group so an entry like
@@ -131,6 +136,8 @@
   let isMapActive = $derived(currentPath === '/map' || currentPath.startsWith('/map/'));
   // Messages route match — '/messages' or any '/messages/*' sub-route.
   let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
+  // Bulletins route match.
+  let isBulletinsActive = $derived(currentPath === '/bulletins' || currentPath.startsWith('/bulletins/'));
   let isTerminalActive = $derived(currentPath === '/terminal' || currentPath.startsWith('/terminal/'));
 
   // Per-group active item: longest-prefix match wins. This prevents e.g.
@@ -183,6 +190,23 @@
                 <path d="M3 12h18" />
                 <path d="M12 3a14 14 0 0 1 0 18" />
                 <path d="M12 3a14 14 0 0 0 0 18" />
+              </svg>
+            {:else if item.svgIcon === 'stations'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18" />
+                <path d="M3 15h18" />
+                <path d="M9 9v12" />
               </svg>
             {:else if item.svgIcon === 'dashboard'}
               <svg
@@ -262,6 +286,38 @@
                 <rect x="2" y="4" width="20" height="16" rx="2" />
                 <polyline points="6 9 9 12 6 15" />
                 <line x1="12" y1="15" x2="17" y2="15" />
+              </svg>
+            {:else if item.svgIcon === 'bulletins'}
+              <!-- Megaphone / bulletin icon -->
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M3 11v2a2 2 0 0 0 2 2h1l2 5h2l-2-5h1l11 4V5L9 9H5a2 2 0 0 0-2 2z" />
+                <path d="M21 9v6" />
+              </svg>
+            {:else if item.svgIcon === 'weather'}
+              <!-- Cloud-lightning / weather alert icon -->
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+                <path d="M11 13l-2 4h4l-2 4" />
               </svg>
             {/if}
             {#if unread > 0}
@@ -589,7 +645,7 @@
     opacity: 0.5;
     padding: 10px 16px 6px;
     margin: 0;
-    border-top: 1px solid var(--border-color);
+    /* border-top: 1px solid var(--border-color); */
   }
 
   .nav-link {
@@ -871,5 +927,49 @@
       width: 28px;
       height: 28px;
     }
+  }
+
+  /* Force compact layout when the user preference is active.
+     Higher specificity than the media queries above so these win
+     regardless of viewport size or orientation. */
+  :global(html.force-compact-menu) .sidebar {
+    display: none;
+  }
+
+  :global(html.force-compact-menu) .top-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: calc(56px + var(--safe-area-top));
+    padding: var(--safe-area-top) 8px 0
+      max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    border-right: none;
+    z-index: 100;
+    box-sizing: border-box;
+    overflow-y: visible;
+  }
+
+  /* Restore wordmark visibility in forced portrait layout on landscape phones. */
+  :global(html.force-compact-menu) .top-bar-brand {
+    height: 44px;
+    padding: 0 8px;
+    margin-bottom: 0;
+  }
+  :global(html.force-compact-menu) .top-bar-wordmark {
+    display: inline;
+  }
+  :global(html.force-compact-menu) .top-bar-logo {
+    width: 32px;
+    height: 32px;
   }
 </style>
