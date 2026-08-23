@@ -41,7 +41,7 @@ type StationDTO struct {
 	LastDirectHeard time.Time `json:"last_direct_heard"`
 	// Direction indicates the source of the most recent packet: "RX" (heard on air), "TX" (sent by us), or "IS" (APRS-IS).
 	Direction string `json:"direction"`
-	// Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets.
+	// Via is how the most recent packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS).
 	Via string `json:"via,omitempty"`
 	// Path is the raw AX.25 digipeater path from the most recent packet (entries with trailing "*" have the H-bit set).
 	Path []string `json:"path,omitempty"`
@@ -75,7 +75,7 @@ type StationPosDTO struct {
 	Speed float64 `json:"speed_kt,omitempty"`
 	// Course is the reported course over ground in degrees true (0-359); omitted when not reported.
 	Course *int `json:"course,omitempty"`
-	// Via is the callsign of the last digipeater (H-bit) that forwarded this position packet; empty for direct.
+	// Via is how this position packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS).
 	Via string `json:"via,omitempty"`
 	// Path is the AX.25 digipeater path recorded with this position fix.
 	Path []string `json:"path,omitempty"`

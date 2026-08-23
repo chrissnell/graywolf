@@ -14,6 +14,12 @@
 // dot is omitted -- legacy used Leaflet's bindTooltip which has no
 // direct MapLibre equivalent on a circle feature; the labels can be
 // added later if missed.
+//
+// When that signal path can't be built -- a direct RF station with no
+// configured own position, or an APRS-IS station whose digipeaters
+// aren't locally known -- show() falls back to highlighting the
+// station's own recent-beacon trail so hover still visualizes the path
+// of its last beacons instead of silently rendering nothing (GH #506).
 
 const PATH_SRC = 'gw-hover-path';
 const PATH_GLOW_LAYER = 'gw-hover-path-glow';
@@ -72,6 +78,24 @@ export function mountHoverPathLayer(map, getOwnPosition = () => null) {
     });
   }
 
+  // trailCoords: the station's beacon breadcrumbs as [lon, lat] pairs,
+  // consecutive duplicates collapsed. Returned oldest-first (station.positions
+  // is newest-first) so the line reads in the direction the station travelled.
+  function trailCoords(station) {
+    const positions = station.positions;
+    if (!Array.isArray(positions) || positions.length < 2) return [];
+    const out = [];
+    for (let i = positions.length - 1; i >= 0; i--) {
+      const p = positions[i];
+      if (!p || typeof p.lon !== 'number' || typeof p.lat !== 'number') continue;
+      const c = [p.lon, p.lat];
+      const prev = out[out.length - 1];
+      if (prev && prev[0] === c[0] && prev[1] === c[1]) continue;
+      out.push(c);
+    }
+    return out;
+  }
+
   function show(station) {
     if (!station) {
       clear();
@@ -114,8 +138,36 @@ export function mountHoverPathLayer(map, getOwnPosition = () => null) {
       }
     }
 
+    // Fallback: when the digipeater/own signal path can't be drawn (a
+    // direct RF station with no configured own position, or an APRS-IS
+    // station whose digipeaters aren't locally known), highlight the
+    // station's own recent-beacon trail instead so hover still shows the
+    // path of its last beacons (GH #506) rather than silently doing
+    // nothing. The signal path takes priority when it IS drawable.
     if (coords.length < 2) {
-      clear();
+      const trail = trailCoords(station);
+      if (trail.length < 2) {
+        clear();
+        return;
+      }
+      map.getSource(PATH_SRC).setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: trail },
+            properties: {},
+          },
+        ],
+      });
+      map.getSource(NODES_SRC).setData({
+        type: 'FeatureCollection',
+        features: trail.map((c) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: c },
+          properties: {},
+        })),
+      });
       return;
     }
 
