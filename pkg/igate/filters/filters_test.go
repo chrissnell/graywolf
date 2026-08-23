@@ -357,6 +357,13 @@ func TestPacketTypeMatch(t *testing.T) {
 		{"status_matches_status", "status", aprs.PacketStatus, true},
 		{"query_matches_query", "query", aprs.PacketQuery, true},
 		{"status_rejects_message", "status", aprs.PacketMessage, false},
+		// Fail-safe: packet types with no category must never gate to RF.
+		// This locks in default-deny for uncovered types so a future
+		// taxonomy change can't silently start keying up the radio.
+		{"message_rejects_thirdparty", "message", aprs.PacketThirdParty, false},
+		{"message_rejects_capabilities", "message", aprs.PacketCapabilities, false},
+		{"message_rejects_df", "message", aprs.PacketDF, false},
+		{"message_rejects_unknown", "message", aprs.PacketUnknown, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -511,6 +511,19 @@
       <span class="callout-icon">&#9432;</span>
       <div class="callout-body">
         <p>
+          A weather station&rsquo;s position report is classified as
+          <strong>Weather</strong>, not <strong>Position</strong> &mdash;
+          the weather data determines the category. If you want to gate
+          weather stations, use the Weather category; a Position rule will
+          not match them.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
           Packet Type rules still pass through the hardcoded policy gate:
           non-message types only transmit when the packet is sourced from
           one of your own station SSIDs, and directed messages only
