@@ -19,6 +19,7 @@ const (
 	TypePrefix      RuleType = "prefix"       // source callsign prefix (no SSID)
 	TypeMessageDest RuleType = "message_dest" // message addressee match
 	TypeObject      RuleType = "object"       // object/item name match
+	TypePacketType  RuleType = "packet_type"  // APRS packet-type category match
 )
 
 // Action is the outcome when a rule matches.
@@ -36,6 +37,35 @@ type Rule struct {
 	Type     RuleType
 	Pattern  string // interpretation depends on Type
 	Action   Action
+}
+
+// packetTypeCategories maps a TypePacketType rule Pattern (a stable
+// category key exposed in the UI and validated by the DTO layer) to the
+// set of aprs.PacketType values it covers. The keys mirror the aprs.is
+// javAPRSFilter `t/...` classes (https://www.aprs-is.net/javAPRSFilter.aspx):
+//
+//	message (t/m), position (t/p), weather (t/w), object (t/o),
+//	item (t/i), telemetry (t/t), status (t/s), query (t/q).
+//
+// `position` folds in Mic-E, which is a position report at heart. The key
+// set is duplicated (as strings, no aprs import) in the DTO validator
+// pkg/webapi/dto.packetTypeCategoryKeys — keep the two in sync.
+var packetTypeCategories = map[string][]aprs.PacketType{
+	"message":   {aprs.PacketMessage},
+	"position":  {aprs.PacketPosition, aprs.PacketMicE},
+	"weather":   {aprs.PacketWeather},
+	"object":    {aprs.PacketObject},
+	"item":      {aprs.PacketItem},
+	"telemetry": {aprs.PacketTelemetry},
+	"status":    {aprs.PacketStatus},
+	"query":     {aprs.PacketQuery},
+}
+
+// PacketTypeCategory reports whether s is a recognized TypePacketType
+// category key (case-insensitive, whitespace-trimmed, matching matches()).
+func PacketTypeCategory(s string) bool {
+	_, ok := packetTypeCategories[strings.ToLower(strings.TrimSpace(s))]
+	return ok
 }
 
 // Engine evaluates rules against decoded packets.
@@ -125,6 +155,17 @@ func matches(r Rule, pkt *aprs.DecodedAPRSPacket) bool {
 			return false
 		}
 		return matchPattern(r.Pattern, name)
+	case TypePacketType:
+		cats, ok := packetTypeCategories[strings.ToLower(strings.TrimSpace(r.Pattern))]
+		if !ok {
+			return false
+		}
+		for _, t := range cats {
+			if pkt.Type == t {
+				return true
+			}
+		}
+		return false
 	}
 	return false
 }

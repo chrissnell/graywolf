@@ -263,7 +263,7 @@
           <tbody>
             <tr>
               <td>Type</td>
-              <td>Match type: Callsign, Prefix, Message Dest, or Object</td>
+              <td>Match type: Callsign, Prefix, Message Dest, Object, or Packet Type</td>
             </tr>
             <tr>
               <td>Pattern</td>
@@ -491,6 +491,36 @@
       </div>
     </div>
 
+    <h4>Packet Type</h4>
+
+    <p>
+      Match on the <strong>type of the APRS packet</strong> rather than on
+      any callsign or name. Instead of a free-text pattern, the Pattern
+      field becomes a drop-down of packet-type categories mapped to the
+      standard aprs.is <code>t/&hellip;</code> filter classes:
+      <strong>Message</strong>, <strong>Position</strong>,
+      <strong>Weather</strong>, <strong>Object</strong>,
+      <strong>Item</strong>, <strong>Telemetry</strong>,
+      <strong>Status</strong>, and <strong>Query</strong>.
+      (Position also covers Mic-E reports.) This lets you gate only a
+      chosen kind of traffic to RF &mdash; for example, messages only in
+      areas where no iGate should transmit anything else on the air.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Packet Type rules still pass through the hardcoded policy gate:
+          non-message types only transmit when the packet is sourced from
+          one of your own station SSIDs, and directed messages only
+          transmit to a station heard directly on RF in the last 30
+          minutes. A Packet Type rule narrows <em>what</em> is gated; it
+          never widens who or what the policy gate already allows.
+        </p>
+      </div>
+    </div>
+
     <h3>Example: Gate a Single Station</h3>
 
     <p>
@@ -534,6 +564,31 @@ Priority: 100</code></pre>
       filter, graywolf would still receive (and evaluate) every message
       on APRS-IS; without the gating rule, graywolf would receive those
       messages but never transmit them.
+    </p>
+
+    <h3>Example: Gate Messages Only</h3>
+
+    <p>
+      To transmit <strong>only messages</strong> to RF and nothing else,
+      add a single Packet Type rule. The default-deny policy handles the
+      rest: any packet that isn&rsquo;t a message falls through to deny.
+      Pair it with a <code>t/m</code> server filter so APRS-IS only sends
+      you message traffic in the first place:
+    </p>
+
+<pre><code>APRS-IS Server Filter: t/m
+
+Type:     Packet Type
+Pattern:  Message
+Action:   Allow
+Priority: 100</code></pre>
+
+    <p>
+      This is the recommended setup for service areas where an iGate
+      should relay directed messages to local stations but must never put
+      position, weather, object, or telemetry traffic on the air. The
+      heard-direct check still applies, so a message only transmits when
+      its addressee was recently heard directly on RF.
     </p>
 
     <h2 id="simulation-mode">Simulation Mode</h2>

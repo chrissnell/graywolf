@@ -371,13 +371,14 @@ type IGateConfig struct {
 	UpdatedAt       time.Time `json:"-"`
 }
 
-// IGateRfFilter is a per-channel allow/deny rule used to decide which
-// RF-originated packets are forwarded to APRS-IS. Evaluation: lowest
+// IGateRfFilter is a per-channel allow/deny rule for the IS->RF gate: it
+// decides which packets received from APRS-IS are forwarded out to RF
+// (tier 2 of the gate; see pkg/igate/filters). Evaluation: lowest
 // Priority first (ascending order); first match determines action.
 type IGateRfFilter struct {
 	ID        uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Channel   uint32    `gorm:"not null;index" json:"channel"`
-	Type      string    `gorm:"not null" json:"type"` // callsign|prefix|message_dest|object
+	Type      string    `gorm:"not null" json:"type"` // callsign|prefix|message_dest|object|packet_type
 	Pattern   string    `gorm:"not null" json:"pattern"`
 	Action    string    `gorm:"not null;default:'allow'" json:"action"` // allow|deny
 	Priority  uint32    `gorm:"not null;default:100" json:"priority"`

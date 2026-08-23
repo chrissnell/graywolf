@@ -328,3 +328,99 @@ func TestPrefixStarIsLiteralNotWildcard(t *testing.T) {
 		t.Fatal("Prefix pattern NW5W* must not match NW5W (source has no literal '*')")
 	}
 }
+
+// typedPkt builds a decoded packet carrying only a PacketType, which is
+// all the packet_type rule inspects.
+func typedPkt(t aprs.PacketType) *aprs.DecodedAPRSPacket {
+	return &aprs.DecodedAPRSPacket{Source: "N0CALL-1", Type: t}
+}
+
+func TestPacketTypeMatch(t *testing.T) {
+	// One allow rule per category, evaluated against every packet type.
+	// want is true only when the packet's type is covered by the category.
+	tests := []struct {
+		name     string
+		category string
+		pktType  aprs.PacketType
+		want     bool
+	}{
+		{"message_matches_message", "message", aprs.PacketMessage, true},
+		{"message_rejects_position", "message", aprs.PacketPosition, false},
+		{"position_matches_position", "position", aprs.PacketPosition, true},
+		{"position_matches_mice", "position", aprs.PacketMicE, true},
+		{"position_rejects_weather", "position", aprs.PacketWeather, false},
+		{"weather_matches_weather", "weather", aprs.PacketWeather, true},
+		{"object_matches_object", "object", aprs.PacketObject, true},
+		{"object_rejects_item", "object", aprs.PacketItem, false},
+		{"item_matches_item", "item", aprs.PacketItem, true},
+		{"telemetry_matches_telemetry", "telemetry", aprs.PacketTelemetry, true},
+		{"status_matches_status", "status", aprs.PacketStatus, true},
+		{"query_matches_query", "query", aprs.PacketQuery, true},
+		{"status_rejects_message", "status", aprs.PacketMessage, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := New([]Rule{
+				{ID: 1, Priority: 10, Type: TypePacketType, Pattern: tc.category, Action: Allow},
+			})
+			if got := e.Allow(typedPkt(tc.pktType)); got != tc.want {
+				t.Fatalf("packet_type=%q vs pkt=%q: Allow=%v want %v",
+					tc.category, tc.pktType, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPacketTypeCaseAndWhitespaceInsensitive(t *testing.T) {
+	e := New([]Rule{
+		{ID: 1, Priority: 10, Type: TypePacketType, Pattern: "  Message  ", Action: Allow},
+	})
+	if !e.Allow(typedPkt(aprs.PacketMessage)) {
+		t.Fatal("packet_type category should match case- and whitespace-insensitively")
+	}
+}
+
+func TestPacketTypeUnknownCategoryNeverMatches(t *testing.T) {
+	e := New([]Rule{
+		{ID: 1, Priority: 10, Type: TypePacketType, Pattern: "bogus", Action: Allow},
+	})
+	if e.Allow(typedPkt(aprs.PacketMessage)) {
+		t.Fatal("unknown category must never match")
+	}
+}
+
+// TestPacketTypeComposesWithOtherRules exercises the "messages-only" use
+// case (GH #518): an allow rule for message packets, with a lower-priority
+// deny catch-all, gates messages while denying everything else. It also
+// confirms a higher-priority source deny still wins over the type allow.
+func TestPacketTypeComposesWithOtherRules(t *testing.T) {
+	e := New([]Rule{
+		{ID: 1, Priority: 5, Type: TypeCallsign, Pattern: "BADACTR-1", Action: Deny},
+		{ID: 2, Priority: 10, Type: TypePacketType, Pattern: "message", Action: Allow},
+	})
+	msg := &aprs.DecodedAPRSPacket{Source: "N0CALL-1", Type: aprs.PacketMessage}
+	if !e.Allow(msg) {
+		t.Fatal("message from ordinary source should be allowed by packet_type rule")
+	}
+	pos := &aprs.DecodedAPRSPacket{Source: "N0CALL-1", Type: aprs.PacketPosition}
+	if e.Allow(pos) {
+		t.Fatal("non-message should fall through to default deny")
+	}
+	badMsg := &aprs.DecodedAPRSPacket{Source: "BADACTR-1", Type: aprs.PacketMessage}
+	if e.Allow(badMsg) {
+		t.Fatal("higher-priority source deny must win over packet_type allow")
+	}
+}
+
+func TestPacketTypeCategoryHelper(t *testing.T) {
+	for _, ok := range []string{"message", "POSITION", "  weather  ", "query"} {
+		if !PacketTypeCategory(ok) {
+			t.Errorf("PacketTypeCategory(%q) = false, want true", ok)
+		}
+	}
+	for _, bad := range []string{"", "bogus", "mic-e", "unknown"} {
+		if PacketTypeCategory(bad) {
+			t.Errorf("PacketTypeCategory(%q) = true, want false", bad)
+		}
+	}
+}

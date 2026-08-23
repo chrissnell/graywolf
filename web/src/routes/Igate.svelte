@@ -143,7 +143,25 @@
     { value: 'prefix', label: 'Prefix' },
     { value: 'message_dest', label: 'Message Dest' },
     { value: 'object', label: 'Object' },
+    { value: 'packet_type', label: 'Packet Type' },
   ];
+
+  // Packet-type categories for the Pattern <select> shown when the rule
+  // type is `packet_type`. Values mirror the aprs.is `t/...` filter
+  // classes and MUST stay in sync with packetTypeCategories in
+  // pkg/igate/filters/filters.go and packetTypeCategoryKeys in
+  // pkg/webapi/dto/igate.go.
+  const packetTypeOptions = [
+    { value: 'message', label: 'Message' },
+    { value: 'position', label: 'Position' },
+    { value: 'weather', label: 'Weather' },
+    { value: 'object', label: 'Object' },
+    { value: 'item', label: 'Item' },
+    { value: 'telemetry', label: 'Telemetry' },
+    { value: 'status', label: 'Status' },
+    { value: 'query', label: 'Query' },
+  ];
+  const packetTypeValues = packetTypeOptions.map((o) => o.value);
 
   const actionOptions = [
     { value: 'allow', label: 'Allow' },
@@ -167,6 +185,8 @@
       // the wildcard form is what this phase is introducing, and a
       // literal like "WX-001" would imply objects are exact-match only.
       case 'object':       return 'WX-*';
+      // packet_type uses a <select>, not a free-text input, so no
+      // placeholder is shown.
       default:             return '';
     }
   }
@@ -191,6 +211,12 @@
         return 'Matches the object or item name. Exact match by default, or use ' +
                'a trailing `*` as a prefix wildcard (e.g. WX-* matches all WX- ' +
                'objects). See warning above.';
+      case 'packet_type':
+        return 'Matches the APRS packet type (mapped to the aprs.is t/… filter ' +
+               'classes). Use an Allow rule of type Message for messages-only ' +
+               'IS→RF gating. Non-message types are still bounded by the ' +
+               'hardcoded gate — they only transmit when sourced from your ' +
+               'own station SSID.';
       default:
         return '';
     }
@@ -212,6 +238,15 @@
     const trimmed = (pattern ?? '').trim();
     if (trimmed === '') {
       return 'Pattern must not be empty.';
+    }
+    // packet_type: the pattern is a fixed category key, not a wildcard
+    // string. Validate membership (the <select> already constrains input,
+    // but keep parity with dto.validateIGateRfFilterPattern). Return
+    // early — the wildcard rules below don't apply to a category key.
+    if (type === 'packet_type') {
+      return packetTypeValues.includes(trimmed.toLowerCase())
+        ? ''
+        : 'Select a packet type.';
     }
     // A bare `*` ("any addressee") is only meaningful for message_dest,
     // where the hardcoded heard-direct check bounds delivery to stations
@@ -241,6 +276,27 @@
   let patternError = $derived.by(() => {
     if (!patternTouched && (filterForm.pattern ?? '').trim() === '') return '';
     return validatePattern(filterForm.type, filterForm.pattern);
+  });
+
+  // Normalize the Pattern when the rule type flips into or out of
+  // packet_type. packet_type edits a fixed category via a <select>, so a
+  // leftover free-text pattern (e.g. "W5") would leave the select on a
+  // stale value; seed a valid category instead. Flipping back to a
+  // text type clears the seeded category so the input starts empty. The
+  // prevType guard ensures this fires only on an actual type change, not
+  // on every pattern keystroke.
+  let prevType = filterForm.type;
+  $effect(() => {
+    const t = filterForm.type;
+    if (t === prevType) return;
+    const wasPacket = prevType === 'packet_type';
+    prevType = t;
+    if (t === 'packet_type') {
+      if (!packetTypeValues.includes(filterForm.pattern)) filterForm.pattern = 'message';
+    } else if (wasPacket) {
+      filterForm.pattern = '';
+      patternTouched = false;
+    }
   });
 
   // ------------------------------------------------------------------
@@ -837,13 +893,22 @@
       error={patternError}
     >
       {#snippet children(describedBy)}
-        <Input
-          id="flt-pattern"
-          bind:value={filterForm.pattern}
-          placeholder={placeholderFor(filterForm.type)}
-          aria-describedby={describedBy}
-          oninput={() => { patternTouched = true; }}
-        />
+        {#if filterForm.type === 'packet_type'}
+          <Select
+            id="flt-pattern"
+            bind:value={filterForm.pattern}
+            options={packetTypeOptions}
+            aria-describedby={describedBy}
+          />
+        {:else}
+          <Input
+            id="flt-pattern"
+            bind:value={filterForm.pattern}
+            placeholder={placeholderFor(filterForm.type)}
+            aria-describedby={describedBy}
+            oninput={() => { patternTouched = true; }}
+          />
+        {/if}
       {/snippet}
     </FormField>
     <FormField label="Action" id="flt-action">

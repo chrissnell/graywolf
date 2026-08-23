@@ -183,7 +183,15 @@ IS->RF transmission requires **both** tiers to allow a packet:
   (`sourceIsOwnSSID`). Not operator-configurable.
 - **Tier 2 — the rule engine** (`filters.Engine.Allow`): priority-ordered,
   first-match-wins, **default deny**. Rule types: `callsign`, `prefix`,
-  `message_dest`, `object`.
+  `message_dest`, `object`, `packet_type`. `packet_type` matches on the
+  decoded `aprs.PacketType`; its Pattern is a fixed category key (`message`,
+  `position`, `weather`, `object`, `item`, `telemetry`, `status`, `query`)
+  mapped to the aprs.is `t/…` classes, not a wildcard string. The category
+  set lives in `packetTypeCategories` (`pkg/igate/filters/filters.go`) and is
+  mirrored as strings in the DTO validator (`packetTypeCategoryKeys`,
+  `pkg/webapi/dto/igate.go`) and the Svelte `packetTypeOptions` — keep the
+  three in sync. Messages-only IS→RF gating is one allow rule of type
+  `packet_type` = `message` (graywolf #518).
 
 A bare `*` pattern is a flooding footgun for source-side rules
 (`callsign`/`prefix`) and a silent no-op elsewhere, so it is rejected —

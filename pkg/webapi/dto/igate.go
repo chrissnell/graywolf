@@ -194,6 +194,17 @@ func validateIGateRfFilterPattern(ruleType, pattern string) error {
 	if trimmed == "" {
 		return fmt.Errorf("pattern must not be empty")
 	}
+	// packet_type: the pattern is a fixed category key (mapped to the
+	// aprs.is `t/...` classes), not a wildcard string. Validate membership
+	// so the UI and engine agree on what a rule means — an unknown
+	// category silently never matches in the engine. Return early: the
+	// wildcard rules below do not apply to a category key.
+	if ruleType == filtersTypePacketType {
+		if !isPacketTypeCategory(trimmed) {
+			return fmt.Errorf("packet_type pattern must be one of: %s", strings.Join(packetTypeCategoryKeys, ", "))
+		}
+		return nil
+	}
 	// A bare `*` means "any value". It is only permitted for
 	// message_dest, where it means "any addressee": the iGate's tier-1
 	// heard-direct check already bounds IS->RF directed-message delivery
@@ -235,7 +246,26 @@ const (
 	filtersTypeCallsign    = "callsign"
 	filtersTypePrefix      = "prefix"
 	filtersTypeMessageDest = "message_dest"
+	filtersTypePacketType  = "packet_type"
 )
+
+// packetTypeCategoryKeys mirrors the keys of packetTypeCategories in
+// pkg/igate/filters. Duplicated here (as plain strings) rather than
+// imported so the DTO layer doesn't pull the filter engine (and its aprs
+// dependency) into every handler build — matching the filtersType*
+// mirroring above. Keep in sync with pkg/igate/filters/filters.go.
+var packetTypeCategoryKeys = []string{
+	"message", "position", "weather", "object", "item", "telemetry", "status", "query",
+}
+
+func isPacketTypeCategory(s string) bool {
+	for _, k := range packetTypeCategoryKeys {
+		if strings.EqualFold(strings.TrimSpace(s), k) {
+			return true
+		}
+	}
+	return false
+}
 
 func (r IGateRfFilterRequest) ToModel() configstore.IGateRfFilter {
 	return configstore.IGateRfFilter{

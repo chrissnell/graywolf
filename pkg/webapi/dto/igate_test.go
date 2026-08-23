@@ -250,6 +250,30 @@ func TestIGateRfFilterRequestValidate(t *testing.T) {
 			req:     IGateRfFilterRequest{Type: "object", Pattern: "WX* X"},
 			wantErr: errTrailingOnly,
 		},
+
+		// --- packet_type: fixed category, not a wildcard string ----------
+		{
+			name: "accept_packet_type_message",
+			req:  IGateRfFilterRequest{Type: "packet_type", Pattern: "message"},
+		},
+		{
+			name: "accept_packet_type_position",
+			req:  IGateRfFilterRequest{Type: "packet_type", Pattern: "position"},
+		},
+		{
+			name: "accept_packet_type_case_insensitive_padded",
+			req:  IGateRfFilterRequest{Type: "packet_type", Pattern: "  Weather  "},
+		},
+		{
+			name:    "reject_packet_type_unknown_category",
+			req:     IGateRfFilterRequest{Type: "packet_type", Pattern: "bogus"},
+			wantErr: "packet_type pattern must be one of: message, position, weather, object, item, telemetry, status, query",
+		},
+		{
+			name:    "reject_packet_type_wildcard",
+			req:     IGateRfFilterRequest{Type: "packet_type", Pattern: "message*"},
+			wantErr: "packet_type pattern must be one of: message, position, weather, object, item, telemetry, status, query",
+		},
 	}
 
 	for _, tc := range tests {
