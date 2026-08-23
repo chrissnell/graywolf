@@ -16,6 +16,7 @@ export function blankForm() {
     output_device_id: '0', output_channel: '0',
     modem_type: 'afsk', bit_rate: '1200', mark_freq: '1200', space_freq: '2200',
     tx_delay_ms: '300', tx_tail_ms: '100', slot_ms: '100', persist: '63', full_dup: false,
+    enabled: true,
   };
 }
 
@@ -44,6 +45,9 @@ export function rowToForm(row, timing) {
     slot_ms: String(t.slot_ms ?? 100),
     persist: String(t.persist ?? 63),
     full_dup: t.full_dup ?? false,
+    // A row that predates the enabled flag (or any partial payload) reads
+    // as enabled so an edit never silently disables a running channel.
+    enabled: row.enabled ?? true,
   };
 }
 
@@ -54,6 +58,7 @@ export function formToPayload(form) {
   const base = {
     name: form.name,
     mode: form.mode,
+    enabled: form.enabled,
     modem_type: form.modem_type,
     bit_rate: parseInt(form.bit_rate, 10),
     mark_freq: parseInt(form.mark_freq, 10),

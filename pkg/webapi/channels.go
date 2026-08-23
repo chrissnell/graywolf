@@ -28,6 +28,7 @@ func (s *Server) registerChannels(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/channels", s.createChannel)
 	mux.HandleFunc("GET /api/channels/{id}", s.getChannel)
 	mux.HandleFunc("PUT /api/channels/{id}", s.updateChannel)
+	mux.HandleFunc("PUT /api/channels/{id}/enabled", s.setChannelEnabled)
 	mux.HandleFunc("DELETE /api/channels/{id}", s.deleteChannel)
 	mux.HandleFunc("GET /api/channels/{id}/stats", s.getChannelStats)
 	mux.HandleFunc("GET /api/channels/{id}/referrers", s.getChannelReferrers)
@@ -102,7 +103,21 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	handleCreate[dto.ChannelRequest](s, w, r, "create channel",
 		func(ctx context.Context, req dto.ChannelRequest) (configstore.Channel, error) {
 			m := req.ToModel()
-			return m, s.store.CreateChannel(ctx, &m)
+			if err := s.store.CreateChannel(ctx, &m); err != nil {
+				return m, err
+			}
+			// The store creates every channel enabled (the Enabled column
+			// defaults true and GORM omits a zero-value false). Honor an
+			// explicit create-disabled from the request's *bool by flipping
+			// the fresh row off — the intent survives only at this layer
+			// where nil (default) is distinct from an explicit false.
+			if req.Enabled != nil && !*req.Enabled {
+				if err := s.store.SetChannelEnabled(ctx, m.ID, false); err != nil {
+					return m, err
+				}
+				m.Enabled = false
+			}
+			return m, nil
 		},
 		dto.ChannelFromModel)
 }
@@ -445,7 +460,94 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.notifyBridgeReload(ctx)
+	// A full PUT can flip the enabled flag, which changes whether any
+	// KISS interface bound to this channel should be running. Reconcile
+	// the KISS manager so a disabled channel releases its TNC device (and
+	// a re-enabled one brings it back) without an app restart.
+	s.reconcileKissForChannel(ctx, id)
 	writeJSON(w, http.StatusOK, dto.ChannelFromModel(m))
+}
+
+// setChannelEnabled flips only the Enabled flag on a channel and applies
+// the change live: disabling makes the channel fully inert — the modem
+// drops it on the next bridge reload (no audio device opened, no RX/TX),
+// any KISS interface bound to it is stopped (releasing its device), and
+// it is removed from the governor TX snapshot so outbound routing no
+// longer selects it. Enabling reverses all three. The saved
+// configuration is preserved either way. This is the one-click toggle
+// behind the Channels page's per-card enable/disable action — it avoids
+// re-sending the full channel definition just to bring a radio down.
+//
+// @Summary  Enable or disable a channel
+// @Tags     channels
+// @ID       setChannelEnabled
+// @Accept   json
+// @Produce  json
+// @Param    id   path     int                        true "Channel id"
+// @Param    body body     dto.ChannelEnabledRequest  true "Enabled flag"
+// @Success  200  {object} dto.ChannelResponse
+// @Failure  400  {object} webtypes.ErrorResponse
+// @Failure  404  {object} webtypes.ErrorResponse
+// @Failure  500  {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /channels/{id}/enabled [put]
+func (s *Server) setChannelEnabled(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid id")
+		return
+	}
+	req, err := decodeJSON[dto.ChannelEnabledRequest](r)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	ctx := r.Context()
+	ch, err := s.store.GetChannel(ctx, id)
+	if err != nil || ch == nil {
+		notFound(w)
+		return
+	}
+	if ch.Enabled != req.Enabled {
+		if err := s.store.SetChannelEnabled(ctx, id, req.Enabled); err != nil {
+			s.internalError(w, r, "set channel enabled", err)
+			return
+		}
+		ch.Enabled = req.Enabled
+		s.notifyBridgeReload(ctx)
+		s.reconcileKissForChannel(ctx, id)
+	}
+	out := dto.ChannelFromModel(*ch)
+	ifaces, err := s.store.ListKissInterfaces(ctx)
+	if err != nil {
+		s.internalError(w, r, "set channel enabled", err)
+		return
+	}
+	b := computeChannelBacking(*ch, ifaces, s.kissStatus(), s.modemRunning())
+	out.Backing = &b
+	writeJSON(w, http.StatusOK, out)
+}
+
+// reconcileKissForChannel re-applies the KISS manager lifecycle to every
+// interface bound to the given channel. Called after a channel's enabled
+// flag may have changed so a disabled channel's TNC device is released
+// and a re-enabled channel's interface is brought back — notifyKissManager
+// consults the channel's live enabled state, so the correct start/stop
+// decision falls out of a single pass. A no-op when the KISS manager is
+// not wired (tests) or no interface references the channel.
+func (s *Server) reconcileKissForChannel(ctx context.Context, channelID uint32) {
+	if s.kissManager == nil {
+		return
+	}
+	ifaces, err := s.store.ListKissInterfaces(ctx)
+	if err != nil {
+		return
+	}
+	for _, ki := range ifaces {
+		if ki.Channel == channelID {
+			s.notifyKissManager(ki)
+		}
+	}
 }
 
 // ChannelReferrersResponse is the body returned by

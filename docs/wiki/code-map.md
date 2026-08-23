@@ -160,6 +160,21 @@ The split is enforced by [invariant 9](invariants.md).
 | REST | `webapi/channels.go` accepts `mode` on POST/PUT; `webapi/messages_config.go` exposes GET/PUT `/api/messages/config` with packet-mode validation. |
 | UI | `web/src/routes/Channels.svelte` shows mode selector + badge; `web/src/routes/MessagesSettings.svelte` shows messages TX-channel selector filtered to non-packet channels. |
 
+## Channel enable/disable (issue #517)
+
+Per-channel on/off switch. A disabled channel keeps its config but is fully inert — see [invariant 16d](invariants.md) for the cross-backend contract.
+
+| Surface | Where |
+|---|---|
+| Persisted flag | `pkg/configstore/models.go` — `Channel.Enabled` (`gorm:"not null;default:true"`); column added by `migrate_channel_enabled.go` (v29), backfilling existing rows to enabled. |
+| Store toggle | `pkg/configstore/store.go` — `SetChannelEnabled(id, bool)` (single-column update, the persistence path a full `Save` also honors). `CreateChannel` cannot honor an explicit create-disabled (GORM omits a zero-value `false` under the `default:true` tag); the REST create handler flips it off afterward off the request `*bool`. |
+| DTO | `pkg/webapi/dto/channel.go` — `ChannelRequest.Enabled *bool` (nil ⇒ default true, mirrors the KISS contract), surfaced concretely on `ChannelResponse` via `ChannelFromModel`; `ChannelEnabledRequest` is the focused-toggle body. |
+| REST | `pkg/webapi/channels.go` — `PUT /api/channels/{id}/enabled` (`setChannelEnabled`); `createChannel` honors create-disabled; `updateChannel` + the toggle both call `notifyBridgeReload` and `reconcileKissForChannel` so the change is hot. |
+| Modem inertness | `pkg/modembridge/session.go` — `pushConfiguration` filters disabled channels (no device open / RX / TX). |
+| Egress inertness | `pkg/app/wiring.go` — `disabledChannelSet` excludes disabled channels from `buildTxBackendSnapshot`, `kissTxChannelSet`, and `resolveTxChannel`. |
+| KISS device release | `pkg/app/wiring.go` `kissComponent` (boot) + `pkg/webapi/kiss.go` `notifyKissManager` (live, re-reads channel enabled) stop interfaces bound to a disabled channel. |
+| UI | `web/src/routes/channels/ChannelEditModal.svelte` — Enabled toggle in the Identity section; `web/src/routes/channels/ChannelRow.svelte` — "Disabled" badge, dimmed/dashed card, one-click Enable/Disable calling the toggle endpoint (`onToggled` → list refresh in `Channels.svelte`); `web/src/lib/channelForm.js` carries `enabled` through blank/row/payload. |
+
 See [invariant 23](invariants.md) for the TX-gating contract.
 
 ## Per-conversation message routing (issue #453)

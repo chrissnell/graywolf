@@ -35,6 +35,14 @@ type ChannelRequest struct {
 	IL2PEncode     bool    `json:"il2p_encode"`
 	NumDecoders    uint32  `json:"num_decoders"`
 	DecoderOffset  int32   `json:"decoder_offset"`
+	// Enabled gates whether graywolf brings the channel up. A pointer so
+	// an omitted field means "leave at the default" (true) rather than
+	// "disable": older clients and partial callers that never send the
+	// key keep their channels running. ToModel substitutes true when nil.
+	// A channel PUT is a full-resource replace, so an editor that echoes
+	// the row's current enabled value preserves a disabled state across
+	// unrelated field edits.
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // Validate ensures required fields are set. Deep validation (device
@@ -72,9 +80,17 @@ func (r ChannelRequest) Validate() error {
 
 // ToModel maps a create request to a storage model.
 func (r ChannelRequest) ToModel() configstore.Channel {
+	// Absent enabled flag defaults to true so existing clients that never
+	// send the key keep creating/updating running channels; an explicit
+	// false disables (see Channel.Enabled).
+	enabled := true
+	if r.Enabled != nil {
+		enabled = *r.Enabled
+	}
 	return configstore.Channel{
 		Name:           r.Name,
 		Mode:           r.Mode,
+		Enabled:        enabled,
 		InputDeviceID:  r.InputDeviceID,
 		InputChannel:   r.InputChannel,
 		OutputDeviceID: r.OutputDeviceID,
@@ -98,6 +114,16 @@ func (r ChannelRequest) ToUpdate(id uint32) configstore.Channel {
 	m := r.ToModel()
 	m.ID = id
 	return m
+}
+
+// ChannelEnabledRequest is the body for PUT /api/channels/{id}/enabled —
+// a focused toggle that flips only the Enabled flag without re-sending
+// the whole channel definition. The Channels page's per-card
+// enable/disable action uses it so the operator can bring a channel down
+// (releasing its modem/TNC device) in one click while keeping the saved
+// configuration intact. Mirrors dto.KissEnabledRequest.
+type ChannelEnabledRequest struct {
+	Enabled bool `json:"enabled"`
 }
 
 // ChannelResponse is the body returned by GET/POST/PUT for a channel.
@@ -315,11 +341,13 @@ func pttDetail(p configstore.PttConfig, method string) string {
 // `input_device_id: null` — the segmented type picker on the
 // Channels page treats that as "KISS-TNC only".
 func ChannelFromModel(m configstore.Channel) ChannelResponse {
+	enabled := m.Enabled
 	return ChannelResponse{
 		ID: m.ID,
 		ChannelRequest: ChannelRequest{
 			Name:           m.Name,
 			Mode:           m.Mode,
+			Enabled:        &enabled,
 			InputDeviceID:  m.InputDeviceID,
 			InputChannel:   m.InputChannel,
 			OutputDeviceID: m.OutputDeviceID,

@@ -283,6 +283,15 @@ func (s *Store) CreateChannel(ctx context.Context, c *Channel) error {
 	if err := s.validateChannel(ctx, c, 0); err != nil {
 		return err
 	}
+	// NOTE on Enabled: the column carries a `default:true` tag, so GORM
+	// omits a zero-value (false) Enabled from the INSERT and the row is
+	// created enabled. A Go `false` here is therefore indistinguishable
+	// from "unset" — the store cannot honor an explicit create-disabled.
+	// Callers that need a channel created disabled must create it (comes
+	// up enabled) and then call SetChannelEnabled(id, false); the REST
+	// create handler does exactly that off the request's *bool. This keeps
+	// the common path (channels default enabled) working for every caller
+	// that builds a Channel without touching the flag.
 	return s.db.WithContext(ctx).Create(c).Error
 }
 
@@ -942,6 +951,13 @@ func (s *Store) SetChannelFX25(ctx context.Context, id uint32, enable bool) erro
 // SetChannelIL2P sets IL2P encoding for a channel.
 func (s *Store) SetChannelIL2P(ctx context.Context, id uint32, enable bool) error {
 	return s.db.WithContext(ctx).Model(&Channel{}).Where("id = ?", id).Update("il2p_encode", enable).Error
+}
+
+// SetChannelEnabled flips only the enabled flag on a channel, leaving
+// the rest of its configuration untouched. Backs the focused
+// PUT /api/channels/{id}/enabled toggle (graywolf#517).
+func (s *Store) SetChannelEnabled(ctx context.Context, id uint32, enable bool) error {
+	return s.db.WithContext(ctx).Model(&Channel{}).Where("id = ?", id).Update("enabled", enable).Error
 }
 
 // ---------------------------------------------------------------------------

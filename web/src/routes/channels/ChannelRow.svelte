@@ -17,9 +17,29 @@
   import { api } from '../../lib/api.js';
   import { toasts } from '../../lib/stores.js';
 
-  let { channel, txTiming, audioDevices = [], onEdit, onDelete } = $props();
+  let { channel, txTiming, audioDevices = [], onEdit, onDelete, onToggled } = $props();
 
   let sendingSignal = $state(false);
+  let togglingEnabled = $state(false);
+
+  // A row that predates the enabled flag reads as enabled (=== false is
+  // the only disabled signal), so an older backend never renders every
+  // channel as disabled.
+  let isDisabled = $derived(channel.enabled === false);
+
+  async function toggleEnabled() {
+    togglingEnabled = true;
+    const next = isDisabled;
+    try {
+      await api.put(`/channels/${channel.id}/enabled`, { enabled: next });
+      toasts.success(`${next ? 'Enabled' : 'Disabled'} "${channel.name}"`);
+      onToggled?.();
+    } catch (err) {
+      toasts.error(`Failed to ${next ? 'enable' : 'disable'} channel: ${err.message}`);
+    } finally {
+      togglingEnabled = false;
+    }
+  }
 
   const SIGNAL_LABELS = {
     cw: 'Send callsign in CW',
@@ -53,10 +73,13 @@
   }
 </script>
 
-<div class="channel-card">
+<div class="channel-card" class:disabled={isDisabled}>
   <div class="channel-header">
     <span class="channel-name">{channel.name}</span>
     <div class="channel-badges">
+      {#if isDisabled}
+        <Badge variant="warning">Disabled</Badge>
+      {/if}
       {#if isKissOnly}
         <Badge variant="info">KISS-TNC only</Badge>
       {:else}
@@ -173,6 +196,13 @@
         </DropdownMenu.Content>
       </DropdownMenu.Root>
     {/if}
+    <Button variant="ghost" disabled={togglingEnabled} onclick={toggleEnabled}>
+      {#if togglingEnabled}
+        {isDisabled ? 'Enabling…' : 'Disabling…'}
+      {:else}
+        {isDisabled ? 'Enable' : 'Disable'}
+      {/if}
+    </Button>
     <Button variant="ghost" onclick={() => onEdit?.(channel)}>Edit</Button>
     <Button variant="danger" onclick={() => onDelete?.(channel)}>Delete</Button>
   </div>
@@ -186,6 +216,14 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
+  }
+
+  /* A disabled channel is inert; dim the card and dash its border so it
+     reads as "parked" at a glance. The card stays interactive so the
+     operator can re-enable, edit, or delete it. */
+  .channel-card.disabled {
+    opacity: 0.65;
+    border-style: dashed;
   }
 
   .channel-header {

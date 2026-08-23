@@ -115,3 +115,24 @@ test('validateForm: valid modem form returns empty errors', () => {
   });
   assert.deepEqual(errs, {});
 });
+
+test('blankForm defaults enabled to true', () => {
+  assert.equal(blankForm().enabled, true);
+});
+
+test('rowToForm defaults a missing enabled flag to true', () => {
+  const f = rowToForm({ id: 1, name: 'T', input_device_id: 2, output_device_id: 0, input_channel: 0, output_channel: 0, bit_rate: 1200, mark_freq: 1200, space_freq: 2200 }, null);
+  assert.equal(f.enabled, true);
+});
+
+test('rowToForm preserves an explicit disabled flag', () => {
+  const f = rowToForm({ id: 1, name: 'T', input_device_id: 2, output_device_id: 0, input_channel: 0, output_channel: 0, bit_rate: 1200, mark_freq: 1200, space_freq: 2200, enabled: false }, null);
+  assert.equal(f.enabled, false);
+});
+
+test('formToPayload carries enabled for modem and kiss-tnc', () => {
+  const modem = formToPayload({ ...blankForm(), channel_type: 'modem', name: 'M', enabled: false });
+  assert.equal(modem.enabled, false);
+  const kiss = formToPayload({ ...blankForm(), channel_type: 'kiss-tnc', name: 'K', enabled: false });
+  assert.equal(kiss.enabled, false);
+});

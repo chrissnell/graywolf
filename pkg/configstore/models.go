@@ -76,6 +76,15 @@ type Channel struct {
 	NumDecoders    uint32       `gorm:"not null;default:1" json:"num_decoders"`
 	DecoderOffset  int32        `gorm:"not null;default:0" json:"decoder_offset"`
 	Mode           string       `gorm:"not null;default:'aprs'" json:"mode"` // aprs|packet|aprs+packet
+	// Enabled gates whether graywolf brings this channel up. When false
+	// the channel is fully inert: the modem subprocess is never told
+	// about it (no audio device opened, no RX/TX), any KISS interface
+	// bound to it is stopped (device released), and it is not registered
+	// as a governor TX backend, so outbound routing never selects it.
+	// The row's configuration is preserved for a later re-enable. Default
+	// true so pre-existing channels and any client that omits the field
+	// keep running. See graywolf#517.
+	Enabled        bool         `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt      time.Time    `json:"-"`
 	UpdatedAt      time.Time    `json:"-"`
 }

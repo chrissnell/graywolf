@@ -209,6 +209,7 @@
         {audioDevices}
         onEdit={openEdit}
         onDelete={requestDelete}
+        onToggled={refreshChannels}
       />
     {/each}
   </div>

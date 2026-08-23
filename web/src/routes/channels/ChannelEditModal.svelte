@@ -166,6 +166,13 @@
         ]}
       />
     </FormField>
+
+    <Toggle bind:checked={form.enabled} label="Enabled" />
+    <p class="enabled-hint">
+      When off, the channel is fully inert: its radio device stays closed, it
+      does not receive or transmit, and it is not selectable for outbound
+      routing. The configuration is kept so you can turn it back on later.
+    </p>
   </div>
 
   {#if isModemType}
@@ -264,6 +271,12 @@
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid var(--border-color);
+  }
+
+  .enabled-hint {
+    margin: 4px 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
   }
 
   .form-grid-2 {

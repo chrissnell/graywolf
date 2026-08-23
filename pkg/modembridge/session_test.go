@@ -442,6 +442,104 @@ func TestPushConfiguration_SkipsKissOnlyChannels(t *testing.T) {
 	})
 }
 
+// TestPushConfiguration_SkipsDisabledChannels verifies that a disabled
+// channel (Enabled == false, graywolf#517) is excluded from the
+// ConfigureAudio / ConfigureChannel / ConfigurePtt stream so the Rust
+// modem never opens its device or decodes it. A mix of enabled and
+// disabled modem channels configures only the enabled subset; a
+// deployment with nothing but disabled channels must not emit StartAudio.
+func TestPushConfiguration_SkipsDisabledChannels(t *testing.T) {
+	t.Run("mixed: enabled + disabled skips the disabled row", func(t *testing.T) {
+		store := seedStore(t) // seeds one enabled modem channel "rx1"
+		defer store.Close()
+		ctx := context.Background()
+
+		dev := &configstore.AudioDevice{
+			Name: "dev2", Direction: "input", SourceType: "flac",
+			SourcePath: "/tmp/does-not-exist2.flac", SampleRate: 44100,
+			Channels: 1, Format: "s16le",
+		}
+		if err := store.CreateAudioDevice(ctx, dev); err != nil {
+			t.Fatalf("create dev2: %v", err)
+		}
+		disabled := &configstore.Channel{
+			Name: "rx2", InputDeviceID: configstore.U32Ptr(dev.ID), ModemType: "afsk",
+			BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, Profile: "A",
+			NumSlicers: 1, FixBits: "none",
+		}
+		if err := store.CreateChannel(ctx, disabled); err != nil {
+			t.Fatalf("create disabled: %v", err)
+		}
+		if err := store.SetChannelEnabled(ctx, disabled.ID, false); err != nil {
+			t.Fatalf("disable: %v", err)
+		}
+
+		b := New(Config{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		var sent []*pb.IpcMessage
+		configured, err := b.pushConfiguration(ctx, func(msg *pb.IpcMessage) error {
+			sent = append(sent, msg)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("pushConfiguration: %v", err)
+		}
+		if !configured {
+			t.Fatal("expected configured=true (an enabled modem channel exists)")
+		}
+		chCount := 0
+		for _, m := range sent {
+			if cc, ok := m.GetPayload().(*pb.IpcMessage_ConfigureChannel); ok {
+				chCount++
+				if cc.ConfigureChannel.Channel == disabled.ID {
+					t.Errorf("disabled channel %d should not have been configured", disabled.ID)
+				}
+			}
+			if ca, ok := m.GetPayload().(*pb.IpcMessage_ConfigureAudio); ok {
+				if ca.ConfigureAudio.DeviceId == dev.ID {
+					t.Errorf("device %d used only by the disabled channel should not be configured", dev.ID)
+				}
+			}
+		}
+		if chCount != 1 {
+			t.Errorf("expected 1 ConfigureChannel, got %d", chCount)
+		}
+	})
+
+	t.Run("disabled-only: pushConfiguration returns false", func(t *testing.T) {
+		store := seedStore(t)
+		defer store.Close()
+		ctx := context.Background()
+		chs, err := store.ListChannels(ctx)
+		if err != nil || len(chs) == 0 {
+			t.Fatalf("list channels: %v", err)
+		}
+		if err := store.SetChannelEnabled(ctx, chs[0].ID, false); err != nil {
+			t.Fatalf("disable: %v", err)
+		}
+
+		b := New(Config{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		var sent []*pb.IpcMessage
+		configured, err := b.pushConfiguration(ctx, func(msg *pb.IpcMessage) error {
+			sent = append(sent, msg)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("pushConfiguration: %v", err)
+		}
+		if configured {
+			t.Errorf("expected configured=false when every channel is disabled, got true")
+		}
+		for _, m := range sent {
+			switch m.GetPayload().(type) {
+			case *pb.IpcMessage_ConfigureAudio,
+				*pb.IpcMessage_ConfigureChannel,
+				*pb.IpcMessage_ConfigurePtt:
+				t.Errorf("unexpected %T emitted for all-disabled deployment", m.GetPayload())
+			}
+		}
+	})
+}
+
 func TestStateTransitions(t *testing.T) {
 	b := New(Config{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if b.State() != StateStopped {

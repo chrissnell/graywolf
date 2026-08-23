@@ -148,12 +148,22 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 	if err != nil {
 		return false, fmt.Errorf("list audio devices: %w", err)
 	}
-	channels, err := b.cfg.Store.ListChannels(ctx)
+	allChannels, err := b.cfg.Store.ListChannels(ctx)
 	if err != nil {
 		return false, fmt.Errorf("list channels: %w", err)
 	}
+	// Disabled channels are fully inert: the Rust modem is never told
+	// about them, so no audio device is opened and no RX/TX happens for
+	// them. Filter them out up front, mirroring the InputDeviceID == nil
+	// KISS-only skip below. See graywolf#517.
+	channels := make([]configstore.Channel, 0, len(allChannels))
+	for _, ch := range allChannels {
+		if ch.Enabled {
+			channels = append(channels, ch)
+		}
+	}
 	if len(channels) == 0 {
-		b.logger.Info("no channels configured, skipping audio setup")
+		b.logger.Info("no enabled channels configured, skipping audio setup")
 		return false, nil
 	}
 

@@ -1936,8 +1936,14 @@ func (a *App) kissComponent() namedComponent {
 		name: "kiss",
 		start: func(ctx context.Context) error {
 			kissIfaces, _ := a.store.ListKissInterfaces(ctx)
+			// A KISS interface bound to a disabled channel stays down so
+			// the channel is fully inert — no device opened (graywolf#517).
+			disabled := a.disabledChannelSet(ctx)
 			for _, ki := range kissIfaces {
 				if !ki.Enabled {
+					continue
+				}
+				if disabled[ki.Channel] {
 					continue
 				}
 				ch := ki.Channel
@@ -2158,9 +2164,17 @@ func (a *App) buildTxBackendSnapshot() *txbackend.Snapshot {
 	// returns an error (surfaced as outcome=err) if no IPC session is
 	// live. Registering the backend regardless keeps the snapshot a
 	// pure config projection: health is a separate runtime concern.
+	// Disabled channels are fully inert (graywolf#517): exclude them from
+	// every governor egress projection so outbound routing never selects
+	// them, and treat any KISS interface bound to a disabled channel as
+	// off. disabled is the set of disabled channel IDs.
+	disabled := a.disabledChannelSet(ctx)
 	var modemChannels []uint32
 	if chs, err := a.store.ListChannels(ctx); err == nil {
 		for _, c := range chs {
+			if !c.Enabled {
+				continue
+			}
 			if c.InputDeviceID != nil {
 				modemChannels = append(modemChannels, c.ID)
 			}
@@ -2190,6 +2204,9 @@ func (a *App) buildTxBackendSnapshot() *txbackend.Snapshot {
 			if ki.Channel == 0 {
 				continue
 			}
+			if disabled[ki.Channel] {
+				continue
+			}
 			q := a.kissMgr.InstanceQueueFor(ki.ID)
 			if q == nil {
 				// Interface configured but not started yet, or Mode flip
@@ -2217,15 +2234,46 @@ func (a *App) kissTxChannelSet(ctx context.Context) map[uint32]bool {
 	if err != nil {
 		return nil
 	}
+	// A disabled channel is inert (graywolf#517): a KISS interface bound
+	// to it is not a valid egress target even if the interface itself is
+	// enabled. Kept in lockstep with buildTxBackendSnapshot per
+	// invariant 16c.
+	disabled := a.disabledChannelSet(ctx)
 	var set map[uint32]bool
 	for _, ki := range ifaces {
 		if !ki.Enabled || ki.Mode != configstore.KissModeTnc || !ki.AllowTxFromGovernor || ki.Channel == 0 {
+			continue
+		}
+		if disabled[ki.Channel] {
 			continue
 		}
 		if set == nil {
 			set = make(map[uint32]bool)
 		}
 		set[ki.Channel] = true
+	}
+	return set
+}
+
+// disabledChannelSet returns the set of channel IDs whose Enabled flag
+// is false. A disabled channel is fully inert (graywolf#517) and must be
+// excluded from every governor egress projection. Returns nil when no
+// channel is disabled (the common case) so callers can use a plain map
+// index without allocating.
+func (a *App) disabledChannelSet(ctx context.Context) map[uint32]bool {
+	chs, err := a.store.ListChannels(ctx)
+	if err != nil {
+		return nil
+	}
+	var set map[uint32]bool
+	for _, c := range chs {
+		if c.Enabled {
+			continue
+		}
+		if set == nil {
+			set = make(map[uint32]bool)
+		}
+		set[c.ID] = true
 	}
 	return set
 }
@@ -2269,8 +2317,19 @@ func (a *App) resolveTxChannel(ctx context.Context, configured uint32) uint32 {
 	if err != nil || len(chs) == 0 {
 		return configured
 	}
+	// A disabled channel is fully inert (graywolf#517): the modem never
+	// opens its device, so it has no TX backend and must not be selected
+	// as an egress target. Skip disabled rows in the modem scan and in
+	// the lowest-channel fallback.
 	var firstWithModem uint32
+	var lowestEnabled uint32
 	for _, c := range chs {
+		if !c.Enabled {
+			continue
+		}
+		if lowestEnabled == 0 {
+			lowestEnabled = c.ID
+		}
 		if c.InputDeviceID == nil {
 			continue
 		}
@@ -2291,7 +2350,13 @@ func (a *App) resolveTxChannel(ctx context.Context, configured uint32) uint32 {
 			}
 			return kissFallback
 		}
-		fallback := chs[0].ID
+		// Least-bad: the lowest enabled channel, or the lowest row overall
+		// when every channel is disabled. Either way tx fails at submit
+		// (no backend), which the warning flags for the operator.
+		fallback := lowestEnabled
+		if fallback == 0 {
+			fallback = chs[0].ID
+		}
 		a.logger.Warn("tx channel fallback: no channel has a tx backend; tx will fail at submit",
 			"configured", configured, "using", fallback)
 		return fallback

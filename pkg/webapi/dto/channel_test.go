@@ -231,3 +231,55 @@ func TestChannelPttFromModel_PttMethod(t *testing.T) {
 		t.Fatalf("ptt_method: got %d want 3 (AIOC must round-trip to the SPA modal)", got.PttMethod)
 	}
 }
+
+// TestChannelRequest_Enabled_Default pins the backward-compat contract
+// for graywolf#517: a request that omits the enabled field (Enabled ==
+// nil) must default the model to enabled, so older clients and partial
+// callers never silently disable a running channel. An explicit false
+// disables; explicit true stays enabled. Mirrors the KISS contract.
+func TestChannelRequest_Enabled_Default(t *testing.T) {
+	f := false
+	tr := true
+	cases := []struct {
+		name string
+		ptr  *bool
+		want bool
+	}{
+		{"omitted defaults to enabled", nil, true},
+		{"explicit true", &tr, true},
+		{"explicit false disables", &f, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := ChannelRequest{Name: "ch", ModemType: "afsk", Enabled: c.ptr}
+			if got := req.ToModel().Enabled; got != c.want {
+				t.Fatalf("ToModel: Enabled=%v, want %v", got, c.want)
+			}
+			if got := req.ToUpdate(9).Enabled; got != c.want {
+				t.Fatalf("ToUpdate: Enabled=%v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestChannelResponse_Enabled_RoundTrip ensures ChannelFromModel always
+// surfaces a concrete enabled boolean (never null) so the Channels page
+// can render a "Disabled" state and drive the toggle.
+func TestChannelResponse_Enabled_RoundTrip(t *testing.T) {
+	for _, want := range []bool{false, true} {
+		resp := ChannelFromModel(configstore.Channel{ID: 3, Name: "ch", ModemType: "afsk", Enabled: want})
+		if resp.Enabled == nil {
+			t.Fatalf("ChannelFromModel: Enabled is nil, want concrete %v", want)
+		}
+		if *resp.Enabled != want {
+			t.Fatalf("ChannelFromModel: Enabled=%v, want %v", *resp.Enabled, want)
+		}
+		b, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if !strings.Contains(string(b), `"enabled":`) {
+			t.Fatalf("enabled field missing from JSON: %s", b)
+		}
+	}
+}

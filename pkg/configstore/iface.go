@@ -21,6 +21,7 @@ type ConfigStore interface {
 	DeleteChannel(ctx context.Context, id uint32) error
 	SetChannelFX25(ctx context.Context, id uint32, enable bool) error
 	SetChannelIL2P(ctx context.Context, id uint32, enable bool) error
+	SetChannelEnabled(ctx context.Context, id uint32, enable bool) error
 
 	// PTT
 	UpsertPttConfig(ctx context.Context, p *PttConfig) error

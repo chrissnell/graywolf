@@ -29,6 +29,7 @@ const (
 	OpCreateChannel       = "createChannel"
 	OpGetChannel          = "getChannel"
 	OpUpdateChannel       = "updateChannel"
+	OpSetChannelEnabled   = "setChannelEnabled"
 	OpDeleteChannel       = "deleteChannel"
 	OpGetChannelStats     = "getChannelStats"
 	OpGetChannelReferrers = "getChannelReferrers"
