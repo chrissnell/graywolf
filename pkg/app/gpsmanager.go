@@ -115,6 +115,14 @@ func (m *gpsManager) start(parent context.Context) {
 			}
 			run = func(ctx context.Context) error { return gps.RunGPSD(ctx, gcfg, m.cache, m.logger) }
 			name = "gpsd reader"
+		case "fixed":
+			fcfg := gps.FixedConfig{
+				Latitude:  gpsCfg.FixedLat,
+				Longitude: gpsCfg.FixedLon,
+				Altitude:  gpsCfg.FixedAlt,
+			}
+			run = func(ctx context.Context) error { return gps.RunFixed(ctx, fcfg, m.cache, m.logger) }
+			name = "fixed gps coordinate"
 		default:
 			m.logger.Info("gps source type not recognized", "type", gpsCfg.SourceType)
 			return

@@ -2740,6 +2740,12 @@ export interface components {
         };
         "dto.GPSRequest": {
             baud_rate?: number;
+            /** @description metres above MSL; 0 = unspecified */
+            fixed_alt?: number;
+            /** @description decimal degrees, north positive (source=fixed) */
+            fixed_lat?: number;
+            /** @description decimal degrees, east positive (source=fixed) */
+            fixed_lon?: number;
             gpsd_host?: string;
             gpsd_port?: number;
             serial_port?: string;
@@ -2748,6 +2754,12 @@ export interface components {
         "dto.GPSResponse": {
             baud_rate?: number;
             enabled?: boolean;
+            /** @description metres above MSL; 0 = unspecified */
+            fixed_alt?: number;
+            /** @description decimal degrees, north positive (source=fixed) */
+            fixed_lat?: number;
+            /** @description decimal degrees, east positive (source=fixed) */
+            fixed_lon?: number;
             gpsd_host?: string;
             gpsd_port?: number;
             id?: number;

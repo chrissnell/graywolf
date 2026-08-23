@@ -19,6 +19,7 @@
   const sourceOptions = [
     { value: 'serial', label: 'Serial Port' },
     { value: 'gpsd', label: 'GPSD' },
+    { value: 'fixed', label: 'Fixed Coordinate' },
   ];
 
   const sourceLabels = Object.fromEntries(sourceOptions.map(o => [o.value, o.label]));
@@ -27,6 +28,7 @@
     return {
       source: 'serial', serial_port: '/dev/ttyACM0', baud_rate: '9600',
       gpsd_host: 'localhost', gpsd_port: '2947',
+      fixed_lat: '', fixed_lon: '', fixed_alt: '',
     };
   }
 
@@ -66,6 +68,9 @@
       baud_rate: String(config.baud_rate || 9600),
       gpsd_host: config.gpsd_host || 'localhost',
       gpsd_port: String(config.gpsd_port || 2947),
+      fixed_lat: config.fixed_lat != null ? String(config.fixed_lat) : '',
+      fixed_lon: config.fixed_lon != null ? String(config.fixed_lon) : '',
+      fixed_alt: config.fixed_alt ? String(config.fixed_alt) : '',
     };
     modalOpen = true;
   }
@@ -82,16 +87,41 @@
   }
 
   async function handleSave() {
+    const payload = {
+      ...form, baud_rate: parseInt(form.baud_rate), gpsd_port: parseInt(form.gpsd_port),
+      fixed_lat: parseFloat(form.fixed_lat), fixed_lon: parseFloat(form.fixed_lon),
+      fixed_alt: form.fixed_alt === '' ? 0 : parseFloat(form.fixed_alt),
+    };
+    if (form.source === 'fixed') {
+      const err = validateFixed(payload.fixed_lat, payload.fixed_lon, payload.fixed_alt);
+      if (err) {
+        toasts.error(err);
+        return;
+      }
+    }
     try {
-      await api.put('/gps', {
-        ...form, baud_rate: parseInt(form.baud_rate), gpsd_port: parseInt(form.gpsd_port),
-      });
+      await api.put('/gps', payload);
       toasts.success('GPS config saved');
       modalOpen = false;
       await loadConfig();
     } catch (err) {
       toasts.error(err.message);
     }
+  }
+
+  // validateFixed mirrors the server-side WGS-84 range check so the user
+  // gets an inline error before the request round-trips.
+  function validateFixed(lat, lon, alt) {
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      return 'Latitude must be a number between -90 and 90';
+    }
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+      return 'Longitude must be a number between -180 and 180';
+    }
+    if (form.fixed_alt !== '' && !Number.isFinite(alt)) {
+      return 'Altitude must be a number (metres) or left blank';
+    }
+    return '';
   }
 
   async function executeDisable() {
@@ -171,6 +201,19 @@
             <span class="detail-label">Port</span>
             <span class="detail-value">{config.gpsd_port || 2947}</span>
           </div>
+        {:else if config.source === 'fixed'}
+          <div class="detail-row">
+            <span class="detail-label">Latitude</span>
+            <span class="detail-value">{config.fixed_lat}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Longitude</span>
+            <span class="detail-value">{config.fixed_lon}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Altitude</span>
+            <span class="detail-value">{config.fixed_alt ? `${config.fixed_alt} m` : '—'}</span>
+          </div>
         {/if}
       </div>
       <div class="device-actions">
@@ -234,6 +277,17 @@
     </FormField>
     <FormField label="GPSD Port" id="gps-port">
       <Input id="gps-port" bind:value={form.gpsd_port} type="number" placeholder="2947" />
+    </FormField>
+  {:else if form.source === 'fixed'}
+    <p class="fixed-hint">Enter the station's location in decimal degrees (e.g. <code>39.7392</code>, <code>-104.9903</code>). Used for distance and bearing to received stations.</p>
+    <FormField label="Latitude" id="gps-fixed-lat">
+      <Input id="gps-fixed-lat" bind:value={form.fixed_lat} type="number" step="any" placeholder="39.7392" />
+    </FormField>
+    <FormField label="Longitude" id="gps-fixed-lon">
+      <Input id="gps-fixed-lon" bind:value={form.fixed_lon} type="number" step="any" placeholder="-104.9903" />
+    </FormField>
+    <FormField label="Altitude (metres, optional)" id="gps-fixed-alt">
+      <Input id="gps-fixed-alt" bind:value={form.fixed_alt} type="number" step="any" placeholder="0" />
     </FormField>
   {/if}
   <div class="modal-actions">
@@ -460,6 +514,16 @@
     font-size: 11px;
     color: var(--color-warning, #d29922);
     margin-top: 4px;
+  }
+
+  .fixed-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+  }
+  .fixed-hint code {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
   }
 
   .modal-actions {

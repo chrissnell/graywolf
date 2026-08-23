@@ -1381,6 +1381,15 @@ definitions:
     properties:
       baud_rate:
         type: integer
+      fixed_alt:
+        description: metres above MSL; 0 = unspecified
+        type: number
+      fixed_lat:
+        description: decimal degrees, north positive (source=fixed)
+        type: number
+      fixed_lon:
+        description: decimal degrees, east positive (source=fixed)
+        type: number
       gpsd_host:
         type: string
       gpsd_port:
@@ -1396,6 +1405,15 @@ definitions:
         type: integer
       enabled:
         type: boolean
+      fixed_alt:
+        description: metres above MSL; 0 = unspecified
+        type: number
+      fixed_lat:
+        description: decimal degrees, north positive (source=fixed)
+        type: number
+      fixed_lon:
+        description: decimal degrees, east positive (source=fixed)
+        type: number
       gpsd_host:
         type: string
       gpsd_port:

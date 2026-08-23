@@ -71,8 +71,9 @@
     <p>
       A GPS receiver provides live position data for
       <a href="beacons.html">tracker beacons</a> and SmartBeacon rate
-      adaptation. Graywolf supports two GPS source types: direct serial
-      NMEA and the gpsd daemon.
+      adaptation. Graywolf supports three GPS source types: direct serial
+      NMEA, the gpsd daemon, and a fixed coordinate you enter by hand for a
+      stationary station.
     </p>
 
     <div class="screenshot">
@@ -107,7 +108,7 @@
             <tr>
               <td><code>source_type</code></td>
               <td><code>none</code></td>
-              <td><code>none</code>, <code>serial</code>, or <code>gpsd</code></td>
+              <td><code>none</code>, <code>serial</code>, <code>gpsd</code>, or <code>fixed</code></td>
             </tr>
           </tbody>
         </table>
@@ -194,6 +195,56 @@
           handles device hotplug, PPS timing, and allows multiple clients
           to share one GPS receiver. Install it with
           <code>sudo apt install gpsd</code>.
+        </p>
+      </div>
+    </div>
+
+    <h2>Fixed Coordinate</h2>
+
+    <p>
+      If your station never moves and you don&rsquo;t have a GPS receiver
+      attached, choose <strong>Fixed Coordinate</strong> and enter the
+      station&rsquo;s location by hand. The coordinate is published into the
+      same position cache the live receivers feed, so distance and bearing
+      to received stations, position beacons using <code>use_gps</code>, and
+      the station list all use it exactly as they would a live fix.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>fixed_lat</code></td>
+              <td>&mdash;</td>
+              <td>Latitude in decimal degrees, north positive (e.g. <code>39.7392</code>). Range &minus;90 to 90.</td>
+            </tr>
+            <tr>
+              <td><code>fixed_lon</code></td>
+              <td>&mdash;</td>
+              <td>Longitude in decimal degrees, east positive (e.g. <code>-104.9903</code>). Range &minus;180 to 180.</td>
+            </tr>
+            <tr>
+              <td><code>fixed_alt</code></td>
+              <td><code>0</code></td>
+              <td>Altitude in metres above mean sea level. Optional; leave blank to omit altitude from beacons.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          Enter coordinates in decimal degrees, not degrees/minutes/seconds.
+          Most mapping tools can copy a decimal-degree pair directly; the
+          live map&rsquo;s right-click <strong>Copy GPS</strong> menu gives
+          you one in the correct format.
         </p>
       </div>
     </div>

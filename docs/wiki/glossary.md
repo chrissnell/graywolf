@@ -67,6 +67,7 @@ background, the operator handbook is the starting point.
 | systemd unit | Service unit shipped with deb/rpm; runs as user `graywolf`, listens `0.0.0.0:8080`. | [`../../packaging/systemd/graywolf.service`](../../packaging/systemd/graywolf.service) |
 | GPS (gpsd) | Reads positions from a local gpsd daemon. | [`../../pkg/gps/gpsd.go`](../../pkg/gps/gpsd.go), [`../handbook/gps.html`](../handbook/gps.html) |
 | GPS (serial NMEA) | Reads positions directly from a serial GPS speaking NMEA. | [`../../pkg/gps/serial.go`](../../pkg/gps/serial.go), [`../handbook/gps.html`](../handbook/gps.html) |
+| GPS (fixed coordinate) | Manually-entered station lat/lon/alt published into the same cache the live readers feed; the way a home station gets distance/bearing without a live receiver (GH #510). Source type `fixed`. | [`../../pkg/gps/fixed.go`](../../pkg/gps/fixed.go), [`../handbook/gps.html`](../handbook/gps.html) |
 | CPAL | Upstream Rust audio crate; cross-platform live audio I/O. | integration in [`../../graywolf-modem/src/audio/soundcard.rs`](../../graywolf-modem/src/audio/soundcard.rs) |
 
 ## Project-internal
