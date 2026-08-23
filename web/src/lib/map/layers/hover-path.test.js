@@ -85,12 +85,14 @@ test('collapses consecutive duplicate beacons in the trail fallback', () => {
   assert.deepEqual(pathCoords(map), [[-95.1, 35.1], [-95.0, 35.0]]);
 });
 
-test('clears when there is no path and only a single fix', () => {
+test('drops the line but keeps a single node when only one fix is drawable', () => {
   const map = fakeMap();
   const layer = mountHoverPathLayer(map, () => null);
-  // Seed something, then show a station that can draw nothing.
+  // Seed a line, then show a station that can draw no path: the line clears
+  // but a lone node stays on the station so the hover is still acknowledged.
   layer.show({ callsign: 'A', via: 'rf', positions: [{ lat: 1, lon: 1 }, { lat: 2, lon: 2 }] });
   layer.show({ callsign: 'STATIONARY', via: 'is', positions: [{ lat: 35, lon: -95 }] });
   assert.equal(pathCoords(map), null);
-  assert.equal(nodeCount(map), 0);
+  assert.equal(nodeCount(map), 1);
+  assert.deepEqual(map._sources[NODES_SRC].data.features[0].geometry.coordinates, [-95, 35]);
 });

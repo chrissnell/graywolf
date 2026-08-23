@@ -147,7 +147,21 @@ export function mountHoverPathLayer(map, getOwnPosition = () => null) {
     if (coords.length < 2) {
       const trail = trailCoords(station);
       if (trail.length < 2) {
-        clear();
+        // Nothing to trace (a stationary station, or one heard once): drop
+        // the line but still drop a single node on the station so the hover
+        // is acknowledged instead of doing nothing at all.
+        const pathSrc = map.getSource(PATH_SRC);
+        if (pathSrc) pathSrc.setData(EMPTY_FC);
+        map.getSource(NODES_SRC).setData({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [pos.lon, pos.lat] },
+              properties: {},
+            },
+          ],
+        });
         return;
       }
       map.getSource(PATH_SRC).setData({
