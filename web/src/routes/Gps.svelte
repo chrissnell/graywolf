@@ -118,6 +118,12 @@
     if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
       return 'Longitude must be a number between -180 and 180';
     }
+    // 0,0 is a valid WGS-84 point (open ocean off Africa) but almost
+    // always means the fields were left blank — nudge rather than
+    // silently beacon from the Gulf of Guinea.
+    if (lat === 0 && lon === 0) {
+      return 'Enter the station latitude and longitude (0, 0 is unset)';
+    }
     if (form.fixed_alt !== '' && !Number.isFinite(alt)) {
       return 'Altitude must be a number (metres) or left blank';
     }
