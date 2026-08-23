@@ -3646,7 +3646,7 @@ export interface components {
             symbol_code?: string;
             /** @description SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char). */
             symbol_table?: string;
-            /** @description Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets. */
+            /** @description Via is how the most recent packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS). */
             via?: string;
             /** @description Weather is optional weather telemetry; present only when include=weather is requested and the station reports weather. */
             weather?: components["schemas"]["webapi.WeatherDTO"];
@@ -3680,7 +3680,7 @@ export interface components {
             speed_kt?: number;
             /** @description Timestamp is the UTC RFC3339 time the position was received. */
             timestamp?: string;
-            /** @description Via is the callsign of the last digipeater (H-bit) that forwarded this position packet; empty for direct. */
+            /** @description Via is how this position packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS). */
             via?: string;
         };
         "webapi.StatusChannel": {
