@@ -34,6 +34,12 @@
     { value: 604800, label: '7 days' },
   ];
 
+  const DIRECTION_OPTIONS = [
+    { value: 'RX', label: 'RX', cls: 'b-rx' },
+    { value: 'TX', label: 'TX', cls: 'b-tx' },
+    { value: 'IS', label: 'IS', cls: 'b-is' },
+  ];
+
   const RETINA = typeof window !== 'undefined' && window.devicePixelRatio > 1.5;
   const SHEETS = RETINA ? SPRITE_URLS_2X : SPRITE_URLS;
   const ICON_PX = 20;
@@ -59,6 +65,10 @@
   let iconDropOpen   = $state(false);
   let iconSearch     = $state('');
   let iconDropEl     = $state(null); // bound to the wrapper div for outside-click detection
+
+  let filterDirections = $state(new Set());
+  let dirDropOpen      = $state(false);
+  let dirDropEl        = $state(null);
 
   // Sort
   let sortCol = $state('last_heard');
@@ -187,7 +197,7 @@
   $effect(() => {
     // Access all filter state so this effect tracks them.
     filterCallsign; filterAlias; hasAliasOnly; todayOnly;
-    filterComment; selectedIcons; sortCol; sortDir; pageSize;
+    filterComment; selectedIcons; filterDirections; sortCol; sortDir; pageSize;
     currentPage = 1;
   });
 
@@ -219,6 +229,11 @@
     // Icon multiselect
     if (selectedIcons.size > 0) {
       list = list.filter(s => selectedIcons.has(iconKey(s.symbol_table, s.symbol_code)));
+    }
+
+    // Direction multiselect
+    if (filterDirections.size > 0) {
+      list = list.filter(s => filterDirections.has(s.direction));
     }
 
     // Comment LIKE filter
@@ -356,6 +371,12 @@
 
   function clearIconFilter() { selectedIcons = new Set(); }
 
+  function toggleDirection(val) {
+    const next = new Set(filterDirections);
+    if (next.has(val)) next.delete(val); else next.add(val);
+    filterDirections = next;
+  }
+
   // Close icon dropdown on outside click; also clear the search.
   function onIconDropKey(e) {
     if (e.key === 'Escape') { iconDropOpen = false; iconSearch = ''; }
@@ -367,6 +388,19 @@
     const dismiss = () => { iconDropOpen = false; iconSearch = ''; };
     const onKey   = (e) => { if (e.key === 'Escape') dismiss(); };
     const onDown  = (e) => { if (iconDropEl && !iconDropEl.contains(e.target)) dismiss(); };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  });
+
+  $effect(() => {
+    if (!dirDropOpen) return;
+    const dismiss = () => { dirDropOpen = false; };
+    const onKey   = (e) => { if (e.key === 'Escape') dismiss(); };
+    const onDown  = (e) => { if (dirDropEl && !dirDropEl.contains(e.target)) dismiss(); };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onDown);
     return () => {
@@ -465,7 +499,41 @@
                 <Input bind:value={filterAlias} placeholder="Search…" />
               </td>
             {/if}
-            <td><!-- Last Heard: use global Today toggle above --></td>
+            <td class="filter-heard-cell">
+              <div class="icon-drop-wrap" bind:this={dirDropEl}>
+                <button
+                  type="button"
+                  class="icon-drop-btn"
+                  onclick={() => { dirDropOpen = !dirDropOpen; }}
+                  aria-expanded={dirDropOpen}
+                  aria-haspopup="listbox"
+                >
+                  {filterDirections.size > 0 ? `${filterDirections.size} selected` : 'All'}
+                  <span class="icon-drop-caret">▾</span>
+                </button>
+                {#if dirDropOpen}
+                  <div class="icon-drop-panel" role="listbox" aria-multiselectable="true">
+                    <button
+                      type="button"
+                      class="icon-drop-clear"
+                      onclick={() => { filterDirections = new Set(); }}
+                    >Clear selection</button>
+                    <div class="icon-drop-list">
+                      {#each DIRECTION_OPTIONS as opt}
+                        <label class="icon-drop-item">
+                          <input
+                            type="checkbox"
+                            checked={filterDirections.has(opt.value)}
+                            onchange={() => toggleDirection(opt.value)}
+                          />
+                          <span class="badge {opt.cls}">{opt.label}</span>
+                        </label>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            </td>
             <td class="filter-icon-cell">
               <!-- Custom multiselect dropdown for icon filter -->
               <div class="icon-drop-wrap" bind:this={iconDropEl}>
@@ -725,7 +793,8 @@
     vertical-align: middle;
   }
   .filter-alias-cell { min-width: 120px; }
-  .filter-icon-cell { position: relative; min-width: 120px; }
+  .filter-heard-cell { position: relative; min-width: 110px; vertical-align: top !important; }
+  .filter-icon-cell { position: relative; min-width: 120px; vertical-align: top !important; }
 
   /* Body rows */
   .station-row td {
@@ -803,9 +872,10 @@
   .icon-drop-btn {
     width: 100%; background: var(--bg-primary);
     border: 1px solid var(--border-color); border-radius: 4px;
-    padding: 4px 8px; color: var(--color-text);
-    font-size: var(--text-sm); cursor: pointer;
+    padding: 0.5rem; color: var(--color-text);
+    font-size: var(--text-base); cursor: pointer;
     display: flex; align-items: center; justify-content: space-between;
+    box-sizing: border-box;
     gap: 4px;
   }
   .icon-drop-btn:hover { border-color: var(--color-primary); }
