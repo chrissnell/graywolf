@@ -335,10 +335,8 @@
     // for string/numeric fields (server, port, software_name, etc.) so
     // no UI-side || fallbacks are needed. Booleans still use ??
     // because the server can't distinguish "unset" from "explicit
-    // false". tx_channel is taken verbatim: 0 means "none (RX only)",
-    // a first-class, selectable choice now (see graywolf#396) — forcing
-    // it onto the first available channel here would silently re-arm TX
-    // and make "none" impossible to persist.
+    // false". tx_channel is taken verbatim: 0 means "auto" (resolveTxChannel
+    // picks the first APRS-eligible channel at runtime, same as messages).
     startChannelsStore();
     // Invalidate synchronously so the channel list is fresh before the
     // form seeds from it; then the poller keeps it current.
@@ -737,7 +735,7 @@
         <FormField label="Port" id="ig-port">
           <Input id="ig-port" bind:value={form.port} type="number" placeholder="14580" />
         </FormField>
-        <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets and outbound APRS messages.">
+        <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets and outbound APRS messages. Auto picks the first APRS-eligible channel at transmit time.">
           {#snippet children(describedBy)}
             <ChannelListbox
               id="ig-txch"
@@ -747,7 +745,7 @@
               ariaLabelledBy={describedBy}
               capabilityFilter={txPredicate}
               allowNone
-              noneLabel="None (RX only)"
+              noneLabel="Auto (first APRS-eligible channel)"
             />
           {/snippet}
         </FormField>
