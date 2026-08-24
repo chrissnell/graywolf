@@ -212,11 +212,12 @@ type migration struct {
 //	29 — channels_enabled: add the channels.enabled column (default 1)
 //	    so a channel can be disabled without deleting it. Backfills
 //	    enabled=1 on every existing row so upgrades keep all channels
-//	    running. AutoMigrate adds the column with a DEFAULT clause, but
-//	    SQLite's ALTER TABLE ADD COLUMN only applies that default to rows
-//	    inserted after the ALTER, so this migration writes it explicitly.
-//	    Post-AutoMigrate; no-op on fresh DBs via the columnExists guard.
-//	    See graywolf#517.
+//	    running. SQLite's ALTER TABLE ADD COLUMN with a constant DEFAULT 1
+//	    already returns 1 for pre-existing rows; the explicit UPDATE is
+//	    belt-and-suspenders so every row carries a written value regardless
+//	    of how the column was created. Post-AutoMigrate; the ALTER is
+//	    skipped when AutoMigrate already added the column (columnExists
+//	    guard). See graywolf#517.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},

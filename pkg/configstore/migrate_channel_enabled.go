@@ -11,9 +11,9 @@ import (
 // post-AutoMigrate so AutoMigrate has already created (or verified) the
 // channels table. On fresh installs AutoMigrate adds the column from the
 // Go struct and no rows exist, so the ALTER is skipped and the UPDATE is
-// a no-op. On upgrades the explicit UPDATE guarantees a physical value
-// on pre-existing rows rather than relying on SQLite's ADD COLUMN
-// default being returned for legacy rows.
+// a no-op. SQLite's ADD COLUMN with a constant DEFAULT 1 already returns
+// 1 for pre-existing rows; the explicit UPDATE is belt-and-suspenders so
+// every row carries a written value regardless of how the column landed.
 //
 // The unconditional backfill is safe: this migration runs exactly once
 // (user_version gate) and the enabled flag did not exist before it, so

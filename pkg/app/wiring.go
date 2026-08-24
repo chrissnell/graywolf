@@ -1943,12 +1943,15 @@ func (a *App) kissComponent() namedComponent {
 				if !ki.Enabled {
 					continue
 				}
-				if disabled[ki.Channel] {
-					continue
-				}
 				ch := ki.Channel
 				if ch == 0 {
+					// Channel==0 implicitly binds to channel 1 (same default
+					// used for the device open below); gate the disabled
+					// check on the effective channel, not the raw 0.
 					ch = 1
+				}
+				if disabled[ch] {
+					continue
 				}
 				name := ki.Name
 				mode := kiss.Mode(ki.Mode)

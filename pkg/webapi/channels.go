@@ -478,6 +478,14 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 // behind the Channels page's per-card enable/disable action — it avoids
 // re-sending the full channel definition just to bring a radio down.
 //
+// Unlike a device-removing edit, disabling deliberately does NOT run the
+// referrer guard (no 409): it is a reversible park, the config is kept
+// intact, and re-enabling restores every referrer's TX path. This
+// mirrors the KISS interface enable/disable toggle (setKissEnabled),
+// which is likewise unguarded. A beacon / iGate pointed at the parked
+// channel is rerouted by resolveTxChannel (or fails cleanly at the
+// dispatcher with no backend) until the operator re-enables it.
+//
 // @Summary  Enable or disable a channel
 // @Tags     channels
 // @ID       setChannelEnabled

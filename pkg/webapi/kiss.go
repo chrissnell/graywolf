@@ -270,19 +270,21 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 		s.kissManager.Stop(ki.ID)
 		return
 	}
+	// A KISS interface with Channel==0 implicitly binds to channel 1 (the
+	// same default used for the device open below), so resolve the
+	// effective channel first and gate the disabled check on it -- a
+	// legacy Channel==0 row must go inert when channel 1 is disabled.
+	ch := ki.Channel
+	if ch == 0 {
+		ch = 1
+	}
 	// A KISS interface bound to a disabled channel stays down so the
 	// channel is fully inert — the device is released (graywolf#517).
 	// Fail open (treat as enabled) if the channel row can't be read so a
 	// transient store error never silently kills a running interface.
-	if ki.Channel != 0 {
-		if ch, err := s.store.GetChannel(context.Background(), ki.Channel); err == nil && ch != nil && !ch.Enabled {
-			s.kissManager.Stop(ki.ID)
-			return
-		}
-	}
-	ch := ki.Channel
-	if ch == 0 {
-		ch = 1
+	if c, err := s.store.GetChannel(context.Background(), ch); err == nil && c != nil && !c.Enabled {
+		s.kissManager.Stop(ki.ID)
+		return
 	}
 	mode := kiss.Mode(ki.Mode)
 	if mode == "" {

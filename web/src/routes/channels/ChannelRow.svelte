@@ -125,7 +125,18 @@
     </div>
   {/if}
 
-  {#if channel.backing}
+  {#if isDisabled}
+    <!-- A disabled channel is inert: the backend is parked, so surface a
+         "Disabled" state instead of the (stale) live/down backing health,
+         which would otherwise contradict the Disabled badge. -->
+    <div class="backing-row" aria-label="Channel disabled; backend not running">
+      <span class="backing-label">Backing</span>
+      <span class="backing-summary">
+        <span class="glyph unbound" aria-hidden="true">○</span>
+        <span class="backing-text">{channel.backing ? summaryLabel(channel.backing) + ' · ' : ''}Disabled</span>
+      </span>
+    </div>
+  {:else if channel.backing}
     {@const h = channel.backing.health}
     {@const glyphClass = h === HEALTH_LIVE ? 'live' : h === HEALTH_DOWN ? 'down' : 'unbound'}
     <div class="backing-row"
@@ -142,8 +153,9 @@
   <!-- PTT indicator (issue #112). Only shown for modem-backed TX
        channels: KISS-TNC channels handle keying inside the TNC
        firmware, and an RX-only modem channel can't transmit so
-       PTT has no role to play either. -->
-  {#if !isKissOnly && channel.output_device_id && channel.output_device_id !== 0}
+       PTT has no role to play either. Hidden while disabled — the
+       channel is inert, so a "live" PTT dot would be misleading. -->
+  {#if !isDisabled && !isKissOnly && channel.output_device_id && channel.output_device_id !== 0}
     {@const pttGlyphClass = pttState(channel.ptt)}
     <div class="backing-row"
          aria-label={pttAriaLabel(channel.ptt)}>

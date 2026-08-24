@@ -379,3 +379,145 @@ func TestChannelsDelete_RemovesRow(t *testing.T) {
 		t.Fatalf("expected 404 after delete, got %d", rec2.Code)
 	}
 }
+
+// TestSetChannelEnabled_Toggle exercises PUT /api/channels/{id}/enabled:
+// the flag flips, persists in the store, and round-trips in the response.
+// The seeded channel (id 1) starts enabled.
+func TestSetChannelEnabled_Toggle(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	do := func(enabled bool) dto.ChannelResponse {
+		t.Helper()
+		body := `{"enabled":` + strconv.FormatBool(enabled) + `}`
+		req := httptest.NewRequest(http.MethodPut, "/api/channels/1/enabled", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("enabled=%v: expected 200, got %d: %s", enabled, rec.Code, rec.Body.String())
+		}
+		var resp dto.ChannelResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	// Disable.
+	resp := do(false)
+	if resp.Enabled == nil || *resp.Enabled {
+		t.Fatalf("response Enabled=%v, want false", resp.Enabled)
+	}
+	if got, err := srv.store.GetChannel(context.Background(), 1); err != nil || got.Enabled {
+		t.Fatalf("store channel Enabled=%v (err %v), want false", got.Enabled, err)
+	}
+
+	// Re-enable.
+	resp = do(true)
+	if resp.Enabled == nil || !*resp.Enabled {
+		t.Fatalf("response Enabled=%v, want true", resp.Enabled)
+	}
+	if got, err := srv.store.GetChannel(context.Background(), 1); err != nil || !got.Enabled {
+		t.Fatalf("store channel Enabled=%v (err %v), want true", got.Enabled, err)
+	}
+}
+
+// TestSetChannelEnabled_NotFound returns 404 for an unknown channel id.
+func TestSetChannelEnabled_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/999/enabled", strings.NewReader(`{"enabled":false}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestSetChannelEnabled_NoOp is idempotent: setting the current value
+// returns 200 and leaves the channel enabled.
+func TestSetChannelEnabled_NoOp(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/1/enabled", strings.NewReader(`{"enabled":true}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got, _ := srv.store.GetChannel(context.Background(), 1); !got.Enabled {
+		t.Fatalf("no-op disabled the channel")
+	}
+}
+
+// TestChannelsCreate_Disabled verifies an explicit create-disabled
+// (enabled:false in the POST body) is honored despite the GORM
+// default:true footgun -- the create handler flips the fresh row off.
+func TestChannelsCreate_Disabled(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	body := `{
+		"name": "parked",
+		"input_device_id": 1,
+		"modem_type": "afsk",
+		"bit_rate": 1200, "mark_freq": 1200, "space_freq": 2200,
+		"profile": "A", "num_slicers": 1, "fix_bits": "none",
+		"enabled": false
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/channels", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp dto.ChannelResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Enabled == nil || *resp.Enabled {
+		t.Fatalf("response Enabled=%v, want false", resp.Enabled)
+	}
+	got, err := srv.store.GetChannel(context.Background(), resp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled {
+		t.Fatalf("channel created with enabled:false persisted as enabled")
+	}
+}
+
+// TestChannelsCreate_DefaultsEnabled confirms omitting the flag defaults
+// a created channel to enabled (backward-compat contract).
+func TestChannelsCreate_DefaultsEnabled(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	body := `{
+		"name": "auto-on",
+		"input_device_id": 1,
+		"modem_type": "afsk",
+		"bit_rate": 1200, "mark_freq": 1200, "space_freq": 2200,
+		"profile": "A", "num_slicers": 1, "fix_bits": "none"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/channels", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp dto.ChannelResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Enabled == nil || !*resp.Enabled {
+		t.Fatalf("response Enabled=%v, want true", resp.Enabled)
+	}
+}
