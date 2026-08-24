@@ -285,7 +285,7 @@
   // text type clears the seeded category so the input starts empty. The
   // prevType guard ensures this fires only on an actual type change, not
   // on every pattern keystroke.
-  let prevType = filterForm.type;
+  let prevType = $state('');
   $effect(() => {
     const t = filterForm.type;
     if (t === prevType) return;
