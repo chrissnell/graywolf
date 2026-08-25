@@ -1800,9 +1800,9 @@ into an otherwise-monospace app.
 
 Two intentional exceptions, neither a UI text font:
 
-- Emoji-only spans (e.g. the `.bolt` zap glyph, avatar emoji) use an
-  `'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui,
-  sans-serif` stack to render color emoji, not Latin text.
+- Emoji-only spans (e.g. the `.bolt` zap glyph) use an `'Apple Color
+  Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, sans-serif`
+  stack to render color emoji, not Latin text.
 - MapLibre label layers name glyph sets (`'Open Sans ...'`, `'Arial
   Unicode MS ...'` in `web/src/lib/map/layers/fronts.js`) that must match
   the tile server's font stack; these are map-render font names, not CSS.
