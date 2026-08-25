@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Box } from '@chrissnell/chonky-ui';
+  import { Button, Box, Badge } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { online } from '../lib/stores/connection.js';
   import { formatAltitude, formatSpeed } from '../lib/settings/units.js';
@@ -9,7 +9,7 @@
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
   import { channelsStore, start as startChannels } from '../lib/stores/channels.svelte.js';
-  import { SUMMARY_KISS_TNC, HEALTH_LIVE } from '../lib/channelBacking.js';
+  import { SUMMARY_KISS_TNC, HEALTH_LIVE, isTxCapable } from '../lib/channelBacking.js';
 
   let packets = $state([]);
   let status = $state(null);
@@ -22,6 +22,12 @@
   // Cross-references status channel ids with the backing data from /api/channels.
   let channelMetaById = $derived(
     Object.fromEntries((channelsStore.list || []).map(c => [c.id, c]))
+  );
+
+  // The channel the app will use for TX when "Auto" is selected — mirrors
+  // resolveTxChannel(0): first enabled TX-capable channel in config order.
+  let firstTxChannelId = $derived(
+    (channelsStore.list || []).find(c => c.enabled !== false && isTxCapable(c))?.id ?? null
   );
 
   let offline = $derived(!$online);
@@ -261,9 +267,19 @@
       {@const audioPeak = ch.device_peak_dbfs || ch.audio_peak}
       {@const isKissTnc = channelMetaById[ch.id]?.backing?.summary === SUMMARY_KISS_TNC}
       {@const kissBacking = channelMetaById[ch.id]?.backing}
-      <div class="ch-card">
+      {@const isDisabled = channelMetaById[ch.id]?.enabled === false}
+      {@const isFirstTxChannel = ch.id === firstTxChannelId}
+      <div class="ch-card" class:disabled={isDisabled}>
         <div class="ch-header">
-          <span class="ch-title">CH{ch.id}: {ch.name}</span>
+          <div class="ch-title-row">
+            <span class="ch-title">CH{ch.id}: {ch.name}</span>
+            {#if isDisabled}
+              <Badge variant="warning">Disabled</Badge>
+            {/if}
+            {#if isFirstTxChannel}
+              <Badge variant="success">★ TX</Badge>
+            {/if}
+          </div>
           <span class="ch-modem">{ch.modem_type.toUpperCase()} {ch.bit_rate} bd</span>
         </div>
 
@@ -290,7 +306,7 @@
         {:else}
           <div class="ch-audio">
             <div class="level-bar">
-              <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
+              <div class="level-fill" style="width: {isDisabled ? 0 : peakToPercent(audioPeak)}%; background: {isDisabled ? '' : levelColor(audioPeak)}"></div>
             </div>
             <span class="level-value">{formatPeak(audioPeak)}</span>
           </div>
@@ -443,10 +459,25 @@
     flex-direction: column;
     gap: 12px;
   }
+  /* A disabled channel is inert; dim the card and dash its border. */
+  .ch-card.disabled {
+    opacity: 0.65;
+    border-style: dashed;
+  }
+
   .ch-header {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
+    gap: 8px;
+  }
+  .ch-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;
+    min-width: 0;
   }
   .ch-title {
     font-size: 15px;
