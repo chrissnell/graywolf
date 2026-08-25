@@ -403,6 +403,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
+    overflow: hidden;
     min-height: 38px;
     gap: 8px;
     padding: 6px 10px;
