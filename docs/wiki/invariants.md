@@ -1781,3 +1781,31 @@ Source: [`../../pkg/messages/store.go`](../../pkg/messages/store.go)
 (`TestListCursorHighVolumeNoSkips`),
 [`../../web/src/lib/messagesTransport.js`](../../web/src/lib/messagesTransport.js)
 (`fetchDelta`).
+
+### 64. Web UI renders in Inconsolata everywhere; no system/Helvetica stack
+
+Every visible glyph in the web UI is Inconsolata. The font is applied
+through the `--font-mono` custom property (`'Inconsolata', 'Courier New',
+monospace`), set on `body` by both `chonky-ui` and `web/src/app.css` and
+inherited by headings and controls. Component CSS must not override
+`font-family` with a system stack (`-apple-system`, `BlinkMacSystemFont`,
+`system-ui`, `'Helvetica Neue'`, `Arial`, `sans-serif`); use
+`var(--font-mono)`. The Messages surface (bubbles, invite text, compose
+box) once carried an iOS-style stack "to feel like messaging" -- that was
+removed so the product reads as one typeface (graywolf #576).
+
+*Why:* a lone component reintroducing the platform font is exactly the
+regression this issue fixed; it looks like a native iOS control dropped
+into an otherwise-monospace app.
+
+Two intentional exceptions, neither a UI text font:
+
+- Emoji-only spans (e.g. the `.bolt` zap glyph, avatar emoji) use an
+  `'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui,
+  sans-serif` stack to render color emoji, not Latin text.
+- MapLibre label layers name glyph sets (`'Open Sans ...'`, `'Arial
+  Unicode MS ...'` in `web/src/lib/map/layers/fronts.js`) that must match
+  the tile server's font stack; these are map-render font names, not CSS.
+
+The per-tab page header (`web/src/components/PageHeader.svelte`,
+`.page-title`) is pinned to `var(--font-mono)` at 22px.

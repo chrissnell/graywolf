@@ -513,8 +513,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     color: var(--color-text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
-      'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-mono);
     font-size: 14px;
     line-height: 1.4;
     overflow-y: auto;

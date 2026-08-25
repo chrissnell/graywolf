@@ -26,7 +26,8 @@
     flex-wrap: wrap;
   }
   .page-title {
-    font-size: 20px;
+    font-family: var(--font-mono);
+    font-size: 22px;
     font-weight: 600;
   }
   .page-subtitle {
