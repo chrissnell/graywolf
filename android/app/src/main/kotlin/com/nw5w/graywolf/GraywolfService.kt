@@ -167,11 +167,20 @@ class GraywolfService : Service() {
     }
 
     private fun bootGoChild(): Boolean {
-        val bearerToken = (application as GraywolfApp).bearerToken
+        val app = application as GraywolfApp
+        val bearerToken = app.bearerToken
         val goPath = File(applicationInfo.nativeLibraryDir, "libgraywolf.so").absolutePath
-        val tileCacheDir = File(filesDir, "tiles").also { it.mkdirs() }
+        val storagePrefs = com.nw5w.graywolf.storage.StoragePreferences(this)
+        val dataDir = storagePrefs.getDataDir()
+        val sdCardDir = storagePrefs.getSdCardDir()
+        val tileCacheDir = File(dataDir, "tiles").also { it.mkdirs() }
         val dnsServers = currentDnsServers()
         Log.i(TAG, "GRAYWOLF_DNS_SERVERS=$dnsServers")
+        Log.i(TAG, "data_dir=${dataDir.absolutePath} sd_card=${sdCardDir?.absolutePath ?: "(none)"}")
+
+        // Update storageInfoJson so the JS bridge can report current state.
+        app.storageInfoJson = buildStorageInfoJson(storagePrefs.useSDCard, sdCardDir, filesDir)
+
         val launcher = GoLauncher(
             executablePath = goPath,
             env = mapOf(
@@ -184,10 +193,13 @@ class GraywolfService : Service() {
                 "GRAYWOLF_PLATFORM_SOCKET" to "@" + platformSocketPath(),
                 "GRAYWOLF_LISTEN" to "127.0.0.1:8080",
                 "GRAYWOLF_LISTEN_TOKEN" to bearerToken,
-                "GRAYWOLF_DB" to File(filesDir, "graywolf.db").absolutePath,
-                "GRAYWOLF_HISTORY_DB" to File(filesDir, "graywolf-history.db").absolutePath,
+                "GRAYWOLF_DB" to File(dataDir, "graywolf.db").absolutePath,
+                "GRAYWOLF_HISTORY_DB" to File(dataDir, "graywolf-history.db").absolutePath,
                 "GRAYWOLF_TILE_CACHE" to tileCacheDir.absolutePath,
                 "GRAYWOLF_PLATFORM" to "android",
+                "GRAYWOLF_STORAGE_LOCATION" to if (storagePrefs.useSDCard && sdCardDir != null) "sdcard" else "internal",
+                "GRAYWOLF_SD_CARD_PATH" to (sdCardDir?.absolutePath ?: ""),
+                "GRAYWOLF_INTERNAL_PATH" to filesDir.absolutePath,
                 // Android has no /etc/resolv.conf; without this Go's net
                 // resolver falls through to dialing [::1]:53 and every
                 // outbound DNS lookup fails with "connection refused".
@@ -205,6 +217,70 @@ class GraywolfService : Service() {
         goListenerReady = true
         Log.i(TAG, "poc-b: go_child_up")
         return true
+    }
+
+    private fun buildStorageInfoJson(useSDCard: Boolean, sdCardDir: java.io.File?, internalDir: java.io.File): String {
+        val sdPath = sdCardDir?.absolutePath ?: ""
+        val sdAvail = sdCardDir != null
+        val intPath = internalDir.absolutePath
+        return """{"use_sd_card":$useSDCard,"sd_card_available":$sdAvail,"sd_card_path":"$sdPath","internal_path":"$intPath"}"""
+    }
+
+    /**
+     * Migrates data files to or from the SD card.
+     * Stops the Go child, copies files with progress, saves the preference,
+     * then restarts. Must be called from a background thread.
+     */
+    private fun doStorageMigration(useSDCard: Boolean) {
+        val app = application as GraywolfApp
+        val storagePrefs = com.nw5w.graywolf.storage.StoragePreferences(this)
+
+        val srcDir = storagePrefs.getDataDir()
+        val dstDir = if (useSDCard) {
+            storagePrefs.getSdCardDir() ?: run {
+                app.migrationStateJson = """{"state":"error","progress":0,"message":"SD card not available"}"""
+                return
+            }
+        } else {
+            filesDir
+        }
+
+        if (srcDir.absolutePath == dstDir.absolutePath) {
+            // Already in the right location; just update the preference.
+            storagePrefs.useSDCard = useSDCard
+            app.migrationStateJson = """{"state":"complete","progress":1,"message":""}"""
+            return
+        }
+
+        // Stop Go child before touching its databases.
+        goListenerReady = false
+        goLauncher?.stop()
+        goLauncher = null
+
+        val success = com.nw5w.graywolf.storage.StorageMigration.migrate(
+            ctx = this,
+            srcDir = srcDir,
+            dstDir = dstDir,
+            onState = { state -> app.migrationStateJson = state.toJson() },
+        )
+
+        if (success) {
+            storagePrefs.useSDCard = useSDCard
+            Log.i(TAG, "storage migration complete; useSDCard=$useSDCard dst=${dstDir.absolutePath}")
+        } else {
+            Log.e(TAG, "storage migration failed; restarting with original paths")
+        }
+
+        // Restart Go with the new (or original) paths.
+        if (!bootGoChild()) {
+            Log.e(TAG, "go child failed to restart after migration")
+        }
+
+        // Reload the WebView so the SPA picks up the new storage state.
+        sendBroadcast(
+            Intent(com.nw5w.graywolf.MainActivity.ACTION_RELOAD_WEBVIEW)
+                .setPackage(packageName)
+        )
     }
 
     private fun supervisorRestart(): Boolean {
@@ -476,7 +552,13 @@ class GraywolfService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_MIGRATE_STORAGE) {
+            val useSDCard = intent.getBooleanExtra(EXTRA_USE_SD_CARD, false)
+            thread(name = "graywolf-migrate") { doStorageMigration(useSDCard) }
+        }
+        return START_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -575,6 +657,8 @@ class GraywolfService : Service() {
         // then dies with the process) -- same philosophy as the startupThread join.
         private const val BOOT_JOIN_MS = 2_500L
         const val ACTION_STOP = "com.nw5w.graywolf.STOP"
+        const val ACTION_MIGRATE_STORAGE = "com.nw5w.graywolf.MIGRATE_STORAGE"
+        const val EXTRA_USE_SD_CARD = "use_sd_card"
 
         @Volatile
         var goListenerReady: Boolean = false

@@ -29,6 +29,9 @@ class WebAppInterface(
     private val webView: WebView,
     private val adapter: UsbPttAdapter = UsbPttAdapter,
     private val requestBtPermission: (callbackId: String) -> Unit = {},
+    private val getMigrationState: () -> String = { """{"state":"idle","progress":0,"message":""}""" },
+    private val initiateMigration: (Boolean) -> Unit = {},
+    private val getStorageInfoJson: () -> String = { """{"use_sd_card":false,"sd_card_available":false,"sd_card_path":"","internal_path":""}""" },
 ) {
     @JavascriptInterface
     fun getBearerToken(): String = tokenProvider()
@@ -99,6 +102,27 @@ class WebAppInterface(
         }
         requestBtPermission(callbackId)
     }
+
+    /** Returns the current storage configuration as a JSON string. */
+    @JavascriptInterface
+    fun getStorageInfo(): String = getStorageInfoJson()
+
+    /**
+     * Returns the current migration state as a JSON string.
+     * Polled by the frontend progress dialog every 500 ms.
+     * Shape: {"state":"idle|starting|migrating|complete|error","progress":0.0,"message":"..."}
+     */
+    @JavascriptInterface
+    fun getStorageMigrationState(): String = getMigrationState()
+
+    /**
+     * Initiates a storage migration to the SD card (useSDCard=true) or back
+     * to internal storage (useSDCard=false). Runs on a background thread via
+     * GraywolfService; the caller should poll getStorageMigrationState() for
+     * progress.
+     */
+    @JavascriptInterface
+    fun initiateStorageMigration(useSDCard: Boolean) = initiateMigration(useSDCard)
 
     companion object {
         private const val TAG = "WebAppInterface"

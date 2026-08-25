@@ -14,6 +14,16 @@ class GraywolfApp : Application() {
     lateinit var bearerToken: String
         private set
 
+    // Written by GraywolfService during storage migration, read by
+    // WebAppInterface via a lambda so both sides share without coupling.
+    @Volatile
+    var migrationStateJson: String = """{"state":"idle","progress":0,"message":""}"""
+
+    // Written by GraywolfService after bootGoChild, read by WebAppInterface.
+    @Volatile
+    var storageInfoJson: String =
+        """{"use_sd_card":false,"sd_card_available":false,"sd_card_path":"","internal_path":""}"""
+
     override fun onCreate() {
         super.onCreate()
         val b = ByteArray(32)
@@ -21,3 +31,4 @@ class GraywolfApp : Application() {
         bearerToken = b.joinToString("") { "%02x".format(it) }
     }
 }
+
