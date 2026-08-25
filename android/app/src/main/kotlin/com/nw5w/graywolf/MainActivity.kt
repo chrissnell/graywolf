@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
 import android.net.LocalSocket
@@ -38,6 +39,16 @@ class MainActivity : Activity() {
     // request. Cleared in onRequestPermissionsResult after we post the
     // window.__btResult dispatch back to the WebView.
     private var pendingBtPermCallback: String? = null
+
+    // Reloads the WebView after a storage migration completes.
+    private val reloadReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == ACTION_RELOAD_WEBVIEW && ::webView.isInitialized) {
+                Log.i(TAG, "reloading WebView after storage migration")
+                mainHandler.post { webView.reload() }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +86,16 @@ class MainActivity : Activity() {
                     tokenProvider = { (application as GraywolfApp).bearerToken },
                     webView = it,
                     requestBtPermission = ::requestBluetoothPermission,
+                    getMigrationState = { (application as GraywolfApp).migrationStateJson },
+                    getStorageInfoJson = { (application as GraywolfApp).storageInfoJson },
+                    initiateMigration = { useSDCard ->
+                        startService(
+                            Intent(this, GraywolfService::class.java).apply {
+                                action = GraywolfService.ACTION_MIGRATE_STORAGE
+                                putExtra(GraywolfService.EXTRA_USE_SD_CARD, useSDCard)
+                            }
+                        )
+                    },
                 ),
                 "GraywolfWebInterface",
             )
@@ -90,6 +111,11 @@ class MainActivity : Activity() {
         }
         setContentView(webView)
         applyWindowInsets()
+        registerReceiver(
+            reloadReceiver,
+            IntentFilter(ACTION_RELOAD_WEBVIEW),
+            Context.RECEIVER_NOT_EXPORTED,
+        )
         ensurePerms()
     }
 
@@ -359,6 +385,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(reloadReceiver) } catch (_: IllegalArgumentException) { /* idempotent */ }
         // The USB-attach suppression path finish()es in onCreate before webView
         // is built, which skips straight here -- guard the lateinit.
         if (::webView.isInitialized) webView.destroy()
@@ -373,6 +400,7 @@ class MainActivity : Activity() {
         // pending callback instead of the startup-perms code path.
         private const val REQ_BT_PERMS = 0x102
         private const val PREFS_NAME = "graywolf-prefs"
+        const val ACTION_RELOAD_WEBVIEW = "com.nw5w.graywolf.RELOAD_WEBVIEW"
         private const val PREF_BATTERY_OPT_REQUESTED = "battery_opt_whitelist_requested_v1"
         private const val PREF_USER_STOPPED_AT = "user_stopped_at_ms_v1"
 

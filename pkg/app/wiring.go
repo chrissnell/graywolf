@@ -1384,6 +1384,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Catalog:            catalog,
 		Style:              styleCache,
 		Demo:               a.cfg.Demo,
+		StorageLocation:    a.cfg.StorageLocation,
+		SdCardPath:         a.cfg.SdCardPath,
+		InternalPath:       a.cfg.InternalPath,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)

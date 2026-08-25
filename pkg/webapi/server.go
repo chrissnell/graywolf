@@ -147,6 +147,12 @@ type Server struct {
 	bleMobilinkdScanner BLEMobilinkdScanner
 
 	demo bool // true when running in screenshot/demo mode; set from Config.Demo
+
+	// storageLocation/sdCardPath/internalPath are Android storage info, empty on
+	// desktop. Forwarded from app.Config and served by GET /api/android/storage.
+	storageLocation string
+	sdCardPath      string
+	internalPath    string
 }
 
 // ActionsService is the narrow surface the webapi handlers consume
@@ -229,6 +235,16 @@ type Config struct {
 	// Demo serves canned dashboard counters from /api/status. Set by the
 	// wiring layer from app.Config.Demo. Screenshots/demos only.
 	Demo bool
+
+	// StorageLocation is "internal" or "sdcard" on Android, empty on desktop.
+	// Forwarded from app.Config and returned by GET /api/android/storage.
+	StorageLocation string
+	// SdCardPath is the removable-SD external files dir path on Android, empty on
+	// desktop or when no SD card is present.
+	SdCardPath string
+	// InternalPath is the app's internal files dir on Android (filesDir), empty
+	// on desktop. Always set even when storage is currently on the SD card.
+	InternalPath string
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -268,6 +284,9 @@ func NewServer(cfg Config) (*Server, error) {
 		catalog:            cfg.Catalog,
 		style:              cfg.Style,
 		demo:               cfg.Demo,
+		storageLocation:    cfg.StorageLocation,
+		sdCardPath:         cfg.SdCardPath,
+		internalPath:       cfg.InternalPath,
 	}, nil
 }
 
@@ -336,6 +355,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerRemoteActionsMacros(mux)
 	s.registerRemoteActionsOTP(mux)
 	s.registerStorageUsage(mux)
+
+	s.registerAndroidStorage(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
