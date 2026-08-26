@@ -328,6 +328,7 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			TncIngressBurst:     ki.TncIngressBurst,
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
 			AllowConnectedMode:  ki.AllowConnectedMode,
+			GateTxToIs:          ki.GateTxToIs,
 		})
 	case configstore.KissTypeSerial:
 		if ki.Device == "" || ki.BaudRate == 0 {
