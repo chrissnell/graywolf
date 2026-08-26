@@ -648,6 +648,26 @@ The two switches are independent; omitting #2 means a config write calls `Stop()
 
 *Why:* There is no shared dispatch table -- each switch is a separate match on the stored `InterfaceType` string, so a new type added to one switch must be consciously added to the other.
 
+**This extends to every field, not just the type arms.** Each arm builds a
+`kiss.ServerConfig` / `ClientConfig` / `SerialConfig` struct literal by hand at
+both sites, so a `KissInterface` column that one literal sets and the other
+omits silently takes its zero value on whichever path skipped it. Adding a
+per-interface flag means touching **both** literals for **every** arm that
+supports it. The failure is quiet by construction: the boot path is correct,
+so the feature works until the operator saves the config, and then works
+again after the next restart.
+
+The concrete instance this rule was written from: `GateTxToIs` reached the
+`tcp` (server-listen) arm at boot but not in `notifyKissManager`, so any save
+of a KISS TNC config -- including saving with the box freshly checked --
+restarted the server with APRS-IS forwarding off until the next restart. RF TX
+kept working throughout (that leg is `Sink.Submit`, which does not consult the
+flag), which is what made it look like a routing bug rather than a config-
+threading one. Regression coverage:
+[`../../pkg/webapi/kiss_gate_tx_to_is_test.go`](../../pkg/webapi/kiss_gate_tx_to_is_test.go)
+drives a real socket and asserts the gate hook fires after a hot reload; a
+mock-based field assertion would not have caught the omission.
+
 Source: [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`kissComponent`),
 [`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`notifyKissManager`).
 
