@@ -1809,3 +1809,43 @@ Two intentional exceptions, neither a UI text font:
 
 The per-tab page header (`web/src/components/PageHeader.svelte`,
 `.page-title`) is pinned to `var(--font-mono)` at 22px.
+
+### 65. A KISS server-listen row must be waited out, not just cancelled, before its address is rebound
+
+`kiss.Manager.stopManaged` has three arms, one per interface kind. The
+`client` and `serial` arms call `close()`, which cancels *and then blocks*
+on the supervisor's `done` channel. The server-listen arm must do the
+equivalent -- cancel, then wait on `managedServer.serveDone`, which the
+`Start` goroutine closes only after `Server.ListenAndServe` returns.
+
+*Why:* `ListenAndServe` guarantees the bound port is free **when it
+returns** ([`../../pkg/kiss/server.go`](../../pkg/kiss/server.go), and
+`TestKissServerPortFreeAfterCancel` guards that from the server side).
+`cancel()` alone only signals the watcher goroutine that closes the
+listener. `Manager.Start`'s replace-if-running branch calls `stopManaged`
+and then immediately binds the same address, so a cancel-only stop races
+the old close against the new `net.Listen` -- measured losing on roughly
+8% of restarts during development, and load- and platform-dependent.
+
+The failure is silent and looks like health. `Start` has no error return,
+so a lost race surfaces only as an `ERROR msg="kiss server" err="listen
+tcp ...: bind: address already in use"` log line. The row stays in
+`m.running`, so `Status()` and the Kiss page keep reporting the interface
+as present while nothing is listening -- from the operator's seat, a KISS
+TNC that stopped accepting connections after a config save, with the web
+UI insisting it is fine.
+
+The wait is bounded by `serveShutdownGrace` because `stopManaged` runs on
+the config-write HTTP handler's goroutine (via `notifyKissManager`) and on
+the shutdown path (via `StopAll`); neither may hang. Overshooting the
+grace costs a warning log, undershooting reopens the race.
+
+Corollary for anyone adding a fourth interface kind: whatever owns the
+listener or device must expose a "fully stopped" signal, and `stopManaged`
+must block on it. Cancel-and-return is only safe for something nothing
+rebinds.
+
+Source: [`../../pkg/kiss/manager.go`](../../pkg/kiss/manager.go)
+(`stopManaged`, `Manager.Start`, `managedServer.serveDone`,
+`serveShutdownGrace`);
+[`../../pkg/kiss/manager_rebind_test.go`](../../pkg/kiss/manager_rebind_test.go).
