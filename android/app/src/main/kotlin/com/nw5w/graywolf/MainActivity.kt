@@ -45,7 +45,12 @@ class MainActivity : Activity() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == ACTION_RELOAD_WEBVIEW && ::webView.isInitialized) {
                 Log.i(TAG, "reloading WebView after storage migration")
-                mainHandler.post { webView.reload() }
+                // Reset the one-shot error-retry flag so onReceivedError can fire again,
+                // then do a fresh navigation rather than reload() (which reloads the error page).
+                mainHandler.postDelayed({
+                    didReloadOnError = false
+                    webView.loadUrl("http://127.0.0.1:8080/")
+                }, 500)
             }
         }
     }
