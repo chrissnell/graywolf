@@ -5,12 +5,20 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
+
+// serveShutdownGrace bounds how long stopManaged waits for a
+// server-listen interface's ListenAndServe to return after cancel.
+// Generous relative to the sub-millisecond real cost, because
+// overshooting it only costs a log line while undershooting reintroduces
+// the rebind race this wait exists to close.
+const serveShutdownGrace = 5 * time.Second
 
 // Interface lifecycle states reported by Manager.Status().
 //
@@ -129,6 +137,15 @@ type managedServer struct {
 	// channel is the default channel attached to this interface row.
 	// Used by TransmitOnChannel's channel filter.
 	channel uint32
+	// serveDone is closed when the server-listen goroutine's
+	// ListenAndServe has returned. Non-nil only for the server-listen
+	// kind; the client and serial kinds already block on their own done
+	// channel inside close(). stopManaged waits on it so a Start that
+	// replaces a running interface cannot race the old listener's close
+	// against the new bind -- Server.ListenAndServe only guarantees the
+	// port is free once it RETURNS, and cancel() alone does not wait
+	// for that. See serveShutdownGrace.
+	serveDone chan struct{}
 }
 
 // ManagerConfig configures a Manager.
@@ -289,7 +306,13 @@ func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 
 	ctx, cancel := context.WithCancel(parent)
 	srv := NewServer(cfg)
-	ms := &managedServer{server: srv, cancel: cancel, channel: cfg.firstChannel()}
+	serveDone := make(chan struct{})
+	ms := &managedServer{
+		server:    srv,
+		cancel:    cancel,
+		channel:   cfg.firstChannel(),
+		serveDone: serveDone,
+	}
 
 	// Per-instance tx queue: only when Mode=tnc AND the operator has
 	// explicitly enabled governor TX (D4). Modem-mode interfaces TX
@@ -320,6 +343,10 @@ func (m *Manager) Start(parent context.Context, id uint32, cfg ServerConfig) {
 	m.running[id] = ms
 
 	go func() {
+		// Closing serveDone only after ListenAndServe returns is what
+		// makes stopManaged's wait meaningful: at that point the
+		// listener is closed and the port is rebindable.
+		defer close(serveDone)
 		if err := srv.ListenAndServe(ctx); err != nil && ctx.Err() == nil {
 			m.logger.Error("kiss server", "name", cfg.Name, "err", err)
 		}
@@ -621,11 +648,40 @@ func (m *Manager) stopManaged(ms *managedServer) {
 		ms.cancel()
 		ms.serial.close()
 	default:
-		// Plain server-listen row: txQueue.Close() then cancel().
+		// Plain server-listen row: txQueue.Close(), cancel, then wait
+		// for ListenAndServe to return.
+		//
+		// The wait is load-bearing, not hygiene. Server.ListenAndServe
+		// documents that the bound port is free "when it returns"; cancel()
+		// only signals the watcher goroutine that closes the listener. A
+		// Start that replaces a running interface calls stopManaged and
+		// then immediately binds the same address, so without this wait the
+		// new net.Listen races the old close and loses often enough to
+		// matter -- and when it loses, the error is only logged. The row
+		// stays registered in m.running and reports healthy while nothing
+		// is listening, so the operator sees a KISS TNC that silently
+		// stopped accepting connections after a config save.
+		//
+		// Bounded: stopManaged runs on the config-write HTTP handler's
+		// goroutine (via notifyKissManager) and on the shutdown path (via
+		// StopAll), and neither may hang. In practice this returns in well
+		// under a millisecond -- ListenAndServe waits only on the listener
+		// close, the per-connection read goroutines (whose sockets it has
+		// just closed), and the ingress drain, all of which key off the
+		// same cancelled context.
 		if ms.txQueue != nil {
 			ms.txQueue.Close()
 		}
 		ms.cancel()
+		if ms.serveDone != nil {
+			select {
+			case <-ms.serveDone:
+			case <-time.After(serveShutdownGrace):
+				m.logger.Warn("kiss server did not stop within grace period; "+
+					"a rebind of the same address may fail",
+					"grace", serveShutdownGrace)
+			}
+		}
 	}
 }
 
