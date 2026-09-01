@@ -11,10 +11,10 @@
 // stations the server folds the most RF-reachable copy of a fix into
 // positions[0] (see stationcache rfRank), so a fixed station heard on RF and
 // later re-beaconed via a gated/IS copy still qualifies. Note positions[0] can
-// diverge from the popup's top-level direction/via badge in exactly that case
-// (the cache overwrites the station-level fields with the latest packet
-// unconditionally) -- positions[0] is the rfRank-protected copy and is the
-// correct basis for RF reachability.
+// diverge from the popup's top-level direction/via badge in exactly that case:
+// station-level fields follow the latest packet (except a brief same-fix
+// RF-preference window), while positions[0] stays rfRank-protected. So
+// positions[0] is the correct basis for RF reachability.
 export function isRfOnly(station) {
   const p = station?.positions?.[0];
   return !!p && p.direction === 'RX' && !p.gated;
@@ -23,8 +23,8 @@ export function isRfOnly(station) {
 // rfReachableDespiteNonRfLatest reports the popup "RF-reachable" note case:
 // the plotted fix (positions[0]) qualifies as RF-heard (isRfOnly) yet the
 // station's *latest* packet -- the one that drives the popup badge / via line
-// (station-level direction/gated, overwritten by every arrival) -- did NOT
-// arrive over RF. That divergence is why a station badged "APRS-IS" can still,
+// (station-level direction/gated, usually latest-packet) -- did NOT arrive
+// over RF. That divergence is why a station badged "APRS-IS" can still,
 // correctly, survive the RF Only filter: the marker is drawn at positions[0],
 // which the server pins to the most RF-reachable copy of the fix via rfRank.
 // The popup uses this to explain the visibility instead of reading as a bug
