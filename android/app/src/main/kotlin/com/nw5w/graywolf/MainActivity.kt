@@ -45,12 +45,23 @@ class MainActivity : Activity() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == ACTION_RELOAD_WEBVIEW && ::webView.isInitialized) {
                 Log.i(TAG, "reloading WebView after storage migration")
-                // Reset the one-shot error-retry flag so onReceivedError can fire again,
-                // then do a fresh navigation rather than reload() (which reloads the error page).
-                mainHandler.postDelayed({
-                    didReloadOnError = false
-                    webView.loadUrl("http://127.0.0.1:8080/")
-                }, 500)
+                // Poll goListenerReady (same pattern as startServiceAndAwaitReady) so we
+                // don't navigate before the restarted Go child is actually accepting
+                // connections. Only reset the error-retry flag once we're about to load.
+                val started = System.currentTimeMillis()
+                val r = object : Runnable {
+                    override fun run() {
+                        if (GraywolfService.goListenerReady) {
+                            didReloadOnError = false
+                            webView.loadUrl("http://127.0.0.1:8080/")
+                        } else if (System.currentTimeMillis() - started < 30_000) {
+                            mainHandler.postDelayed(this, 250)
+                        } else {
+                            Log.e(TAG, "go listener never became ready after migration")
+                        }
+                    }
+                }
+                mainHandler.postDelayed(r, 250)
             }
         }
     }

@@ -252,7 +252,9 @@ class GraywolfService : Service() {
             return
         }
 
-        // Stop Go child before touching its databases.
+        // Stop supervisor first so it doesn't race the migration by trying to
+        // restart the Go child the moment we kill it below.
+        supervisor.stop()
         goListenerReady = false
         goLauncher?.stop()
         goLauncher = null
@@ -275,6 +277,8 @@ class GraywolfService : Service() {
         if (!bootGoChild()) {
             Log.e(TAG, "go child failed to restart after migration")
         }
+        // Re-arm the supervisor whether or not bootGoChild succeeded.
+        supervisor.start { goLauncher?.process }
 
         // Reload the WebView so the SPA picks up the new storage state.
         sendBroadcast(
