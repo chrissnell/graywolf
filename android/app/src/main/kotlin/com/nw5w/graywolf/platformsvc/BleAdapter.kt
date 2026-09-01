@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
@@ -46,6 +47,7 @@ class BleAdapter(
     @Volatile private var scanActive = false
 
     private data class HandleState(
+        val mac: String,
         val session: BleGattSession,
         val readJob: Job,
     )
@@ -97,6 +99,13 @@ class BleAdapter(
      * connectGatt triggers fresh pairing with the TNC. */
     fun handleRepairRequest(req: BleRepairRequest) {
         scope.launch {
+            // Tear down any live GATT session to this device first; removeBond
+            // while a GATT connection is open causes undefined behaviour on many chipsets.
+            handles.entries
+                .filter { it.value.mac.equals(req.mac, ignoreCase = true) }
+                .toList()
+                .forEach { (handle, _) -> closeQuietly(handle, "repair") }
+            delay(300)
             val ok = facade.removeBond(req.mac)
             Log.i(tag, "BLE repair bond removal mac=${req.mac} ok=$ok")
             sendMessage(PlatformMessage.newBuilder().setBleRepairAck(
@@ -126,7 +135,7 @@ class BleAdapter(
             }
 
             val readJob = scope.launch { readPump(handle, session) }
-            handles[handle] = HandleState(session, readJob)
+            handles[handle] = HandleState(mac, session, readJob)
             sendAck(handle, ok = true, err = "")
         }
     }

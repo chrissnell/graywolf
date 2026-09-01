@@ -891,6 +891,8 @@
   let repairConfirmOpen = $state(false);
   let repairConfirmMessage = $state('');
   let pendingRepairId = $state(null);
+  // IDs whose bond has already been removed this session.
+  const repairedBleIds = new Set();
 
   function handleDelete(row) {
     pendingDeleteId = row.id;
@@ -899,6 +901,10 @@
   }
 
   function handleRepairBle(row) {
+    if (repairedBleIds.has(row.id)) {
+      toasts.info('This device is already ready to be re-paired');
+      return;
+    }
     pendingRepairId = row.id;
     repairConfirmMessage = `Remove the Bluetooth bond for "${row.name || endpointText(row)}"? This will un-pair the device and prompt for a new pairing on the next connection. This will allow you to re-pair the device after connecting to another application on the same host.`;
     repairConfirmOpen = true;
@@ -910,6 +916,7 @@
     if (id == null) return;
     try {
       await api.post(`/kiss/${id}/repairble`, null);
+      repairedBleIds.add(id);
       toasts.success('Bond removed — re-enable the interface to trigger fresh pairing');
     } catch (err) {
       toasts.error(err.message);
