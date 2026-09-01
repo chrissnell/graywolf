@@ -125,7 +125,7 @@ func (r KissRequest) Validate() error {
 	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeBluetooth || r.Type == configstore.KissTypeUsbSerial) && r.SerialDevice == "" {
 		return fmt.Errorf("serial_device is required for serial/bluetooth/usbserial interfaces")
 	}
-	// ble-mobilinkd: serial_device holds the BLE peripheral address, which
+	// ble-device: serial_device holds the BLE peripheral address, which
 	// is populated after the operator scans and picks a device. An empty
 	// device is accepted at create time; the manager skips rows with no
 	// device when starting. The supervisor will connect once the device
@@ -136,7 +136,7 @@ func (r KissRequest) Validate() error {
 	// bluetooth path; rejecting it here would deadlock valid POSTs.
 	// usbserial mirrors host serial: a real line speed is required
 	// (bluetooth RFCOMM has no baud, so it stays excluded).
-	// ble-mobilinkd is also excluded: BLE has no host-side baud rate.
+	// ble-device is also excluded: BLE has no host-side baud rate.
 	if (r.Type == configstore.KissTypeSerial || r.Type == configstore.KissTypeUsbSerial) && r.BaudRate == 0 {
 		return fmt.Errorf("baud_rate is required for serial/usbserial interfaces")
 	}
@@ -154,9 +154,9 @@ func (r KissRequest) Validate() error {
 	// so setting the flag with Mode=modem is meaningless and almost
 	// certainly a UI bug. Reject at the API boundary so the error
 	// lands with useful context rather than silently persisting.
-	// ble-mobilinkd is always forced to mode=tnc in ToModel, so the
+	// ble-device is always forced to mode=tnc in ToModel, so the
 	// cross-check would false-positive on an empty mode field; skip it.
-	if r.AllowTxFromGovernor && r.Mode != configstore.KissModeTnc && r.Type != configstore.KissTypeBLEMobilinkd {
+	if r.AllowTxFromGovernor && r.Mode != configstore.KissModeTnc && r.Type != configstore.KissTypeBLEDevice {
 		return fmt.Errorf("allow_tx_from_governor requires mode=%q (got %q)",
 			configstore.KissModeTnc, r.Mode)
 	}
@@ -188,7 +188,7 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 			// Outbound TNC: default to TNC mode with governor TX enabled.
 			mode = configstore.KissModeTnc
 			allowTx = true
-		case configstore.KissTypeBLEMobilinkd:
+		case configstore.KissTypeBLEDevice:
 			// BLE TNC always owns the modem; mode is always tnc.
 			mode = configstore.KissModeTnc
 		default:

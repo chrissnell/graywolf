@@ -31,6 +31,8 @@ interface BleFacade {
      * MUST be called from a worker thread (blocks until connection completes or fails).
      */
     fun openGatt(context: Context, mac: String): BleGattSession
+    /** Remove the Android bond for [mac] so the next connect triggers fresh pairing. */
+    fun removeBond(mac: String): Boolean
 }
 
 /** GATT session returned by [BleFacade.openGatt]. Caller owns close(). */
@@ -39,6 +41,8 @@ interface BleGattSession {
     fun write(bytes: ByteArray)
     /** Register a callback invoked on each inbound notification from the TNC TX characteristic. */
     fun onData(cb: (ByteArray) -> Unit)
+    /** Register a one-shot callback invoked when the GATT link drops after successful init. */
+    fun onDisconnect(cb: () -> Unit)
     /** Tear down the GATT connection. */
     fun close()
 }
@@ -139,6 +143,14 @@ class SystemBleFacade(
         }
         return SystemBleGattSession(device, context)
     }
+
+    override fun removeBond(mac: String): Boolean {
+        val a = adapter ?: return false
+        val device = try { a.getRemoteDevice(mac) } catch (_: Exception) { return false }
+        return try {
+            device.javaClass.getMethod("removeBond").invoke(device) as Boolean
+        } catch (_: Exception) { false }
+    }
 }
 
 /**
@@ -160,6 +172,7 @@ class SystemBleGattSession(
     private var gatt: BluetoothGatt? = null
     private var rxChar: BluetoothGattCharacteristic? = null
     @Volatile private var dataCallback: ((ByteArray) -> Unit)? = null
+    @Volatile private var disconnectCallback: (() -> Unit)? = null
 
     // Write serialization: BLE does not allow concurrent characteristic writes.
     private val writeLock = java.util.concurrent.locks.ReentrantLock()
@@ -171,10 +184,15 @@ class SystemBleGattSession(
             when (newState) {
                 BluetoothGatt.STATE_CONNECTED -> {
                     setState(State.CONNECTED)
+                    // Clear stale GATT service cache so service discovery returns fresh results.
+                    // This fixes STATUS_133 loops caused by another app re-bonding the device.
+                    g.refreshGattCache()
                     g.discoverServices()
                 }
                 else -> {
+                    val wasReady = state == State.READY
                     if (state != State.CLOSED) setState(State.FAILED)
+                    if (wasReady) disconnectCallback?.invoke()
                     signal()
                 }
             }
@@ -274,6 +292,9 @@ class SystemBleGattSession(
 
         // Wait for CCCD write to complete (→ onDescriptorWrite → READY).
         awaitState(State.READY, timeoutMs = 10_000L)
+
+        // Shorter connection intervals → supervision timeout ~3-5s vs ~30s default.
+        try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) } catch (_: SecurityException) {}
     }
 
     private data class GattProfile(
@@ -320,6 +341,8 @@ class SystemBleGattSession(
 
     override fun onData(cb: (ByteArray) -> Unit) { dataCallback = cb }
 
+    override fun onDisconnect(cb: () -> Unit) { disconnectCallback = cb }
+
     override fun write(bytes: ByteArray) {
         val rc = rxChar ?: return
         val g  = gatt  ?: return
@@ -357,7 +380,19 @@ class SystemBleGattSession(
         setState(State.CLOSED)
         signal()
         dataCallback = null
+        disconnectCallback = null
         try { gatt?.close() } catch (_: Throwable) {}
         gatt = null
     }
+
+    // Clears the Android GATT service cache via the internal refresh() method.
+    // Prevents stale cache after a previous app connection changed services.
+    private fun BluetoothGatt.refreshGattCache(): Boolean = try {
+        javaClass.getMethod("refresh").invoke(this) as Boolean
+    } catch (_: Exception) { false }
+
+    // Removes the Android bond via the internal removeBond() method.
+    private fun BluetoothDevice.removeBond(): Boolean = try {
+        javaClass.getMethod("removeBond").invoke(this) as Boolean
+    } catch (_: Exception) { false }
 }

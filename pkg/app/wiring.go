@@ -1450,8 +1450,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 
 	// BLE Mobilinkd scanner. Non-Android builds wire a real BLE scan
 	// backed by kiss.ScanBLEMobilinkd (see blesource_desktop.go); Android
-	// returns nil so GET /api/kiss/ble-mobilinkd-scan responds 501.
-	apiSrv.SetBLEMobilinkdScanner(a.bleMobilinkdScannerForWebapi())
+	// returns nil so GET /api/kiss/ble-device-scan responds 501.
+	apiSrv.SetBLEScanner(a.bleDeviceScannerForWebapi())
+	apiSrv.SetBLERepairer(a.bleDeviceRepairerForWebapi())
 
 	// PTT device source for the unified PTT tab. Android returns a
 	// live adapter backed by the platformsvc client (see
@@ -2065,7 +2066,7 @@ func (a *App) kissComponent() namedComponent {
 						OpenFunc:            a.kissSerialOpenFunc(),
 					})
 					continue
-				case configstore.KissTypeBLEMobilinkd:
+				case configstore.KissTypeBLEDevice:
 					// BLE KISS to Mobilinkd TNC3/TNC4. No baud rate; always TNC
 					// mode (the device owns the modem and PTT). The peripheral
 					// address (macOS UUID or Linux MAC) lives in ki.Device.
@@ -2079,8 +2080,8 @@ func (a *App) kissComponent() namedComponent {
 						BaudRate:            0,
 						Mode:                kiss.ModeTnc,
 						ChannelMap:          map[uint8]uint32{0: ch},
-						ReconnectInitMs:     ki.ReconnectInitMs,
-						ReconnectMaxMs:      ki.ReconnectMaxMs,
+						ReconnectInitMs:     5000,
+						ReconnectMaxMs:      5000,
 						Logger:              a.logger,
 						TncIngressRateHz:    ki.TncIngressRateHz,
 						TncIngressBurst:     ki.TncIngressBurst,
@@ -2088,7 +2089,7 @@ func (a *App) kissComponent() namedComponent {
 						AllowConnectedMode:  ki.AllowConnectedMode,
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
-						OpenFunc:            kiss.OpenBLEMobilinkd,
+						OpenFunc:            kiss.OpenBLEDevice,
 					})
 					continue
 				default:

@@ -16,12 +16,12 @@ import (
 
 // fakeBLEScanner is a test double for BLEMobilinkdScanner.
 type fakeBLEScanner struct {
-	devices []BLEMobilinkdDevice
+	devices []BLEDevice
 	err     error
 	delay   time.Duration // per-device delay to simulate real scanning
 }
 
-func (f *fakeBLEScanner) Scan(ctx context.Context, discovered func(BLEMobilinkdDevice)) error {
+func (f *fakeBLEScanner) Scan(ctx context.Context, discovered func(BLEDevice)) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -52,7 +52,7 @@ func TestBLEMobilinkdScan_NoSource(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/kiss/ble-mobilinkd-scan", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/kiss/ble-device-scan", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotImplemented {
@@ -72,8 +72,8 @@ func TestBLEMobilinkdScan_NoSource(t *testing.T) {
 // "event: done" frame is emitted when scanning completes.
 func TestBLEMobilinkdScan_StreamsDevices(t *testing.T) {
 	srv, _ := newTestServer(t)
-	srv.SetBLEMobilinkdScanner(&fakeBLEScanner{
-		devices: []BLEMobilinkdDevice{
+	srv.SetBLEScanner(&fakeBLEScanner{
+		devices: []BLEDevice{
 			{Addr: "AA:BB:CC:DD:EE:01", Name: "Mobilinkd TNC4", RSSI: -60},
 			{Addr: "AA:BB:CC:DD:EE:02", Name: "Mobilinkd TNC3", RSSI: -72},
 		},
@@ -83,7 +83,7 @@ func TestBLEMobilinkdScan_StreamsDevices(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/kiss/ble-mobilinkd-scan?timeout=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/kiss/ble-device-scan?timeout=2", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -130,7 +130,7 @@ func TestBLEMobilinkdScan_StreamsDevices(t *testing.T) {
 // TestBLEMobilinkdScan_ScannerError streams an error event and returns 200.
 func TestBLEMobilinkdScan_ScannerError(t *testing.T) {
 	srv, _ := newTestServer(t)
-	srv.SetBLEMobilinkdScanner(&fakeBLEScanner{
+	srv.SetBLEScanner(&fakeBLEScanner{
 		err: errors.New("bluetooth adapter not available"),
 	})
 
@@ -138,7 +138,7 @@ func TestBLEMobilinkdScan_ScannerError(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/kiss/ble-mobilinkd-scan?timeout=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/kiss/ble-device-scan?timeout=2", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {

@@ -108,7 +108,7 @@ export const kissBle = {
     const token = getBearerToken();
     if (token) params.set('token', token);
     const q = params.toString() ? '?' + params.toString() : '';
-    return new EventSource(`/api/kiss/ble-mobilinkd-scan${q}`);
+    return new EventSource(`/api/kiss/ble-device-scan${q}`);
   },
 };
 
