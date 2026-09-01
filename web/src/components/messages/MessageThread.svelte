@@ -95,8 +95,10 @@
         limit: 200,
       });
       const list = (env?.changes || []).map(c => c.message).filter(Boolean);
-      // Newest-first? API returns newest-first per cursor docs; we
-      // want chronological ascending, so reverse.
+      // A cursor-less thread read is a "tail window": the API returns the
+      // newest `limit` messages of this conversation (newest-first, by
+      // insertion order). We re-sort ascending by message time so the
+      // chat renders oldest-at-top / newest-at-bottom.
       list.sort((a, b) => {
         const at = Date.parse(a.sent_at || a.received_at || a.created_at || 0) || 0;
         const bt = Date.parse(b.sent_at || b.received_at || b.created_at || 0) || 0;

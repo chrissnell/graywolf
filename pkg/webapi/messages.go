@@ -157,6 +157,12 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		f.Limit = n
 	}
+	// A cursor-less read of a specific thread is the chat window opening a
+	// conversation: it wants the newest slice, not the forward
+	// updated_at page (which drops the latest sends/receives off the end
+	// once a thread gets busy -- GH #521). With a cursor, this is the
+	// forward delta-sync feed and keeps the keyset ordering.
+	f.Newest = f.ThreadKey != "" && f.Cursor == ""
 	rows, cursor, err := store.List(r.Context(), f)
 	if err != nil {
 		s.internalError(w, r, "list messages", err)

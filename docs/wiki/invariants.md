@@ -1775,6 +1775,11 @@ breaks ties) and monotonic, which is all forward pagination needs.
 is identical to the cursor predicate; any resolution gap between them
 drops rows.
 
+Note: this invariant governs the **forward delta-sync feed** (cursor
+present, no `thread_key`). The chat window itself opens a conversation
+through the separate **tail-window** read (invariant #65), which orders by
+`id DESC` and does not use this cursor at all.
+
 Source: [`../../pkg/messages/store.go`](../../pkg/messages/store.go)
 (`(*Store).List`, `encodeCursor`),
 [`../../pkg/messages/store_pagination_test.go`](../../pkg/messages/store_pagination_test.go)
@@ -1809,3 +1814,48 @@ Two intentional exceptions, neither a UI text font:
 
 The per-tab page header (`web/src/components/PageHeader.svelte`,
 `.page-title`) is pinned to `var(--font-mono)` at 22px.
+
+### 65. The chat window reads a thread as a "tail window" (newest by id), not the forward cursor page
+
+Opening a conversation in the chat window (`web/src/components/messages/
+MessageThread.svelte` `fetchThread`) issues a **cursor-less, thread-scoped**
+`GET /api/messages?thread_kind=...&thread_key=...&limit=N`. The handler
+(`pkg/webapi/messages.go` `listMessages`) sets `Filter.Newest` whenever a
+`thread_key` is present and no cursor is supplied, and `(*Store).List`
+then returns the newest `N` rows by **insertion order (`id DESC`)** with an
+empty cursor -- NOT the forward `updated_at ASC` page.
+
+This split is load-bearing and must be preserved:
+
+- The forward `updated_at ASC` page (invariant #63) is the **delta-sync
+  feed** used by the transport poll/SSE (`messagesTransport.js`
+  `fetchDelta`, never sends `thread_key`). It orders by `updated_at` so
+  bumped rows resurface for sync.
+- A bounded read of that same `updated_at ASC` order returns the
+  *least-recently-updated* rows, so once a thread grows past `limit` the
+  newest sends and receives fall off the end and stop rendering. Outbound
+  rows churn `updated_at` fastest (sent/retry/ack `Store.Update` in
+  `retry.go`/`router.go`), so they vanish first -- the "incoming shows,
+  outgoing doesn't" half of graywolf #521 that survived the #63 fix.
+
+`id DESC` is used (not `created_at`/`updated_at`) because `id` is
+autoincrement -- exactly "the N most recently inserted messages", unique,
+monotonic, and immune to the glebarez trailing-zero-trimmed RFC3339Nano
+text-sort hazard (`".9Z"` sorts after `".90000001Z"`) that invariant #63
+also calls out. The client re-sorts the returned rows chronologically for
+display. Do NOT route the chat window through a cursor and do NOT reorder
+the tail window by a time text column.
+
+*Why:* "fetch a conversation" and "sync deltas forward" are different
+queries with opposite ends of the same ordering; collapsing them into one
+bounded `updated_at ASC` read silently hides the newest messages on any
+busy thread.
+
+Source: [`../../pkg/messages/store.go`](../../pkg/messages/store.go)
+(`(*Store).List`, `Filter.Newest`),
+[`../../pkg/webapi/messages.go`](../../pkg/webapi/messages.go)
+(`listMessages`),
+[`../../pkg/messages/store_pagination_test.go`](../../pkg/messages/store_pagination_test.go)
+(`TestListNewestWindowReturnsMostRecent`),
+[`../../web/src/components/messages/MessageThread.svelte`](../../web/src/components/messages/MessageThread.svelte)
+(`fetchThread`).
