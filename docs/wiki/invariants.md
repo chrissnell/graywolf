@@ -1310,19 +1310,19 @@ marker (drawn at `positions[0]`) and popup badge labeled it `APRS-IS` -- the bug
 in graywolf GitHub #394. The marker is always `positions[0]`, so the filter must
 classify off that same fix.
 
-*Top-level fields vs. positions[0] -- they are NOT the same.*
-`stationcache.updateMetadata` overwrites the **station-level** `Direction`/
-`Via`/`Gated` (exposed as the top-level `StationDTO` fields, and what the popup
-badge reads via `popup.js` `s.direction` and `viaText`'s `s.via === 'is'`) with
-the **latest** packet on every update, unconditionally. `positions[0]`, by
-contrast, is rfRank-protected for static re-beacons. For the common case (a
-fresh or moving station) `positions[0]` *is* the latest fix and matches the
-badge; they diverge only for a static station heard on RF then re-beaconed via
-IS, where `positions[0]` stays `RX` (rfRank) while the top-level badge flips to
-`IS`. RF Only intentionally keys on the rfRank-protected `positions[0]`, so that
-static station stays visible (next paragraph) even though its popup badge may
-read APRS-IS. Do **not** "fix" that by classifying off the top-level fields --
-that would re-hide RF-reachable static stations.
+*Station-level fields are synced from positions[0], not last-write-wins.*
+After every position update, `MemCache.Update` copies the rfRank-best
+reception metadata (`Direction`/`Via`/`Gated`/`Hops`/`Path`/`Channel`) from
+`positions[0]` back to the station-level fields (exposed as the top-level
+`StationDTO` fields, and what the popup badge reads). `updateMetadata` still
+writes the latest packet's direction first; the sync overwrites it with the
+rfRank winner. The result: when a packet is heard on RF and the same beacon
+arrives again via APRS-IS moments later, the station row and popup badge
+correctly show `RX` rather than `IS`. For a mobile station that has genuinely
+moved and is now only heard via IS, the new IS fix is inserted as `positions[0]`,
+so the sync sets the station-level direction to `IS` — the current state is
+correctly reflected. RF Only intentionally keys on `positions[0]` directly and
+is unaffected by this sync.
 
 *How to apply:* keep RF Only keyed on `positions[0]` only. Static stations are
 preserved -- `stationcache`'s static-rebeacon merge folds the most RF-reachable
@@ -1332,18 +1332,15 @@ qualifies. RF Only is the looser companion to Direct RX (#48): it keeps
 RF-digipeated stations (`hops > 0`) and drops only APRS-IS and Internet-to-RF
 gated current fixes.
 
-*Surfacing the divergence in the popup (graywolf #482).* The badge-vs-`positions[0]`
-divergence above reads as a filter bug to operators: a station badged `APRS-IS`
-that stays visible under RF Only looks wrong even though it is correct. #482 was
-the second report of exactly this. The popup now renders an `RF-reachable`
-note (`popup.js`, class `.stn-rf-reachable`) whenever
-`rfReachableDespiteNonRfLatest(s)` holds -- the plotted fix (`positions[0]`)
-qualifies as RF-heard while the **latest** packet did not arrive over RF
-(`s.direction !== 'RX' || s.gated`). The RF Only toggle also carries a `title`
-tooltip stating the "ever RF-reachable at the current fix" semantics. This is a
-labeling affordance only; it does **not** change the predicate. If you ever make
-RF Only key on current-packet recency instead (the #482 option 2), retire this
-note too.
+*The badge-vs-`positions[0]` divergence (graywolf #482) is now resolved for
+the common cases.* Because the station-level `Direction` is synced from
+`positions[0]`, both the popup badge and the RF Only predicate read from the
+same rfRank-protected value. `rfReachableDespiteNonRfLatest` (`rf-only-core.js`)
+checks whether `positions[0]` is RF-heard while the station-level direction says
+non-RF; since they are now kept in sync for HasPos updates, the note will only
+fire for weather-only IS updates (no position, skips the sync) where a
+pre-existing RF position is on file. The RF Only toggle `title` tooltip
+remains accurate.
 
 Source: [`../../web/src/lib/map/rf-only-core.js`](../../web/src/lib/map/rf-only-core.js)
 (`isRfOnly`, `rfReachableDespiteNonRfLatest`),
