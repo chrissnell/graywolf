@@ -5,6 +5,7 @@ import { toast as chonkyToast, dismiss } from '@chrissnell/chonky-ui';
 export const toasts = {
   success: (msg) => chonkyToast(msg, 'success'),
   error: (msg) => chonkyToast(msg, 'danger', 6000),
+  info: (msg) => chonkyToast(msg, 'info'),
   dismiss,
 };
 
