@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { Button, Input, Select, Badge, Checkbox, Toggle } from '@chrissnell/chonky-ui';
+  import { Button, Input, Select, Badge, Checkbox, Toggle, Tooltip } from '@chrissnell/chonky-ui';
   import { api, kissBt, kissUsb, kissSerial, kissBle } from '../lib/api.js';
   import { Platform } from '../lib/platform.js';
   import { toasts } from '../lib/stores.js';
@@ -982,6 +982,12 @@
   function healthClass(state) {
     return (state === 'connected' || state === 'listening') ? 'health-live' : 'health-down';
   }
+
+  // True when the channel assigned to this KISS interface is disabled.
+  function isChannelDisabled(row) {
+    const ch = channels.find((c) => c.id === row.channel);
+    return ch?.enabled === false;
+  }
 </script>
 
 <PageHeader title="KISS Interfaces" subtitle="KISS interface configuration">
@@ -1054,12 +1060,13 @@
 
 {#snippet statusCell(_value, row)}
   {@const disabled = row.enabled === false}
+  {@const channelDisabled = isChannelDisabled(row)}
   <!-- Only tcp-client rows carry live connection diagnostics worth an
        expandable panel (peer, reconnect count, backoff, last error,
        Retry now). For server / serial / disabled rows the status is a
        plain badge — the old expand popped a gray box that just echoed
        the Endpoint column and buried the disable action (GRA-85). -->
-  {@const expandable = !disabled && row.type === 'tcp-client'}
+  {@const expandable = !disabled && !channelDisabled && row.type === 'tcp-client'}
   <div class="status-cell" data-tick={clockTick}>
     <!-- clockTick is in data-tick so any change triggers snippet
          re-render; that propagates to the countdownText call below. -->
@@ -1069,6 +1076,13 @@
       <span class="status-static">
         <span class="health-disabled" aria-hidden="true">○</span>
         <Badge>Disabled</Badge>
+      </span>
+    {:else if channelDisabled}
+      <!-- The assigned channel is disabled, so this interface cannot
+           run regardless of its own enabled flag. -->
+      <span class="status-static">
+        <span class="health-disabled" aria-hidden="true">○</span>
+        <Badge>Channel disabled</Badge>
       </span>
     {:else if expandable}
       <button
@@ -1115,11 +1129,25 @@
   <!-- Dedicated enable/disable toggle (GRA-85). Disabling stops the
        supervisor and releases the device; enabling restarts it. The
        saved config is preserved either way. -->
-  <Toggle
-    checked={row.enabled !== false}
-    onCheckedChange={() => handleToggleEnabled(row)}
-    aria-label={`${row.enabled === false ? 'Enable' : 'Disable'} KISS interface ${row.id}`}
-  />
+  {@const channelDisabled = isChannelDisabled(row)}
+  {#if channelDisabled}
+    <Tooltip.Root>
+      <Tooltip.Trigger class="tooltip-trigger-plain">
+        <Toggle
+          checked={row.enabled !== false}
+          disabled={true}
+          aria-label={`KISS interface ${row.id} cannot be enabled — assigned channel is disabled`}
+        />
+      </Tooltip.Trigger>
+      <Tooltip.Content side="top">Enable the assigned channel first</Tooltip.Content>
+    </Tooltip.Root>
+  {:else}
+    <Toggle
+      checked={row.enabled !== false}
+      onCheckedChange={() => handleToggleEnabled(row)}
+      aria-label={`${row.enabled === false ? 'Enable' : 'Disable'} KISS interface ${row.id}`}
+    />
+  {/if}
 {/snippet}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit KISS' : 'New KISS Interface'}>
@@ -1515,6 +1543,15 @@
   .health-live { color: var(--color-success, #4caf50); font-size: 14px; }
   .health-down { color: var(--color-warning, #ffa000); font-size: 14px; }
   .health-disabled { color: var(--text-secondary, #9e9e9e); font-size: 14px; }
+  /* Strip the default <button> chrome that Tooltip.Trigger adds */
+  :global(.tooltip-trigger-plain) {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: inline-flex;
+    cursor: default;
+  }
   .countdown {
     font-size: 12px;
     color: var(--text-secondary);
