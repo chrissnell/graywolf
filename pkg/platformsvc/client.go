@@ -45,6 +45,9 @@ type Client interface {
 	// BLEOpen opens a BLE GATT KISS stream to addr, returning a multiplexed
 	// io.ReadWriteCloser routed independently by the dispatch layer.
 	BLEOpen(ctx context.Context, addr string) (io.ReadWriteCloser, error)
+	// BLERepair removes the Android bond for mac so the next BLEOpen triggers
+	// fresh pairing with the TNC.
+	BLERepair(ctx context.Context, mac string) error
 	Close() error
 }
 

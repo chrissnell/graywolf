@@ -20,11 +20,11 @@ type BLEDevice struct {
 	RSSI int16
 }
 
-func ScanBLEMobilinkd(_ context.Context, _ func(BLEDevice)) error {
+func ScanBLEDevice(_ context.Context, _ func(BLEDevice)) error {
 	return errBLEUnsupported
 }
 
-func OpenBLEMobilinkd(_ string, _ uint32) (io.ReadWriteCloser, error) {
+func OpenBLEDevice(_ string, _ uint32) (io.ReadWriteCloser, error) {
 	return nil, errBLEUnsupported
 }
 

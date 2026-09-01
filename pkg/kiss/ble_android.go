@@ -43,9 +43,9 @@ func getClient() androidBLEClient {
 
 var errBLEClientNotReady = errors.New("BLE KISS: platform client not initialized")
 
-// ScanBLEMobilinkd scans for nearby BLE KISS TNCs (Mobilinkd and NUS-based).
+// ScanBLEDevice scans for nearby BLE KISS TNCs (Mobilinkd and NUS-based).
 // Calls discovered for each device found and blocks until ctx is cancelled.
-func ScanBLEMobilinkd(ctx context.Context, discovered func(BLEDevice)) error {
+func ScanBLEDevice(ctx context.Context, discovered func(BLEDevice)) error {
 	c := getClient()
 	if c == nil {
 		return errBLEClientNotReady
@@ -55,9 +55,9 @@ func ScanBLEMobilinkd(ctx context.Context, discovered func(BLEDevice)) error {
 	})
 }
 
-// OpenBLEMobilinkd connects to the BLE KISS TNC at addr (MAC string).
+// OpenBLEDevice connects to the BLE KISS TNC at addr (MAC string).
 // The baud parameter is ignored (BLE is a framed byte stream).
-func OpenBLEMobilinkd(addr string, _ uint32) (io.ReadWriteCloser, error) {
+func OpenBLEDevice(addr string, _ uint32) (io.ReadWriteCloser, error) {
 	c := getClient()
 	if c == nil {
 		return nil, errBLEClientNotReady

@@ -63,12 +63,14 @@
             {#if hasActions}
               <td class="actions-cell">
                 {#each extraActions as action}
-                  <Button
-                    size="sm"
-                    variant={action.variant ?? 'ghost'}
-                    title={action.title ?? ''}
-                    onclick={() => action.onClick(row)}
-                  >{action.icon}</Button>
+                  {#if !action.show || action.show(row)}
+                    <Button
+                      size="sm"
+                      variant={action.variant ?? 'ghost'}
+                      disabled={action.disabled ? action.disabled(row) : false}
+                      onclick={() => action.onClick(row)}
+                    >{action.icon ?? action.title ?? ''}</Button>
+                  {/if}
                 {/each}
                 {#if onEdit}
                   <Button size="sm" variant="ghost" onclick={() => onEdit(row)}>Edit</Button>

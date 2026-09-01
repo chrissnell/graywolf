@@ -12,35 +12,47 @@ import (
 	"github.com/chrissnell/graywolf/pkg/webtypes"
 )
 
-// BLEMobilinkdDevice is one discovered BLE TNC peripheral streamed by
-// GET /api/kiss/ble-mobilinkd-scan. Covers Mobilinkd TNC3/TNC4 and
+// BLEDevice is one discovered BLE TNC peripheral streamed by
+// GET /api/kiss/ble-device-scan. Covers BLE KISS TNC devices (Mobilinkd, NUS-based) and
 // NUS-based devices (BTECH UV-PRO, VERO VR-N76, Radioddity GA-5WB).
-type BLEMobilinkdDevice struct {
+type BLEDevice struct {
 	Addr string `json:"addr"`
 	Name string `json:"name"`
 	RSSI int16  `json:"rssi"`
 }
 
-// BLEMobilinkdScanner is the narrow interface the SSE scan handler
+// BLEScanner is the narrow interface the SSE scan handler
 // consumes. Non-Android builds wire a real BLE scanner backed by
 // kiss.ScanBLEMobilinkd (see pkg/app/blesource_desktop.go); Android
 // builds leave it nil and the handler returns 501.
-type BLEMobilinkdScanner interface {
-	Scan(ctx context.Context, discovered func(BLEMobilinkdDevice)) error
+type BLEScanner interface {
+	Scan(ctx context.Context, discovered func(BLEDevice)) error
 }
 
-// SetBLEMobilinkdScanner installs the BLE scanner post-construction.
+// SetBLEScanner installs the BLE scanner post-construction.
 // Called from pkg/app on non-Android builds; nil on Android so the
 // handler responds 501 Not Implemented.
-func (s *Server) SetBLEMobilinkdScanner(sc BLEMobilinkdScanner) {
-	s.bleMobilinkdScanner = sc
+func (s *Server) SetBLEScanner(sc BLEScanner) {
+	s.bleScanner = sc
+}
+
+// BLERepairer is the narrow interface the repairble handler uses.
+// Android builds wire the live platformsvc client; other platforms leave it
+// nil and the handler returns 501 Not Implemented.
+type BLERepairer interface {
+	BLERepair(ctx context.Context, mac string) error
+}
+
+// SetBLERepairer installs the BLE repairer post-construction.
+func (s *Server) SetBLERepairer(r BLERepairer) {
+	s.bleRepairer = r
 }
 
 // bleScanMu prevents concurrent BLE scans. One scan at a time: a
 // second request while a scan is active receives 409 Conflict.
 var bleScanMu sync.Mutex
 
-// handleBLEMobilinkdScan streams discovered Mobilinkd TNC3/TNC4 BLE devices
+// handleBLEScan streams discovered Mobilinkd TNC3/TNC4 BLE devices
 // as Server-Sent Events. Each discovered peripheral yields a "data:" event
 // with a JSON-encoded BLEMobilinkdDevice object. After the scan timeout a
 // final "event: done" event is sent and the stream closes.
@@ -58,9 +70,9 @@ var bleScanMu sync.Mutex
 // @Failure  409 {object} webtypes.ErrorResponse "scan already in progress"
 // @Failure  501 {object} webtypes.ErrorResponse "not available on this platform"
 // @Security CookieAuth
-// @Router   /kiss/ble-mobilinkd-scan [get]
-func (s *Server) handleBLEMobilinkdScan(w http.ResponseWriter, r *http.Request) {
-	if s.bleMobilinkdScanner == nil {
+// @Router   /kiss/ble-device-scan [get]
+func (s *Server) handleBLEScan(w http.ResponseWriter, r *http.Request) {
+	if s.bleScanner == nil {
 		writeJSON(w, http.StatusNotImplemented, webtypes.ErrorResponse{
 			Error: "BLE scanning is not available on this platform (Android: use Bluetooth Serial; macOS release builds: rebuild with CGO_ENABLED=1)",
 		})
@@ -99,7 +111,7 @@ func (s *Server) handleBLEMobilinkdScan(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	err := s.bleMobilinkdScanner.Scan(ctx, func(dev BLEMobilinkdDevice) {
+	err := s.bleScanner.Scan(ctx, func(dev BLEDevice) {
 		data, _ := json.Marshal(dev)
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()

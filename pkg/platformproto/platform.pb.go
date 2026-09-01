@@ -339,6 +339,8 @@ type PlatformMessage struct {
 	//	*PlatformMessage_BleScanResult
 	//	*PlatformMessage_BleScanError
 	//	*PlatformMessage_BleScanStop
+	//	*PlatformMessage_BleRepairRequest
+	//	*PlatformMessage_BleRepairAck
 	Body          isPlatformMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -651,6 +653,24 @@ func (x *PlatformMessage) GetBleScanStop() *BleScanStop {
 	return nil
 }
 
+func (x *PlatformMessage) GetBleRepairRequest() *BleRepairRequest {
+	if x != nil {
+		if x, ok := x.Body.(*PlatformMessage_BleRepairRequest); ok {
+			return x.BleRepairRequest
+		}
+	}
+	return nil
+}
+
+func (x *PlatformMessage) GetBleRepairAck() *BleRepairAck {
+	if x != nil {
+		if x, ok := x.Body.(*PlatformMessage_BleRepairAck); ok {
+			return x.BleRepairAck
+		}
+	}
+	return nil
+}
+
 type isPlatformMessage_Body interface {
 	isPlatformMessage_Body()
 }
@@ -775,6 +795,14 @@ type PlatformMessage_BleScanStop struct {
 	BleScanStop *BleScanStop `protobuf:"bytes,30,opt,name=ble_scan_stop,json=bleScanStop,proto3,oneof"`
 }
 
+type PlatformMessage_BleRepairRequest struct {
+	BleRepairRequest *BleRepairRequest `protobuf:"bytes,31,opt,name=ble_repair_request,json=bleRepairRequest,proto3,oneof"`
+}
+
+type PlatformMessage_BleRepairAck struct {
+	BleRepairAck *BleRepairAck `protobuf:"bytes,32,opt,name=ble_repair_ack,json=bleRepairAck,proto3,oneof"`
+}
+
 func (*PlatformMessage_Hello) isPlatformMessage_Body() {}
 
 func (*PlatformMessage_GpsFix) isPlatformMessage_Body() {}
@@ -834,6 +862,10 @@ func (*PlatformMessage_BleScanResult) isPlatformMessage_Body() {}
 func (*PlatformMessage_BleScanError) isPlatformMessage_Body() {}
 
 func (*PlatformMessage_BleScanStop) isPlatformMessage_Body() {}
+
+func (*PlatformMessage_BleRepairRequest) isPlatformMessage_Body() {}
+
+func (*PlatformMessage_BleRepairAck) isPlatformMessage_Body() {}
 
 type Hello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2688,6 +2720,104 @@ func (*BleScanStop) Descriptor() ([]byte, []int) {
 	return file_platform_proto_rawDescGZIP(), []int{33}
 }
 
+// Operator-initiated re-pair: remove the Android bond for mac so the next
+// connectGatt triggers fresh bonding (pairing dialog) with the TNC.
+type BleRepairRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mac           string                 `protobuf:"bytes,1,opt,name=mac,proto3" json:"mac,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BleRepairRequest) Reset() {
+	*x = BleRepairRequest{}
+	mi := &file_platform_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BleRepairRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BleRepairRequest) ProtoMessage() {}
+
+func (x *BleRepairRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_platform_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BleRepairRequest.ProtoReflect.Descriptor instead.
+func (*BleRepairRequest) Descriptor() ([]byte, []int) {
+	return file_platform_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *BleRepairRequest) GetMac() string {
+	if x != nil {
+		return x.Mac
+	}
+	return ""
+}
+
+type BleRepairAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BleRepairAck) Reset() {
+	*x = BleRepairAck{}
+	mi := &file_platform_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BleRepairAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BleRepairAck) ProtoMessage() {}
+
+func (x *BleRepairAck) ProtoReflect() protoreflect.Message {
+	mi := &file_platform_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BleRepairAck.ProtoReflect.Descriptor instead.
+func (*BleRepairAck) Descriptor() ([]byte, []int) {
+	return file_platform_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *BleRepairAck) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *BleRepairAck) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type BondedBtDevicesResponse_Device struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Mac           string                 `protobuf:"bytes,1,opt,name=mac,proto3" json:"mac,omitempty"`
@@ -2698,7 +2828,7 @@ type BondedBtDevicesResponse_Device struct {
 
 func (x *BondedBtDevicesResponse_Device) Reset() {
 	*x = BondedBtDevicesResponse_Device{}
-	mi := &file_platform_proto_msgTypes[34]
+	mi := &file_platform_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2710,7 +2840,7 @@ func (x *BondedBtDevicesResponse_Device) String() string {
 func (*BondedBtDevicesResponse_Device) ProtoMessage() {}
 
 func (x *BondedBtDevicesResponse_Device) ProtoReflect() protoreflect.Message {
-	mi := &file_platform_proto_msgTypes[34]
+	mi := &file_platform_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2752,7 +2882,7 @@ type AvailableUsbSerialDevicesResponse_Device struct {
 
 func (x *AvailableUsbSerialDevicesResponse_Device) Reset() {
 	*x = AvailableUsbSerialDevicesResponse_Device{}
-	mi := &file_platform_proto_msgTypes[35]
+	mi := &file_platform_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2764,7 +2894,7 @@ func (x *AvailableUsbSerialDevicesResponse_Device) String() string {
 func (*AvailableUsbSerialDevicesResponse_Device) ProtoMessage() {}
 
 func (x *AvailableUsbSerialDevicesResponse_Device) ProtoReflect() protoreflect.Message {
-	mi := &file_platform_proto_msgTypes[35]
+	mi := &file_platform_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2812,7 +2942,7 @@ var File_platform_proto protoreflect.FileDescriptor
 
 const file_platform_proto_rawDesc = "" +
 	"\n" +
-	"\x0eplatform.proto\x12\x11graywolf.platform\"\xaa\x12\n" +
+	"\x0eplatform.proto\x12\x11graywolf.platform\"\xc8\x13\n" +
 	"\x0fPlatformMessage\x120\n" +
 	"\x05hello\x18\x01 \x01(\v2\x18.graywolf.platform.HelloH\x00R\x05hello\x124\n" +
 	"\agps_fix\x18\x02 \x01(\v2\x19.graywolf.platform.GpsFixH\x00R\x06gpsFix\x12F\n" +
@@ -2850,7 +2980,9 @@ const file_platform_proto_rawDesc = "" +
 	"\x10ble_scan_request\x18\x1b \x01(\v2!.graywolf.platform.BleScanRequestH\x00R\x0ebleScanRequest\x12J\n" +
 	"\x0fble_scan_result\x18\x1c \x01(\v2 .graywolf.platform.BleScanResultH\x00R\rbleScanResult\x12G\n" +
 	"\x0eble_scan_error\x18\x1d \x01(\v2\x1f.graywolf.platform.BleScanErrorH\x00R\fbleScanError\x12D\n" +
-	"\rble_scan_stop\x18\x1e \x01(\v2\x1e.graywolf.platform.BleScanStopH\x00R\vbleScanStopB\x06\n" +
+	"\rble_scan_stop\x18\x1e \x01(\v2\x1e.graywolf.platform.BleScanStopH\x00R\vbleScanStop\x12S\n" +
+	"\x12ble_repair_request\x18\x1f \x01(\v2#.graywolf.platform.BleRepairRequestH\x00R\x10bleRepairRequest\x12G\n" +
+	"\x0eble_repair_ack\x18  \x01(\v2\x1f.graywolf.platform.BleRepairAckH\x00R\fbleRepairAckB\x06\n" +
 	"\x04body\"|\n" +
 	"\x05Hello\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12%\n" +
@@ -2986,7 +3118,12 @@ const file_platform_proto_rawDesc = "" +
 	"\fBleScanError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\"\r\n" +
-	"\vBleScanStop*}\n" +
+	"\vBleScanStop\"$\n" +
+	"\x10BleRepairRequest\x12\x10\n" +
+	"\x03mac\x18\x01 \x01(\tR\x03mac\"4\n" +
+	"\fBleRepairAck\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error*}\n" +
 	"\tGpsSource\x12\x16\n" +
 	"\x12GPS_SOURCE_UNKNOWN\x10\x00\x12\x1c\n" +
 	"\x18GPS_SOURCE_ANDROID_FUSED\x10\x01\x12\x1a\n" +
@@ -3034,7 +3171,7 @@ func file_platform_proto_rawDescGZIP() []byte {
 }
 
 var file_platform_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_platform_proto_goTypes = []any{
 	(GpsSource)(0),                                   // 0: graywolf.platform.GpsSource
 	(UsbClass)(0),                                    // 1: graywolf.platform.UsbClass
@@ -3075,8 +3212,10 @@ var file_platform_proto_goTypes = []any{
 	(*BleScanResult)(nil),                            // 36: graywolf.platform.BleScanResult
 	(*BleScanError)(nil),                             // 37: graywolf.platform.BleScanError
 	(*BleScanStop)(nil),                              // 38: graywolf.platform.BleScanStop
-	(*BondedBtDevicesResponse_Device)(nil),           // 39: graywolf.platform.BondedBtDevicesResponse.Device
-	(*AvailableUsbSerialDevicesResponse_Device)(nil), // 40: graywolf.platform.AvailableUsbSerialDevicesResponse.Device
+	(*BleRepairRequest)(nil),                         // 39: graywolf.platform.BleRepairRequest
+	(*BleRepairAck)(nil),                             // 40: graywolf.platform.BleRepairAck
+	(*BondedBtDevicesResponse_Device)(nil),           // 41: graywolf.platform.BondedBtDevicesResponse.Device
+	(*AvailableUsbSerialDevicesResponse_Device)(nil), // 42: graywolf.platform.AvailableUsbSerialDevicesResponse.Device
 }
 var file_platform_proto_depIdxs = []int32{
 	6,  // 0: graywolf.platform.PlatformMessage.hello:type_name -> graywolf.platform.Hello
@@ -3109,26 +3248,28 @@ var file_platform_proto_depIdxs = []int32{
 	36, // 27: graywolf.platform.PlatformMessage.ble_scan_result:type_name -> graywolf.platform.BleScanResult
 	37, // 28: graywolf.platform.PlatformMessage.ble_scan_error:type_name -> graywolf.platform.BleScanError
 	38, // 29: graywolf.platform.PlatformMessage.ble_scan_stop:type_name -> graywolf.platform.BleScanStop
-	0,  // 30: graywolf.platform.GpsFix.source:type_name -> graywolf.platform.GpsSource
-	1,  // 31: graywolf.platform.UsbDevice.classes:type_name -> graywolf.platform.UsbClass
-	9,  // 32: graywolf.platform.UsbAttach.device:type_name -> graywolf.platform.UsbDevice
-	1,  // 33: graywolf.platform.UsbDeviceListRequest.class_filter:type_name -> graywolf.platform.UsbClass
-	9,  // 34: graywolf.platform.UsbDeviceListResponse.devices:type_name -> graywolf.platform.UsbDevice
-	2,  // 35: graywolf.platform.PttKeyRequest.method:type_name -> graywolf.platform.PttMethod
-	2,  // 36: graywolf.platform.PttUnkeyRequest.method:type_name -> graywolf.platform.PttMethod
-	20, // 37: graywolf.platform.AudioDeviceListResponse.devices:type_name -> graywolf.platform.AudioDevice
-	20, // 38: graywolf.platform.AudioRouteChanged.current_inputs:type_name -> graywolf.platform.AudioDevice
-	20, // 39: graywolf.platform.AudioRouteChanged.current_outputs:type_name -> graywolf.platform.AudioDevice
-	3,  // 40: graywolf.platform.Error.code:type_name -> graywolf.platform.ErrorCode
-	24, // 41: graywolf.platform.GnssStatusUpdate.sats:type_name -> graywolf.platform.SatInfo
-	4,  // 42: graywolf.platform.SerialOpen.kind:type_name -> graywolf.platform.SerialKind
-	39, // 43: graywolf.platform.BondedBtDevicesResponse.devices:type_name -> graywolf.platform.BondedBtDevicesResponse.Device
-	40, // 44: graywolf.platform.AvailableUsbSerialDevicesResponse.devices:type_name -> graywolf.platform.AvailableUsbSerialDevicesResponse.Device
-	45, // [45:45] is the sub-list for method output_type
-	45, // [45:45] is the sub-list for method input_type
-	45, // [45:45] is the sub-list for extension type_name
-	45, // [45:45] is the sub-list for extension extendee
-	0,  // [0:45] is the sub-list for field type_name
+	39, // 30: graywolf.platform.PlatformMessage.ble_repair_request:type_name -> graywolf.platform.BleRepairRequest
+	40, // 31: graywolf.platform.PlatformMessage.ble_repair_ack:type_name -> graywolf.platform.BleRepairAck
+	0,  // 32: graywolf.platform.GpsFix.source:type_name -> graywolf.platform.GpsSource
+	1,  // 33: graywolf.platform.UsbDevice.classes:type_name -> graywolf.platform.UsbClass
+	9,  // 34: graywolf.platform.UsbAttach.device:type_name -> graywolf.platform.UsbDevice
+	1,  // 35: graywolf.platform.UsbDeviceListRequest.class_filter:type_name -> graywolf.platform.UsbClass
+	9,  // 36: graywolf.platform.UsbDeviceListResponse.devices:type_name -> graywolf.platform.UsbDevice
+	2,  // 37: graywolf.platform.PttKeyRequest.method:type_name -> graywolf.platform.PttMethod
+	2,  // 38: graywolf.platform.PttUnkeyRequest.method:type_name -> graywolf.platform.PttMethod
+	20, // 39: graywolf.platform.AudioDeviceListResponse.devices:type_name -> graywolf.platform.AudioDevice
+	20, // 40: graywolf.platform.AudioRouteChanged.current_inputs:type_name -> graywolf.platform.AudioDevice
+	20, // 41: graywolf.platform.AudioRouteChanged.current_outputs:type_name -> graywolf.platform.AudioDevice
+	3,  // 42: graywolf.platform.Error.code:type_name -> graywolf.platform.ErrorCode
+	24, // 43: graywolf.platform.GnssStatusUpdate.sats:type_name -> graywolf.platform.SatInfo
+	4,  // 44: graywolf.platform.SerialOpen.kind:type_name -> graywolf.platform.SerialKind
+	41, // 45: graywolf.platform.BondedBtDevicesResponse.devices:type_name -> graywolf.platform.BondedBtDevicesResponse.Device
+	42, // 46: graywolf.platform.AvailableUsbSerialDevicesResponse.devices:type_name -> graywolf.platform.AvailableUsbSerialDevicesResponse.Device
+	47, // [47:47] is the sub-list for method output_type
+	47, // [47:47] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_platform_proto_init() }
@@ -3167,6 +3308,8 @@ func file_platform_proto_init() {
 		(*PlatformMessage_BleScanResult)(nil),
 		(*PlatformMessage_BleScanError)(nil),
 		(*PlatformMessage_BleScanStop)(nil),
+		(*PlatformMessage_BleRepairRequest)(nil),
+		(*PlatformMessage_BleRepairAck)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3174,7 +3317,7 @@ func file_platform_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_platform_proto_rawDesc), len(file_platform_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   36,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
