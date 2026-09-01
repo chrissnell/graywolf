@@ -133,6 +133,7 @@
   let isMapActive = $derived(currentPath === '/map' || currentPath.startsWith('/map/'));
   // Messages route match — '/messages' or any '/messages/*' sub-route.
   let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
+  let isStationsActive = $derived(currentPath === '/stations' || currentPath.startsWith('/stations/'));
   let isTerminalActive = $derived(currentPath === '/terminal' || currentPath.startsWith('/terminal/'));
 
   // Per-group active item: longest-prefix match wins. This prevents e.g.
@@ -416,6 +417,34 @@
         <path d="M3 12h18" />
         <path d="M12 3a14 14 0 0 1 0 18" />
         <path d="M12 3a14 14 0 0 0 0 18" />
+      </svg>
+    </span>
+  </a>
+
+  <a
+    href="/stations"
+    use:link
+    class="top-bar-action"
+    class:active={isStationsActive}
+    aria-label="Stations"
+    aria-current={isStationsActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M3 9h18" />
+        <path d="M3 15h18" />
+        <path d="M9 9v12" />
       </svg>
     </span>
   </a>
