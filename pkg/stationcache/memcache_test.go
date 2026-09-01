@@ -356,9 +356,10 @@ func TestMemCache_MetadataUpdate(t *testing.T) {
 			Timestamp: time.Now()},
 	})
 
-	// IS echo of the same beacon at the same position. rfRank(IS) < rfRank(RX),
-	// so Direction/Via/Channel must stay at the RF copy. Symbol and Comment
-	// still advance (last-write-wins — they are not reception-path fields).
+	// Near-simultaneous IS echo of the same beacon at the same position.
+	// rfRank(IS) < rfRank(RX), so Direction/Via/Channel stay at the RF
+	// copy inside sameFixRFPreferenceWindow. Symbol and Comment still
+	// advance (last-write-wins -- they are not reception-path fields).
 	c.Update([]CacheEntry{
 		{Key: "stn:W1ABC", Callsign: "W1ABC", HasPos: true,
 			Lat: 40.0, Lon: -105.0, Symbol: [2]byte{'/', 'k'},
@@ -378,6 +379,49 @@ func TestMemCache_MetadataUpdate(t *testing.T) {
 	assertEqual(t, "Comment", s.Comment, "updated")       // Comment always updates
 	if len(s.Positions) != 1 {
 		t.Fatalf("expected 1 position, got %d", len(s.Positions))
+	}
+}
+
+func TestMemCache_MetadataUpdate_DelayedISEchoFlipsStationDirection(t *testing.T) {
+	c := newTestCache(t)
+
+	// Start with a direct RF copy of a static fix.
+	c.Update([]CacheEntry{
+		{Key: "stn:W1ABC", Callsign: "W1ABC", HasPos: true,
+			Lat: 40.0, Lon: -105.0, Symbol: [2]byte{'/', '>'},
+			Via: "rf", Direction: "RX", Channel: 0, Comment: "first",
+			Timestamp: time.Now()},
+	})
+
+	// Simulate a long gap before an IS copy of the same coordinates arrives:
+	// outside the RF-preference window, station-level metadata must follow
+	// the latest packet and flip to IS.
+	c.mu.Lock()
+	c.stations["stn:W1ABC"].LastHeard = time.Now().Add(-(sameFixRFPreferenceWindow + time.Second))
+	c.mu.Unlock()
+
+	c.Update([]CacheEntry{
+		{Key: "stn:W1ABC", Callsign: "W1ABC", HasPos: true,
+			Lat: 40.0, Lon: -105.0, Symbol: [2]byte{'/', 'k'},
+			Via: "is", Direction: "IS", Channel: 3, Comment: "is copy",
+			Timestamp: time.Now()},
+	})
+
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 station, got %d", len(results))
+	}
+	s := results[0]
+	assertEqual(t, "Via", s.Via, "is")
+	assertEqual(t, "Direction", s.Direction, "IS")
+	assertEqual(t, "Channel", s.Channel, uint32(3))
+	if len(s.Positions) != 1 {
+		t.Fatalf("expected 1 position, got %d", len(s.Positions))
+	}
+	// RF-only map classification still keys on the position metadata, which
+	// keeps the RF-strongest copy of this static fix.
+	if !isDirectRF(s.Positions[0].Direction, s.Positions[0].Hops) {
+		t.Fatalf("positions[0] lost RF-strongest metadata: Direction=%q Hops=%d", s.Positions[0].Direction, s.Positions[0].Hops)
 	}
 }
 
