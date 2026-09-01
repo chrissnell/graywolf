@@ -1310,19 +1310,18 @@ marker (drawn at `positions[0]`) and popup badge labeled it `APRS-IS` -- the bug
 in graywolf GitHub #394. The marker is always `positions[0]`, so the filter must
 classify off that same fix.
 
-*Station-level fields are synced from positions[0], not last-write-wins.*
-After every position update, `MemCache.Update` copies the rfRank-best
-reception metadata (`Direction`/`Via`/`Gated`/`Hops`/`Path`/`Channel`) from
-`positions[0]` back to the station-level fields (exposed as the top-level
-`StationDTO` fields, and what the popup badge reads). `updateMetadata` still
-writes the latest packet's direction first; the sync overwrites it with the
-rfRank winner. The result: when a packet is heard on RF and the same beacon
-arrives again via APRS-IS moments later, the station row and popup badge
-correctly show `RX` rather than `IS`. For a mobile station that has genuinely
-moved and is now only heard via IS, the new IS fix is inserted as `positions[0]`,
-so the sync sets the station-level direction to `IS` — the current state is
-correctly reflected. RF Only intentionally keys on `positions[0]` directly and
-is unaffected by this sync.
+*Station-level fields are latest-packet metadata, with a short same-fix RF preference window.*
+`updateMetadata` writes station-level reception metadata
+(`Direction`/`Via`/`Gated`/`Hops`/`Path`/`Channel`) from the latest packet.
+For a static same-position re-reception, `positions[0]` still keeps the
+rfRank-best copy of that fix (direct RF > digipeated RF > gated/IS/TX), but
+station-level fields only keep the prior RF-stronger value when the lower-rank
+copy arrives within `sameFixRFPreferenceWindow` (currently 2 minutes).
+
+Result: near-simultaneous duplicate receptions of the same beacon still read
+as `RX` (the intended RF-over-IS tie-break), while a delayed IS-only period
+eventually flips the station-level badge/table to `IS` as operators expect.
+RF Only intentionally keys on `positions[0]` directly and is unaffected.
 
 *How to apply:* keep RF Only keyed on `positions[0]` only. Static stations are
 preserved -- `stationcache`'s static-rebeacon merge folds the most RF-reachable
@@ -1332,15 +1331,13 @@ qualifies. RF Only is the looser companion to Direct RX (#48): it keeps
 RF-digipeated stations (`hops > 0`) and drops only APRS-IS and Internet-to-RF
 gated current fixes.
 
-*The badge-vs-`positions[0]` divergence (graywolf #482) is now resolved for
-the common cases.* Because the station-level `Direction` is synced from
-`positions[0]`, both the popup badge and the RF Only predicate read from the
-same rfRank-protected value. `rfReachableDespiteNonRfLatest` (`rf-only-core.js`)
-checks whether `positions[0]` is RF-heard while the station-level direction says
-non-RF; since they are now kept in sync for HasPos updates, the note will only
-fire for weather-only IS updates (no position, skips the sync) where a
-pre-existing RF position is on file. The RF Only toggle `title` tooltip
-remains accurate.
+*Badge-vs-`positions[0]` divergence is expected and explained.* Station-level
+fields answer "what did we hear most recently?" (with the short same-fix RF
+tie-break above), while `positions[0]` answers "what fix is plotted now?" and
+retains rfRank-best metadata for that fix. `rfReachableDespiteNonRfLatest`
+(`rf-only-core.js`) intentionally detects this divergence so the popup can
+explain why a station may still qualify under RF Only when its latest packet
+badge is non-RF.
 
 Source: [`../../web/src/lib/map/rf-only-core.js`](../../web/src/lib/map/rf-only-core.js)
 (`isRfOnly`, `rfReachableDespiteNonRfLatest`),

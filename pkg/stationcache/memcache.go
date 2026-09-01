@@ -19,6 +19,12 @@ const posEpsilon = 0.00001
 // for APRS-IS and store-and-forward digipeater delays. See issue #421.
 const dupWindow = 2 * time.Minute
 
+// sameFixRFPreferenceWindow is the maximum arrival gap for treating a lower-
+// rank copy of the same fix as "roughly simultaneous" and keeping the prior
+// RF-stronger station-level reception metadata. Beyond this window, station-
+// level metadata follows the latest packet.
+const sameFixRFPreferenceWindow = dupWindow
+
 // MaxStations is the hard upper bound on resident MemCache entries.
 // The TTL-based prune (memMaxAge, default 24h) is the primary eviction
 // path for routine operation; this cap is a safety bound for the
@@ -66,6 +72,16 @@ func (c *MemCache) Update(entries []CacheEntry) {
 		}
 
 		s, exists := c.stations[e.Key]
+		var (
+			prevHead      Position
+			hadPrevHead   bool
+			prevLastHeard time.Time
+		)
+		if exists && len(s.Positions) > 0 {
+			prevHead = s.Positions[0]
+			hadPrevHead = true
+			prevLastHeard = s.LastHeard
+		}
 
 		if !e.HasPos && !exists {
 			// Weather-only packet for unknown station — skip.
@@ -123,6 +139,14 @@ func (c *MemCache) Update(entries []CacheEntry) {
 			mergeReception(&s.Positions[0], e)
 			s.Positions[0].Timestamp = e.Timestamp
 			s.Positions[0].Comment = e.Comment
+			if hadPrevHead && preferPriorStationReception(prevHead, prevLastHeard, e, now) {
+				s.Direction = prevHead.Direction
+				s.Via = prevHead.Via
+				s.Gated = prevHead.Gated
+				s.Hops = prevHead.Hops
+				s.Path = prevHead.Path
+				s.Channel = prevHead.Channel
+			}
 		} else if i := duplicateFix(s.Positions, newPos); i >= 0 {
 			// Late duplicate of an earlier fix: a digipeated, APRS-IS, or
 			// second-channel copy of a beacon the station has since moved on
@@ -145,21 +169,6 @@ func (c *MemCache) Update(entries []CacheEntry) {
 				s.Positions = s.Positions[:MaxTrailLen]
 			}
 		}
-		// Mirror positions[0]'s rfRank-best reception metadata back to the
-		// station-level direction fields. updateMetadata above wrote the
-		// latest packet's direction unconditionally; for a static re-beacon
-		// positions[0] was just rfRank-merged, so syncing here prevents an
-		// IS echo of the same beacon from downgrading the stations-table
-		// row from RX to IS. For a genuinely new position (mobile station
-		// now only heard via IS) positions[0] holds that IS fix, so the
-		// station-level direction still correctly reflects the current state.
-		p0 := s.Positions[0]
-		s.Direction = p0.Direction
-		s.Via = p0.Via
-		s.Gated = p0.Gated
-		s.Hops = p0.Hops
-		s.Path = p0.Path
-		s.Channel = p0.Channel
 	}
 }
 
@@ -369,6 +378,22 @@ func mergeReception(p *Position, e *CacheEntry) {
 		p.Gated = e.Gated
 		p.Channel = e.Channel
 	}
+}
+
+// preferPriorStationReception keeps station-level reception metadata at the
+// prior value when a lower-rank copy of the same fix arrives shortly after.
+// This preserves the expected "RF wins over IS" behavior for near-simultaneous
+// duplicates, while allowing a delayed IS-only period to flip station-level
+// direction to IS.
+func preferPriorStationReception(prev Position, prevLastHeard time.Time, e *CacheEntry, now time.Time) bool {
+	if prevLastHeard.IsZero() {
+		return false
+	}
+	age := now.Sub(prevLastHeard)
+	if age < 0 || age > sameFixRFPreferenceWindow {
+		return false
+	}
+	return rfRank(prev.Direction, prev.Hops, prev.Gated) > rfRank(e.Direction, e.Hops, e.Gated)
 }
 
 // duplicateFix reports the index of an existing trail point that the
