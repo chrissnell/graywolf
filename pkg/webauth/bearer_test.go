@@ -98,7 +98,7 @@ func TestBearerAuth_SSEAcceptsQueryToken(t *testing.T) {
 	srv := httptest.NewServer(mw(okHandler()))
 	defer srv.Close()
 
-	req, _ := http.NewRequest("GET", srv.URL+"/api/kiss/ble-mobilinkd-scan?token=hex-token-abc", nil)
+	req, _ := http.NewRequest("GET", srv.URL+"/api/kiss/ble-device-scan?token=hex-token-abc", nil)
 	req.Header.Set("Accept", "text/event-stream")
 	res, _ := srv.Client().Do(req)
 	if res.StatusCode != 200 {
@@ -111,7 +111,7 @@ func TestBearerAuth_SSERejectsQueryTokenMismatch(t *testing.T) {
 	srv := httptest.NewServer(mw(okHandler()))
 	defer srv.Close()
 
-	req, _ := http.NewRequest("GET", srv.URL+"/api/kiss/ble-mobilinkd-scan?token=wrong", nil)
+	req, _ := http.NewRequest("GET", srv.URL+"/api/kiss/ble-device-scan?token=wrong", nil)
 	req.Header.Set("Accept", "text/event-stream")
 	res, _ := srv.Client().Do(req)
 	if res.StatusCode != 401 {

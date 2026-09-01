@@ -5,6 +5,8 @@ import android.util.Log
 import com.google.protobuf.ByteString
 import com.nw5w.graywolf.platformproto.BleScanError
 import com.nw5w.graywolf.platformproto.BleScanResult
+import com.nw5w.graywolf.platformproto.BleRepairAck
+import com.nw5w.graywolf.platformproto.BleRepairRequest
 import com.nw5w.graywolf.platformproto.PlatformMessage
 import com.nw5w.graywolf.platformproto.SerialClose
 import com.nw5w.graywolf.platformproto.SerialData
@@ -91,6 +93,18 @@ class BleAdapter(
         Log.d(tag, "BLE scan stopped")
     }
 
+    /** Called by PlatformServer on BleRepairRequest: remove the bond so the next
+     * connectGatt triggers fresh pairing with the TNC. */
+    fun handleRepairRequest(req: BleRepairRequest) {
+        scope.launch {
+            val ok = facade.removeBond(req.mac)
+            Log.i(tag, "BLE repair bond removal mac=${req.mac} ok=$ok")
+            sendMessage(PlatformMessage.newBuilder().setBleRepairAck(
+                BleRepairAck.newBuilder().setOk(ok).build()
+            ).build())
+        }
+    }
+
     // -----------------------------------------------------------------------
     // BLE serial open / data / close
     // -----------------------------------------------------------------------
@@ -149,6 +163,9 @@ class BleAdapter(
     private suspend fun readPump(handle: UInt, session: BleGattSession) {
         val ch = kotlinx.coroutines.channels.Channel<ByteArray>(64)
         session.onData { bytes -> ch.trySend(bytes) }
+        // Closing ch causes the for-loop below to exit → closeQuietly sends SerialClose
+        // to Go → Read() returns io.EOF → SerialSupervisor reconnects automatically.
+        session.onDisconnect { ch.close() }
         try {
             for (bytes in ch) {
                 sendMessage(
@@ -161,7 +178,7 @@ class BleAdapter(
                 )
             }
         } finally {
-            closeQuietly(handle, "session closed")
+            closeQuietly(handle, "ble_link_lost")
         }
     }
 
