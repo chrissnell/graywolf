@@ -145,6 +145,21 @@ func (c *MemCache) Update(entries []CacheEntry) {
 				s.Positions = s.Positions[:MaxTrailLen]
 			}
 		}
+		// Mirror positions[0]'s rfRank-best reception metadata back to the
+		// station-level direction fields. updateMetadata above wrote the
+		// latest packet's direction unconditionally; for a static re-beacon
+		// positions[0] was just rfRank-merged, so syncing here prevents an
+		// IS echo of the same beacon from downgrading the stations-table
+		// row from RX to IS. For a genuinely new position (mobile station
+		// now only heard via IS) positions[0] holds that IS fix, so the
+		// station-level direction still correctly reflects the current state.
+		p0 := s.Positions[0]
+		s.Direction = p0.Direction
+		s.Via = p0.Via
+		s.Gated = p0.Gated
+		s.Hops = p0.Hops
+		s.Path = p0.Path
+		s.Channel = p0.Channel
 	}
 }
 
