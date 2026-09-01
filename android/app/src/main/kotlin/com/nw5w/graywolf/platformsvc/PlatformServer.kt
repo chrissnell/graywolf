@@ -327,6 +327,10 @@ class PlatformServer(
                         bleAdapter?.handleScanStop()
                         continue
                     }
+                    PlatformMessage.BodyCase.BLE_REPAIR_REQUEST -> {
+                        bleAdapter?.handleRepairRequest(req.bleRepairRequest)
+                        continue
+                    }
                     PlatformMessage.BodyCase.USB_LIST_REQ -> {
                         val lister = usbDeviceLister
                         val devices = if (lister != null) {

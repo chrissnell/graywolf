@@ -14,7 +14,7 @@
 //
 // Build constraints: requires CGO on macOS (CoreBluetooth); pure-Go
 // on Linux (BlueZ via D-Bus). Build with CGO_ENABLED=0 on macOS will
-// use ble_mobilinkd_stub.go instead.
+// use ble_stub.go instead.
 package kiss
 
 import (
@@ -72,13 +72,13 @@ type BLEDevice struct {
 	RSSI int16
 }
 
-// ScanBLEMobilinkd scans for nearby BLE KISS TNC devices. It recognises
+// ScanBLEDevice scans for nearby BLE KISS TNC devices. It recognises
 // both Mobilinkd peripherals (proprietary service UUID) and NUS-based
 // devices such as the BTECH UV-PRO, VERO VR-N76, and Radioddity GA-5WB.
 // It calls discovered for each unique peripheral found and returns when
 // ctx is cancelled. The caller is responsible for setting a deadline on
 // ctx to bound the scan duration.
-func ScanBLEMobilinkd(ctx context.Context, discovered func(BLEDevice)) error {
+func ScanBLEDevice(ctx context.Context, discovered func(BLEDevice)) error {
 	if err := enableAdapter(); err != nil {
 		return fmt.Errorf("BLE: adapter enable: %w", err)
 	}
@@ -135,7 +135,7 @@ var knownProfiles = []bleProfile{
 	{nusServiceUUID, nusTxUUID, nusRxUUID},
 }
 
-// OpenBLEMobilinkd connects to the BLE TNC at addr (a string produced
+// OpenBLEDevice connects to the BLE TNC at addr (a string produced
 // by Address.String() on the scan result — a UUID on macOS, a MAC on Linux).
 // It tries the Mobilinkd GATT profile first, then falls back to the Nordic
 // UART Service (NUS) profile used by BTECH UV-PRO, VERO VR-N76, Radioddity
@@ -144,7 +144,7 @@ var knownProfiles = []bleProfile{
 //
 // The baud parameter is ignored (BLE is a framed byte stream with no
 // host-side baud rate). Signature matches kiss.OpenFunc.
-func OpenBLEMobilinkd(addr string, _ uint32) (io.ReadWriteCloser, error) {
+func OpenBLEDevice(addr string, _ uint32) (io.ReadWriteCloser, error) {
 	if addr == "" {
 		return nil, errors.New("BLE: empty device address — scan and save the interface to set it")
 	}
@@ -243,7 +243,7 @@ func OpenBLEMobilinkd(addr string, _ uint32) (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("BLE: required KISS characteristics not found on %s (tx=%v rx=%v)", addr, txChar != nil, rxChar != nil)
 	}
 
-	conn := &bleMobilinkdConn{
+	conn := &bleConn{
 		device:   device,
 		rxChar:   rxChar,
 		rxBuf:    make(chan []byte, 64),
@@ -267,10 +267,10 @@ func OpenBLEMobilinkd(addr string, _ uint32) (io.ReadWriteCloser, error) {
 	return conn, nil
 }
 
-// bleMobilinkdConn wraps a BLE GATT connection as io.ReadWriteCloser.
+// bleConn wraps a BLE GATT connection as io.ReadWriteCloser.
 // Read delivers bytes from TNC TX notifications; Write sends bytes to
 // TNC RX characteristic in MTU-sized chunks.
-type bleMobilinkdConn struct {
+type bleConn struct {
 	device    bluetooth.Device
 	rxChar    *bluetooth.DeviceCharacteristic
 	rxBuf     chan []byte   // inbound frames from TNC
@@ -282,7 +282,7 @@ type bleMobilinkdConn struct {
 
 const bleMTU = 244 // maximum BLE ATT payload after MTU negotiation
 
-func (c *bleMobilinkdConn) Read(p []byte) (int, error) {
+func (c *bleConn) Read(p []byte) (int, error) {
 	if len(c.partial) > 0 {
 		n := copy(p, c.partial)
 		c.partial = c.partial[n:]
@@ -305,7 +305,7 @@ func (c *bleMobilinkdConn) Read(p []byte) (int, error) {
 	}
 }
 
-func (c *bleMobilinkdConn) Write(p []byte) (int, error) {
+func (c *bleConn) Write(p []byte) (int, error) {
 	total := 0
 	for len(p) > 0 {
 		chunk := p
@@ -322,7 +322,7 @@ func (c *bleMobilinkdConn) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-func (c *bleMobilinkdConn) Close() error {
+func (c *bleConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		// Use a no-op rather than nil: DidDisconnectPeripheral fires the

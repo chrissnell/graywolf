@@ -91,3 +91,39 @@ func (c *clientImpl) BLEOpen(ctx context.Context, addr string) (io.ReadWriteClos
 		}
 	})
 }
+
+// BLERepair sends a BleRepairRequest to remove the Android bond for mac.
+// The next BLEOpen call will connect without a bond, triggering fresh pairing.
+func (c *clientImpl) BLERepair(ctx context.Context, mac string) error {
+	if c.closed.Load() {
+		return ErrClosed
+	}
+	ackCh := make(chan *pb.BleRepairAck, 1)
+	c.subsMu.Lock()
+	c.bleRepairAckSubs = append(c.bleRepairAckSubs, ackCh)
+	c.subsMu.Unlock()
+	defer func() {
+		c.subsMu.Lock()
+		for i, s := range c.bleRepairAckSubs {
+			if s == ackCh {
+				c.bleRepairAckSubs = append(c.bleRepairAckSubs[:i], c.bleRepairAckSubs[i+1:]...)
+				break
+			}
+		}
+		c.subsMu.Unlock()
+	}()
+	if err := c.send(&pb.PlatformMessage{Body: &pb.PlatformMessage_BleRepairRequest{
+		BleRepairRequest: &pb.BleRepairRequest{Mac: mac},
+	}}); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case ack := <-ackCh:
+		if !ack.GetOk() {
+			return fmt.Errorf("BLE repair failed: %s", ack.GetError())
+		}
+		return nil
+	}
+}

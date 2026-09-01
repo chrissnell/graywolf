@@ -41,6 +41,8 @@ message PlatformMessage {
     BleScanResult ble_scan_result = 28;
     BleScanError ble_scan_error = 29;
     BleScanStop ble_scan_stop = 30;
+    BleRepairRequest ble_repair_request = 31;
+    BleRepairAck ble_repair_ack = 32;
   }
 }
 
@@ -281,3 +283,14 @@ message BleScanError {
 }
 
 message BleScanStop {}
+
+// Operator-initiated re-pair: remove the Android bond for mac so the next
+// connectGatt triggers fresh bonding (pairing dialog) with the TNC.
+message BleRepairRequest {
+  string mac = 1;
+}
+
+message BleRepairAck {
+  bool   ok    = 1;
+  string error = 2;
+}
