@@ -147,6 +147,8 @@ class SystemBleFacade(
     override fun removeBond(mac: String): Boolean {
         val a = adapter ?: return false
         val device = try { a.getRemoteDevice(mac) } catch (_: Exception) { return false }
+        // Already unbonded — goal state is already reached.
+        try { if (device.bondState != BluetoothDevice.BOND_BONDED) return true } catch (_: SecurityException) { /* proceed */ }
         return try {
             device.javaClass.getMethod("removeBond").invoke(device) as Boolean
         } catch (_: Exception) { false }
@@ -184,16 +186,28 @@ class SystemBleGattSession(
             when (newState) {
                 BluetoothGatt.STATE_CONNECTED -> {
                     setState(State.CONNECTED)
-                    // Clear stale GATT service cache so service discovery returns fresh results.
-                    // This fixes STATUS_133 loops caused by another app re-bonding the device.
+                    // Clear stale GATT service cache, then negotiate MTU before service
+                    // discovery: correct BLE order is connect → MTU → discover → CCCD.
+                    // Small delay lets the cache refresh settle before the next command.
                     g.refreshGattCache()
-                    g.discoverServices()
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        try {
+                            // onMtuChanged triggers discoverServices on success; fall through
+                            // to discoverServices directly only if requestMtu can't be queued.
+                            if (!g.requestMtu(517)) g.discoverServices()
+                        } catch (_: Throwable) {
+                            g.discoverServices()
+                        }
+                    }, 300)
                 }
                 else -> {
                     val wasReady = state == State.READY
                     if (state != State.CLOSED) setState(State.FAILED)
                     if (wasReady) disconnectCallback?.invoke()
                     signal()
+                    // Release the GATT client slot immediately so future connect
+                    // attempts are not blocked by a lingering registration.
+                    try { g.close() } catch (_: Throwable) {}
                 }
             }
         }
@@ -255,46 +269,55 @@ class SystemBleGattSession(
         } ?: error("BLE: connectGatt returned null for ${device.address}")
         gatt = g
 
-        // Wait for services to be discovered (connectGatt → onConnectionStateChange →
-        // discoverServices → onServicesDiscovered).
-        awaitState(State.SERVICES_DISCOVERED, timeoutMs = 20_000L)
+        var initOk = false
+        try {
+            // Wait for services: connect → requestMtu (postDelayed 300ms) →
+            // onMtuChanged → discoverServices → onServicesDiscovered.
+            awaitState(State.SERVICES_DISCOVERED, timeoutMs = 20_000L)
 
-        // Request larger MTU so KISS frames fit without fragmentation.
-        try { g.requestMtu(244) } catch (_: SecurityException) {}
-        // Briefly wait for MTU negotiation (best-effort; discoverServices was
-        // called from onConnectionStateChange already, this is a second call).
+            // Find the first supported GATT profile (Mobilinkd, then NUS).
+            val profile = findProfile(g)
+                ?: run { g.disconnect(); error("BLE: no recognised KISS service on ${device.address}") }
 
-        // Find the first supported GATT profile (Mobilinkd, then NUS).
-        val profile = findProfile(g)
-            ?: run { g.disconnect(); error("BLE: no recognised KISS service on ${device.address}") }
+            rxChar = profile.rx
 
-        rxChar = profile.rx
-
-        // Enable notifications on the TX characteristic.
-        try { g.setCharacteristicNotification(profile.tx, true) } catch (e: SecurityException) {
-            g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied enabling notify")
-        }
-        val cccdDescriptor = profile.tx.getDescriptor(SystemBleFacade.CCCD)
-            ?: run { g.disconnect(); error("BLE: no CCCD on TX characteristic") }
-
-        @Suppress("DEPRECATION")
-        cccdDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            try { g.writeDescriptor(cccdDescriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) } catch (e: SecurityException) {
-                g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied writing CCCD")
+            // Enable notifications on the TX characteristic.
+            try { g.setCharacteristicNotification(profile.tx, true) } catch (e: SecurityException) {
+                g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied enabling notify")
             }
-        } else {
+            val cccdDescriptor = profile.tx.getDescriptor(SystemBleFacade.CCCD)
+                ?: run { g.disconnect(); error("BLE: no CCCD on TX characteristic") }
+
             @Suppress("DEPRECATION")
-            try { g.writeDescriptor(cccdDescriptor) } catch (e: SecurityException) {
-                g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied writing CCCD")
+            cccdDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try { g.writeDescriptor(cccdDescriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) } catch (e: SecurityException) {
+                    g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied writing CCCD")
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                try { g.writeDescriptor(cccdDescriptor) } catch (e: SecurityException) {
+                    g.disconnect(); error("BLE: BLUETOOTH_CONNECT permission denied writing CCCD")
+                }
+            }
+
+            // Wait for CCCD write to complete (→ onDescriptorWrite → READY).
+            awaitState(State.READY, timeoutMs = 10_000L)
+
+            // Shorter connection intervals → supervision timeout ~3-5s vs ~30s default.
+            try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) } catch (_: SecurityException) {}
+
+            initOk = true
+        } finally {
+            if (!initOk) {
+                // Always release the GATT client slot on any construction failure;
+                // not doing so exhausts the BLE stack's client table (~8-16 slots)
+                // and prevents reconnection until the Bluetooth stack is restarted.
+                try { g.disconnect() } catch (_: Throwable) {}
+                try { g.close() } catch (_: Throwable) {}
+                gatt = null
             }
         }
-
-        // Wait for CCCD write to complete (→ onDescriptorWrite → READY).
-        awaitState(State.READY, timeoutMs = 10_000L)
-
-        // Shorter connection intervals → supervision timeout ~3-5s vs ~30s default.
-        try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) } catch (_: SecurityException) {}
     }
 
     private data class GattProfile(
@@ -346,32 +369,54 @@ class SystemBleGattSession(
     override fun write(bytes: ByteArray) {
         val rc = rxChar ?: return
         val g  = gatt  ?: return
+        // Prefer write-without-response when the characteristic supports it: no
+        // per-chunk ATT round-trip and onCharacteristicWrite does NOT fire for WWR
+        // on API < 33, so writePending would never clear and every subsequent chunk
+        // would stall for 5 s then be dropped.
+        val useWwr = rc.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
         val mtu = 244
         var offset = 0
         while (offset < bytes.size) {
             val end = minOf(offset + mtu, bytes.size)
             val chunk = bytes.copyOfRange(offset, end)
 
-            // Serialize writes: wait for the previous write to complete.
-            writeLock.lock()
-            try {
-                val deadline = System.currentTimeMillis() + 5_000L
-                while (writePending) {
-                    val remaining = deadline - System.currentTimeMillis()
-                    if (remaining <= 0) return  // timeout; drop remainder
-                    writeReady.await(remaining, java.util.concurrent.TimeUnit.MILLISECONDS)
+            if (!useWwr) {
+                // Serialize write-with-response: wait for the previous ATT ACK.
+                writeLock.lock()
+                try {
+                    val deadline = System.currentTimeMillis() + 5_000L
+                    while (writePending) {
+                        val remaining = deadline - System.currentTimeMillis()
+                        if (remaining <= 0) return
+                        writeReady.await(remaining, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    }
+                    writePending = true
+                } finally {
+                    writeLock.unlock()
                 }
-                writePending = true
-            } finally {
-                writeLock.unlock()
             }
 
-            @Suppress("DEPRECATION")
-            rc.value = chunk
-            @Suppress("DEPRECATION")
-            try {
-                g.writeCharacteristic(rc)
-            } catch (_: SecurityException) { writeLock.lock(); writePending = false; writeLock.unlock(); return }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val writeType = if (useWwr) BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                                else BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                try { g.writeCharacteristic(rc, chunk, writeType) }
+                catch (_: SecurityException) {
+                    if (!useWwr) { writeLock.lock(); try { writePending = false; writeReady.signalAll() } finally { writeLock.unlock() } }
+                    return
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                rc.writeType = if (useWwr) BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                               else BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                @Suppress("DEPRECATION")
+                rc.value = chunk
+                @Suppress("DEPRECATION")
+                try { g.writeCharacteristic(rc) }
+                catch (_: SecurityException) {
+                    if (!useWwr) { writeLock.lock(); try { writePending = false; writeReady.signalAll() } finally { writeLock.unlock() } }
+                    return
+                }
+            }
             offset = end
         }
     }
@@ -381,6 +426,9 @@ class SystemBleGattSession(
         signal()
         dataCallback = null
         disconnectCallback = null
+        // disconnect() before close() per Android docs; close() alone leaves the
+        // remote device connected until supervision timeout (~30 s by default).
+        try { gatt?.disconnect() } catch (_: Throwable) {}
         try { gatt?.close() } catch (_: Throwable) {}
         gatt = null
     }
