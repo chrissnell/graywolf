@@ -83,8 +83,13 @@
   // toggle cell gets vertical-align:middle so the switch centers in the row
   // instead of sitting on the baseline.
   const BADGE_HEAD_INDENT = 'padding-left: calc(0.4rem + 1px);';
+  // chonky-ui td has padding-right: 0.75rem but padding-left: 0; mirror the
+  // right side on the first column so the Type badge isn't flush to the edge.
+  const FIRST_COL_PAD = '0.75rem';
   const columns = [
-    { key: 'type', label: 'Type', headStyle: BADGE_HEAD_INDENT },
+    { key: 'type', label: 'Type',
+      tdStyle: `padding-left: ${FIRST_COL_PAD};`,
+      headStyle: `padding-left: calc(${FIRST_COL_PAD} + 0.4rem + 1px);` },
     { key: 'endpoint', label: 'Endpoint' },
     { key: 'channel', label: 'Channel' },
     { key: 'mode', label: 'Mode', headStyle: BADGE_HEAD_INDENT },
