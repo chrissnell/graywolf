@@ -82,14 +82,40 @@ func TestBearerAuth_WSUpgradeRejectsQueryTokenMismatch(t *testing.T) {
 	}
 }
 
-func TestBearerAuth_NonWSRejectsQueryToken(t *testing.T) {
+func TestBearerAuth_NonWSNonSSERejectsQueryToken(t *testing.T) {
 	mw := BearerAuthMiddleware("hex-token-abc")
 	srv := httptest.NewServer(mw(okHandler()))
 	defer srv.Close()
 
 	res, _ := srv.Client().Get(srv.URL + "/api/x?token=hex-token-abc")
 	if res.StatusCode != 401 {
-		t.Fatalf("want 401 got %d (query token must not bypass for non-WS)", res.StatusCode)
+		t.Fatalf("want 401 got %d (query token must not bypass for non-WS, non-SSE)", res.StatusCode)
+	}
+}
+
+func TestBearerAuth_SSEAcceptsQueryToken(t *testing.T) {
+	mw := BearerAuthMiddleware("hex-token-abc")
+	srv := httptest.NewServer(mw(okHandler()))
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL+"/api/kiss/ble-device-scan?token=hex-token-abc", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	res, _ := srv.Client().Do(req)
+	if res.StatusCode != 200 {
+		t.Fatalf("want 200 got %d (SSE must accept ?token= since EventSource cannot set headers)", res.StatusCode)
+	}
+}
+
+func TestBearerAuth_SSERejectsQueryTokenMismatch(t *testing.T) {
+	mw := BearerAuthMiddleware("hex-token-abc")
+	srv := httptest.NewServer(mw(okHandler()))
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL+"/api/kiss/ble-device-scan?token=wrong", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	res, _ := srv.Client().Do(req)
+	if res.StatusCode != 401 {
+		t.Fatalf("want 401 got %d", res.StatusCode)
 	}
 }
 

@@ -56,3 +56,10 @@ var ErrClosed = errors.New("platformsvc: client closed")
 // connection died (read EOF, write error). The reconnect loop will
 // re-dial; callers can retry idempotent requests after that succeeds.
 var ErrDisconnected = errors.New("platformsvc: connection disconnected")
+
+// BLEKISSDevice is a BLE device discovered during a ScanBLEKISS call.
+type BLEKISSDevice struct {
+	Addr string
+	Name string
+	RSSI int16
+}

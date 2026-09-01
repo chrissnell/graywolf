@@ -37,6 +37,12 @@ message PlatformMessage {
     BondedBtDevicesResponse bonded_bt_devices_response = 24;
     AvailableUsbSerialDevicesRequest available_usb_serial_devices_request = 25;
     AvailableUsbSerialDevicesResponse available_usb_serial_devices_response = 26;
+    BleScanRequest ble_scan_request = 27;
+    BleScanResult ble_scan_result = 28;
+    BleScanError ble_scan_error = 29;
+    BleScanStop ble_scan_stop = 30;
+    BleRepairRequest ble_repair_request = 31;
+    BleRepairAck ble_repair_ack = 32;
   }
 }
 
@@ -209,6 +215,7 @@ enum SerialKind {
   SERIAL_KIND_UNSPECIFIED = 0;
   SERIAL_KIND_BLUETOOTH   = 1;
   SERIAL_KIND_USB         = 2;
+  SERIAL_KIND_BLE         = 3;
 }
 
 message SerialOpen {
@@ -260,4 +267,30 @@ message AvailableUsbSerialDevicesResponse {
     bool   has_permission = 4;
   }
   repeated Device devices = 1;
+}
+
+message BleScanRequest {}
+
+message BleScanResult {
+  string addr = 1;  // BLE MAC address
+  string name = 2;  // advertised name (may be empty)
+  int32  rssi = 3;  // signal strength in dBm
+}
+
+message BleScanError {
+  string code   = 1;  // short error token (e.g. "permission_denied", "scanner_unavailable")
+  string detail = 2;  // human-readable detail
+}
+
+message BleScanStop {}
+
+// Operator-initiated re-pair: remove the Android bond for mac so the next
+// connectGatt triggers fresh bonding (pairing dialog) with the TNC.
+message BleRepairRequest {
+  string mac = 1;
+}
+
+message BleRepairAck {
+  bool   ok    = 1;
+  string error = 2;
 }

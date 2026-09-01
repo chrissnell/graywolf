@@ -31,10 +31,13 @@ type clientImpl struct {
 	// interleave header and body bytes without this guard.
 	writeMu sync.Mutex
 
-	subsMu         sync.Mutex
-	gpsFixSubs     []chan<- *GpsFix
-	gnssStatusSubs []chan<- *GnssStatusUpdate
-	audioRouteSubs []chan<- *AudioRouteChanged
+	subsMu           sync.Mutex
+	gpsFixSubs       []chan<- *GpsFix
+	gnssStatusSubs   []chan<- *GnssStatusUpdate
+	audioRouteSubs   []chan<- *AudioRouteChanged
+	bleScanSubs      []chan<- *pb.BleScanResult
+	bleScanErrSubs   []chan<- *pb.BleScanError
+	bleRepairAckSubs []chan<- *pb.BleRepairAck
 
 	// Single in-flight request → response correlation. The platform proto
 	// has no request_id field, so we serialize requests through requestMu.
@@ -177,6 +180,36 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 		for _, s := range subs {
 			select {
 			case s <- b.GnssStatus:
+			default:
+			}
+		}
+	case *pb.PlatformMessage_BleScanResult:
+		c.subsMu.Lock()
+		subs := append([]chan<- *pb.BleScanResult{}, c.bleScanSubs...)
+		c.subsMu.Unlock()
+		for _, s := range subs {
+			select {
+			case s <- b.BleScanResult:
+			default:
+			}
+		}
+	case *pb.PlatformMessage_BleScanError:
+		c.subsMu.Lock()
+		subs := append([]chan<- *pb.BleScanError{}, c.bleScanErrSubs...)
+		c.subsMu.Unlock()
+		for _, s := range subs {
+			select {
+			case s <- b.BleScanError:
+			default:
+			}
+		}
+	case *pb.PlatformMessage_BleRepairAck:
+		c.subsMu.Lock()
+		subs := append([]chan<- *pb.BleRepairAck{}, c.bleRepairAckSubs...)
+		c.subsMu.Unlock()
+		for _, s := range subs {
+			select {
+			case s <- b.BleRepairAck:
 			default:
 			}
 		}

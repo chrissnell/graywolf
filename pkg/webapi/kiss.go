@@ -3,6 +3,7 @@ package webapi
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/kiss"
@@ -21,11 +22,13 @@ func (s *Server) registerKiss(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/kiss/bonded-bt-devices", s.handleGetBondedBtDevices)
 	mux.HandleFunc("GET /api/kiss/available-usb-serial-devices", s.handleGetAvailableUsbSerialDevices)
 	mux.HandleFunc("GET /api/kiss/available-serial-ports", s.listAvailableKissSerialPorts)
+	mux.HandleFunc("GET /api/kiss/ble-device-scan", s.handleBLEScan)
 	mux.HandleFunc("GET /api/kiss/{id}", s.getKiss)
 	mux.HandleFunc("PUT /api/kiss/{id}", s.updateKiss)
 	mux.HandleFunc("PUT /api/kiss/{id}/enabled", s.setKissEnabled)
 	mux.HandleFunc("DELETE /api/kiss/{id}", s.deleteKiss)
 	mux.HandleFunc("POST /api/kiss/{id}/reconnect", s.reconnectKiss)
+	mux.HandleFunc("POST /api/kiss/{id}/repairble", s.repairBleKiss)
 }
 
 // attachKissStatus folds live manager status onto every response DTO.
@@ -402,6 +405,30 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			OnReload:            s.notifyTxBackendReload,
 			OpenFunc:            s.kissSerialOpenFunc,
 		})
+	case configstore.KissTypeBLEDevice:
+		// BLE KISS to Mobilinkd TNC3/TNC4. No baud rate; always TNC mode.
+		// Mirrors the boot-path in wiring.go's kissComponent.
+		if ki.Device == "" {
+			s.kissManager.Stop(ki.ID)
+			return
+		}
+		s.kissManager.StartSerial(s.kissCtx, ki.ID, kiss.SerialConfig{
+			Name:                ki.Name,
+			Device:              ki.Device,
+			BaudRate:            0,
+			Mode:                kiss.ModeTnc,
+			ChannelMap:          map[uint8]uint32{0: ch},
+			ReconnectInitMs:     5000,
+			ReconnectMaxMs:      5000,
+			Logger:              s.logger,
+			TncIngressRateHz:    ki.TncIngressRateHz,
+			TncIngressBurst:     ki.TncIngressBurst,
+			AllowTxFromGovernor: ki.AllowTxFromGovernor,
+			AllowConnectedMode:  ki.AllowConnectedMode,
+			GateTxToIs:          ki.GateTxToIs,
+			OnReload:            s.notifyTxBackendReload,
+			OpenFunc:            kiss.OpenBLEDevice,
+		})
 	default:
 		// Unknown interface type — stop any lingering session.
 		s.kissManager.Stop(ki.ID)
@@ -452,4 +479,36 @@ func (s *Server) reconnectKiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// repairBleKiss forces a fresh BLE connection for the given interface.
+// On Android: removes the bond so the next connect triggers fresh pairing.
+// On all platforms: forces an immediate reconnect via the supervisor.
+func (s *Server) repairBleKiss(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid id")
+		return
+	}
+	ki, err := s.store.GetKissInterface(r.Context(), id)
+	if err != nil || ki == nil {
+		notFound(w)
+		return
+	}
+	if ki.InterfaceType != configstore.KissTypeBLEDevice {
+		http.Error(w, "interface is not a BLE device", http.StatusConflict)
+		return
+	}
+	// On Android, remove the stale bond so the next connect triggers fresh
+	// pairing. On other platforms this is a no-op (no OS bond to remove).
+	if s.bleRepairer != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		if err := s.bleRepairer.BLERepair(ctx, ki.Device); err != nil {
+			s.internalError(w, r, "ble repair", err)
+			return
+		}
+	}
+	// Return 204 so the JS client doesn't attempt res.json() on an empty body.
+	w.WriteHeader(http.StatusNoContent)
 }
