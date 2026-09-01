@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stations &mdash; Graywolf Handbook</title>
+  <meta name="description" content="Stations list: sortable, filterable table of all stations heard on RF and APRS-IS, with aliases and map navigation." />
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <a href="stations.html">Stations</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Stations</h1>
+    <p class="subtitle">Sortable, filterable table of all stations heard on RF and APRS-IS</p>
+
+    <p>
+      The Stations page shows every station Graywolf has heard &mdash; whether
+      received directly on RF, via a digipeater, or through the APRS-IS iGate
+      &mdash; in a table you can sort and filter by any column. Clicking a
+      callsign flies the <a href="livemap.html">Live Map</a> to that station
+      and opens its popup.
+    </p>
+
+    <p>
+      Find the page in the sidebar under <strong>Live Map</strong>, or navigate
+      directly to <code>/#/stations</code>.
+    </p>
+
+    <h2>Table Columns</h2>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Column</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Station</strong></td>
+              <td>The APRS callsign (or object/item name). Click to open the station on the Live Map.</td>
+            </tr>
+            <tr>
+              <td><strong>Alias</strong></td>
+              <td>
+                A user-defined display name, e.g. &ldquo;My Car&rdquo; or &ldquo;Dad's Jeep&rdquo;.
+                Only shown when the <a href="history-database.html">Position Log</a> is enabled
+                (aliases are stored alongside position history). Click the pencil icon on any
+                row to edit; leave the field blank to remove an alias.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Last Heard</strong></td>
+              <td>How long ago the most recent packet arrived, with a direction badge:
+                <strong>RX</strong> (received on RF), <strong>IS</strong> (APRS-IS iGate),
+                or <strong>TX</strong> (transmitted by this station).</td>
+            </tr>
+            <tr>
+              <td><strong>Icon</strong></td>
+              <td>The station&rsquo;s APRS symbol icon and its human-readable name.</td>
+            </tr>
+            <tr>
+              <td><strong>Distance</strong></td>
+              <td>
+                Straight-line distance from Graywolf&rsquo;s own GPS position to the station.
+                Shown in km or miles depending on the units preference. Displays
+                &ldquo;&mdash;&rdquo; when no GPS fix is available.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Bearing</strong></td>
+              <td>
+                True bearing from your station to the remote station, expressed as a compass
+                direction and degrees (e.g. &ldquo;NNE 22&deg;&rdquo;). Displays
+                &ldquo;&mdash;&rdquo; when no GPS fix is available.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Comment</strong></td>
+              <td>The free-form comment field from the station&rsquo;s most recent packet.</td>
+            </tr>
+            <tr>
+              <td><strong>Lat / Lon</strong></td>
+              <td>Decimal-degree coordinates of the station&rsquo;s most recent position fix.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Sorting</h2>
+
+    <p>
+      Click any column header to sort by that column. A second click on the same
+      header reverses the direction. A small arrow (&uarr; / &darr;) shows the active
+      sort column and direction. The default sort is <strong>Last Heard</strong>
+      newest-first.
+    </p>
+
+    <h2>Filtering</h2>
+
+    <p>
+      A filter row sits directly under the column headers. Each filter applies
+      independently; multiple active filters are AND&rsquo;d together.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Filter</th><th>Behaviour</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Station</strong></td>
+              <td>Substring match (case-insensitive). Typing <code>KD</code> shows all callsigns that contain &ldquo;KD&rdquo;.</td>
+            </tr>
+            <tr>
+              <td><strong>Alias</strong></td>
+              <td>
+                Substring match. A <strong>Has alias</strong> toggle shows only stations
+                that have a saved alias. The alias filter and toggle are hidden when the
+                Position Log is disabled.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Last Heard</strong></td>
+              <td>
+                A <strong>Today only</strong> toggle restricts the list to stations heard
+                since midnight local time, regardless of the time-range selector in the
+                toolbar.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Icon</strong></td>
+              <td>
+                A multiselect dropdown listing every APRS symbol currently on the page.
+                Check one or more icons to show only stations with those symbols.
+                Click <em>Clear</em> to remove the icon filter.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Comment</strong></td>
+              <td>Substring match (case-insensitive).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Auto-Refresh and Manual Refresh</h2>
+
+    <p>
+      <strong>Auto-refresh</strong> is on by default and polls every 30&nbsp;seconds.
+      The data updates silently in the background &mdash; active filters and sort order
+      are never reset. If you are searching for a specific callsign and that station
+      is heard again, its Last Heard cell updates in place; the filter itself does not
+      change.
+    </p>
+
+    <p>
+      Uncheck <strong>Auto-refresh</strong> in the toolbar to stop polling. The
+      <strong>Refresh</strong> button fetches fresh data at any time regardless of
+      whether auto-refresh is enabled.
+    </p>
+
+    <h2>Time Range</h2>
+
+    <p>
+      The time-range selector in the toolbar (default <strong>1&nbsp;day</strong>)
+      controls how far back Graywolf looks for heard stations. Selecting a longer
+      range may add older entries from the <a href="history-database.html">Position
+      Log</a>; selecting a shorter range prunes entries that have aged out. Changing
+      the time range triggers an immediate refresh.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Time ranges beyond a few hours only show historical data when the
+          <a href="history-database.html">Position Log</a> is enabled. Without it,
+          stations are held in memory only and a restart clears them.
+        </p>
+      </div>
+    </div>
+
+    <h2>Pagination</h2>
+
+    <p>
+      The table shows 50 rows per page by default. Use the per-page selector in the
+      toolbar to switch to 100 or 200. Pagination controls at the bottom of the table
+      let you step through pages. Changing any filter resets to page&nbsp;1; a refresh
+      that reduces the total count automatically moves you to the last valid page.
+    </p>
+
+    <h2>Station Aliases</h2>
+
+    <p>
+      An alias is a personal label you attach to a callsign so it appears in the
+      Alias column whenever that station is heard. Examples: <em>My Car</em>,
+      <em>Dad&rsquo;s Jeep</em>, <em>Club Digi</em>.
+    </p>
+
+    <p>
+      To add or edit an alias, hover over a row and click the pencil icon (&#9998;)
+      in the Alias column. Type your label and press <kbd>Enter</kbd> (or click
+      away) to save. Clear the field and save to remove the alias.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          The Alias column and alias editing are only available when the
+          <a href="history-database.html">Position Log</a> is enabled. Aliases
+          are stored in the same SQLite database as position history.
+        </p>
+      </div>
+    </div>
+
+    <h2>Navigating to the Live Map</h2>
+
+    <p>
+      Click any callsign in the Station column to open the
+      <a href="livemap.html">Live Map</a> centered on that station with its popup
+      open. This works even for stations not currently in the map&rsquo;s active
+      time range &mdash; the camera flies to the station&rsquo;s last known
+      coordinates.
+    </p>
+
+    <nav class="page-nav">
+      <a href="livemap.html">
+        <span class="label">Previous</span>
+        Live Map
+      </a>
+      <a href="ax25-terminal.html" class="next">
+        <span class="label">Next</span>
+        AX.25 Terminal
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

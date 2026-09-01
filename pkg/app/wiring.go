@@ -377,6 +377,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			if err := a.stationCache.Reconfigure(hdb); err != nil {
 				a.logger.Warn("failed to hydrate from history db", "err", err)
 			}
+			a.histdb = hdb
 		}
 	}
 
@@ -1518,6 +1519,12 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
 	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
 	webapi.RegisterHeatmap(apiSrv, apiMux, a.stationCache)
+	webapi.RegisterStationAliases(apiSrv, apiMux, func() webapi.AliasStore {
+		if a.histdb == nil {
+			return nil
+		}
+		return a.histdb
+	})
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
 	// /api/system-logs reads the slog ring buffer. a.cfg.LogBuffer is a
 	// concrete *logbuffer.DB that may be nil; assign through a typed
@@ -1733,6 +1740,7 @@ func (a *App) reconfigurePositionLog(ctx context.Context) {
 		if err := a.stationCache.Reconfigure(nil); err != nil {
 			a.logger.Warn("disable position log", "err", err)
 		}
+		a.histdb = nil
 		return
 	}
 	hdb, err := historydb.Open(a.cfg.HistoryDBPath)
@@ -1744,6 +1752,7 @@ func (a *App) reconfigurePositionLog(ctx context.Context) {
 	if err := a.stationCache.Reconfigure(hdb); err != nil {
 		a.logger.Warn("reconfigure position log", "err", err)
 	}
+	a.histdb = hdb
 }
 
 func (a *App) governorComponent() namedComponent {

@@ -27,6 +27,7 @@
   const mainItems = [
     { path: '/', label: 'Dashboard', svgIcon: 'dashboard' },
     { path: '/map', label: 'Live Map', svgIcon: 'globe' },
+    { path: '/stations', label: 'Stations', svgIcon: 'stations' },
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
@@ -35,21 +36,21 @@
   ];
 
   const allSettingsItems = [
-    { path: '/agw', label: 'AGW' },
-    { path: '/audio-devices', label: 'Audio Devices' },
-    { path: '/beacons', label: 'Beacons' },
-    { path: '/channels', label: 'Channels' },
-    { path: '/digipeater', label: 'Digipeater' },
     { path: '/preferences', label: 'General' },
-    { path: '/gps', label: 'GPS' },
-    { path: '/igate', label: 'iGate' },
-    { path: '/kiss', label: 'KISS' },
-    { path: '/preferences/maps', label: 'Maps' },
-    { path: '/preferences/messages', label: 'Messaging' },
-    { path: '/position-log', label: 'Position Log' },
-    { path: '/ptt', label: 'PTT' },
-    { path: '/simulation', label: 'Simulation' },
     { path: '/callsign', label: 'Station Callsign' },
+    { path: '/audio-devices', label: 'Audio Devices' },
+    { path: '/ptt', label: 'PTT' },
+    { path: '/channels', label: 'Channels' },
+    { path: '/kiss', label: 'KISS' },
+    { path: '/gps', label: 'GPS' },
+    { path: '/beacons', label: 'Beacons' },
+    { path: '/igate', label: 'iGate' },
+    { path: '/digipeater', label: 'Digipeater' },
+    { path: '/preferences/maps', label: 'Maps' },
+    { path: '/position-log', label: 'Position Log' },
+    { path: '/preferences/messages', label: 'Messaging' },
+    { path: '/agw', label: 'AGW' },
+    { path: '/simulation', label: 'Simulation' },
   ];
   // mainItems carries the icon'd top section; it's filtered by the
   // same HIDDEN_ON_ANDROID set as the settings group so an entry like
@@ -183,6 +184,23 @@
                 <path d="M3 12h18" />
                 <path d="M12 3a14 14 0 0 1 0 18" />
                 <path d="M12 3a14 14 0 0 0 0 18" />
+              </svg>
+            {:else if item.svgIcon === 'stations'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18" />
+                <path d="M3 15h18" />
+                <path d="M9 9v12" />
               </svg>
             {:else if item.svgIcon === 'dashboard'}
               <svg
