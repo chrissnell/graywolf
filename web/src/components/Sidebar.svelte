@@ -589,7 +589,7 @@
     opacity: 0.5;
     padding: 10px 16px 6px;
     margin: 0;
-    border-top: 1px solid var(--border-color);
+    /* border-top: 1px solid var(--border-color); */
   }
 
   .nav-link {
@@ -871,5 +871,49 @@
       width: 28px;
       height: 28px;
     }
+  }
+
+  /* Force compact layout when the user preference is active.
+     Higher specificity than the media queries above so these win
+     regardless of viewport size or orientation. */
+  :global(html.force-compact-menu) .sidebar {
+    display: none;
+  }
+
+  :global(html.force-compact-menu) .top-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: calc(56px + var(--safe-area-top));
+    padding: var(--safe-area-top) 8px 0
+      max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    border-right: none;
+    z-index: 100;
+    box-sizing: border-box;
+    overflow-y: visible;
+  }
+
+  /* Restore wordmark visibility in forced portrait layout on landscape phones. */
+  :global(html.force-compact-menu) .top-bar-brand {
+    height: 44px;
+    padding: 0 8px;
+    margin-bottom: 0;
+  }
+  :global(html.force-compact-menu) .top-bar-wordmark {
+    display: inline;
+  }
+  :global(html.force-compact-menu) .top-bar-logo {
+    width: 32px;
+    height: 32px;
   }
 </style>

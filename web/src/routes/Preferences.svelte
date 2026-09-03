@@ -5,6 +5,7 @@
   import { updates } from '../lib/updatesStore.svelte.js';
   import { themeState } from '../lib/settings/theme-store.svelte.js';
   import { uiScaleState, UI_SCALE_OPTIONS } from '../lib/settings/ui-scale-store.svelte.js';
+  import { compactMenuState } from '../lib/settings/compact-menu-store.svelte.js';
   import { THEMES } from '../lib/themes/registry.js';
   import PageHeader from '../components/PageHeader.svelte';
 
@@ -76,11 +77,23 @@
   </p>
 </Box>
 
+<Box title="Menu">
+  <Toggle
+    checked={compactMenuState.forceCompact}
+    onCheckedChange={(v) => compactMenuState.setForceCompact(v)}
+    label="Force small side menu"
+  />
+  <p class="menu-hint">
+    This will force the small screen side menu to be active.
+  </p>
+</Box>
+
 <style>
   .theme-hint,
   .scale-hint,
   .unit-hint,
-  .update-hint {
+  .update-hint,
+  .menu-hint {
     margin-top: 12px;
     font-size: 13px;
     color: var(--text-muted);
