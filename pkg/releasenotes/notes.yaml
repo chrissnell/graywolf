@@ -7,8 +7,8 @@
 # route the body references via [text](link) markdown; renderer only
 # accepts internal #/... routes.
 
-- version: "0.14.13"
-  date: "2026-08-24"
+- version: "0.14.14"
+  date: "2026-08-28"
   style: info
   schema_version: 1
   link: "#/channels"
@@ -43,6 +43,58 @@
     routing direct messages; outbound traffic no longer gets forced onto
     the modem channel when it should go out a KISS TNC; and busy message
     threads no longer strand older messages when you page through them.
+
+- version: "0.14.13"
+  date: "2026-07-31"
+  style: info
+  schema_version: 1
+  link: "#/preferences/notifications"
+  title: "Bulletin board, customizable notifications, and new-station alerts"
+  body: |
+    You can now send and receive APRS bulletins (BLN0-9 and BLNA-Z), with
+    a dedicated board for composing, sending, and scheduling them
+    alongside your regular messages.
+
+    Notifications got their own settings page. Messages, bulletins, and
+    station-emergency alerts each have independent on/off switches and
+    their own sound, so you can pick different alert sounds for each (or
+    turn any of them off) without affecting the others. Clicking a
+    notification now reliably jumps you to the right conversation or map
+    location.
+
+    You can also set your own station's Mic-E status (Off Duty through
+    Emergency) on your outbound beacon, and get notified -- with a
+    popup, sound, and map badge -- when another station on the map
+    reports an Emergency status, regardless of where you're currently
+    looking on the map.
+
+    Graywolf can now let you know when a station you haven't heard from
+    in a while shows up on the map, instead of pinging you every time it
+    beacons. You can set how long "a while" means (from 1 hour up to a
+    week, or turn the alert off entirely), and weather stations are
+    excluded from these alerts by default, with a toggle if you'd rather
+    see them too. Digipeaters and repeaters are filtered out
+    automatically, since they're not people you'd want to reach.
+
+    You can also mark specific stations as favorites -- enter a callsign
+    and every SSID under that call will always notify you, even if the
+    alert above is turned off. There's a matching exclusion list for
+    stations you never want to hear about again.
+
+    A new "Notifications Log" page (in the sidebar, between APRS Logs
+    and System Logs) keeps a running history of every popup
+    notification, so you can catch ones you missed.
+
+    The two recenter buttons above the map now behave differently on
+    purpose: "Center on my station" pans to your position without
+    changing your current zoom level, while "Reset to default view"
+    zooms out to a fixed radius around your station -- 15 miles by
+    default, adjustable from the layer card. Both buttons now properly
+    reset the map's URL and clear any leftover station selection when
+    clicked.
+
+    This is a test build for feedback before the pull request is
+    reviewed -- if anything looks off, please report it.
 
 - version: "0.14.12"
   date: "2026-07-23"

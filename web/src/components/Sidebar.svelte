@@ -1,13 +1,20 @@
 <script>
-  import { untrack } from 'svelte';
+  import { untrack, onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
   import { location } from 'svelte-spa-router';
   import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
   import { messages } from '../lib/messagesStore.svelte.js';
+  import { bulletinsStore } from '../lib/bulletinsStore.svelte.js';
   import { terminalSidebar } from '../lib/stores/terminal.svelte.js';
   import { updates } from '../lib/updatesStore.svelte.js';
   import { Platform } from '../lib/platform.js';
   import logoUrl from '../assets/graywolf.svg';
+
+  // bulletinsTransport.js (started app-wide from App.svelte) owns the
+  // shared poll; this is just a reactive read so the badge stays in
+  // lockstep with whatever Bulletins.svelte does to the same store —
+  // no more independent polling loop here.
+  let bulletinUnread = $derived(bulletinsStore.unreadTotal);
 
   // Surfaces deferred or unsupported on Android. Hidden from the
   // sidebar so operators don't tap into a non-functional surface:
@@ -28,9 +35,11 @@
     { path: '/', label: 'Dashboard', svgIcon: 'dashboard' },
     { path: '/map', label: 'Live Map', svgIcon: 'globe' },
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
+    { path: '/bulletins', label: 'Bulletins', svgIcon: 'bulletins', badge: 'bulletins' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
     { path: '/logs', label: 'APRS Logs', svgIcon: 'logs' },
+    { path: '/notifications-log', label: 'Notifications Log', svgIcon: 'notifications-log' },
     { path: '/system-logs', label: 'System Logs', svgIcon: 'system-logs' },
   ];
 
@@ -46,6 +55,7 @@
     { path: '/kiss', label: 'KISS' },
     { path: '/preferences/maps', label: 'Maps' },
     { path: '/preferences/messages', label: 'Messaging' },
+    { path: '/preferences/notifications', label: 'Notifications' },
     { path: '/position-log', label: 'Position Log' },
     { path: '/ptt', label: 'PTT' },
     { path: '/simulation', label: 'Simulation' },
@@ -82,6 +92,7 @@
   function badgeCount(kind) {
     if (kind === 'terminal') return terminalUnread;
     if (kind === 'messages') return unreadTotal;
+    if (kind === 'bulletins') return bulletinUnread;
     return 0;
   }
 
@@ -230,6 +241,24 @@
               >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
+            {:else if item.svgIcon === 'bulletins'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="8" y="2" width="8" height="4" rx="1" />
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                <line x1="9" y1="10" x2="15" y2="10" />
+                <line x1="9" y1="14" x2="15" y2="14" />
+                <line x1="9" y1="18" x2="12" y2="18" />
+              </svg>
             {:else if item.svgIcon === 'logs'}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -246,6 +275,21 @@
                 <path d="M14 3v5h5" />
                 <line x1="9" y1="13" x2="15" y2="13" />
                 <line x1="9" y1="17" x2="15" y2="17" />
+              </svg>
+            {:else if item.svgIcon === 'notifications-log'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
               </svg>
             {:else if item.svgIcon === 'system-logs'}
               <svg

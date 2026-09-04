@@ -36,6 +36,12 @@ import {
   listConversations,
   listTacticals,
 } from '../api/messages.js';
+import { notifications } from './notificationsStore.svelte.js';
+import { shouldNotifyMessage } from './notification-rules-core.js';
+import { fireOsNotification } from './osNotify.js';
+import { notificationPrefsState } from './settings/notification-prefs-store.svelte.js';
+import { notificationSoundState } from './settings/notification-sound-store.svelte.js';
+import { notificationsLogStore } from './notificationsLogStore.svelte.js';
 
 const POLL_BASE_MS = 5_000;
 const POLL_MAX_MS = 60_000;
@@ -61,6 +67,46 @@ function shouldUseSSE() {
   }
 }
 
+// Dedup set so a message already seen (e.g. re-delivered on a
+// reconnect, or present in both the delta and a conversations rollup
+// window) doesn't raise a second popup. Bounded so a long session
+// doesn't grow this unboundedly.
+const notifiedMessageIds = new Set();
+const MAX_NOTIFIED_IDS = 500;
+
+/**
+ * Raise a new-activity notification for a genuinely new inbound unread
+ * message, subject to the mute/active-thread suppression rules and the
+ * operator's notification mode (toast/os/both).
+ */
+function maybeNotifyInbound(msg) {
+  if (!msg || msg.direction !== 'in' || !msg.unread || typeof msg.id !== 'number') return;
+  if (notifiedMessageIds.has(msg.id)) return;
+  notifiedMessageIds.add(msg.id);
+  if (notifiedMessageIds.size > MAX_NOTIFIED_IDS) notifiedMessageIds.clear();
+
+  if (!notificationPrefsState.messageEnabled) return;
+
+  const threadId = messages.threadIdFor(msg.thread_kind, msg.thread_key);
+  const thread = messages.conversations.get(threadId);
+  if (!shouldNotifyMessage({ muted: !!thread?.muted, isActiveThread: messages.activeThreadId === threadId })) {
+    return;
+  }
+
+  const label = messages.isTactical(threadId) ? (thread?.alias || msg.thread_key) : msg.from_call;
+  const href = `#/messages?thread=${encodeURIComponent(threadId)}`;
+  const title = `New message from ${label}`;
+  const body = (msg.text || '').slice(0, 140);
+  notificationsLogStore.add({ kind: 'message', title, body, href });
+  if (notificationPrefsState.toastEnabled) {
+    notifications.push({ kind: 'message', title, body, href });
+  }
+  fireOsNotification(title, msg.text, () => {
+    window.location.hash = href;
+  });
+  notificationSoundState.message.play();
+}
+
 /** Apply a single MessageChange frame to the store. */
 function applyChange(change) {
   if (!change || typeof change.id === 'undefined') return;
@@ -68,7 +114,10 @@ function applyChange(change) {
     messages.markDeleted(change.id);
     return;
   }
-  if (change.message) messages.upsertMessage(change.message);
+  if (change.message) {
+    messages.upsertMessage(change.message);
+    maybeNotifyInbound(change.message);
+  }
 }
 
 async function fetchDelta() {
@@ -237,4 +286,17 @@ export function refreshNow() {
   refreshTacticals();
   refreshConversations();
   fetchDelta().catch(() => {});
+}
+
+// Vite HMR: without this, editing this file (or anything it imports)
+// while `npm run dev` is running leaves the OLD module instance's
+// timers/EventSource running forever alongside the new one — started
+// never gets reset to false on the stale copy, so every edit stacks
+// another live poll loop, each independently firing its own
+// notifications for the same events (2026-08-01, found via
+// stationNewTransport.js's identical gap producing duplicate
+// notifications during a long dev-testing session). A production
+// build has no import.meta.hot, so this is a no-op there.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => stop());
 }

@@ -90,6 +90,64 @@ func TestExtractEntry_NoCourse(t *testing.T) {
 	assertBool(t, "HasCourse", entries[0].HasCourse, false)
 }
 
+func TestExtractEntry_DeviceFromTocall(t *testing.T) {
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1ABC-9",
+		Dest:   "APAT51", // AnyTone AT-D578 in the tocall table
+		Position: &aprs.Position{
+			Latitude:  40.0,
+			Longitude: -105.0,
+			Symbol:    aprs.Symbol{Table: '/', Code: '>'},
+		},
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	dev := entries[0].Device
+	if dev == nil {
+		t.Fatal("expected Device to be resolved from tocall, got nil")
+	}
+	assertEqual(t, "Device.Vendor", dev.Vendor, "AnyTone")
+	assertEqual(t, "Device.Model", dev.Model, "AT-D578")
+}
+
+func TestExtractEntry_DeviceFromMicEFallback(t *testing.T) {
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1ABC-9",
+		Dest:   "N0CALL", // not a recognized tocall pattern
+		Position: &aprs.Position{
+			Latitude:  40.0,
+			Longitude: -105.0,
+			Symbol:    aprs.Symbol{Table: '/', Code: '>'},
+		},
+		MicE: &aprs.MicE{Manufacturer: "Some Mic-E Radio"},
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	dev := entries[0].Device
+	if dev == nil {
+		t.Fatal("expected Device to fall back to Mic-E manufacturer, got nil")
+	}
+	assertEqual(t, "Device.Model", dev.Model, "Some Mic-E Radio")
+	assertEqual(t, "Device.Vendor", dev.Vendor, "")
+}
+
+func TestExtractEntry_DeviceUnknown(t *testing.T) {
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1ABC-9",
+		Dest:   "N0CALL",
+		Position: &aprs.Position{
+			Latitude:  40.0,
+			Longitude: -105.0,
+			Symbol:    aprs.Symbol{Table: '/', Code: '>'},
+		},
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	if entries[0].Device != nil {
+		t.Fatalf("expected nil Device for unrecognized tocall with no Mic-E fallback, got %+v", entries[0].Device)
+	}
+}
+
 func TestExtractEntry_Object(t *testing.T) {
 	pkt := &aprs.DecodedAPRSPacket{
 		Source: "W1ABC",
@@ -377,6 +435,85 @@ func TestExtractEntry_WeatherOnlyNoPosition(t *testing.T) {
 	if entries[0].Weather == nil {
 		t.Fatal("expected weather data")
 	}
+}
+
+func TestExtractEntry_MicEStatus(t *testing.T) {
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1EMG-9",
+		Position: &aprs.Position{
+			Latitude:  40.0,
+			Longitude: -105.0,
+			Symbol:    aprs.Symbol{Table: '/', Code: '>'},
+		},
+		MicE: &aprs.MicE{MessageCode: 0, MessageText: "Emergency"},
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	assertEqual(t, "StatusCode", entries[0].StatusCode, 0)
+	assertEqual(t, "StatusText", entries[0].StatusText, "Emergency")
+}
+
+func TestExtractEntry_PositionNoMicENoStatusCode(t *testing.T) {
+	// A plain (non-Mic-E) position packet must not default StatusCode to
+	// 0 -- that's the Emergency wire code (APRS101 ch 10 table 8), and
+	// Go's int zero value would collide with it if buildStationEntry
+	// didn't explicitly set the -1 "no status" sentinel.
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1PLAIN",
+		Position: &aprs.Position{
+			Latitude:  40.0,
+			Longitude: -105.0,
+			Symbol:    aprs.Symbol{Table: '/', Code: '>'},
+		},
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	assertEqual(t, "StatusCode", entries[0].StatusCode, -1)
+	assertEqual(t, "StatusText", entries[0].StatusText, "")
+}
+
+func TestExtractEntry_StatusReportNoPosition(t *testing.T) {
+	// A bare '>' status report (APRS101 ch 16) carries no position but
+	// should still produce a metadata-only entry so an already-known
+	// station's status can be updated.
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1STAT",
+		Status: "PRIORITY",
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	assertBool(t, "HasPos", entries[0].HasPos, false)
+	assertEqual(t, "StatusCode", entries[0].StatusCode, -1)
+	assertEqual(t, "StatusText", entries[0].StatusText, "PRIORITY")
+}
+
+func TestExtractEntry_ObjectStatusCodeDefaultsNone(t *testing.T) {
+	// Objects/items carry no Mic-E status; buildObjectEntry must set
+	// StatusCode -1 explicitly for the same reason buildStationEntry
+	// does -- the Go zero value 0 would otherwise read as Emergency.
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1ABC",
+		Object: &aprs.Object{
+			Name: "SHELTER1",
+			Live: true,
+			Position: &aprs.Position{
+				Latitude:  40.0,
+				Longitude: -105.0,
+				Symbol:    aprs.Symbol{Table: '\\', Code: 'S'},
+			},
+		},
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 0)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	assertEqual(t, "StatusCode", entries[0].StatusCode, -1)
 }
 
 func TestExtractEntry_ObjectWithOriginatorPosition(t *testing.T) {

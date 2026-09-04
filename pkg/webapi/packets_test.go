@@ -166,3 +166,65 @@ func TestListPackets_ExposesCoordinates(t *testing.T) {
 		}
 	}
 }
+
+// TestListPackets_ExposesStatusText verifies /api/packets surfaces a
+// Mic-E message label ("Emergency", "Priority", ...) for a Mic-E
+// packet, and the raw text of a positionless '>' status report -- both
+// previously decoded but never reaching the packet log/inspector.
+func TestListPackets_ExposesStatusText(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	log := packetlog.New(packetlog.Config{Capacity: 10})
+	// Mic-E carrying a non-default message code.
+	log.Record(packetlog.Entry{
+		Direction: packetlog.DirRX, Display: "MIC>APRS:mice",
+		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketMicE, Source: "MIC-EMG",
+			MicE: &aprs.MicE{
+				Position:    aprs.Position{Latitude: 35.1, Longitude: -90.0},
+				MessageCode: 0,
+				MessageText: "Emergency",
+			}},
+	})
+	// Bare '>' status report: no position, must still surface text.
+	log.Record(packetlog.Entry{
+		Direction: packetlog.DirRX, Display: "STA>APRS:>PRIORITY",
+		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketStatus, Source: "STA", Status: "PRIORITY"},
+	})
+	// Plain position report: no status of any kind.
+	log.Record(packetlog.Entry{
+		Direction: packetlog.DirRX, Display: "POS>APRS:!pos",
+		Decoded: &aprs.DecodedAPRSPacket{Type: aprs.PacketPosition, Source: "POS",
+			Position: &aprs.Position{Latitude: 39.5, Longitude: -104.8}},
+	})
+
+	mux := http.NewServeMux()
+	RegisterPackets(srv, mux, log, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/packets", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var got []packetDTO
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	bySrc := map[string]packetDTO{}
+	for _, p := range got {
+		if p.Decoded != nil {
+			bySrc[p.Decoded.Source] = p
+		}
+	}
+
+	if got := bySrc["MIC-EMG"].StatusText; got != "Emergency" {
+		t.Errorf("MIC-EMG: status_text = %q, want Emergency", got)
+	}
+	if got := bySrc["STA"].StatusText; got != "PRIORITY" {
+		t.Errorf("STA: status_text = %q, want PRIORITY", got)
+	}
+	if got := bySrc["POS"].StatusText; got != "" {
+		t.Errorf("POS: status_text = %q, want empty", got)
+	}
+}

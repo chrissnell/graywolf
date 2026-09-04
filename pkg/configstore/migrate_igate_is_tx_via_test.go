@@ -30,7 +30,7 @@ func TestMigrateIGateIsTxVia(t *testing.T) {
 		t.Fatalf("probe max_msg_hops: %v", err)
 	}
 	if hasHops {
-		t.Fatal("max_msg_hops column should have been dropped by migration 27")
+		t.Fatal("max_msg_hops column should have been dropped by migration 31")
 	}
 
 	// Default: a freshly seeded singleton reads is_tx_via = '' (direct).

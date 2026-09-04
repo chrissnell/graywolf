@@ -297,6 +297,13 @@ func (d *DB) LoadRecent(maxAge time.Duration, trailLimit int) (map[string]*stati
 			Direction: r.Direction,
 			Channel:   r.Channel,
 			Comment:   r.Comment,
+			// Status isn't persisted to the history DB yet (only the
+			// in-memory cache tracks it), so a hydrated station must not
+			// default to Go's int zero value: StatusCode 0 means
+			// Emergency (APRS101 ch 10 table 8), so every station
+			// restored from history would misreport as Emergency until
+			// its next packet arrives. -1 means "unknown" until then.
+			StatusCode: -1,
 			LastHeard: r.LastHeard,
 		}
 		if len(r.Symbol) >= 2 {

@@ -113,6 +113,59 @@
       your station&rsquo;s IP showing up in GitHub&rsquo;s logs.
     </p>
 
+    <h2>Notifications</h2>
+
+    <p>
+      Graywolf can pop up a clickable notification when a new message or
+      bulletin arrives, so you can jump straight to it instead of noticing
+      the unread dot later. Choose one of three modes:
+    </p>
+
+    <ul>
+      <li><strong>In-app popup</strong> &mdash; a card appears inside
+        graywolf itself, on whichever page you're viewing. This is the
+        default and always works.</li>
+      <li><strong>OS notification</strong> &mdash; your browser shows a
+        notification outside the graywolf tab, even if it's in the
+        background. Your browser will ask permission the first time you
+        pick this.</li>
+      <li><strong>Both</strong> &mdash; in-app popups and OS
+        notifications together.</li>
+    </ul>
+
+    <p>
+      OS notifications only fire while the graywolf tab isn't the one
+      you're actively looking at &mdash; if it's already focused, you'll
+      just get the in-app popup, so you're never notified twice for the
+      same thing. If your browser blocks the permission prompt, graywolf
+      falls back to in-app popups only.
+    </p>
+
+    <p>
+      Click <strong>Send test notification</strong> to preview exactly
+      what your chosen mode looks like, right away, without waiting for
+      a real message or bulletin to arrive.
+    </p>
+
+    <p>
+      OS notifications aren&rsquo;t available in the Android app (the
+      whole interface runs inside an embedded browser view there), so
+      only the in-app popup option is offered on that platform.
+    </p>
+
+    <p>
+      <strong>If you turn on OS notifications and nothing appears</strong>,
+      even though your browser says it's allowed: your operating system
+      or desktop environment may be the one blocking it, not graywolf or
+      your browser. On Windows, check that <strong>Focus Assist</strong>
+      isn&rsquo;t set to "Priority only" or "Alarms only" (it silently
+      drops app notifications with no error), and that notifications are
+      enabled for your browser under <strong>Settings &rarr; System
+      &rarr; Notifications</strong>. The in-app popup always works
+      regardless of any of this, since it doesn&rsquo;t depend on the OS
+      at all.
+    </p>
+
     <h2>Long messages</h2>
 
     <p>

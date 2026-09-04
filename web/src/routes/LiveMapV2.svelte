@@ -35,8 +35,12 @@
   import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
   import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
+  import { parseFocusHash, sameFocus } from '../lib/map/focus-hash-core.js';
+  import { boundsAroundMiles, MIN_VIEW_RADIUS_MILES, MAX_VIEW_RADIUS_MILES } from '../lib/map/view-radius-core.js';
+  import { favoriteStationsStore } from '../lib/favoriteStationsStore.svelte.js';
+  import { excludedStationsStore } from '../lib/excludedStationsStore.svelte.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
-  import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
+  import { mapState, MY_POSITION_ZOOM, WORLD_CENTER, WORLD_ZOOM } from '../lib/map/map-store.svelte.js';
   import {
     LAYER_TOGGLES_KEY,
     parseLayerToggles,
@@ -82,19 +86,39 @@
   // authoritative for the camera so we can fly even to a station that is older
   // than the active time-range and thus never enters the data store.
   const FOCUS_ZOOM = 12;
-  const pendingFocus = parseFocusFromHash();
+  // $state, not a plain const: LiveMapV2 stays mounted across a same-route
+  // hash change (svelte-spa-router's <svelte:component> only remounts when
+  // the matched component itself changes, not its props/querystring), so a
+  // second focus link clicked while already on /map -- e.g. a new toast
+  // notification arriving while a different station's popup is open -- must
+  // be picked up by re-parsing window.location.hash, not just read once at
+  // setup (graywolf, found 2026-07-31: "took me to the person fine the 1st
+  // time but if I was already on a person and got a new toast it didn't
+  // move"). See the hashchange listener in onMount below.
+  let pendingFocus = $state(parseFocusFromHash());
   let focusPopupDone = false;
 
+  // parseFocusHash/sameFocus are pure (see focus-hash-core.js and its
+  // tests); this wrapper is just the window.location.hash read that
+  // can't be unit-tested outside a browser.
   function parseFocusFromHash() {
     if (typeof window === 'undefined') return null;
-    const h = window.location.hash || '';
-    const qIdx = h.indexOf('?');
-    if (qIdx < 0) return null;
-    const params = new URLSearchParams(h.slice(qIdx + 1));
-    const lat = parseFloat(params.get('lat'));
-    const lon = parseFloat(params.get('lon'));
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-    return { callsign: params.get('focus') || '', lat, lon };
+    return parseFocusHash(window.location.hash);
+  }
+
+  // Re-parses the hash on every hashchange while this component stays
+  // mounted (see the pendingFocus comment above) and, for a genuinely new
+  // target, claims the camera immediately and resets the popup-retry state
+  // so the existing focus-popup $effect picks it up the same way it does on
+  // first mount.
+  function handleFocusHashChange() {
+    const next = parseFocusFromHash();
+    if (!next?.callsign || sameFocus(next, pendingFocus)) return;
+    pendingFocus = next;
+    focusPopupDone = false;
+    focusPopupAttempts = 0;
+    didAutoFit = true;
+    mapRef?.easeTo({ center: [next.lon, next.lat], zoom: FOCUS_ZOOM, duration: 600 });
   }
 
   let stationsLayer = null;
@@ -506,6 +530,7 @@
     const handler = (e) => (isMobile = e.matches);
     mq.addEventListener('change', handler);
     mqUnsub = () => mq.removeEventListener('change', handler);
+    window.addEventListener('hashchange', handleFocusHashChange);
   });
 
   function closePopup() {
@@ -522,6 +547,8 @@
 
     const html = renderStationPopupHTML(station, {
       hasStation: (callsign) => dataStore.stations.has(callsign),
+      isFavorite: favoriteStationsStore.has(station.callsign),
+      isExcluded: excludedStationsStore.has(station.callsign),
     });
 
     activePopup = new maplibregl.Popup({
@@ -534,6 +561,10 @@
       .setLngLat([pos.lon, pos.lat])
       .setHTML(html)
       .addTo(map);
+    // Captured so the favorite-toggle handler below can tell whether this
+    // exact popup instance is still the active one once its request
+    // resolves, not just whether *some* popup happens to be open.
+    const thisPopup = activePopup;
 
     // Keep the hover path pinned while the popup is open; clear it on close.
     hoverPathLayer?.show(station);
@@ -544,9 +575,34 @@
     });
 
     // Wire path-link clicks: pan + reopen popup for the clicked digipeater.
+    // Wire the favorite star: toggle then redraw this same popup in place
+    // (no pan/reopen -- unlike a path-link, this doesn't navigate anywhere).
     const el = activePopup.getElement();
     if (el) {
       el.addEventListener('click', (ev) => {
+        const favBtn = ev.target && ev.target.closest && ev.target.closest('.stn-fav-btn');
+        if (favBtn) {
+          ev.preventDefault();
+          const callsign = favBtn.dataset.callsign;
+          if (!callsign) return;
+          favoriteStationsStore.toggle(callsign).then(() => {
+            // Guard against this exact popup having been closed, or
+            // replaced by a different station's popup, while the request
+            // was in flight.
+            if (activePopup === thisPopup) openStationPopup(map, station);
+          });
+          return;
+        }
+        const exclBtn = ev.target && ev.target.closest && ev.target.closest('.stn-exclude-btn');
+        if (exclBtn) {
+          ev.preventDefault();
+          const callsign = exclBtn.dataset.callsign;
+          if (!callsign) return;
+          excludedStationsStore.toggle(callsign).then(() => {
+            if (activePopup === thisPopup) openStationPopup(map, station);
+          });
+          return;
+        }
         const link = ev.target && ev.target.closest && ev.target.closest('.path-link');
         if (!link) return;
         ev.preventDefault();
@@ -1145,17 +1201,35 @@
     if (fitToStations()) didAutoFit = true;
   });
 
-  // Focus deep-link popup: after the first poll completes, make one attempt to
-  // open the focused station's popup. One-shot (focusPopupDone) so a station
-  // heard minutes later doesn't surprise the operator with a popup; if the
-  // station isn't in the store (older than the time-range), the camera fly in
-  // onMapReady already framed its coordinates, which is enough.
+  // Focus deep-link popup: try to open the focused station's popup over
+  // the first few polls, then give up. Bounded (not unbounded) retry so
+  // a station heard minutes later doesn't surprise the operator with a
+  // popup; if the station isn't in the store after MAX_FOCUS_POPUP_ATTEMPTS
+  // (older than the time-range), the camera fly in onMapReady already
+  // framed its coordinates, which is enough.
+  //
+  // More than one attempt is required, not just a nicety: onMapReady's
+  // updateBounds() runs synchronously with the map's PRE-focus viewport
+  // before dataStore.start() -- the pendingFocus easeTo hasn't fired its
+  // 'moveend' yet, so the first /api/stations poll almost always queries
+  // the wrong bbox and misses a target outside the original view. The
+  // 'moveend' from that easeTo triggers a forced bbox-corrected refetch
+  // moments later (see setBounds), which is what a single-attempt
+  // one-shot missed here (graywolf, 2026-07-29: centered but never
+  // opened the popup for the station-emergency deep-link).
+  const MAX_FOCUS_POPUP_ATTEMPTS = 4;
+  let focusPopupAttempts = 0;
   $effect(() => {
     const t = dataStore.lastFetchAt;
     if (!pendingFocus?.callsign || !mapRef || !t || focusPopupDone) return;
-    focusPopupDone = true;
     const target = dataStore.stations.get(pendingFocus.callsign);
-    if (target) openStationPopup(mapRef, target);
+    if (target) {
+      focusPopupDone = true;
+      openStationPopup(mapRef, target);
+      return;
+    }
+    focusPopupAttempts += 1;
+    if (focusPopupAttempts >= MAX_FOCUS_POPUP_ATTEMPTS) focusPopupDone = true;
   });
 
   function fitToStations() {
@@ -1176,6 +1250,95 @@
     for (let i = 1; i < coords.length; i++) bounds.extend(coords[i]);
     mapRef.fitBounds(bounds, { padding: 60, maxZoom: 12, duration: 600 });
     return true;
+  }
+
+  // Drops every vestige of "the map is currently pointed at some other
+  // station" so a manual recenter always fully wins:
+  //   - #/map?focus= deep-link state (from a notification click earlier
+  //     in the session) -- without this, pendingFocus/the URL hash stayed
+  //     stale, and the operator worried (correctly, in spirit) that some
+  //     later event tied to that old focus target could pull the camera
+  //     back to it. Only touches the hash when there's actually a focus
+  //     param to strip, so a plain manual recenter (no prior deep-link)
+  //     doesn't add a needless history entry.
+  //   - Any open station popup and its pinned hover-path line -- reported
+  //     2026-07-31: clicking "Center on my station"/"Reset to default
+  //     view" while a station's popup was open left that popup (and the
+  //     path line it pins via activePopup's 'close' handler) sitting on
+  //     screen after the camera moved away. closePopup() fires that
+  //     'close' handler, which already clears hoverPathLayer.
+  function clearFocus() {
+    pendingFocus = null;
+    focusPopupDone = true;
+    focusPopupAttempts = MAX_FOCUS_POPUP_ATTEMPTS;
+    if (typeof window !== 'undefined' && /[?&]focus=/.test(window.location.hash)) {
+      window.location.hash = '#/map';
+    }
+    closePopup();
+  }
+
+  // Manual recenter controls (top-right, below the compass/zoom control).
+  // The two buttons deliberately do NOT share an extent (reverted
+  // 2026-07-31 after briefly unifying them): "Center on my station" only
+  // pans to the station's position, preserving whatever zoom the
+  // operator currently has from their own scroll-wheel zooming ("if i
+  // have used my cursor to zoom or unzoom the map i want that button
+  // tied to that... which i guess is the behavior before we changed
+  // stuff") -- easeTo with no `zoom` option leaves the current zoom
+  // untouched. "Reset to default view" (the "home" button) is the one
+  // that resets extent, via mapState.defaultViewRadiusMiles/fitDefaultRadius.
+  // Both set didAutoFit so the one-shot my-position/fit-to-stations
+  // effects don't immediately fight a manual recenter on the next poll,
+  // and clearFocus() so a manual recenter always wins over a stale
+  // deep-link.
+  function fitDefaultRadius(lat, lon) {
+    const b = boundsAroundMiles(lat, lon, mapState.defaultViewRadiusMiles);
+    mapRef.fitBounds([[b.west, b.south], [b.east, b.north]], { duration: 600 });
+  }
+
+  function recenterOnMyStation() {
+    const my = dataStore.myPosition;
+    if (!mapRef) return;
+    if (!my) {
+      toasts.error("Your station's position isn't available yet.");
+      return;
+    }
+    clearFocus();
+    didAutoFit = true;
+    // No `zoom` option -- pan only, preserving the operator's current
+    // manual zoom level.
+    mapRef.easeTo({ center: [my.lon, my.lat], duration: 600 });
+  }
+
+  // Falls back to the world view when no position is available yet
+  // (fresh install, no GPS fix) -- unlike "Center on my station", which
+  // errors instead, since this button means "show something sensible"
+  // rather than "show ME specifically."
+  function resetToDefaultView() {
+    if (!mapRef) return;
+    clearFocus();
+    didAutoFit = true;
+    const my = dataStore.myPosition;
+    if (my) {
+      fitDefaultRadius(my.lat, my.lon);
+    } else {
+      mapRef.easeTo({ center: [WORLD_CENTER[1], WORLD_CENTER[0]], zoom: WORLD_ZOOM, duration: 600 });
+    }
+  }
+
+  // Changing the "Default view radius (miles)" setting applies live to
+  // wherever the operator is currently looking (the map's current
+  // center), not just the next time a recenter button is clicked
+  // (2026-07-31: "if i change the default radius miles go ahead and
+  // change my current view to that"). Deliberately re-centers on the
+  // current map center, not the station's own position -- the operator
+  // may be panned somewhere else entirely when they adjust this.
+  function onDefaultViewRadiusChange(e) {
+    mapState.defaultViewRadiusMiles = e.currentTarget.value;
+    if (!mapRef) return;
+    didAutoFit = true;
+    const c = mapRef.getCenter();
+    fitDefaultRadius(c.lat, c.lng);
   }
 
   // ---- Status bar derivations ----
@@ -1289,6 +1452,7 @@
     }
     mqUnsub?.();
     mqUnsub = null;
+    if (typeof window !== 'undefined') window.removeEventListener('hashchange', handleFocusHashChange);
   });
 </script>
 
@@ -1404,6 +1568,18 @@
           <option value={opt.value}>{opt.label}</option>
         {/each}
       </select>
+
+      <label class="timerange-label" for="map-default-view-radius">Default view radius (miles)</label>
+      <input
+        id="map-default-view-radius"
+        type="number"
+        class="map-view-radius-input"
+        min={MIN_VIEW_RADIUS_MILES}
+        max={MAX_VIEW_RADIUS_MILES}
+        step="5"
+        value={mapState.defaultViewRadiusMiles}
+        onchange={onDefaultViewRadiusChange}
+      />
     </section>
 
     <!-- Weather: fronts + radar overlays and their controls. (The surface-obs
@@ -1543,6 +1719,37 @@
     </aside>
   {/if}
 
+  <!-- Manual recenter controls (top-right, stacked directly under
+       MapLibre's NavigationControl compass/zoom in the same corner --
+       mirrors the common "locate me" placement under a zoom control). -->
+  <div class="map-recenter-controls">
+    <button
+      type="button"
+      class="map-recenter-btn"
+      onclick={resetToDefaultView}
+      aria-label="Reset to default view"
+      title="Reset to default view"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m3 9 9-7 9 7" />
+        <path d="M4 10v10a1 1 0 0 0 1 1h4v-6h6v6h4a1 1 0 0 0 1-1V10" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="map-recenter-btn"
+      onclick={recenterOnMyStation}
+      aria-label="Center on my station"
+      title="Center on my station"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 2v3" /><path d="M12 19v3" />
+        <path d="M2 12h3" /><path d="M19 12h3" />
+      </svg>
+    </button>
+  </div>
+
   <!-- Coord + zoom display (bottom-right). Zoom is always visible;
        coords/grid only appear while the cursor is over the map. -->
   {#if zoomLevel !== null || coordText}
@@ -1639,6 +1846,39 @@
     z-index: 60;
   }
   .map-fab:hover {
+    color: var(--color-text);
+  }
+
+  /* Manual recenter controls: stacked top-right, directly under
+     MapLibre's NavigationControl (compass + zoom, ~87px tall with its
+     10px margin) so the two control clusters read as one group instead
+     of overlapping. */
+  .map-recenter-controls {
+    position: absolute;
+    top: 106px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 60;
+  }
+  .map-recenter-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    background: var(--map-overlay-bg);
+    -webkit-backdrop-filter: blur(var(--map-overlay-blur, 0));
+    backdrop-filter: blur(var(--map-overlay-blur, 0));
+    color: var(--map-overlay-fg);
+    border: 1px solid var(--map-overlay-border);
+    box-shadow: var(--map-overlay-shadow);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .map-recenter-btn:hover {
     color: var(--color-text);
   }
 
@@ -1799,6 +2039,16 @@
   .map-timerange-select option {
     background: var(--color-surface);
     color: var(--color-text);
+  }
+  .map-view-radius-input {
+    width: 100%;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 6px 8px;
   }
 
   /* Coord display (bottom-right; sits above MapLibre's attribution). */
@@ -2111,7 +2361,16 @@
   :global(.stn-popup) { font-family: var(--font-mono); }
   :global(.stn-hdr) { display: flex; align-items: center; gap: 8px; }
   :global(.stn-call) { color: #d4a040; font-size: 13px; font-weight: 700; }
-  :global(.stn-sub) { color: var(--color-text-dim); font-size: 11px; margin-top: 2px; }
+  /* Brighter than the app-wide --color-text-dim: on the map's dark overlay
+     surface that gray reads as too low-contrast for this metadata to be
+     legible at a glance, so these track the popup's own foreground color
+     (--map-overlay-fg) dimmed with opacity instead -- stays readable in
+     every theme, not just the dark ones. */
+  :global(.stn-sub) { color: var(--map-overlay-fg); opacity: 0.75; font-size: 11px; margin-top: 2px; }
+  /* Device identification line (vendor/model/class inferred from TOCALL),
+     e.g. "Device: Yaesu: FT5D (ht)". Sits with the other sub-header
+     metadata, same weight as .stn-sub. */
+  :global(.stn-device) { color: var(--map-overlay-fg); opacity: 0.75; font-size: 11px; margin-top: 2px; }
   /* Object/item "from CALLSIGN" line: the originating station beneath the
      object name. Sits directly under the title so source reads first,
      distinct from the relay path (.stn-via / .stn-path) shown lower down. */
@@ -2145,7 +2404,7 @@
     margin-top: 2px;
     cursor: help;
   }
-  :global(.stn-path) { color: var(--color-text-dim); font-size: 11px; }
+  :global(.stn-path) { color: var(--map-overlay-fg); opacity: 0.75; font-size: 11px; }
   :global(.stn-path .path-link) { color: #6eb5ff; text-decoration: none; cursor: pointer; }
   :global(.stn-path .path-link:hover) { text-decoration: underline; }
   :global(.stn-comment) { color: var(--color-text-dim); font-style: italic; font-size: 12px; }
@@ -2187,6 +2446,25 @@
     text-decoration: none;
     outline: none;
   }
+  /* .stn-fav-btn and .stn-exclude-btn are <button>s, unlike the other
+     .stn-action rows' <a> tags -- reset default button chrome so they
+     match them. */
+  :global(button.stn-fav-btn),
+  :global(button.stn-exclude-btn) {
+    width: 100%;
+    background: none;
+    border: none;
+    font: inherit;
+    text-align: left;
+  }
+  :global(.stn-fav-btn.is-favorite),
+  :global(.stn-fav-btn.is-favorite .stn-action-icon) {
+    color: #e0a72e;
+  }
+  :global(.stn-exclude-btn.is-excluded),
+  :global(.stn-exclude-btn.is-excluded .stn-action-icon) {
+    color: var(--color-danger, #e5534b);
+  }
   :global(.stn-weather) { font-size: 12px; }
   :global(.stn-weather-row) {
     display: flex;
@@ -2211,6 +2489,14 @@
   :global(.stn-popup .b-rx) { background: rgba(63, 185, 80, 0.15); color: var(--color-success); }
   :global(.stn-popup .b-tx) { background: rgba(210, 153, 34, 0.15); color: var(--color-warning); }
   :global(.stn-popup .b-is) { background: rgba(195, 155, 255, 0.15); color: #c39bff; }
+  /* Mic-E status badge (APRS101 ch 10 table 8) / '>' status report text.
+     b-emergency is reserved for status_code 0 (Emergency) -- the same
+     threshold stationAlertsTransport.js uses to raise a popup/OS/sound
+     notification. Every other non-routine status (Priority, Special,
+     Committed, Returning, En Route, or free-form status text) gets the
+     neutral b-status styling: informative, not alarming. */
+  :global(.stn-popup .b-emergency) { background: rgba(248, 81, 73, 0.18); color: var(--color-danger, #f85149); }
+  :global(.stn-popup .b-status) { background: rgba(139, 148, 158, 0.18); color: var(--color-text-dim); }
 
   /* Wind barbs -- inline SVG glyph rendered per station by
      wind-barbs.js. The marker is inert so it never steals clicks from

@@ -1557,6 +1557,34 @@ Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 [`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
 (`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
 
+### 60. MapLibre `map.remove()` deletes `this.style`; any layer helper called after teardown must guard `getSource()`/`getLayer()`
+
+MapLibre GL JS v5 `map.remove()` → `_updateStyle(null)` → `delete this.style`.
+Any subsequent call to `map.getSource()` or `map.getLayer()` throws a
+TypeError because those methods dereference `this.style`.
+
+In Svelte 5 components, **child `onDestroy` fires before parent `onDestroy`**.
+`MaplibreMap.svelte` (child) calls `map.remove()` first; if the parent's
+`onDestroy` (or a popup's `close` event handler fired during teardown) then
+calls a layer helper that has not been guarded, it crashes mid-teardown and
+aborts the cleanup sequence.
+
+Every layer helper that exposes a `clear()` or similar method callable from
+outside `onDestroy` context (e.g. from a popup close callback) must wrap
+`getSource()`/`getLayer()` in the same `try { ... } catch {}` guard already
+required on `destroy()`.
+
+*Why it matters:* A missing guard causes a silent TypeError during navigation
+away from `/map`. No user-visible error, but the map component's teardown
+is aborted mid-sequence, which can leak listeners or stale state into the
+next mount.
+
+Source: [`../../web/src/lib/map/layers/hover-path.js`](../../web/src/lib/map/layers/hover-path.js)
+(`clear()`, `destroy()` — both guarded),
+[`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte)
+(`closePopup` / popup `close` event handler),
+MapLibre GL JS v5 source: `map.remove()` → `_updateStyle(null)` → `delete this.style`.
+
 ### 58. The heatmap counts one `rx_events` row per physical RF frame, at the ingest edge only
 
 The direct-RX heatmap answers "where did RF energy actually reach our antenna
@@ -1747,7 +1775,270 @@ Source: [`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go)
 [`../../pkg/ax25conn/manager_test.go`](../../pkg/ax25conn/manager_test.go)
 (`TestManager_DispatchRawMod128Delivers`).
 
-### 63. `messages.Store.List` keyset order MUST match the cursor predicate's whole-second resolution
+### 63. Unread-signal stores are updated optimistically, not solely by the rollup poll
+
+`messagesStore.svelte.js`'s `unreadTotal` and `bulletinsStore.svelte.js`'s
+`unreadTotal` must be decremented at the exact point a mark-read (or
+mark-all-read) action succeeds locally — `MessageThread.svelte`'s
+`flushBatch` calls `store.decrementUnread(threadId, n)` before the
+`markRead` POST even resolves, and `Bulletins.svelte`'s `handleMarkRead`/
+`handleMarkAllRead` call `bulletinsStore.markRead`/`markAllRead`
+synchronously. The periodic rollup poll
+(`messagesTransport.js`'s 30s `refreshConversations()`,
+`bulletinsTransport.js`'s 30s snapshot) is reconciliation for drift, not
+the primary signal path.
+
+*Why:* neither backend mark-read endpoint publishes an event
+(`pkg/messages/service.go`'s `MarkRead`/`MarkUnread` and
+`pkg/webapi/bulletins.go`'s `markBulletinRead`/`markAllBulletinsRead` are
+plain REST, no `EventHub.Publish`), so any unread surface that waits on
+the rollup poll instead of updating optimistically will lag up to 30s
+behind what the operator already read — this is exactly the bug reported
+against the Messages and Bulletins unread badges before the fix in
+[notifications.md](notifications.md). A future unread surface (e.g. a
+per-channel Actions inbox) must follow the same optimistic-update
+pattern, with rollback on a failed request, rather than reintroducing
+the poll-only lag.
+
+Source: [`../../web/src/lib/messagesStore.svelte.js`](../../web/src/lib/messagesStore.svelte.js)
+(`decrementUnread`, `incrementUnread`),
+[`../../web/src/components/messages/MessageThread.svelte`](../../web/src/components/messages/MessageThread.svelte)
+(`flushBatch`),
+[`../../web/src/lib/bulletinsStore.svelte.js`](../../web/src/lib/bulletinsStore.svelte.js)
+(`markRead`, `markAllRead`, `markUnreadLocal`),
+[`notifications.md`](notifications.md).
+
+### 64. Collapsed IS/RF-echo bubbles must mark every merged row read, not just the primary
+
+`messages.Router`'s inbound dedup (invariant #27) only fires when the
+packet carries a `MessageID` (`pkg/messages/router.go`'s `classify`,
+`if effMsg.MessageID != ""`). Well-known no-ack bots
+(`pkg/messages/bots.go`'s `WellKnownBots` — WXBOT and friends) send
+unnumbered messages, so the same packet heard on multiple paths (RF
+direct + APRS-IS gate, or a digipeater re-tx) persists as separate rows
+with no server-side dedup. `duplicate-echo-core.js`'s
+`collapseDuplicateEchoes` merges these into one display bubble
+(multiple source badges) purely for readability — it does not touch
+the underlying rows. Any code that marks a collapsed bubble read
+(`MessageThread.svelte`'s dwell-driven `flushBatch`) MUST iterate the
+bubble's `mergedIds`, not just its primary `id`.
+
+*Why:* if only the primary id is marked read, the hidden duplicate
+rows stay unread server-side forever — the thread's unread badge would
+never reach zero for a WXBOT-style thread, and the optimistic
+decrement (invariant #63) would get overwritten back up by the next
+30s conversations rollup, which still counts the un-marked duplicates.
+
+Source: [`../../web/src/lib/duplicate-echo-core.js`](../../web/src/lib/duplicate-echo-core.js),
+[`../../web/src/components/messages/MessageThread.svelte`](../../web/src/components/messages/MessageThread.svelte)
+(`displayBubbles`, IntersectionObserver dwell handler),
+[`../../web/src/components/messages/MessageBubble.svelte`](../../web/src/components/messages/MessageBubble.svelte)
+(`sourceBadges`),
+[`../../pkg/messages/router.go`](../../pkg/messages/router.go) (`classify`),
+[`../../pkg/messages/bots.go`](../../pkg/messages/bots.go).
+
+### 65. Mic-E `StatusCode` must never rely on Go/JSON's int zero value — use the `-1` "none" sentinel explicitly
+
+APRS101 ch 10 table 8's wire encoding is inverted vs. intuition: message
+code `0` is **Emergency**, code `7` is Off Duty. `stationcache.CacheEntry`/
+`Station.StatusCode` and `webapi.StationDTO.StatusCode` therefore can't
+use Go's normal "zero value = absent" convention, because zero is a real,
+alarming value. Every construction path that produces one of these types
+MUST set `StatusCode: -1` explicitly when no status is known:
+`buildStationEntry`/`buildObjectEntry` (`pkg/stationcache/extract.go`),
+`MemCache.Update`'s new-station branch (`pkg/stationcache/memcache.go`),
+and `historydb.LoadRecent`'s hydration (`pkg/historydb/historydb.go` —
+status isn't persisted there yet, so every restored station must default
+to "unknown", not "Emergency"). The same trap exists one layer up in
+`configstore.Beacon.MicEMessageCode`/`webapi/dto.BeaconRequest`: it's
+stored as a **named string enum** (`"off_duty"`, `"emergency"`, ...)
+rather than the raw int specifically so gorm's zero-value-skips-INSERT
+default behavior can't silently coerce an operator's deliberate
+"Emergency" selection into the column default.
+
+*Why:* `StationDTO.StatusCode` is deliberately NOT `omitempty` for the
+same reason — `omitempty` drops a JSON field whose value is the language
+zero value, which for `int` is `0`, which here means Emergency. Tagging
+it `omitempty` would silently hide every Emergency station from the API
+response. Any new consumer of these types (a test fixture, a new cache
+entry constructor, a new DTO) that leaves `StatusCode` unset gets `0` =
+Emergency by accident, not "no status" — grep for `StatusCode: -1` for
+the existing safe-default call sites before adding a new one.
+
+Source: [`../../pkg/stationcache/extract.go`](../../pkg/stationcache/extract.go),
+[`../../pkg/stationcache/memcache.go`](../../pkg/stationcache/memcache.go),
+[`../../pkg/stationcache/store.go`](../../pkg/stationcache/store.go),
+[`../../pkg/historydb/historydb.go`](../../pkg/historydb/historydb.go),
+[`../../pkg/webapi/stations.go`](../../pkg/webapi/stations.go),
+[`../../pkg/beacon/mice.go`](../../pkg/beacon/mice.go) (`micEMessageCodesByName`),
+[`../../pkg/configstore/models.go`](../../pkg/configstore/models.go),
+[`../../pkg/webapi/dto/beacon.go`](../../pkg/webapi/dto/beacon.go).
+
+### 66. `#/map?focus=CALL` deep-links must always carry `&lat=…&lon=…` — the callsign alone is silently discarded
+
+`LiveMapV2.svelte`'s `parseFocusFromHash()` parses `focus`/`lat`/`lon`
+together and returns `null` -- not a partial result -- if `lat`/`lon`
+are missing or non-finite, even when `focus` is present:
+
+```js
+if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+return { callsign: params.get('focus') || '', lat, lon };
+```
+
+This isn't just a camera-framing nicety: the returned value also gates
+whether the "open this station's popup once it loads" effect runs at
+all (`if (!pendingFocus?.callsign || ...) return;`). Omit `lat`/`lon`
+and the link silently does nothing on the Map page -- no camera move,
+no popup, no error, because `pendingFocus` was never non-null to begin
+with.
+
+*Why documented as an invariant:* `stationAlertsTransport.js`'s
+Emergency-alert deep-link shipped on 2026-07-29 with `#/map?focus=CALL`
+only (no `lat`/`lon`), and the omission wasn't caught by any test --
+there's no e2e/Playwright coverage of the click-through in this repo
+(see `docs/wiki/notifications.md`'s Test coverage section), only unit
+tests of the pure diffing logic that decides *whether* to notify, not
+*what happens on click*. The operator caught it by testing manually.
+Any future code constructing a `#/map?focus=` link (a new notification
+type, a new deep-link source) must supply real `lat`/`lon` -- pull them
+from wherever the station's last-known position already lives (e.g.
+`StationDTO`/`StationAlertDTO.Lat/.Lon`, or `GET /api/position` for the
+operator's own station) rather than assuming `focus=CALL` alone works.
+
+Source: [`../../web/src/lib/map/focus-hash-core.js`](../../web/src/lib/map/focus-hash-core.js)
+(`parseFocusHash` -- pure, unit-tested in `focus-hash-core.test.js`,
+extracted from `LiveMapV2.svelte` 2026-07-31 after a third click-through
+bug in this area, see invariant #68),
+[`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte)
+(`parseFocusFromHash`, the focus-popup `$effect`),
+[`../../web/src/lib/stationAlertsTransport.js`](../../web/src/lib/stationAlertsTransport.js),
+[`../../web/src/routes/NotificationsSettings.svelte`](../../web/src/routes/NotificationsSettings.svelte)
+(`sendTestEmergencyNotification`).
+
+### 67. `#/map?focus=` popup-open is a bounded-retry, not a single-shot, poll match — the first poll almost always misses
+
+Even with `lat`/`lon` supplied correctly (invariant #66), the focused
+station's popup did not open on the first attempt after this deep-link
+was added for station-emergency alerts (2026-07-29): the map recentered
+but no popup appeared. Root cause is poll/viewport sequencing in
+`onMapReady`, not the DTO:
+
+1. `updateBounds()` runs synchronously (line ~786) and sets `bbox` from
+   the map's **pre-focus** viewport (whatever was on screen before this
+   navigation -- the last-saved view or the default planet view).
+2. `dataStore.start()` (line ~900) immediately fires the first
+   `/api/stations` poll using that stale bbox.
+3. Only *after* `start()` does the `pendingFocus` block call
+   `map.easeTo(...)` (line ~909), which fires `moveend` asynchronously
+   (~600ms animation) → `updateBounds()` → `dataStore.setBounds()` →
+   a forced bbox-corrected refetch.
+
+A target station outside the pre-focus viewport is absent from poll #1
+and only appears in poll #2 (or later). The original popup-open effect
+set `focusPopupDone = true` unconditionally on its first run regardless
+of a hit or miss, so it always consumed its one shot on the pre-focus
+poll and never got to see the corrected-bbox result.
+
+Fixed by making the effect retry up to `MAX_FOCUS_POPUP_ATTEMPTS` (4)
+poll cycles before giving up, only marking `focusPopupDone` on an
+actual hit or after exhausting the attempt budget -- still bounded (a
+station heard minutes later doesn't surprise the operator with a late
+popup, preserving the original one-shot intent), but tolerant of the
+one-poll-cycle bbox-correction race every `#/map?focus=` navigation
+goes through.
+
+*Why documented as an invariant:* the failure mode is silent (no error,
+just "nothing happened") and only reproduces when the focus target
+isn't already within the current map viewport -- exactly the case for
+any notification-driven deep-link (the operator is rarely already
+looking at the right spot on the map when a Message/Emergency/etc.
+notification fires), but easy to miss when testing from the Map page
+itself with the target already in view. Any future change to the poll
+cadence, `onMapReady`'s setup order, or the attempt cap should re-verify
+this race is still covered.
+
+Source: [`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte)
+(`onMapReady`'s `updateBounds`/`dataStore.start()`/`easeTo` ordering,
+the focus-popup `$effect`'s `MAX_FOCUS_POPUP_ATTEMPTS`),
+[`../../web/src/lib/map/data-store.svelte.js`](../../web/src/lib/map/data-store.svelte.js)
+(`setBounds`'s forced refetch on bbox change).
+
+### 68. A `#/map?focus=` deep-link clicked while already on `/map` must be re-parsed from `window.location.hash` — the component does not remount
+
+Invariants #66/#67 fixed the deep-link's *first* click. The operator
+then found a second failure mode (2026-07-31): "took me to the person
+fine the 1st time but if I was already on a person and got a new toast
+it didn't move." Root cause is `svelte-spa-router`: `Router.svelte`
+renders the routed page via `<svelte:component this={component} .../>`,
+which only destroys/recreates the component instance when `this`
+(the matched component) changes -- not when only the querystring does.
+Since every `#/map?focus=...` link matches the *same* `/map` route,
+`LiveMapV2.svelte` never remounts on a second focus link; it just keeps
+running with whatever `pendingFocus` it computed once, at initial setup,
+from a one-time `parseFocusFromHash()` call.
+
+Fixed by making `pendingFocus` reactive (`$state`, not a plain `const`)
+and adding a `window.addEventListener('hashchange', handleFocusHashChange)`
+in `onMount` (removed in `onDestroy`) that re-parses the hash on every
+navigation and, for a target that actually differs from the current
+`pendingFocus` (`sameFocus()` compares callsign+lat+lon), claims the
+camera immediately and resets `focusPopupDone`/`focusPopupAttempts` so
+the existing bounded-retry `$effect` from invariant #67 picks up the new
+target exactly as it does on first mount. `push()`
+(`svelte-spa-router`) and every direct `window.location.hash = href`
+assignment in this codebase (`stationAlertsTransport.js`,
+`stationNewTransport.js`, `osNotify.js`'s click callbacks) both fire a
+native `hashchange` event even when the target document/route doesn't
+change, so this one listener catches every delivery path.
+
+*Why documented as an invariant:* like #66/#67, this is silent (no
+error, the map just doesn't move) and only reproduces when the operator
+is *already* on `/map` looking at a different station -- exactly the
+"got a second notification while investigating the first one" case that
+real usage hits constantly but a fresh-navigation manual test doesn't.
+Any component that reads `window.location.hash` (or router-provided
+`params`/`querystring`) once at setup to drive one-shot behavior should
+ask whether a same-route hash change needs to re-trigger that behavior
+too, and if so, listen for `hashchange` rather than assuming a route
+change remounts the component.
+
+**Follow-up (same day):** the fix above updates `pendingFocus` on a new
+focus link, but did nothing when the operator manually recentered the
+map (the "Center on my station" / "Reset to default view" buttons) --
+`pendingFocus` and the `?focus=` URL both stayed pointed at whatever
+deep-link brought them there. No confirmed live re-trigger existed once
+`focusPopupDone` was true (the retry effect from #67 is a no-op past
+that point), but leaving stale `?focus=` state in the URL after an
+explicit manual recenter is itself wrong -- the operator flagged the URL
+not updating as suspicious ("I guess next time the station beacons I go
+back to them"). Both recenter handlers now call a `clearFocus()` helper
+first: it nulls `pendingFocus`, forces `focusPopupDone = true`, and
+strips `?focus=...` back to a plain `#/map` (only when a focus param is
+actually present, so a plain recenter with no prior deep-link doesn't
+add a needless history entry). A manual recenter now always fully wins.
+
+**Second follow-up (same day):** `clearFocus()` alone didn't fully
+resolve the operator's underlying complaint. Clicking either recenter
+button while a station's popup was open left that popup, and the
+hover-path line it pins (`activePopup`'s `'close'` handler clears
+`hoverPathLayer`, but only when the popup actually closes), sitting on
+screen after the camera moved away -- "it needs to release the mouse
+click on them because lines showing the path is still there." `clearFocus()`
+now also calls the existing `closePopup()` helper, which fires that
+`'close'` handler and clears the hover-path line as a side effect. Both
+follow-ups landed in `clearFocus()` because they're the same category of
+bug: state pointing at "some other station" that a manual recenter must
+fully release, not just the camera position.
+
+Source: [`../../web/src/lib/map/focus-hash-core.js`](../../web/src/lib/map/focus-hash-core.js)
+(`parseFocusHash`, `sameFocus` -- pure, unit-tested in
+`focus-hash-core.test.js`), [`../../web/src/routes/LiveMapV2.svelte`](../../web/src/routes/LiveMapV2.svelte)
+(`pendingFocus`, `handleFocusHashChange`, the `onMount`/`onDestroy`
+listener registration), `node_modules/svelte-spa-router/Router.svelte`
+(`push()`'s `window.location.hash` assignment, the `<svelte:component>`
+render).
+
+### 69. `messages.Store.List` keyset order MUST match the cursor predicate's whole-second resolution
 
 The chat UI pages through messages with a forward cursor
 (`web/src/lib/messagesTransport.js` `fetchDelta`), so `(*Store).List`
@@ -1787,7 +2078,7 @@ Source: [`../../pkg/messages/store.go`](../../pkg/messages/store.go)
 [`../../web/src/lib/messagesTransport.js`](../../web/src/lib/messagesTransport.js)
 (`fetchDelta`).
 
-### 64. Web UI renders in Inconsolata everywhere; no system/Helvetica stack
+### 70. Web UI renders in Inconsolata everywhere; no system/Helvetica stack
 
 Every visible glyph in the web UI is Inconsolata. The font is applied
 through the `--font-mono` custom property (`'Inconsolata', 'Courier New',

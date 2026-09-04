@@ -67,6 +67,41 @@ func TestRainBackfillMigration(t *testing.T) {
 }
 
 // TestStaticRebeaconDirectNotMasked is the persistence-layer counterpart to
+// TestLoadRecent_StatusCodeDefaultsNone confirms a station hydrated from
+// the history DB gets StatusCode -1 ("unknown"), not Go's int zero
+// value. Status isn't persisted to this DB (only the in-memory cache
+// tracks it), so if LoadRecent left the field unset, every station
+// restored after a restart would misreport as Emergency (wire code 0,
+// APRS101 ch 10 table 8) until its next packet arrived.
+func TestLoadRecent_StatusCodeDefaultsNone(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	entry := stationcache.CacheEntry{
+		Key: "stn:W1ABC", Callsign: "W1ABC", HasPos: true,
+		Lat: 40.0, Lon: -105.0, Symbol: [2]byte{'/', '>'},
+		Direction: "RX", Timestamp: time.Now(),
+	}
+	if err := db.WriteEntries([]stationcache.CacheEntry{entry}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	stations, err := db.LoadRecent(time.Hour, 200)
+	if err != nil {
+		t.Fatalf("load recent: %v", err)
+	}
+	s := stations["stn:W1ABC"]
+	if s == nil {
+		t.Fatal("expected hydrated station")
+	}
+	if s.StatusCode != -1 {
+		t.Errorf("StatusCode = %d, want -1 (none) -- 0 would misreport as Emergency", s.StatusCode)
+	}
+}
+
 // issue #130: a static station heard directly (hops 0) then via a digipeater
 // (hops > 0) must keep the direct reception on its single stored position so
 // hydration after a restart still satisfies the Direct RX filter.

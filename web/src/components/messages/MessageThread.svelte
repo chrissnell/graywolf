@@ -31,6 +31,7 @@
     DEFAULT_MAX_MESSAGE_TEXT,
   } from '../../lib/settings/messages-preferences-store.svelte.js';
   import { dayHeader, dayKey } from './time.js';
+  import { collapseDuplicateEchoes } from '../../lib/duplicate-echo-core.js';
   import { messages as store } from '../../lib/messagesStore.svelte.js';
   import {
     listMessages, markRead, markUnread, resendMessage,
@@ -140,6 +141,14 @@
     return arr;
   });
 
+  // Same physical packet heard on multiple paths (RF direct + APRS-IS
+  // gate) collapses into one bubble with merged source badges — see
+  // duplicate-echo-core.js for why this can't be dedup'd server-side
+  // for no-ack senders like WXBOT. Every render list below (clustering,
+  // day separators, the {#each}, dwell/read-marking) works off this
+  // collapsed list, not the raw `allBubbles`.
+  const displayBubbles = $derived.by(() => collapseDuplicateEchoes(allBubbles));
+
   // Apply cluster rules to each bubble for sender-label / stripe-monogram rendering.
   // Cluster break: same sender + incoming + within 120s + no day-sep +
   // no intervening other-sender or outgoing bubble. Repeat label every
@@ -150,8 +159,8 @@
     let clusterCount = 0;
     let lastTs = 0;
     let lastDay = '';
-    for (let i = 0; i < allBubbles.length; i++) {
-      const m = allBubbles[i];
+    for (let i = 0; i < displayBubbles.length; i++) {
+      const m = displayBubbles[i];
       const inc = m.direction === 'in';
       const sender = m.from_call || '';
       const t = Date.parse(m.sent_at || m.received_at || m.created_at || 0) || 0;
@@ -184,8 +193,8 @@
   const daySeps = $derived.by(() => {
     const seps = new Set();
     let lastDay = '';
-    for (let i = 0; i < allBubbles.length; i++) {
-      const m = allBubbles[i];
+    for (let i = 0; i < displayBubbles.length; i++) {
+      const m = displayBubbles[i];
       const key = dayKey(m.sent_at || m.received_at || m.created_at);
       if (key !== lastDay) {
         seps.add(i);
@@ -209,26 +218,65 @@
 
   // Observe near-bottom on new bubble to auto-scroll when user is pinned.
   $effect(() => {
-    void allBubbles.length;
+    void displayBubbles.length;
     if (!scrollEl) return;
     if (!scrolledUp) {
       tick().then(() => scrollToBottom(true));
     }
   });
 
+  // Rebuild the read-tracking IntersectionObserver from scratch whenever
+  // the rendered bubble set changes (new message OR a thread switch via
+  // deep link, e.g. clicking a notification — no full component remount
+  // happens there, so individual per-bubble observe() calls are the only
+  // other trigger and can race with the DOM not having settled yet).
+  // Deferred a tick so it runs after Svelte has actually mounted/unmounted
+  // the new bubble set and every registerRef(el, mounted) call has landed.
+  $effect(() => {
+    void displayBubbles.length;
+    void threadId;
+    if (!scrollEl) return;
+    tick().then(() => rebuildIO());
+  });
+
   // --- IntersectionObserver: mark inbound messages as read on dwell.
   /** @type {Map<number, number>} */
   const dwellStart = new Map();
-  /** @type {Set<number>} */
-  const batchedIds = new Set();
+  // id -> {kind, key} captured from the message row itself at the moment
+  // it's scheduled for read, NOT from an outer `thread` prop — this
+  // component instance persists across thread switches, so anything
+  // derived from an outer variable could be stale by the time the 2s
+  // batch below flushes.
+  /** @type {Map<number, {kind: string, key: string}>} */
+  const batchedIds = new Map();
   let batchTimer = null;
 
   function flushBatch() {
-    for (const id of batchedIds) {
-      markRead(id).catch(() => { /* ignore */ });
-    }
+    const entries = [...batchedIds];
     batchedIds.clear();
     batchTimer = null;
+    if (entries.length === 0) return;
+
+    // Optimistically decrement the affected thread(s) now so the
+    // sidebar/top-bar unread dot updates immediately instead of waiting
+    // on the next 30s conversations rollup.
+    const byThread = new Map();
+    for (const [, t] of entries) {
+      const tid = store.threadIdFor(t.kind, t.key);
+      byThread.set(tid, (byThread.get(tid) || 0) + 1);
+    }
+    for (const [tid, n] of byThread) store.decrementUnread(tid, n);
+
+    Promise.allSettled(entries.map(([id]) => markRead(id))).then((results) => {
+      const rollback = new Map();
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          const tid = store.threadIdFor(entries[i][1].kind, entries[i][1].key);
+          rollback.set(tid, (rollback.get(tid) || 0) + 1);
+        }
+      });
+      for (const [tid, n] of rollback) store.incrementUnread(tid, n);
+    });
   }
 
   function scheduleFlush() {
@@ -255,7 +303,14 @@
           setTimeout(() => {
             if (!dwellStart.has(m.id)) return;
             if (Date.now() - started < 500) return;
-            batchedIds.add(m.id);
+            // A collapsed IS/RF-echo bubble represents multiple server
+            // rows (one per path) — mark every one of them read, not
+            // just the primary, or the thread's unread count never
+            // reaches zero for the hidden duplicates.
+            const ids = Array.isArray(m.mergedIds) && m.mergedIds.length ? m.mergedIds : [m.id];
+            for (const id of ids) {
+              batchedIds.set(id, { kind: m.thread_kind, key: m.thread_key });
+            }
             dwellStart.delete(m.id);
             scheduleFlush();
           }, 520);
@@ -394,7 +449,7 @@
         data-scroll-viewport
         onscroll={onScroll}
       >
-        {#if allBubbles.length === 0 && !loading}
+        {#if displayBubbles.length === 0 && !loading}
           {#if isTactical}
             <div class="thread-empty" data-testid="tactical-empty-state">
               <EmptyState>
@@ -406,7 +461,7 @@
           {/if}
         {:else}
           <div class="bubbles">
-            {#each allBubbles as m, i (bubbleKey(m, i))}
+            {#each displayBubbles as m, i (bubbleKey(m, i))}
               {#if daySeps.has(i)}
                 <div class="day-sep" role="separator">
                   <span>{dayHeader(m.sent_at || m.received_at || m.created_at)}</span>
@@ -422,7 +477,7 @@
                 onReplyPrivate={replyPrivately}
                 onContextMenu={openMenu}
                 onResend={resendDirect}
-                registerRef={(el) => el ? observe(el, m) : null}
+                registerRef={(el, mounted) => (mounted ? observe(el, m) : unobserve(el))}
               />
             {/each}
           </div>

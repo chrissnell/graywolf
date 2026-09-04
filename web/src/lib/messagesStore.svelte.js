@@ -275,6 +275,26 @@ class MessagesStore {
     this.conversations.set(threadId, { ...t, muted: !!muted });
   }
 
+  /**
+   * Optimistically decrement a thread's unreadCount (floor 0) at the
+   * moment a message is marked read locally, rather than waiting on the
+   * next refreshConversations() rollup poll (up to 30s later). Any
+   * residual drift self-heals on the next rollup.
+   */
+  decrementUnread(threadId, n = 1) {
+    const t = this.conversations.get(threadId);
+    if (!t) return;
+    const next = Math.max(0, (t.unreadCount || 0) - n);
+    if (next !== t.unreadCount) this.conversations.set(threadId, { ...t, unreadCount: next });
+  }
+
+  /** Roll back a failed markRead optimistic decrement. */
+  incrementUnread(threadId, n = 1) {
+    const t = this.conversations.get(threadId);
+    if (!t) return;
+    this.conversations.set(threadId, { ...t, unreadCount: (t.unreadCount || 0) + n });
+  }
+
   // --- Selection (inbox bulk-delete) --------------------------------
 
   toggleSelected(threadId, on) {

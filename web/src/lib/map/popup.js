@@ -1,19 +1,25 @@
 // Station popup HTML factory. The CSS classes (.stn-popup, .stn-hdr,
-// .stn-call, .stn-sub, .stn-src, .stn-src-icon, .stn-src-from,
+// .stn-call, .stn-sub, .stn-device, .stn-src, .stn-src-icon, .stn-src-from,
 // .stn-src-call, .stn-coords, .stn-meta, .stn-via, .stn-path,
 // .stn-comment, .badge, .b-rx, .b-tx, .b-is, .via-is, .via-rf,
 // .via-rf-hops, .path-link) are defined :global() in LiveMapV2.svelte.
 
-import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText, formatWeatherRows } from './popup-helpers.js';
+import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText, formatWeatherRows, deviceText } from './popup-helpers.js';
 import { rfReachableDespiteNonRfLatest } from './rf-only-core.js';
 import { unitsState } from '../settings/units-store.svelte.js';
 
-// renderStationPopupHTML(station, { hasStation }) -> HTML string
+// renderStationPopupHTML(station, { hasStation, isFavorite }) -> HTML string
 //
 // hasStation(callsign) is an optional predicate used to decide whether a
 // digipeater entry in the path field renders as a clickable .path-link
 // or plain text. Pass null to render every entry as plain text.
-export function renderStationPopupHTML(s, { hasStation = null } = {}) {
+// isFavorite is whether this callsign is currently on the operator's
+// favorites list (favoriteStationsStore) -- drives the star action's
+// filled/outline state.
+// isExcluded is whether this callsign is currently on the operator's
+// excluded-stations list (excludedStationsStore) -- drives the
+// exclude action's "Exclude"/"Excluded" label and pressed state.
+export function renderStationPopupHTML(s, { hasStation = null, isFavorite = false, isExcluded = false } = {}) {
   const pos = s.positions && s.positions[0];
   if (!pos) return '';
 
@@ -26,6 +32,16 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
   html += `<span class="stn-call">${esc(s.callsign)}</span>`;
   if (s.direction !== 'IS') {
     html += `<span class="badge ${dirCls}">${esc(s.direction)}</span>`;
+  }
+  // Mic-E status (APRS101 ch 10 table 8) or '>' status report text.
+  // "Off Duty" is the routine default and not worth a badge; status_code
+  // 0 is Emergency -- the one status that also raises a popup/OS/sound
+  // notification (stationAlertsTransport.js) -- so it gets the alarming
+  // b-emergency style. Everything else (Priority, Special, Committed,
+  // Returning, En Route, or a free-form status string) is informational.
+  if (s.status_text && s.status_text !== 'Off Duty') {
+    const statusCls = s.status_code === 0 ? 'b-emergency' : 'b-status';
+    html += `<span class="badge ${statusCls}">${esc(s.status_text)}</span>`;
   }
   html += `</div>`;
 
@@ -40,6 +56,16 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
   }
 
   html += `<div class="stn-sub">${ago} &middot; Ch ${s.channel}</div>`;
+
+  // Device identification (manufacturer/model/class) inferred server-side
+  // from the packet's TOCALL, or the Mic-E manufacturer byte as a
+  // fallback -- e.g. "Yaesu: FT5D (ht)". Omitted when the tocall pattern
+  // is unrecognized. Not looked up via aprs.fi or any external service.
+  if (s.device) {
+    const dtext = deviceText(s.device);
+    if (dtext) html += `<div class="stn-device">Device: ${esc(dtext)}</div>`;
+  }
+
   html += `<div class="stn-sep"></div>`;
   html += `<div class="stn-coords">${fmtLat(pos.lat)} ${fmtLon(pos.lon)}</div>`;
 
@@ -98,7 +124,7 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
     html += `<div class="stn-comment">${esc(s.comment)}</div>`;
   }
 
-  const actions = renderStationActionsHTML(s);
+  const actions = renderStationActionsHTML(s, { isFavorite, isExcluded });
   if (actions) {
     html += `<div class="stn-sep"></div>`;
     html += actions;
@@ -157,16 +183,44 @@ const ICON_QRZ = icon(
     '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
 );
 
-// renderStationActionsHTML(station) -> HTML string (or '' to suppress)
+// lucide "star" — the favorites toggle. filled=true renders a solid star
+// (currently a favorite) instead of an outline, mirrors how a filled vs
+// outline heart/star icon reads universally as "already saved" vs "save".
+function iconStar(filled) {
+  return (
+    `<svg class="stn-action-icon" xmlns="http://www.w3.org/2000/svg" ` +
+    `width="14" height="14" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" ` +
+    `stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ` +
+    `aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
+  );
+}
+
+// lucide "bell-off" — the exclude-from-notifications toggle. Excluding a
+// station on excludedStationsStore stops it from ever raising a
+// new-station or favorite notification (stationNewTransport.js checks
+// excludedStationsStore.has() before either notification path), so the
+// bell-with-a-slash reads as "notifications off for this station".
+const ICON_EXCLUDE = icon(
+  '<path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5"/>' +
+    '<path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"/>' +
+    '<path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>' +
+    '<path d="m2 2 20 20"/>'
+);
+
+// renderStationActionsHTML(station, { isFavorite, isExcluded }) -> HTML string (or '' to suppress)
 //
 // Action rows shown for a real heard station: open a direct message thread,
-// view the APRS packet log filtered to this callsign, and a QRZ database
-// lookup. APRS objects/items aren't operators you can work, so they get no
+// view the APRS packet log filtered to this callsign, a QRZ database
+// lookup, a favorites star toggle, and an exclude-from-notifications
+// toggle. APRS objects/items aren't operators you can work, so they get no
 // actions. Messages and Logs are internal hash routes; QRZ is the one
-// external link (opens in a new tab). Styled to match the map right-click
-// context menu -- icon + label rows with a hover tint (see .stn-action in
-// LiveMapV2.svelte).
-export function renderStationActionsHTML(s) {
+// external link (opens in a new tab); the star and bell-off buttons are
+// <button>s (not links -- they mutate state via favoriteStationsStore /
+// excludedStationsStore rather than navigating), wired up by
+// LiveMapV2.svelte's popup click delegation the same way .path-link
+// clicks are. Styled to match the map right-click context menu -- icon +
+// label rows with a hover tint (see .stn-action in LiveMapV2.svelte).
+export function renderStationActionsHTML(s, { isFavorite = false, isExcluded = false } = {}) {
   const call = s.callsign;
   if (!call || s.is_object) return '';
 
@@ -182,6 +236,14 @@ export function renderStationActionsHTML(s) {
   html += `<a class="stn-action stn-msg-link" role="menuitem" href="${msgHref}">${ICON_MESSAGE}<span class="stn-action-label">Message</span></a>`;
   html += `<a class="stn-action stn-log-link" role="menuitem" href="${logHref}">${ICON_LOGS}<span class="stn-action-label">APRS logs</span></a>`;
   html += `<a class="stn-action stn-qrz-link" role="menuitem" href="${qrzHref}" target="_blank" rel="noopener noreferrer">${ICON_QRZ}<span class="stn-action-label">QRZ</span></a>`;
+  html +=
+    `<button type="button" class="stn-action stn-fav-btn${isFavorite ? ' is-favorite' : ''}" role="menuitem" ` +
+    `data-callsign="${esc(upper)}" aria-pressed="${isFavorite}">${iconStar(isFavorite)}` +
+    `<span class="stn-action-label">${isFavorite ? 'Favorited' : 'Favorite'}</span></button>`;
+  html +=
+    `<button type="button" class="stn-action stn-exclude-btn${isExcluded ? ' is-excluded' : ''}" role="menuitem" ` +
+    `data-callsign="${esc(upper)}" aria-pressed="${isExcluded}">${ICON_EXCLUDE}` +
+    `<span class="stn-action-label">${isExcluded ? 'Excluded' : 'Exclude'}</span></button>`;
   html += `</div>`;
   return html;
 }

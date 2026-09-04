@@ -7576,6 +7576,34 @@
                 }
             }
         },
+        "/stations/alerts": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "List stations currently in Emergency status",
+                "operationId": "listStationAlerts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/webapi.StationAlertDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/stations/autocomplete": {
             "get": {
                 "security": [
@@ -7625,6 +7653,304 @@
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/stations/exclusions": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "List excluded stations",
+                "operationId": "listExcludedStations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.ExcludedStationResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "Add an excluded station",
+                "operationId": "createExcludedStation",
+                "parameters": [
+                    {
+                        "description": "Excluded station",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ExcludedStationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ExcludedStationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/stations/exclusions/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "Remove an excluded station",
+                "operationId": "deleteExcludedStation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Excluded station id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/stations/favorites": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "List favorite stations",
+                "operationId": "listFavoriteStations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.FavoriteStationResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "Add a favorite station",
+                "operationId": "createFavoriteStation",
+                "parameters": [
+                    {
+                        "description": "Favorite station",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.FavoriteStationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.FavoriteStationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/stations/favorites/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "Remove a favorite station",
+                "operationId": "deleteFavoriteStation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Favorite station id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/stations/roster": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stations"
+                ],
+                "summary": "List currently-heard stations (compact, world-scope)",
+                "operationId": "listStationRoster",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/webapi.StationRosterDTO"
+                            }
                         }
                     }
                 }
@@ -9235,6 +9561,10 @@
                 "messaging": {
                     "type": "boolean"
                 },
+                "mic_e_message_code": {
+                    "description": "MicEMessageCode is the Mic-E status/message code, only meaningful\nwhen position_format is mic_e. One of off_duty (default), en_route,\nin_service, returning, committed, special, priority, emergency.",
+                    "type": "string"
+                },
                 "object_name": {
                     "type": "string"
                 },
@@ -9365,6 +9695,9 @@
                 },
                 "messaging": {
                     "type": "boolean"
+                },
+                "mic_e_message_code": {
+                    "type": "string"
                 },
                 "object_name": {
                     "type": "string"
@@ -10062,6 +10395,62 @@
                 }
             }
         },
+        "dto.ExcludedStationRequest": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ExcludedStationResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.FavoriteStationRequest": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.FavoriteStationResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.FixedPointRequest": {
             "type": "object",
             "properties": {
@@ -10581,6 +10970,9 @@
                 "retention_days": {
                     "type": "integer"
                 },
+                "retry_interval_secs": {
+                    "type": "integer"
+                },
                 "retry_max_attempts": {
                     "type": "integer"
                 }
@@ -10600,6 +10992,9 @@
                     "type": "integer"
                 },
                 "retention_days": {
+                    "type": "integer"
+                },
+                "retry_interval_secs": {
                     "type": "integer"
                 },
                 "retry_max_attempts": {
@@ -11985,6 +12380,29 @@
                 }
             }
         },
+        "webapi.StationAlertDTO": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "last_heard": {
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "status_text": {
+                    "type": "string"
+                }
+            }
+        },
         "webapi.StationDTO": {
             "type": "object",
             "properties": {
@@ -11999,6 +12417,14 @@
                 "comment": {
                     "description": "Comment is the free-form comment field from the most recent packet.",
                     "type": "string"
+                },
+                "device": {
+                    "description": "Device is APRS device identification (manufacturer, model) inferred from the most recent packet's TOCALL (or Mic-E manufacturer byte as a fallback); omitted when unknown.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/aprs.DeviceInfo"
+                        }
+                    ]
                 },
                 "direction": {
                     "description": "Direction indicates the source of the most recent packet: \"RX\" (heard on air), \"TX\" (sent by us), or \"IS\" (APRS-IS).",
@@ -12050,6 +12476,14 @@
                 },
                 "source": {
                     "description": "Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source.",
+                    "type": "string"
+                },
+                "status_code": {
+                    "description": "StatusCode is the Mic-E message code (APRS101 ch 10 table 8) from the most\nrecent packet: 0 = Emergency, 1 = Priority, 2 = Special, 3 = Committed,\n4 = Returning, 5 = In Service, 6 = En Route, 7 = Off Duty, or -1 when no\nstatus is known. Deliberately NOT omitempty -- 0 is a meaningful value\n(Emergency), so omitting zero values would silently hide it.",
+                    "type": "integer"
+                },
+                "status_text": {
+                    "description": "StatusText is the label for StatusCode (\"Emergency\", \"Priority\", ...) when\nit came from a Mic-E packet, or the raw free-form text of a '\u003e' status\nreport when there's no Mic-E code to classify it. Empty when unknown.",
                     "type": "string"
                 },
                 "symbol_code": {
@@ -12144,6 +12578,52 @@
                 },
                 "via": {
                     "description": "Via is how this position packet reached us: \"rf\" (heard on radio) or \"is\" (received from APRS-IS).",
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.StationRosterDTO": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "direction": {
+                    "description": "Direction/Gated describe positions[0] (the current-fix, rfRank-\nprotected copy), NOT the station-level latest-packet fields --\nthis is deliberate so the client can apply the exact same RF Only\npredicate it uses on the map (web/src/lib/map/rf-only-core.js's\nisRfOnly checks positions[0] for the same reason; see its header\ncomment).",
+                    "type": "string"
+                },
+                "gated": {
+                    "type": "boolean"
+                },
+                "is_digipeater": {
+                    "description": "IsDigipeater is true when this station looks like a digipeater by any\nof three heuristics (isDigipeaterHeuristic): it appears as an H-bit\npath entry (\"*\"-suffixed) in some station's current path or trail\nwithin the roster window (i.e. it's currently observed repeating\ntraffic for others); its symbol code is '#' (Digipeater) in EITHER\ntable, or an overlaid numbered-digi icon (table byte replaced by the\noverlay '1'..'9', code still '#'); or its beacon comment\nself-identifies as one (case-insensitive \"digi\" substring -- e.g.\n\"East Alabama ARC APRS Digi (UIV32N)\", graywolf#2026-07-31: a\ndigipeater that hadn't repeated anything within the roster window\nslipped past the path-only check). None of these is a configured\nrole, just a heuristic -- a digipeater matching none of the three\n(hasn't repeated anything recently, uses a non-'#' icon, and\ndoesn't mention it in its comment) won't be flagged.\nstationNewTransport.js's general \"new station\" path excludes these;\nthe favorites path does not, since an operator who favorites their\nown digipeater still wants to know it's alive.",
+                    "type": "boolean"
+                },
+                "is_repeater": {
+                    "description": "IsRepeater is true when this station looks like a voice repeater\n(isRepeaterHeuristic): its symbol code is 'r' (Repeater, best-effort\n-- unlike '#' for digipeaters, this letter's meaning hasn't been\ncross-checked against a second source in this repo, so it's one\nsignal among several rather than load-bearing alone), its comment\nself-identifies with \"repeater\"/\"rptr\"/\"rpt\", or its comment matches\na frequency+tone pattern (e.g. \"146.84 T 123.0\" -- the operator's\nown W4AP-2 example, 2026-07-31). A repeater is infrastructure that\n\"can message\" (autopatch/remote-base capable) but isn't a human\noperator, same reasoning as the digipeater exclusion -- unconditional,\nnot operator-toggleable, and never applied to favorites.",
+                    "type": "boolean"
+                },
+                "is_weather_station": {
+                    "description": "IsWeatherStation is true when this station has reported weather\ntelemetry (s.Weather != nil, the same \"nil if not a weather station\"\nsignal stationcache.Station.Weather already documents) or uses the\nprimary-table Weather Station icon ('/' + '_', APRS101 ch 20 table 1)\n-- e.g. a WXTrak-style fixed weather station like the operator's\nAJ4FJ-13 example. Unlike IsDigipeater this is operator-toggleable,\nnot an unconditional exclusion: notificationPrefsState.stationNewIncludeWeather\n(default off) gates whether the general \"new station\" path skips\nthese; the favorites path never excludes on this.",
+                    "type": "boolean"
+                },
+                "last_direct_heard": {
+                    "description": "LastDirectHeard backs the client's Direct RX Only predicate\n(web/src/lib/map/direct-rx-core.js's directHeardWithin) the same\nway StationDTO.LastDirectHeard does for the map.",
+                    "type": "string"
+                },
+                "last_heard": {
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "symbol_code": {
+                    "type": "string"
+                },
+                "symbol_table": {
                     "type": "string"
                 }
             }
@@ -12435,6 +12915,10 @@
                 },
                 "source": {
                     "description": "Source identifies the subsystem that produced this entry: \"kiss\", \"agw\", \"digi\", \"igate-tx\", \"beacon\", \"modem\", or \"igate-is\".",
+                    "type": "string"
+                },
+                "status_text": {
+                    "description": "StatusText is the Mic-E message label (\"Emergency\", \"Priority\", ...;\nAPRS101 ch 10 table 8) when this packet is a Mic-E position report,\nor the raw free-form text of a '\u003e' status report (APRS101 ch 16).\nOmitted for packet types that carry neither.",
                     "type": "string"
                 },
                 "timestamp": {

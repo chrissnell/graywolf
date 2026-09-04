@@ -1853,6 +1853,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stations/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List stations currently in Emergency status */
+        get: operations["listStationAlerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stations/autocomplete": {
         parameters: {
             query?: never;
@@ -1862,6 +1879,93 @@ export interface paths {
         };
         /** Station autocomplete */
         get: operations["autocompleteStations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stations/exclusions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List excluded stations */
+        get: operations["listExcludedStations"];
+        put?: never;
+        /** Add an excluded station */
+        post: operations["createExcludedStation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stations/exclusions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove an excluded station */
+        delete: operations["deleteExcludedStation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stations/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List favorite stations */
+        get: operations["listFavoriteStations"];
+        put?: never;
+        /** Add a favorite station */
+        post: operations["createFavoriteStation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stations/favorites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a favorite station */
+        delete: operations["deleteFavoriteStation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stations/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List currently-heard stations (compact, world-scope) */
+        get: operations["listStationRoster"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2447,6 +2551,12 @@ export interface components {
             latitude?: number;
             longitude?: number;
             messaging?: boolean;
+            /**
+             * @description MicEMessageCode is the Mic-E status/message code, only meaningful
+             *     when position_format is mic_e. One of off_duty (default), en_route,
+             *     in_service, returning, committed, special, priority, emergency.
+             */
+            mic_e_message_code?: string;
             object_name?: string;
             overlay?: string;
             path?: string;
@@ -2493,6 +2603,7 @@ export interface components {
             latitude?: number;
             longitude?: number;
             messaging?: boolean;
+            mic_e_message_code?: string;
             object_name?: string;
             overlay?: string;
             path?: string;
@@ -2761,6 +2872,26 @@ export interface components {
             slug?: string;
             state?: string;
         };
+        "dto.ExcludedStationRequest": {
+            callsign?: string;
+            note?: string;
+        };
+        "dto.ExcludedStationResponse": {
+            callsign?: string;
+            created_at?: string;
+            id?: number;
+            note?: string;
+        };
+        "dto.FavoriteStationRequest": {
+            callsign?: string;
+            note?: string;
+        };
+        "dto.FavoriteStationResponse": {
+            callsign?: string;
+            created_at?: string;
+            id?: number;
+            note?: string;
+        };
         "dto.FixedPointRequest": {
             latitude?: number;
             longitude?: number;
@@ -3018,6 +3149,7 @@ export interface components {
              */
             max_message_text_override?: number;
             retention_days?: number;
+            retry_interval_secs?: number;
             retry_max_attempts?: number;
         };
         "dto.MessagePreferencesResponse": {
@@ -3032,6 +3164,7 @@ export interface components {
              */
             max_message_text_override?: number;
             retention_days?: number;
+            retry_interval_secs?: number;
             retry_max_attempts?: number;
         };
         "dto.MessageResponse": {
@@ -3687,6 +3820,14 @@ export interface components {
             svid?: number;
             used_in_fix?: boolean;
         };
+        "webapi.StationAlertDTO": {
+            callsign?: string;
+            last_heard?: string;
+            lat?: number;
+            lon?: number;
+            status_code?: number;
+            status_text?: string;
+        };
         "webapi.StationDTO": {
             /** @description Callsign is the station or object name (APRS callsign-SSID for stations, object/item name otherwise). */
             callsign?: string;
@@ -3694,6 +3835,8 @@ export interface components {
             channel?: number;
             /** @description Comment is the free-form comment field from the most recent packet. */
             comment?: string;
+            /** @description Device is APRS device identification (manufacturer, model) inferred from the most recent packet's TOCALL (or Mic-E manufacturer byte as a fallback); omitted when unknown. */
+            device?: components["schemas"]["aprs.DeviceInfo"];
             /** @description Direction indicates the source of the most recent packet: "RX" (heard on air), "TX" (sent by us), or "IS" (APRS-IS). */
             direction?: string;
             /** @description Gated is true when the most recent packet reached us as Internet-to-RF gated traffic (the inner packet of a third-party gate) rather than heard directly on RF. */
@@ -3719,6 +3862,20 @@ export interface components {
             positions?: components["schemas"]["webapi.StationPosDTO"][];
             /** @description Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source. */
             source?: string;
+            /**
+             * @description StatusCode is the Mic-E message code (APRS101 ch 10 table 8) from the most
+             *     recent packet: 0 = Emergency, 1 = Priority, 2 = Special, 3 = Committed,
+             *     4 = Returning, 5 = In Service, 6 = En Route, 7 = Off Duty, or -1 when no
+             *     status is known. Deliberately NOT omitempty -- 0 is a meaningful value
+             *     (Emergency), so omitting zero values would silently hide it.
+             */
+            status_code?: number;
+            /**
+             * @description StatusText is the label for StatusCode ("Emergency", "Priority", ...) when
+             *     it came from a Mic-E packet, or the raw free-form text of a '>' status
+             *     report when there's no Mic-E code to classify it. Empty when unknown.
+             */
+            status_text?: string;
             /** @description SymbolCode is the APRS symbol code character within the selected table. */
             symbol_code?: string;
             /** @description SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char). */
@@ -3759,6 +3916,76 @@ export interface components {
             timestamp?: string;
             /** @description Via is how this position packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS). */
             via?: string;
+        };
+        "webapi.StationRosterDTO": {
+            callsign?: string;
+            /**
+             * @description Direction/Gated describe positions[0] (the current-fix, rfRank-
+             *     protected copy), NOT the station-level latest-packet fields --
+             *     this is deliberate so the client can apply the exact same RF Only
+             *     predicate it uses on the map (web/src/lib/map/rf-only-core.js's
+             *     isRfOnly checks positions[0] for the same reason; see its header
+             *     comment).
+             */
+            direction?: string;
+            gated?: boolean;
+            /**
+             * @description IsDigipeater is true when this station looks like a digipeater by any
+             *     of three heuristics (isDigipeaterHeuristic): it appears as an H-bit
+             *     path entry ("*"-suffixed) in some station's current path or trail
+             *     within the roster window (i.e. it's currently observed repeating
+             *     traffic for others); its symbol code is '#' (Digipeater) in EITHER
+             *     table, or an overlaid numbered-digi icon (table byte replaced by the
+             *     overlay '1'..'9', code still '#'); or its beacon comment
+             *     self-identifies as one (case-insensitive "digi" substring -- e.g.
+             *     "East Alabama ARC APRS Digi (UIV32N)", graywolf#2026-07-31: a
+             *     digipeater that hadn't repeated anything within the roster window
+             *     slipped past the path-only check). None of these is a configured
+             *     role, just a heuristic -- a digipeater matching none of the three
+             *     (hasn't repeated anything recently, uses a non-'#' icon, and
+             *     doesn't mention it in its comment) won't be flagged.
+             *     stationNewTransport.js's general "new station" path excludes these;
+             *     the favorites path does not, since an operator who favorites their
+             *     own digipeater still wants to know it's alive.
+             */
+            is_digipeater?: boolean;
+            /**
+             * @description IsRepeater is true when this station looks like a voice repeater
+             *     (isRepeaterHeuristic): its symbol code is 'r' (Repeater, best-effort
+             *     -- unlike '#' for digipeaters, this letter's meaning hasn't been
+             *     cross-checked against a second source in this repo, so it's one
+             *     signal among several rather than load-bearing alone), its comment
+             *     self-identifies with "repeater"/"rptr"/"rpt", or its comment matches
+             *     a frequency+tone pattern (e.g. "146.84 T 123.0" -- the operator's
+             *     own W4AP-2 example, 2026-07-31). A repeater is infrastructure that
+             *     "can message" (autopatch/remote-base capable) but isn't a human
+             *     operator, same reasoning as the digipeater exclusion -- unconditional,
+             *     not operator-toggleable, and never applied to favorites.
+             */
+            is_repeater?: boolean;
+            /**
+             * @description IsWeatherStation is true when this station has reported weather
+             *     telemetry (s.Weather != nil, the same "nil if not a weather station"
+             *     signal stationcache.Station.Weather already documents) or uses the
+             *     primary-table Weather Station icon ('/' + '_', APRS101 ch 20 table 1)
+             *     -- e.g. a WXTrak-style fixed weather station like the operator's
+             *     AJ4FJ-13 example. Unlike IsDigipeater this is operator-toggleable,
+             *     not an unconditional exclusion: notificationPrefsState.stationNewIncludeWeather
+             *     (default off) gates whether the general "new station" path skips
+             *     these; the favorites path never excludes on this.
+             */
+            is_weather_station?: boolean;
+            /**
+             * @description LastDirectHeard backs the client's Direct RX Only predicate
+             *     (web/src/lib/map/direct-rx-core.js's directHeardWithin) the same
+             *     way StationDTO.LastDirectHeard does for the map.
+             */
+            last_direct_heard?: string;
+            last_heard?: string;
+            lat?: number;
+            lon?: number;
+            symbol_code?: string;
+            symbol_table?: string;
         };
         "webapi.StatusChannel": {
             audio_peak?: number;
@@ -3907,6 +4134,13 @@ export interface components {
             raw?: number[];
             /** @description Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is". */
             source?: string;
+            /**
+             * @description StatusText is the Mic-E message label ("Emergency", "Priority", ...;
+             *     APRS101 ch 10 table 8) when this packet is a Mic-E position report,
+             *     or the raw free-form text of a '>' status report (APRS101 ch 16).
+             *     Omitted for packet types that carry neither.
+             */
+            status_text?: string;
             /** @description Timestamp is the UTC RFC3339 time the packet was recorded. */
             timestamp?: string;
             /** @description Type is the APRS packet type (position, message, status, ...) when the payload decoded successfully. */
@@ -10695,6 +10929,26 @@ export interface operations {
             };
         };
     };
+    listStationAlerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.StationAlertDTO"][];
+                };
+            };
+        };
+    };
     autocompleteStations: {
         parameters: {
             query?: {
@@ -10734,6 +10988,284 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listExcludedStations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ExcludedStationResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createExcludedStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Excluded station */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.ExcludedStationRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.ExcludedStationResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteExcludedStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Excluded station id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listFavoriteStations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.FavoriteStationResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createFavoriteStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Favorite station */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.FavoriteStationRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.FavoriteStationResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteFavoriteStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Favorite station id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listStationRoster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.StationRosterDTO"][];
                 };
             };
         };

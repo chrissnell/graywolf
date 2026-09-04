@@ -5,9 +5,15 @@
   import { Platform } from './lib/platform.js';
   import Sidebar from './components/Sidebar.svelte';
   import NewsPopup from './components/NewsPopup.svelte';
+  import NotificationPopup from './components/NotificationPopup.svelte';
   import ServerUpdatedBanner from './components/ServerUpdatedBanner.svelte';
   import { serverVersion } from './lib/stores/server-version.svelte.js';
   import { start as startMessagesTransport } from './lib/messagesTransport.js';
+  import { start as startBulletinsTransport } from './lib/bulletinsTransport.js';
+  import { start as startStationAlertsTransport } from './lib/stationAlertsTransport.js';
+  import { start as startStationNewTransport } from './lib/stationNewTransport.js';
+  import { favoriteStationsStore } from './lib/favoriteStationsStore.svelte.js';
+  import { excludedStationsStore } from './lib/excludedStationsStore.svelte.js';
   import { releaseNotes } from './lib/releaseNotesStore.svelte.js';
   import { unitsState } from './lib/settings/units-store.svelte.js';
   import { themeState } from './lib/settings/theme-store.svelte.js';
@@ -27,16 +33,19 @@
   import Simulation from './routes/Simulation.svelte';
   import PositionLog from './routes/PositionLog.svelte';
   import Logs from './routes/Logs.svelte';
+  import NotificationsLog from './routes/NotificationsLog.svelte';
   import SystemLogs from './routes/SystemLogs.svelte';
   import LiveMapV2 from './routes/LiveMapV2.svelte';
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
   import MapsSettings from './routes/MapsSettings.svelte';
   import MessagesSettings from './routes/MessagesSettings.svelte';
+  import NotificationsSettings from './routes/NotificationsSettings.svelte';
   import Messages from './routes/Messages.svelte';
   import Terminal from './routes/Terminal.svelte';
   import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
   import Actions from './routes/Actions.svelte';
+  import Bulletins from './routes/Bulletins.svelte';
 
   const baseRoutes = {
     '/login': Login,
@@ -44,6 +53,7 @@
     '/map': LiveMapV2,
     '/messages': Messages,
     '/messages/*': Messages,
+    '/bulletins': Bulletins,
     '/terminal': Terminal,
     '/terminal/transcripts': TerminalTranscripts,
     '/actions': Actions,
@@ -60,10 +70,12 @@
     '/simulation': Simulation,
     '/position-log': PositionLog,
     '/logs': Logs,
+    '/notifications-log': NotificationsLog,
     '/system-logs': SystemLogs,
     '/preferences': Preferences,
     '/preferences/maps': MapsSettings,
     '/preferences/messages': MessagesSettings,
+    '/preferences/notifications': NotificationsSettings,
     '/about': About,
   };
   const routes = (() => {
@@ -100,6 +112,7 @@
 
   let version = $state('');
   let authChecked = $state(false);
+  let authValid = $state(false);
 
   $effect(() => {
     // Probe auth state before rendering protected routes.
@@ -124,11 +137,12 @@
         // Fetch version (public endpoint) in parallel with auth probe.
         fetch('/api/version').then(r => r.json()).then(d => { version = d.version; }).catch(() => {});
         return fetch('/api/status', { credentials: 'same-origin' }).then(r => {
+          authValid = r.status !== 401;
           if (r.status === 401 && !isAndroid) window.location.hash = '#/login';
           authChecked = true;
         });
       })
-      .catch(() => { authChecked = true; });
+      .catch(() => { authChecked = true; authValid = false; });
   });
 
   // Start the messages transport once we know the user is authenticated.
@@ -137,9 +151,17 @@
   // every 5 s is cheap enough to be always-on; SSE is opt-in via `?sse=1`.
   let messagesTransportStarted = false;
   $effect(() => {
-    if (authChecked && !isLoginPage && !messagesTransportStarted) {
+    if (authChecked && authValid && currentPath !== '' && !isLoginPage && !messagesTransportStarted) {
       messagesTransportStarted = true;
       startMessagesTransport();
+      startBulletinsTransport();
+      startStationAlertsTransport();
+      startStationNewTransport();
+      // Prime the favorites/exclusions lists up front so the map popup's
+      // star state is correct as soon as the operator opens it, rather
+      // than waiting for stationNewTransport.js's first poll.
+      favoriteStationsStore.load();
+      excludedStationsStore.load();
       // Watch for the server build changing underneath this tab (operator
       // upgraded graywolf) and surface a reload banner. Idempotent.
       serverVersion.start();
@@ -161,6 +183,7 @@
   <Router {routes} />
 {:else if authChecked}
   <ServerUpdatedBanner />
+  <NotificationPopup />
   <div class="app-layout">
     <Sidebar />
     <main class="main-content" class:full-bleed={currentPath === '/map' || currentPath === '/messages' || currentPath.startsWith('/messages/')}>
