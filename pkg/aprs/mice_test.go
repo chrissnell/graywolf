@@ -206,6 +206,65 @@ func TestParseMicEDelInLonRejected(t *testing.T) {
 	}
 }
 
+// TestParseMicEDelInLonAcceptedNoOffset covers real on-air packets from
+// NX0R-7 that graywolf was incorrectly dropping: dest[4] is a plain
+// digit (offset=0), so the DEL byte in the longitude field is just the
+// ordinary top-of-range digit 99, not the PicoAPRS no-fix sentinel — it
+// must decode, unlike the offset=100 cases in TestParseMicEDelInLonRejected.
+func TestParseMicEDelInLonAcceptedNoOffset(t *testing.T) {
+	cases := []struct {
+		name    string
+		dest    string
+		info    []byte
+		wantLat float64
+		wantLon float64
+	}{
+		{
+			name:    "S8UR7Y",
+			dest:    "S8UR7Y",
+			info:    []byte{'`', 0x7f, 0x2e, 0x4f, 0x6c, 0x20, 0x25, 0x5b, 0x2f, 0x60, 0x22, 0x3a, 0x62, 0x7d, 0x5f, 0x30},
+			wantLat: 38.8798,
+			wantLon: -99.3085,
+		},
+		{
+			name:    "S8UV2X",
+			dest:    "S8UV2X",
+			info:    []byte{'`', 0x7f, 0x3d, 0x57, 0x6c, 0x20, 0x6e, 0x5b, 0x2f, 0x60, 0x22, 0x3b, 0x22, 0x7d, 0x5f, 0x30},
+			wantLat: 38.9380,
+			wantLon: -99.5598,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srcAddr, err := ax25.ParseAddress("NX0R-7")
+			if err != nil {
+				t.Fatal(err)
+			}
+			destAddr, err := ax25.ParseAddress(tc.dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, tc.info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkt, err := Parse(f)
+			if err != nil {
+				t.Fatalf("Parse: %v (offset=0 DEL longitude must decode, not be rejected)", err)
+			}
+			if pkt.Position == nil {
+				t.Fatal("Position is nil")
+			}
+			if abs(pkt.Position.Latitude-tc.wantLat) > 0.01 {
+				t.Errorf("lat = %.4f, want ~%.4f", pkt.Position.Latitude, tc.wantLat)
+			}
+			if abs(pkt.Position.Longitude-tc.wantLon) > 0.01 {
+				t.Errorf("lon = %.4f, want ~%.4f", pkt.Position.Longitude, tc.wantLon)
+			}
+		})
+	}
+}
+
 // TestParseMicELonOffsetNormalises locks in the APRS101 ch 10 rule that
 // the +100° offset is added BEFORE the 180..189 / 190..199 wrap-range
 // normalisation. Raw degrees byte 'l' (108-28 = 80) with the offset bit
