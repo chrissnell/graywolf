@@ -108,6 +108,52 @@ func TestSessionShutdownEvent(t *testing.T) {
 	}
 }
 
+// TestSessionEmitsDisconnectedOnce guards against a duplicate 'd'
+// notification: setState(StateDisconnected) already tells the observer
+// once when the state machine reaches it on its own, and cleanup() used
+// to always emit a second one on the way out of Run(). Besides the
+// redundant notification, the second emit's session-map deletion (in
+// the agw bridge) could race a client that reconnected in between and
+// delete its brand-new session instead of the defunct one.
+func TestSessionEmitsDisconnectedOnce(t *testing.T) {
+	var disconnects int
+	s := newTestSession(t, func(cfg *SessionConfig) {
+		cfg.Observer = func(ev OutEvent) {
+			if ev.Kind == OutStateChange && ev.State == StateDisconnected {
+				disconnects++
+			}
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+
+	s.Submit(Event{Kind: EventConnect})
+	s.Submit(Event{Kind: EventFrameRX, Frame: &Frame{Control: Control{Kind: FrameUA, PF: true}}})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && s.Snapshot().State != StateConnected {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if s.Snapshot().State != StateConnected {
+		t.Fatalf("session never reached CONNECTED, state=%v", s.Snapshot().State)
+	}
+
+	s.Submit(Event{Kind: EventDisconnect})
+	s.Submit(Event{Kind: EventFrameRX, Frame: &Frame{Control: Control{Kind: FrameUA, PF: true}}})
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("session did not exit after disconnect completed")
+	}
+
+	if disconnects != 1 {
+		t.Fatalf("observer saw %d StateDisconnected notifications, want exactly 1", disconnects)
+	}
+}
+
 func TestSessionDefaultsApplied(t *testing.T) {
 	s := newTestSession(t)
 	if s.cfg.T1 != DefaultT1 || s.cfg.T2 != DefaultT2 || s.cfg.T3 != DefaultT3 {

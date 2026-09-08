@@ -122,6 +122,15 @@ type Session struct {
 	// setMod128; read via Mod128().
 	mod128Bit atomic.Bool
 
+	// outstandingBit mirrors the number of I-frames this session still
+	// owes the peer -- unacked frames in the window plus whole frames'
+	// worth of operator bytes still waiting in txBuf. Kept as an atomic
+	// so callers on other goroutines can read a live count without
+	// touching session-goroutine state; AGWPE clients poll it via 'Y'
+	// for flow control. Always written via syncOutstanding; read via
+	// Outstanding().
+	outstandingBit atomic.Int32
+
 	// txFailNotified guards the one-shot operator-facing error emitted
 	// when a frame cannot be handed to the TX backend (e.g. the channel
 	// has no KISS/modem backend, or the wrong channel was selected).
@@ -302,6 +311,26 @@ func (s *Session) signalTimer(bit uint32) {
 // when the session is stable.
 func (s *Session) State() State { return s.state }
 
+// Outstanding reports how many I-frames are queued for transmission or
+// still awaiting acknowledgement: the unacked window [V(A), V(S)) plus
+// the frames txBuf will be cut into at the negotiated paclen. Safe to
+// call from any goroutine. The value is refreshed after every event the
+// session processes, so it trails the session goroutine by at most one
+// event rather than by a stats tick.
+func (s *Session) Outstanding() int { return int(s.outstandingBit.Load()) }
+
+// syncOutstanding recomputes the atomic from session-goroutine state.
+// Called from handle() so every path that moves V(S)/V(A) or touches
+// txBuf is covered by one call site.
+func (s *Session) syncOutstanding() {
+	mod := uint8(s.modulus())
+	n := int((s.v.VS - s.v.VA + mod) % mod)
+	if queued := len(s.txBuf); queued > 0 {
+		n += (queued + s.cfg.Paclen - 1) / s.cfg.Paclen
+	}
+	s.outstandingBit.Store(int32(n))
+}
+
 // Run blocks until ctx is cancelled or EventShutdown is processed.
 // Manager invokes Run in a goroutine. Each iteration drains pending
 // timer bits before reading the channel so timer events never starve
@@ -343,6 +372,10 @@ func (s *Session) Run(ctx context.Context) {
 // handle dispatches by current state. Returns false when the session
 // should exit.
 func (s *Session) handle(ctx context.Context, ev Event) bool {
+	// Every state mutation this session makes happens below, on this
+	// goroutine, so one deferred refresh keeps Outstanding() current for
+	// external readers without auditing each V(S)/V(A)/txBuf site.
+	defer s.syncOutstanding()
 	// EventHeartbeat runs the housekeeping tick across all states; it
 	// is not state-dispatched. The tick re-arms itself unconditionally
 	// (see heartbeatTick).
@@ -384,7 +417,17 @@ func (s *Session) cleanup() {
 	s.t3.stop()
 	s.hb.stop()
 	s.tStats.stop()
-	s.emit(OutEvent{Kind: OutStateChange, State: StateDisconnected})
+	// setState already emitted StateDisconnected (and set terminated) when
+	// the state machine reached it on its own -- emitting again here would
+	// send the observer a second 'd' notification and, worse, race a
+	// client that reconnected in between into having its brand-new session
+	// deleted by this stale one's second cleanup. Only Run() exits that
+	// bypass setState (ctx cancellation, EventShutdown) still need this as
+	// their sole notification.
+	if !s.terminated {
+		s.terminated = true
+		s.emit(OutEvent{Kind: OutStateChange, State: StateDisconnected})
+	}
 }
 
 func (s *Session) emit(ev OutEvent) {

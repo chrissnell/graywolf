@@ -1,8 +1,6 @@
-// Package agw implements a minimal AGWPE-compatible TCP server for APRS
-// use. The wire format matches direwolf's server.c so existing clients
-// (APRSIS32, UI-View, YAAC, Xastir) interoperate without modification.
-//
-// Only the frame types needed for APRS are implemented:
+// Package agw implements a minimal AGWPE-compatible TCP server. The wire
+// format matches direwolf's server.c so existing clients (APRSIS32, UI-View,
+// YAAC, Xastir) interoperate without modification.
 //
 //	Client → server:
 //	  'R'  query AGW version
@@ -13,6 +11,12 @@
 //	  'm'  start monitoring (enable 'U'-type rx packets)
 //	  'k'  toggle raw AX.25 frame reception (each 'k' flips it on/off)
 //	  'M'  transmit UNPROTO (UI) frame — server must build the AX.25 header
+//	  'V'  transmit UNPROTO (UI) frame via digipeaters
+//	  'C'  connect to a remote station
+//	  'v'  connect to a remote station via digipeaters
+//	  'D'  transmit connected-mode data
+//	  'd'  disconnect from a remote station
+//	  'Y'  query frames outstanding on a connection
 //
 //	Server → client:
 //	  'R'  version response
@@ -21,10 +25,18 @@
 //	  'X'  callsign registered ack
 //	  'U'  monitored UI frame from RF
 //	  'K'  raw AX.25 frame from RF, for clients that enabled it via 'k'
+//	  'C'  connection established
+//	  'D'  received connected-mode data
+//	  'd'  disconnect notification, also used to refuse a connect
+//	  'Y'  outstanding frame count
 //
-// Connected-mode frame types ('C', 'D', 'd', 'v', 'V', 'c', ...) are
-// accepted and logged but not implemented, matching the "AX.25 UI only"
-// constraint for graywolf Phase 2.
+// Not implemented: 'c' (connect with a non-standard PID) — ax25conn has
+// no per-session PID, so I-frames always go out as 0xF0. 'y' (frames
+// outstanding on a port, as opposed to 'Y' on a connection).
+//
+// Connected mode is outbound only: an AGW client can raise a link to a
+// remote station, but an incoming SABM from RF is not offered to AGW
+// clients.
 package agw
 
 import (
@@ -61,6 +73,13 @@ const (
 	KindSendRaw            byte = 'K' // both directions: raw AX.25
 	KindToggleRawKISS      byte = 'k' // client → server: toggle raw KISS frame reception
 	KindMonitoredUI        byte = 'U' // server → client: rx UI frame
+
+	// Connected-mode kinds
+	KindConnect           byte = 'C'
+	KindConnectVia        byte = 'v'
+	KindDisconnect        byte = 'd'
+	KindConnectedData     byte = 'D'
+	KindOutstandingFrames byte = 'Y'
 )
 
 // EncodeHeader writes h into a 36-byte buffer.
