@@ -623,7 +623,16 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 				a.stationCache.Update(entries)
 			}
 		},
+		// Reuses the same resolveTxChannel messages/iGate call for their
+		// own Auto option (see resolveTxChannel doc + invariant 16c/16d).
+		// Unlike their cached atomic.Uint32, this re-resolves fresh on
+		// every send inside sendBeaconWith, so no reload-signal wiring
+		// is needed here.
+		AutoChannelResolver: func(rctx context.Context) uint32 {
+			return a.resolveTxChannel(rctx, 0)
+		},
 	})
+
 	if err != nil {
 		return fmt.Errorf("beacon scheduler init: %w", err)
 	}

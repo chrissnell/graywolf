@@ -15,12 +15,8 @@
   import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
   import { trackerBeaconFlags } from '../lib/trackerBeacon.js';
-  import {
-    channelRefStatus,
-    buildChannelsById,
-    STATUS_OK,
-    STATUS_DELETED,
-  } from '../lib/channelRefStatus.js';
+  import { buildChannelsById } from '../lib/channelRefStatus.js';
+  import { beaconChannelDisplay } from '../lib/beaconChannelDisplay.js';
   import {
     PRIMARY_TABLE, ALTERNATE_TABLE, SPRITE_URLS, CELL_PX,
     backgroundPosition, loadSymbols, describe,
@@ -64,9 +60,8 @@
   let beacons = $state([]);
   // Channels come from the shared channelsStore (D9) so every picker
   // page sees coherent backing state. Legacy local `channels` array is
-  // retained only as a $derived view on top of the store so
-  // channelName() and the modal channel-defaulting code paths keep
-  // working without changes.
+  // retained only as a $derived view on top of the store so the modal
+  // channel-defaulting code paths keep working without changes.
   let channels = $derived(channelsStore.list);
   // Map<id, channel> for O(1) list-card lookups via channelRefStatus.
   // Rebuilt on every channelsStore poll, which is the desired
@@ -93,7 +88,7 @@
   // we don't need a parallel lifecycle for the checkbox.
   let form = $state({
     type: 'position', object_name: '',
-    channel: '', callsign: '', callsign_override: false,
+    channel: 0, callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
     position_format: 'compressed', ambiguity: 0,
@@ -121,6 +116,9 @@
   // modal.
   let selectedChannelObj = $derived.by(() => {
     const n = parseInt(form.channel, 10);
+    // channel 0 = Auto; no channel object has id 0, so lookupChannel
+    // returns undefined and txBlock's `if (!c) return null;` below
+    // already treats Auto as "not blocked" for free.
     return lookupChannel(n);
   });
   // APRS-IS-only beacons carry no RF leg, so the radio channel is
@@ -189,11 +187,6 @@
   let pickerOpen = $state(false);
   let symbolMeta = $state(null);
   loadSymbols().then((m) => symbolMeta = m);
-
-  function channelName(id) {
-    const c = channels.find(c => c.id === id);
-    return c ? c.name : `Channel #${id}`;
-  }
 
   function formatInterval(seconds) {
     if (!seconds) return '—';
@@ -289,15 +282,11 @@
     editing = null;
     form.type = 'position';
     form.object_name = '';
-    // A radioless (APRS-IS-only) station has no channels at all. Rather
-    // than block beacon creation, default to an APRS-IS-only beacon so
-    // the operator can get on the network with no RF setup; the channel
-    // picker stays hidden until they pick an RF send path.
-    if (channels.length === 0) {
-      form.channel = '';
-    } else {
-      form.channel = String(channels[0].id);
-    }
+    // Default new beacons to Auto so they survive a future channel
+    // renumbering/swap without an edit. Auto only matters once an RF
+    // send path is chosen below; a radioless station still falls
+    // through to is_only regardless of this value.
+    form.channel = 0;
     form.callsign = '';
     form.callsign_override = false;
     callsignError = '';
@@ -336,7 +325,7 @@
     Object.assign(form, row, {
       type: row.type || 'position',
       object_name: row.object_name || '',
-      channel: String(row.channel),
+      channel: row.channel,
       callsign: rowCall,
       callsign_override: rowCall !== '',
       symbol_table: row.symbol_table || '/',
@@ -383,7 +372,7 @@
       // so the value is unambiguous even when switching from an RF beacon
       // that had a channel selected.
       channelId = 0;
-    } else if (!Number.isFinite(channelId) || channelId <= 0) {
+    } else if (!Number.isFinite(channelId) || channelId < 0) {
       toasts.error('Channel required');
       return;
     }
@@ -600,19 +589,7 @@
 {:else}
   <div class="beacon-grid">
     {#each beacons as b}
-      {@const isOnly = b.send_path === 'is_only'}
-      {@const refStatus = channelRefStatus(b.channel, channelsById)}
-      {@const broken = !isOnly && refStatus.status !== STATUS_OK}
-      {@const pillAriaLabel = broken
-        ? (refStatus.status === STATUS_DELETED
-            ? `Channel #${b.channel} deleted`
-            : `${refStatus.channel?.name ?? `Channel #${b.channel}`} unreachable: ${refStatus.reason}`)
-        : `Channel ${refStatus.channel?.name ?? `#${b.channel}`}`}
-      {@const pillTitle = broken
-        ? (refStatus.status === STATUS_DELETED
-            ? `Channel #${b.channel} deleted`
-            : `Unreachable: ${refStatus.reason}`)
-        : ''}
+      {@const disp = beaconChannelDisplay(b, channelsById)}
       <div class="beacon-card">
         <div class="beacon-header">
           <div class="beacon-identity">
@@ -652,28 +629,17 @@
           </div>
         </div>
 
-        <div class="beacon-channel" class:broken>
-          {#if isOnly}
-            <span class="channel-label">Send to</span>
-            <span class="channel-value">APRS-IS only (no radio)</span>
-          {:else}
+        <div class="beacon-channel" class:broken={disp.broken}>
           <span
             class="channel-label"
-            class:danger={broken}
-            aria-label={pillAriaLabel}
-            title={pillTitle}
+            class:danger={disp.broken}
+            aria-label={disp.ariaLabel}
+            title={disp.title}
           >
-            {#if refStatus.status === STATUS_DELETED}
-              Channel deleted
-            {:else if broken}
-              Unreachable: {refStatus.reason}
-            {:else}
-              Channel
-            {/if}
+            {disp.label}
           </span>
-          {#if refStatus.status !== STATUS_DELETED}
-            <span class="channel-value">{channelName(b.channel)}</span>
-          {/if}
+          {#if disp.showValue}
+            <span class="channel-value">{disp.value}</span>
           {/if}
         </div>
 
@@ -833,13 +799,15 @@
           </div>
         {:else}
           <FormField label="Channel" id="bcn-channel"
-            hint="Radio channel this beacon transmits on. Defined on the Channels page.">
+            hint="Radio channel this beacon transmits on. Choose Auto to always use the first APRS-eligible channel — handy if you change radios or channels later.">
             <ChannelListbox
               id="bcn-channel"
               bind:value={form.channel}
-              valueType="string"
+              valueType="number"
               channels={channels}
               capabilityFilter={txPredicate}
+              allowNone
+              noneLabel="Auto (first APRS-eligible channel)"
             />
           </FormField>
         {/if}
