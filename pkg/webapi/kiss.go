@@ -254,6 +254,7 @@ func (s *Server) deleteKiss(w http.ResponseWriter, r *http.Request) {
 			s.kissManager.Stop(id)
 		}
 		s.notifyTxBackendReload()
+		s.signalTxRoutingReload()
 		return nil
 	})
 }
@@ -263,9 +264,12 @@ func (s *Server) deleteKiss(w http.ResponseWriter, r *http.Request) {
 // Tcp-client interfaces dispatch to StartClient (Phase 4). After any
 // state change the TX backend reload signal is nudged so the Phase 3
 // dispatcher's registry snapshot rebuilds to reflect the new tx queue
-// membership.
+// membership, and the iGate/messages routing reload signal is nudged
+// so their cached "Auto" TX channel re-resolves against the new
+// Enabled/Mode/AllowTxFromGovernor/Channel state.
 func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 	defer s.notifyTxBackendReload()
+	defer s.signalTxRoutingReload()
 	if s.kissManager == nil {
 		return
 	}

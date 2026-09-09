@@ -547,12 +547,33 @@ func (s *Server) notifyBridgeForChannel(ctx context.Context, _ uint32) {
 // with any channel / device changes that preceded this reload.
 func (s *Server) notifyBridgeReload(ctx context.Context) {
 	s.notifyTxBackendReload()
+	s.signalTxRoutingReload()
 	if s.bridge == nil {
 		return
 	}
 	if err := s.bridge.ReconfigureAudioDevice(ctx, 0); err != nil {
 		s.logger.Warn("bridge reconfigure", "err", err)
 	}
+}
+
+// signalTxRoutingReload signals iGate and messages to re-resolve any
+// "Auto" (TxChannel=0) or now-invalid explicit TX channel selection
+// against current config. Call after a mutation that could change
+// resolveTxChannel's answer: a channel's Enabled flag, its audio-device
+// backing, or a KISS interface's Enabled/Mode/AllowTxFromGovernor/
+// Channel fields. Do NOT call this from a purely live/runtime state
+// change (e.g. a KISS TCP-client reconnect's OnReload callback) --
+// resolveTxChannel only reads persisted config, so a live-state signal
+// would just be noise. Service.ReloadConfig and App.reloadIgate are
+// idempotent no-ops when the resolved channel is unchanged, so calling
+// this liberally (it is folded into notifyBridgeReload) is safe.
+//
+// Fixes: an operator-disabled/re-enabled channel left messages/iGate's
+// cached "Auto" TX channel stale until an unrelated config save (e.g.
+// messages preferences) happened to trigger Service.ReloadConfig.
+func (s *Server) signalTxRoutingReload() {
+	s.signalIgateReload()
+	s.signalMessagesReload()
 }
 
 // parseID parses a uint32 id from a clean path segment. Callers are
