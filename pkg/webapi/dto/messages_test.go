@@ -97,6 +97,16 @@ func TestDeriveMessageStatus(t *testing.T) {
 			},
 			want: MessageStatusFailed,
 		},
+		{
+			// Exact-match branch must win over the "retry budget"
+			// substring check even though both set AckStateRejected.
+			name: "outbound_dm_aborted_by_operator",
+			in: configstore.Message{
+				Direction: "out", ThreadKind: messages.ThreadKindDM,
+				AckState: messages.AckStateRejected, FailureReason: messages.AbortedFailureReason,
+			},
+			want: MessageStatusAborted,
+		},
 		// Tactical outbound
 		{
 			name: "outbound_tactical_queued",
@@ -328,7 +338,7 @@ func TestMessageFromModel_ExtendedFlag(t *testing.T) {
 		want bool
 	}{
 		{"short_body", "hi", false},
-		{"exactly_default", "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01234", false}, // 67
+		{"exactly_default", "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01234", false},  // 67
 		{"one_over_default", "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz012345", true}, // 68
 		{"long_extended", "this is a deliberately long message that exceeds the APRS 67-char default", true},
 	}

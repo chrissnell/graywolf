@@ -116,6 +116,10 @@
         // Send-path failure (encode error, governor stopped mid-retry,
         // etc.) — never reached the wire or never completed. Red alarm.
         case 'failed':   return { primary: { name: 'alert-circle', label: 'Send failed — click to resend' }, failed: true };
+        // Operator cancelled the retry ladder via the context menu's
+        // Abort action. Same red-alarm treatment as rejected/failed,
+        // but a distinct icon so the three don't look identical.
+        case 'aborted':  return { primary: { name: 'x', label: 'Aborted by operator — click to resend' }, failed: true };
         default:         return { primary: { name: 'clock', label: status || 'Unknown state' } };
       }
     }
