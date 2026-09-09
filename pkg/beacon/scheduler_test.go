@@ -2,6 +2,7 @@ package beacon
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -785,5 +786,172 @@ func TestOnISSent_NotFiredForRFOnly(t *testing.T) {
 	s.sendBeacon(context.Background(), mkPathBeacon(SendPathRF))
 	if fired != 0 {
 		t.Fatalf("OnISSent fired %d times for RF-only beacon, want 0", fired)
+	}
+}
+
+// TestSendBeaconWith_AutoChannelResolvesViaResolver verifies that a
+// Channel=0 ("Auto") RF beacon is resolved via AutoChannelResolver
+// before hitting the sink.
+func TestSendBeaconWith_AutoChannelResolvesViaResolver(t *testing.T) {
+	sink := newMockSink(1)
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, err := New(Options{
+		Sink: sink, Logger: logger,
+		AutoChannelResolver: func(context.Context) uint32 { return 5 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathRF)) // Channel: 0
+
+	caps := sink.Captures()
+	if len(caps) != 1 {
+		t.Fatalf("got %d captures, want 1", len(caps))
+	}
+	if caps[0].Channel != 5 {
+		t.Errorf("resolved channel = %d, want 5", caps[0].Channel)
+	}
+}
+
+// TestSendBeaconWith_ExplicitChannelNotOverridden proves an explicit
+// non-zero Channel is never rerouted, even when a resolver is wired.
+func TestSendBeaconWith_ExplicitChannelNotOverridden(t *testing.T) {
+	sink := newMockSink(1)
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	var resolverCalls int
+	s, err := New(Options{
+		Sink: sink, Logger: logger,
+		AutoChannelResolver: func(context.Context) uint32 {
+			resolverCalls++
+			return 5
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := mkPathBeacon(SendPathRF)
+	b.Channel = 3
+	s.sendBeacon(context.Background(), b)
+
+	if resolverCalls != 0 {
+		t.Errorf("resolver called %d times, want 0 for an explicit channel", resolverCalls)
+	}
+	caps := sink.Captures()
+	if len(caps) != 1 || caps[0].Channel != 3 {
+		t.Fatalf("captures = %+v, want one capture on channel 3", caps)
+	}
+}
+
+// TestSendBeaconWith_IsOnlyChannelZeroNotResolved proves the is_only
+// "no RF leg" zero sentinel is never confused with Auto: the resolver
+// must not be invoked at all for an is_only beacon.
+func TestSendBeaconWith_IsOnlyChannelZeroNotResolved(t *testing.T) {
+	sink := newMockSink(0)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	var resolverCalls int
+	s, err := New(Options{
+		Sink: sink, ISSink: is, Logger: logger,
+		AutoChannelResolver: func(context.Context) uint32 {
+			resolverCalls++
+			return 5
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathISOnly)) // Channel: 0, is_only sentinel
+
+	if resolverCalls != 0 {
+		t.Errorf("resolver called %d times, want 0 for an is_only beacon", resolverCalls)
+	}
+	if got := len(sink.Frames()); got != 0 {
+		t.Errorf("RF frames = %d, want 0 (is_only must not hit the RF sink)", got)
+	}
+	if got := len(is.Lines()); got != 1 {
+		t.Errorf("IS lines = %d, want 1", got)
+	}
+}
+
+// TestSendBeaconWith_AutoChannelHonorsChannelModeGate proves the
+// channel-mode gate is evaluated against the resolved channel, not the
+// literal 0 — an Auto beacon whose resolved channel is packet-mode must
+// be skipped exactly like an explicit-channel beacon would be.
+func TestSendBeaconWith_AutoChannelHonorsChannelModeGate(t *testing.T) {
+	sink := testtx.NewRecorder()
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	lookup := &fakeChannelModeLookup{modes: map[uint32]string{9: configstore.ChannelModePacket}}
+	s, err := New(Options{
+		Sink: sink, Logger: logger,
+		ChannelModes:        lookup,
+		AutoChannelResolver: func(context.Context) uint32 { return 9 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendErr := s.sendBeaconImmediate(context.Background(), mkPathBeacon(SendPathRF)) // Channel: 0
+
+	if sink.Len() != 0 {
+		t.Errorf("frames submitted = %d, want 0 (packet-mode gate should suppress)", sink.Len())
+	}
+	var sne *SendNowError
+	if !errors.As(sendErr, &sne) {
+		t.Fatalf("err = %v, want *SendNowError", sendErr)
+	}
+	if sne.Kind != SendNowErrorChannelMode {
+		t.Errorf("kind = %v, want SendNowErrorChannelMode", sne.Kind)
+	}
+}
+
+// TestSendBeaconWith_NilResolverLeavesChannelZero is a backward-
+// compatibility guard: with no AutoChannelResolver configured (the zero
+// value — matching every other test in this file), Channel=0 is
+// submitted as-is, exactly as it behaved before this feature existed.
+func TestSendBeaconWith_NilResolverLeavesChannelZero(t *testing.T) {
+	sink := newMockSink(1)
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	s, err := New(Options{Sink: sink, Logger: logger}) // no AutoChannelResolver
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathRF)) // Channel: 0
+
+	caps := sink.Captures()
+	if len(caps) != 1 || caps[0].Channel != 0 {
+		t.Fatalf("captures = %+v, want one capture on channel 0", caps)
+	}
+}
+
+// TestSendBeaconWith_AutoChannelUsedForBothSendPath proves a SendPathBoth
+// beacon resolves Channel once and reuses the resolved value for both
+// the RF leg and the OnISSent hook — never the literal 0 for either.
+func TestSendBeaconWith_AutoChannelUsedForBothSendPath(t *testing.T) {
+	sink := newMockSink(1)
+	is := &fakeISSink{}
+	logger := slog.New(slog.NewTextHandler(logSink{}, nil))
+	var gotISChannel uint32
+	var isFired int
+	s, err := New(Options{
+		Sink: sink, ISSink: is, Logger: logger,
+		AutoChannelResolver: func(context.Context) uint32 { return 4 },
+		OnISSent: func(_ *ax25.Frame, channel uint32) {
+			isFired++
+			gotISChannel = channel
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.sendBeacon(context.Background(), mkPathBeacon(SendPathBoth)) // Channel: 0
+
+	caps := sink.Captures()
+	if len(caps) != 1 || caps[0].Channel != 4 {
+		t.Fatalf("RF capture = %+v, want one capture on channel 4", caps)
+	}
+	if isFired != 1 {
+		t.Fatalf("OnISSent fired %d times, want 1", isFired)
+	}
+	if gotISChannel != 4 {
+		t.Errorf("OnISSent channel = %d, want 4 (resolved, not 0)", gotISChannel)
 	}
 }

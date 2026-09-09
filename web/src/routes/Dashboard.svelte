@@ -10,6 +10,7 @@
   import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
   import { channelsStore, start as startChannels } from '../lib/stores/channels.svelte.js';
   import { SUMMARY_KISS_TNC, HEALTH_LIVE, isTxCapable } from '../lib/channelBacking.js';
+  import { groupBeaconsByChannel } from '../lib/beaconsByChannel.js';
 
   let packets = $state([]);
   let status = $state(null);
@@ -56,16 +57,11 @@
   let txActive = $state({});
   let sendingBeacon = $state({});
 
-  // Group enabled beacons by channel
-  let beaconsByChannel = $derived(
-    beacons.reduce((acc, b) => {
-      if (b.enabled) {
-        if (!acc[b.channel]) acc[b.channel] = [];
-        acc[b.channel].push(b);
-      }
-      return acc;
-    }, {})
-  );
+  // Group enabled beacons by the channel card they should show a
+  // "Beacon Now" button on. Auto (channel=0) beacons bucket under
+  // firstTxChannelId so the button tracks wherever the app would
+  // actually transmit, surviving an enable/disable channel swap.
+  let beaconsByChannel = $derived(groupBeaconsByChannel(beacons, firstTxChannelId));
 
   // Same auto-refresh / auto-scroll switches as the APRS Logs page, rendered
   // in the packet feed's own toolbar via Chonky's LogViewer toolbarToggles.

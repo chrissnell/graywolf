@@ -1,6 +1,7 @@
 package beacon
 
 import (
+	"context"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
@@ -20,9 +21,14 @@ const (
 // Config describes one beacon entry from the beacons table. Fields match
 // the SQL schema in .context/graywolf-implementation-plan.md §beacons.
 type Config struct {
-	ID          uint32
-	Type        Type
-	Channel     uint32 // send_to parsed as channel number (IG/APP handled by caller)
+	ID   uint32
+	Type Type
+	// Channel is the RF channel this beacon transmits on. Zero is
+	// overloaded with two distinct meanings, disambiguated by SendPath:
+	// on an is_only beacon it means "no RF leg" (there is nothing to
+	// resolve); on an rf/both beacon it means "Auto" and is resolved to
+	// a live channel at send time by Scheduler.autoChannelResolver.
+	Channel     uint32
 	Source      ax25.Address
 	Dest        ax25.Address
 	Path        []ax25.Address
@@ -49,12 +55,21 @@ type Config struct {
 	PHGHeightFt    int // feet above average terrain
 	PHGGainDB      int // dBi
 	PHGDirectivity int // 0 = omni, 1..8 = 45° × d compass direction
-	Enabled  bool
+	Enabled        bool
 	// SendPath selects the transmission destination. Empty is treated as
 	// SendPathRF for safety. SendPathISOnly skips RF entirely so a station
 	// with no radio can beacon to APRS-IS.
 	SendPath string
 }
+
+// AutoChannelResolver resolves the live "Auto APRS Channel" target
+// (Channel == 0) at transmit time, mirroring messages/iGate's
+// TxChannelResolver (see App.resolveTxChannel). The Scheduler calls this
+// only for beacons whose SendPath needs an RF leg (SendPath != is_only) —
+// an is_only beacon's Channel is a distinct "no RF leg" sentinel, also 0,
+// and must never be routed through this resolver. Nil disables Auto
+// resolution: Channel 0 is submitted as-is.
+type AutoChannelResolver func(ctx context.Context) uint32
 
 // Beacon send_path enum values (mirrors the send_path DB column).
 const (
