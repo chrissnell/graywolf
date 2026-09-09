@@ -172,6 +172,7 @@ type ActionsService interface {
 type MessagesService interface {
 	SendMessage(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
 	Resend(ctx context.Context, id uint64) (messages.SendResult, error)
+	Abort(ctx context.Context, id uint64) error
 	SoftDelete(ctx context.Context, id uint64) error
 	SoftDeleteThread(ctx context.Context, kind, key string) (int, error)
 	MarkRead(ctx context.Context, id uint64) error

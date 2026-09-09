@@ -16,17 +16,18 @@ import (
 // configstore.Message columns — see MessageResponse.Status below for
 // the derivation table.
 const (
-	MessageStatusQueued       = "queued"        // outbound, not yet submitted
-	MessageStatusTxSubmitted  = "tx_submitted"  // outbound, submitted but not yet TxHook-confirmed
-	MessageStatusSentRF       = "sent_rf"       // outbound DM, RF sent, awaiting ack
-	MessageStatusSentIS       = "sent_is"       // outbound DM, IS sent, awaiting ack
-	MessageStatusAwaitingAck  = "awaiting_ack"  // outbound DM, sent but not yet acked
-	MessageStatusAcked        = "acked"         // outbound DM, acked
-	MessageStatusRejected     = "rejected"      // outbound DM, REJ received
-	MessageStatusTimeout      = "timeout"       // outbound DM, retry budget exhausted
-	MessageStatusBroadcast    = "sent"          // tactical outbound broadcast — terminal
-	MessageStatusFailed       = "failed"        // terminal failure (non-retryable)
-	MessageStatusReceived     = "received"      // inbound
+	MessageStatusQueued      = "queued"       // outbound, not yet submitted
+	MessageStatusTxSubmitted = "tx_submitted" // outbound, submitted but not yet TxHook-confirmed
+	MessageStatusSentRF      = "sent_rf"      // outbound DM, RF sent, awaiting ack
+	MessageStatusSentIS      = "sent_is"      // outbound DM, IS sent, awaiting ack
+	MessageStatusAwaitingAck = "awaiting_ack" // outbound DM, sent but not yet acked
+	MessageStatusAcked       = "acked"        // outbound DM, acked
+	MessageStatusRejected    = "rejected"     // outbound DM, REJ received
+	MessageStatusTimeout     = "timeout"      // outbound DM, retry budget exhausted
+	MessageStatusAborted     = "aborted"      // outbound DM, operator cancelled via /abort
+	MessageStatusBroadcast   = "sent"         // tactical outbound broadcast — terminal
+	MessageStatusFailed      = "failed"       // terminal failure (non-retryable)
+	MessageStatusReceived    = "received"     // inbound
 )
 
 // DeriveMessageStatus maps the row's persisted column tuple to the
@@ -36,11 +37,14 @@ const (
 //
 // Direction = "in"   → "received"
 // Direction = "out" && ThreadKind = "tactical":
+//
 //	AckState == "broadcast"           → "sent"   (per plan: tactical terminal maps to "sent")
 //	SentAt == nil && Attempts == 0    → "queued"
 //	SentAt == nil && Attempts > 0     → "tx_submitted"
 //	default                            → "sent"
+//
 // Direction = "out" && ThreadKind = "dm":
+//
 //	AckState == "acked"                                          → "acked"
 //	AckState == "rejected" && FailureReason != ""                → "timeout" or "failed"
 //	AckState == "rejected"                                       → "rejected"
@@ -74,6 +78,8 @@ func DeriveMessageStatus(m configstore.Message) string {
 		// Retry manager populates FailureReason on budget exhaustion /
 		// permanent governor error; empty reason → peer-sent REJ.
 		switch {
+		case m.FailureReason == messages.AbortedFailureReason:
+			return MessageStatusAborted
 		case strings.Contains(strings.ToLower(m.FailureReason), "retry budget"):
 			return MessageStatusTimeout
 		case m.FailureReason != "":
@@ -206,8 +212,8 @@ func (r SendMessageRequest) Validate() error {
 // underlying columns.
 type MessageResponse struct {
 	ID             uint64     `json:"id"`
-	Direction      string     `json:"direction"`                // "in" | "out"
-	Status         string     `json:"status"`                   // derived — see DeriveMessageStatus
+	Direction      string     `json:"direction"` // "in" | "out"
+	Status         string     `json:"status"`    // derived — see DeriveMessageStatus
 	OurCall        string     `json:"our_call"`
 	PeerCall       string     `json:"peer_call"`
 	FromCall       string     `json:"from_call"`
@@ -218,7 +224,7 @@ type MessageResponse struct {
 	ReceivedAt     *time.Time `json:"received_at,omitempty"`
 	SentAt         *time.Time `json:"sent_at,omitempty"`
 	AckedAt        *time.Time `json:"acked_at,omitempty"`
-	Source         string     `json:"source,omitempty"`          // "rf" | "is"
+	Source         string     `json:"source,omitempty"` // "rf" | "is"
 	Channel        *uint32    `json:"channel,omitempty"`
 	Path           string     `json:"path,omitempty"`
 	Via            string     `json:"via,omitempty"`
@@ -257,28 +263,28 @@ type MessageResponse struct {
 // semantic "channel 0" that would confuse clients.
 func MessageFromModel(m configstore.Message) MessageResponse {
 	resp := MessageResponse{
-		ID:             m.ID,
-		Direction:      m.Direction,
-		Status:         DeriveMessageStatus(m),
-		OurCall:        m.OurCall,
-		PeerCall:       m.PeerCall,
-		FromCall:       m.FromCall,
-		ToCall:         m.ToCall,
-		Text:           m.Text,
-		MsgID:          m.MsgID,
-		CreatedAt:      m.CreatedAt.UTC(),
-		ReceivedAt:     nilUTC(m.ReceivedAt),
-		SentAt:         nilUTC(m.SentAt),
-		AckedAt:        nilUTC(m.AckedAt),
-		Source:         m.Source,
-		Path:           m.Path,
-		Via:            m.Via,
-		Unread:         m.Unread,
-		Attempts:       m.Attempts,
-		NextRetryAt:    nilUTC(m.NextRetryAt),
-		FailureReason:  m.FailureReason,
-		IsAck:          m.IsAck,
-		IsBulletin:     m.IsBulletin,
+		ID:               m.ID,
+		Direction:        m.Direction,
+		Status:           DeriveMessageStatus(m),
+		OurCall:          m.OurCall,
+		PeerCall:         m.PeerCall,
+		FromCall:         m.FromCall,
+		ToCall:           m.ToCall,
+		Text:             m.Text,
+		MsgID:            m.MsgID,
+		CreatedAt:        m.CreatedAt.UTC(),
+		ReceivedAt:       nilUTC(m.ReceivedAt),
+		SentAt:           nilUTC(m.SentAt),
+		AckedAt:          nilUTC(m.AckedAt),
+		Source:           m.Source,
+		Path:             m.Path,
+		Via:              m.Via,
+		Unread:           m.Unread,
+		Attempts:         m.Attempts,
+		NextRetryAt:      nilUTC(m.NextRetryAt),
+		FailureReason:    m.FailureReason,
+		IsAck:            m.IsAck,
+		IsBulletin:       m.IsBulletin,
 		ThreadKind:       m.ThreadKind,
 		ThreadKey:        m.ThreadKey,
 		ReceivedByCall:   m.ReceivedByCall,
