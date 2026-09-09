@@ -455,6 +455,102 @@ func TestSetChannelEnabled_NoOp(t *testing.T) {
 	}
 }
 
+// TestSetChannelEnabled_SignalsTxRouting is the regression guard for
+// the "Auto TX channel goes stale" bug: toggling a channel's enabled
+// flag must wake both the iGate and messages reload drainers so their
+// cached "Auto"-resolved TX channel re-converges, not just the Phase 3
+// TX-dispatcher snapshot.
+func TestSetChannelEnabled_SignalsTxRouting(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	msgCh := make(chan struct{}, 1)
+	igCh := make(chan struct{}, 1)
+	srv.SetMessagesReload(msgCh)
+	srv.SetIgateReload(igCh)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/1/enabled", strings.NewReader(`{"enabled":false}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-msgCh:
+	default:
+		t.Error("expected messages reload signal")
+	}
+	select {
+	case <-igCh:
+	default:
+		t.Error("expected igate reload signal")
+	}
+}
+
+// TestSetChannelEnabled_NoOpDoesNotSignal confirms the reload signals
+// only fire on an actual enabled-flag transition, not on every request.
+func TestSetChannelEnabled_NoOpDoesNotSignal(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	msgCh := make(chan struct{}, 1)
+	srv.SetMessagesReload(msgCh)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/1/enabled", strings.NewReader(`{"enabled":true}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-msgCh:
+		t.Error("no-op toggle must not signal a reload")
+	default:
+	}
+}
+
+// TestUpdateChannel_SignalsTxRouting confirms a full channel PUT (which
+// can flip Enabled or the audio-device backing) also nudges the
+// iGate/messages routing reload, not just the Phase 3 dispatcher.
+func TestUpdateChannel_SignalsTxRouting(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	msgCh := make(chan struct{}, 1)
+	igCh := make(chan struct{}, 1)
+	srv.SetMessagesReload(msgCh)
+	srv.SetIgateReload(igCh)
+
+	body := `{
+		"name": "rx0",
+		"input_device_id": 1,
+		"output_device_id": 2,
+		"modem_type": "afsk",
+		"bit_rate": 1200,
+		"mark_freq": 1200,
+		"space_freq": 2200,
+		"profile": "A",
+		"num_slicers": 1,
+		"fix_bits": "none"
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/1", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-msgCh:
+	default:
+		t.Error("expected messages reload signal")
+	}
+	select {
+	case <-igCh:
+	default:
+		t.Error("expected igate reload signal")
+	}
+}
+
 // TestChannelsCreate_Disabled verifies an explicit create-disabled
 // (enabled:false in the POST body) is honored despite the GORM
 // default:true footgun -- the create handler flips the fresh row off.
