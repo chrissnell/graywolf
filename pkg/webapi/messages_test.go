@@ -32,6 +32,7 @@ import (
 type fakeMessagesSvc struct {
 	sendFn             func(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
 	resendFn           func(ctx context.Context, id uint64) (messages.SendResult, error)
+	abortFn            func(ctx context.Context, id uint64) error
 	softDeleteFn       func(ctx context.Context, id uint64) error
 	softDeleteThreadFn func(ctx context.Context, kind, key string) (int, error)
 	markReadFn         func(ctx context.Context, id uint64) error
@@ -53,6 +54,12 @@ func (f *fakeMessagesSvc) Resend(ctx context.Context, id uint64) (messages.SendR
 		return f.resendFn(ctx, id)
 	}
 	return messages.SendResult{}, errors.New("resendFn not set")
+}
+func (f *fakeMessagesSvc) Abort(ctx context.Context, id uint64) error {
+	if f.abortFn != nil {
+		return f.abortFn(ctx, id)
+	}
+	return nil
 }
 func (f *fakeMessagesSvc) SoftDelete(ctx context.Context, id uint64) error {
 	if f.softDeleteFn != nil {
@@ -916,6 +923,117 @@ func TestResend_HappyPath(t *testing.T) {
 	case <-resendCalled:
 	case <-time.After(time.Second):
 		t.Error("resendFn was not called")
+	}
+}
+
+// --- POST /api/messages/{id}/abort ----------------------------------------
+
+func TestAbort_NotFound(t *testing.T) {
+	_, mux, _ := newMessagesTestServer(t, &fakeMessagesSvc{})
+	req := httptest.NewRequest(http.MethodPost, "/api/messages/999/abort", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestAbort_InboundConflict(t *testing.T) {
+	_, mux, store := newMessagesTestServer(t, &fakeMessagesSvc{})
+	m := &configstore.Message{
+		Direction: "in", OurCall: "N0CALL", FromCall: "W1ABC", ToCall: "N0CALL",
+		ThreadKind: messages.ThreadKindDM, Text: "bye",
+	}
+	insertMessage(t, store, m)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/messages/%d/abort", m.ID), nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for inbound, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAbort_TacticalRejected(t *testing.T) {
+	_, mux, store := newMessagesTestServer(t, &fakeMessagesSvc{})
+	m := &configstore.Message{
+		Direction: "out", OurCall: "N0CALL", FromCall: "N0CALL", ToCall: "NW5WOPS",
+		ThreadKind: messages.ThreadKindTactical, Text: "hi",
+		AckState: messages.AckStateNone,
+	}
+	insertMessage(t, store, m)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/messages/%d/abort", m.ID), nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for tactical, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAbort_ConflictOnTerminalRow(t *testing.T) {
+	svc := &fakeMessagesSvc{
+		abortFn: func(ctx context.Context, id uint64) error { return messages.ErrCannotAbort },
+	}
+	_, mux, store := newMessagesTestServer(t, svc)
+	m := &configstore.Message{
+		Direction: "out", OurCall: "N0CALL", FromCall: "N0CALL", ToCall: "W1ABC",
+		ThreadKind: messages.ThreadKindDM, MsgID: "001", Text: "hi",
+		AckState: messages.AckStateAcked,
+	}
+	insertMessage(t, store, m)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/messages/%d/abort", m.ID), nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for already-terminal row, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAbort_HappyPath(t *testing.T) {
+	abortCalled := make(chan uint64, 1)
+	svc := &fakeMessagesSvc{
+		abortFn: func(ctx context.Context, id uint64) error {
+			abortCalled <- id
+			return nil
+		},
+	}
+	_, mux, store := newMessagesTestServer(t, svc)
+	m := &configstore.Message{
+		Direction: "out", OurCall: "N0CALL", FromCall: "N0CALL", ToCall: "W1ABC",
+		ThreadKind: messages.ThreadKindDM, MsgID: "001", Text: "hi",
+		AckState: messages.AckStateNone,
+	}
+	insertMessage(t, store, m)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/messages/%d/abort", m.ID), nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-abortCalled:
+	case <-time.After(time.Second):
+		t.Error("abortFn was not called")
+	}
+}
+
+func TestAbort_ServiceUnavailable(t *testing.T) {
+	store, err := configstore.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	srv, err := NewServer(Config{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately leave messagesService/messagesStore unset.
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	req := httptest.NewRequest(http.MethodPost, "/api/messages/1/abort", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

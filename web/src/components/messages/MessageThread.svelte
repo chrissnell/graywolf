@@ -26,14 +26,16 @@
   import MessageMetaPanel from './MessageMetaPanel.svelte';
   import ComposeBar from './ComposeBar.svelte';
   import RemoteActionsDrawer from './remote_actions/RemoteActionsDrawer.svelte';
+  import ConfirmDialog from '../ConfirmDialog.svelte';
   import {
     messagesPreferencesState,
     DEFAULT_MAX_MESSAGE_TEXT,
   } from '../../lib/settings/messages-preferences-store.svelte.js';
   import { dayHeader, dayKey } from './time.js';
   import { messages as store } from '../../lib/messagesStore.svelte.js';
+  import { toasts } from '../../lib/stores.js';
   import {
-    listMessages, markRead, markUnread, resendMessage,
+    listMessages, markRead, markUnread, resendMessage, abortMessage, deleteMessage,
   } from '../../api/messages.js';
   import { refreshNow } from '../../lib/messagesTransport.js';
 
@@ -77,6 +79,12 @@
       ? messagesPreferencesState.maxMessageText
       : DEFAULT_MAX_MESSAGE_TEXT,
   );
+  // Denominator for the context menu's "attempts/max" footer. The
+  // preferences store's `.prefs` getter is populated by ComposeBar's
+  // mount-time fetchPreferences() for this same thread view, so by the
+  // time a bubble's context menu can be opened it's already hydrated;
+  // 0/unset falls back to the backend's own default (4).
+  const retryMaxAttempts = $derived(messagesPreferencesState.prefs?.retry_max_attempts || 4);
 
   // --- Local messages state (per-thread, not part of global store).
   /** @type {Array<any>} */
@@ -347,6 +355,40 @@
     refreshNow();
     fetchThread();
   }
+  async function onAbortMenu() {
+    if (menuMsg?.id == null) return;
+    try {
+      await abortMessage(menuMsg.id);
+      toasts.success('Message aborted');
+    } catch (e) {
+      toasts.error(e?.message || 'Abort failed');
+    }
+    refreshNow();
+    fetchThread();
+  }
+  // Delete requires confirmation — stash the target id and let the
+  // dialog's onConfirm drive the actual API call.
+  let deleteConfirmOpen = $state(false);
+  let deleteTargetId = $state(null);
+  function onDeleteMenu() {
+    if (menuMsg?.id == null) return;
+    deleteTargetId = menuMsg.id;
+    deleteConfirmOpen = true;
+  }
+  async function confirmDelete() {
+    const id = deleteTargetId;
+    deleteTargetId = null;
+    if (id == null) return;
+    try {
+      await deleteMessage(id);
+      msgs = msgs.filter((m) => m.id !== id);
+      store.messageById.delete(id);
+      toasts.success('Message deleted');
+    } catch (e) {
+      toasts.error(e?.message || 'Delete failed');
+    }
+    refreshNow();
+  }
   // --- Meta drawer wiring.
   let metaOpen = $state(false);
   /** @type {any} */
@@ -466,9 +508,19 @@
     {onCopyCall}
     {onMarkUnread}
     {onResend}
+    onAbort={onAbortMenu}
+    onDelete={onDeleteMenu}
+    {retryMaxAttempts}
     onReplyPrivate={replyPrivately}
   />
   <MessageMetaPanel bind:open={metaOpen} msg={metaMsg} />
+  <ConfirmDialog
+    bind:open={deleteConfirmOpen}
+    title="Delete this message?"
+    message="This message will be permanently removed from the thread. This cannot be undone."
+    confirmLabel="Delete"
+    onConfirm={confirmDelete}
+  />
   {#if !isTactical && thread?.key}
     <RemoteActionsDrawer
       bind:open={actionsDrawerOpen}

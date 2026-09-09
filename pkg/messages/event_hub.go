@@ -27,6 +27,11 @@ const (
 	// EventMessageDeleted is emitted when an operator soft-deletes
 	// an outbound or inbound row via REST.
 	EventMessageDeleted = "message.deleted"
+	// EventMessageAborted is emitted when an operator cancels a
+	// pending DM's retry via Service.Abort. Distinct from
+	// EventMessageFailed (retry-budget exhaustion) so consumers can
+	// tell an operator-initiated cancel apart from a timeout.
+	EventMessageAborted = "message.aborted"
 	// EventMessageUpdated is emitted when a row's rendered state
 	// changes without a more specific event (e.g. an invite gets
 	// InviteAcceptedAt stamped). The webapi SSE layer already maps
