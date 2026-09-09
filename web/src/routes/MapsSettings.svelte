@@ -9,6 +9,8 @@
   import { catalogStore } from '../lib/maps/catalog-store.svelte.js';
   import { localBoundsStore } from '../lib/maps/local-bounds-store.svelte.js';
   import { formatBytes } from '../lib/maps/format-bytes.js';
+  import { buildCountryTree } from '../lib/maps/catalog-tree.js';
+  import { groupDownloadedByCountry } from '../lib/maps/downloaded-groups.js';
   import RegionPicker from '../lib/maps/region-picker.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import wolfLogoUrl from '../assets/graywolf.svg';
@@ -18,6 +20,7 @@
   let lastError = $state(null); // { ok, status, code, message }
 
   let pickerOpen = $state(false);
+  let expandedCountries = $state(new Set()); // iso2 codes expanded in the Downloaded list
 
   let validation = $derived(validateCallsign(callsignInput));
   let canSubmit = $derived(consented && validation.ok && !mapsState.registering);
@@ -59,6 +62,18 @@
     rows.sort((a, b) => a.name.localeCompare(b.name));
     return rows;
   });
+
+  // Country-grouped view of downloadedRows, mirroring the region-picker's layout.
+  let downloadedEntries = $derived.by(() => {
+    const tree = catalogStore.catalog ? buildCountryTree(catalogStore.catalog) : [];
+    return groupDownloadedByCountry(tree, downloadedRows);
+  });
+
+  function toggleCountry(iso2) {
+    const s = new Set(expandedCountries);
+    if (s.has(iso2)) s.delete(iso2); else s.add(iso2);
+    expandedCountries = s;
+  }
 
   let activeDownloads = $derived.by(() => {
     const rows = [];
@@ -357,23 +372,49 @@
       </ul>
     {/if}
 
+    {#snippet downloadedRow(row)}
+      <li class="downloaded-row">
+        <span class="downloaded-name">{row.name}</span>
+        <span class="downloaded-meta">
+          {formatBytes(row.bytes_total)}
+          {#if row.downloaded_at}
+            · {new Date(row.downloaded_at).toLocaleDateString()}
+          {/if}
+        </span>
+        <Button variant="default" onclick={() => downloadsState.start(row.slug)}>Re-download</Button>
+        <Button variant="danger" onclick={() => downloadsState.remove(row.slug)}>Delete</Button>
+      </li>
+    {/snippet}
+
     {#if downloadedRows.length === 0 && activeDownloads.length === 0}
       <p class="form-hint">No regions downloaded yet.</p>
     {:else if downloadedRows.length > 0}
       <h3 class="prose-heading">Downloaded ({downloadedRows.length})</h3>
       <ul class="downloaded-list">
-        {#each downloadedRows as row (row.slug)}
-          <li class="downloaded-row">
-            <span class="downloaded-name">{row.name}</span>
-            <span class="downloaded-meta">
-              {formatBytes(row.bytes_total)}
-              {#if row.downloaded_at}
-                · {new Date(row.downloaded_at).toLocaleDateString()}
+        {#each downloadedEntries as entry (entry.kind + ':' + entry.slug)}
+          {#if entry.kind === 'single'}
+            {@render downloadedRow(entry)}
+          {:else}
+            <li class="downloaded-group">
+              <button
+                class="downloaded-group-header"
+                type="button"
+                onclick={() => toggleCountry(entry.iso2)}
+                aria-expanded={expandedCountries.has(entry.iso2)}
+              >
+                <span class="downloaded-caret">{expandedCountries.has(entry.iso2) ? '▾' : '▸'}</span>
+                <span class="downloaded-name">{entry.name}</span>
+                <span class="downloaded-badge">{entry.downloadedCount}/{entry.totalCount} Downloaded</span>
+              </button>
+              {#if expandedCountries.has(entry.iso2)}
+                <ul class="downloaded-children">
+                  {#each entry.rows as row (row.slug)}
+                    {@render downloadedRow(row)}
+                  {/each}
+                </ul>
               {/if}
-            </span>
-            <Button variant="default" onclick={() => downloadsState.start(row.slug)}>Re-download</Button>
-            <Button variant="danger" onclick={() => downloadsState.remove(row.slug)}>Delete</Button>
-          </li>
+            </li>
+          {/if}
         {/each}
       </ul>
     {/if}
