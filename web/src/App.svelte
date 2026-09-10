@@ -35,6 +35,7 @@
   import MapsSettings from './routes/MapsSettings.svelte';
   import StorageSettings from './routes/StorageSettings.svelte';
   import MessagesSettings from './routes/MessagesSettings.svelte';
+  import BeaconSettings from './routes/BeaconSettings.svelte';
   import Messages from './routes/Messages.svelte';
   import Terminal from './routes/Terminal.svelte';
   import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
@@ -65,6 +66,7 @@
     '/logs': Logs,
     '/system-logs': SystemLogs,
     '/preferences': Preferences,
+    '/preferences/beacons': BeaconSettings,
     '/preferences/maps': MapsSettings,
     '/preferences/storage': StorageSettings,
     '/preferences/messages': MessagesSettings,
