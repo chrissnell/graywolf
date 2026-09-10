@@ -29,6 +29,7 @@ contribution is licensed under the same terms. See
   - [Reporting bugs](#reporting-bugs)
   - [Requesting features](#requesting-features)
   - [How we use GitHub issue labels](#how-we-use-github-issue-labels)
+    - [Workflow labels and how maintainers triage](#workflow-labels-and-how-maintainers-triage)
   - [Setting up a development environment](#setting-up-a-development-environment)
     - [Toolchain](#toolchain)
     - [Optional tools](#optional-tools)
@@ -164,7 +165,7 @@ when you see them.
 | `bug` | Confirmed or strongly suspected defect. Fixes welcome. |
 | `enhancement` | New feature or behavior change. Being discussed, or accepted but not started. |
 | `documentation` | Handbook, wiki, README, or in-code documentation. |
-| `question` | Needs clarification from the reporter, or is a support question rather than a defect. |
+| `question` | A genuine question about intended behavior or design. Requests for help go under `support`; reports missing details get `needs-info` (both below). |
 | `good first issue` | Small, well-scoped, and does not require deep knowledge of the codebase. A good place to start. |
 | `help wanted` | We want this and would welcome a contributor taking it. Comment on the issue before you start so we can point you in the right direction. |
 | `in-progress` | Someone (usually a maintainer) is actively working on it. **Ask before starting your own work** on an `in-progress` issue so we do not duplicate effort. |
@@ -174,6 +175,83 @@ when you see them.
 | `duplicate` | Already tracked elsewhere. The canonical issue is linked. |
 | `invalid` | Not actionable as filed: not reproducible, not a Graywolf problem, or missing information that was not provided. |
 | `wontfix` | Considered and declined. The reason is in the thread. This is not a judgment of the idea, only of its fit for this project. |
+
+### Workflow labels and how maintainers triage
+
+The labels above say *what* an item is. Workflow labels say *where it
+is*: what has to happen next, and who has to do it. `in-progress`,
+`blocked-pending-other-work`, and `backlog` already play this role. The
+five below complete the set. An open issue or PR with no workflow label
+has not been looked at yet.
+
+| Label | Applies to | Meaning |
+|---|---|---|
+| `support` | issues | Help using Graywolf; not a defect as filed. |
+| `needs-info` | issues, PRs | Waiting on the reporter or author for details. |
+| `needs-discussion` | issues, PRs | A maintainer has looked; the maintainers need to agree on whether or how to proceed before it moves. |
+| `needs-second-review` | PRs | First review done and favorable; wants the other maintainer's review before merge. |
+| `awaiting-author` | PRs | Changes requested; the ball is with the contributor. |
+
+> **Draft note for reviewers:** these five labels do not exist in the
+> repository yet. They are created when this document is adopted, and
+> two things need deciding first.
+>
+> 1. **Prefix or not.** Plain names as shown match the existing
+>    `in-progress`, `backlog`, and `blocked-pending-other-work`. A prefix
+>    such as `status:` (`status: needs-discussion`) makes the workflow
+>    labels sort and filter together and look distinct from the type
+>    labels, at the cost of renaming the three existing ones. Whichever
+>    we pick is far easier to apply now than after the labels are in
+>    use.
+> 2. **Narrowing `question`.** The table above already gives `question`
+>    its narrowed meaning. Adopting this section means re-labeling the
+>    handful of issues that currently use it for support or feature
+>    requests.
+
+**Issues.** On first look, a maintainer applies one type label (`bug`,
+`enhancement`, `documentation`, `question`, or `support`) and, if the
+issue cannot move yet, one workflow label:
+
+- `support`: answer, or point to the handbook page or Discord, and
+  close when resolved. If nothing comes back in about 30 days, close as
+  not planned. Support requests often expose a documentation or UX gap;
+  when one does, open a `bug` or `documentation` issue for the gap,
+  link the two, and close the support issue. A log line that makes a
+  newcomer believe the install failed is a bug even when the install
+  worked.
+- `needs-info`: the report lacks the version, platform, hardware, logs,
+  or steps that [Reporting bugs](#reporting-bugs) asks for. Ask for
+  them. Close as not planned after about 30 days without a reply; the
+  reporter can reopen.
+- `needs-discussion`: the maintainers need to agree on whether or how
+  to do it, typically an `enhancement` whose fit for the project is not
+  obvious. The comment that applies the label states the actual
+  question.
+- Once agreed and started, `in-progress`. If it must wait on something
+  else, `blocked-pending-other-work`. If agreed but nobody will get to
+  it soon, `backlog`.
+
+**Pull requests.** After a maintainer's first look, one of four things
+happens:
+
+- Obviously correct and complete: merge it. No label needed.
+- Obviously not going to be accepted: explain why and close it.
+- Needs work from the contributor: request changes through a GitHub
+  review and apply `awaiting-author`. If the contributor goes quiet for
+  about 30 days, close as not planned with a note that they are welcome
+  to reopen.
+- Needs the other maintainer: apply `needs-second-review` when you are
+  inclined to merge but want a second opinion (DSP, Android, PTT
+  hardware, anything outside your comfort zone), or `needs-discussion`
+  when there is a scope or design question to settle first. In both
+  cases request a review from the other maintainer and say in a comment
+  what you want them to look at.
+
+Rules: at most one workflow label on an open item at a time; replace it
+when the state changes; drop it on merge or close. Two filters do most
+of the work: `is:open is:pr no:label` is the untouched queue, and
+`is:open label:needs-discussion` is the agenda for the next maintainer
+conversation.
 
 ## Setting up a development environment
 
