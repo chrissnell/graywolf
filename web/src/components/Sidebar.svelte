@@ -44,6 +44,7 @@
     { path: '/gps', label: 'GPS' },
     { path: '/igate', label: 'iGate' },
     { path: '/digipeater', label: 'Digipeater' },
+    { path: '/preferences/beacons', label: 'Beacons' },
     { path: '/preferences/maps', label: 'Maps' },
     { path: '/position-log', label: 'Position Log' },
     { path: '/preferences/messages', label: 'Messaging' },
