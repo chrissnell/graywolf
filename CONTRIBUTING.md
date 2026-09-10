@@ -511,9 +511,33 @@ as `vX.Y.Z`, and betas as `vX.Y.Z-beta.N`. There are no `develop`,
 followed by a point release.
 
 Everything else is a short-lived topic branch: cut from `main`,
-carrying one change, opened as one PR against `main`. Maintainers push
-topic branches to the main repository; everyone else works from a fork.
-Either way the change arrives as a PR.
+carrying one change, opened as one PR against `main`.
+
+Only maintainers have write access to `chrissnell/graywolf`, so only
+maintainers can create branches there. Everyone else works from a fork:
+
+1. Fork the repository on GitHub.
+2. Keep your fork's `main` in sync with upstream. Never commit to it
+   directly, and never open a PR from it.
+3. Create your topic branch on the fork, from your freshly synced
+   `main`.
+4. Open the PR from that branch against `chrissnell/graywolf:main`.
+
+To sync a fork from the command line, add the upstream remote once:
+
+```bash
+git remote add upstream https://github.com/chrissnell/graywolf.git
+```
+
+then, before starting each new branch:
+
+```bash
+git fetch upstream && git checkout main && git merge --ff-only upstream/main && git push origin main
+```
+
+If the fast-forward merge fails, your fork's `main` has commits that
+upstream does not. Move them to a topic branch and reset `main` to
+`upstream/main`.
 
 Name branches `<type>/<short-kebab-description>`:
 
@@ -531,8 +555,6 @@ to the issue.
 
 Housekeeping:
 
-- Do not open a PR from your fork's `main`. Keep it clean so you can
-  pull upstream changes into it.
 - If `main` moves under you before review starts, rebase or merge as
   you like. Once review has started, merge `main` into your branch
   rather than rebasing, so review comments stay attached to the commits
@@ -541,8 +563,10 @@ Housekeeping:
 
 ### Workflow
 
-1. Fork the repository and create a topic branch from `main`, named as
-   described in [Branches](#branches).
+1. Fork the repository, sync your fork's `main` with upstream, and
+   create a topic branch from it, named as described in
+   [Branches](#branches). Maintainers skip the fork and branch directly
+   in `chrissnell/graywolf`.
 2. Make the change. Run the tests and linters for every component you
    touched (`make go-test`, `make test`, `make lint`,
    `cd web && npm test`). Regenerate committed artifacts if needed.
