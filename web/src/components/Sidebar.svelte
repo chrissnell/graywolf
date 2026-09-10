@@ -29,10 +29,9 @@
     { path: '/map', label: 'Live Map', svgIcon: 'globe' },
     { path: '/stations', label: 'Stations', svgIcon: 'stations' },
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
+    { path: '/beacons', label: 'Beacons', svgIcon: 'beacon' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
-    { path: '/logs', label: 'APRS Logs', svgIcon: 'logs' },
-    { path: '/system-logs', label: 'System Logs', svgIcon: 'system-logs' },
   ];
 
   const allSettingsItems = [
@@ -43,7 +42,6 @@
     { path: '/channels', label: 'Channels' },
     { path: '/kiss', label: 'KISS' },
     { path: '/gps', label: 'GPS' },
-    { path: '/beacons', label: 'Beacons' },
     { path: '/igate', label: 'iGate' },
     { path: '/digipeater', label: 'Digipeater' },
     { path: '/preferences/maps', label: 'Maps' },
@@ -52,6 +50,11 @@
     { path: '/preferences/storage', label: 'Storage' },
     { path: '/agw', label: 'AGW' },
     { path: '/simulation', label: 'Simulation' },
+  ];
+
+  const allLogsItems = [
+    { path: '/logs', label: 'APRS Logs' },
+    { path: '/system-logs', label: 'System Logs' },
   ];
   // mainItems carries the icon'd top section; it's filtered by the
   // same HIDDEN_ON_ANDROID set as the settings group so an entry like
@@ -67,6 +70,12 @@
       items: Platform.kind === 'android'
         ? allSettingsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
         : allSettingsItems,
+    },
+    {
+      label: 'Logs',
+      items: Platform.kind === 'android'
+        ? allLogsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
+        : allLogsItems,
     },
   ]);
 
@@ -134,6 +143,7 @@
   // Messages route match — '/messages' or any '/messages/*' sub-route.
   let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
   let isStationsActive = $derived(currentPath === '/stations' || currentPath.startsWith('/stations/'));
+  let isBeaconsActive = $derived(currentPath === '/beacons' || currentPath.startsWith('/beacons/'));
   let isTerminalActive = $derived(currentPath === '/terminal' || currentPath.startsWith('/terminal/'));
 
   // Per-group active item: longest-prefix match wins. This prevents e.g.
@@ -221,6 +231,23 @@
                 <rect x="14" y="12" width="7" height="9" />
                 <rect x="3" y="16" width="7" height="5" />
               </svg>
+            {:else if item.svgIcon === 'beacon'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="18" r="1.5" />
+                <path d="M12 15.5v-3" />
+                <path d="M8.5 9a5 5 0 0 1 7 0" />
+                <path d="M5.5 6a9 9 0 0 1 13 0" />
+              </svg>
             {:else if item.svgIcon === 'terminal'}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -249,39 +276,6 @@
                 stroke-linejoin="round"
               >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-            {:else if item.svgIcon === 'logs'}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.75"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-                <path d="M14 3v5h5" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="15" y2="17" />
-              </svg>
-            {:else if item.svgIcon === 'system-logs'}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.75"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect x="2" y="4" width="20" height="16" rx="2" />
-                <polyline points="6 9 9 12 6 15" />
-                <line x1="12" y1="15" x2="17" y2="15" />
               </svg>
             {/if}
             {#if unread > 0}
@@ -466,6 +460,35 @@
   </a>
 
   <a
+    href="/beacons"
+    use:link
+    class="top-bar-action"
+    class:active={isBeaconsActive}
+    aria-label="Beacons"
+    aria-current={isBeaconsActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <!-- Inline beacon glyph: matches the sidebar's Beacons icon. -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="18" r="1.5" />
+        <path d="M12 15.5v-3" />
+        <path d="M8.5 9a5 5 0 0 1 7 0" />
+        <path d="M5.5 6a9 9 0 0 1 13 0" />
+      </svg>
+    </span>
+  </a>
+
+  <a
     href="/terminal"
     use:link
     class="top-bar-action"
@@ -626,6 +649,13 @@
 
   .nav-group {
     padding: 0;
+  }
+
+  /* Divider between successive nav groups (e.g. above Logs, below Settings). */
+  .nav-group + .nav-group {
+    border-top: 1px solid var(--border-color);
+    margin-top: 4px;
+    padding-top: 4px;
   }
 
   .nav-group-label {
