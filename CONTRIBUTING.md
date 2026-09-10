@@ -166,6 +166,7 @@ when you see them.
 | `enhancement` | New feature or behavior change. Being discussed, or accepted but not started. |
 | `documentation` | Handbook, wiki, README, or in-code documentation. |
 | `question` | A genuine question about intended behavior or design. Requests for help go under `support`; reports missing details get `needs-info` (both below). |
+| `support` | issues | Help using Graywolf; not a defect as filed. |
 | `good first issue` | Small, well-scoped, and does not require deep knowledge of the codebase. A good place to start. |
 | `help wanted` | We want this and would welcome a contributor taking it. Comment on the issue before you start so we can point you in the right direction. |
 | `in-progress` | Someone (usually a maintainer) is actively working on it. **Ask before starting your own work** on an `in-progress` issue so we do not duplicate effort. |
@@ -186,8 +187,8 @@ has not been looked at yet.
 
 | Label | Applies to | Meaning |
 |---|---|---|
-| `support` | issues | Help using Graywolf; not a defect as filed. |
 | `needs-info` | issues, PRs | Waiting on the reporter or author for details. |
+| `requesting-code-review` | issues, PR | A contributor has a PR that they are ready to have a maintainer review. |
 | `needs-discussion` | issues, PRs | A maintainer has looked; the maintainers need to agree on whether or how to proceed before it moves. |
 | `needs-second-review` | PRs | First review done and favorable; wants the other maintainer's review before merge. |
 | `awaiting-author` | PRs | Changes requested; the ball is with the contributor. |
