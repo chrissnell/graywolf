@@ -34,6 +34,8 @@
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
   import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
   import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
+  import CotDialog from '../lib/map/cot-dialog.svelte';
+  import { api } from '../lib/api.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
@@ -50,6 +52,7 @@
   import { online } from '../lib/stores/connection.js';
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
   import MapPinned from 'lucide-svelte/icons/map-pinned';
+  import Target from 'lucide-svelte/icons/target';
   import Copy from 'lucide-svelte/icons/copy';
 
   // Values are seconds (data store wants ms; multiplied at dispatch).
@@ -397,6 +400,9 @@
   // clicked coordinates; onConfirm drops the point into the store.
   let fpDialog = $state({ open: false, lat: 0, lon: 0 });
 
+  // Add-CoT dialog state -- opened from the context menu's first item.
+  let cotDialog = $state({ open: false, lat: 0, lon: 0 });
+
   // Direct RX predicate: a station qualifies only if it was heard directly on
   // RF (RX, zero digi hops) WITHIN the active time range. The server tracks the
   // last direct-hearing time in last_direct_heard and never advances it on a
@@ -450,6 +456,14 @@
     const decimal = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     const grid = toMaidenhead(lat, lon);
     return [
+      {
+        label: 'Add CoT',
+        icon: Target,
+        primary: true,
+        onSelect: () => {
+          cotDialog = { open: true, lat, lon };
+        },
+      },
       {
         label: 'Add fixed beacon here',
         icon: MapPinPlus,
@@ -1612,6 +1626,20 @@
         toasts.success(`Added "${p.name}"`);
       } catch (err) {
         toasts.error(`Could not add point: ${err.message}`);
+      }
+    }}
+  />
+
+  <CotDialog
+    bind:open={cotDialog.open}
+    lat={cotDialog.lat}
+    lon={cotDialog.lon}
+    onConfirm={async (payload) => {
+      try {
+        await api.post('/cot-targets', payload);
+        toasts.success(`Cursor-on-Target sent: ${payload.object_name}`);
+      } catch (err) {
+        toasts.error(`Could not send Cursor-on-Target: ${err.message}`);
       }
     }}
   />

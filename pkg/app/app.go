@@ -16,6 +16,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/cot"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
 	"github.com/chrissnell/graywolf/pkg/historydb"
@@ -75,9 +76,9 @@ type App struct {
 	stationCache *stationcache.PersistentCache
 	// histdb is the history database; non-nil when the position log is
 	// enabled and the DB opened successfully. Updated by reconfigurePositionLog.
-	histdb       *historydb.DB
-	bridge       *modembridge.Bridge
-	gov          *txgovernor.Governor
+	histdb *historydb.DB
+	bridge *modembridge.Bridge
+	gov    *txgovernor.Governor
 	// ax25Mgr owns the per-process LAPB session table for the
 	// connected-mode terminal. Constructed in wireServices once the
 	// governor and store are available. Non-UI inbound frames are
@@ -99,41 +100,46 @@ type App struct {
 	// device change). The watcher rebuilds the snapshot on each
 	// received signal.
 	txBackendReload chan struct{}
-	agwServer         *agw.Server // nil if AGW is disabled in config
+	agwServer       *agw.Server // nil if AGW is disabled in config
 	// agwMu guards access to agwServer so a reload can swap in a new
 	// instance while the modem-bridge frame consumer is calling
 	// BroadcastMonitoredUI on the old one. Readers use currentAgw();
 	// the reload goroutine takes the write lock to stop the old server
 	// and install (or clear) a replacement.
-	agwMu       sync.Mutex
-	digi           *digipeater.Digipeater
-	gpsCache       *gps.MemCache
+	agwMu    sync.Mutex
+	digi     *digipeater.Digipeater
+	gpsCache *gps.MemCache
 	// satelliteCache points at gpsCache today (MemCache implements both
 	// PositionCache and SatelliteCache, with separate internal locks).
 	// The field is typed as the narrower SatelliteCache interface so the
 	// android per-sat reader can swap in an alternate implementation
 	// without touching gpsCache.
 	satelliteCache gps.SatelliteCache
-	stationPos  *gps.StationPos
-	gpsMgr      *gpsManager
-	appAndroidExt // platformClient lives here on Android, empty on desktop
-	beaconSched *beacon.Scheduler
+	stationPos     *gps.StationPos
+	gpsMgr         *gpsManager
+	appAndroidExt  // platformClient lives here on Android, empty on desktop
+	beaconSched    *beacon.Scheduler
+	// cotSched drives Cursor-on-Target retransmits; unlike beaconSched it
+	// is stateless (polls configstore directly) so it needs no reload
+	// channel -- a settings change is picked up by the next target
+	// created, and in-flight targets already snapshotted their own copy.
+	cotSched *cot.Scheduler
 	// ig is the live *igate.Igate; nil while the iGate is disabled.
 	// Held in an atomic pointer so the runtime enable/disable toggle
 	// (reloadIgate) can swap it without coordinating with consumers
 	// (RF->IS fanout adapter, status fn closures, beacon ISSink).
-	ig          atomic.Pointer[igate.Igate]
+	ig atomic.Pointer[igate.Igate]
 	// igateOut is the always-allocated aprs.PacketOutput adapter for the
 	// RF->IS fanout. Its inner *igate.Igate is set/cleared by reloadIgate
 	// so the bridge fanout doesn't need to be torn down on toggle.
-	igateOut    *igate.IgateOutput
+	igateOut *igate.IgateOutput
 	// igateLineSender is the always-allocated IGateLineSender adapter
 	// passed to messages.Service. It loads a.ig on every SendLine call
 	// so a runtime enable lights up the IS path without rebuilding the
 	// Service.
 	igateLineSender *liveIGateLineSender
-	apiSrv      *webapi.Server
-	httpSrv     *http.Server
+	apiSrv          *webapi.Server
+	httpSrv         *http.Server
 	// pprofSrv is the dedicated debug listener for /debug/pprof/*. nil
 	// when cfg.PprofAddr is empty (the default). Has no auth — operators
 	// are expected to bind loopback only.
@@ -222,18 +228,21 @@ type App struct {
 	// owns without tangling with siblings. Having one catchall WG would
 	// force every stop to wait for every other component to exit,
 	// defeating the ordered-teardown contract.
-	govWG               sync.WaitGroup
-	ax25connWG          sync.WaitGroup
-	statsWG             sync.WaitGroup
-	updatesWG           sync.WaitGroup
-	kissWG              sync.WaitGroup
-	agwWG               sync.WaitGroup
-	agwReloadWG         sync.WaitGroup
-	digiReloadWG        sync.WaitGroup
-	igateReloadWG       sync.WaitGroup
-	gpsWG               sync.WaitGroup
-	beaconWG            sync.WaitGroup
-	beaconReloadWG      sync.WaitGroup
+	govWG          sync.WaitGroup
+	ax25connWG     sync.WaitGroup
+	statsWG        sync.WaitGroup
+	updatesWG      sync.WaitGroup
+	kissWG         sync.WaitGroup
+	agwWG          sync.WaitGroup
+	agwReloadWG    sync.WaitGroup
+	digiReloadWG   sync.WaitGroup
+	igateReloadWG  sync.WaitGroup
+	gpsWG          sync.WaitGroup
+	beaconWG       sync.WaitGroup
+	beaconReloadWG sync.WaitGroup
+	// cotWG tracks the cot.Scheduler.Run goroutine; no reload WG
+	// counterpart since the scheduler is stateless (see cotSched doc).
+	cotWG               sync.WaitGroup
 	positionLogReloadWG sync.WaitGroup
 	httpWG              sync.WaitGroup
 	pprofWG             sync.WaitGroup

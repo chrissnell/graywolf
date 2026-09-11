@@ -1624,10 +1624,20 @@ deliberately double-feeds (RF hook *and* OnISSent); that is harmless because
 for both legs so the fix keeps `rfRank` 0 (our own transmission, never
 counted as RF-reachability evidence).
 
+**Cursor-on-Target (`pkg/cot`) joins this pattern identically.** A CoT's RF
+leg is covered by the same governor TX hook (`source.Kind == "beacon" ||
+source.Kind == "cot"`); its IS leg has its own `cot.Options.OnISSent`
+callback, wired in `pkg/app/wiring.go` right next to the beacon one, doing
+the identical `stationcache.ExtractEntry(pkt, "cot", "TX", channel)` extract.
+Without it an `is_only` CoT target would reach APRS-IS but never appear on
+the local map, for exactly the reason #438 describes for beacons.
+
 Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 (`sendBeaconWith` IS leg, `Options.OnISSent`),
+[`../../pkg/cot/scheduler.go`](../../pkg/cot/scheduler.go)
+(`send` IS leg, `Options.OnISSent`),
 [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
-(governor TX hook + `OnISSent` wiring),
+(governor TX hook + both `OnISSent` wirings),
 [`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
 (`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
 

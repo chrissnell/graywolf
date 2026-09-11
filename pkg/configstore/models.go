@@ -718,6 +718,85 @@ type FixedPoint struct {
 	UpdatedAt   time.Time `json:"-"`
 }
 
+// CotSettings is a singleton (id=1) row holding the global parameters
+// applied to every Cursor-on-Target (CoT) object created from the live
+// map's "Add CoT" dialog. Unlike Beacon, an individual CotTarget has no
+// per-object channel/destination/path/send-path override -- those are
+// all copied from this singleton onto the target row at creation time
+// (see CotTarget's snapshot fields) so a later settings edit never
+// changes an in-flight target's schedule.
+type CotSettings struct {
+	ID uint32 `gorm:"primaryKey;autoIncrement" json:"-"`
+	// Type is reserved for a future non-object CoT kind; only "object"
+	// is valid today (enforced at the webapi layer).
+	Type string `gorm:"not null;default:'object'" json:"type"`
+	// SendPath mirrors Beacon.SendPath: rf | both | is_only.
+	SendPath string `gorm:"column:send_path;not null;default:'rf'" json:"send_path"`
+	// Channel is the RF channel new CoT targets transmit on; 0 = Auto
+	// (first APRS-eligible channel, resolved at send time), mirroring
+	// Beacon.Channel.
+	Channel     uint32 `gorm:"not null;default:0" json:"channel"`
+	Destination string `gorm:"not null;default:'APGRWO'" json:"destination"`
+	Path        string `gorm:"not null;default:'WIDE1-1,WIDE2-1'" json:"path"`
+	// NumTransmits is the total number of sends (including the
+	// immediate first one) before a target goes inactive.
+	NumTransmits uint32 `gorm:"not null;default:4" json:"num_transmits"`
+	// SecondTxDelaySeconds is the delay before the 2nd transmit; every
+	// later delay is the previous offset multiplied by DecayFactor. See
+	// pkg/cot.ComputeOffsets for the exact formula.
+	SecondTxDelaySeconds uint32    `gorm:"not null;default:300" json:"second_tx_delay_seconds"`
+	DecayFactor          float64   `gorm:"not null;default:2" json:"decay_factor"`
+	CreatedAt            time.Time `json:"-"`
+	UpdatedAt            time.Time `json:"-"`
+}
+
+// CotTarget is one Cursor-on-Target object dropped from the live map.
+// It transmits immediately on creation, then retransmits on a decaying
+// schedule (pkg/cot) until TxCount reaches NumTransmits. Every
+// transmission parameter below the ObjectName/symbol/comment/position
+// fields is snapshotted from CotSettings at creation time and never
+// changes afterward, even if the operator later edits the global
+// settings -- see CotSettings' doc comment.
+type CotTarget struct {
+	ID          uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
+	ObjectName  string  `gorm:"not null" json:"object_name"`
+	SymbolTable string  `gorm:"not null;default:'/'" json:"symbol_table"`
+	Symbol      string  `gorm:"not null;default:'D'" json:"symbol"`
+	Overlay     string  `json:"overlay"`
+	Comment     string  `json:"comment"`
+	Latitude    float64 `gorm:"not null" json:"latitude"`
+	Longitude   float64 `gorm:"not null" json:"longitude"`
+
+	// --- snapshotted from CotSettings at creation time ---
+	Type                 string  `gorm:"not null;default:'object'" json:"type"`
+	SendPath             string  `gorm:"column:send_path;not null;default:'rf'" json:"send_path"`
+	Channel              uint32  `gorm:"not null;default:0" json:"channel"`
+	Destination          string  `gorm:"not null;default:'APGRWO'" json:"destination"`
+	Path                 string  `gorm:"not null;default:'WIDE1-1,WIDE2-1'" json:"path"`
+	NumTransmits         uint32  `gorm:"not null;default:4" json:"num_transmits"`
+	SecondTxDelaySeconds uint32  `gorm:"not null;default:300" json:"second_tx_delay_seconds"`
+	DecayFactor          float64 `gorm:"not null;default:2" json:"decay_factor"`
+
+	// --- transmit bookkeeping ---
+	// TxCount is the number of scheduled/automatic sends completed so
+	// far (the immediate first send counts as 1). Manual "Beacon Now"
+	// sends never touch this field -- see pkg/cot.Scheduler.SendNow.
+	TxCount uint32 `gorm:"not null;default:0" json:"tx_count"`
+	// FirstSentAt is set the moment TxCount transitions 0->1. Every
+	// later NextSendAt is computed as FirstSentAt + an offset from
+	// pkg/cot.ComputeOffsets, so a delayed first send doesn't compress
+	// the rest of the schedule.
+	FirstSentAt *time.Time `json:"first_sent_at,omitempty"`
+	// NextSendAt is when the next scheduled send is due; nil once
+	// TxCount reaches NumTransmits (exhausted / inactive). Starts equal
+	// to CreatedAt so the immediate first send is picked up right away.
+	NextSendAt *time.Time `json:"next_send_at,omitempty"`
+	LastSentAt *time.Time `json:"last_sent_at,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"-"`
+}
+
 // SmartBeaconConfig is a singleton (id=1) row holding the global
 // SmartBeacon curve parameters applied to every beacon with
 // SmartBeacon=true. Mirrors direwolf's single SMARTBEACON directive:

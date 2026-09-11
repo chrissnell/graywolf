@@ -238,6 +238,7 @@
 
   onMount(async () => {
     beacons = await api.get('/beacons') || [];
+    loadCotTargets();
     // Station callsign drives the inherited-placeholder and the list's
     // "inherited" rendering. Failure is non-fatal — the page stays
     // usable, beacons are still authorable, and the placeholder just
@@ -528,13 +529,89 @@
     }
   }
 
+  // --- Cursor-on-Target (CoT) tabs -------------------------------------
+  // CoT targets are only ever created from the live map's "Add CoT"
+  // dialog -- this page can view, manually resend, and delete them, but
+  // has no create form of its own (see cot-dialog.svelte).
+  let activeTab = $state('beacons'); // 'beacons' | 'active-cot' | 'inactive-cot'
+  let cotTargets = $state([]);
+  let cotDeleteTarget = $state(null);
+  let cotDeleteOpen = $state(false);
+  let deleteAllInactiveOpen = $state(false);
 
+  // `active` is computed server-side (tx_count < num_transmits) and is
+  // the single source of truth for which tab a target belongs to.
+  let activeCotTargets = $derived(cotTargets.filter((t) => t.active));
+  let inactiveCotTargets = $derived(cotTargets.filter((t) => !t.active));
+
+  async function loadCotTargets() {
+    try {
+      cotTargets = await api.get('/cot-targets') || [];
+    } catch (err) {
+      toasts.error(`Could not load Cursor-on-Targets: ${err.message}`);
+    }
+  }
+
+  // Manual resend: never touches the target's tx_count/num_transmits
+  // counter (see docs/wiki/invariants.md) -- the list doesn't need a
+  // refresh after this succeeds.
+  async function handleCotSendNow(t) {
+    try {
+      await api.post(`/cot-targets/${t.id}/send`, {});
+      toasts.success(`Cursor-on-Target sent: ${t.object_name}`);
+    } catch (err) {
+      toasts.error(err.message);
+    }
+  }
+
+  function confirmDeleteCot(t) {
+    cotDeleteTarget = t;
+    cotDeleteOpen = true;
+  }
+
+  async function executeDeleteCot() {
+    if (!cotDeleteTarget) return;
+    try {
+      await api.delete(`/cot-targets/${cotDeleteTarget.id}`);
+      toasts.success('Cursor-on-Target deleted');
+      await loadCotTargets();
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      cotDeleteOpen = false;
+      cotDeleteTarget = null;
+    }
+  }
+
+  async function executeDeleteAllInactiveCot() {
+    try {
+      const res = await api.delete('/cot-targets/inactive');
+      const n = res?.deleted ?? 0;
+      toasts.success(`Deleted ${n} inactive Cursor-on-Target${n === 1 ? '' : 's'}`);
+      await loadCotTargets();
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      deleteAllInactiveOpen = false;
+    }
+  }
 </script>
 
-<PageHeader title="Beacons" subtitle="APRS beacon configuration">
-  <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
+<PageHeader title="Beacons" subtitle="APRS beacon configuration and Cursor-on-Target objects">
+  {#if activeTab === 'beacons'}
+    <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
+  {:else if activeTab === 'inactive-cot' && inactiveCotTargets.length > 0}
+    <Button variant="danger" onclick={() => deleteAllInactiveOpen = true}>Delete all</Button>
+  {/if}
 </PageHeader>
 
+<div class="tabs">
+  <button class="tab" class:active={activeTab === 'beacons'} onclick={() => activeTab = 'beacons'}>Beacons</button>
+  <button class="tab" class:active={activeTab === 'active-cot'} onclick={() => activeTab = 'active-cot'}>Active Cursor-on-Targets</button>
+  <button class="tab" class:active={activeTab === 'inactive-cot'} onclick={() => activeTab = 'inactive-cot'}>Inactive Cursor-on-Targets</button>
+</div>
+
+{#if activeTab === 'beacons'}
 <!-- Gated on lastUpdated (set only after a successful fetch) so the
      banner doesn't flash before the channels store's first load, and
      stays hidden if that fetch errors — we don't claim "no channels"
@@ -648,6 +725,103 @@
       </div>
     {/each}
   </div>
+{/if}
+{/if}
+
+{#snippet cotCard(t)}
+  {@const disp = beaconChannelDisplay(t, channelsById)}
+  <div class="beacon-card">
+    <div class="beacon-header">
+      <div class="beacon-identity">
+        <span
+          class="symbol-swatch"
+          style="background-image: url({SPRITE_URLS[t.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(t.symbol || 'D', CELL_PX)};"
+          aria-hidden="true"
+        >
+          {#if t.overlay && t.symbol_table === ALTERNATE_TABLE}
+            <span class="symbol-swatch-overlay">{t.overlay}</span>
+          {/if}
+        </span>
+        <span class="beacon-callsign">{t.object_name}</span>
+        <span class="beacon-callsign-inherited">via {stationCallsign || '(not set)'}</span>
+      </div>
+      <div class="beacon-badges">
+        {#if t.send_path === 'is_only'}
+          <Badge variant="info">APRS-IS only</Badge>
+        {:else if t.send_path === 'both'}
+          <Badge variant="info">APRS-IS</Badge>
+        {/if}
+      </div>
+    </div>
+
+    <div class="beacon-channel" class:broken={disp.broken}>
+      <span
+        class="channel-label"
+        class:danger={disp.broken}
+        aria-label={disp.ariaLabel}
+        title={disp.title}
+      >
+        {disp.label}
+      </span>
+      {#if disp.showValue}
+        <span class="channel-value">{disp.value}</span>
+      {/if}
+    </div>
+
+    <div class="beacon-details">
+      <div class="detail-row">
+        <span class="detail-label">Destination</span>
+        <span class="detail-value">{t.destination}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Path</span>
+        <span class="detail-value">{t.path || '—'}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Position</span>
+        <span class="detail-value">{t.latitude.toFixed(4)}, {t.longitude.toFixed(4)}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">TX Count</span>
+        <span class="detail-value">{t.tx_count}/{t.num_transmits}</span>
+      </div>
+      {#if t.comment}
+        <div class="detail-row">
+          <span class="detail-label">Comment</span>
+          <span class="detail-value detail-comment">{t.comment}</span>
+        </div>
+      {/if}
+    </div>
+
+    <div class="beacon-actions">
+      <Button variant="ghost" onclick={() => handleCotSendNow(t)}>Beacon Now</Button>
+      <Button variant="danger" onclick={() => confirmDeleteCot(t)}>Delete</Button>
+    </div>
+  </div>
+{/snippet}
+
+{#if activeTab === 'active-cot'}
+  {#if activeCotTargets.length === 0}
+    <div class="empty-state">No active Cursor-on-Targets. Add one from the Live Map's right-click menu.</div>
+  {:else}
+    <div class="beacon-grid">
+      {#each activeCotTargets as t (t.id)}
+        {@render cotCard(t)}
+      {/each}
+    </div>
+  {/if}
+{/if}
+
+{#if activeTab === 'inactive-cot'}
+  {#if inactiveCotTargets.length === 0}
+    <div class="empty-state">No inactive Cursor-on-Targets.</div>
+  {:else}
+    <div class="beacon-grid">
+      {#each inactiveCotTargets as t (t.id)}
+        {@render cotCard(t)}
+      {/each}
+    </div>
+  {/if}
 {/if}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'} class="beacon-modal">
@@ -907,7 +1081,62 @@
   </AlertDialog.Content>
 </AlertDialog>
 
+<!-- Delete confirmation: single Cursor-on-Target -->
+<AlertDialog bind:open={cotDeleteOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>Delete Cursor-on-Target</AlertDialog.Title>
+    <AlertDialog.Description>
+      Are you sure you want to delete "{cotDeleteTarget?.object_name || '(unset)'}"? This cannot be undone.
+    </AlertDialog.Description>
+    <div class="modal-footer">
+      <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action class="danger-action" onclick={executeDeleteCot}>Delete</AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
+
+<!-- Delete confirmation: all inactive Cursor-on-Targets -->
+<AlertDialog bind:open={deleteAllInactiveOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>Delete all inactive Cursor-on-Targets</AlertDialog.Title>
+    <AlertDialog.Description>
+      Are you sure you want to delete all {inactiveCotTargets.length} inactive Cursor-on-Target{inactiveCotTargets.length === 1 ? '' : 's'}? This cannot be undone.
+    </AlertDialog.Description>
+    <div class="modal-footer">
+      <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action class="danger-action" onclick={executeDeleteAllInactiveCot}>Delete all</AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
+
 <style>
+  /* Tab bar — same look as BeaconSettings.svelte's tabs; no shared
+     Tabs component exists yet, so this is duplicated per-page. */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .tab {
+    padding: 8px 20px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab:hover {
+    color: var(--text-primary);
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
   .empty-state {
     text-align: center;
     color: var(--text-muted);
