@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cursor-on-Target &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="cursor-on-target.html">Cursor-on-Target</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <a href="stations.html">Stations</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Cursor-on-Target</h1>
+    <p class="subtitle">Drop a named object on the live map and beacon it under your station callsign</p>
+
+    <p>
+      A <strong>Cursor-on-Target (CoT)</strong> is a one-off APRS object
+      &mdash; a name, an icon, a comment, and a position &mdash; that you
+      drop directly from the <a href="livemap.html">Live Map</a> instead
+      of pre-configuring a <a href="beacons.html">beacon</a>. It&rsquo;s
+      built for the case where you need to mark something <em>right
+      now</em>: an aid station, a hazard, a staging area, a rally point
+      &mdash; and you want it on the air immediately without opening the
+      Beacons page first.
+    </p>
+
+    <p>
+      A CoT transmits once immediately, then automatically retransmits a
+      few more times on a schedule that spaces out over time, so the
+      object stays visible on other stations&rsquo; maps for a while
+      without you having to babysit it or clutter the frequency with a
+      beacon that repeats forever.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          CoT objects always transmit under your
+          <a href="callsign.html">station callsign</a> &mdash; there is no
+          per-object override. Set your station callsign before adding
+          one; graywolf refuses to create a CoT target otherwise.
+        </p>
+      </div>
+    </div>
+
+    <h2>Adding a Cursor-on-Target</h2>
+
+    <ol class="steps">
+      <li>Open the <a href="livemap.html">Live Map</a>.</li>
+      <li>Right-click (or long-press on touch) the spot you want to
+        mark. <strong>Add CoT</strong> is the first item in the context
+        menu.</li>
+      <li>Fill in the dialog:
+        <ul>
+          <li><strong>Object Name</strong> &mdash; up to 9 characters,
+            shown as the object&rsquo;s label on APRS maps.</li>
+          <li><strong>Icon</strong> &mdash; defaults to the primary-table
+            &ldquo;/D&rdquo; symbol; click <strong>Choose&hellip;</strong>
+            to pick a different one from the same symbol picker beacons
+            and fixed points use.</li>
+          <li><strong>Comment</strong> &mdash; free text appended to the
+            object report.</li>
+          <li><strong>Latitude</strong> / <strong>Longitude</strong>
+            &mdash; read-only, filled in from where you clicked.</li>
+        </ul>
+      </li>
+      <li>Click <strong>Send</strong>. It enables once Object Name and
+        Comment are both filled in. The object transmits immediately and
+        the dialog closes.</li>
+    </ol>
+
+    <h2 id="retransmit-schedule">The retransmit schedule</h2>
+
+    <p>
+      After the immediate first send, graywolf keeps retransmitting the
+      object a few more times so it doesn&rsquo;t vanish from other
+      stations&rsquo; maps the moment your first packet ages out. Each
+      later transmit is spaced out further than the last, controlled by
+      three numbers (configured on the
+      <a href="#settings">Cursor-on-Target Settings tab</a>):
+    </p>
+
+    <ul>
+      <li><strong>Number of Transmits</strong> &mdash; the total number
+        of sends, counting the immediate first one. Default 4.</li>
+      <li><strong>2nd TX Delay</strong> &mdash; how long after the first
+        send the second one fires. Default 300 seconds (5 minutes).</li>
+      <li><strong>Decay Factor</strong> &mdash; each later delay is the
+        previous one multiplied by this factor. Default 2 (each gap
+        doubles).</li>
+    </ul>
+
+    <p>
+      With the defaults (4 / 300 / 2), the schedule looks like this:
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Transmit</th><th>Offset</th><th>Time</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>TX 1</td><td>0 s</td><td>00:00:00</td></tr>
+            <tr><td>TX 2</td><td>300 s</td><td>00:05:00</td></tr>
+            <tr><td>TX 3</td><td>600 s</td><td>00:10:00</td></tr>
+            <tr><td>TX 4</td><td>1200 s</td><td>00:20:00</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      The Cursor-on-Target Settings tab shows this same preview table
+      live as you adjust the three numbers, so you can see the exact
+      pattern before saving.
+    </p>
+
+    <p>
+      Clicking <strong>Beacon Now</strong> on a CoT target (see below)
+      sends it immediately but never counts against this schedule
+      &mdash; it doesn&rsquo;t advance the transmit count or change when
+      the next automatic retransmit fires.
+    </p>
+
+    <h2 id="settings">Cursor-on-Target Settings</h2>
+
+    <p>
+      Global parameters live on the <strong>Beacon Settings</strong> page
+      (<a href="preferences.html">Preferences</a> &rarr; Beacons, or
+      directly from the Beacons page), under the
+      <strong>Cursor-on-Target Settings</strong> tab. Every new CoT
+      object snapshots these settings for itself at the moment it&rsquo;s
+      created &mdash; changing them later never affects a target that
+      already exists, only ones created afterward.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>type</code></td>
+              <td><code>object</code></td>
+              <td>Reserved for a future non-object CoT kind. Only
+                &ldquo;Object&rdquo; exists today.</td>
+            </tr>
+            <tr>
+              <td><code>send_path</code></td>
+              <td><code>rf</code></td>
+              <td>Same three choices as beacons: RF only, RF + APRS-IS,
+                or APRS-IS only (no radio). Saving with APRS-IS only
+                auto-enables the <a href="igate.html">iGate</a> the same
+                way an APRS-IS-only beacon does.</td>
+            </tr>
+            <tr>
+              <td><code>channel</code></td>
+              <td>Auto</td>
+              <td>Radio channel new CoT targets transmit on. Hidden when
+                Send To is APRS-IS only.</td>
+            </tr>
+            <tr>
+              <td><code>destination</code></td>
+              <td><code>APGRWO</code></td>
+              <td>APRS tocall identifying the originating software.</td>
+            </tr>
+            <tr>
+              <td><code>path</code></td>
+              <td><code>WIDE1-1,WIDE2-1</code></td>
+              <td>Digipeater path.</td>
+            </tr>
+            <tr>
+              <td><code>num_transmits</code></td>
+              <td><code>4</code></td>
+              <td>Total sends including the immediate first one.</td>
+            </tr>
+            <tr>
+              <td><code>second_tx_delay_seconds</code></td>
+              <td><code>300</code></td>
+              <td>Delay before the second transmit.</td>
+            </tr>
+            <tr>
+              <td><code>decay_factor</code></td>
+              <td><code>2</code></td>
+              <td>Multiplies each successive delay &mdash; see
+                <a href="#retransmit-schedule">the retransmit schedule</a>
+                above.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>Viewing and managing Cursor-on-Targets</h2>
+
+    <p>
+      The <a href="beacons.html">Beacons</a> page has three tabs:
+      <strong>Beacons</strong>, <strong>Active Cursor-on-Targets</strong>,
+      and <strong>Inactive Cursor-on-Targets</strong>. A CoT target moves
+      from Active to Inactive once it has been transmitted
+      <code>num_transmits</code> times &mdash; it stays listed there
+      rather than disappearing, so you can still review it, fire it again
+      with <strong>Beacon Now</strong>, or delete it.
+    </p>
+
+    <p>
+      Each card shows the same destination/path/position detail rows as
+      a beacon card, plus a <strong>TX Count</strong> row reading
+      <code>x/n</code> &mdash; how many times it has been automatically
+      sent, out of the configured total. Two buttons are available:
+    </p>
+
+    <ul>
+      <li><strong>Beacon Now</strong> &mdash; sends it immediately without
+        affecting the TX Count.</li>
+      <li><strong>Delete</strong> &mdash; removes the target and cancels
+        any remaining scheduled retransmits.</li>
+    </ul>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Deleting a Cursor-on-Target (single or via <strong>Delete
+          all</strong>) also transmits an APRS object-kill report for it
+          &mdash; the same object name and position, but marked dead
+          instead of live. Compliant radios and apps that recognize the
+          kill status remove the object from their own list instead of
+          waiting for it to age out on its own. This send is best-effort:
+          if the channel is unreachable, the target is still deleted from
+          graywolf.
+        </p>
+      </div>
+    </div>
+
+    <p>
+      The Inactive Cursor-on-Targets tab also has a
+      <strong>Delete all</strong> button above the list, for clearing out
+      every exhausted target at once.
+    </p>
+
+    <nav class="page-nav">
+      <a href="beacons.html">
+        <span class="label">Previous</span>
+        Beacons
+      </a>
+      <a href="digipeater.html" class="next">
+        <span class="label">Next</span>
+        Digipeater
+      </a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer">
+  graywolf &middot; modern APRS station
+</footer>
+
+<script src="handbook.js"></script>
+</body>
+</html>

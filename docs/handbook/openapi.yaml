@@ -50,6 +50,7 @@ definitions:
       raw:
         description: original AX.25 frame bytes
         items:
+          format: int32
           type: integer
         type: array
       source:
@@ -228,6 +229,7 @@ definitions:
     properties:
       altitude:
         description: meters (0 if none reported)
+        format: float64
         type: number
       ambiguity:
         description: 0..4, digits of ambiguity introduced by spaces
@@ -239,6 +241,7 @@ definitions:
         type: integer
       daodatum:
         description: DAO datum byte (APRS101 DAO extension), 0 if not present
+        format: int32
         type: integer
       hasAlt:
         type: boolean
@@ -246,12 +249,14 @@ definitions:
         type: boolean
       latitude:
         description: decimal degrees, positive north
+        format: float64
         type: number
       localTime:
         description: true if the timestamp was the '/' local-time form (APRS101 ch 6)
         type: boolean
       longitude:
         description: decimal degrees, positive east
+        format: float64
         type: number
       phg:
         allOf:
@@ -259,6 +264,7 @@ definitions:
         description: decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present
       speed:
         description: knots
+        format: float64
         type: number
       symbol:
         $ref: '#/definitions/aprs.Symbol'
@@ -269,14 +275,17 @@ definitions:
   aprs.Symbol:
     properties:
       code:
+        format: int32
         type: integer
       table:
+        format: int32
         type: integer
     type: object
   aprs.Telemetry:
     properties:
       analog:
         items:
+          format: float64
           type: number
         type: array
       analogHas:
@@ -289,6 +298,7 @@ definitions:
         type: string
       digital:
         description: bits 0..7 (only lower 8)
+        format: int32
         type: integer
       hasDigital:
         type: boolean
@@ -300,11 +310,13 @@ definitions:
     properties:
       bits:
         description: BITS. sense-bits bitmap (active-high per bit)
+        format: int32
         type: integer
       eqns:
         description: a, b, c coefficients per analog channel
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -357,25 +369,31 @@ definitions:
         type: integer
       pressure:
         description: tenths of millibar (e.g. 10132 = 1013.2)
+        format: float64
         type: number
       rain1Hour:
         description: hundredths of an inch
+        format: float64
         type: number
       rain24Hour:
+        format: float64
         type: number
       rainSinceMid:
+        format: float64
         type: number
       rawRainCounter:
         description: raw rain counter ('#' field)
         type: integer
       snowfall24h:
         description: inches (via 's' after 'g')
+        format: float64
         type: number
       softwareType:
         description: one-letter software code (e.g. 'w', 'x', 'd')
         type: string
       temperature:
         description: degrees F
+        format: float64
         type: number
       weatherUnitTag:
         description: 2..4 ASCII letters identifying the unit/model
@@ -385,9 +403,11 @@ definitions:
         type: integer
       windGust:
         description: mph (5-minute peak)
+        format: float64
         type: number
       windSpeed:
         description: mph (1-minute sustained)
+        format: float64
         type: number
     type: object
   configstore.Referrer:
@@ -941,6 +961,30 @@ definitions:
         description: '"sent"'
         type: string
     type: object
+  dto.BlockedCallsignRequest:
+    properties:
+      callsign:
+        type: string
+      enabled:
+        type: boolean
+      note:
+        type: string
+    type: object
+  dto.BlockedCallsignResponse:
+    properties:
+      callsign:
+        type: string
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      note:
+        type: string
+      updated_at:
+        type: string
+    type: object
   dto.BlocklistEntryRequest:
     properties:
       enabled:
@@ -1063,6 +1107,11 @@ definitions:
       tx:
         $ref: '#/definitions/dto.TxCapability'
     type: object
+  dto.ChannelEnabledRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
   dto.ChannelKissTncEntry:
     properties:
       allow_tx_from_governor:
@@ -1109,6 +1158,16 @@ definitions:
         type: integer
       decoder_offset:
         type: integer
+      enabled:
+        description: |-
+          Enabled gates whether graywolf brings the channel up. A pointer so
+          an omitted field means "leave at the default" (true) rather than
+          "disable": older clients and partial callers that never send the
+          key keep their channels running. ToModel substitutes true when nil.
+          A channel PUT is a full-resource replace, so an editor that echoes
+          the row's current enabled value preserves a disabled state across
+          unrelated field edits.
+        type: boolean
       fix_bits:
         type: string
       fx25_encode:
@@ -1148,6 +1207,16 @@ definitions:
         type: integer
       decoder_offset:
         type: integer
+      enabled:
+        description: |-
+          Enabled gates whether graywolf brings the channel up. A pointer so
+          an omitted field means "leave at the default" (true) rather than
+          "disable": older clients and partial callers that never send the
+          key keep their channels running. ToModel substitutes true when nil.
+          A channel PUT is a full-resource replace, so an editor that echoes
+          the row's current enabled value preserves a disabled state across
+          unrelated field edits.
+        type: boolean
       fix_bits:
         type: string
       fx25_encode:
@@ -1183,6 +1252,46 @@ definitions:
       space_freq:
         type: integer
     type: object
+  dto.CheckDeviceRequest:
+    properties:
+      device_path:
+        type: string
+    type: object
+  dto.CheckDeviceResponse:
+    properties:
+      char_device:
+        type: boolean
+      exists:
+        type: boolean
+      message:
+        type: string
+    type: object
+  dto.ConversationPrefsRequest:
+    properties:
+      send_path:
+        description: |-
+          SendPath overrides transport for this conversation. Empty ('')
+          means "inherit the global fallback policy"; otherwise one of
+          rf_only | is_only | both.
+        type: string
+      wait_for_ack:
+        description: |-
+          WaitForAck, when false, sends DMs to this contact once and skips
+          the retry ladder (no re-sends) — for handhelds that never ACK.
+          Defaults true.
+        type: boolean
+    type: object
+  dto.ConversationPrefsResponse:
+    properties:
+      send_path:
+        type: string
+      thread_key:
+        type: string
+      thread_kind:
+        type: string
+      wait_for_ack:
+        type: boolean
+    type: object
   dto.ConversationSummary:
     properties:
       alias:
@@ -1205,6 +1314,139 @@ definitions:
         type: integer
       unread_count:
         type: integer
+    type: object
+  dto.CotDeleteInactiveResponse:
+    properties:
+      deleted:
+        example: 3
+        type: integer
+    type: object
+  dto.CotSendResponse:
+    properties:
+      status:
+        example: sent
+        type: string
+    type: object
+  dto.CotSettingsRequest:
+    properties:
+      channel:
+        type: integer
+      decay_factor:
+        example: 2
+        type: number
+      destination:
+        example: APGRWO
+        type: string
+      num_transmits:
+        example: 4
+        type: integer
+      path:
+        example: WIDE1-1,WIDE2-1
+        type: string
+      second_tx_delay_seconds:
+        example: 300
+        type: integer
+      send_path:
+        enum:
+          - rf
+          - both
+          - is_only
+        example: rf
+        type: string
+      type:
+        description: |-
+          Type is reserved for a future non-object CoT kind; only "object"
+          validates today.
+        enum:
+          - object
+        example: object
+        type: string
+    type: object
+  dto.CotSettingsResponse:
+    properties:
+      channel:
+        type: integer
+      decay_factor:
+        type: number
+      destination:
+        type: string
+      num_transmits:
+        type: integer
+      path:
+        type: string
+      second_tx_delay_seconds:
+        type: integer
+      send_path:
+        type: string
+      type:
+        type: string
+    type: object
+  dto.CotTargetRequest:
+    properties:
+      comment:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      object_name:
+        example: WOOFWOOF
+        type: string
+      overlay:
+        type: string
+      symbol:
+        example: D
+        type: string
+      symbol_table:
+        example: /
+        type: string
+    type: object
+  dto.CotTargetResponse:
+    properties:
+      active:
+        type: boolean
+      channel:
+        type: integer
+      comment:
+        type: string
+      created_at:
+        type: string
+      decay_factor:
+        type: number
+      destination:
+        type: string
+      first_sent_at:
+        type: string
+      id:
+        type: integer
+      last_sent_at:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      next_send_at:
+        type: string
+      num_transmits:
+        type: integer
+      object_name:
+        type: string
+      overlay:
+        type: string
+      path:
+        type: string
+      second_tx_delay_seconds:
+        type: integer
+      send_path:
+        type: string
+      symbol:
+        type: string
+      symbol_table:
+        type: string
+      tx_count:
+        type: integer
+      type:
+        type: string
     type: object
   dto.DigipeaterConfigRequest:
     properties:
@@ -1317,6 +1559,15 @@ definitions:
     properties:
       baud_rate:
         type: integer
+      fixed_alt:
+        description: metres above MSL; 0 = unspecified
+        type: number
+      fixed_lat:
+        description: decimal degrees, north positive (source=fixed)
+        type: number
+      fixed_lon:
+        description: decimal degrees, east positive (source=fixed)
+        type: number
       gpsd_host:
         type: string
       gpsd_port:
@@ -1332,6 +1583,15 @@ definitions:
         type: integer
       enabled:
         type: boolean
+      fixed_alt:
+        description: metres above MSL; 0 = unspecified
+        type: number
+      fixed_lat:
+        description: decimal degrees, north positive (source=fixed)
+        type: number
+      fixed_lon:
+        description: decimal degrees, east positive (source=fixed)
+        type: number
       gpsd_host:
         type: string
       gpsd_port:
@@ -1450,6 +1710,14 @@ definitions:
     type: object
   dto.KissRequest:
     properties:
+      allow_connected_mode:
+        description: |-
+          AllowConnectedMode opts a KISS interface in to passing non-UI
+          (connected-mode) AX.25 frames through to the radio instead of
+          dropping them, so connected-mode packet apps (Pat/Winlink via the
+          kernel AX.25 stack + kissattach) can use graywolf as a raw KISS
+          modem. Default false; the far end owns the LAPB session state.
+        type: boolean
       allow_tx_from_governor:
         description: |-
           AllowTxFromGovernor opts this TNC-mode interface in to receive
@@ -1523,6 +1791,8 @@ definitions:
     type: object
   dto.KissResponse:
     properties:
+      allow_connected_mode:
+        type: boolean
       allow_tx_from_governor:
         type: boolean
       backoff_seconds:
@@ -2429,6 +2699,12 @@ definitions:
       description:
         description: human-friendly name (e.g. USB product string)
         type: string
+      enhancements_enabled:
+        description: |-
+          EnhancementsEnabled is Windows-only: the endpoint has audio
+          "enhancements" (system effects / APOs) active, which corrupt
+          AFSK/packet audio. Always false on Linux/macOS.
+        type: boolean
       host_api:
         type: string
       is_default:
@@ -2519,6 +2795,10 @@ definitions:
       DirIS: APRS-IS upload/download (iGate)
       DirRX: heard on the air
       DirTX: transmitted by us
+    x-enum-descriptions:
+      - heard on the air
+      - transmitted by us
+      - APRS-IS upload/download (iGate)
     x-enum-varnames:
       - DirRX
       - DirTX
@@ -2721,6 +3001,13 @@ definitions:
       is_object:
         description: IsObject is true for APRS objects and items; false for regular stations.
         type: boolean
+      last_direct_heard:
+        description: |-
+          LastDirectHeard is the UTC RFC3339 timestamp of the most recent reception heard
+          directly on RF (RX, zero digi hops). Zero value (serialized as the JSON zero
+          time) means the station has never been heard directly. The Live Map "Direct
+          RX" filter requires this to fall within the selected time range.
+        type: string
       last_heard:
         description: LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station.
         type: string
@@ -2733,6 +3020,7 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -2751,7 +3039,7 @@ definitions:
         description: SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char).
         type: string
       via:
-        description: Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets.
+        description: 'Via is how the most recent packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS).'
         type: string
       weather:
         allOf:
@@ -2799,6 +3087,7 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
+            format: float64
             type: number
           type: array
         type: array
@@ -2809,7 +3098,7 @@ definitions:
         description: Timestamp is the UTC RFC3339 time the position was received.
         type: string
       via:
-        description: Via is the callsign of the last digipeater (H-bit) that forwarded this position packet; empty for direct.
+        description: 'Via is how this position packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS).'
         type: string
     type: object
   webapi.StatusChannel:
@@ -2921,6 +3210,15 @@ definitions:
     type: object
   webapi.VersionResponse:
     properties:
+      commit:
+        description: |-
+          Commit is the build-time git commit of the running server. The web
+          UI captures (version, commit) at load and re-checks this endpoint to
+          notice when the server binary changed underneath it (e.g. the
+          operator upgraded graywolf) so it can prompt a reload. Including the
+          commit — not just the release version — means a same-version rebuild
+          from source is still detected.
+        type: string
       platform:
         description: |-
           Platform is runtime.GOOS of the server process — "windows", "linux",
@@ -3090,6 +3388,8 @@ tags:
     description: Radio channel configuration.
   - name: beacons
     description: Beacon configuration and send-now.
+  - name: cot
+    description: 'Cursor-on-Target: map-dropped APRS objects with a finite decaying retransmit schedule.'
   - name: fixed-points
     description: Operator-placed map landmarks, shared across devices.
   - name: audio-devices
@@ -3959,6 +4259,7 @@ paths:
       operationId: deleteAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -3979,6 +4280,7 @@ paths:
       operationId: getAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4009,6 +4311,7 @@ paths:
       operationId: updateAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4050,6 +4353,7 @@ paths:
       operationId: pinAX25Profile
       parameters:
         - description: Profile ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4170,6 +4474,7 @@ paths:
       operationId: deleteAX25Transcript
       parameters:
         - description: Transcript session ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4190,6 +4495,7 @@ paths:
       operationId: getAX25Transcript
       parameters:
         - description: Transcript session ID
+          format: int32
           in: path
           name: id
           required: true
@@ -4561,6 +4867,47 @@ paths:
       summary: Update channel
       tags:
         - channels
+  /channels/{id}/enabled:
+    put:
+      consumes:
+        - application/json
+      operationId: setChannelEnabled
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Enabled flag
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ChannelEnabledRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ChannelResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Enable or disable a channel
+      tags:
+        - channels
   /channels/{id}/ptt:
     post:
       consumes:
@@ -4712,6 +5059,219 @@ paths:
       summary: Send a TX test signal (CW callsign or tone) on a channel
       tags:
         - channels
+  /cot-settings:
+    get:
+      description: |-
+        Returns the global parameters every new CoT target
+        snapshots at creation time. Returns defaults when no
+        configuration has been saved yet.
+      operationId: getCotSettings
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotSettingsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get Cursor-on-Target settings
+      tags:
+        - cot
+    put:
+      consumes:
+        - application/json
+      description: |-
+        Replaces the global CoT parameters. Does not affect any
+        CoT target already created -- each target snapshots
+        these settings for itself at creation time.
+      operationId: updateCotSettings
+      parameters:
+        - description: CoT settings
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.CotSettingsRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update Cursor-on-Target settings
+      tags:
+        - cot
+  /cot-targets:
+    get:
+      operationId: listCotTargets
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.CotTargetResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List Cursor-on-Target objects
+      tags:
+        - cot
+    post:
+      consumes:
+        - application/json
+      description: |-
+        Snapshots the current CoT settings onto the new target
+        and transmits it immediately under the station
+        callsign. The immediate send is best-effort: on failure
+        the target is still created and the scheduler retries
+        it on its next poll.
+      operationId: createCotTarget
+      parameters:
+        - description: CoT target definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.CotTargetRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CotTargetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create a Cursor-on-Target object
+      tags:
+        - cot
+  /cot-targets/{id}:
+    delete:
+      operationId: deleteCotTarget
+      parameters:
+        - description: CoT target id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete a Cursor-on-Target object
+      tags:
+        - cot
+  /cot-targets/{id}/send:
+    post:
+      operationId: sendCotTarget
+      parameters:
+        - description: CoT target id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Send a Cursor-on-Target object now
+      tags:
+        - cot
+  /cot-targets/inactive:
+    delete:
+      operationId: deleteInactiveCotTargets
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotDeleteInactiveResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete every inactive (exhausted) Cursor-on-Target object
+      tags:
+        - cot
   /digipeater:
     get:
       operationId: getDigipeaterConfig
@@ -5710,6 +6270,32 @@ paths:
       summary: List attached USB serial devices (Android only)
       tags:
         - kiss
+  /kiss/ble-device-scan:
+    get:
+      operationId: scanBLEMobilinkd
+      parameters:
+        - description: Scan duration in seconds (default 15, max 60)
+          in: query
+          name: timeout
+          type: integer
+      produces:
+        - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of BLEMobilinkdDevice objects
+        "409":
+          description: scan already in progress
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "501":
+          description: not available on this platform
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Scan for Mobilinkd BLE TNC devices (desktop only)
+      tags:
+        - kiss
   /kiss/bonded-bt-devices:
     get:
       operationId: getBondedBtDevices
@@ -6087,6 +6673,47 @@ paths:
       summary: Get message
       tags:
         - messages
+  /messages/{id}/abort:
+    post:
+      operationId: abortMessage
+      parameters:
+        - description: Message id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Abort message
+      tags:
+        - messages
   /messages/{id}/read:
     post:
       operationId: markMessageRead
@@ -6186,6 +6813,135 @@ paths:
       summary: Mark message unread
       tags:
         - messages
+  /messages/blocklist:
+    get:
+      operationId: listBlockedCallsigns
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.BlockedCallsignResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List blocked call signs
+      tags:
+        - messages
+    post:
+      consumes:
+        - application/json
+      operationId: createBlockedCallsign
+      parameters:
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Block a call sign
+      tags:
+        - messages
+  /messages/blocklist/{id}:
+    delete:
+      operationId: deleteBlockedCallsign
+      parameters:
+        - description: Blocklist entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Unblock a call sign
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: updateBlockedCallsign
+      parameters:
+        - description: Blocklist entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update a blocked call sign
+      tags:
+        - messages
   /messages/config:
     get:
       operationId: getMessagesConfig
@@ -6268,6 +7024,81 @@ paths:
       security:
         - CookieAuth: []
       summary: List conversations
+      tags:
+        - messages
+  /messages/conversations/{kind}/{key}/prefs:
+    get:
+      operationId: getConversationPrefs
+      parameters:
+        - description: thread kind (dm|tactical)
+          in: path
+          name: kind
+          required: true
+          type: string
+        - description: peer callsign or tactical label
+          in: path
+          name: key
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get conversation preferences
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: putConversationPrefs
+      parameters:
+        - description: thread kind (dm|tactical)
+          in: path
+          name: kind
+          required: true
+          type: string
+        - description: peer callsign or tactical label
+          in: path
+          name: key
+          required: true
+          type: string
+        - description: Preferences
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update conversation preferences
       tags:
         - messages
   /messages/events:
@@ -7129,6 +7960,34 @@ paths:
       security:
         - CookieAuth: []
       summary: Get PTT capabilities
+      tags:
+        - ptt
+  /ptt/check-device:
+    post:
+      consumes:
+        - application/json
+      operationId: checkPttDevice
+      parameters:
+        - description: Device path to inspect
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.CheckDeviceRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CheckDeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Check a PTT device path
       tags:
         - ptt
   /ptt/gpio-chips/{chip}/lines:
