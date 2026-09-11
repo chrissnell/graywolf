@@ -16,33 +16,46 @@ import (
 
 // --- Beacon observer for metrics -----------------------------------------
 
-// beaconISSink wraps the iGate line sender used by the beacon scheduler
-// so every successful APRS-IS beacon upload is recorded in the packet log
-// as a DirIS entry. Without this, APRS-IS-only beacons never produce a
-// visible log entry: they skip the RF TX hook (no RF leg) and the iGate's
-// SendLine does not log. Mirrors the RF->IS gate's RfToIsHook recording.
-type beaconISSink struct {
-	inner beacon.ISSink
-	plog  *packetlog.Log
+// packetlogISSink wraps an inner APRS-IS line sender so every successful
+// upload is recorded in the packet log as a DirIS entry, tagged with the
+// caller-supplied source ("beacon" or "cot"). Without this, an
+// APRS-IS-only send never produces a visible log entry: it skips the RF
+// TX hook (no RF leg) and the iGate's SendLine does not log on its own.
+// Mirrors the RF->IS gate's RfToIsHook recording.
+type packetlogISSink struct {
+	inner  beacon.ISSink
+	plog   *packetlog.Log
+	source string
 }
 
 // newBeaconISSink wraps inner so beacon APRS-IS sends are logged. Returns
 // nil when inner is nil so the scheduler's "no IS sink" path is preserved.
 func newBeaconISSink(inner beacon.ISSink, plog *packetlog.Log) beacon.ISSink {
+	return newPacketlogISSink(inner, plog, "beacon")
+}
+
+// newCotISSink wraps inner so CoT APRS-IS sends are logged distinctly
+// from beacon ones. Returns nil when inner is nil, mirroring
+// newBeaconISSink.
+func newCotISSink(inner beacon.ISSink, plog *packetlog.Log) beacon.ISSink {
+	return newPacketlogISSink(inner, plog, "cot")
+}
+
+func newPacketlogISSink(inner beacon.ISSink, plog *packetlog.Log, source string) beacon.ISSink {
 	if inner == nil {
 		return nil
 	}
-	return &beaconISSink{inner: inner, plog: plog}
+	return &packetlogISSink{inner: inner, plog: plog, source: source}
 }
 
-func (w *beaconISSink) SendLine(line string) error {
+func (w *packetlogISSink) SendLine(line string) error {
 	if err := w.inner.SendLine(line); err != nil {
 		return err
 	}
 	if w.plog != nil {
 		w.plog.Record(packetlog.Entry{
 			Direction: packetlog.DirIS,
-			Source:    "beacon",
+			Source:    w.source,
 			Display:   line,
 			Notes:     "aprs-is",
 		})

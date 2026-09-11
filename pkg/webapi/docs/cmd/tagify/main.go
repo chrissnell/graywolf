@@ -36,6 +36,7 @@ var tagOrder = []tagEntry{
 	// --- Configuration --------------------------------------------------
 	{"channels", "Radio channel configuration."},
 	{"beacons", "Beacon configuration and send-now."},
+	{"cot", "Cursor-on-Target: map-dropped APRS objects with a finite decaying retransmit schedule."},
 	{"fixed-points", "Operator-placed map landmarks, shared across devices."},
 	{"audio-devices", "Audio input/output device binding."},
 	{"kiss", "KISS TCP server interfaces."},

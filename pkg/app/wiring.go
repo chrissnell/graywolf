@@ -25,6 +25,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/clocksync"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/cot"
 	"github.com/chrissnell/graywolf/pkg/demoseed"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
@@ -499,9 +500,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 		plog.Record(e)
 
-		// Feed our own beacon position into the station cache.
-		if source.Kind == "beacon" && pkt != nil {
-			if entries := stationcache.ExtractEntry(pkt, "beacon", "TX", channel); len(entries) > 0 {
+		// Feed our own beacon/CoT position into the station cache.
+		if (source.Kind == "beacon" || source.Kind == "cot") && pkt != nil {
+			if entries := stationcache.ExtractEntry(pkt, source.Kind, "TX", channel); len(entries) > 0 {
 				sc.Update(entries)
 			}
 		}
@@ -640,6 +641,46 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	a.beaconReload = make(chan struct{}, 1)
 	a.smartBeaconReload = make(chan struct{}, 1)
 
+	// --- Cursor-on-Target (CoT) scheduler -------------------------------
+	// Stateless (see cotSched doc on App): polls configstore for due
+	// targets rather than holding an in-memory schedule, so no reload
+	// channel is needed here.
+	cotSched, err := cot.New(cot.Options{
+		Sink:         a.gov,
+		Store:        a.store, // *configstore.Store satisfies cot.Store
+		Logger:       a.logger,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
+		// CoT objects always transmit under the inherited station
+		// callsign -- there is no per-target override (per spec).
+		StationCallsignResolver: a.store.ResolveStationCallsign,
+		// IS-leg counterpart of the governor TX hook above (mirrors
+		// beacon.Options.OnISSent / invariant 57): feeds an is_only
+		// CoT's own position into the station cache, since that leg
+		// never reaches the governor.
+		OnISSent: func(frame *ax25.Frame, channel uint32) {
+			if frame == nil || !frame.IsUI() {
+				return
+			}
+			pkt, err := aprs.Parse(frame)
+			if err != nil || pkt == nil {
+				return
+			}
+			pkt.Channel = int(channel)
+			if entries := stationcache.ExtractEntry(pkt, "cot", "TX", channel); len(entries) > 0 {
+				a.stationCache.Update(entries)
+			}
+		},
+		// Reuses the same resolveTxChannel messages/beacon/iGate call for
+		// their own Auto option (see resolveTxChannel doc + invariant 16d).
+		AutoChannelResolver: func(rctx context.Context) uint32 {
+			return a.resolveTxChannel(rctx, 0)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("cot scheduler init: %w", err)
+	}
+	a.cotSched = cotSched
+
 	// --- Messages: LocalTxRing is shared by iGate gating + messages ----
 	//
 	// The ring is constructed before the iGate so we can pass it into
@@ -656,6 +697,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	}
 	if ig := a.ig.Load(); ig != nil {
 		a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
+		a.cotSched.SetISSink(newCotISSink(ig, a.plog))
 	}
 
 	// --- Messages service ---------------------------------------------
@@ -745,6 +787,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.digipeaterComponent(),
 		a.gpsComponent(),
 		a.beaconComponent(),
+		a.cotComponent(),
 		a.bridgeComponent(),
 		a.agwComponent(),
 		a.igateComponent(),
@@ -1422,6 +1465,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	apiSrv.SetBeaconReload(a.beaconReload)
 	apiSrv.SetSmartBeaconReload(a.smartBeaconReload)
 	apiSrv.SetBeaconSendNow(a.beaconSched.SendNow)
+	apiSrv.SetCotSendNow(a.cotSched.SendNow)
+	apiSrv.SetCotSendScheduled(a.cotSched.SendScheduled)
+	apiSrv.SetCotSendKill(a.cotSched.SendKill)
 	apiSrv.SetDigipeaterReload(a.digipeaterReload)
 	apiSrv.SetAgwReload(a.agwReload)
 	apiSrv.SetTxBackendReload(a.txBackendReload)
@@ -2588,6 +2634,30 @@ func (a *App) beaconComponent() namedComponent {
 	}
 }
 
+// cotComponent starts the Cursor-on-Target scheduler's poll loop. Unlike
+// beaconComponent there is no reload-signal goroutine: cotSched is
+// stateless (it queries configstore fresh on every 5s tick), so a
+// settings change or a newly-created target is simply picked up on the
+// next poll without needing to be told.
+func (a *App) cotComponent() namedComponent {
+	return namedComponent{
+		name: "cot",
+		start: func(ctx context.Context) error {
+			a.cotWG.Add(1)
+			go func() {
+				defer a.cotWG.Done()
+				if err := a.cotSched.Run(ctx); err != nil {
+					a.logger.Error("cot scheduler", "err", err)
+				}
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			return waitGroup(shutdownCtx, &a.cotWG, "cot scheduler")
+		},
+	}
+}
+
 // loadBeaconConfigs reads the current beacon rows and the global
 // SmartBeacon singleton from configstore, maps each beacon through
 // beaconConfigFromStore against the same singleton, and seeds the
@@ -2962,6 +3032,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 		if a.beaconSched != nil {
 			a.beaconSched.SetISSink(nil)
 		}
+		if a.cotSched != nil {
+			a.cotSched.SetISSink(nil)
+		}
 		a.lastAppliedIgateFilter = ""
 		return
 	}
@@ -2988,6 +3061,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 		if a.beaconSched != nil {
 			a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
 		}
+		if a.cotSched != nil {
+			a.cotSched.SetISSink(newCotISSink(ig, a.plog))
+		}
 		a.lastAppliedIgateFilter = composed
 		if err := ig.Start(ctx); err != nil {
 			a.logger.Error("igate reload: start", "err", err)
@@ -2997,6 +3073,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 			a.igateOut.SetIgate(nil)
 			if a.beaconSched != nil {
 				a.beaconSched.SetISSink(nil)
+			}
+			if a.cotSched != nil {
+				a.cotSched.SetISSink(nil)
 			}
 			a.lastAppliedIgateFilter = ""
 			return
