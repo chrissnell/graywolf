@@ -140,7 +140,8 @@ submits it to the maintainers. If a maintainer asks you to run it,
 please do. It saves several rounds of back and forth.
 
 Please open one issue per bug. If you are not sure whether two symptoms
-share a cause, open two issues and mention the other in each.
+share a cause, open two issues and mention the other in each. PRs without
+a linked issue will not be reviewed.
 
 ## Requesting features
 
@@ -153,7 +154,8 @@ Open an issue with the `enhancement` label. Explain:
   dislike about how it does it.
 
 Do not open a PR for a feature before the issue has been discussed. See
-the previous section for why.
+the previous section for why. PRs without a linked issue will not be
+reviewed.
 
 ## How we use GitHub issue labels
 
