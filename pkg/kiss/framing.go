@@ -83,6 +83,12 @@ type Decoder struct {
 	br *bufio.Reader
 	// Max payload size; frames larger than this return an error.
 	MaxFrame int
+	// synced becomes true once the first FEND on the stream has been
+	// seen. Until then we discard leading bytes (a TNC's pre-KISS text
+	// banner, or a partial frame from a mid-stream connect) to find the
+	// first delimiter. After sync we never discard frame bytes again —
+	// see Next for why.
+	synced bool
 }
 
 // NewDecoder wraps r in a buffered KISS decoder. MaxFrame defaults to 4096.
@@ -93,14 +99,30 @@ func NewDecoder(r io.Reader) *Decoder {
 // Next reads the next complete frame. Returns io.EOF when the underlying
 // reader is exhausted cleanly.
 func (d *Decoder) Next() (*Frame, error) {
-	// Skip leading FENDs and any stray bytes until we see a FEND.
-	for {
-		b, err := d.br.ReadByte()
-		if err != nil {
-			return nil, err
-		}
-		if b == FEND {
-			break
+	// Initial sync only: discard leading bytes until the first FEND on
+	// the stream. This handles a TNC that emits a text banner before
+	// entering KISS mode, or a mid-stream connect that lands us partway
+	// through a frame. It runs at most once per stream.
+	//
+	// It must NOT run on subsequent calls. FEND is a frame *delimiter*:
+	// the byte immediately after a frame's closing FEND is the start of
+	// the next frame. Many TNCs emit only a trailing FEND per frame (no
+	// per-frame leading FEND), or share a single FEND between back-to-back
+	// frames — re-discarding "until the next FEND" on every call would
+	// throw those frames away (silent RX loss; see TestDecodeSharedDelimiter
+	// and TestDecodeTrailingFendOnly). Once synced, the read loop below
+	// handles delimiter runs (empty frames / leading FENDs) via its
+	// len(buf)==0 skip.
+	if !d.synced {
+		for {
+			b, err := d.br.ReadByte()
+			if err != nil {
+				return nil, err
+			}
+			if b == FEND {
+				d.synced = true
+				break
+			}
 		}
 	}
 	// Now read until next FEND, unescaping as we go.
