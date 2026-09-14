@@ -1895,7 +1895,13 @@ receives any server push.
 *How to apply:* any new server→client push added on the Kotlin side rides
 `activeOutputs`, so it inherits this dependency; never gate Hello behind a
 one-shot that the reconnect path can't repeat, and if the registration timing
-on the Kotlin side ever changes, re-check this invariant.
+on the Kotlin side ever changes, re-check this invariant. `reconnectLoop` must
+also run for the whole process lifetime: `ConnectWithReconnect` takes the
+caller's app-lifetime ctx and bounds only the *initial* dial internally
+(`dialTimeout`). Never pass a short dial-deadline ctx straight through -- a
+deadline-scoped ctx cancels the loop the instant it elapses, so a later UDS
+drop is never re-dialed (nor re-Hello'd). `cmd/graywolf/main_android.go`
+`platformConnect` passes the lifetime ctx for exactly this reason.
 
 Source: [`../../pkg/platformsvc/client_impl.go`](../../pkg/platformsvc/client_impl.go)
 (`reconnectLoop`, `Hello`, `helloSchema`),
