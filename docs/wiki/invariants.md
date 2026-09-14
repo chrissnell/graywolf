@@ -1859,3 +1859,51 @@ Source: [`../../pkg/messages/store.go`](../../pkg/messages/store.go)
 (`TestListNewestWindowReturnsMostRecent`),
 [`../../web/src/components/messages/MessageThread.svelte`](../../web/src/components/messages/MessageThread.svelte)
 (`fetchThread`).
+
+### 66. The platformsvc client MUST re-Hello on every reconnect, or all server→client broadcasts silently stop
+
+The Android `PlatformServer` (Kotlin) registers a connection into
+`activeOutputs` -- the fan-out set that every server-initiated frame
+(`broadcastGpsFix`, `broadcastGnssStatus`, and `broadcastBt`, which carries
+`BondedBtDevicesResponse`, `SerialOpenAck`, `SerialData`, `SerialError`,
+`SerialClose`) is written to -- **only after a successful `Hello` round-trip**
+(`serveClient`, gated on `req.bodyCase == HELLO`). The Go client's initial
+`Hello` is sent once by `cmd/graywolf/main_android.go` `platformConnect`.
+
+Therefore the reconnect loop (`clientImpl.reconnectLoop`) MUST re-send `Hello`
+after each successful re-dial. It replays the schema version recorded by the
+first `Hello` (`clientImpl.helloSchema`). Without this, a UDS reconnect (the
+Go child survives while the Kotlin `PlatformServer` restarts, or any socket
+hiccup) lands on a fresh `serveClient` that never sees a Hello, so its `out`
+is never registered and **every** broadcast is dropped -- GPS/GNSS stop and,
+visibly, the KISS bonded-device picker hangs on "Loading" forever because its
+`BondedBtDevicesResponse` never reaches the blocked Go round-trip (GH #573).
+
+Two independent backstops keep a single lost reply from being fatal:
+`BtSerialAdapter.handleBondedRequest` catches **all** throwables and always
+emits exactly one reply (a resetting Bluetooth stack throws
+`DeadObjectException`, not `SecurityException`), and
+`clientImpl.BondedBtDevices` bounds its round-trip with `bondedBtTimeout` so a
+never-arriving reply surfaces as an error rather than spinning the picker and
+wedging `requestMu`.
+
+*Why:* the Hello handshake is not just a version check -- it is the signal the
+server uses to start delivering asynchronous frames to a connection. A
+reconnect that skips it produces a connection that can send requests but never
+receives any server push.
+
+*How to apply:* any new server→client push added on the Kotlin side rides
+`activeOutputs`, so it inherits this dependency; never gate Hello behind a
+one-shot that the reconnect path can't repeat, and if the registration timing
+on the Kotlin side ever changes, re-check this invariant.
+
+Source: [`../../pkg/platformsvc/client_impl.go`](../../pkg/platformsvc/client_impl.go)
+(`reconnectLoop`, `Hello`, `helloSchema`),
+[`../../pkg/platformsvc/btserial.go`](../../pkg/platformsvc/btserial.go)
+(`BondedBtDevices`, `bondedBtTimeout`),
+[`../../pkg/platformsvc/reconnect_test.go`](../../pkg/platformsvc/reconnect_test.go)
+(`TestReconnectReHandshakes`),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/PlatformServer.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/PlatformServer.kt)
+(`serveClient`, `activeOutputs`),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt)
+(`handleBondedRequest`).

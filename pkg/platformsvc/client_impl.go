@@ -41,6 +41,16 @@ type clientImpl struct {
 	requestMu sync.Mutex
 	respCh    chan *pb.PlatformMessage // re-set per request
 
+	// helloSchema records the schema version from the first successful
+	// Hello so the reconnect loop can re-perform the handshake on every
+	// re-dial. The server only registers a connection for server→client
+	// broadcasts (GPS/GNSS/bonded-device/serial frames) after a Hello, so a
+	// reconnect that skipped Hello would silently swallow every broadcast.
+	// Zero until the first Hello; the reconnect loop skips re-Hello while it
+	// is zero (a drop before the initial handshake is the caller's Hello to
+	// retry).
+	helloSchema atomic.Uint32
+
 	// Multiplexed serial handles. Each open serial stream (Bluetooth RFCOMM
 	// or USB) gets a unique uint32 handle (atomic-allocated via
 	// serialHandleCounter) and a dedicated inbound channel that the dispatch
@@ -101,12 +111,30 @@ func (c *clientImpl) reconnectLoop(ctx context.Context) {
 				return
 			case <-time.After(delay):
 			}
-			if err := c.Connect(ctx); err == nil {
-				lastErr = nil
-				break
-			} else {
+			if err := c.Connect(ctx); err != nil {
 				lastErr = err
+				continue
 			}
+			// Re-perform the Hello handshake so the server re-registers this
+			// connection for server→client broadcasts (GPS/GNSS, bonded-device
+			// responses, and BT/USB serial frames all flow over that path). A
+			// reconnect that skipped Hello would leave the connection
+			// unregistered and every broadcast silently dropped — surfacing as
+			// the KISS bonded-device picker spinning on "Loading" forever.
+			if sv := c.helloSchema.Load(); sv != 0 {
+				hctx, hcancel := context.WithTimeout(ctx, 5*time.Second)
+				_, herr := c.Hello(hctx, sv)
+				hcancel()
+				if herr != nil {
+					// Schema mismatch already Closed the client (next loop
+					// iteration returns via closeCh); a transient error leaves
+					// conn dead so we keep retrying within the backoff schedule.
+					lastErr = herr
+					continue
+				}
+			}
+			lastErr = nil
+			break
 		}
 		_ = lastErr
 	}
@@ -380,6 +408,9 @@ func (c *clientImpl) deliverSerialHandle(handle uint32, msg *pb.PlatformMessage)
 }
 
 func (c *clientImpl) Hello(ctx context.Context, schemaVersion uint32) (*HelloResponse, error) {
+	// Remember the negotiated schema so the reconnect loop can re-handshake
+	// on every future re-dial (see helloSchema / reconnectLoop).
+	c.helloSchema.Store(schemaVersion)
 	req := &pb.PlatformMessage{Body: &pb.PlatformMessage_Hello{
 		Hello: &pb.Hello{
 			SchemaVersion: schemaVersion,
