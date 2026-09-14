@@ -217,8 +217,15 @@ function validateControl(result, issues) {
 }
 
 // Mic-E info field: type byte + 3 longitude + 3 speed/course + symbol +
-// symbol-table = 9 bytes minimum (APRS101 ch.10). The longitude/speed bytes
-// are offset-encoded printable ASCII (0x26-0x7f).
+// symbol-table = 9 bytes minimum (APRS101 ch.10). The longitude/speed
+// bytes are offset-encoded (byte = digit + 28), so the legal range is
+// 0x1c-0x7f, not 0x26-0x7f — digit 0 legitimately encodes as 0x1c.
+// 0x20 (SPACE) is checked separately below: it sits inside that numeric
+// range but is spec-reserved (APRS101 ch.10) as the "unknown data"
+// sentinel in the longitude field, so it's always flagged there. 0x7f
+// (DEL) is deliberately NOT flagged here — it's an ordinary top-of-range
+// digit (99) unless combined with the destination's +100° longitude
+// offset bit, which this info-field-only check can't see.
 function validateMicE(result, info, issues) {
   if (info.length < 9) {
     issues.push({
@@ -229,10 +236,19 @@ function validateMicE(result, info, issues) {
   }
   for (let i = 1; i <= 6; i++) {
     const b = info[i];
-    if (b < 0x26 || b > 0x7f) {
+    if (b < 0x1c || b > 0x7f) {
       issues.push({
         severity: 'error',
-        text: `Mic-E longitude/speed byte at info offset ${i} is 0x${hexByte(b)}, outside the encodable range 0x26-0x7F.`,
+        text: `Mic-E longitude/speed byte at info offset ${i} is 0x${hexByte(b)}, outside the encodable range 0x1C-0x7F.`,
+      });
+      break;
+    }
+  }
+  for (let i = 1; i <= 3; i++) {
+    if (info[i] === 0x20) {
+      issues.push({
+        severity: 'error',
+        text: `Mic-E longitude byte at info offset ${i} is 0x20 (SPACE), the APRS101 "unknown data" sentinel — receivers must not plot this position.`,
       });
       break;
     }

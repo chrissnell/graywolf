@@ -109,10 +109,33 @@ test('analyzeFrame flags invalid characters in a normal destination', () => {
 
 test('analyzeFrame validates a well-formed Mic-E frame', () => {
   // Dest "T7SUTV" is valid Mic-E (all chars in 0-9 A-L P-Z); info starts with
-  // '`' then 8+ encodable bytes (all in 0x26-0x7F).
+  // '`' then 8+ encodable bytes (all in 0x1C-0x7F).
   const f = frame('T7SUTV', 'NW5W', '`' + 'lmnopq' + 'rst');
   const r = analyzeFrame(f);
   assert.equal(r.isMicE, true);
+  assert.equal(r.issues.length, 0);
+});
+
+test('analyzeFrame accepts a low but valid Mic-E digit byte', () => {
+  // Real on-air KD3DKY-7 packet: speed/course byte 0x23 (digit 7) sits
+  // below the old (wrong) 0x26 floor but is a legitimate encoding.
+  const f = frame('T0TR4P', 'KD3DKY-7', ['`', 0x6c, 0x60, 0x3c, 0x6c, 0x23, 0x25, 0x62, 0x2f]);
+  const r = analyzeFrame(f);
+  assert.equal(r.isMicE, true);
+  assert.equal(r.issues.length, 0);
+});
+
+test('analyzeFrame flags a SPACE byte in the Mic-E longitude field', () => {
+  const f = frame('T7SUTV', 'NW5W', ['`', 0x6c, 0x20, 0x3c, 0x6c, 0x25, 0x25, 0x62, 0x2f]);
+  const r = analyzeFrame(f);
+  assert.ok(r.issues.some((i) => i.severity === 'error' && /SPACE/.test(i.text)));
+});
+
+test('analyzeFrame does not flag a DEL byte in the Mic-E longitude field', () => {
+  // 0x7f is only dangerous combined with the dest's +100 offset bit,
+  // which this info-field-only heuristic can't see — must not error.
+  const f = frame('T7SUTV', 'NW5W', ['`', 0x7f, 0x2e, 0x4f, 0x6c, 0x25, 0x25, 0x62, 0x2f]);
+  const r = analyzeFrame(f);
   assert.equal(r.issues.length, 0);
 });
 
