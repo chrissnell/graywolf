@@ -60,7 +60,9 @@ type Server struct {
 	kissSerialOpenFunc kiss.OpenFunc   // platform-aware opener for serial-family hot reloads; nil on desktop
 	logger             *slog.Logger
 	startedAt          time.Time
+	configDBPath       string // read-only; set by -config flag
 	historyDBPath      string // read-only; set by -history-db flag
+	tileCacheDir       string // read-only; set by -tile-cache-dir flag
 	version            string // build-time version string returned by GET /api/version
 	commit             string // build-time git commit returned by GET /api/version
 	igateStatusFn      func() *igate.Status
@@ -193,7 +195,9 @@ type Config struct {
 	// it, Android Bluetooth/USB interfaces cannot be (re)started live.
 	KissSerialOpenFunc kiss.OpenFunc
 	Logger             *slog.Logger
+	ConfigDBPath       string // path to config database, from -config flag
 	HistoryDBPath      string // path to history database, from -history-db flag
+	TileCacheDir       string // offline PMTiles cache dir, from -tile-cache-dir flag
 	Version            string // build-time version string reported by GET /api/version
 	Commit             string // build-time git commit reported by GET /api/version
 	// MapsAuth is the registration client used by
@@ -247,7 +251,9 @@ func NewServer(cfg Config) (*Server, error) {
 		kissSerialOpenFunc: cfg.KissSerialOpenFunc,
 		logger:             logger.With("component", "webapi"),
 		startedAt:          time.Now(),
+		configDBPath:       cfg.ConfigDBPath,
 		historyDBPath:      cfg.HistoryDBPath,
+		tileCacheDir:       cfg.TileCacheDir,
 		version:            cfg.Version,
 		commit:             cfg.Commit,
 		updatesReloadCh:    make(chan struct{}, 1),
@@ -323,6 +329,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerRemoteActionsCreds(mux)
 	s.registerRemoteActionsMacros(mux)
 	s.registerRemoteActionsOTP(mux)
+	s.registerStorageUsage(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)

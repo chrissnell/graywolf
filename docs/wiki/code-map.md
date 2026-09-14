@@ -106,6 +106,10 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 | `logbuffer` | `slog.Handler` tee that persists DEBUG records into a circular SQLite ring (`graywolf-logs.db`); env-aware path (tmpfs on Pi/SD-card, disk elsewhere); feeds the `graywolf flare` diagnostic submission. Read side: `(*DB).Query` (`query.go`) backs the **System Logs** UI tab via `GET /api/system-logs` (`pkg/webapi/system_logs.go`, wired out-of-band in `pkg/app/wiring.go`; the `*logbuffer.DB` handle is threaded from `cmd/graywolf/main.go`'s `setupLogger` through `app.Config.LogBuffer`, nil when persistence is disabled → endpoint reports `available:false`) | (no dedicated page) |
 | `releasenotes` | Embedded release-note YAML (`notes.yaml`); lazy parse + markdown render | (in-app "What's new") |
 
+### Storage usage (cross-platform, GH #538 / #625)
+
+`GET /api/storage/usage` (`pkg/webapi/storage_usage.go`, `@ID getStorageUsage`) returns the on-disk byte size of the three locations Graywolf writes to — offline map tiles (`-tile-cache-dir`), position history (`-history-db`), and config/app data (`-config`, incl. `-wal`/`-shm` sidecars) — plus a total and each absolute path (DTO `dto.StorageUsageResponse`). The three paths are threaded into `webapi.Config` (`ConfigDBPath`/`HistoryDBPath`/`TileCacheDir`) from `pkg/app/wiring.go`; the Android build passes the same absolute paths in via env (`GRAYWOLF_DB`/`GRAYWOLF_HISTORY_DB`/`GRAYWOLF_TILE_CACHE`), so the endpoint is identical on every platform. Read-only and advisory — `dirSize`/`dbFileSize` swallow missing-path and stat errors so a fresh install (nothing downloaded, history off) reports zeros, never a 500. Frontend: `src/routes/StorageSettings.svelte` (route `/preferences/storage`, sidebar "Storage") renders a shared usage bar + data-folder path list via `src/lib/settings/storage-usage-store.svelte.js`, reusing `formatBytes`. The Android SD-card relocation + data migration is a planned follow-up, not yet built.
+
 ## Go service: PTT enumeration
 
 | Package | Purpose |

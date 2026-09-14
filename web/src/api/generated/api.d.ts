@@ -1887,6 +1887,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/storage/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Report on-disk storage usage
+         * @description Returns the byte size of each location Graywolf writes to
+         *     (offline map tiles, position history, config/app data) plus
+         *     the total. Advisory only; never mutates state.
+         */
+        get: operations["getStorageUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system-logs": {
         parameters: {
             query?: never;
@@ -3394,6 +3416,29 @@ export interface components {
         "dto.StationConfigResponse": {
             callsign?: string;
             disabled?: string[];
+        };
+        "dto.StorageUsageLocation": {
+            /**
+             * @description Bytes is the total size in bytes. 0 when the path does not exist
+             *     yet (e.g. no offline maps downloaded, history logging disabled).
+             */
+            bytes?: number;
+            /**
+             * @description Key is a stable identifier for the location: "maps", "history",
+             *     or "config". Clients key colors/labels off this, not off Label.
+             */
+            key?: string;
+            /** @description Label is the human-readable name shown in the UI. */
+            label?: string;
+            /**
+             * @description Path is the absolute path on the server host. Informational —
+             *     shown to operators so they know where to look / back up.
+             */
+            path?: string;
+        };
+        "dto.StorageUsageResponse": {
+            locations?: components["schemas"]["dto.StorageUsageLocation"][];
+            total_bytes?: number;
         };
         "dto.TacticalCallsignRequest": {
             alias?: string;
@@ -10754,6 +10799,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webapi.StatusDTO"];
+                };
+            };
+        };
+    };
+    getStorageUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.StorageUsageResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

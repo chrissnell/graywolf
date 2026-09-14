@@ -331,6 +331,12 @@ const (
 	OpRegisterMapsToken = "registerMapsToken"
 )
 
+// Storage usage — /api/storage/usage. Read-only, cross-platform report
+// of on-disk space used by offline maps, position history, and config.
+const (
+	OpGetStorageUsage = "getStorageUsage"
+)
+
 // AX.25 saved + recent connection profiles — /api/ax25/profiles. Pinned
 // rows persist; recent (unpinned) rows are upserted on each CONNECTED
 // transition and trimmed to the last 20.

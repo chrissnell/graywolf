@@ -59,6 +59,7 @@ var tagOrder = []tagEntry{
 	{"updates", "Daily GitHub update-check: controls the outbound poll and exposes the latest known release to the UI."},
 	{"preferences", "Operator display preferences stored server-side (units, etc.)."},
 	{"maps", "Offline PMTiles map downloads: per-state download lifecycle and status."},
+	{"storage", "On-disk storage usage: where offline maps, position history, and config data live and how much space they use."},
 	{"actions", "On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire."},
 	{"remote-actions", "Outbound Actions: operator-curated macros plus remote-station TOTP credentials used to fire @@<otp>#<action> invocations from inside Messages."},
 

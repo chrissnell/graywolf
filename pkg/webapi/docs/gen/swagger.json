@@ -103,6 +103,10 @@
             "description": "Offline PMTiles map downloads: per-state download lifecycle and status."
         },
         {
+            "name": "storage",
+            "description": "On-disk storage usage: where offline maps, position history, and config data live and how much space they use."
+        },
+        {
             "name": "actions",
             "description": "On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire."
         },
@@ -7655,6 +7659,38 @@
                 }
             }
         },
+        "/storage/usage": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns the byte size of each location Graywolf writes to\n(offline map tiles, position history, config/app data) plus\nthe total. Advisory only; never mutates state.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Report on-disk storage usage",
+                "operationId": "getStorageUsage",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StorageUsageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/system-logs": {
             "get": {
                 "security": [
@@ -11227,6 +11263,41 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "dto.StorageUsageLocation": {
+            "type": "object",
+            "properties": {
+                "bytes": {
+                    "description": "Bytes is the total size in bytes. 0 when the path does not exist\nyet (e.g. no offline maps downloaded, history logging disabled).",
+                    "type": "integer"
+                },
+                "key": {
+                    "description": "Key is a stable identifier for the location: \"maps\", \"history\",\nor \"config\". Clients key colors/labels off this, not off Label.",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Label is the human-readable name shown in the UI.",
+                    "type": "string"
+                },
+                "path": {
+                    "description": "Path is the absolute path on the server host. Informational —\nshown to operators so they know where to look / back up.",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.StorageUsageResponse": {
+            "type": "object",
+            "properties": {
+                "locations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.StorageUsageLocation"
+                    }
+                },
+                "total_bytes": {
+                    "type": "integer"
                 }
             }
         },

@@ -2306,6 +2306,36 @@ definitions:
           type: string
         type: array
     type: object
+  dto.StorageUsageLocation:
+    properties:
+      bytes:
+        description: |-
+          Bytes is the total size in bytes. 0 when the path does not exist
+          yet (e.g. no offline maps downloaded, history logging disabled).
+        type: integer
+      key:
+        description: |-
+          Key is a stable identifier for the location: "maps", "history",
+          or "config". Clients key colors/labels off this, not off Label.
+        type: string
+      label:
+        description: Label is the human-readable name shown in the UI.
+        type: string
+      path:
+        description: |-
+          Path is the absolute path on the server host. Informational —
+          shown to operators so they know where to look / back up.
+        type: string
+    type: object
+  dto.StorageUsageResponse:
+    properties:
+      locations:
+        items:
+          $ref: '#/definitions/dto.StorageUsageLocation'
+        type: array
+      total_bytes:
+        type: integer
+    type: object
   dto.TacticalCallsignRequest:
     properties:
       alias:
@@ -3271,6 +3301,8 @@ tags:
     description: Operator display preferences stored server-side (units, etc.).
   - name: maps
     description: 'Offline PMTiles map downloads: per-state download lifecycle and status.'
+  - name: storage
+    description: 'On-disk storage usage: where offline maps, position history, and config data live and how much space they use.'
   - name: actions
     description: 'On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire.'
   - name: remote-actions
@@ -8059,6 +8091,29 @@ paths:
       summary: System status dashboard
       tags:
         - status
+  /storage/usage:
+    get:
+      description: |-
+        Returns the byte size of each location Graywolf writes to
+        (offline map tiles, position history, config/app data) plus
+        the total. Advisory only; never mutates state.
+      operationId: getStorageUsage
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.StorageUsageResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Report on-disk storage usage
+      tags:
+        - storage
   /system-logs:
     get:
       operationId: listSystemLogs
