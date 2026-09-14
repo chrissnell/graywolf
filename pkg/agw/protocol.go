@@ -1,29 +1,34 @@
-// Package agw implements a minimal AGWPE-compatible TCP server for APRS
-// use. The wire format matches direwolf's server.c so existing clients
-// (APRSIS32, UI-View, YAAC, Xastir) interoperate without modification.
+// Package agw implements a minimal AGWPE-compatible TCP server. The wire
+// format matches direwolf's server.c so existing clients (APRSIS32, UI-View,
+// YAAC, Xastir) interoperate without modification.
 //
-// Only the frame types needed for APRS are implemented:
+//	Client → server:
+//	  'R'  query AGW version
+//	  'G'  query port information (list of radio ports)
+//	  'g'  query port capabilities
+//	  'X'  register callsign
+//	  'x'  unregister callsign
+//	  'm'  start monitoring (enable 'U'-type rx packets)
+//	  'k'  transmit raw AX.25 frame
+//	  'M'  transmit UNPROTO (UI) frame — server must build the AX.25 header
+//	  'C'  connect to a remote station
+//	  'v'  connect to a remote station via digipeaters
+//	  'c'  connect to a remote station with non-standard PID
+//	  'V'  transmit UNPROTO (UI) frame via digipeaters
+//	  'D'  transmit connected-mode data
+//	  'd'  disconnect from a remote station
 //
-//   Client → server:
-//     'R'  query AGW version
-//     'G'  query port information (list of radio ports)
-//     'g'  query port capabilities
-//     'X'  register callsign
-//     'x'  unregister callsign
-//     'm'  start monitoring (enable 'U'-type rx packets)
-//     'k'  transmit raw AX.25 frame
-//     'M'  transmit UNPROTO (UI) frame — server must build the AX.25 header
+//	Server → client:
+//	  'R'  version response
+//	  'G'  port info response
+//	  'g'  port capability response
+//	  'X'  callsign registered ack
+//	  'U'  monitored UI frame from RF
+//	  'C'  connection established
+//	  'D'  received connected-mode data
+//	  'd'  disconnect notification
 //
-//   Server → client:
-//     'R'  version response
-//     'G'  port info response
-//     'g'  port capability response
-//     'X'  callsign registered ack
-//     'U'  monitored UI frame from RF
-//
-// Connected-mode frame types ('C', 'D', 'd', 'v', 'V', 'c', ...) are
-// accepted and logged but not implemented, matching the "AX.25 UI only"
-// constraint for graywolf Phase 2.
+// Outbound connections are supported.
 package agw
 
 import (
@@ -59,6 +64,13 @@ const (
 	KindSendUnprotoVia     byte = 'V' // client → server: send UI frame via digipeaters
 	KindSendRaw            byte = 'K' // both directions: raw AX.25
 	KindMonitoredUI        byte = 'U' // server → client: rx UI frame
+
+	// Connected-mode kinds
+	KindConnect           byte = 'C'
+	KindConnectVia        byte = 'v'
+	KindDisconnect        byte = 'd'
+	KindConnectedData     byte = 'D'
+	KindOutstandingFrames byte = 'Y'
 )
 
 // EncodeHeader writes h into a 36-byte buffer.

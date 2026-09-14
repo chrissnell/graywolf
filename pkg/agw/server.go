@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -29,6 +30,8 @@ type ServerConfig struct {
 	// Sink receives parsed AX.25 frames for transmission. Typically
 	// *txgovernor.Governor in production.
 	Sink txgovernor.TxSink
+	// AX25Manager handles connected-mode LAPB sessions.
+	AX25Manager *ax25conn.Manager
 	// Logger is optional.
 	Logger *slog.Logger
 	// OnClientChange is invoked with the new total-client count on connect
@@ -72,6 +75,10 @@ type clientState struct {
 	// message. It is consumed (cleared) by the next 'M' (UNPROTO) send so
 	// a client can choose a path per transmission.
 	viaPath []string
+
+	// sessions tracks connected-mode LAPB sessions established by this client.
+	// Keyed by "port:CallFrom:CallTo".
+	sessions map[string]*ax25conn.Session
 }
 
 // NewServer builds an AGW server. Does not listen until ListenAndServe.
@@ -212,12 +219,23 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) handleClient(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	cs := &clientState{conn: conn, callsigns: make(map[string]struct{})}
+	cs := &clientState{
+		conn:      conn,
+		callsigns: make(map[string]struct{}),
+		sessions:  make(map[string]*ax25conn.Session),
+	}
 	s.addClient(cs)
 	defer s.removeClient(cs)
 	remote := conn.RemoteAddr().String()
 	s.logger.Info("agw client connected", "remote", remote)
 	defer s.logger.Info("agw client disconnected", "remote", remote)
+	defer func() {
+		cs.mu.Lock()
+		for _, sess := range cs.sessions {
+			sess.Submit(ax25conn.Event{Kind: ax25conn.EventAbort})
+		}
+		cs.mu.Unlock()
+	}()
 
 	// Close the connection on ctx cancel so ReadFrame unblocks. Tracked
 	// in s.wg so Shutdown's wg.Wait cannot return until this watcher
@@ -372,8 +390,25 @@ func (s *Server) dispatch(ctx context.Context, cs *clientState, h *Header, data 
 		}
 		return nil
 
+	case KindConnect, KindConnectVia:
+		return s.handleConnect(ctx, cs, h, data)
+
+	case KindDisconnect:
+		return s.handleDisconnect(cs, h)
+
+	case KindConnectedData:
+		return s.handleConnectedData(cs, h, data)
+
+	case KindOutstandingFrames:
+		payload := make([]byte, 4)
+		return s.writeFrame(cs, &Header{
+			Port:     h.Port,
+			DataKind: KindOutstandingFrames,
+			CallFrom: h.CallFrom,
+			CallTo:   h.CallTo,
+		}, payload)
+
 	default:
-		// Connected-mode frames: 'C', 'D', 'd', 'v', 'V', 'c' etc. Log and drop.
 		s.logger.Debug("unsupported agw frame kind", "kind", string(h.DataKind))
 		return nil
 	}

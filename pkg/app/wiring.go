@@ -1218,6 +1218,7 @@ func (a *App) buildAgwServer(agwCfg *configstore.AgwConfig) *agw.Server {
 		PortCallsigns: calls,
 		PortToChannel: map[uint8]uint32{0: 1},
 		Sink:          a.gov,
+		AX25Manager:   a.ax25Mgr,
 		Logger:        a.logger,
 		OnClientChange: func(n int) {
 			a.metrics.SetAgwClients(n)
