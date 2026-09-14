@@ -28,3 +28,11 @@ resolver = "2"
 # is released upstream.
 [patch.crates-io]
 alsa = { git = "https://github.com/chrissnell/alsa-rs", rev = "56099e8915af95f322d6eeca3a24da5d7c7098e4" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
