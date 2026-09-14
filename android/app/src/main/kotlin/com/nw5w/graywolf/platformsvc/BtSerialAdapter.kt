@@ -63,6 +63,10 @@ class BtSerialAdapter(
             } catch (sec: SecurityException) {
                 Log.w(tag, "BLUETOOTH_CONNECT permission missing", sec)
                 emptyList()
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                // Never swallow cooperative cancellation (e.g. shutdown()) —
+                // rethrow so the coroutine unwinds instead of sending a stray reply.
+                throw cancel
             } catch (t: Throwable) {
                 Log.w(tag, "bonded-device enumeration failed; replying empty", t)
                 emptyList()

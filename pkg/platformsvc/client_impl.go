@@ -76,7 +76,15 @@ func newClient(socketPath string) Client {
 // This is the production entry point exposed via the Client interface.
 // The internal one-shot Connect path stays for tests only.
 func (c *clientImpl) ConnectWithReconnect(ctx context.Context) error {
-	if err := c.Connect(ctx); err != nil {
+	// ctx governs the reconnect loop for the whole client lifetime, so it
+	// must NOT carry a short dial deadline — bound only the initial dial.
+	// Passing a timeout-scoped ctx straight through would cancel the
+	// reconnect loop the instant that deadline elapsed, so a later UDS drop
+	// would never be re-dialed (nor re-Hello'd).
+	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
+	err := c.Connect(dialCtx)
+	cancel()
+	if err != nil {
 		return err
 	}
 	go c.reconnectLoop(ctx)
@@ -111,7 +119,10 @@ func (c *clientImpl) reconnectLoop(ctx context.Context) {
 				return
 			case <-time.After(delay):
 			}
-			if err := c.Connect(ctx); err != nil {
+			dialCtx, dcancel := context.WithTimeout(ctx, dialTimeout)
+			err := c.Connect(dialCtx)
+			dcancel()
+			if err != nil {
 				lastErr = err
 				continue
 			}
@@ -408,9 +419,6 @@ func (c *clientImpl) deliverSerialHandle(handle uint32, msg *pb.PlatformMessage)
 }
 
 func (c *clientImpl) Hello(ctx context.Context, schemaVersion uint32) (*HelloResponse, error) {
-	// Remember the negotiated schema so the reconnect loop can re-handshake
-	// on every future re-dial (see helloSchema / reconnectLoop).
-	c.helloSchema.Store(schemaVersion)
 	req := &pb.PlatformMessage{Body: &pb.PlatformMessage_Hello{
 		Hello: &pb.Hello{
 			SchemaVersion: schemaVersion,
@@ -432,6 +440,11 @@ func (c *clientImpl) Hello(ctx context.Context, schemaVersion uint32) (*HelloRes
 		_ = c.Close()
 		return nil, &ErrSchemaMismatch{ClientVersion: schemaVersion, ServerVersion: hello.SchemaVersion}
 	}
+	// Record the negotiated schema only after a clean handshake so the
+	// reconnect loop can replay it on every future re-dial (see helloSchema /
+	// reconnectLoop). Storing on success means a reconnect that races a
+	// never-completed initial Hello won't re-Hello prematurely.
+	c.helloSchema.Store(schemaVersion)
 	return hello, nil
 }
 
@@ -502,6 +515,11 @@ func (c *clientImpl) UnkeyPtt(ctx context.Context, method PttMethod, handle *Usb
 	}
 	return nil, fmt.Errorf("platformsvc: unexpected response %T", resp.GetBody())
 }
+
+// dialTimeout bounds a single UDS dial (initial and each reconnect). Kept
+// separate from the reconnect loop's lifetime ctx so a slow dial can't wedge
+// startup while a genuine app-lifetime ctx still governs the loop overall.
+const dialTimeout = 10 * time.Second
 
 // Used in reconnect_test.go to assert backoff behaviour.
 var backoffSchedule = []time.Duration{
