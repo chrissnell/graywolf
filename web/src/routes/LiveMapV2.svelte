@@ -442,6 +442,34 @@
       toasts.error('Clipboard unavailable');
     }
   }
+
+  // Hands a Navigate link off to its native app via a custom URL scheme
+  // (Organic Maps `om://`, Apple Maps `maps://`) without navigating this tab
+  // away from the live map. Desktop browsers have no Universal/App-Link
+  // handoff (that's iOS/Android-only), so a plain https:// link just opens
+  // the website even with the app installed -- the scheme is what makes the
+  // native app open, on any OS/browser. The attempt runs in a throwaway
+  // hidden iframe so a browser that shows an error page for an unregistered
+  // scheme does so there, not in the live map; if the tab is still visible
+  // after NAV_FALLBACK_MS (nothing claimed the link), we open the https
+  // fallback in a new tab instead.
+  const NAV_FALLBACK_MS = 900;
+  function openNativeOrFallback(scheme, fallback) {
+    let handedOff = false;
+    const onHide = () => { handedOff = true; };
+    document.addEventListener('visibilitychange', onHide, { once: true });
+
+    const probe = document.createElement('iframe');
+    probe.style.display = 'none';
+    probe.src = scheme;
+    document.body.appendChild(probe);
+
+    setTimeout(() => {
+      probe.remove();
+      document.removeEventListener('visibilitychange', onHide);
+      if (!handedOff) window.open(fallback, '_blank', 'noopener,noreferrer');
+    }, NAV_FALLBACK_MS);
+  }
   // Hemispheric coords shown once in the menu header; the copy items
   // carry short labels so the menu stays narrow.
   function ctxMenuHeader() {
@@ -559,9 +587,18 @@
     });
 
     // Wire path-link clicks: pan + reopen popup for the clicked digipeater.
+    // Also intercept Navigate links that carry a native scheme (Organic Maps,
+    // Apple Maps) so the desktop app gets first shot before the https
+    // fallback -- see openNativeOrFallback.
     const el = activePopup.getElement();
     if (el) {
       el.addEventListener('click', (ev) => {
+        const navLink = ev.target && ev.target.closest && ev.target.closest('.stn-nav-link[data-nav-scheme]');
+        if (navLink) {
+          ev.preventDefault();
+          openNativeOrFallback(navLink.dataset.navScheme, navLink.href);
+          return;
+        }
         const link = ev.target && ev.target.closest && ev.target.closest('.path-link');
         if (!link) return;
         ev.preventDefault();
@@ -2259,6 +2296,53 @@
     );
     color: var(--color-text);
     text-decoration: none;
+    outline: none;
+  }
+
+  /* Navigate disclosure: a native <details>/<summary> nested inside
+     .stn-actions (see popup.js renderNavigateHTML) so it needs no JS to
+     expand -- the popup is plain DOM, not a Svelte component. The summary
+     row reuses .stn-action's look; the marker is replaced with a small
+     CSS-only chevron that rotates on [open]. */
+  :global(.stn-nav-group) { margin: 0; }
+  :global(.stn-nav-summary) {
+    list-style: none;
+    position: relative;
+    padding-right: 22px;
+  }
+  :global(.stn-nav-summary::-webkit-details-marker) { display: none; }
+  :global(.stn-nav-summary::after) {
+    content: '\203A';
+    position: absolute;
+    right: 10px;
+    color: var(--map-overlay-muted);
+    transition: transform 120ms ease;
+  }
+  :global(.stn-nav-group[open] .stn-nav-summary::after) {
+    transform: rotate(90deg);
+  }
+  :global(.stn-nav-list) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 0 2px 30px;
+  }
+  :global(.stn-nav-link) {
+    padding: 4px 10px;
+    border-radius: 5px;
+    color: var(--map-overlay-fg);
+    text-decoration: none;
+    font-size: 12.5px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  :global(.stn-nav-link:hover),
+  :global(.stn-nav-link:focus-visible) {
+    background: var(
+      --color-surface-hover,
+      color-mix(in srgb, var(--color-text) 9%, transparent)
+    );
+    color: var(--color-text);
     outline: none;
   }
   :global(.stn-weather) { font-size: 12px; }
