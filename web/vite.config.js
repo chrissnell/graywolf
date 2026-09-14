@@ -6,6 +6,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: false,
+    // vendor-map (maplibre-gl + pmtiles) is intentionally large but is only
+    // ever fetched lazily when navigating to /map or /preferences/maps
+    // (routes are dynamically imported in App.svelte), so it never inflates
+    // the initial load. Raise the limit so that expected chunk isn't flagged.
+    chunkSizeWarningLimit: 1700,
     rollupOptions: {
       output: {
         manualChunks(id) {

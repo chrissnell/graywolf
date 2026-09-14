@@ -23,7 +23,6 @@
     audioLevel,
     displaySegments,
   } from '../lib/packetColumns.js';
-  import PacketInspector from './PacketInspector.svelte';
 
   let {
     packets = [],
@@ -89,9 +88,19 @@
     wasNewestFirst = nf;
   });
 
-  // Deep packet inspector state (only used when `inspectable`).
+  // Deep packet inspector state (only used when `inspectable`). The
+  // component itself (and the xterm dependency it drags in for the hex/ASCII
+  // dump) is dynamically imported so pages that render this viewer without
+  // `inspectable` (e.g. the Dashboard) never fetch it.
   let inspectOpen = $state(false);
   let inspectPacket = $state(null);
+  let PacketInspector = $state(null);
+
+  $effect(() => {
+    if (inspectable && !PacketInspector) {
+      import('./PacketInspector.svelte').then((m) => { PacketInspector = m.default; });
+    }
+  });
 
   function inspect(entry) {
     inspectPacket = entry;
@@ -242,7 +251,7 @@
   />
 </div>
 
-{#if inspectable}
+{#if inspectable && PacketInspector}
   <PacketInspector bind:open={inspectOpen} packet={inspectPacket} />
 {/if}
 
