@@ -167,6 +167,10 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 		)
 	}
 
+	if srv := a.currentAgwServer(); srv != nil {
+		srv.BroadcastRawKISS(uint8(rf.Channel), rf.Data)
+	}
+
 	if f.IsUI() {
 		if srv := a.currentAgwServer(); srv != nil {
 			srv.BroadcastMonitoredUI(uint8(rf.Channel), f)

@@ -58,6 +58,7 @@ const (
 	KindSendUnproto        byte = 'M' // client → server: send UI frame
 	KindSendUnprotoVia     byte = 'V' // client → server: send UI frame via digipeaters
 	KindSendRaw            byte = 'K' // both directions: raw AX.25
+	KindToggleRawKISS      byte = 'k' // client → server: toggle raw KISS frame reception
 	KindMonitoredUI        byte = 'U' // server → client: rx UI frame
 )
 

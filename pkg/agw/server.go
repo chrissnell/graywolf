@@ -67,6 +67,7 @@ type clientState struct {
 	writeMu   sync.Mutex
 	mu        sync.Mutex
 	monitor   bool
+	rawKISS   bool
 	callsigns map[string]struct{}
 	// viaPath is the digipeater list supplied by the most recent 'V'
 	// message. It is consumed (cleared) by the next 'M' (UNPROTO) send so
@@ -298,6 +299,12 @@ func (s *Server) dispatch(ctx context.Context, cs *clientState, h *Header, data 
 		cs.mu.Unlock()
 		return nil
 
+	case KindToggleRawKISS:
+		cs.mu.Lock()
+		cs.rawKISS = !cs.rawKISS
+		cs.mu.Unlock()
+		return nil
+
 	case KindSendUnproto:
 		// data layout (direwolf): header.PID is the PID byte; data is the
 		// info field. CallFrom → CallTo. If a prior 'V' frame stashed a
@@ -522,6 +529,35 @@ func (s *Server) BroadcastMonitoredUI(port uint8, f *ax25.Frame) {
 	for _, cs := range targets {
 		if err := s.writeFrame(cs, h, []byte(text)); err != nil {
 			s.logger.Debug("agw monitor write failed", "err", err)
+		}
+	}
+}
+
+// BroadcastRawKISS sends raw AX.25 frame data to clients that have enabled
+// raw KISS reception via the 'k' toggle.
+func (s *Server) BroadcastRawKISS(port uint8, raw []byte) {
+	h := &Header{
+		Port:     port,
+		DataKind: KindSendRaw,
+	}
+	// AGWPE expects a leading 0 byte (KISS Data command) on 'K' frames.
+	payload := make([]byte, len(raw)+1)
+	copy(payload[1:], raw)
+
+	s.mu.Lock()
+	targets := make([]*clientState, 0, len(s.clients))
+	for c := range s.clients {
+		c.mu.Lock()
+		if c.rawKISS {
+			targets = append(targets, c)
+		}
+		c.mu.Unlock()
+	}
+	s.mu.Unlock()
+
+	for _, cs := range targets {
+		if err := s.writeFrame(cs, h, payload); err != nil {
+			s.logger.Debug("agw raw write failed", "err", err)
 		}
 	}
 }
