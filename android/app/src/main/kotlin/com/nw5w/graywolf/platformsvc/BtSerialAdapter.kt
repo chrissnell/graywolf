@@ -50,10 +50,25 @@ class BtSerialAdapter(
 
     fun handleBondedRequest() {
         scope.launch {
+            // Every request MUST produce exactly one reply. The Go client
+            // blocks (holding its single-request lock) until this response
+            // arrives, so any uncaught failure here spins the KISS
+            // bonded-device picker on "Loading" forever and wedges the
+            // platform request channel. Catch everything — a denied
+            // permission surfaces as SecurityException, but a resetting
+            // Bluetooth stack can throw DeadObjectException / IllegalState —
+            // and always send a (possibly empty) list.
             val devices = try {
                 facade.bondedDevices()
             } catch (sec: SecurityException) {
                 Log.w(tag, "BLUETOOTH_CONNECT permission missing", sec)
+                emptyList()
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                // Never swallow cooperative cancellation (e.g. shutdown()) —
+                // rethrow so the coroutine unwinds instead of sending a stray reply.
+                throw cancel
+            } catch (t: Throwable) {
+                Log.w(tag, "bonded-device enumeration failed; replying empty", t)
                 emptyList()
             }
             val resp = BondedBtDevicesResponse.newBuilder().apply {
