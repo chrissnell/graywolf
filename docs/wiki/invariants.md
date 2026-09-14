@@ -1872,12 +1872,22 @@ The Android `PlatformServer` (Kotlin) registers a connection into
 
 Therefore the reconnect loop (`clientImpl.reconnectLoop`) MUST re-send `Hello`
 after each successful re-dial. It replays the schema version recorded by the
-first `Hello` (`clientImpl.helloSchema`). Without this, a UDS reconnect (the
-Go child survives while the Kotlin `PlatformServer` restarts, or any socket
-hiccup) lands on a fresh `serveClient` that never sees a Hello, so its `out`
-is never registered and **every** broadcast is dropped -- GPS/GNSS stop and,
-visibly, the KISS bonded-device picker hangs on "Loading" forever because its
+first `Hello` (`clientImpl.helloSchema`). Without this, a UDS reconnect (any
+socket drop or `PlatformServer` re-bind while the Go child survives) lands on a
+fresh `serveClient` that never sees a Hello, so its `out` is never registered
+and **every** broadcast is dropped -- GPS/GNSS stop and, visibly, the KISS
+bonded-device picker hangs on "Loading" forever because its
 `BondedBtDevicesResponse` never reaches the blocked Go round-trip (GH #573).
+
+The re-Hello is **not atomic** with the re-dial: between `Connect` returning
+(conn set) and the loop acquiring `requestMu` for the re-Hello, an application
+`roundTrip` can win the mutex and send on the not-yet-registered connection.
+That single request's broadcast-borne reply is dropped and it fails after
+`bondedBtTimeout` (8s) rather than hanging forever -- bounded and self-healing
+(the next request lands on a registered conn), and in the common case the
+loop's re-Hello, issued immediately on the reconnect goroutine, wins the mutex
+first. Do not assume a request issued right after a reconnect is guaranteed a
+registered connection.
 
 Two independent backstops keep a single lost reply from being fatal:
 `BtSerialAdapter.handleBondedRequest` catches **all** throwables and always

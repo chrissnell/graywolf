@@ -133,7 +133,7 @@ func (c *clientImpl) reconnectLoop(ctx context.Context) {
 			// unregistered and every broadcast silently dropped — surfacing as
 			// the KISS bonded-device picker spinning on "Loading" forever.
 			if sv := c.helloSchema.Load(); sv != 0 {
-				hctx, hcancel := context.WithTimeout(ctx, 5*time.Second)
+				hctx, hcancel := context.WithTimeout(ctx, reHelloTimeout)
 				_, herr := c.Hello(hctx, sv)
 				hcancel()
 				if herr != nil {
@@ -520,6 +520,12 @@ func (c *clientImpl) UnkeyPtt(ctx context.Context, method PttMethod, handle *Usb
 // separate from the reconnect loop's lifetime ctx so a slow dial can't wedge
 // startup while a genuine app-lifetime ctx still governs the loop overall.
 const dialTimeout = 10 * time.Second
+
+// reHelloTimeout bounds the re-Hello issued after a reconnect. It holds
+// requestMu for its duration, so an application round-trip that arrives during
+// a reconnect waits behind it — kept comfortably under bondedBtTimeout so the
+// bonded picker still resolves within its own budget.
+const reHelloTimeout = 5 * time.Second
 
 // Used in reconnect_test.go to assert backoff behaviour.
 var backoffSchedule = []time.Duration{
