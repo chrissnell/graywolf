@@ -7,6 +7,7 @@
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText, formatWeatherRows } from './popup-helpers.js';
 import { rfReachableDespiteNonRfLatest } from './rf-only-core.js';
 import { unitsState } from '../settings/units-store.svelte.js';
+import { formatSpeed, formatAltitude } from '../settings/units.js';
 
 // renderStationPopupHTML(station, { hasStation }) -> HTML string
 //
@@ -44,9 +45,9 @@ export function renderStationPopupHTML(s, { hasStation = null } = {}) {
   html += `<div class="stn-coords">${fmtLat(pos.lat)} ${fmtLon(pos.lon)}</div>`;
 
   const meta = [];
-  if (pos.speed_kt > 0) meta.push(`${Math.round(pos.speed_kt * 1.15078)}mph`);
+  if (pos.speed_kt > 0) meta.push(formatSpeed(pos.speed_kt));
   if (pos.course != null) meta.push(`${pos.course}°`);
-  if (pos.has_alt) meta.push(`alt ${Math.round(pos.alt_m * 3.28084)} ft`);
+  if (pos.has_alt) meta.push(`alt ${formatAltitude(pos.alt_m)}`);
   if (meta.length) html += `<div class="stn-meta">${meta.join(' · ')}</div>`;
 
   html += `<div class="stn-via ${viaCls(s)}">${viaText(s)}</div>`;

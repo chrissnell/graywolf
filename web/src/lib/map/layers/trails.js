@@ -26,6 +26,7 @@
 
 import maplibregl from 'maplibre-gl';
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText } from '../popup-helpers.js';
+import { formatSpeed, formatAltitude } from '../../settings/units.js';
 
 const LINE_SOURCE_ID = 'gw-trails-lines';
 const DOT_SOURCE_ID = 'gw-trails-dots';
@@ -374,13 +375,13 @@ function renderDotPopup(props, hasStation) {
 
   const meta = [];
   const speedKt = Number(props.speed_kt) || 0;
-  if (speedKt > 0) meta.push(`${Math.round(speedKt * 1.15078)}mph`);
+  if (speedKt > 0) meta.push(formatSpeed(speedKt));
   if (props.course !== null && props.course !== '' && props.course !== undefined) {
     meta.push(`${props.course}°`);
   }
   if (props.has_alt) {
     const altM = Number(props.alt_m);
-    if (!Number.isNaN(altM)) meta.push(`alt ${Math.round(altM * 3.28084)} ft`);
+    if (!Number.isNaN(altM)) meta.push(`alt ${formatAltitude(altM)}`);
   }
   if (meta.length) html += `<div class="stn-meta">${meta.join(' · ')}</div>`;
 
