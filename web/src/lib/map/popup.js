@@ -7,7 +7,11 @@
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText, formatWeatherRows } from './popup-helpers.js';
 import { rfReachableDespiteNonRfLatest } from './rf-only-core.js';
 import { unitsState } from '../settings/units-store.svelte.js';
+<<<<<<< HEAD
 import { formatSpeed, formatAltitude } from '../settings/units.js';
+=======
+import { organicMapsLinks, googleMapsUrl, appleMapsLinks } from './nav-links.js';
+>>>>>>> 9ba1711c (feature: Added Navigate to link on the map popups so that users can use a map application to navigate to the location.)
 
 // renderStationPopupHTML(station, { hasStation }) -> HTML string
 //
@@ -158,6 +162,9 @@ const ICON_QRZ = icon(
     '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
 );
 
+// lucide "navigation" (arrow) -- marks the expandable Navigate disclosure.
+const ICON_NAVIGATE = icon('<polygon points="3 11 22 2 13 21 11 13 3 11"/>');
+
 // renderStationActionsHTML(station) -> HTML string (or '' to suppress)
 //
 // Action rows shown for a real heard station: open a direct message thread,
@@ -182,7 +189,41 @@ export function renderStationActionsHTML(s) {
   let html = `<div class="stn-actions" role="menu">`;
   html += `<a class="stn-action stn-msg-link" role="menuitem" href="${msgHref}">${ICON_MESSAGE}<span class="stn-action-label">Message</span></a>`;
   html += `<a class="stn-action stn-log-link" role="menuitem" href="${logHref}">${ICON_LOGS}<span class="stn-action-label">APRS logs</span></a>`;
+  html += renderNavigateHTML(s, upper);
   html += `<a class="stn-action stn-qrz-link" role="menuitem" href="${qrzHref}" target="_blank" rel="noopener noreferrer">${ICON_QRZ}<span class="stn-action-label">QRZ</span></a>`;
   html += `</div>`;
+  return html;
+}
+
+// renderNavigateHTML(station, name) -> HTML string (or '' when unpositioned)
+//
+// A <details> disclosure -- not a click-wired menu -- so expanding it needs no
+// JS: MapLibre popups are plain DOM, not Svelte components, and <details> is
+// the native equivalent of the Svelte-rendered map-context-menu.svelte used
+// elsewhere. Organic Maps is listed first per its primary/offline-capable role
+// (feature request); Google/Apple Maps follow as common alternatives.
+//
+// Organic Maps and Apple Maps links carry a `data-nav-scheme` attribute (the
+// custom-protocol URL) alongside their `href` (the https fallback). LiveMapV2
+// intercepts clicks on that attribute and tries the scheme first, since a
+// desktop browser has no Universal/App-Link handoff and would otherwise just
+// open the href website even with the native app installed (see
+// openNativeOrFallback in LiveMapV2.svelte). Google Maps has no desktop app,
+// so it stays a plain link -- mobile OSes already auto-handoff its https URL.
+function renderNavigateHTML(s, name) {
+  const pos = s.positions && s.positions[0];
+  if (!pos) return '';
+
+  const om = organicMapsLinks(pos.lat, pos.lon, name);
+  const am = appleMapsLinks(pos.lat, pos.lon, name);
+
+  let html = `<details class="stn-nav-group">`;
+  html += `<summary class="stn-action stn-nav-summary" role="menuitem">${ICON_NAVIGATE}<span class="stn-action-label">Navigate</span></summary>`;
+  html += `<div class="stn-nav-list" role="menu">`;
+  html += `<a class="stn-nav-link" href="${om.fallback}" data-nav-scheme="${om.scheme}" target="_blank" rel="noopener noreferrer">Organic Maps</a>`;
+  html += `<a class="stn-nav-link" href="${googleMapsUrl(pos.lat, pos.lon)}" target="_blank" rel="noopener noreferrer">Google Maps</a>`;
+  html += `<a class="stn-nav-link" href="${am.fallback}" data-nav-scheme="${am.scheme}" target="_blank" rel="noopener noreferrer">Apple Maps</a>`;
+  html += `</div>`;
+  html += `</details>`;
   return html;
 }
