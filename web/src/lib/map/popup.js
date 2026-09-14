@@ -7,11 +7,8 @@
 import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText, formatWeatherRows } from './popup-helpers.js';
 import { rfReachableDespiteNonRfLatest } from './rf-only-core.js';
 import { unitsState } from '../settings/units-store.svelte.js';
-<<<<<<< HEAD
 import { formatSpeed, formatAltitude } from '../settings/units.js';
-=======
 import { organicMapsLinks, googleMapsUrl, appleMapsLinks } from './nav-links.js';
->>>>>>> 9ba1711c (feature: Added Navigate to link on the map popups so that users can use a map application to navigate to the location.)
 
 // renderStationPopupHTML(station, { hasStation }) -> HTML string
 //
