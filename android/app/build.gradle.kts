@@ -127,6 +127,17 @@ android {
     }
 }
 
+androidComponents {
+    // Debug/release land in separate output dirs, so a shared name is safe.
+    onVariants(selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
+                output.outputFileName.set("graywolf.apk")
+            }
+        }
+    }
+}
+
 protobuf {
     protoc {
         artifact = "com.google.protobuf:protoc:3.25.3"

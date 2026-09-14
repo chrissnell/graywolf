@@ -157,7 +157,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: graywolf-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/graywolf.apk
           retention-days: 7
 
   # ------------------------------------------------------------------
@@ -264,7 +264,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           mkdir -p staging
           cp android/app/build/outputs/bundle/release/app-release.aab "staging/graywolf-${version}.aab"
-          cp android/app/build/outputs/apk/release/app-release.apk     "staging/graywolf-${version}.apk"
+          cp android/app/build/outputs/apk/release/graywolf.apk        "staging/graywolf-${version}.apk"
           ls -la staging/
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
