@@ -1898,7 +1898,8 @@ export interface paths {
          * Report on-disk storage usage
          * @description Returns the byte size of each location Graywolf writes to
          *     (offline map tiles, position history, config/app data) plus
-         *     the total. Advisory only; never mutates state.
+         *     the total. Advisory only; never mutates state and always
+         *     returns 200 (missing paths report 0).
          */
         get: operations["getStorageUsage"];
         put?: never;
@@ -10819,15 +10820,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["dto.StorageUsageResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

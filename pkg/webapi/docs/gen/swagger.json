@@ -7666,7 +7666,7 @@
                         "CookieAuth": []
                     }
                 ],
-                "description": "Returns the byte size of each location Graywolf writes to\n(offline map tiles, position history, config/app data) plus\nthe total. Advisory only; never mutates state.",
+                "description": "Returns the byte size of each location Graywolf writes to\n(offline map tiles, position history, config/app data) plus\nthe total. Advisory only; never mutates state and always\nreturns 200 (missing paths report 0).",
                 "produces": [
                     "application/json"
                 ],
@@ -7680,12 +7680,6 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.StorageUsageResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
                     }
                 }

@@ -51,6 +51,13 @@
       <span>Total</span>
       <span class="usage-bytes">{formatBytes(storageUsageState.totalBytes)}</span>
     </div>
+
+    {#if storageUsageState.error}
+      <p class="usage-stale">
+        Showing last known figures — couldn't refresh.
+        <button class="linklike" onclick={() => storageUsageState.refresh()}>Retry</button>
+      </p>
+    {/if}
   {/if}
 </Box>
 
@@ -119,6 +126,12 @@
   }
   .usage-error {
     color: var(--color-text-muted);
+  }
+  .usage-stale {
+    color: var(--color-text-dim);
+    font-size: 0.9em;
+    margin-top: 12px;
+    margin-bottom: 0;
   }
   .linklike {
     background: none;

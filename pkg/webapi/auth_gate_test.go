@@ -119,6 +119,10 @@ func TestAuthGate_EveryRoute(t *testing.T) {
 		{http.MethodGet, "/api/health", ""},
 		{http.MethodGet, "/api/status", ""},
 
+		// Storage usage exposes absolute on-disk paths, so it must
+		// never go public.
+		{http.MethodGet, "/api/storage/usage", ""},
+
 		// Release notes (popup + About page "What's new").
 		{http.MethodGet, "/api/release-notes", ""},
 		{http.MethodGet, "/api/release-notes/unseen", ""},

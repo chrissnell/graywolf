@@ -8096,7 +8096,8 @@ paths:
       description: |-
         Returns the byte size of each location Graywolf writes to
         (offline map tiles, position history, config/app data) plus
-        the total. Advisory only; never mutates state.
+        the total. Advisory only; never mutates state and always
+        returns 200 (missing paths report 0).
       operationId: getStorageUsage
       produces:
         - application/json
@@ -8105,10 +8106,6 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.StorageUsageResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/webtypes.ErrorResponse'
       security:
         - CookieAuth: []
       summary: Report on-disk storage usage
