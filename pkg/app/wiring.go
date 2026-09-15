@@ -1042,8 +1042,10 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 		Decoded:   pkt,
 		Notes:     "is-rx",
 	})
-	// IS-received packet — cache as via=is, direction=IS so the map can
-	// distinguish APRS-IS arrivals from RF receptions.
+	// IS-received packet — cache as via=is, direction=IS. stationcache's
+	// classifyRFOrIS decides whether the station's Direction badge stays
+	// RX (a recent RF reception confirms it) or reads IS, so this call
+	// always reports the ground truth for this specific reception.
 	if entries := stationcache.ExtractEntry(pkt, "igate-is", "IS", uint32(pkt.Channel)); len(entries) > 0 {
 		a.stationCache.Update(entries)
 	}
