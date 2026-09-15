@@ -195,7 +195,22 @@ type migration struct {
 //	    legacy column. Required by the per-beacon format selector
 //	    and uncompressed-only position ambiguity. See
 //	    docs/superpowers/plans/2026-05-29-beacon-position-format-and-ambiguity.md.
-//	27 — igate_is_tx_via: replace the inert i_gate_configs.max_msg_hops
+//	27 — messages_retry_interval: add retry_interval_secs column to
+//	    messages_preferences (default 30 seconds). Post-AutoMigrate
+//	    because the table is created by AutoMigrate. Backfills any
+//	    row that AutoMigrate left at 0 to the 30s default.
+//	28 — bulletins_table: create the bulletins table and its three
+//	    indexes (inbound upsert unique index on (from_call, slot),
+//	    direction index for list queries, next_send_at index for the
+//	    outbound scheduler). The Bulletin model is NOT in the AutoMigrate
+//	    list; this migration is the single source of truth for its schema.
+//	29 — bulletin_interval: add retransmit_interval_secs to bulletins
+//	    (default 20 minutes). Post-AutoMigrate; backfills any row
+//	    AutoMigrate left at 0 to the default.
+//	30 — bulletin_row_interval: make the retransmit interval a per-row
+//	    setting instead of a global default, backfilling existing rows
+//	    from the prior global value.
+//	31 — igate_is_tx_via: replace the inert i_gate_configs.max_msg_hops
 //	    WIDE-hop count with the is_tx_via literal via-path string
 //	    (Direwolf-style IGTXVIA). AutoMigrate adds is_tx_via (empty
 //	    default) from the Go struct; this migration drops the dead
@@ -203,13 +218,13 @@ type migration struct {
 //	    an empty path before the fix, so an empty is_tx_via preserves
 //	    behavior exactly. Post-AutoMigrate, guarded by columnExists
 //	    (issue #489).
-//	28 — igate_gate_is_to_rf_backfill: GateIsToRf became the real IS->RF
+//	32 — igate_gate_is_to_rf_backfill: GateIsToRf became the real IS->RF
 //	    master switch (the TX governor is now wired on it, not on the old
 //	    implicit "has >=1 enabled rule"). Sets gate_is_to_rf=true on the
 //	    singleton iff an enabled RF filter exists, so operators who had
 //	    IS->RF active keep it on upgrade instead of silently losing it.
 //	    Post-AutoMigrate; no-op on fresh DBs (issue #496).
-//	29 — channels_enabled: add the channels.enabled column (default 1)
+//	33 — channels_enabled: add the channels.enabled column (default 1)
 //	    so a channel can be disabled without deleting it. Backfills
 //	    enabled=1 on every existing row so upgrades keep all channels
 //	    running. SQLite's ALTER TABLE ADD COLUMN with a constant DEFAULT 1
@@ -245,9 +260,13 @@ var schemaMigrations = []migration{
 	{version: 24, name: "kiss_gate_tx_to_is", phase: postAutoMigrate, run: migrateKissGateTxToIs},
 	{version: 25, name: "beacon_send_path", phase: postAutoMigrate, run: migrateBeaconSendPath},
 	{version: 26, name: "kiss_allow_connected_mode", phase: postAutoMigrate, run: migrateKissAllowConnectedMode},
-	{version: 27, name: "igate_is_tx_via", phase: postAutoMigrate, run: migrateIGateIsTxVia},
-	{version: 28, name: "igate_gate_is_to_rf_backfill", phase: postAutoMigrate, run: migrateIGateGateIsToRfBackfill},
-	{version: 29, name: "channels_enabled", phase: postAutoMigrate, run: migrateChannelsEnabled},
+	{version: 27, name: "messages_retry_interval", phase: postAutoMigrate, run: migrateMessagesRetryInterval},
+	{version: 28, name: "bulletins_table", phase: postAutoMigrate, run: migrateBulletinsTable},
+	{version: 29, name: "bulletin_interval", phase: postAutoMigrate, run: migrateBulletinInterval},
+	{version: 30, name: "bulletin_row_interval", phase: postAutoMigrate, run: migrateBulletinRowInterval},
+	{version: 31, name: "igate_is_tx_via", phase: postAutoMigrate, run: migrateIGateIsTxVia},
+	{version: 32, name: "igate_gate_is_to_rf_backfill", phase: postAutoMigrate, run: migrateIGateGateIsToRfBackfill},
+	{version: 33, name: "channels_enabled", phase: postAutoMigrate, run: migrateChannelsEnabled},
 }
 
 // runMigrations applies every pending migration in the given phase,

@@ -410,7 +410,7 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 				lat, lon = fix.Latitude, fix.Longitude
 			}
 		}
-		micEDestCall := MicEDestination(lat, lon, b.Ambiguity)
+		micEDestCall := MicEDestination(lat, lon, b.Ambiguity, b.MicEMessageCode)
 		parsed, perr := ax25.ParseAddress(micEDestCall)
 		if perr != nil {
 			s.logger.Warn("beacon mic_e dest parse", "id", b.ID, "call", micEDestCall, "err", perr)

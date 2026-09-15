@@ -38,6 +38,16 @@ export function fmtLon(lon) {
   return `${Math.abs(lon).toFixed(4)}\u00B0${dir}`;
 }
 
+// deviceText renders an aprs.DeviceInfo (vendor/model/class) as a single
+// display string, e.g. "Yaesu: FT5D (ht)". Vendor and class are both
+// optional -- the Mic-E-manufacturer fallback path only ever fills Model.
+export function deviceText(device) {
+  if (!device || !device.model) return device?.vendor || '';
+  let text = device.vendor ? `${device.vendor}: ${device.model}` : device.model;
+  if (device.class) text += ` (${device.class})`;
+  return text;
+}
+
 export function viaCls(s) {
   if (s.via === 'is') return 'via-is';
   if (s.hops > 0) return 'via-rf-hops';

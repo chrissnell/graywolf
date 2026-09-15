@@ -107,7 +107,7 @@ nfpms:
 
 dockers:
   - image_templates:
-      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-amd64"
+      - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:{{ .Tag }}-amd64"
     dockerfile: Dockerfile.goreleaser
     use: buildx
     goos: linux
@@ -123,7 +123,7 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.source={{.GitURL}}"
   - image_templates:
-      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
+      - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:{{ .Tag }}-arm64"
     dockerfile: Dockerfile.goreleaser.arm64
     use: buildx
     goos: linux
@@ -140,14 +140,14 @@ dockers:
       - "--label=org.opencontainers.image.source={{.GitURL}}"
 
 docker_manifests:
-  - name_template: "ghcr.io/chrissnell/graywolf:{{ .Tag }}"
+  - name_template: "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:{{ .Tag }}"
     image_templates:
-      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-amd64"
-      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
-  - name_template: "ghcr.io/chrissnell/graywolf:latest"
+      - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:{{ .Tag }}-amd64"
+      - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:{{ .Tag }}-arm64"
+  - name_template: "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:latest"
     image_templates:
-      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-amd64"
-      - "ghcr.io/chrissnell/graywolf:{{ .Tag }}-arm64"
+      - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:{{ .Tag }}-amd64"
+      - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/graywolf:{{ .Tag }}-arm64"
 
 checksum:
   name_template: checksums.txt

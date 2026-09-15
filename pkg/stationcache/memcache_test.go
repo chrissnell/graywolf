@@ -14,15 +14,16 @@ func newTestCache(t *testing.T) *MemCache {
 
 func stationEntry(key, callsign string, lat, lon float64) CacheEntry {
 	return CacheEntry{
-		Key:       key,
-		Callsign:  callsign,
-		HasPos:    true,
-		Lat:       lat,
-		Lon:       lon,
-		Symbol:    [2]byte{'/', '>'},
-		Via:       "rf",
-		Direction: "RX",
-		Timestamp: time.Now(),
+		Key:        key,
+		Callsign:   callsign,
+		HasPos:     true,
+		Lat:        lat,
+		Lon:        lon,
+		Symbol:     [2]byte{'/', '>'},
+		Via:        "rf",
+		Direction:  "RX",
+		StatusCode: -1, // no status; 0 would misread as Emergency
+		Timestamp:  time.Now(),
 	}
 }
 
@@ -194,6 +195,43 @@ func TestMemCache_WeatherOnlyForExistingStation(t *testing.T) {
 	}
 	// Position should remain unchanged
 	assertFloat(t, "Lat", results[0].Positions[0].Lat, 40.0)
+}
+
+func TestMemCache_StatusPropagates(t *testing.T) {
+	c := newTestCache(t)
+
+	e := stationEntry("stn:W1EMG-9", "W1EMG-9", 40.0, -105.0)
+	e.StatusCode = 0
+	e.StatusText = "Emergency"
+	c.Update([]CacheEntry{e})
+
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, time.Hour)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 station, got %d", len(results))
+	}
+	assertEqual(t, "StatusCode", results[0].StatusCode, 0)
+	assertEqual(t, "StatusText", results[0].StatusText, "Emergency")
+}
+
+func TestMemCache_StatusOnlyUpdateForExistingStation(t *testing.T) {
+	// A positionless '>' status report (HasPos false) must update an
+	// already-known station's status without disturbing its plotted
+	// position, mirroring TestMemCache_WeatherOnlyForExistingStation.
+	c := newTestCache(t)
+	c.Update([]CacheEntry{stationEntry("stn:W1STAT", "W1STAT", 40.0, -105.0)})
+
+	c.Update([]CacheEntry{
+		{Key: "stn:W1STAT", Callsign: "W1STAT", HasPos: false,
+			Via: "rf", Direction: "RX", Timestamp: time.Now(),
+			StatusCode: -1, StatusText: "PRIORITY"},
+	})
+
+	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, time.Hour)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 station, got %d", len(results))
+	}
+	assertEqual(t, "StatusText", results[0].StatusText, "PRIORITY")
+	assertFloat(t, "Lat unchanged", results[0].Positions[0].Lat, 40.0)
 }
 
 func TestMemCache_WeatherOnlyForUnknownStation(t *testing.T) {
