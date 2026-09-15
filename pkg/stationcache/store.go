@@ -62,6 +62,19 @@ type Station struct {
 	// the fix stays classified as direct for display (issues #130 + #349).
 	// Zero value means the station has never been heard directly.
 	LastDirectHeard time.Time
+	// LastRFHeard is the timestamp of the most recent reception heard over
+	// RF at all (direct or digipeated, not gated) — broader than
+	// LastDirectHeard, which requires zero hops. Compared against
+	// LastISHeard by classifyRFOrIS to derive Direction. Zero value means
+	// never heard over RF.
+	LastRFHeard time.Time
+	// LastISHeard is the timestamp of the most recent reception heard over
+	// APRS-IS. Compared against LastRFHeard by classifyRFOrIS: an APRS-IS
+	// reception trailing the last RF reception by more than
+	// rfIsSimultaneityWindow flips Direction to "IS"; within that window
+	// it's treated as the same physical event and Direction stays "RX".
+	// Zero value means never heard via APRS-IS.
+	LastISHeard time.Time
 }
 
 // Position is a single position fix with metadata.
@@ -89,24 +102,24 @@ type Position struct {
 const MaxTrailLen = 200
 
 type Weather struct {
-	Temp       float64
-	HasTemp    bool
-	WindSpeed  float64
-	HasWindSpeed bool
-	WindDir    int
-	HasWindDir bool
-	WindGust   float64
-	HasWindGust bool
-	Humidity   int
-	HasHumidity bool
-	Pressure   float64
-	HasPressure bool
-	Rain1h     float64
-	HasRain1h  bool
-	Rain24h    float64
-	HasRain24h bool
-	Snow24h    float64
-	HasSnow24h bool
-	Luminosity int
+	Temp          float64
+	HasTemp       bool
+	WindSpeed     float64
+	HasWindSpeed  bool
+	WindDir       int
+	HasWindDir    bool
+	WindGust      float64
+	HasWindGust   bool
+	Humidity      int
+	HasHumidity   bool
+	Pressure      float64
+	HasPressure   bool
+	Rain1h        float64
+	HasRain1h     bool
+	Rain24h       float64
+	HasRain24h    bool
+	Snow24h       float64
+	HasSnow24h    bool
+	Luminosity    int
 	HasLuminosity bool
 }

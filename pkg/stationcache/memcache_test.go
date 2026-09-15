@@ -26,6 +26,15 @@ func stationEntry(key, callsign string, lat, lon float64) CacheEntry {
 	}
 }
 
+// isEntry builds a static-position entry for a beacon received over
+// APRS-IS rather than RF.
+func isEntry(key, callsign string, lat, lon float64) CacheEntry {
+	e := stationEntry(key, callsign, lat, lon)
+	e.Via = "is"
+	e.Direction = "IS"
+	return e
+}
+
 func TestMemCache_UpdateAndQueryBBox(t *testing.T) {
 	c := newTestCache(t)
 
@@ -385,17 +394,19 @@ func TestMemCache_MetadataUpdate(t *testing.T) {
 func TestMemCache_MetadataUpdate_DelayedISEchoFlipsStationDirection(t *testing.T) {
 	c := newTestCache(t)
 
+	base := time.Now()
+
 	// Start with a direct RF copy of a static fix.
 	c.Update([]CacheEntry{
 		{Key: "stn:W1ABC", Callsign: "W1ABC", HasPos: true,
 			Lat: 40.0, Lon: -105.0, Symbol: [2]byte{'/', '>'},
 			Via: "rf", Direction: "RX", Channel: 0, Comment: "first",
-			Timestamp: time.Now()},
+			Timestamp: base},
 	})
 
 	// Simulate a long gap before an IS copy of the same coordinates arrives:
-	// outside the RF-preference window, station-level metadata must follow
-	// the latest packet and flip to IS.
+	// outside the RF-preference window, Via/Channel must follow the latest
+	// packet, and outside rfIsSimultaneityWindow, Direction must flip to IS.
 	c.mu.Lock()
 	c.stations["stn:W1ABC"].LastHeard = time.Now().Add(-(sameFixRFPreferenceWindow + time.Second))
 	c.mu.Unlock()
@@ -404,7 +415,7 @@ func TestMemCache_MetadataUpdate_DelayedISEchoFlipsStationDirection(t *testing.T
 		{Key: "stn:W1ABC", Callsign: "W1ABC", HasPos: true,
 			Lat: 40.0, Lon: -105.0, Symbol: [2]byte{'/', 'k'},
 			Via: "is", Direction: "IS", Channel: 3, Comment: "is copy",
-			Timestamp: time.Now()},
+			Timestamp: base.Add(rfIsSimultaneityWindow + time.Second)},
 	})
 
 	results := c.QueryBBox(BBox{SwLat: 39, SwLon: -106, NeLat: 41, NeLon: -104}, 1*time.Hour)
@@ -814,5 +825,150 @@ func TestMemCache_NonTimestampedDuplicateDedups(t *testing.T) {
 		if lats[i] != want[i] {
 			t.Fatalf("trail order corrupted: got %v, want %v", lats, want)
 		}
+	}
+}
+
+// stationDirection returns the cached Direction for key, or "" if the
+// station doesn't exist yet. White-box helper for classifyRFOrIS tests.
+func stationDirection(c *MemCache, key string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	s, ok := c.stations[key]
+	if !ok {
+		return ""
+	}
+	return s.Direction
+}
+
+// TestClassifyRFOrIS is a pure table-driven test of the RX/IS decision,
+// independent of MemCache plumbing.
+func TestClassifyRFOrIS(t *testing.T) {
+	base := time.Now()
+	cases := []struct {
+		name   string
+		lastRF time.Time
+		lastIS time.Time
+		want   string
+	}{
+		{"never heard at all", time.Time{}, time.Time{}, "IS"},
+		{"RF only", base, time.Time{}, "RX"},
+		{"IS only", time.Time{}, base, "IS"},
+		{"RF more recent than IS", base.Add(time.Minute), base, "RX"},
+		{"RF and IS simultaneous (equal)", base, base, "RX"},
+		{"IS newer by exactly the window", base, base.Add(rfIsSimultaneityWindow), "RX"},
+		{"IS newer by window+1ms", base, base.Add(rfIsSimultaneityWindow + time.Millisecond), "IS"},
+		{"IS newer by a large margin", base, base.Add(time.Hour), "IS"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := classifyRFOrIS(c.lastRF, c.lastIS); got != c.want {
+				t.Fatalf("classifyRFOrIS(%v, %v) = %q, want %q", c.lastRF, c.lastIS, got, c.want)
+			}
+		})
+	}
+}
+
+// TestMemCache_ClassifyRFOrIS_BothOrders covers requirement 1: RF and
+// APRS-IS receptions of a station within rfIsSimultaneityWindow of each
+// other classify as RX, regardless of which one arrives first.
+func TestMemCache_ClassifyRFOrIS_BothOrders(t *testing.T) {
+	base := time.Now()
+
+	c := newTestCache(t)
+	rf := stationEntry("stn:BOTH1", "BOTH1", 40.0, -105.0)
+	rf.Timestamp = base
+	c.Update([]CacheEntry{rf})
+	is := isEntry("stn:BOTH1", "BOTH1", 40.0, -105.0)
+	is.Timestamp = base.Add(2 * time.Second)
+	c.Update([]CacheEntry{is})
+	if got := stationDirection(c, "stn:BOTH1"); got != "RX" {
+		t.Fatalf("RF then IS within window: Direction=%q, want RX", got)
+	}
+
+	c2 := newTestCache(t)
+	is2 := isEntry("stn:BOTH2", "BOTH2", 40.0, -105.0)
+	is2.Timestamp = base
+	c2.Update([]CacheEntry{is2})
+	rf2 := stationEntry("stn:BOTH2", "BOTH2", 40.0, -105.0)
+	rf2.Timestamp = base.Add(2 * time.Second)
+	c2.Update([]CacheEntry{rf2})
+	if got := stationDirection(c2, "stn:BOTH2"); got != "RX" {
+		t.Fatalf("IS then RF within window: Direction=%q, want RX", got)
+	}
+}
+
+// TestMemCache_ClassifyRFOrIS_RFOnly covers requirement 2.
+func TestMemCache_ClassifyRFOrIS_RFOnly(t *testing.T) {
+	c := newTestCache(t)
+	c.Update([]CacheEntry{stationEntry("stn:RFONLY", "RFONLY", 40.0, -105.0)})
+	if got := stationDirection(c, "stn:RFONLY"); got != "RX" {
+		t.Fatalf("RF only: Direction=%q, want RX", got)
+	}
+}
+
+// TestMemCache_ClassifyRFOrIS_ISOnly covers requirement 3.
+func TestMemCache_ClassifyRFOrIS_ISOnly(t *testing.T) {
+	c := newTestCache(t)
+	c.Update([]CacheEntry{isEntry("stn:ISONLY", "ISONLY", 40.0, -105.0)})
+	if got := stationDirection(c, "stn:ISONLY"); got != "IS" {
+		t.Fatalf("IS only: Direction=%q, want IS", got)
+	}
+}
+
+// TestMemCache_ClassifyRFOrIS_StaleRFThenIS covers requirement 4: once an
+// APRS-IS reception trails the last RF reception by more than
+// rfIsSimultaneityWindow, the station reads IS.
+func TestMemCache_ClassifyRFOrIS_StaleRFThenIS(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now()
+
+	rf := stationEntry("stn:STALERF", "STALERF", 40.0, -105.0)
+	rf.Timestamp = base
+	c.Update([]CacheEntry{rf})
+
+	is := isEntry("stn:STALERF", "STALERF", 40.0, -105.0)
+	is.Timestamp = base.Add(10 * time.Second)
+	c.Update([]CacheEntry{is})
+
+	if got := stationDirection(c, "stn:STALERF"); got != "IS" {
+		t.Fatalf("RF then IS 10s later: Direction=%q, want IS", got)
+	}
+}
+
+// TestMemCache_ClassifyRFOrIS_StaleISThenFreshRF covers requirement 5: a
+// station only heard via APRS-IS flips to RX the instant a genuine RF
+// reception arrives, however long the prior IS-only history.
+func TestMemCache_ClassifyRFOrIS_StaleISThenFreshRF(t *testing.T) {
+	c := newTestCache(t)
+	base := time.Now()
+
+	is := isEntry("stn:STALEIS", "STALEIS", 40.0, -105.0)
+	is.Timestamp = base
+	c.Update([]CacheEntry{is})
+
+	rf := stationEntry("stn:STALEIS", "STALEIS", 40.0, -105.0)
+	rf.Timestamp = base.Add(10 * time.Minute)
+	c.Update([]CacheEntry{rf})
+
+	if got := stationDirection(c, "stn:STALEIS"); got != "RX" {
+		t.Fatalf("IS then fresh RF 10m later: Direction=%q, want RX", got)
+	}
+}
+
+// TestMemCache_ClassifyRFOrIS_TXUnaffected verifies our own transmissions
+// (beacons/digipeats) keep Direction="TX" regardless of prior RF/IS
+// reception history for that station.
+func TestMemCache_ClassifyRFOrIS_TXUnaffected(t *testing.T) {
+	c := newTestCache(t)
+
+	c.Update([]CacheEntry{isEntry("stn:SELF", "SELF", 40.0, -105.0)})
+
+	tx := stationEntry("stn:SELF", "SELF", 40.0, -105.0)
+	tx.Direction = "TX"
+	tx.Via = "tx"
+	c.Update([]CacheEntry{tx})
+
+	if got := stationDirection(c, "stn:SELF"); got != "TX" {
+		t.Fatalf("own TX after IS history: Direction=%q, want TX", got)
 	}
 }
