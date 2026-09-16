@@ -2197,6 +2197,8 @@
     box-shadow: var(--map-overlay-shadow);
     padding: 12px;
     font-size: 13px;
+    /* Updated Width for better readability */
+    width: 14rem;
   }
   :global(.gw-station-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip) {
     border-bottom-color: var(--map-overlay-bg) !important;
