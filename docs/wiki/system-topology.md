@@ -202,6 +202,20 @@ installs (where every archive sat directly in `<TileCacheDir>/`) are
 migrated on startup by `mapsCache.MigrateLegacyArchives` (file move)
 and `store.MigrateMapsDownloadSlugs` (DB row update); both idempotent.
 
+`GET /api/maps/downloads` (and thus the settings-page "Downloaded"
+list) is driven entirely by the `maps_downloads` DB table, not a
+filesystem scan -- so a `.pmtiles` file dropped into `<TileCacheDir>`
+out-of-band (e.g. a tile-cache directory copied from another install
+to share downloads without re-fetching them) is otherwise invisible to
+the UI and the region picker offers to download it again. Startup runs
+`mapsCache.AdoptOrphanArchives`, which walks `<TileCacheDir>` for
+`.pmtiles` files with no matching row and inserts a `complete` row for
+each (bbox/maxZoom read from the archive's own PMTiles v3 header,
+`bytes_total`/`downloaded_at` from the file's size/mtime). Idempotent:
+a slug that already has a row (any status) is left untouched, so a
+failed download is never silently flipped to complete by a partial
+file.
+
 The `/tiles/{multi-segment}.pmtiles` route on the outer mux strips the
 prefix and `.pmtiles` suffix, sets the rest as the slug, and delegates
 to `webapi.Server.ServeTilesPMTiles`. Catalog membership is rechecked

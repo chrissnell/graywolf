@@ -341,7 +341,8 @@ and embedded via `go:embed all:dist` -- see [invariant 12](invariants.md).
 |---|---|
 | Auth registration + bearer token | [`../../pkg/mapsauth/client.go`](../../pkg/mapsauth/client.go) |
 | Tile cache (PMTiles, atomic writes) | [`../../pkg/mapscache/manager.go`](../../pkg/mapscache/manager.go), `atomic_writer.go` |
-| PMTiles v3 header bbox reader (used by the startup backfill) | [`../../pkg/mapscache/pmtiles_header.go`](../../pkg/mapscache/pmtiles_header.go) |
+| PMTiles v3 header bbox/maxZoom reader (used by the startup backfill and orphan-archive adoption) | [`../../pkg/mapscache/pmtiles_header.go`](../../pkg/mapscache/pmtiles_header.go) |
+| Adopts pre-existing `.pmtiles` files with no DB row (e.g. a copied-in tile cache) as completed downloads | [`../../pkg/mapscache/manager.go`](../../pkg/mapscache/manager.go) (`AdoptOrphanArchives`) |
 | Render-path bounds (offline-safe; reads `maps_downloads.bbox`, no remote dep) | [`../../pkg/webapi/local_bounds.go`](../../pkg/webapi/local_bounds.go) (`GET /api/maps/local-bounds`) |
 | Catalog fetcher + disk fallback for the region picker | [`../../pkg/mapscatalog/catalog.go`](../../pkg/mapscatalog/catalog.go) (`NewWithDiskCache` writes/reads `<TileCacheDir>/catalog.json`) |
 | Style/glyph/sprite/shields/tiles.json pull-through cache, served at `/api/maps/style/{path}` | [`../../pkg/mapsstyle/`](../../pkg/mapsstyle/) |
