@@ -1403,6 +1403,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	if err := mapsCache.MigrateLegacyArchives(context.Background()); err != nil {
 		a.logger.Warn("legacy archive migration failed", "err", err)
 	}
+	if err := mapsCache.AdoptOrphanArchives(context.Background()); err != nil {
+		a.logger.Warn("orphan archive adoption failed", "err", err)
+	}
 	if err := mapsCache.BackfillBBoxes(context.Background()); err != nil {
 		a.logger.Warn("bbox backfill failed", "err", err)
 	}
