@@ -900,6 +900,19 @@
     }
   }
 
+  /* Narrow phones in portrait (e.g. iPhone 16 Pro, 393px): the wordmark
+     next to the logo leaves too little room for all six action icons plus
+     the hamburger, pushing Terminal and the hamburger off-screen. Drop the
+     text and keep just the logo to free up that space. */
+  @media (max-width: 430px) {
+    .top-bar-brand {
+      padding: 0 0 0 8px;
+    }
+    .top-bar-wordmark {
+      display: none;
+    }
+  }
+
   /* Landscape phone: vertical icon rail down the left edge. Wins back the
      full viewport height for the map, which a horizontal bar would eat
      into (GH #419) -- this matters most on the *smallest* landscape phones
