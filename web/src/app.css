@@ -52,6 +52,14 @@
   padding: 0;
   box-sizing: border-box;
 }
+/* 
+  This is required to prevent the min-height from the UI library 
+  from chonky-ui's default min-height on the body. This was messing with
+  the mobile device UI layout.
+*/
+body {
+  min-height: unset !important;
+}
 
 html, body, #app {
   height: 100%;
@@ -114,7 +122,6 @@ input, select, textarea, button {
 @media (max-width: 768px) {
   body.messages-thread-open .sidebar { display: none; }
   body.messages-thread-open .main-content { margin-bottom: 0; }
-  body.messages-thread-open .main-content.full-bleed { height: 100vh; }
 }
 
 /* chonky-ui's default .modal-close (the X button in modal headers) is

@@ -674,6 +674,13 @@
   .messages-shell {
     display: grid;
     grid-template-columns: 340px minmax(0, 1fr);
+    /* Without an explicit row track, grid sizes the implicit "auto" row
+       to the panes' unclipped content height (the full conversation)
+       instead of the shell's own height, so `.pane`'s height:100% has
+       nothing definite to resolve against and the whole page scrolls
+       instead of just the message list. Pin the row to the shell's
+       height so it clips at the intended boundary. */
+    grid-template-rows: minmax(0, 1fr);
     height: 100%;
     width: 100%;
     overflow: hidden;

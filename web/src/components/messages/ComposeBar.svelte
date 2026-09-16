@@ -524,6 +524,15 @@
     box-shadow: 0 0 0 2px var(--color-primary-muted);
   }
 
+  /* iOS Safari auto-zooms the page on focus into any text input whose
+     computed font-size is under 16px. Bump to 16px on mobile widths so
+     tapping the compose box doesn't trigger a pinch-zoom. */
+  @media (max-width: 767px) {
+    .textarea {
+      font-size: 16px;
+    }
+  }
+
   /* Below-textarea toolbar: [long pill] [counter] on the left,
      [send] right-aligned and vertically centered. Same structure
      in embedded (modal) and non-embedded (thread) modes. */

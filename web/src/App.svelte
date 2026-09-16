@@ -167,7 +167,6 @@
 <style>
   .app-layout {
     display: flex;
-    min-height: 100vh;
     justify-content: center;
   }
   .main-content {
@@ -200,9 +199,15 @@
     /* dvh tracks the *visible* viewport as the mobile address bar
        collapses/expands; 100vh (the largest viewport) would push the map's
        bottom indicators behind the address bar (GH #348). vh first as a
-       fallback for browsers without dvh. */
+       fallback for browsers without dvh. svh (smallest viewport, toolbar
+       always assumed visible) wins last: iOS Safari's first dvh paint can
+       briefly report the large/toolbar-collapsed size before the toolbar's
+       real state settles, which let fixed-bottom UI like the messages
+       compose bar render underneath the toolbar. svh trades a few px of
+       unused space when the toolbar auto-hides for never being obscured. */
     height: 100vh;
     height: 100dvh;
+    height: 100svh;
     overflow: hidden;
     position: relative;
   }
@@ -219,6 +224,7 @@
     .main-content.full-bleed {
       height: calc(100vh - 56px - var(--safe-area-top));
       height: calc(100dvh - 56px - var(--safe-area-top));
+      height: calc(100svh - 56px - var(--safe-area-top));
     }
   }
 
@@ -238,6 +244,7 @@
     .main-content.full-bleed {
       height: 100vh;
       height: 100dvh;
+      height: 100svh;
     }
   }
 
@@ -251,5 +258,6 @@
   :global(html.force-compact-menu) .main-content.full-bleed {
     height: calc(100vh - 56px - var(--safe-area-top));
     height: calc(100dvh - 56px - var(--safe-area-top));
+    height: calc(100svh - 56px - var(--safe-area-top));
   }
 </style>

@@ -355,6 +355,14 @@
     border-color: var(--color-primary);
     box-shadow: 0 0 0 2px var(--color-primary-muted);
   }
+
+  /* iOS Safari auto-zooms the page on focus into any text input whose
+     computed font-size is under 16px. */
+  @media (max-width: 767px) {
+    .input {
+      font-size: 16px;
+    }
+  }
   .list {
     /* position:fixed so the listbox escapes ancestor `overflow: auto`
        (chonky's .modal-body clips absolutely-positioned descendants).
