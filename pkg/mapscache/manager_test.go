@@ -511,3 +511,121 @@ func TestBackfillBBoxes_SkipsMissingArchives(t *testing.T) {
 		t.Fatalf("expected bbox to remain NULL for missing archive, got %q", *row.BBox)
 	}
 }
+
+// TestAdoptOrphanArchives_RegistersFileWithNoRow covers the reported
+// bug: a tile-cache directory copied in from another install has
+// .pmtiles files on disk but no maps_downloads rows. The scan must
+// create a "complete" row, sourced from the file's size/mtime plus the
+// archive's own header, so the UI shows it as already downloaded.
+func TestAdoptOrphanArchives_RegistersFileWithNoRow(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	archive := mgr.PathFor("state/colorado")
+	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	hdr := buildPMTilesV3Header(t, -109.05, 36.99, -102.04, 41.0)
+	if err := os.WriteFile(archive, hdr, 0o644); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	if err := mgr.AdoptOrphanArchives(ctx); err != nil {
+		t.Fatalf("AdoptOrphanArchives: %v", err)
+	}
+
+	row, err := store.GetMapsDownload(ctx, "state/colorado")
+	if err != nil {
+		t.Fatalf("GetMapsDownload: %v", err)
+	}
+	if row.ID == 0 {
+		t.Fatalf("expected a row to have been created for state/colorado")
+	}
+	if row.Status != "complete" {
+		t.Errorf("Status = %q, want complete", row.Status)
+	}
+	if row.BytesTotal != int64(len(hdr)) {
+		t.Errorf("BytesTotal = %d, want %d", row.BytesTotal, len(hdr))
+	}
+	want := `[-109.05,36.99,-102.04,41]`
+	if row.BBox == nil || *row.BBox != want {
+		t.Errorf("BBox = %v, want %q", row.BBox, want)
+	}
+
+	// Verify the adopted row is now surfaced through List/Status, which
+	// is what the frontend actually consumes.
+	statuses, err := mgr.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	found := false
+	for _, s := range statuses {
+		if s.Slug == "state/colorado" && s.State == "complete" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected state/colorado to appear as complete in List(); got %+v", statuses)
+	}
+}
+
+// TestAdoptOrphanArchives_SkipsKnownSlugs proves the scan does not
+// touch a slug that already has a row, regardless of that row's
+// status -- e.g. a failed download should not be silently flipped to
+// complete just because a partial file happens to exist.
+func TestAdoptOrphanArchives_SkipsKnownSlugs(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	if err := store.UpsertMapsDownload(ctx, configstore.MapsDownload{
+		Slug: "state/wyoming", Status: "error", ErrorMessage: "boom",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	archive := mgr.PathFor("state/wyoming")
+	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(archive, []byte("partial"), 0o644); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	if err := mgr.AdoptOrphanArchives(ctx); err != nil {
+		t.Fatalf("AdoptOrphanArchives: %v", err)
+	}
+
+	row, err := store.GetMapsDownload(ctx, "state/wyoming")
+	if err != nil {
+		t.Fatalf("GetMapsDownload: %v", err)
+	}
+	if row.Status != "error" {
+		t.Errorf("expected existing row to be left alone, got Status=%q", row.Status)
+	}
+}
+
+// TestAdoptOrphanArchives_IgnoresIllegalSlugs ensures stray files
+// (or files whose relative path doesn't match the slug grammar) are
+// left on disk without a row being created.
+func TestAdoptOrphanArchives_IgnoresIllegalSlugs(t *testing.T) {
+	ctx := context.Background()
+	mgr, store, _ := newTestManager(t, silentUpstream())
+
+	if err := os.WriteFile(filepath.Join(mgr.cacheDir, "not-a-slug!!.pmtiles"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(mgr.cacheDir, "catalog.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := mgr.AdoptOrphanArchives(ctx); err != nil {
+		t.Fatalf("AdoptOrphanArchives: %v", err)
+	}
+
+	rows, err := store.ListMapsDownloads(ctx)
+	if err != nil {
+		t.Fatalf("ListMapsDownloads: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected no rows created, got %+v", rows)
+	}
+}
