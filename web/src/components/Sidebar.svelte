@@ -904,7 +904,7 @@
      next to the logo leaves too little room for all six action icons plus
      the hamburger, pushing Terminal and the hamburger off-screen. Drop the
      text and keep just the logo to free up that space. */
-  @media (max-width: 430px) {
+  @media (max-width: 575px) {
     .top-bar-brand {
       padding: 0 0 0 8px;
     }
