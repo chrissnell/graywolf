@@ -17,7 +17,6 @@
   let position = $state(null);
   let beacons = $state([]);
   let stationCallsign = $state('');
-  let audioDevices = $state([]);
   let pollTimer = $state(null);
 
   // Cross-references status channel ids with the backing data from /api/channels.
@@ -33,8 +32,20 @@
 
   let offline = $derived(!$online);
 
-  let hasInput = $derived(audioDevices.some(d => d.direction === 'input'));
-  let hasOutput = $derived(audioDevices.some(d => d.direction === 'output'));
+  // Station readiness must reflect the channel's actual backend (modem
+  // OR kiss-tnc), not the raw /api/audio-devices list: a KISS/BLE-backed
+  // channel has no audio device at all yet can be fully RX/TX live, and an
+  // audio device row existing (e.g. a phone's mic) doesn't mean any channel
+  // is actually using it. HEALTH_LIVE already means "at least one backend
+  // instance is up", so it's the right signal for both chips.
+  let hasInput = $derived(
+    (channelsStore.list || []).some(c => c.enabled !== false && c.backing?.health === HEALTH_LIVE)
+  );
+  let hasOutput = $derived(
+    (channelsStore.list || []).some(
+      c => c.enabled !== false && c.backing?.health === HEALTH_LIVE && isTxCapable(c)
+    )
+  );
 
   // When contact with the server is lost, the polled values we hold are
   // stale — drop them so the cards fall back to placeholder dashes instead
@@ -98,8 +109,7 @@
     loadData();
     loadBeacons();
     loadStationCallsign();
-    loadAudioDevices();
-    startChannels(); // backing data (modem vs kiss-tnc) for dashboard card rendering
+    startChannels(); // backing data (modem vs kiss-tnc) drives readiness + card rendering
     pollTimer = setInterval(loadData, 5000);
     return () => clearInterval(pollTimer);
   });
@@ -148,10 +158,6 @@
       const s = await api.get('/station/config');
       stationCallsign = s?.callsign ?? '';
     } catch (_) {}
-  }
-
-  async function loadAudioDevices() {
-    try { audioDevices = await api.get('/audio-devices') || []; } catch (_) {}
   }
 
   async function sendBeaconNow(beaconId) {
@@ -246,11 +252,11 @@
   <div class="readiness-row">
     <div class="ready-chip" class:ok={hasInput}>
       <span class="ready-dot">{hasInput ? '\u25CF' : '\u25CB'}</span>
-      <span>RX {hasInput ? 'Ready' : 'No Input'}</span>
+      <span>RX {hasInput ? 'Ready' : 'Not Ready'}</span>
     </div>
     <div class="ready-chip" class:ok={hasOutput}>
       <span class="ready-dot">{hasOutput ? '\u25CF' : '\u25CB'}</span>
-      <span>TX Audio {hasOutput ? 'Ready' : 'No Output'}</span>
+      <span>TX {hasOutput ? 'Ready' : 'Not Ready'}</span>
     </div>
   </div>
 {/if}
