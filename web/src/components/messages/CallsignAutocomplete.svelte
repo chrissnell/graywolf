@@ -56,6 +56,13 @@
     excludeBots = false,
   } = $props();
 
+  // Set true to re-enable the server-fed dropdown (autocompleteStations,
+  // popover positioning, grouping, keyboard nav). Disabled for now: on
+  // iOS the fixed-position popover drifted/misrendered around the
+  // on-screen keyboard inside the compose modal. With it off, this
+  // component behaves like a plain uppercasing text input.
+  const AUTOCOMPLETE_ENABLED = false;
+
   let inputEl = $state(null);
   let listId = 'cb-list-' + Math.random().toString(36).slice(2, 8);
   let open = $state(false);
@@ -119,6 +126,7 @@
     value = raw.toUpperCase();
     // Keep the DOM input in sync with the normalized value.
     if (e.target.value !== value) e.target.value = value;
+    if (!AUTOCOMPLETE_ENABLED) return;
     open = true;
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(runFetch, 150);
@@ -181,6 +189,15 @@
   }
 
   function onKeyDown(e) {
+    if (!AUTOCOMPLETE_ENABLED) {
+      // Plain-input mode: no dropdown to navigate, so Enter just commits
+      // whatever was typed.
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commit(-1);
+      }
+      return;
+    }
     if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       open = true;
       runFetch();
@@ -214,6 +231,7 @@
       suppressNextFocus = false;
       return;
     }
+    if (!AUTOCOMPLETE_ENABLED) return;
     open = true;
     if (results.length === 0) runFetch();
   }
@@ -249,14 +267,14 @@
       bind:this={inputEl}
       type="text"
       class="input"
-      role="combobox"
+      role={AUTOCOMPLETE_ENABLED ? 'combobox' : undefined}
       {value}
       {placeholder}
       {disabled}
-      aria-controls={listId}
-      aria-expanded={open}
-      aria-autocomplete="list"
-      aria-activedescendant={activeId}
+      aria-controls={AUTOCOMPLETE_ENABLED ? listId : undefined}
+      aria-expanded={AUTOCOMPLETE_ENABLED ? open : undefined}
+      aria-autocomplete={AUTOCOMPLETE_ENABLED ? 'list' : undefined}
+      aria-activedescendant={AUTOCOMPLETE_ENABLED ? activeId : undefined}
       autocomplete="off"
       autocapitalize="characters"
       spellcheck="false"
@@ -267,7 +285,7 @@
       data-testid="callsign-autocomplete-input"
     />
   </div>
-  {#if open && (flatItems.length > 0 || (value && value.trim()))}
+  {#if AUTOCOMPLETE_ENABLED && open && (flatItems.length > 0 || (value && value.trim()))}
     <ul
       use:portal
       id={listId}
