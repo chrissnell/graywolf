@@ -2034,3 +2034,69 @@ Source: [`../../pkg/kiss/manager.go`](../../pkg/kiss/manager.go)
 (`stopManaged`, `Manager.Start`, `managedServer.serveDone`,
 `serveShutdownGrace`);
 [`../../pkg/kiss/manager_rebind_test.go`](../../pkg/kiss/manager_rebind_test.go).
+
+### 68. RF ingestion must never share a synchronous write with APRS-IS ingestion
+
+`stationcache.PersistentCache` (`pkg/stationcache/persistent.go`) hands
+every `Update`/`RecordRxEvent` call off to a single background writer
+goroutine via a bounded channel (`writeQueueCapacity`, 512) instead of
+calling into `historydb` synchronously from the caller. The writer
+coalesces pending work over `writeFlushInterval` (150ms) into one
+`WriteEntries` / `RecordRxEvents` transaction each. `MemCache.Update` (the
+in-memory part) stays synchronous -- only the SQLite write is async.
+
+*Why:* Both the RF ingest path (`dispatchRxFrame`, the single
+`rxFanoutWG` consumer goroutine) and the APRS-IS ingest path
+(`onIGateIsRxPacket`, called synchronously from `Igate.handleISLine` on
+the APRS-IS client's read loop) called `stationCache.Update` /
+`RecordRxEvent` directly. Position Log's `historydb.DB` opens with
+`SetMaxOpenConns(1)`, so with persistence enabled the two paths
+serialized against the same single SQLite connection. A busy APRS-IS
+server filter (e.g. a 100km radius around a populated area) could
+generate enough write volume to delay the RF path through that shared
+connection -- the RF ingest path uses a bounded, non-blocking channel
+send from the KISS-TNC producer (`kissTncProduce`), so once
+`dispatchRxFrame` is delayed long enough for the shared `rxFanout`
+channel to fill, further off-air frames are silently dropped. This was
+graywolf's "RF packets stop while the iGate is on" report (2026-09) on a
+KISS/BLE-backed channel with Position Log enabled.
+
+Any future caller of `PersistentCache.Update`/`RecordRxEvent` (or a new
+persistence path added alongside them) must go through the same queue --
+adding a second direct caller of `historydb.WriteEntries`/`RecordRxEvent`
+from a latency-sensitive goroutine reintroduces the exact contention this
+invariant closes.
+
+Source: [`../../pkg/stationcache/persistent.go`](../../pkg/stationcache/persistent.go)
+(`writeLoop`, `Update`, `RecordRxEvent`);
+[`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go) (`dispatchRxFrame`);
+[`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`onIGateIsRxPacket`);
+[`../../pkg/igate/igate.go`](../../pkg/igate/igate.go) (`handleISLine`).
+
+### 69. Every KISS server-listen broadcast write is bounded by a hung-peer deadline
+
+`kiss.Server.Broadcast` (the RX-echo path used by `BroadcastFromChannel`
+and called once per RF frame from `dispatchRxFrame`) sets a per-connection
+write deadline (`Server.broadcastDeadline`, default
+`instanceTxSocketDeadline` = 10s) before every client write, and closes
+that client's connection on a timeout/error. This mirrors `TxBroadcast`'s
+existing hung-peer guard, which covers the governor-driven TX path.
+
+*Why:* `Broadcast` runs inline on the single RX-fanout consumer goroutine.
+Before this deadline existed, a single stalled or slow-reading KISS
+client (a monitoring app that stopped draining its socket, or a dead TCP
+peer) could block `net.Conn.Write` indefinitely, stalling every
+subsequent RF frame system-wide regardless of its source -- a plausible
+independent contributor to the same "RF packets stop" class of report as
+invariant 68.
+
+Corollary: any new per-connection write path added to `kiss.Server` (RX
+echo, TX broadcast, or otherwise) must set a bounded write deadline the
+same way -- an un-deadlined `net.Conn.Write` on a fan-out path is a
+latent full-stall bug.
+
+Source: [`../../pkg/kiss/server.go`](../../pkg/kiss/server.go)
+(`Broadcast`, `TxBroadcast`, `broadcastDeadline`);
+[`../../pkg/kiss/server_test.go`](../../pkg/kiss/server_test.go)
+(`TestServerBroadcast_StalledClientDoesNotBlockOthers`).
+

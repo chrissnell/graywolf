@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/aprs"
@@ -11,6 +12,10 @@ import (
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 )
+
+// rxFanoutDropLogInterval rate-limits the "rx fanout backlogged" warning
+// so a sustained overflow cannot flood the log.
+const rxFanoutDropLogInterval = 10 * time.Second
 
 // kissTncProduce is the RxIngress callback wired into kiss.Manager. It
 // performs a non-blocking send of (rf, src) onto the shared rxFanout
@@ -34,7 +39,30 @@ func (a *App) kissTncProduce(rf *pb.ReceivedFrame, src ingress.Source) {
 		if a.metrics != nil {
 			a.metrics.RxFanoutDropped.WithLabelValues("kiss_tnc").Inc()
 		}
+		a.logRxFanoutDropRateLimited()
 	}
+}
+
+// logRxFanoutDropRateLimited emits a rate-limited warning when the shared
+// RX fanout channel is full, so an operator can see "the RF dispatch
+// consumer is backlogged" in graywolf's own log (dashboard packet counts
+// silently dropping otherwise gave no on-box signal -- see the 2026-09
+// packet-loss report where a busy APRS-IS feed contended with the RF path
+// on shared station-cache/history-db locks).
+func (a *App) logRxFanoutDropRateLimited() {
+	if a.logger == nil {
+		return
+	}
+	now := time.Now().UnixNano()
+	last := a.lastRxFanoutDropLogNano.Load()
+	if now-last < int64(rxFanoutDropLogInterval) {
+		return
+	}
+	if !a.lastRxFanoutDropLogNano.CompareAndSwap(last, now) {
+		return
+	}
+	a.logger.Warn("rx fanout consumer backlogged; dropping KISS-TNC RF frames",
+		"dropped_total", a.rxFanoutDropped.Load())
 }
 
 // audioLevelFromFrame projects a modem ReceivedFrame's mark/space tone
