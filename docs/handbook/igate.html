@@ -186,6 +186,24 @@
       with a Message Dest rule.
     </p>
 
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Only the APRS-IS Server Filter reduces background
+          processing cost.</strong> Every packet the server sends you is
+          logged and cached (for the Live Map and packet log) before any
+          IS&rarr;RF gating rule is even consulted &mdash; gating rules
+          decide what gets <em>transmitted</em>, not what graywolf has to
+          receive and process. A broad radius (e.g. 100&nbsp;km around a
+          busy metro area) can mean a steady stream of packets to parse
+          and cache even if your gating rules forward almost none of it
+          to RF. Keep the Server Filter as narrow as your use case allows,
+          especially on lower-power hardware.
+        </p>
+      </div>
+    </div>
+
     <h3>Spec-Mandated IS&rarr;RF Policy</h3>
 
     <p>

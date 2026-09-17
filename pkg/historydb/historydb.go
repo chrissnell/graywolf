@@ -168,6 +168,33 @@ func (d *DB) RecordRxEvent(ev stationcache.RxEvent) error {
 	).Error
 }
 
+// RecordRxEvents persists a batch of rx_events rows in a single
+// transaction. Used by PersistentCache's async writer to coalesce a burst
+// of receptions (RF and/or IS, arriving from two independent goroutines)
+// into one commit instead of one transaction per event.
+func (d *DB) RecordRxEvents(evs []stationcache.RxEvent) error {
+	if len(evs) == 0 {
+		return nil
+	}
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		for i := range evs {
+			ev := &evs[i]
+			hasPos := 0
+			if ev.HasPos {
+				hasPos = 1
+			}
+			if err := tx.Exec(
+				`INSERT INTO rx_events (timestamp, attr_key, hops, lat, lon, has_pos)
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+				ev.Timestamp, ev.AttrKey, ev.Hops, ev.Lat, ev.Lon, hasPos,
+			).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // insertPositionIfMoved appends a position row only when the station
 // has moved beyond posEpsilon from its most recent stored position.
 func insertPositionIfMoved(tx *gorm.DB, e *stationcache.CacheEntry) error {

@@ -59,6 +59,12 @@ type Metrics struct {
 	KissBroadcastSuppressed *prometheus.CounterVec // labels: "interface_id", "reason" ("self_loop")
 	RxFanoutDropped         *prometheus.CounterVec // label: "producer" ("kiss_tnc"; "modem" is a blocking producer and never drops at the fanout)
 
+	// StationCacheWriteDropped counts station-cache persistence jobs
+	// (history db batches / rx_events) dropped because the async writer's
+	// queue was full -- the writer fell behind a sustained RF+IS write
+	// burst. See pkg/stationcache/persistent.go's async writer.
+	StationCacheWriteDropped prometheus.Counter
+
 	// Phase 3 (KISS TCP-client / channel-backing plan): TX backend
 	// dispatcher observability. Labels:
 	//   TxBackendSubmits: channel, backend ("modem" | "kiss"),
@@ -202,6 +208,10 @@ func New() *Metrics {
 		AprsOutDropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "graywolf_aprs_out_dropped_total",
 			Help: "Decoded APRS packets dropped because the output worker queue was full.",
+		}),
+		StationCacheWriteDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "graywolf_stationcache_write_dropped_total",
+			Help: "Station cache persistence jobs dropped because the async history-db writer's queue was full.",
 		}),
 		DigipeaterPackets: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "graywolf_digipeater_packets_total",
@@ -356,6 +366,7 @@ func New() *Metrics {
 		m.KissSerialConnected,
 		m.KissSerialReconnects,
 		m.KissSerialBackoffSeconds,
+		m.StationCacheWriteDropped,
 	)
 	return m
 }
