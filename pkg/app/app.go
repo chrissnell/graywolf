@@ -216,6 +216,10 @@ type App struct {
 	// was behind). Modem-RX never increments this: its send is
 	// blocking by design.
 	rxFanoutDropped atomic.Uint64
+	// lastRxFanoutDropLogNano rate-limits the "rx fanout consumer
+	// backlogged" warning emitted alongside rxFanoutDropped increments
+	// (see kissTncProduce), so a sustained backlog cannot flood the log.
+	lastRxFanoutDropLogNano atomic.Int64
 	// rxFanoutWG tracks the single fanout consumer goroutine. Separate
 	// from frameConsumerWG (which tracks the modem producer) so stop
 	// can sequence "close producers → consumer drains → aprsQueue closes"

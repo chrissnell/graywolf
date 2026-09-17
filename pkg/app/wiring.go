@@ -1910,6 +1910,7 @@ func (a *App) backgroundStatsComponent() namedComponent {
 				// the pattern used for the TX governor above.
 				lastKissRate := map[uint32]uint64{}
 				lastKissQueue := map[uint32]uint64{}
+				var prevStationCacheDropped uint64
 				for {
 					select {
 					case <-ctx.Done():
@@ -1934,6 +1935,13 @@ func (a *App) backgroundStatsComponent() namedComponent {
 						prev = s
 
 						a.syncKissTncDropMetrics(ctx, lastKissRate, lastKissQueue)
+
+						if a.stationCache != nil {
+							if cur := a.stationCache.WriteDropped(); cur > prevStationCacheDropped {
+								a.metrics.StationCacheWriteDropped.Add(float64(cur - prevStationCacheDropped))
+								prevStationCacheDropped = cur
+							}
+						}
 					}
 				}
 			}()

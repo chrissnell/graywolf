@@ -32,6 +32,10 @@ type HistoryStore interface {
 	Prune(maxAge time.Duration) error
 	QueryHeatmap(window time.Duration, bbox BBox) (*HeatmapResult, error)
 	RecordRxEvent(ev RxEvent) error
+	// RecordRxEvents persists a batch of rx_events rows in a single
+	// transaction. Used by PersistentCache's async writer to coalesce a
+	// burst of receptions into one commit instead of one per event.
+	RecordRxEvents(evs []RxEvent) error
 	Close() error
 }
 

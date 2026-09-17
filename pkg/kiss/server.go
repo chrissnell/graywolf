@@ -146,6 +146,12 @@ type Server struct {
 	clients map[*clientConn]struct{}
 	active  int32 // atomic: current client count
 
+	// broadcastDeadline bounds each per-connection write inside Broadcast
+	// (the RX-echo path). Defaults to instanceTxSocketDeadline in
+	// NewServer; tests may override it directly to exercise the
+	// hung-peer guard without a real 10s wait.
+	broadcastDeadline time.Duration
+
 	// rateLimiter gates ModeTnc ingress. nil in ModeModem and in tests
 	// that construct a server without a Mode; see NewServer.
 	rateLimiter *RateLimiter
@@ -176,9 +182,10 @@ func NewServer(cfg ServerConfig) *Server {
 		cfg.Logger = slog.Default()
 	}
 	s := &Server{
-		cfg:     cfg,
-		logger:  cfg.Logger.With("kiss_iface", cfg.Name),
-		clients: make(map[*clientConn]struct{}),
+		cfg:               cfg,
+		logger:            cfg.Logger.With("kiss_iface", cfg.Name),
+		clients:           make(map[*clientConn]struct{}),
+		broadcastDeadline: instanceTxSocketDeadline,
 		rateLimiter: NewRateLimiter(
 			cfg.TncIngressRateHz,
 			cfg.TncIngressBurst,
@@ -486,6 +493,19 @@ func (s *Server) removeClient(c *clientConn) {
 // (KISSCOPY equivalent). Errors on individual clients are logged but do not
 // stop the broadcast. Does not consult the Broadcast flag; callers that
 // want per-interface honoring should use BroadcastFromChannel instead.
+//
+// Per-connection writes are bounded by instanceTxSocketDeadline (the same
+// hung-peer guard TxBroadcast already uses) so one stalled or slow-reading
+// client cannot block this call indefinitely. BroadcastFromChannel is
+// called inline, once per RF frame, from the single RX-fanout consumer
+// goroutine (pkg/app/rxfanout.go's dispatchRxFrame) -- before this
+// deadline existed, a stuck client's net.Conn.Write could block that
+// goroutine forever, silently stalling all subsequent RF packet
+// processing regardless of the frame's actual source (graywolf
+// packet-loss report, 2026-09). A write that times out or errors closes
+// that client's connection so its read side observes EOF and it is
+// dropped, mirroring how Client.writeFrame already treats a TX write
+// failure.
 func (s *Server) Broadcast(port uint8, axBytes []byte) {
 	raw := Encode(port, axBytes)
 	s.mu.Lock()
@@ -496,10 +516,18 @@ func (s *Server) Broadcast(port uint8, axBytes []byte) {
 	s.mu.Unlock()
 	for _, c := range clients {
 		c.mu.Lock()
+		if s.broadcastDeadline > 0 {
+			if setter, ok := c.w.(interface{ SetWriteDeadline(time.Time) error }); ok {
+				_ = setter.SetWriteDeadline(time.Now().Add(s.broadcastDeadline))
+			}
+		}
 		_, err := c.w.Write(raw)
 		c.mu.Unlock()
 		if err != nil {
 			s.logger.Debug("kiss broadcast write failed", "err", err)
+			if closer, ok := c.w.(io.Closer); ok {
+				_ = closer.Close()
+			}
 		}
 	}
 }
