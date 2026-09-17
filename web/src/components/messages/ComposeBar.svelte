@@ -264,7 +264,14 @@
     // WebView by the IME inset, so the web viewport already shrinks
     // above the keyboard. Translating again here would double-offset
     // the bar off-screen.
-    if (Platform.isAndroid) return;
+    //
+    // Skip entirely when embedded (e.g. inside ComposeNewModal): the
+    // `.compose.embedded` element is `position: relative`, laid out
+    // in-flow within the modal body, not pinned to the viewport edge.
+    // Applying this transform there shifted the textarea up over the
+    // "To" field as the visual viewport panned on iOS — the modal's
+    // own (already-scrollable) body is what should carry it into view.
+    if (Platform.isAndroid || embedded) return;
     const vv = typeof window !== 'undefined' ? window.visualViewport : null;
     if (!vv) return;
     function apply() {
