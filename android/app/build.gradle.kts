@@ -18,6 +18,29 @@ val graywolfVersionCode: Int = run {
     major * 1_000_000 + minor * 10_000 + patch * 100
 }
 
+// Mirrors the Makefile's GIT_COMMIT/GIT_DIRTY derivation so the Android
+// build's libgraywolf.so reports the same "vX.Y.Z-<commit>[-dirty]" string
+// as the desktop binary instead of falling back to main_android.go's
+// "dev"/"unknown" zero values.
+val graywolfGitCommit: String = run {
+    val repoRootDir = rootProject.projectDir.parentFile
+    val sha = ProcessBuilder("git", "rev-parse", "HEAD")
+        .directory(repoRootDir)
+        .start()
+        .let { proc ->
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor()
+            out
+        }
+        .ifBlank { "unknown" }
+    val shortSha = sha.take(8)
+    val isDirty = ProcessBuilder("git", "diff-index", "--quiet", "HEAD", "--")
+        .directory(repoRootDir)
+        .start()
+        .waitFor() != 0
+    if (isDirty) "$shortSha-dirty" else shortSha
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -293,10 +316,14 @@ goAbiMatrix.forEach { (abi, info) ->
         })
         inputs.file(repoRoot.resolve("go.mod"))
         inputs.file(repoRoot.resolve("go.sum"))
+        // Not a file input, but must still bust UP-TO-DATE when the repo
+        // moves to a new commit with no other tracked inputs changed.
+        inputs.property("goLdflags", "-X main.Version=$graywolfVersionName -X main.GitCommit=$graywolfGitCommit")
         outputs.file(outDir.resolve("libgraywolf.so"))
         doFirst { outDir.mkdirs() }
         commandLine = listOf(
             "go", "build",
+            "-ldflags", "-X main.Version=$graywolfVersionName -X main.GitCommit=$graywolfGitCommit",
             "-o", outDir.resolve("libgraywolf.so").absolutePath,
             "./cmd/graywolf",
         )
