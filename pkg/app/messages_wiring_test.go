@@ -391,3 +391,28 @@ func TestIGateIsRxHook_NoRouterSafe(t *testing.T) {
 	pkt.Direction = aprs.DirectionIS
 	a.onIGateIsRxPacket(pkt, "W1ABC-9>APGRWO,qAR,K1AAA::N0CALL   :no-svc{001")
 }
+
+// TestIGateIsRxHook_RecordsDirIS is a regression guard for the bug
+// fixed in d310ff3a: onIGateIsRxPacket once recorded APRS-IS-received
+// packets with Direction=DirRX, which misrepresented internet-sourced
+// traffic as heard-on-air in the packet log. The hook must always
+// stamp DirIS for its "igate-is" entries.
+func TestIGateIsRxHook_RecordsDirIS(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	a := &App{
+		logger:       logger,
+		plog:         packetlog.New(packetlog.Config{Capacity: 16}),
+		stationCache: stationcache.NewPersistentCache(logger),
+	}
+	pkt := makeInboundDM(t, "W1ABC-9", "N0CALL", "is-rx-direction", "001")
+	pkt.Direction = aprs.DirectionIS
+	a.onIGateIsRxPacket(pkt, "W1ABC-9>APGRWO,qAR,K1AAA::N0CALL   :is-rx-direction{001")
+
+	entries := a.plog.Query(packetlog.Filter{Source: "igate-is"})
+	if len(entries) != 1 {
+		t.Fatalf("packet log entries for igate-is = %d, want 1", len(entries))
+	}
+	if got := entries[0].Direction; got != packetlog.DirIS {
+		t.Fatalf("Direction = %q, want %q", got, packetlog.DirIS)
+	}
+}

@@ -26,7 +26,7 @@ func TestListPackets_ResolvesChannelName(t *testing.T) {
 
 	log := packetlog.New(packetlog.Config{Capacity: 10})
 	log.Record(packetlog.Entry{Channel: seeded.ID, Direction: packetlog.DirRX, Display: "A>B:hi"})
-	log.Record(packetlog.Entry{Channel: 0, Direction: packetlog.DirRX, Source: "igate-is", Display: "C>D:is"})
+	log.Record(packetlog.Entry{Channel: 0, Direction: packetlog.DirIS, Source: "igate-is", Display: "C>D:is"})
 
 	mux := http.NewServeMux()
 	RegisterPackets(srv, mux, log, nil)
